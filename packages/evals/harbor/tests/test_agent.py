@@ -130,7 +130,7 @@ class AgentHelpersTest(unittest.TestCase):
             symlink_to.assert_called_once()
             self.assertTrue(symlink_to.call_args.kwargs["target_is_directory"])
 
-    def test_harbor_run_omits_agent_when_recipe_default_is_selected(self) -> None:
+    def test_harbor_run_preserves_task_workdir_for_default_agent(self) -> None:
         instance = object.__new__(IntrospectionRecipeAgent)
         instance._spec = {
             "candidate": {"runtime": "refunds", "agent": None, "model": None},
@@ -143,13 +143,13 @@ class AgentHelpersTest(unittest.TestCase):
 
         async def capture_exec(*args, **kwargs):
             environment.command = kwargs["command"]
-            environment.cwd = kwargs["cwd"]
+            environment.cwd = kwargs.get("cwd")
 
         instance.exec_as_agent = capture_exec
         asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
         self.assertIn("--work-dir /tmp/introspection-recipe-source", environment.command)
         self.assertNotIn("--agent", environment.command)
-        self.assertEqual(environment.cwd, "/app")
+        self.assertIsNone(environment.cwd)
 
     def test_harbor_run_selects_inherited_agent_by_declared_name(self) -> None:
         instance = object.__new__(IntrospectionRecipeAgent)

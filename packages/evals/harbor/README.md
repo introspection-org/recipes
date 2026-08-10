@@ -19,4 +19,6 @@ then override only its model, tools, extensions, or other variant settings.
 The CLI selects the Recipe and optional hydrated Pi session. The adapter copies
 that snapshot into Harbor's environment, invokes `introspection local`, and
 writes both native Pi events and `trajectory.json` (ATIF) under the agent log
-directory.
+directory. Recipe execution preserves the Harbor task image's `WORKDIR`; the
+staged Recipe source is selected separately and does not replace the task's
+working directory.

@@ -211,7 +211,6 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             environment,
             command=_recipe_run_command(args, self._OUTPUT_FILENAME),
             env=env,
-            cwd="/app",
         )
 
     @override
