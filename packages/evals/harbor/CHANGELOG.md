@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.2...introspection-harbor-v0.1.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **eval:** use agent YAML as model authority ([#228](https://github.com/introspection-org/introspection-cli/issues/228)) ([c2ed704](https://github.com/introspection-org/introspection-cli/commit/c2ed704c32ce2237cf770549b56d3f3adf1e9e1e))
+
 ## [0.1.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.1...introspection-harbor-v0.1.2) (2026-08-11)
 
 
