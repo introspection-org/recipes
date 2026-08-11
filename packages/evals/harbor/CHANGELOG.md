@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.1...introspection-harbor-v0.1.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **eval:** repair Harbor evaluation flow ([#223](https://github.com/introspection-org/introspection-cli/issues/223)) ([475515e](https://github.com/introspection-org/introspection-cli/commit/475515e295ba72411f9748d287fbc9747aad5810))
+
 ## [0.1.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.0...introspection-harbor-v0.1.1) (2026-08-10)
 
 
