@@ -301,7 +301,8 @@ def _selected_prompt(spec: dict[str, Any], instruction: str) -> str:
 
 def _recipe_run_command(args: list[str], output_filename: str) -> str:
     return (
-        "set -o pipefail; . ~/.nvm/nvm.sh; "
+        "set -o pipefail; "
+        "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\"; fi; "
         f"{shlex.join(args)} 2>&1 </dev/null | "
         f"stdbuf -oL tee /logs/agent/{shlex.quote(output_filename)}"
     )

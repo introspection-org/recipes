@@ -34,6 +34,11 @@ class AgentHelpersTest(unittest.TestCase):
         command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
         self.assertTrue(command.startswith("set -o pipefail;"))
 
+    def test_recipe_pipeline_only_loads_nvm_when_it_exists(self) -> None:
+        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
+        self.assertIn('if [ -s "$HOME/.nvm/nvm.sh" ]', command)
+        self.assertNotIn("; . ~/.nvm/nvm.sh;", command)
+
     def test_bedrock_forwards_temporary_session_credentials(self) -> None:
         credentials = {
             "AWS_ACCESS_KEY_ID": "key",
