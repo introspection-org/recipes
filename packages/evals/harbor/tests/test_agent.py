@@ -12,6 +12,7 @@ from introspection_harbor.agent import (
     IntrospectionRecipeAgent,
     _materialize_workspace,
     _model_environment,
+    _pi_events_to_atif,
     _node_prerequisite_command,
     _recipe_run_command,
     _selected_prompt,
@@ -19,6 +20,20 @@ from introspection_harbor.agent import (
 
 
 class AgentHelpersTest(unittest.TestCase):
+    def test_trajectory_records_the_observed_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events = Path(temp_dir) / "pi.jsonl"
+            events.write_text(
+                '{"type":"message_end","message":{"role":"assistant",'
+                '"provider":"openrouter","model":"deepseek/deepseek-v4-flash",'
+                '"content":[{"type":"text","text":"done"}],"usage":{}}}\n'
+            )
+            trajectory = _pi_events_to_atif(events)
+            self.assertEqual(
+                trajectory.agent.model_name,
+                "openrouter/deepseek/deepseek-v4-flash",
+            )
+
     def test_production_run_uses_selected_prompt(self) -> None:
         spec = {
             "source": {"kind": "production_task"},

@@ -199,10 +199,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
         pi_args: list[str] = []
         if (self._spec.get("input") or {}).get("pi_session_path"):
             pi_args.extend(["--session", _REMOTE_SESSION_PATH])
-        model_name = candidate.get("model") or self.model_name
-        if model_name:
-            provider, model = model_name.split("/", 1)
-            pi_args.extend(["--provider", provider, "--model", model])
+        model_name = candidate.get("model")
         if pi_args:
             args.extend(["--", *pi_args])
 
@@ -218,10 +215,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
         output_path = self.logs_dir / self._OUTPUT_FILENAME
         if not output_path.is_file():
             return
-        trajectory = _pi_events_to_atif(
-            output_path,
-            model_name=(self._spec.get("candidate") or {}).get("model") or self.model_name,
-        )
+        trajectory = _pi_events_to_atif(output_path)
         (self.logs_dir / "trajectory.json").write_text(
             json.dumps(trajectory.to_json_dict(), indent=2)
         )
@@ -339,7 +333,7 @@ def _model_environment(model_name: str | None) -> dict[str, str]:
     return {name: os.environ[name] for name in names if name in os.environ}
 
 
-def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
+def _pi_events_to_atif(path: Path) -> Trajectory:
     messages: list[dict[str, Any]] = []
     for line in path.read_text().splitlines():
         try:
@@ -352,6 +346,7 @@ def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
     steps: list[Step] = []
     calls: dict[str, tuple[int, ToolCall]] = {}
     totals = {"input": 0, "output": 0, "cache": 0, "cost": 0.0}
+    observed_models: set[str] = set()
     for message in messages:
         role = message.get("role")
         if role == "user":
@@ -362,6 +357,9 @@ def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
                 )
             steps.append(Step(step_id=len(steps) + 1, source="user", message=content or ""))
         elif role == "assistant":
+            observed_model = _message_model_name(message)
+            if observed_model:
+                observed_models.add(observed_model)
             text: list[str] = []
             thinking: list[str] = []
             tool_calls: list[ToolCall] = []
@@ -386,7 +384,7 @@ def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
             step = Step(
                 step_id=len(steps) + 1,
                 source="agent",
-                model_name=model_name,
+                model_name=observed_model,
                 message="".join(text),
                 reasoning_content="\n".join(thinking) or None,
                 tool_calls=tool_calls or None,
@@ -417,11 +415,25 @@ def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
             )
             step.observation = Observation(results=results)
 
+    observed_model_name = (
+        next(iter(observed_models), None) if len(observed_models) == 1 else None
+    )
     if not steps:
-        steps.append(Step(step_id=1, source="agent", message="No Pi events were recorded", llm_call_count=0))
+        steps.append(
+            Step(
+                step_id=1,
+                source="agent",
+                message="No Pi events were recorded",
+                llm_call_count=0,
+            )
+        )
     return Trajectory(
         session_id=None,
-        agent=Agent(name="introspection-recipe", version=_ADAPTER_VERSION, model_name=model_name),
+        agent=Agent(
+            name="introspection-recipe",
+            version=_ADAPTER_VERSION,
+            model_name=observed_model_name,
+        ),
         steps=steps,
         final_metrics=FinalMetrics(
             total_prompt_tokens=int(totals["input"]),
@@ -431,3 +443,16 @@ def _pi_events_to_atif(path: Path, model_name: str | None) -> Trajectory:
             total_steps=len(steps),
         ),
     )
+
+
+def _message_model_name(message: dict[str, Any]) -> str | None:
+    provider = message.get("provider")
+    model = message.get("model")
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or not isinstance(model, str)
+        or not model
+    ):
+        return None
+    return f"{provider}/{model}"
