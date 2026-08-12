@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.3...introspection-harbor-v0.2.0) (2026-08-12)
+
+
+### Features
+
+* **eval:** replay production conversations by turn ([#239](https://github.com/introspection-org/introspection-cli/issues/239)) ([10ae0d1](https://github.com/introspection-org/introspection-cli/commit/10ae0d1458b361d4fd0ffa4ef3205228d7f5a8c8))
+
 ## [0.1.3](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.2...introspection-harbor-v0.1.3) (2026-08-11)
 
 
