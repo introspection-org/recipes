@@ -26,7 +26,7 @@ from harbor.models.trajectories import (
 
 _RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
 _REMOTE_SOURCE_DIR = "/tmp/introspection-recipe-source"
-_REMOTE_SESSION_PATH = "/tmp/introspection-session.jsonl"
+_REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 _NODE_MAJOR = 24
 _NODE_VERSION_CHECK = (
     "node -e 'process.exit(Number(process.versions.node.split(\".\")[0]) >= "
@@ -108,8 +108,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
                 "introspection-recipe must be launched by `introspection eval run --runner harbor`"
             )
         self._spec = json.loads(Path(spec_path).read_text())
-        if self._spec.get("schema_version") != 1:
-            raise ValueError("unsupported Introspection evaluation run specification")
+        _require_run_spec_v2(self._spec)
         candidate = self._spec.get("candidate") or {}
         workspace_path = Path(candidate.get("workspace_path", ""))
         recipe_path = Path(candidate.get("recipe_path", ""))
@@ -149,9 +148,11 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             command=f"chmod -R a+rX {shlex.quote(_REMOTE_SOURCE_DIR)}",
         )
 
-        session_path = (self._spec.get("input") or {}).get("pi_session_path")
-        if session_path:
-            await environment.upload_file(Path(session_path), _REMOTE_SESSION_PATH)
+        replay_context_path = (self._spec.get("input") or {}).get("replay_context_path")
+        if replay_context_path:
+            await environment.upload_file(
+                Path(replay_context_path), _REMOTE_REPLAY_CONTEXT_PATH
+            )
 
         await self.exec_as_root(environment, command=_node_prerequisite_command())
         cli_version = shlex.quote(candidate["cli_version"])
@@ -196,12 +197,9 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
         args.extend(["--print", prompt, "--mode", "json"])
-        pi_args: list[str] = []
-        if (self._spec.get("input") or {}).get("pi_session_path"):
-            pi_args.extend(["--session", _REMOTE_SESSION_PATH])
+        if (self._spec.get("input") or {}).get("replay_context_path"):
+            args.extend(["--replay-context", _REMOTE_REPLAY_CONTEXT_PATH])
         model_name = candidate.get("model")
-        if pi_args:
-            args.extend(["--", *pi_args])
 
         env = _model_environment(model_name)
         await self.exec_as_agent(
@@ -227,7 +225,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
         context.metadata = {
             "pi_events": self._OUTPUT_FILENAME,
             "atif": "trajectory.json",
-            "source_snapshot": (self._spec.get("source") or {}).get("snapshot_hash"),
+            "introspection": (self._spec.get("input") or {}).get("metadata"),
         }
 
 
@@ -285,12 +283,20 @@ def _excluded_workspace_path(path: Path) -> bool:
 
 
 def _selected_prompt(spec: dict[str, Any], instruction: str) -> str:
-    source = spec.get("source") or {}
     selected_prompt = (spec.get("input") or {}).get("prompt")
-    prompt = selected_prompt if source.get("kind") == "production_task" else instruction
+    prompt = selected_prompt if selected_prompt is not None else instruction
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("Introspection evaluation prompt must be non-empty")
     return prompt
+
+
+def _require_run_spec_v2(spec: dict[str, Any]) -> None:
+    version = spec.get("schema_version")
+    if version != 2:
+        raise ValueError(
+            f"Introspection evaluation run spec {version} is not supported. "
+            "Update the Introspection CLI."
+        )
 
 
 def _recipe_run_command(args: list[str], output_filename: str) -> str:

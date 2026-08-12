@@ -15,6 +15,7 @@ from introspection_harbor.agent import (
     _pi_events_to_atif,
     _node_prerequisite_command,
     _recipe_run_command,
+    _require_run_spec_v2,
     _selected_prompt,
 )
 
@@ -34,16 +35,20 @@ class AgentHelpersTest(unittest.TestCase):
                 "openrouter/deepseek/deepseek-v4-flash",
             )
 
-    def test_production_run_uses_selected_prompt(self) -> None:
-        spec = {
-            "source": {"kind": "production_task"},
-            "input": {"prompt": "counterfactual prompt"},
-        }
+    def test_production_conversation_uses_selected_prompt(self) -> None:
+        spec = {"input": {"prompt": "counterfactual prompt"}}
         self.assertEqual(_selected_prompt(spec, "Harbor instruction"), "counterfactual prompt")
 
     def test_authored_run_uses_harbor_instruction(self) -> None:
-        spec = {"source": {"kind": "authored"}, "input": {"prompt": None}}
+        spec = {"input": {}}
         self.assertEqual(_selected_prompt(spec, "Harbor instruction"), "Harbor instruction")
+
+    def test_schema_one_requires_a_newer_cli(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Update the Introspection CLI"):
+            _require_run_spec_v2({"schema_version": 1})
+
+    def test_schema_two_is_accepted(self) -> None:
+        _require_run_spec_v2({"schema_version": 2})
 
     def test_recipe_pipeline_preserves_the_first_failure(self) -> None:
         command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
@@ -154,7 +159,6 @@ class AgentHelpersTest(unittest.TestCase):
         instance = object.__new__(IntrospectionRecipeAgent)
         instance._spec = {
             "candidate": {"runtime": "refunds", "agent": None, "model": None},
-            "source": {"kind": "authored"},
             "input": {},
         }
         instance.model_name = None
@@ -175,7 +179,6 @@ class AgentHelpersTest(unittest.TestCase):
         instance = object.__new__(IntrospectionRecipeAgent)
         instance._spec = {
             "candidate": {"runtime": "refunds", "agent": "agent2", "model": None},
-            "source": {"kind": "authored"},
             "input": {},
         }
         instance.model_name = None
@@ -188,6 +191,31 @@ class AgentHelpersTest(unittest.TestCase):
         instance.exec_as_agent = capture_exec
         asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
         self.assertIn("--agent agent2", environment.command)
+
+    def test_harbor_run_forwards_replay_context_to_local(self) -> None:
+        instance = object.__new__(IntrospectionRecipeAgent)
+        instance._spec = {
+            "candidate": {"runtime": "refunds", "agent": None, "model": None},
+            "input": {
+                "prompt": "production prompt",
+                "replay_context_path": "/host/replay-context.json",
+            },
+        }
+        instance.model_name = None
+        instance._OUTPUT_FILENAME = "pi.jsonl"
+        environment = Mock()
+
+        async def capture_exec(*args, **kwargs):
+            environment.command = kwargs["command"]
+
+        instance.exec_as_agent = capture_exec
+        asyncio.run(instance.run.__wrapped__(instance, "authored", environment, Mock()))
+        self.assertIn(
+            "--replay-context /tmp/introspection-replay-context.json",
+            environment.command,
+        )
+        self.assertIn("--print 'production prompt'", environment.command)
+        self.assertNotIn("--session", environment.command)
 
 
 class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
@@ -224,6 +252,35 @@ class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/opt/introspection-workspace", combined)
         self.assertNotIn("recipe-source.tar", combined)
         self.assertNotIn("tar -xf", combined)
+
+    async def test_install_uploads_canonical_replay_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            (workspace / "package.json").write_text("{}")
+            replay_context = root / "replay-context.json"
+            replay_context.write_text(
+                '{"schema_version":1,"cwd":"/workspace","trajectory":[]}'
+            )
+
+            instance = object.__new__(IntrospectionRecipeAgent)
+            instance._spec = {
+                "candidate": {"cli_version": "0.23.0"},
+                "input": {"replay_context_path": str(replay_context)},
+            }
+            instance._workspace_path = workspace
+            instance.exec_as_root = AsyncMock()
+            instance.exec_as_agent = AsyncMock()
+            environment = Mock()
+            environment.upload_dir = AsyncMock()
+            environment.upload_file = AsyncMock()
+
+            await instance.install(environment)
+
+            environment.upload_file.assert_awaited_once_with(
+                replay_context, "/tmp/introspection-replay-context.json"
+            )
 
 
 if __name__ == "__main__":
