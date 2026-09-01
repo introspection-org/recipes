@@ -1,3 +1,4 @@
 from .agent import IntrospectionRecipeAgent
+from .environment import IntrospectionE2BEnvironment
 
-__all__ = ["IntrospectionRecipeAgent"]
+__all__ = ["IntrospectionE2BEnvironment", "IntrospectionRecipeAgent"]
