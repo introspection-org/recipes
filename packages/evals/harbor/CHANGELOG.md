@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.2.0...introspection-harbor-v0.3.0) (2026-09-01)
+
+
+### Features
+
+* **harbor:** run E2B through scoped Data Plane egress ([#287](https://github.com/introspection-org/introspection-cli/issues/287)) ([0ca3b63](https://github.com/introspection-org/introspection-cli/commit/0ca3b63240a235476f5f97e2392afd8d9e7520a5))
+
 ## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.1.3...introspection-harbor-v0.2.0) (2026-08-12)
 
 
