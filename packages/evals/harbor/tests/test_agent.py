@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import tempfile
@@ -11,12 +12,14 @@ from unittest.mock import AsyncMock, Mock, patch
 from introspection_harbor.agent import (
     IntrospectionRecipeAgent,
     _materialize_workspace,
+    _mcp_header_environment,
     _model_environment,
-    _pi_events_to_atif,
     _node_prerequisite_command,
+    _pi_events_to_atif,
     _recipe_run_command,
     _require_run_spec_v2,
     _selected_prompt,
+    _write_recipe_patch,
 )
 
 
@@ -37,11 +40,15 @@ class AgentHelpersTest(unittest.TestCase):
 
     def test_production_conversation_uses_selected_prompt(self) -> None:
         spec = {"input": {"prompt": "counterfactual prompt"}}
-        self.assertEqual(_selected_prompt(spec, "Harbor instruction"), "counterfactual prompt")
+        self.assertEqual(
+            _selected_prompt(spec, "Harbor instruction"), "counterfactual prompt"
+        )
 
     def test_authored_run_uses_harbor_instruction(self) -> None:
         spec = {"input": {}}
-        self.assertEqual(_selected_prompt(spec, "Harbor instruction"), "Harbor instruction")
+        self.assertEqual(
+            _selected_prompt(spec, "Harbor instruction"), "Harbor instruction"
+        )
 
     def test_schema_one_requires_a_newer_cli(self) -> None:
         with self.assertRaisesRegex(ValueError, "Update the Introspection CLI"):
@@ -58,6 +65,16 @@ class AgentHelpersTest(unittest.TestCase):
         command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
         self.assertIn('if [ -s "$HOME/.nvm/nvm.sh" ]', command)
         self.assertNotIn("; . ~/.nvm/nvm.sh;", command)
+
+    def test_recipe_runs_from_the_staged_source_directory(self) -> None:
+        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
+        self.assertIn(
+            "cd /tmp/introspection-recipe-source && introspection local", command
+        )
+
+    def test_recipe_rejects_an_empty_pi_event_stream(self) -> None:
+        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
+        self.assertIn("test -s /logs/agent/pi.jsonl", command)
 
     def test_bedrock_forwards_temporary_session_credentials(self) -> None:
         credentials = {
@@ -79,6 +96,48 @@ class AgentHelpersTest(unittest.TestCase):
                 _model_environment("google/model"), {"GEMINI_API_KEY": "key"}
             )
 
+    def test_mcp_header_environment_forwards_only_referenced_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recipe = Path(temp_dir)
+            config = recipe / ".pi" / "mcp.local.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps(
+                    {
+                        "servers": [
+                            {
+                                "id": "hello",
+                                "headers": {
+                                    "Authorization": "Bearer ${HELLO_MCP_TOKEN}"
+                                },
+                                "description": "${UNRELATED_SECRET}",
+                            }
+                        ]
+                    }
+                )
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "HELLO_MCP_TOKEN": "provider-token",
+                    "UNRELATED_SECRET": "do-not-forward",
+                },
+                clear=True,
+            ):
+                self.assertEqual(
+                    _mcp_header_environment(recipe),
+                    {"HELLO_MCP_TOKEN": "provider-token"},
+                )
+
+    def test_mcp_header_environment_ignores_missing_or_invalid_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recipe = Path(temp_dir)
+            self.assertEqual(_mcp_header_environment(recipe), {})
+            config = recipe / ".pi" / "mcp.local.json"
+            config.parent.mkdir()
+            config.write_text("not json")
+            self.assertEqual(_mcp_header_environment(recipe), {})
+
     def test_node_setup_supports_non_debian_task_images(self) -> None:
         command = _node_prerequisite_command()
         self.assertIn("command -v apk", command)
@@ -88,7 +147,9 @@ class AgentHelpersTest(unittest.TestCase):
         self.assertIn("command -v curl", command)
         self.assertFalse(command.startswith("apt-get"))
 
-    def test_workspace_staging_preserves_monorepo_sources_and_excludes_secrets(self) -> None:
+    def test_workspace_staging_preserves_monorepo_sources_and_excludes_secrets(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "source"
             staged = Path(temp_dir) / "staged"
@@ -162,6 +223,7 @@ class AgentHelpersTest(unittest.TestCase):
             "input": {},
         }
         instance.model_name = None
+        instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
 
@@ -171,7 +233,9 @@ class AgentHelpersTest(unittest.TestCase):
 
         instance.exec_as_agent = capture_exec
         asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
-        self.assertIn("--work-dir /tmp/introspection-recipe-source", environment.command)
+        self.assertIn(
+            "--work-dir /tmp/introspection-recipe-source", environment.command
+        )
         self.assertNotIn("--agent", environment.command)
         self.assertIsNone(environment.cwd)
 
@@ -182,6 +246,7 @@ class AgentHelpersTest(unittest.TestCase):
             "input": {},
         }
         instance.model_name = None
+        instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
 
@@ -202,6 +267,7 @@ class AgentHelpersTest(unittest.TestCase):
             },
         }
         instance.model_name = None
+        instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
 
@@ -219,7 +285,66 @@ class AgentHelpersTest(unittest.TestCase):
 
 
 class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_install_uploads_filtered_workspace_without_tar_or_opt_layout(self) -> None:
+    async def test_baked_install_uses_image_recipe_without_upload(self) -> None:
+        instance = object.__new__(IntrospectionRecipeAgent)
+        instance._spec = {"candidate": {"cli_version": "0.34.0"}, "input": {}}
+        instance._recipe_mode = "baked"
+        instance._remote_source_dir = "/opt/introspection/recipe"
+        instance.exec_as_root = AsyncMock()
+        instance.exec_as_agent = AsyncMock()
+        environment = Mock()
+        environment.upload_dir = AsyncMock()
+        environment.upload_file = AsyncMock()
+
+        await instance.install(environment)
+
+        environment.upload_dir.assert_not_awaited()
+        environment.upload_file.assert_not_awaited()
+        instance.exec_as_root.assert_not_awaited()
+        command = instance.exec_as_agent.await_args.kwargs["command"]
+        self.assertIn("test -f /opt/introspection/recipe/package.json", command)
+        self.assertNotIn("npm install", command)
+
+    def test_sync_patch_is_relative_to_the_recipe(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            recipe = workspace / "recipe"
+            recipe.mkdir()
+            target = recipe / "package.json"
+            target.write_text('{"version":"1"}\n')
+            subprocess.run(["git", "init", "--quiet"], cwd=workspace, check=True)
+            subprocess.run(["git", "add", "."], cwd=workspace, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "base",
+                ],
+                cwd=workspace,
+                check=True,
+            )
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=workspace, text=True
+            ).strip()
+            target.write_text('{"version":"2"}\n')
+            destination = workspace / "recipe.patch"
+
+            _write_recipe_patch(workspace, Path("recipe"), base, destination)
+
+            patch_text = destination.read_text()
+            self.assertIn("a/package.json", patch_text)
+            self.assertIn("b/package.json", patch_text)
+            self.assertNotIn("a/recipe/package.json", patch_text)
+
+    async def test_install_uploads_filtered_workspace_without_tar_or_opt_layout(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir) / "workspace"
             workspace.mkdir()
@@ -252,6 +377,11 @@ class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/opt/introspection-workspace", combined)
         self.assertNotIn("recipe-source.tar", combined)
         self.assertNotIn("tar -xf", combined)
+        self.assertIn("git -C /tmp/introspection-recipe-source init --quiet", combined)
+        self.assertIn(
+            "git -C /tmp/introspection-recipe-source init --quiet",
+            instance.exec_as_agent.await_args.kwargs["command"],
+        )
 
     async def test_install_uploads_canonical_replay_context(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

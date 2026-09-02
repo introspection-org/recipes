@@ -5,7 +5,10 @@ description = "Harbor installed-agent adapter for Introspection Recipes"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
-dependencies = ["harbor[e2b]>=0.20.0"]
+dependencies = ["harbor[e2b]>=0.20.0", "tenacity>=8"]
+
+[tool.introspection]
+harbor-version = "0.20.0"
 
 [build-system]
 requires = ["hatchling"]

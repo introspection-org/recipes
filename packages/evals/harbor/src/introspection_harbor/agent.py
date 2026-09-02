@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
+import subprocess
 import tempfile
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any, override
 
@@ -24,16 +26,20 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 
-_RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
-_REMOTE_SOURCE_DIR = "/tmp/introspection-recipe-source"
-_REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
-_NODE_MAJOR = 24
-_NODE_VERSION_CHECK = (
-    "node -e 'process.exit(Number(process.versions.node.split(\".\")[0]) >= "
-    f"{_NODE_MAJOR} ? 0 : 1)'"
+RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
+REMOTE_SOURCE_DIR = "/tmp/introspection-recipe-source"
+BAKED_RECIPE_DIR = "/opt/introspection/recipe"
+REMOTE_PATCH_PATH = "/tmp/introspection-recipe.patch"
+RECIPE_MODE_ENV = "INTROSPECTION_HARBOR_RECIPE_MODE"
+RECIPE_BASE_ENV = "INTROSPECTION_HARBOR_RECIPE_BASE_SHA"
+REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
+NODE_MAJOR = 24
+NODE_VERSION_CHECK = (
+    'node -e \'process.exit(Number(process.versions.node.split(".")[0]) >= '
+    f"{NODE_MAJOR} ? 0 : 1)'"
 )
 
-_EXCLUDED_DIRECTORY_NAMES = {
+EXCLUDED_DIRECTORY_NAMES = {
     ".git",
     ".hg",
     ".svn",
@@ -45,30 +51,24 @@ _EXCLUDED_DIRECTORY_NAMES = {
     ".mypy_cache",
     ".ruff_cache",
 }
-_EXCLUDED_EVAL_DIRECTORIES = {
+EXCLUDED_EVAL_DIRECTORIES = {
     ".evalite",
     "eval-runs",
     "eval-artifacts",
 }
-_EXCLUDED_SECRET_FILES = {
+EXCLUDED_SECRET_FILES = {
     ".npmrc",
     ".pypirc",
     "credentials.json",
     "service-account.json",
     "service_account.json",
 }
-_SECRET_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
-_SAFE_ENV_SUFFIXES = {".example", ".sample", ".template"}
+SECRET_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
+SAFE_ENV_SUFFIXES = {".example", ".sample", ".template"}
+MCP_ENV_REFERENCE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
 
 
-def _adapter_version() -> str:
-    try:
-        return version("introspection-harbor")
-    except PackageNotFoundError:
-        return "0.1.0"
-
-
-_ADAPTER_VERSION = _adapter_version()
+ADAPTER_VERSION = version("introspection-harbor")
 
 
 def _node_prerequisite_command() -> str:
@@ -76,11 +76,11 @@ def _node_prerequisite_command() -> str:
 
     return (
         "set -eu; "
-        f"if {_NODE_VERSION_CHECK} 2>/dev/null; then exit 0; fi; "
+        f"if {NODE_VERSION_CHECK} 2>/dev/null; then exit 0; fi; "
         "if command -v apk >/dev/null 2>&1; then "
         "apk add --no-cache nodejs npm; "
-        f"{_NODE_VERSION_CHECK} || {{ "
-        f"echo 'The Alpine package repository must provide Node {_NODE_MAJOR} or newer' >&2; "
+        f"{NODE_VERSION_CHECK} || {{ "
+        f"echo 'The Alpine package repository must provide Node {NODE_MAJOR} or newer' >&2; "
         "exit 1; }; "
         "elif command -v curl >/dev/null 2>&1; then :; "
         "elif command -v apt-get >/dev/null 2>&1; then "
@@ -102,7 +102,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        spec_path = os.environ.get(_RUN_SPEC_ENV)
+        spec_path = os.environ.get(RUN_SPEC_ENV)
         if not spec_path:
             raise ValueError(
                 "introspection-recipe must be launched by `introspection eval run --runner harbor`"
@@ -122,6 +122,12 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             raise ValueError("Recipe source must be inside its workspace") from error
         self._workspace_path = workspace_path
         self._recipe_path = recipe_path
+        self._recipe_mode = os.environ.get(RECIPE_MODE_ENV, "upload")
+        if self._recipe_mode not in {"upload", "baked", "sync"}:
+            raise ValueError(f"{RECIPE_MODE_ENV} must be upload, baked, or sync")
+        self._remote_source_dir = (
+            BAKED_RECIPE_DIR if self._recipe_mode == "baked" else REMOTE_SOURCE_DIR
+        )
 
     @staticmethod
     @override
@@ -130,39 +136,46 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
 
     @override
     def version(self) -> str | None:
-        return _ADAPTER_VERSION
+        return ADAPTER_VERSION
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
         candidate = self._spec["candidate"]
+        if getattr(self, "_recipe_mode", "upload") in {"baked", "sync"}:
+            await self._install_baked_recipe(environment)
+            return
+
         await self.exec_as_root(
             environment,
-            command=f"rm -rf {shlex.quote(_REMOTE_SOURCE_DIR)}",
+            command=f"rm -rf {shlex.quote(REMOTE_SOURCE_DIR)}",
         )
-        with tempfile.TemporaryDirectory(prefix="introspection-recipe-source-") as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="introspection-recipe-source-"
+        ) as temp_dir:
             staged = Path(temp_dir) / "workspace"
             _materialize_workspace(self._workspace_path, staged)
-            await environment.upload_dir(staged, _REMOTE_SOURCE_DIR)
+            await environment.upload_dir(staged, REMOTE_SOURCE_DIR)
         await self.exec_as_root(
             environment,
-            command=f"chmod -R a+rX {shlex.quote(_REMOTE_SOURCE_DIR)}",
+            command=f"chmod -R a+rX {shlex.quote(REMOTE_SOURCE_DIR)}",
         )
 
         replay_context_path = (self._spec.get("input") or {}).get("replay_context_path")
         if replay_context_path:
             await environment.upload_file(
-                Path(replay_context_path), _REMOTE_REPLAY_CONTEXT_PATH
+                Path(replay_context_path), REMOTE_REPLAY_CONTEXT_PATH
             )
 
         await self.exec_as_root(environment, command=_node_prerequisite_command())
         cli_version = shlex.quote(candidate["cli_version"])
-        source = shlex.quote(_REMOTE_SOURCE_DIR)
-        node_install = nvm_node_install_snippet(node_major=_NODE_MAJOR)
+        source = shlex.quote(REMOTE_SOURCE_DIR)
+        node_install = nvm_node_install_snippet(node_major=NODE_MAJOR)
         await self.exec_as_agent(
             environment,
             command=(
                 "set -euo pipefail; "
-                f"if {_NODE_VERSION_CHECK}; then npm -v; else {node_install}; fi && "
+                f"git -C {source} init --quiet && "
+                f"if {NODE_VERSION_CHECK}; then npm -v; else {node_install}; fi && "
                 f"npm install -g @introspection-ai/cli@{cli_version} && "
                 f"if [ -f {source}/pnpm-lock.yaml ]; then "
                 f"corepack pnpm --dir {source} install --frozen-lockfile; "
@@ -173,6 +186,53 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
                 f"elif [ -f {source}/package-lock.json ]; then npm --prefix {source} ci; "
                 f"else npm --prefix {source} install; fi && "
                 "introspection setup --yes"
+            ),
+        )
+
+    async def _install_baked_recipe(self, environment: BaseEnvironment) -> None:
+        if self._recipe_mode == "sync":
+            base_sha = os.environ.get(RECIPE_BASE_ENV)
+            if not base_sha:
+                raise ValueError(f"{RECIPE_BASE_ENV} is required in sync mode")
+            with tempfile.TemporaryDirectory(
+                prefix="introspection-recipe-patch-"
+            ) as temp_dir:
+                patch_path = Path(temp_dir) / "recipe.patch"
+                _write_recipe_patch(
+                    self._workspace_path,
+                    self._recipe_relative_path,
+                    base_sha,
+                    patch_path,
+                )
+                await environment.upload_file(patch_path, REMOTE_PATCH_PATH)
+            await self.exec_as_root(
+                environment,
+                command=(
+                    f"rm -rf {shlex.quote(REMOTE_SOURCE_DIR)} && "
+                    f"mkdir -p {shlex.quote(REMOTE_SOURCE_DIR)} && "
+                    f"cp -a {shlex.quote(BAKED_RECIPE_DIR)}/. "
+                    f"{shlex.quote(REMOTE_SOURCE_DIR)}/ && "
+                    f"chmod -R a+rX,u+w {shlex.quote(REMOTE_SOURCE_DIR)}"
+                ),
+            )
+
+        source = shlex.quote(self._remote_source_dir)
+        patch = (
+            f"git -C {source} apply --binary {shlex.quote(REMOTE_PATCH_PATH)} && "
+            if self._recipe_mode == "sync"
+            else ""
+        )
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "set -euo pipefail; "
+                f"test -f {source}/package.json && "
+                f"git -C {source} init --quiet && "
+                f"{patch}"
+                f"if [ -f {source}/.pi/mcp.local.example.json ] && "
+                f"[ ! -f {source}/.pi/mcp.local.json ]; then "
+                f"cp {source}/.pi/mcp.local.example.json {source}/.pi/mcp.local.json; fi && "
+                "introspection --version"
             ),
         )
 
@@ -190,21 +250,28 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             "introspection",
             "local",
             "--work-dir",
-            _REMOTE_SOURCE_DIR,
+            getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR),
             "--runtime",
             candidate["runtime"],
         ]
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
-        args.extend(["--print", prompt, "--mode", "json"])
+        args.extend(["--print", prompt, "--mode", "json", "--yes", "--non-interactive"])
         if (self._spec.get("input") or {}).get("replay_context_path"):
-            args.extend(["--replay-context", _REMOTE_REPLAY_CONTEXT_PATH])
+            args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])
         model_name = candidate.get("model")
 
-        env = _model_environment(model_name)
+        env = {
+            **_model_environment(model_name),
+            **_mcp_header_environment(self._recipe_path),
+        }
         await self.exec_as_agent(
             environment,
-            command=_recipe_run_command(args, self._OUTPUT_FILENAME),
+            command=_recipe_run_command(
+                args,
+                self._OUTPUT_FILENAME,
+                getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR),
+            ),
             env=env,
         )
 
@@ -247,6 +314,33 @@ def _materialize_workspace(source: Path, destination: Path) -> None:
             shutil.copy2(source_path, target_path)
 
 
+def _write_recipe_patch(
+    workspace: Path,
+    recipe_relative_path: Path,
+    base_sha: str,
+    destination: Path,
+) -> None:
+    recipe = recipe_relative_path.as_posix()
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--binary",
+            base_sha,
+            f"--relative={recipe}",
+            "--",
+            recipe,
+        ],
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.decode("utf-8", "replace").strip()
+        raise ValueError(f"cannot create Recipe patch from {base_sha}: {message}")
+    destination.write_bytes(result.stdout)
+
+
 def _workspace_paths(source: Path) -> list[Path]:
     paths: list[Path] = []
     for current, directories, files in os.walk(source, followlinks=False):
@@ -268,18 +362,18 @@ def _workspace_paths(source: Path) -> list[Path]:
 def _excluded_workspace_path(path: Path) -> bool:
     if path.is_absolute() or ".." in path.parts:
         return True
-    if any(part in _EXCLUDED_DIRECTORY_NAMES for part in path.parts):
+    if any(part in EXCLUDED_DIRECTORY_NAMES for part in path.parts):
         return True
-    if any(part in _EXCLUDED_EVAL_DIRECTORIES for part in path.parts):
+    if any(part in EXCLUDED_EVAL_DIRECTORIES for part in path.parts):
         return True
     name = path.name
-    if name == ".DS_Store" or name in _EXCLUDED_SECRET_FILES:
+    if name == ".DS_Store" or name in EXCLUDED_SECRET_FILES:
         return True
     if name == ".env":
         return True
-    if name.startswith(".env.") and Path(name).suffix not in _SAFE_ENV_SUFFIXES:
+    if name.startswith(".env.") and Path(name).suffix not in SAFE_ENV_SUFFIXES:
         return True
-    return path.suffix.lower() in _SECRET_SUFFIXES
+    return path.suffix.lower() in SECRET_SUFFIXES
 
 
 def _selected_prompt(spec: dict[str, Any], instruction: str) -> str:
@@ -299,12 +393,16 @@ def _require_run_spec_v2(spec: dict[str, Any]) -> None:
         )
 
 
-def _recipe_run_command(args: list[str], output_filename: str) -> str:
+def _recipe_run_command(
+    args: list[str], output_filename: str, source_dir: str = REMOTE_SOURCE_DIR
+) -> str:
+    output_path = f"/logs/agent/{shlex.quote(output_filename)}"
     return (
         "set -o pipefail; "
-        "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\"; fi; "
+        'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; '
+        f"cd {shlex.quote(source_dir)} && "
         f"{shlex.join(args)} 2>&1 </dev/null | "
-        f"stdbuf -oL tee /logs/agent/{shlex.quote(output_filename)}"
+        f"stdbuf -oL tee {output_path} && test -s {output_path}"
     )
 
 
@@ -339,6 +437,36 @@ def _model_environment(model_name: str | None) -> dict[str, str]:
     return {name: os.environ[name] for name in names if name in os.environ}
 
 
+def _mcp_header_environment(recipe_path: Path) -> dict[str, str]:
+    """Forward only env references used by local MCP authorization headers.
+
+    Hosted bindings materialize the same config shape. Keeping this restricted
+    to header values avoids turning an arbitrary Recipe string into permission
+    to copy an unrelated host environment variable into the trial.
+    """
+
+    config_path = recipe_path / ".pi" / "mcp.local.json"
+    if not config_path.is_file():
+        return {}
+    try:
+        config = json.loads(config_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    names: set[str] = set()
+    servers = config.get("servers") if isinstance(config, dict) else None
+    if not isinstance(servers, list):
+        return {}
+    for server in servers:
+        headers = server.get("headers") if isinstance(server, dict) else None
+        if not isinstance(headers, dict):
+            continue
+        for value in headers.values():
+            if isinstance(value, str):
+                names.update(MCP_ENV_REFERENCE.findall(value))
+    return {name: os.environ[name] for name in sorted(names) if name in os.environ}
+
+
 def _pi_events_to_atif(path: Path) -> Trajectory:
     messages: list[dict[str, Any]] = []
     for line in path.read_text().splitlines():
@@ -346,7 +474,9 @@ def _pi_events_to_atif(path: Path) -> Trajectory:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") == "message_end" and isinstance(event.get("message"), dict):
+        if event.get("type") == "message_end" and isinstance(
+            event.get("message"), dict
+        ):
             messages.append(event["message"])
 
     steps: list[Step] = []
@@ -359,9 +489,13 @@ def _pi_events_to_atif(path: Path) -> Trajectory:
             content = message.get("content")
             if isinstance(content, list):
                 content = "".join(
-                    block.get("text", "") for block in content if block.get("type") == "text"
+                    block.get("text", "")
+                    for block in content
+                    if block.get("type") == "text"
                 )
-            steps.append(Step(step_id=len(steps) + 1, source="user", message=content or ""))
+            steps.append(
+                Step(step_id=len(steps) + 1, source="user", message=content or "")
+            )
         elif role == "assistant":
             observed_model = _message_model_name(message)
             if observed_model:
@@ -409,7 +543,9 @@ def _pi_events_to_atif(path: Path) -> Trajectory:
             step_index, _ = calls[message["toolCallId"]]
             content = message.get("content") or []
             rendered = "".join(
-                block.get("text", "") for block in content if block.get("type") == "text"
+                block.get("text", "")
+                for block in content
+                if block.get("type") == "text"
             )
             step = steps[step_index]
             results = list(step.observation.results) if step.observation else []
@@ -437,7 +573,7 @@ def _pi_events_to_atif(path: Path) -> Trajectory:
         session_id=None,
         agent=Agent(
             name="introspection-recipe",
-            version=_ADAPTER_VERSION,
+            version=ADAPTER_VERSION,
             model_name=observed_model_name,
         ),
         steps=steps,
