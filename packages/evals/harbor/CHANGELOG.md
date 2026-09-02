@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.0...introspection-harbor-v0.4.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **harbor:** forward relay target to E2B ([#319](https://github.com/introspection-org/introspection-cli/issues/319)) ([459f969](https://github.com/introspection-org/introspection-cli/commit/459f96956a51f4c675efb7558636cd52a45544fb))
+
 ## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.3.1...introspection-harbor-v0.4.0) (2026-09-02)
 
 
