@@ -33,6 +33,7 @@ REMOTE_PATCH_PATH = "/tmp/introspection-recipe.patch"
 RECIPE_MODE_ENV = "INTROSPECTION_HARBOR_RECIPE_MODE"
 RECIPE_BASE_ENV = "INTROSPECTION_HARBOR_RECIPE_BASE_SHA"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
+REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
 NODE_MAJOR = 24
 NODE_VERSION_CHECK = (
     'node -e \'process.exit(Number(process.versions.node.split(".")[0]) >= '
@@ -240,7 +241,8 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
                 f"if [ -f {source}/.pi/mcp.local.example.json ] && "
                 f"[ ! -f {source}/.pi/mcp.local.json ]; then "
                 f"cp {source}/.pi/mcp.local.example.json {source}/.pi/mcp.local.json; fi && "
-                "introspection --version"
+                "introspection --version && "
+                "introspection setup --yes --non-interactive"
             ),
         )
 
@@ -254,19 +256,32 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
     ) -> None:
         candidate = self._spec["candidate"]
         prompt = _selected_prompt(self._spec, instruction)
-        args = [
-            "introspection",
-            "local",
-            "--work-dir",
-            getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR),
-            "--runtime",
-            candidate["runtime"],
-        ]
-        if candidate.get("agent"):
-            args.extend(["--agent", candidate["agent"]])
-        args.extend(["--print", prompt, "--mode", "json", "--yes", "--non-interactive"])
+        source_dir = getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR)
+        with tempfile.TemporaryDirectory(prefix="introspection-eval-prompt-") as temp_dir:
+            prompt_path = Path(temp_dir) / "prompt.md"
+            prompt_path.write_text(prompt)
+            await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
+
         if (self._spec.get("input") or {}).get("replay_context_path"):
+            args = [
+                "introspection",
+                "local",
+                "--work-dir",
+                source_dir,
+                "--runtime",
+                candidate["runtime"],
+            ]
+            if candidate.get("agent"):
+                args.extend(["--agent", candidate["agent"]])
             args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])
+            args.extend(["--yes", "--non-interactive", "--"])
+        else:
+            args = ["pi", "--recipe", source_dir]
+            if candidate.get("agent"):
+                args.extend(["--agent", candidate["agent"]])
+        args.extend(
+            ["--print", "--mode", "json", "--approve", f"@{REMOTE_EVAL_PROMPT_PATH}"]
+        )
         model_name = candidate.get("model")
 
         env = {
@@ -278,7 +293,7 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             command=_recipe_run_command(
                 args,
                 self._OUTPUT_FILENAME,
-                getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR),
+                source_dir,
             ),
             env=env,
         )
@@ -413,11 +428,10 @@ def _recipe_run_command(
 ) -> str:
     output_path = f"/logs/agent/{shlex.quote(output_filename)}"
     return (
-        "set -o pipefail; "
         'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; '
         f"cd {shlex.quote(source_dir)} && "
-        f"{shlex.join(args)} 2>&1 </dev/null | "
-        f"stdbuf -oL tee {output_path} && test -s {output_path}"
+        f"{shlex.join(args)} >{output_path} 2>&1 </dev/null; "
+        f"status=$?; cat {output_path}; test $status -eq 0 && test -s {output_path}"
     )
 
 

@@ -14,6 +14,7 @@ _PUBLIC_EGRESS_URL = "INTROSPECTION_PUBLIC_EGRESS_URL"
 _ENDPOINT_HOSTS = "INTROSPECTION_ENDPOINT_HOSTS"
 _SESSION_TOKEN = "INTROSPECTION_TOKEN"
 _PASSTHROUGH_ENV = "INTROSPECTION_HARBOR_PASSTHROUGH_ENV"
+INTROSPECTION_RECIPE_WORKDIR = "/opt/introspection/recipe"
 
 
 def _binding_environment() -> dict[str, str]:
@@ -111,6 +112,8 @@ class IntrospectionE2BEnvironment(E2BEnvironment):
             await super().start(force_build)
             return
 
+        if self.task_env_config.workdir is None:
+            self.task_env_config.workdir = INTROSPECTION_RECIPE_WORKDIR
         await self._create_sandbox()
         if not self._sandbox:
             raise RuntimeError(

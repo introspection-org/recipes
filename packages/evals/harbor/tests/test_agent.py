@@ -57,9 +57,15 @@ class AgentHelpersTest(unittest.TestCase):
     def test_schema_two_is_accepted(self) -> None:
         _require_run_spec_v2({"schema_version": 2})
 
-    def test_recipe_pipeline_preserves_the_first_failure(self) -> None:
+    def test_recipe_capture_preserves_the_agent_exit_status(self) -> None:
         command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertTrue(command.startswith("set -o pipefail;"))
+        self.assertIn("status=$?", command)
+        self.assertIn("test $status -eq 0", command)
+
+    def test_recipe_capture_does_not_pipe_live_agent_output(self) -> None:
+        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
+        self.assertNotIn("|", command)
+        self.assertNotIn("tee", command)
 
     def test_recipe_pipeline_only_loads_nvm_when_it_exists(self) -> None:
         command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
@@ -226,7 +232,7 @@ class AgentHelpersTest(unittest.TestCase):
             symlink_to.assert_called_once()
             self.assertTrue(symlink_to.call_args.kwargs["target_is_directory"])
 
-    def test_harbor_run_preserves_task_workdir_for_default_agent(self) -> None:
+    def test_harbor_run_passes_uploaded_prompt_file_to_pi(self) -> None:
         instance = object.__new__(IntrospectionRecipeAgent)
         instance._spec = {
             "candidate": {"runtime": "refunds", "agent": None, "model": None},
@@ -236,17 +242,30 @@ class AgentHelpersTest(unittest.TestCase):
         instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
+        environment.upload_file = AsyncMock()
 
         async def capture_exec(*args, **kwargs):
             environment.command = kwargs["command"]
             environment.cwd = kwargs.get("cwd")
+            environment.env = kwargs["env"]
 
         instance.exec_as_agent = capture_exec
-        asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
-        self.assertIn(
-            "--work-dir /tmp/introspection-recipe-source", environment.command
+        asyncio.run(
+            instance.run.__wrapped__(instance, "large inline instruction", environment, Mock())
         )
+        self.assertIn("pi --recipe /tmp/introspection-recipe-source", environment.command)
+        self.assertNotIn("introspection local", environment.command)
         self.assertNotIn("--agent", environment.command)
+        self.assertIn("--print", environment.command)
+        self.assertIn("@/tmp/introspection-eval-prompt.md", environment.command)
+        uploaded_path, remote_path = environment.upload_file.await_args.args
+        self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
+        self.assertEqual(uploaded_path.name, "prompt.md")
+        self.assertNotIn("large inline instruction", environment.command)
+        self.assertNotIn(
+            "INTROSPECTION_RUNTIME_MODE",
+            environment.env,
+        )
         self.assertIsNone(environment.cwd)
 
     def test_harbor_run_selects_inherited_agent_by_declared_name(self) -> None:
@@ -259,9 +278,11 @@ class AgentHelpersTest(unittest.TestCase):
         instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
+        environment.upload_file = AsyncMock()
 
         async def capture_exec(*args, **kwargs):
             environment.command = kwargs["command"]
+            environment.env = kwargs["env"]
 
         instance.exec_as_agent = capture_exec
         asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
@@ -280,6 +301,7 @@ class AgentHelpersTest(unittest.TestCase):
         instance._recipe_path = Path("/nonexistent")
         instance._OUTPUT_FILENAME = "pi.jsonl"
         environment = Mock()
+        environment.upload_file = AsyncMock()
 
         async def capture_exec(*args, **kwargs):
             environment.command = kwargs["command"]
@@ -290,7 +312,9 @@ class AgentHelpersTest(unittest.TestCase):
             "--replay-context /tmp/introspection-replay-context.json",
             environment.command,
         )
-        self.assertIn("--print 'production prompt'", environment.command)
+        self.assertIn("introspection local", environment.command)
+        self.assertIn("@/tmp/introspection-eval-prompt.md", environment.command)
+        self.assertNotIn("production prompt", environment.command)
         self.assertNotIn("--session", environment.command)
 
 

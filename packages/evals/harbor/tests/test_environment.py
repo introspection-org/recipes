@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import harbor.environments.e2b as harbor_e2b
@@ -143,6 +144,7 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
     def test_external_template_start_skips_harbor_template_build(self) -> None:
         environment = object.__new__(IntrospectionE2BEnvironment)
         environment.external_template_name = "published-template"
+        environment.task_env_config = SimpleNamespace(workdir=None)
         environment._sandbox = Mock()
         environment._create_sandbox = AsyncMock()
         environment.ensure_dirs = AsyncMock()
@@ -154,6 +156,24 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
         environment._create_sandbox.assert_awaited_once_with()
         environment.ensure_dirs.assert_awaited_once_with(["/logs"])
         environment._upload_environment_dir_after_start.assert_awaited_once_with()
+        self.assertEqual(
+            environment.task_env_config.workdir,
+            "/opt/introspection/recipe",
+        )
+
+    def test_external_template_preserves_explicit_task_workdir(self) -> None:
+        environment = object.__new__(IntrospectionE2BEnvironment)
+        environment.external_template_name = "published-template"
+        environment.task_env_config = SimpleNamespace(workdir="/custom/workdir")
+        environment._sandbox = Mock()
+        environment._create_sandbox = AsyncMock()
+        environment.ensure_dirs = AsyncMock()
+        environment._mount_targets = Mock(return_value=["/logs"])
+        environment._upload_environment_dir_after_start = AsyncMock()
+
+        asyncio.run(environment.start(force_build=True))
+
+        self.assertEqual(environment.task_env_config.workdir, "/custom/workdir")
 
     def test_sandbox_shim_uses_external_template_and_timeout(self) -> None:
         environment = object.__new__(IntrospectionE2BEnvironment)
