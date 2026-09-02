@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.3.0...introspection-harbor-v0.3.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **harbor:** run staged recipes with direct MCP auth ([#299](https://github.com/introspection-org/introspection-cli/issues/299)) ([9a671e9](https://github.com/introspection-org/introspection-cli/commit/9a671e9bd5fc92b99587e5c83ae03abc0d3751ad))
+
 ## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.2.0...introspection-harbor-v0.3.0) (2026-09-01)
 
 
