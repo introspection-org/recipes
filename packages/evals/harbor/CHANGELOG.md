@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.3.1...introspection-harbor-v0.4.0) (2026-09-02)
+
+
+### Features
+
+* **bindings:** authenticate MCP with connectors ([#318](https://github.com/introspection-org/introspection-cli/issues/318)) ([59052fb](https://github.com/introspection-org/introspection-cli/commit/59052fbbbd5b1973793fa61837495ed605e52e4e))
+* **eval:** add Vitest runner and reusable Recipe judges ([#297](https://github.com/introspection-org/introspection-cli/issues/297)) ([172f2f6](https://github.com/introspection-org/introspection-cli/commit/172f2f6298cde96a0db56f0985d3f87ebd5002f3))
+
 ## [0.3.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.3.0...introspection-harbor-v0.3.1) (2026-09-02)
 
 
