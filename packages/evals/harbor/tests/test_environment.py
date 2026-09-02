@@ -17,6 +17,7 @@ _OPERATOR_ENV = {
     "INTROSPECTION_EGRESS_URL": "http://sandbox-egress:8081",
     "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
     "INTROSPECTION_ENDPOINT_HOSTS": "api.e2b.app,api.openai.com",
+    "INTROSPECTION_RELAY_TARGET": "local-developer",
 }
 
 
@@ -44,6 +45,7 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
                 "INTROSPECTION_TOKEN": "scoped-session-locator",
                 "INTROSPECTION_EGRESS_URL": "https://egress.example.com",
                 "INTROSPECTION_ENDPOINT_HOSTS": ("api.e2b.app,api.openai.com"),
+                "INTROSPECTION_RELAY_TARGET": "local-developer",
             },
         )
         self.assertNotIn("E2B_API_KEY", init.call_args.kwargs["persistent_env"])

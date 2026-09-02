@@ -9,18 +9,19 @@ import harbor.environments.e2b as harbor_e2b
 from harbor.environments.e2b import E2BEnvironment
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-_EGRESS_URL = "INTROSPECTION_EGRESS_URL"
-_PUBLIC_EGRESS_URL = "INTROSPECTION_PUBLIC_EGRESS_URL"
-_ENDPOINT_HOSTS = "INTROSPECTION_ENDPOINT_HOSTS"
-_SESSION_TOKEN = "INTROSPECTION_TOKEN"
-_PASSTHROUGH_ENV = "INTROSPECTION_HARBOR_PASSTHROUGH_ENV"
+EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL"
+PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
+ENDPOINT_HOSTS_ENV = "INTROSPECTION_ENDPOINT_HOSTS"
+SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
+RELAY_TARGET_ENV = "INTROSPECTION_RELAY_TARGET"
+PASSTHROUGH_ENV = "INTROSPECTION_HARBOR_PASSTHROUGH_ENV"
 INTROSPECTION_RECIPE_WORKDIR = "/opt/introspection/recipe"
 
 
 def _binding_environment() -> dict[str, str]:
     """Build the scoped public-egress contract inherited by the E2B trial."""
 
-    required = (_SESSION_TOKEN, _PUBLIC_EGRESS_URL, _ENDPOINT_HOSTS)
+    required = (SESSION_TOKEN_ENV, PUBLIC_EGRESS_URL_ENV, ENDPOINT_HOSTS_ENV)
     configured = [name for name in required if os.environ.get(name)]
     if not configured:
         return {}
@@ -29,22 +30,25 @@ def _binding_environment() -> dict[str, str]:
     if missing:
         raise ValueError("Introspection E2B requires " + ", ".join(sorted(missing)))
 
-    return {
-        _SESSION_TOKEN: os.environ[_SESSION_TOKEN],
-        _EGRESS_URL: os.environ[_PUBLIC_EGRESS_URL],
-        _ENDPOINT_HOSTS: os.environ[_ENDPOINT_HOSTS],
+    binding = {
+        SESSION_TOKEN_ENV: os.environ[SESSION_TOKEN_ENV],
+        EGRESS_URL_ENV: os.environ[PUBLIC_EGRESS_URL_ENV],
+        ENDPOINT_HOSTS_ENV: os.environ[ENDPOINT_HOSTS_ENV],
     }
+    if relay_target := os.environ.get(RELAY_TARGET_ENV):
+        binding[RELAY_TARGET_ENV] = relay_target
+    return binding
 
 
 def _passthrough_environment() -> dict[str, str]:
     """Resolve the explicitly allowlisted host variables for a direct trial."""
 
-    configured = os.environ.get(_PASSTHROUGH_ENV, "")
+    configured = os.environ.get(PASSTHROUGH_ENV, "")
     names = [name.strip() for name in configured.split(",") if name.strip()]
     missing = [name for name in names if not os.environ.get(name)]
     if missing:
         raise ValueError(
-            f"{_PASSTHROUGH_ENV} references unset variables: "
+            f"{PASSTHROUGH_ENV} references unset variables: "
             + ", ".join(sorted(missing))
         )
     return {name: os.environ[name] for name in names}
