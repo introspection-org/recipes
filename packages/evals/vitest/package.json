@@ -1,0 +1,39 @@
+{
+  "name": "@introspection-ai/vitest-evals",
+  "version": "0.1.0",
+  "description": "Run Introspection Recipes from vitest-evals",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "vitest": ">=4.0.0 <5.0.0",
+    "vitest-evals": ">=0.16.1 <0.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "4.1.11",
+    "vitest-evals": "0.16.1"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -56,6 +56,14 @@ EXCLUDED_EVAL_DIRECTORIES = {
     "eval-runs",
     "eval-artifacts",
 }
+EXCLUDED_GENERATED_PI_DIRECTORIES = {
+    Path(".pi/bin"),
+    Path(".pi/mcp-catalogs"),
+}
+EXCLUDED_GENERATED_PI_FILES = {
+    Path(".pi/mcp-session.json"),
+    Path(".pi/mcporter.json"),
+}
 EXCLUDED_SECRET_FILES = {
     ".npmrc",
     ".pypirc",
@@ -365,6 +373,13 @@ def _excluded_workspace_path(path: Path) -> bool:
     if any(part in EXCLUDED_DIRECTORY_NAMES for part in path.parts):
         return True
     if any(part in EXCLUDED_EVAL_DIRECTORIES for part in path.parts):
+        return True
+    if path in EXCLUDED_GENERATED_PI_FILES:
+        return True
+    if any(
+        path == directory or directory in path.parents
+        for directory in EXCLUDED_GENERATED_PI_DIRECTORIES
+    ):
         return True
     name = path.name
     if name == ".DS_Store" or name in EXCLUDED_SECRET_FILES:

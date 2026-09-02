@@ -168,6 +168,11 @@ class AgentHelpersTest(unittest.TestCase):
                 "certificate.pem": "secret",
                 "node_modules/pkg/index.js": "generated",
                 ".introspection/eval-runs/run/result.json": "{}",
+                ".pi/bin/mcp": "#!/bin/sh\nexec /host-only/mcp-client\n",
+                ".pi/mcp-catalogs/deepwiki.json": "{}",
+                ".pi/mcp-session.json": "{}",
+                ".pi/mcporter.json": "{}",
+                ".pi/mcp.local.json": '{"mcpServers": {}}',
             }
             for relative, contents in files.items():
                 path = root / relative
@@ -186,6 +191,7 @@ class AgentHelpersTest(unittest.TestCase):
                 "packages/agent/dist/index.js",
                 "packages/shared/index.ts",
                 ".env.example",
+                ".pi/mcp.local.json",
             ]:
                 self.assertTrue((staged / relative).is_file(), relative)
             for relative in [
@@ -195,6 +201,10 @@ class AgentHelpersTest(unittest.TestCase):
                 ".git/config",
                 "node_modules/pkg/index.js",
                 ".introspection/eval-runs/run/result.json",
+                ".pi/bin/mcp",
+                ".pi/mcp-catalogs/deepwiki.json",
+                ".pi/mcp-session.json",
+                ".pi/mcporter.json",
             ]:
                 self.assertFalse((staged / relative).exists(), relative)
 
