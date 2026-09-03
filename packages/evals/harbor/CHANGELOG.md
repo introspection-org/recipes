@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.6](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.5...introspection-harbor-v0.4.6) (2026-09-03)
+
+
+### Bug Fixes
+
+* **harbor:** route managed model calls through egress ([#337](https://github.com/introspection-org/introspection-cli/issues/337)) ([28e374e](https://github.com/introspection-org/introspection-cli/commit/28e374ea97dd2b5c9711c7f5aa1d2b5343bf93d0))
+
 ## [0.4.5](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.4...introspection-harbor-v0.4.5) (2026-09-03)
 
 
