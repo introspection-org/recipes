@@ -251,9 +251,13 @@ class AgentHelpersTest(unittest.TestCase):
 
         instance.exec_as_agent = capture_exec
         asyncio.run(
-            instance.run.__wrapped__(instance, "large inline instruction", environment, Mock())
+            instance.run.__wrapped__(
+                instance, "large inline instruction", environment, Mock()
+            )
         )
-        self.assertIn("pi --recipe /tmp/introspection-recipe-source", environment.command)
+        self.assertIn(
+            "pi --recipe /tmp/introspection-recipe-source", environment.command
+        )
         self.assertNotIn("introspection local", environment.command)
         self.assertNotIn("--agent", environment.command)
         self.assertIn("--print", environment.command)

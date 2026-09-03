@@ -257,7 +257,9 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
         candidate = self._spec["candidate"]
         prompt = _selected_prompt(self._spec, instruction)
         source_dir = getattr(self, "_remote_source_dir", REMOTE_SOURCE_DIR)
-        with tempfile.TemporaryDirectory(prefix="introspection-eval-prompt-") as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="introspection-eval-prompt-"
+        ) as temp_dir:
             prompt_path = Path(temp_dir) / "prompt.md"
             prompt_path.write_text(prompt)
             await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
