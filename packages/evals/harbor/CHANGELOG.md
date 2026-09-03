@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.2...introspection-harbor-v0.4.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **harbor:** sync 0.4.2 lockfile ([#329](https://github.com/introspection-org/introspection-cli/issues/329)) ([3fee5d4](https://github.com/introspection-org/introspection-cli/commit/3fee5d4f94bfa2603ba2a1ffb6a047cbd043bb7f))
+
 ## [0.4.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.1...introspection-harbor-v0.4.2) (2026-09-03)
 
 
