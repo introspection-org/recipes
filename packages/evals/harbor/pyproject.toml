@@ -13,7 +13,7 @@ hb = "harbor.cli.main:app"
 hr = "harbor.cli.main:app"
 
 [dependency-groups]
-dev = ["build>=1,<2", "ruff==0.16.5", "twine>=6,<7", "ty==0.0.77"]
+dev = ["ruff==0.16.5", "ty==0.0.77"]
 
 [build-system]
 requires = ["hatchling"]
