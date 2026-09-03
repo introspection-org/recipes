@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from introspection_harbor.agent import (
+    PROXY_EXTENSION_SOURCE,
     IntrospectionRecipeAgent,
     _materialize_workspace,
     _mcp_header_environment,
@@ -256,15 +257,26 @@ class AgentHelpersTest(unittest.TestCase):
             )
         )
         self.assertIn(
-            "pi --recipe /tmp/introspection-recipe-source", environment.command
+            "pi --extension /tmp/introspection-proxy-extension.mjs "
+            "--recipe /tmp/introspection-recipe-source",
+            environment.command,
         )
         self.assertNotIn("introspection local", environment.command)
         self.assertNotIn("--agent", environment.command)
         self.assertIn("--print", environment.command)
         self.assertIn("@/tmp/introspection-eval-prompt.md", environment.command)
-        uploaded_path, remote_path = environment.upload_file.await_args.args
+        self.assertEqual(environment.upload_file.await_count, 2)
+        uploaded_path, remote_path = environment.upload_file.await_args_list[0].args
         self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
         self.assertEqual(uploaded_path.name, "prompt.md")
+        extension_path, extension_remote_path = environment.upload_file.await_args_list[
+            1
+        ].args
+        self.assertEqual(
+            extension_remote_path, "/tmp/introspection-proxy-extension.mjs"
+        )
+        self.assertEqual(extension_path.name, "introspection-proxy-extension.mjs")
+        self.assertIn("installProxyFetch();", PROXY_EXTENSION_SOURCE)
         self.assertNotIn("large inline instruction", environment.command)
         self.assertNotIn(
             "INTROSPECTION_RUNTIME_MODE",
@@ -291,6 +303,29 @@ class AgentHelpersTest(unittest.TestCase):
         instance.exec_as_agent = capture_exec
         asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
         self.assertIn("--agent agent2", environment.command)
+
+    def test_harbor_run_selects_declared_model(self) -> None:
+        instance = object.__new__(IntrospectionRecipeAgent)
+        instance._spec = {
+            "candidate": {
+                "runtime": "refunds",
+                "agent": None,
+                "model": "anthropic/claude-sonnet-4-6",
+            },
+            "input": {},
+        }
+        instance.model_name = None
+        instance._recipe_path = Path("/nonexistent")
+        instance._OUTPUT_FILENAME = "pi.jsonl"
+        environment = Mock()
+        environment.upload_file = AsyncMock()
+
+        async def capture_exec(*args, **kwargs):
+            environment.command = kwargs["command"]
+
+        instance.exec_as_agent = capture_exec
+        asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
+        self.assertIn("--model anthropic/claude-sonnet-4-6", environment.command)
 
     def test_harbor_run_forwards_replay_context_to_local(self) -> None:
         instance = object.__new__(IntrospectionRecipeAgent)

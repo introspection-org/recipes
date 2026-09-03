@@ -34,6 +34,16 @@ RECIPE_MODE_ENV = "INTROSPECTION_HARBOR_RECIPE_MODE"
 RECIPE_BASE_ENV = "INTROSPECTION_HARBOR_RECIPE_BASE_SHA"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
+REMOTE_PROXY_EXTENSION_PATH = "/tmp/introspection-proxy-extension.mjs"
+RUNTIME_PROXY_MODULE_PATH = (
+    "/repo/apps/runtime-agent/node_modules/"
+    "@introspection-sdk/introspection-proxy/dist/index.js"
+)
+PROXY_EXTENSION_SOURCE = (
+    f'import {{ installProxyFetch }} from "file://{RUNTIME_PROXY_MODULE_PATH}";\n'
+    "installProxyFetch();\n"
+    "export default function introspectionProxyExtension() {}\n"
+)
 NODE_MAJOR = 24
 NODE_VERSION_CHECK = (
     'node -e \'process.exit(Number(process.versions.node.split(".")[0]) >= '
@@ -263,7 +273,13 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             prompt_path = Path(temp_dir) / "prompt.md"
             prompt_path.write_text(prompt)
             await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
+            proxy_extension_path = Path(temp_dir) / "introspection-proxy-extension.mjs"
+            proxy_extension_path.write_text(PROXY_EXTENSION_SOURCE)
+            await environment.upload_file(
+                proxy_extension_path, REMOTE_PROXY_EXTENSION_PATH
+            )
 
+        model_name = candidate.get("model")
         if (self._spec.get("input") or {}).get("replay_context_path"):
             args = [
                 "introspection",
@@ -278,14 +294,20 @@ class IntrospectionRecipeAgent(BaseInstalledAgent):
             args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])
             args.extend(["--yes", "--non-interactive", "--"])
         else:
-            args = ["pi", "--recipe", source_dir]
+            args = [
+                "pi",
+                "--extension",
+                REMOTE_PROXY_EXTENSION_PATH,
+                "--recipe",
+                source_dir,
+            ]
             if candidate.get("agent"):
                 args.extend(["--agent", candidate["agent"]])
+            if model_name:
+                args.extend(["--model", model_name])
         args.extend(
             ["--print", "--mode", "json", "--approve", f"@{REMOTE_EVAL_PROMPT_PATH}"]
         )
-        model_name = candidate.get("model")
-
         env = {
             **_model_environment(model_name),
             **_mcp_header_environment(self._recipe_path),
