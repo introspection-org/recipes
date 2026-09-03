@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.5](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.4...introspection-harbor-v0.4.5) (2026-09-03)
+
+
+### Bug Fixes
+
+* **harbor:** preserve egress proxy for direct Pi runs ([#336](https://github.com/introspection-org/introspection-cli/issues/336)) ([651d0da](https://github.com/introspection-org/introspection-cli/commit/651d0da3727af215b11590b1c95c1e8e742f1b2b))
+* **harbor:** publish with uv build ([#333](https://github.com/introspection-org/introspection-cli/issues/333)) ([297e5ee](https://github.com/introspection-org/introspection-cli/commit/297e5eeeb8f0b6713db56e765c9b4a41fb670ad9))
+
 ## [0.4.4](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.3...introspection-harbor-v0.4.4) (2026-09-03)
 
 
