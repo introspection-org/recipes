@@ -44,6 +44,8 @@ PROXY_EXTENSION_SOURCE = (
     "installProxyFetch();\n"
     "export default function introspectionProxyExtension() {}\n"
 )
+SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
+PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
 NODE_MAJOR = 24
 NODE_VERSION_CHECK = (
     'node -e \'process.exit(Number(process.versions.node.split(".")[0]) >= '
@@ -463,6 +465,18 @@ def _model_environment(model_name: str | None) -> dict[str, str]:
     if not model_name or "/" not in model_name:
         return {}
     provider = model_name.split("/", 1)[0]
+    session_token = os.environ.get(SESSION_TOKEN_ENV)
+    if session_token and os.environ.get(PUBLIC_EGRESS_URL_ENV):
+        managed_key = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "google": "GEMINI_API_KEY",
+            "groq": "GROQ_API_KEY",
+            "mistral": "MISTRAL_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "xai": "XAI_API_KEY",
+        }.get(provider)
+        return {managed_key: session_token} if managed_key else {}
     names = {
         "amazon-bedrock": [
             "AWS_ACCESS_KEY_ID",

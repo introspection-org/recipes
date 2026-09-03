@@ -103,6 +103,25 @@ class AgentHelpersTest(unittest.TestCase):
                 _model_environment("google/model"), {"GEMINI_API_KEY": "key"}
             )
 
+    def test_managed_egress_uses_session_locator_instead_of_host_key(self) -> None:
+        credentials = {
+            "INTROSPECTION_TOKEN": "session-locator",
+            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
+            "ANTHROPIC_API_KEY": "real-host-key",
+        }
+        with patch.dict(os.environ, credentials, clear=True):
+            self.assertEqual(
+                _model_environment("anthropic/claude-sonnet-4-6"),
+                {"ANTHROPIC_API_KEY": "session-locator"},
+            )
+
+    def test_direct_run_uses_host_provider_key(self) -> None:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "real-host-key"}, clear=True):
+            self.assertEqual(
+                _model_environment("anthropic/claude-sonnet-4-6"),
+                {"ANTHROPIC_API_KEY": "real-host-key"},
+            )
+
     def test_mcp_header_environment_forwards_only_referenced_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             recipe = Path(temp_dir)
