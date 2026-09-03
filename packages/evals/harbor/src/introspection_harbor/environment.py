@@ -11,6 +11,12 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
+BASE_API_URL_ENV = "INTROSPECTION_BASE_API_URL"
+PUBLIC_API_URL_ENV = "INTROSPECTION_PUBLIC_API_URL"
+BASE_OTEL_URL_ENV = "INTROSPECTION_BASE_OTEL_URL"
+PUBLIC_OTEL_URL_ENV = "INTROSPECTION_PUBLIC_OTEL_URL"
+SERVICE_NAME_ENV = "INTROSPECTION_SERVICE_NAME"
+EVAL_SERVICE_NAME = "introspection-eval"
 ENDPOINT_HOSTS_ENV = "INTROSPECTION_ENDPOINT_HOSTS"
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 RELAY_TARGET_ENV = "INTROSPECTION_RELAY_TARGET"
@@ -21,7 +27,13 @@ INTROSPECTION_RECIPE_WORKDIR = "/opt/introspection/recipe"
 def _binding_environment() -> dict[str, str]:
     """Build the scoped public-egress contract inherited by the E2B trial."""
 
-    required = (SESSION_TOKEN_ENV, PUBLIC_EGRESS_URL_ENV, ENDPOINT_HOSTS_ENV)
+    required = (
+        SESSION_TOKEN_ENV,
+        PUBLIC_EGRESS_URL_ENV,
+        PUBLIC_API_URL_ENV,
+        PUBLIC_OTEL_URL_ENV,
+        ENDPOINT_HOSTS_ENV,
+    )
     configured = [name for name in required if os.environ.get(name)]
     if not configured:
         return {}
@@ -33,6 +45,9 @@ def _binding_environment() -> dict[str, str]:
     binding = {
         SESSION_TOKEN_ENV: os.environ[SESSION_TOKEN_ENV],
         EGRESS_URL_ENV: os.environ[PUBLIC_EGRESS_URL_ENV],
+        BASE_API_URL_ENV: os.environ[PUBLIC_API_URL_ENV],
+        BASE_OTEL_URL_ENV: os.environ[PUBLIC_OTEL_URL_ENV],
+        SERVICE_NAME_ENV: EVAL_SERVICE_NAME,
         ENDPOINT_HOSTS_ENV: os.environ[ENDPOINT_HOSTS_ENV],
     }
     if relay_target := os.environ.get(RELAY_TARGET_ENV):

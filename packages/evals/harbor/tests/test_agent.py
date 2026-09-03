@@ -1,387 +1,177 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
-from introspection_harbor.agent import (
+from introspection_harbor.base import (
     PROXY_EXTENSION_SOURCE,
-    IntrospectionRecipeAgent,
-    _materialize_workspace,
-    _mcp_header_environment,
-    _model_environment,
-    _node_prerequisite_command,
-    _pi_events_to_atif,
-    _recipe_run_command,
-    _require_run_spec_v2,
-    _selected_prompt,
-    _write_recipe_patch,
+    managed_model_environment,
+    pi_args,
+    pi_launcher_command,
+    recipe_run_command,
+    require_run_spec_v2,
+    selected_prompt,
 )
+from introspection_harbor.runtime_agent import IntrospectionRecipeAgent
+from introspection_harbor.trajectory import pi_events_to_atif
+
+_AUTHORED_SPEC = {
+    "schema_version": 2,
+    "candidate": {"runtime": "refunds", "agent": None, "model": None},
+    "input": {},
+}
 
 
-class AgentHelpersTest(unittest.TestCase):
-    def test_trajectory_records_the_observed_model(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            events = Path(temp_dir) / "pi.jsonl"
-            events.write_text(
-                '{"type":"message_end","message":{"role":"assistant",'
-                '"provider":"openrouter","model":"deepseek/deepseek-v4-flash",'
-                '"content":[{"type":"text","text":"done"}],"usage":{}}}\n'
-            )
-            trajectory = _pi_events_to_atif(events)
-            self.assertEqual(
-                trajectory.agent.model_name,
-                "openrouter/deepseek/deepseek-v4-flash",
-            )
+def _agent(spec: dict) -> IntrospectionRecipeAgent:
+    instance = object.__new__(IntrospectionRecipeAgent)
+    instance._spec = spec
+    instance._OUTPUT_FILENAME = "pi.jsonl"
+    return instance
 
-    def test_production_conversation_uses_selected_prompt(self) -> None:
+
+class RunSpecTest(unittest.TestCase):
+    def test_schema_one_requires_a_newer_cli(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Update the Introspection CLI"):
+            require_run_spec_v2({"schema_version": 1})
+
+    def test_schema_two_is_accepted(self) -> None:
+        require_run_spec_v2({"schema_version": 2})
+
+    def test_production_conversation_usesselected_prompt(self) -> None:
         spec = {"input": {"prompt": "counterfactual prompt"}}
         self.assertEqual(
-            _selected_prompt(spec, "Harbor instruction"), "counterfactual prompt"
+            selected_prompt(spec, "Harbor instruction"), "counterfactual prompt"
         )
 
     def test_authored_run_uses_harbor_instruction(self) -> None:
-        spec = {"input": {}}
         self.assertEqual(
-            _selected_prompt(spec, "Harbor instruction"), "Harbor instruction"
+            selected_prompt({"input": {}}, "Harbor instruction"),
+            "Harbor instruction",
         )
 
-    def test_schema_one_requires_a_newer_cli(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Update the Introspection CLI"):
-            _require_run_spec_v2({"schema_version": 1})
+    def test_empty_prompt_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            selected_prompt({"input": {"prompt": "  "}}, "instruction")
 
-    def test_schema_two_is_accepted(self) -> None:
-        _require_run_spec_v2({"schema_version": 2})
 
-    def test_recipe_capture_preserves_the_agent_exit_status(self) -> None:
-        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertIn("status=$?", command)
-        self.assertIn("test $status -eq 0", command)
-
-    def test_recipe_capture_does_not_pipe_live_agent_output(self) -> None:
-        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertNotIn("|", command)
-        self.assertNotIn("tee", command)
-
-    def test_recipe_pipeline_only_loads_nvm_when_it_exists(self) -> None:
-        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertIn('if [ -s "$HOME/.nvm/nvm.sh" ]', command)
-        self.assertNotIn("; . ~/.nvm/nvm.sh;", command)
-
-    def test_recipe_runs_from_the_staged_source_directory(self) -> None:
-        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertIn(
-            "cd /tmp/introspection-recipe-source && introspection local", command
-        )
-
-    def test_recipe_rejects_an_empty_pi_event_stream(self) -> None:
-        command = _recipe_run_command(["introspection", "local"], "pi.jsonl")
-        self.assertIn("test -s /logs/agent/pi.jsonl", command)
-
-    def test_bedrock_forwards_temporary_session_credentials(self) -> None:
-        credentials = {
-            "AWS_ACCESS_KEY_ID": "key",
-            "AWS_SECRET_ACCESS_KEY": "secret",
-            "AWS_SESSION_TOKEN": "token",
-            "AWS_REGION": "us-east-1",
-        }
-        with patch.dict(os.environ, credentials, clear=True):
-            self.assertEqual(_model_environment("amazon-bedrock/model"), credentials)
-
-    def test_google_does_not_forward_host_credential_file_paths(self) -> None:
-        credentials = {
-            "GEMINI_API_KEY": "key",
-            "GOOGLE_APPLICATION_CREDENTIALS": "/host/service-account.json",
-        }
-        with patch.dict(os.environ, credentials, clear=True):
-            self.assertEqual(
-                _model_environment("google/model"), {"GEMINI_API_KEY": "key"}
-            )
-
-    def test_managed_egress_uses_session_locator_instead_of_host_key(self) -> None:
-        credentials = {
-            "INTROSPECTION_TOKEN": "session-locator",
-            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
-            "ANTHROPIC_API_KEY": "real-host-key",
-        }
-        with patch.dict(os.environ, credentials, clear=True):
-            self.assertEqual(
-                _model_environment("anthropic/claude-sonnet-4-6"),
-                {"ANTHROPIC_API_KEY": "session-locator"},
-            )
-
-    def test_direct_run_uses_host_provider_key(self) -> None:
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "real-host-key"}, clear=True):
-            self.assertEqual(
-                _model_environment("anthropic/claude-sonnet-4-6"),
-                {"ANTHROPIC_API_KEY": "real-host-key"},
-            )
-
-    def test_mcp_header_environment_forwards_only_referenced_values(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            recipe = Path(temp_dir)
-            config = recipe / ".pi" / "mcp.local.json"
-            config.parent.mkdir()
-            config.write_text(
-                json.dumps(
-                    {
-                        "servers": [
-                            {
-                                "id": "hello",
-                                "headers": {
-                                    "Authorization": "Bearer ${HELLO_MCP_TOKEN}"
-                                },
-                                "description": "${UNRELATED_SECRET}",
-                            }
-                        ]
-                    }
-                )
-            )
-            with patch.dict(
-                os.environ,
-                {
-                    "HELLO_MCP_TOKEN": "provider-token",
-                    "UNRELATED_SECRET": "do-not-forward",
-                },
-                clear=True,
-            ):
-                self.assertEqual(
-                    _mcp_header_environment(recipe),
-                    {"HELLO_MCP_TOKEN": "provider-token"},
-                )
-
-    def test_mcp_header_environment_ignores_missing_or_invalid_config(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            recipe = Path(temp_dir)
-            self.assertEqual(_mcp_header_environment(recipe), {})
-            config = recipe / ".pi" / "mcp.local.json"
-            config.parent.mkdir()
-            config.write_text("not json")
-            self.assertEqual(_mcp_header_environment(recipe), {})
-
-    def test_node_setup_supports_non_debian_task_images(self) -> None:
-        command = _node_prerequisite_command()
-        self.assertIn("command -v apk", command)
-        self.assertIn("command -v dnf", command)
-        self.assertIn("command -v yum", command)
-        self.assertIn("command -v zypper", command)
-        self.assertIn("command -v curl", command)
-        self.assertFalse(command.startswith("apt-get"))
-
-    def test_workspace_staging_preserves_monorepo_sources_and_excludes_secrets(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir) / "source"
-            staged = Path(temp_dir) / "staged"
-            files = {
-                "package.json": "{}",
-                "pnpm-lock.yaml": "lockfileVersion: '9.0'",
-                "pnpm-workspace.yaml": "packages: ['packages/*']",
-                ".introspection/runtimes/agent.yaml": "runtime: {}",
-                "packages/agent/package.json": "{}",
-                "packages/agent/.gitignore": "dist/\n",
-                "packages/agent/dist/index.js": "export const generated = true;",
-                "packages/shared/index.ts": "export const shared = true;",
-                ".env.example": "TOKEN=replace-me",
-                ".env": "TOKEN=secret",
-                ".npmrc": "//registry.example/:_authToken=secret",
-                "certificate.pem": "secret",
-                "node_modules/pkg/index.js": "generated",
-                ".introspection/eval-runs/run/result.json": "{}",
-                ".pi/bin/mcp": "#!/bin/sh\nexec /host-only/mcp-client\n",
-                ".pi/mcp-catalogs/deepwiki.json": "{}",
-                ".pi/mcp-session.json": "{}",
-                ".pi/mcporter.json": "{}",
-                ".pi/mcp.local.json": '{"mcpServers": {}}',
-            }
-            for relative, contents in files.items():
-                path = root / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(contents)
-            subprocess.run(["git", "init", "--quiet", root], check=True)
-
-            _materialize_workspace(root, staged)
-
-            for relative in [
-                "package.json",
-                "pnpm-lock.yaml",
-                "pnpm-workspace.yaml",
-                ".introspection/runtimes/agent.yaml",
-                "packages/agent/package.json",
-                "packages/agent/dist/index.js",
-                "packages/shared/index.ts",
-                ".env.example",
-                ".pi/mcp.local.json",
-            ]:
-                self.assertTrue((staged / relative).is_file(), relative)
-            for relative in [
-                ".env",
-                ".npmrc",
-                "certificate.pem",
-                ".git/config",
-                "node_modules/pkg/index.js",
-                ".introspection/eval-runs/run/result.json",
-                ".pi/bin/mcp",
-                ".pi/mcp-catalogs/deepwiki.json",
-                ".pi/mcp-session.json",
-                ".pi/mcporter.json",
-            ]:
-                self.assertFalse((staged / relative).exists(), relative)
-
-    def test_workspace_staging_preserves_directory_symlink_type(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir) / "source"
-            staged = Path(temp_dir) / "staged"
-            target = root / "packages/shared"
-            target.mkdir(parents=True)
-            link = root / "packages/linked"
-            try:
-                link.symlink_to("shared", target_is_directory=True)
-            except OSError as error:
-                self.skipTest(f"directory symlinks are unavailable: {error}")
-
-            with patch.object(Path, "symlink_to") as symlink_to:
-                _materialize_workspace(root, staged)
-
-            symlink_to.assert_called_once()
-            self.assertTrue(symlink_to.call_args.kwargs["target_is_directory"])
-
-    def test_harbor_run_passes_uploaded_prompt_file_to_pi(self) -> None:
-        instance = object.__new__(IntrospectionRecipeAgent)
-        instance._spec = {
-            "candidate": {"runtime": "refunds", "agent": None, "model": None},
-            "input": {},
-        }
-        instance.model_name = None
-        instance._recipe_path = Path("/nonexistent")
-        instance._OUTPUT_FILENAME = "pi.jsonl"
-        environment = Mock()
-        environment.upload_file = AsyncMock()
-
-        async def capture_exec(*args, **kwargs):
-            environment.command = kwargs["command"]
-            environment.cwd = kwargs.get("cwd")
-            environment.env = kwargs["env"]
-
-        instance.exec_as_agent = capture_exec
-        asyncio.run(
-            instance.run.__wrapped__(
-                instance, "large inline instruction", environment, Mock()
-            )
-        )
-        self.assertIn(
-            "pi --extension /tmp/introspection-proxy-extension.mjs "
-            "--recipe /tmp/introspection-recipe-source",
-            environment.command,
-        )
-        self.assertNotIn("introspection local", environment.command)
-        self.assertNotIn("--agent", environment.command)
-        self.assertIn("--print", environment.command)
-        self.assertIn("@/tmp/introspection-eval-prompt.md", environment.command)
-        self.assertEqual(environment.upload_file.await_count, 2)
-        uploaded_path, remote_path = environment.upload_file.await_args_list[0].args
-        self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
-        self.assertEqual(uploaded_path.name, "prompt.md")
-        extension_path, extension_remote_path = environment.upload_file.await_args_list[
-            1
-        ].args
+class LaunchCommandTest(unittest.TestCase):
+    def test_authored_run_launches_the_baked_pi_directly(self) -> None:
+        args = pi_args(_AUTHORED_SPEC["candidate"], _AUTHORED_SPEC)
         self.assertEqual(
-            extension_remote_path, "/tmp/introspection-proxy-extension.mjs"
+            args,
+            [
+                "pi",
+                "--extension",
+                "/tmp/introspection-proxy-extension.mjs",
+                "--recipe",
+                "/opt/introspection/recipe",
+                "--print",
+                "--mode",
+                "json",
+                "--approve",
+                "@/tmp/introspection-eval-prompt.md",
+            ],
         )
-        self.assertEqual(extension_path.name, "introspection-proxy-extension.mjs")
+
+    def test_inherited_agent_is_selected_by_declared_name(self) -> None:
+        candidate = {**_AUTHORED_SPEC["candidate"], "agent": "agent2"}
+        args = pi_args(candidate, _AUTHORED_SPEC)
+        self.assertEqual(args[5:7], ["--agent", "agent2"])
+
+    def test_declared_model_is_selected(self) -> None:
+        candidate = {
+            **_AUTHORED_SPEC["candidate"],
+            "model": "anthropic/claude-sonnet-4-6",
+        }
+        args = pi_args(candidate, _AUTHORED_SPEC)
+        self.assertEqual(args[5:7], ["--model", "anthropic/claude-sonnet-4-6"])
+
+    def test_proxy_extension_installs_the_runtime_proxy_fetch(self) -> None:
+        # A direct `pi` run must route through the egress proxy like the
+        # runtime-agent does; the extension imports the runtime's own module
+        # through the baked runtime link rather than a downloaded copy.
         self.assertIn("installProxyFetch();", PROXY_EXTENSION_SOURCE)
-        self.assertNotIn("large inline instruction", environment.command)
-        self.assertNotIn(
-            "INTROSPECTION_RUNTIME_MODE",
-            environment.env,
+        self.assertIn(
+            "file:///opt/introspection/recipe/runtime/node_modules/"
+            "@introspection-sdk/introspection-proxy/dist/index.js",
+            PROXY_EXTENSION_SOURCE,
         )
-        self.assertIsNone(environment.cwd)
 
-    def test_harbor_run_selects_inherited_agent_by_declared_name(self) -> None:
-        instance = object.__new__(IntrospectionRecipeAgent)
-        instance._spec = {
-            "candidate": {"runtime": "refunds", "agent": "agent2", "model": None},
-            "input": {},
-        }
-        instance.model_name = None
-        instance._recipe_path = Path("/nonexistent")
-        instance._OUTPUT_FILENAME = "pi.jsonl"
-        environment = Mock()
-        environment.upload_file = AsyncMock()
-
-        async def capture_exec(*args, **kwargs):
-            environment.command = kwargs["command"]
-            environment.env = kwargs["env"]
-
-        instance.exec_as_agent = capture_exec
-        asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
-        self.assertIn("--agent agent2", environment.command)
-
-    def test_harbor_run_selects_declared_model(self) -> None:
-        instance = object.__new__(IntrospectionRecipeAgent)
-        instance._spec = {
-            "candidate": {
-                "runtime": "refunds",
-                "agent": None,
-                "model": "anthropic/claude-sonnet-4-6",
-            },
-            "input": {},
-        }
-        instance.model_name = None
-        instance._recipe_path = Path("/nonexistent")
-        instance._OUTPUT_FILENAME = "pi.jsonl"
-        environment = Mock()
-        environment.upload_file = AsyncMock()
-
-        async def capture_exec(*args, **kwargs):
-            environment.command = kwargs["command"]
-
-        instance.exec_as_agent = capture_exec
-        asyncio.run(instance.run.__wrapped__(instance, "prompt", environment, Mock()))
-        self.assertIn("--model anthropic/claude-sonnet-4-6", environment.command)
-
-    def test_harbor_run_forwards_replay_context_to_local(self) -> None:
-        instance = object.__new__(IntrospectionRecipeAgent)
-        instance._spec = {
-            "candidate": {"runtime": "refunds", "agent": None, "model": None},
+    def test_replay_runs_through_introspection_local(self) -> None:
+        spec = {
+            **_AUTHORED_SPEC,
             "input": {
                 "prompt": "production prompt",
                 "replay_context_path": "/host/replay-context.json",
             },
         }
-        instance.model_name = None
-        instance._recipe_path = Path("/nonexistent")
-        instance._OUTPUT_FILENAME = "pi.jsonl"
-        environment = Mock()
-        environment.upload_file = AsyncMock()
+        args = pi_args(spec["candidate"], spec)
+        self.assertEqual(args[:2], ["introspection", "local"])
+        self.assertIn("--replay-context", args)
+        self.assertIn("/tmp/introspection-replay-context.json", args)
+        self.assertEqual(args[-1], "@/tmp/introspection-eval-prompt.md")
+        self.assertNotIn("production prompt", args)
+        self.assertNotIn("--session", args)
 
-        async def capture_exec(*args, **kwargs):
-            environment.command = kwargs["command"]
+    def test_run_command_captures_events_and_preserves_exit_status(self) -> None:
+        command = recipe_run_command(["pi", "--recipe", "x"], "pi.jsonl")
+        self.assertTrue(command.startswith("cd /opt/introspection/recipe && "))
+        self.assertIn(">/logs/agent/pi.jsonl 2>&1", command)
+        self.assertIn("status=$?", command)
+        self.assertIn("test $status -eq 0 && test -s /logs/agent/pi.jsonl", command)
+        self.assertNotIn("|", command)
+        self.assertNotIn("nvm", command)
 
-        instance.exec_as_agent = capture_exec
-        asyncio.run(instance.run.__wrapped__(instance, "authored", environment, Mock()))
-        self.assertIn(
-            "--replay-context /tmp/introspection-replay-context.json",
-            environment.command,
+    def test_pi_launcher_is_skipped_when_the_image_provides_pi(self) -> None:
+        command = pi_launcher_command()
+        self.assertTrue(
+            command.startswith("if command -v pi >/dev/null 2>&1; then exit 0; fi; ")
         )
-        self.assertIn("introspection local", environment.command)
-        self.assertIn("@/tmp/introspection-eval-prompt.md", environment.command)
-        self.assertNotIn("production prompt", environment.command)
-        self.assertNotIn("--session", environment.command)
+        self.assertIn("> /usr/local/bin/pi", command)
+        self.assertIn("pi-coding-agent/dist/cli.js", command)
+        self.assertIn("recipes/dist/pi-extension.js", command)
+        self.assertNotIn("npm", command)
+        self.assertNotIn("introspection setup", command)
 
 
-class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_baked_install_uses_image_recipe_without_upload(self) -> None:
-        instance = object.__new__(IntrospectionRecipeAgent)
-        instance._spec = {"candidate": {"cli_version": "0.34.0"}, "input": {}}
-        instance._recipe_mode = "baked"
-        instance._remote_source_dir = "/opt/introspection/recipe"
+class ManagedModelEnvironmentTest(unittest.TestCase):
+    def test_managed_egress_presents_the_session_locator_as_the_provider_key(
+        self,
+    ) -> None:
+        host_env = {
+            "INTROSPECTION_TOKEN": "session-locator",
+            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
+            "ANTHROPIC_API_KEY": "real-host-key",
+        }
+        self.assertEqual(
+            managed_model_environment("anthropic/claude-sonnet-4-6", host_env),
+            {"ANTHROPIC_API_KEY": "session-locator"},
+        )
+
+    def test_without_managed_egress_no_key_is_forwarded(self) -> None:
+        # The host's own provider key never reaches the trial from here; the
+        # explicit passthrough allow-list in the environment class is the only path.
+        host_env = {"ANTHROPIC_API_KEY": "real-host-key"}
+        self.assertEqual(
+            managed_model_environment("anthropic/claude-sonnet-4-6", host_env), {}
+        )
+
+    def test_unknown_provider_or_bare_model_gets_nothing(self) -> None:
+        host_env = {
+            "INTROSPECTION_TOKEN": "session-locator",
+            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
+        }
+        self.assertEqual(managed_model_environment("acme/model", host_env), {})
+        self.assertEqual(managed_model_environment("claude-sonnet-4-6", host_env), {})
+        self.assertEqual(managed_model_environment(None, host_env), {})
+
+
+class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    async def test_install_only_verifies_the_baked_recipe(self) -> None:
+        instance = _agent(_AUTHORED_SPEC)
         instance.exec_as_root = AsyncMock()
         instance.exec_as_agent = AsyncMock()
         environment = Mock()
@@ -392,118 +182,165 @@ class AgentStagingTest(unittest.IsolatedAsyncioTestCase):
 
         environment.upload_dir.assert_not_awaited()
         environment.upload_file.assert_not_awaited()
-        instance.exec_as_root.assert_not_awaited()
-        command = instance.exec_as_agent.await_args.kwargs["command"]
-        self.assertIn("test -f /opt/introspection/recipe/package.json", command)
-        self.assertNotIn("npm install", command)
+        root_command = instance.exec_as_root.await_args.kwargs["command"]
+        self.assertIn("/usr/local/bin/pi", root_command)
+        agent_command = instance.exec_as_agent.await_args.kwargs["command"]
+        self.assertIn("test -f /opt/introspection/recipe/package.json", agent_command)
+        self.assertIn("mcp.local.example.json", agent_command)
+        for forbidden in ("npm", "git ", "introspection setup", "apt-get"):
+            self.assertNotIn(forbidden, root_command)
+            self.assertNotIn(forbidden, agent_command)
 
-    def test_sync_patch_is_relative_to_the_recipe(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            recipe = workspace / "recipe"
-            recipe.mkdir()
-            target = recipe / "package.json"
-            target.write_text('{"version":"1"}\n')
-            subprocess.run(["git", "init", "--quiet"], cwd=workspace, check=True)
-            subprocess.run(["git", "add", "."], cwd=workspace, check=True)
-            subprocess.run(
-                [
-                    "git",
-                    "-c",
-                    "user.name=Test",
-                    "-c",
-                    "user.email=test@example.invalid",
-                    "commit",
-                    "--quiet",
-                    "-m",
-                    "base",
-                ],
-                cwd=workspace,
-                check=True,
-            )
-            base = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=workspace, text=True
-            ).strip()
-            target.write_text('{"version":"2"}\n')
-            destination = workspace / "recipe.patch"
+    async def test_install_uploads_the_canonical_replay_context(self) -> None:
+        spec = {
+            **_AUTHORED_SPEC,
+            "input": {"replay_context_path": "/host/replay-context.json"},
+        }
+        instance = _agent(spec)
+        instance.exec_as_root = AsyncMock()
+        instance.exec_as_agent = AsyncMock()
+        environment = Mock()
+        environment.upload_file = AsyncMock()
 
-            _write_recipe_patch(workspace, Path("recipe"), base, destination)
+        await instance.install(environment)
 
-            patch_text = destination.read_text()
-            self.assertIn("a/package.json", patch_text)
-            self.assertIn("b/package.json", patch_text)
-            self.assertNotIn("a/recipe/package.json", patch_text)
-
-    async def test_install_uploads_filtered_workspace_without_tar_or_opt_layout(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir) / "workspace"
-            workspace.mkdir()
-            (workspace / "package.json").write_text("{}")
-
-            instance = object.__new__(IntrospectionRecipeAgent)
-            instance._spec = {
-                "candidate": {"cli_version": "0.23.0"},
-                "input": {},
-            }
-            instance._workspace_path = workspace
-            instance.exec_as_root = AsyncMock()
-            instance.exec_as_agent = AsyncMock()
-            environment = Mock()
-            environment.upload_dir = AsyncMock()
-            environment.upload_file = AsyncMock()
-
-            await instance.install(environment)
-
-        upload = environment.upload_dir.await_args
-        self.assertEqual(upload.args[1], "/tmp/introspection-recipe-source")
-        self.assertEqual(environment.upload_file.await_count, 0)
-        commands = [
-            call.kwargs["command"] for call in instance.exec_as_root.await_args_list
-        ]
-        commands.append(instance.exec_as_agent.await_args.kwargs["command"])
-        combined = "\n".join(commands)
-        self.assertIn("nvm install 24", combined)
-        self.assertNotIn("nvm install 22", combined)
-        self.assertNotIn("/opt/introspection-workspace", combined)
-        self.assertNotIn("recipe-source.tar", combined)
-        self.assertNotIn("tar -xf", combined)
-        self.assertIn("git -C /tmp/introspection-recipe-source init --quiet", combined)
-        self.assertIn(
-            "git -C /tmp/introspection-recipe-source init --quiet",
-            instance.exec_as_agent.await_args.kwargs["command"],
+        environment.upload_file.assert_awaited_once_with(
+            Path("/host/replay-context.json"),
+            "/tmp/introspection-replay-context.json",
         )
 
-    async def test_install_uploads_canonical_replay_context(self) -> None:
+    async def test_run_uploads_the_prompt_file_and_passes_no_host_env(self) -> None:
+        instance = _agent(_AUTHORED_SPEC)
+        environment = Mock()
+        environment.upload_file = AsyncMock()
+        captured: dict = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured.update(kwargs)
+
+        instance.exec_as_agent = capture_exec
+        await instance.run.__wrapped__(
+            instance, "large inline instruction", environment, Mock()
+        )
+
+        self.assertEqual(environment.upload_file.await_count, 2)
+        uploaded_path, remote_path = environment.upload_file.await_args_list[0].args
+        self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
+        self.assertEqual(uploaded_path.name, "prompt.md")
+        extension_path, extension_remote = environment.upload_file.await_args_list[
+            1
+        ].args
+        self.assertEqual(extension_remote, "/tmp/introspection-proxy-extension.mjs")
+        self.assertEqual(extension_path.name, "introspection-proxy-extension.mjs")
+        self.assertIn(
+            "pi --extension /tmp/introspection-proxy-extension.mjs "
+            "--recipe /opt/introspection/recipe",
+            captured["command"],
+        )
+        self.assertIn("@/tmp/introspection-eval-prompt.md", captured["command"])
+        self.assertNotIn("large inline instruction", captured["command"])
+        self.assertNotIn("env", captured)
+        self.assertNotIn("cwd", captured)
+
+
+class TrajectoryTest(unittest.TestCase):
+    def test_trajectory_records_the_observed_model(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            (workspace / "package.json").write_text("{}")
-            replay_context = root / "replay-context.json"
-            replay_context.write_text(
-                '{"schema_version":1,"cwd":"/workspace","trajectory":[]}'
+            events = Path(temp_dir) / "pi.jsonl"
+            events.write_text(
+                '{"type":"message_end","message":{"role":"assistant",'
+                '"provider":"openrouter","model":"deepseek/deepseek-v4-flash",'
+                '"content":[{"type":"text","text":"done"}],"usage":{}}}\n'
+            )
+            trajectory = pi_events_to_atif(events)
+            self.assertEqual(
+                trajectory.agent.model_name,
+                "openrouter/deepseek/deepseek-v4-flash",
             )
 
-            instance = object.__new__(IntrospectionRecipeAgent)
-            instance._spec = {
-                "candidate": {"cli_version": "0.23.0"},
-                "input": {"replay_context_path": str(replay_context)},
-            }
-            instance._workspace_path = workspace
-            instance.exec_as_root = AsyncMock()
-            instance.exec_as_agent = AsyncMock()
-            environment = Mock()
-            environment.upload_dir = AsyncMock()
-            environment.upload_file = AsyncMock()
+    def test_trajectory_links_tool_results_and_sums_usage(self) -> None:
+        events = [
+            {"type": "message_start"},
+            {
+                "type": "message_end",
+                "message": {"role": "user", "content": "write the greeting"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "content": [
+                        {"type": "thinking", "thinking": "call the tool"},
+                        {
+                            "type": "toolCall",
+                            "id": "call-1",
+                            "name": "write",
+                            "arguments": {"path": "/app/greeting.txt"},
+                        },
+                    ],
+                    "usage": {
+                        "input": 10,
+                        "output": 5,
+                        "cacheRead": 3,
+                        "cost": {"total": 0.25},
+                    },
+                },
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "toolResult",
+                    "toolCallId": "call-1",
+                    "content": [{"type": "text", "text": "ok"}],
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "pi.jsonl"
+            path.write_text("".join(json.dumps(event) + "\n" for event in events))
+            trajectory = pi_events_to_atif(path)
 
-            await instance.install(environment)
+        self.assertEqual([step.source for step in trajectory.steps], ["user", "agent"])
+        agent_step = trajectory.steps[1]
+        self.assertEqual(agent_step.reasoning_content, "call the tool")
+        self.assertEqual(agent_step.tool_calls[0].function_name, "write")
+        self.assertEqual(agent_step.observation.results[0].content, "ok")
+        metrics = trajectory.final_metrics
+        self.assertEqual(metrics.total_prompt_tokens, 10)
+        self.assertEqual(metrics.total_completion_tokens, 5)
+        self.assertEqual(metrics.total_cached_tokens, 3)
+        self.assertEqual(metrics.total_cost_usd, 0.25)
 
-            environment.upload_file.assert_awaited_once_with(
-                replay_context, "/tmp/introspection-replay-context.json"
+    def test_post_run_writes_the_atif_trajectory_and_context_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            (logs_dir / "pi.jsonl").write_text(
+                '{"type":"message_end","message":{"role":"assistant",'
+                '"provider":"anthropic","model":"claude-sonnet-4-6",'
+                '"content":[{"type":"text","text":"done"}],'
+                '"usage":{"input":4,"output":2,"cacheRead":1,"cost":{"total":0.5}}}}\n'
             )
+            spec = {**_AUTHORED_SPEC, "input": {"metadata": {"kind": "authored"}}}
+            instance = _agent(spec)
+            instance.logs_dir = logs_dir
+            context = Mock()
 
+            instance.populate_context_post_run(context)
 
-if __name__ == "__main__":
-    unittest.main()
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(written["agent"]["name"], "introspection-recipe")
+            self.assertEqual(context.n_input_tokens, 4)
+            self.assertEqual(context.n_output_tokens, 2)
+            self.assertEqual(context.n_cache_tokens, 1)
+            self.assertEqual(context.cost_usd, 0.5)
+            self.assertEqual(context.metadata["introspection"], {"kind": "authored"})
+
+    def test_post_run_is_a_no_op_without_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = Path(temp_dir)
+            context = Mock()
+            instance.populate_context_post_run(context)
+            self.assertFalse((Path(temp_dir) / "trajectory.json").exists())

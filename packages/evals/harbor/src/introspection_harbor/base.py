@@ -1,0 +1,257 @@
+"""Shared shape of every Introspection Harbor adapter.
+
+An adapter differs only in how the Recipe and Pi reach the trial (``install``).
+What is common lives here: the run spec ``introspection eval run`` hands over,
+the Pi invocation with the egress-proxy extension, the captured event stream,
+and the ATIF conversion Harbor needs for model, usage and cost.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shlex
+import tempfile
+from pathlib import Path
+from typing import Any, override
+
+from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
+from harbor.environments.base import BaseEnvironment
+from harbor.models.agent.context import AgentContext
+
+from .trajectory import ADAPTER_VERSION, pi_events_to_atif
+
+RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
+BAKED_RECIPE_DIR = "/opt/introspection/recipe"
+# The Runtime image links the shared runtime (and its node_modules) into the
+# baked Recipe, so Pi and the Recipes extension resolve from the Recipe itself.
+# An adapter that materializes the Recipe into a foreign image creates the same
+# link, so everything below the install step is shared.
+RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/runtime"
+PI_LAUNCHER_PATH = "/usr/local/bin/pi"
+REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
+REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
+REMOTE_PROXY_EXTENSION_PATH = "/tmp/introspection-proxy-extension.mjs"
+RUNTIME_PROXY_MODULE_PATH = f"{RUNTIME_LINK_DIR}/node_modules/@introspection-sdk/introspection-proxy/dist/index.js"
+# Pi's own HTTP client (undici) ignores the proxy variables the sandbox is
+# started with; the runtime-agent installs a proxy-aware fetch before the
+# session starts, and a direct `pi` run has to do the same or its model and
+# MCP calls bypass the egress proxy. Loaded as a Pi extension so it runs in
+# the agent process before the first request.
+PROXY_EXTENSION_SOURCE = (
+    f'import {{ installProxyFetch }} from "file://{RUNTIME_PROXY_MODULE_PATH}";\n'
+    "installProxyFetch();\n"
+    "export default function introspectionProxyExtension() {}\n"
+)
+SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
+PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
+# Under managed egress the provider key Pi presents is the session locator;
+# the egress proxy swaps it for the real credential. Nothing else from the
+# host environment reaches the trial.
+MANAGED_PROVIDER_KEYS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "xai": "XAI_API_KEY",
+}
+
+
+def load_run_spec() -> dict[str, Any]:
+    """The run spec ``introspection eval run --runner harbor`` wrote for us."""
+
+    spec_path = os.environ.get(RUN_SPEC_ENV)
+    if not spec_path:
+        raise ValueError(
+            "Introspection Harbor adapters must be launched by "
+            "`introspection eval run --runner harbor`"
+        )
+    spec = json.loads(Path(spec_path).read_text())
+    require_run_spec_v2(spec)
+    return spec
+
+
+def require_run_spec_v2(spec: dict[str, Any]) -> None:
+    version = spec.get("schema_version")
+    if version != 2:
+        raise ValueError(
+            f"Introspection evaluation run spec {version} is not supported. "
+            "Update the Introspection CLI."
+        )
+
+
+def selected_prompt(spec: dict[str, Any], instruction: str) -> str:
+    selected = (spec.get("input") or {}).get("prompt")
+    prompt = selected if selected is not None else instruction
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("Introspection evaluation prompt must be non-empty")
+    return prompt
+
+
+def pi_launcher_command() -> str:
+    """Write a ``pi`` launcher for the baked Pi unless the image has one."""
+
+    launcher = "\n".join(
+        [
+            "#!/bin/sh",
+            f'exec node "{RUNTIME_LINK_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" \\',
+            f'  --extension "{RUNTIME_LINK_DIR}/node_modules/@introspection-ai/recipes/dist/pi-extension.js" \\',
+            '  "$@"',
+        ]
+    )
+    return (
+        "if command -v pi >/dev/null 2>&1; then exit 0; fi; "
+        f"printf '%s\\n' {shlex.quote(launcher)} > {PI_LAUNCHER_PATH} && "
+        f"chmod 0755 {PI_LAUNCHER_PATH}"
+    )
+
+
+def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
+    """Build the Pi invocation, via ``introspection local`` only for a replay.
+
+    A production-conversation replay needs the CLI to hydrate the native Pi
+    session from the canonical replay context immediately before Pi starts. An
+    authored run has no such state and launches Pi directly.
+    """
+
+    if (spec.get("input") or {}).get("replay_context_path"):
+        args = [
+            "introspection",
+            "local",
+            "--work-dir",
+            BAKED_RECIPE_DIR,
+            "--runtime",
+            candidate["runtime"],
+        ]
+        if candidate.get("agent"):
+            args.extend(["--agent", candidate["agent"]])
+        args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])
+        args.extend(["--yes", "--non-interactive", "--"])
+    else:
+        args = [
+            "pi",
+            "--extension",
+            REMOTE_PROXY_EXTENSION_PATH,
+            "--recipe",
+            BAKED_RECIPE_DIR,
+        ]
+        if candidate.get("agent"):
+            args.extend(["--agent", candidate["agent"]])
+        if candidate.get("model"):
+            args.extend(["--model", candidate["model"]])
+    args.extend(
+        ["--print", "--mode", "json", "--approve", f"@{REMOTE_EVAL_PROMPT_PATH}"]
+    )
+    return args
+
+
+def recipe_run_command(args: list[str], output_filename: str) -> str:
+    output_path = f"/logs/agent/{shlex.quote(output_filename)}"
+    return (
+        f"cd {BAKED_RECIPE_DIR} && "
+        f"{shlex.join(args)} >{output_path} 2>&1 </dev/null; "
+        f"status=$?; cat {output_path}; test $status -eq 0 && test -s {output_path}"
+    )
+
+
+def managed_model_environment(
+    model_name: str | None, host_env: dict[str, str] | None = None
+) -> dict[str, str]:
+    """Provider key for the trial when the run rides managed egress.
+
+    With a session locator and a public egress URL in the host environment,
+    Pi presents the locator as the provider's API key and the egress proxy
+    injects the real credential. Without them the trial gets no key from
+    here; a developer's own provider key reaches it only through the explicit
+    ``INTROSPECTION_HARBOR_PASSTHROUGH_ENV`` path in the environment class.
+    """
+
+    env = os.environ if host_env is None else host_env
+    if not model_name or "/" not in model_name:
+        return {}
+    session_token = env.get(SESSION_TOKEN_ENV)
+    if not session_token or not env.get(PUBLIC_EGRESS_URL_ENV):
+        return {}
+    managed_key = MANAGED_PROVIDER_KEYS.get(model_name.split("/", 1)[0])
+    return {managed_key: session_token} if managed_key else {}
+
+
+class RecipeAgentBase(BaseInstalledAgent):
+    """Run a Recipe with Pi inside a Harbor trial and report the trajectory.
+
+    Subclasses decide how the Recipe and Pi get into the trial (``install``);
+    launching, capture and ATIF conversion are shared.
+    """
+
+    SUPPORTS_ATIF = True
+    _OUTPUT_FILENAME = "pi.jsonl"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._spec = load_run_spec()
+
+    @override
+    def version(self) -> str | None:
+        return ADAPTER_VERSION
+
+    async def upload_replay_context(self, environment: BaseEnvironment) -> None:
+        """Ship the canonical replay context when the CLI selected one."""
+
+        replay_context_path = (self._spec.get("input") or {}).get("replay_context_path")
+        if replay_context_path:
+            await environment.upload_file(
+                Path(replay_context_path), REMOTE_REPLAY_CONTEXT_PATH
+            )
+
+    @override
+    @with_prompt_template
+    async def run(
+        self,
+        instruction: str,
+        environment: BaseEnvironment,
+        context: AgentContext,
+    ) -> None:
+        candidate = self._spec["candidate"]
+        prompt = selected_prompt(self._spec, instruction)
+        with tempfile.TemporaryDirectory(
+            prefix="introspection-eval-prompt-"
+        ) as temp_dir:
+            prompt_path = Path(temp_dir) / "prompt.md"
+            prompt_path.write_text(prompt)
+            await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
+            proxy_extension_path = Path(temp_dir) / "introspection-proxy-extension.mjs"
+            proxy_extension_path.write_text(PROXY_EXTENSION_SOURCE)
+            await environment.upload_file(
+                proxy_extension_path, REMOTE_PROXY_EXTENSION_PATH
+            )
+
+        env = managed_model_environment(candidate.get("model"))
+        await self.exec_as_agent(
+            environment,
+            command=recipe_run_command(
+                pi_args(candidate, self._spec), self._OUTPUT_FILENAME
+            ),
+            **({"env": env} if env else {}),
+        )
+
+    @override
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        output_path = self.logs_dir / self._OUTPUT_FILENAME
+        if not output_path.is_file():
+            return
+        trajectory = pi_events_to_atif(output_path)
+        (self.logs_dir / "trajectory.json").write_text(
+            json.dumps(trajectory.to_json_dict(), indent=2)
+        )
+        if trajectory.final_metrics:
+            context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
+            context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
+            context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens
+            context.cost_usd = trajectory.final_metrics.total_cost_usd
+        context.metadata = {
+            "pi_events": self._OUTPUT_FILENAME,
+            "atif": "trajectory.json",
+            "introspection": (self._spec.get("input") or {}).get("metadata"),
+        }

@@ -16,6 +16,8 @@ _OPERATOR_ENV = {
     "INTROSPECTION_TOKEN": "scoped-session-locator",
     "INTROSPECTION_EGRESS_URL": "http://sandbox-egress:8081",
     "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.com",
+    "INTROSPECTION_PUBLIC_API_URL": "https://dp-api.example.com",
+    "INTROSPECTION_PUBLIC_OTEL_URL": "https://otel.example.com",
     "INTROSPECTION_ENDPOINT_HOSTS": "api.e2b.app,api.openai.com",
     "INTROSPECTION_RELAY_TARGET": "local-developer",
 }
@@ -44,6 +46,9 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
                 "TASK_SETTING": "value",
                 "INTROSPECTION_TOKEN": "scoped-session-locator",
                 "INTROSPECTION_EGRESS_URL": "https://egress.example.com",
+                "INTROSPECTION_BASE_API_URL": "https://dp-api.example.com",
+                "INTROSPECTION_BASE_OTEL_URL": "https://otel.example.com",
+                "INTROSPECTION_SERVICE_NAME": "introspection-eval",
                 "INTROSPECTION_ENDPOINT_HOSTS": ("api.e2b.app,api.openai.com"),
                 "INTROSPECTION_RELAY_TARGET": "local-developer",
             },

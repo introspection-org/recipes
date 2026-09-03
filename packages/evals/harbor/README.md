@@ -1,7 +1,7 @@
 # `introspection-harbor`
 
-Harbor installed-agent adapter for local Introspection Recipes. Install it
-through `introspection setup --target harbor`, then run a task through:
+Harbor installed-agent adapter for Introspection Recipes. Install it through
+`introspection setup --target harbor`, then run a task through:
 
 ```sh
 introspection eval run --runner harbor --path evals/refund-task
@@ -13,40 +13,68 @@ Select an inherited Recipe agent variant by its declared YAML `name`:
 introspection eval run --runner harbor --path evals/refund-task --agent agent2
 ```
 
-For example, `agents/agent2.yaml` can declare `name: agent2` and `from: agent`,
-then override only its model, tools, extensions, or other variant settings.
 The selected agent YAML is the only source of the evaluated model; the CLI and
 adapter do not apply a separate model override.
 
-The CLI selects the Recipe and optional canonical replay context. The adapter
-copies that opaque context into Harbor's environment and forwards its path to
-`introspection local`, which creates the temporary native Pi session immediately
-before Pi starts. The adapter writes both native Pi events and
-`trajectory.json` (ATIF) under the agent log directory. Recipe execution
-preserves the Harbor task image's `WORKDIR`; the staged Recipe source is
-selected separately and does not replace the task's working directory.
+## What the adapter does
+
+The trial image is the Runtime image the Data Plane published for the Recipe,
+so the Recipe (`/opt/introspection/recipe`), Pi, the Recipes extension, and the
+Introspection CLI are already inside it. The adapter installs nothing. Per
+trial it:
+
+1. writes a `pi` launcher for the image's own Pi when the image has none on
+   `PATH` (the Operator image already provides one);
+2. uploads the Harbor instruction, or the CLI-selected replay prompt, as a
+   prompt file and runs the baked Recipe:
+
+   ```sh
+   pi --recipe /opt/introspection/recipe \
+     --print --mode json --approve \
+     @/tmp/introspection-eval-prompt.md
+   ```
+
+   A production-conversation replay runs the same command through
+   `introspection local --replay-context`, which creates the temporary native
+   Pi session immediately before Pi starts;
+3. captures Pi's JSON event stream as `pi.jsonl` under the agent log directory
+   and converts it into `trajectory.json` (ATIF) with token usage, cost, and
+   the observed model, which `introspection eval run` verifies against the
+   agent YAML.
+
+Recipe source is never uploaded, patched, or dependency-installed inside the
+trial. Test a changed Recipe by publishing it as a new Runtime version.
 
 ## E2B through scoped Data Plane egress
 
-Operator can use E2B without Docker Compose and without receiving a real E2B,
-OpenAI, or Anthropic key. Configure E2B in the Data Plane's
-`sandbox_providers`; `weight: 0` keeps it out of normal traffic while allowing
-an explicitly pinned Operator task to use it. Then select the Introspection
-environment class in the arguments forwarded to Harbor:
+Operator can use E2B without receiving a real E2B, OpenAI, or Anthropic key.
+Configure E2B in the Data Plane's `sandbox_providers`; `weight: 0` keeps it out
+of normal traffic while allowing an explicitly pinned Operator task to use it.
+Then select the Introspection environment class in the arguments forwarded to
+Harbor, naming the Runtime's published template:
 
 ```sh
 introspection eval run --runner harbor --path evals/refund-task -- \
-  --env introspection_harbor.environment:IntrospectionE2BEnvironment
+  --env introspection_harbor.environment:IntrospectionE2BEnvironment \
+  --environment-kwarg "template_name=$(introspection runtimes get "$RUNTIME_ID" \
+    --query image_build_metadata.external_image_name -o json | jq -r .)"
 ```
 
-Harbor's native E2B implementation still owns preflight, template operations,
-sandbox creation, resources, and networking. The adapter only adds the public
-egress contract through Harbor's supported `persistent_env` constructor input.
-The Data Plane exchanges the scoped session locator for credentials after
-authorization. Model inference returns through that public egress path; model
-provider keys are never copied into the E2B environment. Adding a Kubernetes
-Agent Sandbox provider therefore does not require changing the CLI runner or
-task API.
+Harbor's native E2B implementation still owns preflight, sandbox creation,
+resources, and networking. The adapter only:
+
+- skips Harbor's template build when `template_name` names a published
+  Runtime template, and defaults the task workdir to the baked Recipe;
+- copies the scoped public-egress contract (`INTROSPECTION_TOKEN`,
+  `INTROSPECTION_PUBLIC_EGRESS_URL` as the trial's `INTROSPECTION_EGRESS_URL`,
+  `INTROSPECTION_ENDPOINT_HOSTS`, and `INTROSPECTION_RELAY_TARGET` when set)
+  into the trial through Harbor's supported `persistent_env` input. A template
+  snapshot carries no session state, so this is the only way the baked Pi
+  learns where its egress is. The Data Plane exchanges the locator for
+  credentials at egress; model provider keys never enter the trial;
+- forwards the host variables named in `INTROSPECTION_HARBOR_PASSTHROUGH_ENV`
+  (comma-separated) for direct, non-egress runs such as a laptop trial with a
+  developer's own provider key.
 
 The platform Operator image sets
 `INTROSPECTION_HARBOR_ENVIRONMENT=introspection_harbor.environment:IntrospectionE2BEnvironment`.
@@ -59,75 +87,23 @@ adds no egress configuration and Harbor uses E2B's normal environment and
 credentials. A partial egress contract is rejected rather than silently mixing
 direct and routed traffic.
 
+## Where this is heading
+
+The adapter has two seams: how the Recipe is launched (`run`) and how the
+result is collected (`populate_context_post_run`). Today the launch executes Pi
+inside a Harbor-owned sandbox and the result is read back from that sandbox as
+`pi.jsonl`. A bare `pi` process exports no telemetry, so nothing from a trial
+reaches the platform's conversation store.
+
+The intended end state keeps Harbor as the trial orchestrator but moves both
+seams onto the platform: the launch becomes a task on the Runtime, and the
+result is read from that task's conversation and judgement events, which the
+Runtime already exports. That removes the direct E2B dependency and the
+file-based verifier from the path, and a Recipe judge becomes the reward.
+
 ## End-to-end MCP example
 
 [recipe-harbor-mcp-agent](https://github.com/introspection-org/recipe-harbor-mcp-agent)
-runs a Harbor trial in E2B while its Recipe calls a tiny MCP server on the
-developer's machine through `introspection dev`. It has no Docker Compose
-dependency. The Recipe declares a logical MCP id, so the local development
-bridge can later be replaced with an Introspection MCP endpoint binding without
-changing the Recipe or Harbor task.
-
-From the example directory, run each command in a separate terminal. First
-start the included hello-world MCP server:
-
-```sh
-git clone git@github.com:introspection-org/recipe-harbor-mcp-agent.git
-cd recipe-harbor-mcp-agent
-introspection runtimes create
-uv run --with 'fastmcp>=2.0' mcp/server.py
-```
-
-Before involving Harbor or E2B, verify the Recipe locally with Pi. In another
-terminal, configure the ignored local binding, provide the model credential
-selected by `agents/agent.yaml`, and run one prompt:
-
-```sh
-cd recipe-harbor-mcp-agent
-introspection setup --yes
-cp .pi/mcp.local.example.json .pi/mcp.local.json
-export ANTHROPIC_API_KEY='...'
-introspection local \
-  --runtime hello-mcp \
-  --agent agent \
-  --print 'Call the hello MCP get_greeting tool and return exactly its result.'
-```
-
-This local mode runs the Recipe's Pi coding agent directly on the developer's
-machine. Pi resolves logical server `hello` from the ignored
-`.pi/mcp.local.json`, calls `hello.get_greeting`, and returns
-`hello from the local MCP`. The committed example binding contains only the
-loopback endpoint and no credential. This is a quick check of the Recipe,
-agent-level MCP authorization, and server before testing either Harbor or the
-development tunnel.
-
-The Harbor task adds one more piece of work: the same Pi agent must call that
-tool and write its exact result to `/app/greeting.txt`; Harbor's deterministic
-verifier checks that file. Harbor and `introspection_harbor` run in the local
-evaluation process (or later in Operator), not inside the evaluated Recipe
-image.
-
-Next attach that local server to the Recipe's development Runtime, leaving the
-command running while the evaluation executes:
-
-```sh
-cd recipe-harbor-mcp-agent
-introspection dev --runtime hello-mcp \
-  --mcp=hello=http://localhost:8010/mcp
-```
-
-Finally start the Harbor trial in E2B:
-
-```sh
-cd recipe-harbor-mcp-agent
-introspection eval run \
-  --runner harbor \
-  --runtime hello-mcp \
-  --path harbor-task \
-  -- \
-  --env introspection_harbor.environment:IntrospectionE2BEnvironment
-```
-
-The Recipe inside E2B calls `hello.get_greeting` through the development tunnel
-and writes the response for Harbor's verifier. See the standalone repository's
-README for prerequisites and the equivalent proxy configuration.
+runs a Harbor trial in E2B against a published Runtime whose Recipe calls an
+authenticated MCP server. See that repository's README for the setup and the
+`scripts/run-e2b.sh` helper.
