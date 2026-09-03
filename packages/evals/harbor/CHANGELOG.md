@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.1...introspection-harbor-v0.4.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **setup:** accept supported Harbor Python versions ([#326](https://github.com/introspection-org/introspection-cli/issues/326)) ([e40b97a](https://github.com/introspection-org/introspection-cli/commit/e40b97af30738b11cf851b5534e86aba2a3dca44))
+
 ## [0.4.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.0...introspection-harbor-v0.4.1) (2026-09-02)
 
 
