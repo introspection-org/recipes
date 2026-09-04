@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.7](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.6...introspection-harbor-v0.4.7) (2026-09-04)
+
+
+### Bug Fixes
+
+* **harbor:** preload managed evaluation telemetry ([#351](https://github.com/introspection-org/introspection-cli/issues/351)) ([dd698c2](https://github.com/introspection-org/introspection-cli/commit/dd698c2f09a8225ea0b71ee7624d71b331416fb7))
+
 ## [0.4.6](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.5...introspection-harbor-v0.4.6) (2026-09-03)
 
 
