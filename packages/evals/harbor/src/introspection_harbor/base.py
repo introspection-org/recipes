@@ -2,8 +2,8 @@
 
 An adapter differs only in how the Recipe and Pi reach the trial (``install``).
 What is common lives here: the run spec ``introspection eval run`` hands over,
-the Pi invocation with the egress-proxy extension, the captured event stream,
-and the ATIF conversion Harbor needs for model, usage and cost.
+the Pi invocation with the runtime proxy and telemetry preloads, the captured
+event stream, and the ATIF conversion Harbor needs for model, usage and cost.
 """
 
 from __future__ import annotations
@@ -31,17 +31,9 @@ RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/runtime"
 PI_LAUNCHER_PATH = "/usr/local/bin/pi"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
-REMOTE_PROXY_EXTENSION_PATH = "/tmp/introspection-proxy-extension.mjs"
-RUNTIME_PROXY_MODULE_PATH = f"{RUNTIME_LINK_DIR}/node_modules/@introspection-sdk/introspection-proxy/dist/index.js"
-# Pi's own HTTP client (undici) ignores the proxy variables the sandbox is
-# started with; the runtime-agent installs a proxy-aware fetch before the
-# session starts, and a direct `pi` run has to do the same or its model and
-# MCP calls bypass the egress proxy. Loaded as a Pi extension so it runs in
-# the agent process before the first request.
-PROXY_EXTENSION_SOURCE = (
-    f'import {{ installProxyFetch }} from "file://{RUNTIME_PROXY_MODULE_PATH}";\n'
-    "installProxyFetch();\n"
-    "export default function introspectionProxyExtension() {}\n"
+RUNTIME_PROXY_PRELOAD_PATH = "/usr/local/lib/introspection-runtime/proxy-preload.js"
+RUNTIME_TELEMETRY_PRELOAD_PATH = (
+    "/usr/local/lib/introspection-runtime/cli-telemetry-preload.js"
 )
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
@@ -132,8 +124,6 @@ def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
     else:
         args = [
             "pi",
-            "--extension",
-            REMOTE_PROXY_EXTENSION_PATH,
             "--recipe",
             BAKED_RECIPE_DIR,
         ]
@@ -151,9 +141,29 @@ def recipe_run_command(args: list[str], output_filename: str) -> str:
     output_path = f"/logs/agent/{shlex.quote(output_filename)}"
     return (
         f"cd {BAKED_RECIPE_DIR} && "
+        f"{managed_runtime_preloads_command()} "
         f"{shlex.join(args)} >{output_path} 2>&1 </dev/null; "
         f"status=$?; cat {output_path}; test $status -eq 0 && test -s {output_path}"
     )
+
+
+def managed_runtime_preloads_command() -> str:
+    """Restore the runtime's proxy and child telemetry imports for direct Pi."""
+
+    commands = []
+    for preload_path in (
+        RUNTIME_PROXY_PRELOAD_PATH,
+        RUNTIME_TELEMETRY_PRELOAD_PATH,
+    ):
+        preload_url = f"file://{preload_path}"
+        commands.append(
+            f"if [ -f {preload_path} ]; then "
+            f'case " ${{NODE_OPTIONS:-}} " in *"{preload_url}"*) ;; *) '
+            'export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }'
+            f'--import {preload_url}" ;; esac; '
+            "fi;"
+        )
+    return "export INTROSPECTION_LOG_LEVEL=WARN; " + " ".join(commands)
 
 
 def managed_model_environment(
@@ -221,11 +231,6 @@ class RecipeAgentBase(BaseInstalledAgent):
             prompt_path = Path(temp_dir) / "prompt.md"
             prompt_path.write_text(prompt)
             await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
-            proxy_extension_path = Path(temp_dir) / "introspection-proxy-extension.mjs"
-            proxy_extension_path.write_text(PROXY_EXTENSION_SOURCE)
-            await environment.upload_file(
-                proxy_extension_path, REMOTE_PROXY_EXTENSION_PATH
-            )
 
         env = managed_model_environment(candidate.get("model"))
         await self.exec_as_agent(

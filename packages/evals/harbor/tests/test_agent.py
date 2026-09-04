@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from introspection_harbor.base import (
-    PROXY_EXTENSION_SOURCE,
     managed_model_environment,
+    managed_runtime_preloads_command,
     pi_args,
     pi_launcher_command,
     recipe_run_command,
@@ -64,8 +64,6 @@ class LaunchCommandTest(unittest.TestCase):
             args,
             [
                 "pi",
-                "--extension",
-                "/tmp/introspection-proxy-extension.mjs",
                 "--recipe",
                 "/opt/introspection/recipe",
                 "--print",
@@ -79,7 +77,7 @@ class LaunchCommandTest(unittest.TestCase):
     def test_inherited_agent_is_selected_by_declared_name(self) -> None:
         candidate = {**_AUTHORED_SPEC["candidate"], "agent": "agent2"}
         args = pi_args(candidate, _AUTHORED_SPEC)
-        self.assertEqual(args[5:7], ["--agent", "agent2"])
+        self.assertEqual(args[3:5], ["--agent", "agent2"])
 
     def test_declared_model_is_selected(self) -> None:
         candidate = {
@@ -87,18 +85,7 @@ class LaunchCommandTest(unittest.TestCase):
             "model": "anthropic/claude-sonnet-4-6",
         }
         args = pi_args(candidate, _AUTHORED_SPEC)
-        self.assertEqual(args[5:7], ["--model", "anthropic/claude-sonnet-4-6"])
-
-    def test_proxy_extension_installs_the_runtime_proxy_fetch(self) -> None:
-        # A direct `pi` run must route through the egress proxy like the
-        # runtime-agent does; the extension imports the runtime's own module
-        # through the baked runtime link rather than a downloaded copy.
-        self.assertIn("installProxyFetch();", PROXY_EXTENSION_SOURCE)
-        self.assertIn(
-            "file:///opt/introspection/recipe/runtime/node_modules/"
-            "@introspection-sdk/introspection-proxy/dist/index.js",
-            PROXY_EXTENSION_SOURCE,
-        )
+        self.assertEqual(args[3:5], ["--model", "anthropic/claude-sonnet-4-6"])
 
     def test_replay_runs_through_introspection_local(self) -> None:
         spec = {
@@ -119,11 +106,34 @@ class LaunchCommandTest(unittest.TestCase):
     def test_run_command_captures_events_and_preserves_exit_status(self) -> None:
         command = recipe_run_command(["pi", "--recipe", "x"], "pi.jsonl")
         self.assertTrue(command.startswith("cd /opt/introspection/recipe && "))
+        self.assertIn(
+            "if [ -f /usr/local/lib/introspection-runtime/proxy-preload.js ]; then",
+            command,
+        )
+        self.assertIn(
+            'export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }'
+            "--import file:///usr/local/lib/introspection-runtime/"
+            'cli-telemetry-preload.js"',
+            command,
+        )
         self.assertIn(">/logs/agent/pi.jsonl 2>&1", command)
         self.assertIn("status=$?", command)
         self.assertIn("test $status -eq 0 && test -s /logs/agent/pi.jsonl", command)
         self.assertNotIn("|", command)
         self.assertNotIn("nvm", command)
+
+    def test_managed_runtime_preloads_match_the_runtime_child_contract(
+        self,
+    ) -> None:
+        command = managed_runtime_preloads_command()
+        self.assertIn("export INTROSPECTION_LOG_LEVEL=WARN", command)
+        self.assertIn(
+            "--import file:///usr/local/lib/introspection-runtime/proxy-preload.js",
+            command,
+        )
+        self.assertIn("${NODE_OPTIONS:+$NODE_OPTIONS }--import file:///", command)
+        self.assertIn('case " ${NODE_OPTIONS:-} "', command)
+        self.assertIn("*) ;;", command)
 
     def test_pi_launcher_is_skipped_when_the_image_provides_pi(self) -> None:
         command = pi_launcher_command()
@@ -223,18 +233,12 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
             instance, "large inline instruction", environment, Mock()
         )
 
-        self.assertEqual(environment.upload_file.await_count, 2)
+        environment.upload_file.assert_awaited_once()
         uploaded_path, remote_path = environment.upload_file.await_args_list[0].args
         self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
         self.assertEqual(uploaded_path.name, "prompt.md")
-        extension_path, extension_remote = environment.upload_file.await_args_list[
-            1
-        ].args
-        self.assertEqual(extension_remote, "/tmp/introspection-proxy-extension.mjs")
-        self.assertEqual(extension_path.name, "introspection-proxy-extension.mjs")
         self.assertIn(
-            "pi --extension /tmp/introspection-proxy-extension.mjs "
-            "--recipe /opt/introspection/recipe",
+            "pi --recipe /opt/introspection/recipe",
             captured["command"],
         )
         self.assertIn("@/tmp/introspection-eval-prompt.md", captured["command"])
