@@ -22,6 +22,11 @@ from harbor.models.agent.context import AgentContext
 from .trajectory import ADAPTER_VERSION, pi_events_to_atif
 
 RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
+# Where the Runtime image puts the Recipe. Mirrors INTROSPECTION_RECIPE_ROOT's
+# default in the runtime image (runtime/constants.ts defaultRecipeRoot); this
+# adapter runs on the host, not in the sandbox, so it cannot read that variable
+# and has to state the path. One constant, imported by everything that needs it
+# — there were two copies of this string with different names.
 BAKED_RECIPE_DIR = "/opt/introspection/recipe"
 # The Runtime image links the shared runtime (and its node_modules) into the
 # baked Recipe, so Pi and the Recipes extension resolve from the Recipe itself.

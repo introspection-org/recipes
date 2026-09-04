@@ -9,6 +9,8 @@ import harbor.environments.e2b as harbor_e2b
 from harbor.environments.e2b import E2BEnvironment
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from .base import BAKED_RECIPE_DIR
+
 EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
 BASE_API_URL_ENV = "INTROSPECTION_BASE_API_URL"
@@ -21,7 +23,8 @@ ENDPOINT_HOSTS_ENV = "INTROSPECTION_ENDPOINT_HOSTS"
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 RELAY_TARGET_ENV = "INTROSPECTION_RELAY_TARGET"
 PASSTHROUGH_ENV = "INTROSPECTION_HARBOR_PASSTHROUGH_ENV"
-INTROSPECTION_RECIPE_WORKDIR = "/opt/introspection/recipe"
+# The Recipe is also the workdir Pi runs from; one source of truth for the path.
+INTROSPECTION_RECIPE_WORKDIR = BAKED_RECIPE_DIR
 
 
 def _binding_environment() -> dict[str, str]:
