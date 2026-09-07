@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.2.0...recipe-channel-slack-v0.3.0) (2026-09-07)
+
+
+### Features
+
+* **slack:** register issue thread routing after channel sends ([#261](https://github.com/introspection-org/recipes/issues/261)) ([19c8987](https://github.com/introspection-org/recipes/commit/19c89870bc756e8a37d64212e7c9fb91239fb131))
+
 ## [0.2.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.1.1...recipe-channel-slack-v0.2.0) (2026-09-04)
 
 

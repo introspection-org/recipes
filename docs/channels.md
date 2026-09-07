@@ -187,7 +187,7 @@ send idempotency or claim exactly-once delivery.
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-channel-slack": "^0.2.0"
+    "@introspection-ai/recipe-channel-slack": "^0.3.0"
   },
   "pi": {
     "channels": [
