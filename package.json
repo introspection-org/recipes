@@ -97,7 +97,7 @@
 		"@introspection-sdk/introspection-pi": "^0.23.0",
 		"@opentelemetry/api": "^1.9.1",
 		"ajv": "^8.20.0",
-		"mcporter": "0.13.7",
+		"mcporter": "0.13.8",
 		"yaml": "^2.9.0"
 	},
 	"peerDependencies": {
