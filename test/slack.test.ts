@@ -34,6 +34,9 @@ interface FakeFetchOptions {
   file?: Record<string, unknown>;
   fileBody?: string;
   bridgeStatus?: number;
+  bridgeRecorded?: boolean;
+  bridgeSkipped?: string;
+  bridgeStatuses?: number[];
   messages?: Array<Record<string, unknown>>;
   threadPages?: Record<
     string,
@@ -69,11 +72,11 @@ function fakeFetch(options: FakeFetchOptions = {}) {
       return response({ payload: { ok: false, error: options.reactionError } });
     }
     if (parsed.hostname === "dp.example") {
-      const status = options.bridgeStatus ?? 200;
+      const status = options.bridgeStatuses?.shift() ?? options.bridgeStatus ?? 200;
       return response({
         ok: status < 400,
         status,
-        payload: { acknowledged: true },
+        payload: { acknowledged: true, result: { recorded: options.bridgeRecorded ?? true, ...(options.bridgeSkipped ? { skipped: options.bridgeSkipped } : {}) } },
       });
     }
     if (parsed.pathname.endsWith("/api/chat.postMessage")) {
@@ -329,6 +332,56 @@ describe("SlackBotSession transport", () => {
     });
   });
 
+  it("retries transient routing registration without posting the Slack message again", async () => {
+    const fetchImpl = fakeFetch({ bridgeStatuses: [503, 200] });
+    const session = new SlackBotSession({
+      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1", INTROSPECTION_TASK_RUN_ID: "run-1" },
+      fetchImpl,
+    });
+    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" }, mode: "send" });
+    expect(result).toMatchObject({ ts: "200.2", bridge_recorded: true });
+    expect(fetchImpl.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
+    expect(fetchImpl.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(2);
+  });
+
+  it("does not claim routing when cloud intentionally declines registration", async () => {
+    const fetchImpl = fakeFetch({ bridgeRecorded: false });
+    const session = new SlackBotSession({
+      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" }, fetchImpl,
+    });
+    const result = await session.sendMessage({ text: "hello", to: { channel: "C2" }, mode: "send" });
+    expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
+    expect(result.bridge_error).toBeUndefined();
+    expect(fetchImpl.calls).toHaveLength(2);
+  });
+
+  it("retains the posted reference when routing is stale or permanently rejected", async () => {
+    for (const options of [{ bridgeStatus: 409 }, { bridgeSkipped: "stale_run" }]) {
+      const fetchImpl = fakeFetch(options);
+      const session = new SlackBotSession({
+        env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" }, fetchImpl,
+      });
+      const result = await session.sendMessage({ text: "hello", to: { channel: "C2" }, mode: "send" });
+      expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
+      expect(result.bridge_error).toBeTruthy();
+      expect(fetchImpl.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
+      expect(fetchImpl.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(options.bridgeStatus ? 1 : 3);
+    }
+  });
+
+  it("sends and registers a new issue thread without an inbound Slack origin", async () => {
+    const pi = createMockExtensionAPI();
+    const fetchImpl = fakeFetch();
+    const adapter = new SlackChannelAdapter(new SlackFileSession({
+      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "worker", INTROSPECTION_TASK_RUN_ID: "run" }, fetchImpl,
+    }));
+    registerChannelTools(pi, adapter, { target: () => { throw new Error("No inbound origin"); } });
+    const sent = await channelCommand(pi, "send").execute("send-test", { channel_id: "C2", text: "Need guidance" });
+    expect(sent!.details).toMatchObject({ bridge_recorded: true, target: { conversation: "C2", thread: "200.2" } });
+    const registration = fetchImpl.calls.find(request => request.url.includes("dp.example"))!;
+    expect(JSON.parse(String(registration.init.body)).data).toMatchObject({ mode: "send", channel: "C2", ts: "200.2", thread_ts: "200.2" });
+  });
+
   it("returns a bridge warning without retrying a successful Slack post", async () => {
     const fetchImpl = fakeFetch({ bridgeStatus: 503 });
     const session = new SlackBotSession({
@@ -548,18 +601,20 @@ describe("Slack channel tools", () => {
     );
   });
 
-  it("sends to another channel and edits there, without registering a reply bridge", async () => {
+  it("sends to another channel and asks cloud to register follow-up routing", async () => {
     const pi = createMockExtensionAPI();
     const fetchImpl = fakeFetch();
     const adapter = new SlackChannelAdapter(new SlackFileSession({ env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task", INTROSPECTION_TOKEN: "locator" }, fetchImpl }));
     registerChannelTools(pi, adapter, { target: { provider: "slack", conversation: "C1", thread: "100.1" } });
     const sent = await call(pi, "channel_send", { channel_id: "C2", text: "hello" });
     const details = sent!.details as { ref: string };
-    expect(sent!.details).toMatchObject({ target: { conversation: "C2", thread: "200.2" }, bridge_recorded: false });
+    expect(sent!.details).toMatchObject({ target: { conversation: "C2", thread: "200.2" }, bridge_recorded: true });
     const post = fetchImpl.calls.find((request) => request.url.includes("chat.postMessage"))!;
     expect(JSON.parse(String(post.init.body))).toMatchObject({ channel: "C2" });
     expect(JSON.parse(String(post.init.body))).not.toHaveProperty("thread_ts");
-    expect(fetchImpl.calls.some((request) => request.url.includes("dp.example"))).toBe(false);
+    expect(fetchImpl.calls.some((request) => request.url.includes("dp.example"))).toBe(true);
+    const registration = fetchImpl.calls.find((request) => request.url.includes("dp.example"))!;
+    expect(JSON.parse(String(registration.init.body)).data.mode).toBe("send");
     await call(pi, "channel_edit", { message: details.ref, text: "updated" });
     const edit = fetchImpl.calls.find((request) => request.url.includes("chat.update"))!;
     expect(JSON.parse(String(edit.init.body))).toMatchObject({ channel: "C2", ts: "200.2" });

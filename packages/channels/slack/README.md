@@ -51,3 +51,9 @@ unsupported.
 
 See the [Slack connector guide](https://github.com/introspection-org/recipes/blob/main/docs/slack.md)
 for tool behavior and testing.
+
+### Follow-up routing
+
+Confirmed Slack posts are reported through the existing `connector_posted` task event. Cloud may attach a newly posted thread to its issue worker when the destination is configured for that project. Sending into an unrelated existing thread does not claim ownership. `bridge_recorded` reflects Cloud's routing decision, not merely a successful HTTP response.
+
+Transient registration failures retry only the task event, never the Slack post. If registration remains unavailable, the result retains the posted message reference and a `bridge_error`; do not resend the message to repair routing. This bounded retry is not a durable outbox: a process failure between Slack accepting the post and Cloud recording it still needs reconciliation.
