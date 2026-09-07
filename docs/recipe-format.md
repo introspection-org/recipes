@@ -90,7 +90,7 @@ credential. A host binds those values when it starts a task.
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-channel-slack": "^0.2.0"
+    "@introspection-ai/recipe-channel-slack": "^0.3.0"
   },
   "pi": {
     "channels": [
