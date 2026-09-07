@@ -276,7 +276,7 @@ export function registerChannelTools(
   }));
 
   register("send", () => ({
-    description: "Send Markdown to an explicit channel, optionally inside a thread, using this connection. No thread means a top-level post. Does not establish cross-channel follow-up routing.",
+    description: "Send Markdown to an explicit channel, optionally inside a thread, using this connection. No thread means a top-level post.",
     parameters: Type.Object({
       channel_id: Type.String({ minLength: 1 }),
       thread_id: Type.Optional(Type.String({ minLength: 1 })),

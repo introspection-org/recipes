@@ -128,20 +128,19 @@ export class SlackChannelAdapter implements ChannelAdapter {
     ctx: ChannelAdapterContext,
     input: { text: string },
   ): Promise<ChannelPostResult> {
-    return this.post(ctx, input, true);
+    return this.post(ctx, input, "reply");
   }
 
   async send(ctx: ChannelAdapterContext, input: { text: string }): Promise<ChannelPostResult> {
-    // Explicit sends do not claim platform follow-up routing. The existing
-    // bridge is origin-bound and must be refactored separately.
-    return this.post(ctx, input, false);
+    return this.post(ctx, input, "send");
   }
 
-  private async post(ctx: ChannelAdapterContext, input: { text: string }, recordBridge: boolean): Promise<ChannelPostResult> {
+  private async post(ctx: ChannelAdapterContext, input: { text: string }, mode: "send" | "reply"): Promise<ChannelPostResult> {
     const posted = await this.session.sendMessage(
       {
         text: input.text,
-        record_bridge: recordBridge,
+        record_bridge: true,
+        mode,
         // The trusted context, not the session's own view of the origin: the
         // two agree under the connector module, and where they would not, the
         // context is the one every other tool acted on.
