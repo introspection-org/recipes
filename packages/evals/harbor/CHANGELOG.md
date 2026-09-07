@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.7...introspection-harbor-v0.5.0) (2026-09-07)
+
+
+### Features
+
+* **harbor:** the bootstrap adapter, and running a trial in an Introspection eval task sandbox ([#368](https://github.com/introspection-org/introspection-cli/issues/368)) ([84e361d](https://github.com/introspection-org/introspection-cli/commit/84e361d50ff145f5acab2724279cf08d1d65b86d))
+
+
+### Bug Fixes
+
+* **cli:** keep the empty-result note off stdout, and de-duplicate the recipe dir ([#362](https://github.com/introspection-org/introspection-cli/issues/362)) ([cbf7ffc](https://github.com/introspection-org/introspection-cli/commit/cbf7ffc90ecbbde629a9ef5eb52adeeac845fa19))
+
 ## [0.4.7](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.6...introspection-harbor-v0.4.7) (2026-09-04)
 
 
