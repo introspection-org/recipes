@@ -16,7 +16,240 @@ introspection eval run --runner harbor --path evals/refund-task --agent agent2
 The selected agent YAML is the only source of the evaluated model; the CLI and
 adapter do not apply a separate model override.
 
-## What the adapter does
+## Two adapters, one launch
+
+`introspection eval run` selects `introspection_harbor.agent:IntrospectionRecipeAgent`;
+`INTROSPECTION_HARBOR_ADAPTER` decides which adapter that resolves to. They
+share `base.py`: the run spec, the Pi invocation with the egress-proxy
+extension, the captured `pi.jsonl`, and the ATIF trajectory. They differ only
+in how the Recipe and Pi reach the trial, and where the evidence comes from.
+
+| `INTROSPECTION_HARBOR_ADAPTER` | Trial image | What `install` does | Evidence |
+| --- | --- | --- | --- |
+| `runtime` (default) | the Runtime image | exposes the image's own Pi; downloads nothing | `pi.jsonl` in the trial |
+| `bootstrap` | any image (a pinned SWE world, a customer base) | uploads the Recipe workspace from the host, installs Node and the CLI, lets `introspection setup` install Pi and the Recipes extension, lays it out as the Runtime image does, under `/tmp/introspection` (`recipe` + `runtime` link, with the proxy module) | `pi.jsonl` in the trial |
+
+```sh
+# a foreign image: bootstrap the Recipe into it
+INTROSPECTION_HARBOR_ADAPTER=bootstrap introspection eval run --runner harbor --path evals/swe-task
+```
+
+### Which images the bootstrap adapter can use
+
+The bootstrap installs a toolchain into someone else's image, and on an
+Introspection sandbox it does so as an ordinary user with no way to become root.
+That rules two shapes out, and the prerequisite step refuses them by name rather
+than letting a package manager fail on permissions several steps into a trial:
+
+| Image | Bootstrap | Why |
+| --- | --- | --- |
+| Node >= 24 already installed | works | npm's global prefix is moved to `$HOME/.local`, since the image's own is root-owned |
+| glibc, no Node, `curl` and `bash` present | works | nvm installs Node under `$HOME`, which needs no root |
+| glibc, no Node, no `curl` | refused | installing curl needs a package manager, which needs root |
+| glibc, no Node, `curl` but no `bash` | refused | nvm is bash software; the toolchain step runs under bash for that reason |
+| musl (Alpine), no Node | refused | `apk` needs root, and nvm's official binaries do not run on musl |
+
+A refused image is not a bug to work around in the adapter — bake Node (or curl)
+into it, or use the `runtime` adapter with a Runtime image instead.
+
+Two suites cover this. `tests/test_bootstrap_shell.py` runs the generated
+commands under `sh` with the probes they branch on replaced by stubs, so every
+shape is exercised anywhere with no container and no root.
+`tests/test_bootstrap_docker.py` runs them against the real base images as uid
+1000, which is the only way to see whether the branch that runs actually works:
+
+```sh
+HARBOR_BOOTSTRAP_DOCKER=1 uv run python -m unittest tests.test_bootstrap_docker
+# add HARBOR_BOOTSTRAP_DOCKER_NETWORK=1 for the cases that install from npm
+```
+
+Each shape can be pointed at a different image (`HARBOR_IMAGE_NODE`, `_MUSL`,
+`_BARE`, `_CURL`) for a network that cannot reach Docker Hub, and
+`HARBOR_BOOTSTRAP_DOCKER_CA` mounts a CA for a TLS-intercepting egress proxy.
+Use `HARBOR_BOOTSTRAP_DOCKER_UID` where a mirror image happens to grant uid 1000
+ownership of its npm prefix, which a stock image does not.
+
+## Where the bootstrap adapter puts things
+
+Everything the bootstrap installs lives under **`/tmp/introspection`**:
+
+| Path | What it is |
+| --- | --- |
+| `/tmp/introspection/workspace` | the Recipe workspace uploaded from the host |
+| `/tmp/introspection/recipe` | a link to the Recipe inside that workspace — what Pi is pointed at |
+| `/tmp/introspection/runtime` | the proxy module, linked as the Recipe's `runtime` |
+
+Not `/opt/introspection`, which is where the *Runtime image* bakes its own
+Recipe. A foreign image is someone else's: `/opt` is root-owned, the trial runs
+as an ordinary user, and on an Introspection sandbox `pods/exec` cannot run a
+command as anyone else — so `exec_as_root` is not root there and the first
+`mkdir` fails. `/tmp` is the one directory every image grants an arbitrary uid
+(mode 1777), and unlike `$HOME` it is there whether or not the image gave that
+uid a home. Only the system package install (`curl`, for the nvm branch) still
+asks for root, and it refuses by name when it does not have it.
+
+The toolchain itself goes to `$HOME`: npm's global prefix moves to
+`$HOME/.local` on the system-Node branch, and nvm keeps its own prefix under
+`$HOME/.nvm`.
+
+## The Introspection environment
+
+The adapters above choose how the *agent* reaches the trial. The environment
+chooses where the trial *runs*, and `IntrospectionEnvironment` runs it in an
+Introspection evaluation task:
+
+```sh
+introspection eval run --runner harbor --path evals/refund-task -- \
+  --env introspection_harbor.task_environment:IntrospectionEnvironment
+```
+
+`start` creates a `kind: eval` task on the Recipe's Runtime, tagged `harbor`,
+with `commands: true` and the task's own `docker-compose.yaml` as its
+`compose`. Everything Harbor asks of the environment afterwards — `exec`,
+`upload_file`, `download_file`, and the healthchecks and directory helpers the
+base class derives from `exec` — becomes a row on
+`POST /v1/tasks/{id}/commands` that the task workflow runs in that sandbox.
+
+The point of doing it on this axis: Harbor keeps the trial. The verifier runs
+through the same channel, in the same sandbox the agent worked in, so a task's
+own `tests/test.sh` produces the reward. The alternative — creating a platform
+task from an *agent* adapter and leaving the Harbor environment idle — reads
+the Recipe's judges back instead, which measures a Recipe but cannot score
+somebody else's benchmark. That shape was prototyped and withdrawn.
+
+`main` is the agent slot and the Runtime image fills it — the agent base plus
+the Recipe, either baked or materialized from git — so the eval logic belongs
+in the Recipe repository beside the Recipe it measures. A `main` service
+therefore carries only `volumes` and `depends_on`, and a task that declares
+its own `image:` or `build:` there is **refused by that key** rather than
+trimmed: dropping it would run the trial in an image the task did not ask for
+and report the number as though it had. The same goes for an
+`environment/Dockerfile` that no sidecar builds from — for a task with no
+compose file at all, that is the only signal it was written for an environment
+that builds its own main.
+Every other service is a sidecar, and a sidecar may only name an image the
+plane produced — so a `build:` context is packed, uploaded and built through
+`POST /v1/images`, and an `image:` is mirrored, which requires it to be
+digest-pinned. Every task sends a `compose`, even one with no file of its own: Harbor's
+`/logs` and `/tests` sit directly under `/`, which the sandbox user cannot
+create, so they are mounted as named volumes the platform renders as
+emptyDir under the pod's `fsGroup`. `_reset_dirs_user` is overridden to the
+sandbox user for the same reason — asking for root produced a request the
+sandbox silently ignored and a `mkdir` that failed as if the trial had.
+
+Credentials resolve as the CLI's own Data-Plane commands do: `INTROSPECTION_DP_URL`
+and `INTROSPECTION_TOKEN` first, then the profile `introspection login` wrote.
+Resolving the Runtime selector to a version is a Control-Plane read, so the
+login must have a project selected.
+
+**A browser login is not sufficient on its own.** A trial needs `tasks:eval` to
+create the task, `images:write` to build a sidecar and `tasks:exec` to run a
+command, all of which are in the `evals` capability — and a CLI login carries
+`runtimes` and `reviews` only. Set `INTROSPECTION_TOKEN` to a project API key
+minted with **both** `evals` and `runtimes`: the second is not redundant, since
+uploading a sidecar's build context goes through the Files API and `files:write`
+is in the `runtimes` bundle rather than `evals`. With a login alone the
+Control-Plane resolution succeeds and the task create then 403s.
+
+| Variable | What it changes |
+| --- | --- |
+| `INTROSPECTION_HARBOR_TASK_ENVIRONMENT` | the Runtime's environment lane for version resolution (default `production`) |
+| `INTROSPECTION_HARBOR_SANDBOX_PROVIDER` | pins the task to a sandbox provider |
+| `INTROSPECTION_HARBOR_TRIAL_TIMEOUT_SECONDS` | the sandbox's wall-clock ceiling, as the task's `idle_timeout_seconds` (default 3600) |
+| `INTROSPECTION_HARBOR_START_TIMEOUT_SECONDS` | how long to wait for the sandbox to accept commands, including queueing (default 3600) |
+| `INTROSPECTION_HARBOR_IMAGE_TIMEOUT_SECONDS` | how long to wait for a sidecar image to build (default 1800) |
+| `INTROSPECTION_HARBOR_EXEC_TIMEOUT_SECONDS` | the default per-command bound (default 900) |
+
+### Timeouts, admission and fan-out
+
+`idle_timeout_seconds` is the trial's wall-clock ceiling, not a grace period
+before the first command. Commands reach the sandbox through `pods/exec`,
+which the runtime agent never observes, so the idle seconds it reports climb
+for the whole trial however busy Harbor is. That is deliberate: it is also
+what releases the sandbox of a trial that has wedged. Size `INTROSPECTION_HARBOR_TRIAL_TIMEOUT_SECONDS` to the longest trial you
+expect, not to the pause before Harbor starts work.
+
+**A trial cannot exceed two hours.** The plane clamps `idle_timeout_seconds` to
+the task's own `timeout_seconds`, and that field is not on `POST /v1/tasks` —
+it sits on the internal workflow request at a fixed 7200s — so no caller can
+raise it. Configuring a longer budget is refused at startup rather than
+accepted and halved.
+
+Trials are admitted per org on the vqueue `eval` lane, so a task can sit in
+`pending` / `queued` / `scheduled` for a while before its sandbox exists. The
+adapter waits through those patiently and the idle clock does not start until
+the sandbox is running, so queueing does not eat the trial's budget. It does
+eat a Harbor worker slot, though: Harbor's `n_concurrent_trials` defaults to
+4, and setting it above the org's `eval_concurrency` just parks the excess
+trials inside `start`. Match the two.
+
+### Directories, and which ones exist
+
+Harbor's blessed set is `EnvironmentPaths`, a frozen dataclass — there is no
+task field for declaring extra directories, and Harbor creates these itself with
+`mkdir` inside the environment. That `mkdir` fails as uid 1000 against a
+root-owned `/`, so the adapter mounts them as compose named volumes, which the
+platform renders as `emptyDir` under the pod's `fsGroup: 1000`.
+
+| Path | Mounted | What writes it |
+| --- | --- | --- |
+| `/logs` | yes | Harbor; `agent/`, `verifier/`, `artifacts/` and `user-agent/` are created inside it, so one mount covers all four |
+| `/logs/verifier/reward.{txt,json}` | — | the verifier's result, read back as the trial's reward |
+| `/tests` | yes | the Verifier, after the agent runs |
+| `/solution` | yes | the OracleAgent only |
+| `/harbor/skills` | **no** | an agent *reads* it, guarding on `is_dir` — an empty mount would answer "yes, skills" where the truth is "no skills" |
+
+Anything else a task needs writable — `/app`, `/srv`, `/data`, whatever its own
+Dockerfile used — is the task's to declare, in the compose document it already
+sends:
+
+```yaml
+services:
+  main:
+    volumes: [task-app:/app]
+volumes:
+  task-app:
+```
+
+`main` accepts `volumes` and `depends_on` and nothing else, and the platform
+mounts them on the agent container. This needs no new field anywhere.
+
+**What a volume does not give you.** It is an *empty* writable directory, not
+the task image's contents. The Runtime image fills the `main` slot, so
+everything the task's own Dockerfile set up — a seeded `/app`, installed
+packages, fixture files — is absent, and mounting a volume over such a path
+would mask whatever the Runtime image had there. This closes "the directory
+does not exist and is not writable"; it does not close "the task's files are
+missing". A task that needs its own filesystem wants the `bootstrap` adapter or
+a Runtime built from its image.
+
+### Transfer artifacts
+
+Uploads are staged through the Files API as raw (`encryption: false`) files
+stamped `purpose: harbor_transfer`, and deleted as soon as the sandbox has the
+bytes — they are machine-generated tars that exist for one transfer, so
+envelope encryption buys nothing. A `download` output is written by the plane
+through the encrypted store, so that one is only deleted promptly, not stored
+raw.
+
+Known gaps, all of them in the command contract rather than this adapter:
+`exec`'s `user` cannot be honoured (the sandbox runs every command as its own
+user, so the argument is ignored and a command that needed another user fails
+on its own exit code); the network policy is fixed when the pod is created, so
+`set_network_policy` mid-trial is refused; and a command row carries a bounded
+output tail rather than unbounded output, so a chatty command wants
+redirect-then-download. `stop_service` is the one per-service operation this
+adapter cannot offer — a pod's containers stop together — so sidecar evidence
+is collected with the agent still running, which Harbor treats as a warning.
+
+Sidecar artifact collection and verifier collect hooks do work: `service_exec`
+and `service_download_file` address one compose service through the command's
+own `service` field, the directory walks are generic over that pair, and the
+plane refuses a service the task did not declare in its own compose. A sidecar
+command inherits none of the agent's workdir, user or persistent environment,
+as on every other compose-capable provider.
+
+## What the runtime adapter does
 
 The trial image is the Runtime image the Data Plane published for the Recipe,
 so the Recipe (`/opt/introspection/recipe`), Pi, the Recipes extension, and the

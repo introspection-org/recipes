@@ -27,12 +27,18 @@ RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
 # adapter runs on the host, not in the sandbox, so it cannot read that variable
 # and has to state the path. One constant, imported by everything that needs it
 # — there were two copies of this string with different names.
+#
+# An adapter that materializes the Recipe into a foreign image cannot write
+# here — /opt is root-owned and a sandbox runs as an ordinary user — so it
+# overrides `recipe_dir` and the shared commands below take the directory as
+# an argument rather than reading this constant.
 BAKED_RECIPE_DIR = "/opt/introspection/recipe"
 # The Runtime image links the shared runtime (and its node_modules) into the
 # baked Recipe, so Pi and the Recipes extension resolve from the Recipe itself.
-# An adapter that materializes the Recipe into a foreign image creates the same
-# link, so everything below the install step is shared.
-RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/runtime"
+# An adapter that materializes the Recipe elsewhere creates the same link
+# beside its own Recipe, so everything below the install step is shared.
+RUNTIME_LINK_NAME = "runtime"
+RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/{RUNTIME_LINK_NAME}"
 PI_LAUNCHER_PATH = "/usr/local/bin/pi"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
@@ -105,7 +111,11 @@ def pi_launcher_command() -> str:
     )
 
 
-def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
+def pi_args(
+    candidate: dict[str, Any],
+    spec: dict[str, Any],
+    recipe_dir: str = BAKED_RECIPE_DIR,
+) -> list[str]:
     """Build the Pi invocation, via ``introspection local`` only for a replay.
 
     A production-conversation replay needs the CLI to hydrate the native Pi
@@ -118,7 +128,7 @@ def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
             "introspection",
             "local",
             "--work-dir",
-            BAKED_RECIPE_DIR,
+            recipe_dir,
             "--runtime",
             candidate["runtime"],
         ]
@@ -130,7 +140,7 @@ def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
         args = [
             "pi",
             "--recipe",
-            BAKED_RECIPE_DIR,
+            recipe_dir,
         ]
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
@@ -142,10 +152,34 @@ def pi_args(candidate: dict[str, Any], spec: dict[str, Any]) -> list[str]:
     return args
 
 
-def recipe_run_command(args: list[str], output_filename: str) -> str:
+def prepare_recipe_command(recipe_dir: str = BAKED_RECIPE_DIR) -> str:
+    """Check the Recipe is where the launch expects it and seed its local MCP config."""
+
+    return (
+        f"test -f {recipe_dir}/package.json && "
+        f"if [ -f {recipe_dir}/.pi/mcp.local.example.json ] && "
+        f"[ ! -f {recipe_dir}/.pi/mcp.local.json ]; then "
+        f"cp {recipe_dir}/.pi/mcp.local.example.json "
+        f"{recipe_dir}/.pi/mcp.local.json; fi"
+    )
+
+
+def recipe_run_command(
+    args: list[str],
+    output_filename: str,
+    prelude: str = "",
+    recipe_dir: str = BAKED_RECIPE_DIR,
+) -> str:
+    """Run Pi from the Recipe root, capturing its event stream for the trajectory.
+
+    ``prelude`` is shell an adapter needs before the launch (a bootstrapped
+    trial sources nvm so the Node it installed is the one that runs Pi).
+    """
+
     output_path = f"/logs/agent/{shlex.quote(output_filename)}"
     return (
-        f"cd {BAKED_RECIPE_DIR} && "
+        f"{prelude}"
+        f"cd {recipe_dir} && "
         f"{managed_runtime_preloads_command()} "
         f"{shlex.join(args)} >{output_path} 2>&1 </dev/null; "
         f"status=$?; cat {output_path}; test $status -eq 0 && test -s {output_path}"
@@ -202,6 +236,9 @@ class RecipeAgentBase(BaseInstalledAgent):
 
     SUPPORTS_ATIF = True
     _OUTPUT_FILENAME = "pi.jsonl"
+    # Where this adapter's Recipe ends up. The Runtime image bakes it; an
+    # adapter that has to create the directory itself overrides this.
+    recipe_dir: str = BAKED_RECIPE_DIR
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -210,6 +247,11 @@ class RecipeAgentBase(BaseInstalledAgent):
     @override
     def version(self) -> str | None:
         return ADAPTER_VERSION
+
+    def run_prelude(self) -> str:
+        """Shell prepended to the launch; empty when the image's Pi is on ``PATH``."""
+
+        return ""
 
     async def upload_replay_context(self, environment: BaseEnvironment) -> None:
         """Ship the canonical replay context when the CLI selected one."""
@@ -241,7 +283,10 @@ class RecipeAgentBase(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=recipe_run_command(
-                pi_args(candidate, self._spec), self._OUTPUT_FILENAME
+                pi_args(candidate, self._spec, self.recipe_dir),
+                self._OUTPUT_FILENAME,
+                prelude=self.run_prelude(),
+                recipe_dir=self.recipe_dir,
             ),
             **({"env": env} if env else {}),
         )

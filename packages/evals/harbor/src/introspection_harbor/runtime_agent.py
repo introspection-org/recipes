@@ -12,7 +12,7 @@ from typing import override
 
 from harbor.environments.base import BaseEnvironment
 
-from .base import BAKED_RECIPE_DIR, RecipeAgentBase, pi_launcher_command
+from .base import RecipeAgentBase, pi_launcher_command, prepare_recipe_command
 
 
 class IntrospectionRecipeAgent(RecipeAgentBase):
@@ -33,14 +33,5 @@ class IntrospectionRecipeAgent(RecipeAgentBase):
         """
 
         await self.exec_as_root(environment, command=pi_launcher_command())
-        await self.exec_as_agent(
-            environment,
-            command=(
-                f"test -f {BAKED_RECIPE_DIR}/package.json && "
-                f"if [ -f {BAKED_RECIPE_DIR}/.pi/mcp.local.example.json ] && "
-                f"[ ! -f {BAKED_RECIPE_DIR}/.pi/mcp.local.json ]; then "
-                f"cp {BAKED_RECIPE_DIR}/.pi/mcp.local.example.json "
-                f"{BAKED_RECIPE_DIR}/.pi/mcp.local.json; fi"
-            ),
-        )
+        await self.exec_as_agent(environment, command=prepare_recipe_command())
         await self.upload_replay_context(environment)
