@@ -465,13 +465,15 @@ describe("createAgentSession", () => {
   });
 
   it("forwards transparent AI options and provider routing to root and subagent requests", async () => {
+    // Exercise OpenRouter's OpenAI-compatible serializer. Pi 0.85 routes
+    // Anthropic models through the native Anthropic API instead.
     const { recipeDir, workspaceDir } = fixture();
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
       [
         "name: agent",
         "ai:",
-        "  model: openrouter/anthropic/claude-sonnet-4.5",
+        "  model: openrouter/openai/gpt-4.1",
         "  options:",
         "    max_tokens: 321",
         "    sampling_params:",
@@ -537,7 +539,7 @@ describe("createAgentSession", () => {
     for (const handle of [root, child]) {
       const captured = await captureSerializedPayload(handle);
       expect(captured.payload).toMatchObject({
-        model: "anthropic/claude-sonnet-4.5",
+        model: "openai/gpt-4.1",
         max_completion_tokens: 321,
         future_option: "enabled",
         provider: {
