@@ -84,20 +84,23 @@ allowed path, and adds the bot token before the request leaves for Slack.
 The adapter refuses to send a task locator when the provider proxy URL is
 missing. It never falls back to sending the locator to Slack.
 
-After `channels reply` succeeds in cloud, the adapter posts the `connector_posted`
-task event to the Data Plane, which checks the agent session, current run,
-provider, and origin channel before recording the new thread root. A later Slack
-reply then resumes the same task.
+After `channels reply` or `channels send` succeeds in cloud, the adapter posts
+the `connector_posted` task event to the Data Plane. Cloud checks the agent
+session, current run, and destination before recording follow-up routing.
+An explicit send may attach a new thread to its issue worker when the destination
+is configured for that project. Sending into an unrelated existing thread does
+not claim ownership. A reply in a registered thread resumes its owning task.
 
-`channels send` deliberately does not emit this origin-bound bridge event, even
-when its explicit destination matches the origin. Its result includes the
-actual target and `bridge_recorded: false`. Cross-channel continuation is not
-implemented by this tools-only change.
+The result includes the actual target. `bridge_recorded` is true only when Cloud
+confirms registration, not merely when the event request succeeds. Cloud may
+decline registration and return `bridge_recorded: false`.
 
 Slack writes are attempted once. The adapter does not retry `chat.postMessage`,
 because Slack accepts no idempotency key for it. If Slack accepts the post but
-event recording fails, the tool returns the message reference and a
-`bridge_error`. It does not post again.
+event recording fails, only registration is retried, up to three attempts.
+Retries honor the server's `Retry-After` header and support cancellation. If
+registration still fails, the tool returns the message reference,
+`bridge_recorded: false`, and a `bridge_error`. It does not post again.
 
 ## Test with introspection dev
 
