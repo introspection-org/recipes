@@ -49,7 +49,15 @@ export interface SlackPostResult {
 }
 
 class SlackBridgeError extends Error {
-  constructor(message: string, readonly retryable: boolean) { super(message); }
+  constructor(message: string, readonly retryable: boolean, readonly retryAfterMs = 0) { super(message); }
+}
+
+function retryAfterMs(value: string | null | undefined): number {
+  if (!value?.trim()) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
 }
 
 type SlackEncoding = "json" | "form";
@@ -238,7 +246,10 @@ export class SlackBotSession {
       } catch (error) {
         if (attempt >= 2 || signal?.aborted ||
             (error instanceof SlackBridgeError && !error.retryable)) throw error;
-        await setTimeout(100 * (attempt + 1), undefined, { signal });
+        const delay = Math.max(100 * (attempt + 1), error instanceof SlackBridgeError ? error.retryAfterMs : 0);
+        // Node timers overflow above this limit and would retry immediately.
+        if (delay > 2_147_483_647) throw error;
+        await setTimeout(delay, undefined, { signal });
       }
     }
   }
@@ -279,6 +290,7 @@ export class SlackBotSession {
       throw new SlackBridgeError(
         `connector_posted returned HTTP ${response.status}`,
         response.status >= 500 || response.status === 429,
+        retryAfterMs(response.headers.get("Retry-After")),
       );
     }
     const payload = await response.json() as { result?: { recorded?: boolean; skipped?: string } };

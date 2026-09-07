@@ -37,6 +37,7 @@ interface FakeFetchOptions {
   bridgeRecorded?: boolean;
   bridgeSkipped?: string;
   bridgeStatuses?: number[];
+  bridgeRetryAfter?: string;
   messages?: Array<Record<string, unknown>>;
   threadPages?: Record<
     string,
@@ -76,6 +77,7 @@ function fakeFetch(options: FakeFetchOptions = {}) {
       return response({
         ok: status < 400,
         status,
+        retryAfter: options.bridgeRetryAfter,
         payload: { acknowledged: true, result: { recorded: options.bridgeRecorded ?? true, ...(options.bridgeSkipped ? { skipped: options.bridgeSkipped } : {}) } },
       });
     }
@@ -151,6 +153,7 @@ function response(options: {
   status?: number;
   payload: unknown;
   body?: string;
+  retryAfter?: string;
 }) {
   const bytes = Buffer.from(options.body ?? "");
   return {
@@ -158,6 +161,7 @@ function response(options: {
     status: options.status ?? 200,
     headers: {
       get: (name: string) =>
+        name.toLowerCase() === "retry-after" ? options.retryAfter ?? null :
         name.toLowerCase() === "content-length" && options.body !== undefined
           ? String(bytes.length)
           : null,
@@ -342,6 +346,43 @@ describe("SlackBotSession transport", () => {
     expect(result).toMatchObject({ ts: "200.2", bridge_recorded: true });
     expect(fetchImpl.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
     expect(fetchImpl.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(2);
+  });
+
+  it.each(["seconds", "date", "invalid"])("honors registration Retry-After (%s) without reposting", async (kind) => {
+    const retryAt = Math.ceil(Date.now() / 1000) * 1000 + 1000;
+    const header = kind === "seconds" ? "1" : kind === "date" ? new Date(retryAt).toUTCString() : "invalid";
+    const fake = fakeFetch({ bridgeStatuses: [429, 200], bridgeRetryAfter: header });
+    const attempts: number[] = [];
+    const session = new SlackBotSession({
+      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" },
+      fetchImpl: async (url, init) => {
+        if (String(url).includes("dp.example")) attempts.push(Date.now());
+        return fake(url, init);
+      },
+    });
+    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" }, mode: "send" });
+    expect(result.bridge_recorded).toBe(true);
+    expect(attempts).toHaveLength(2);
+    if (kind === "seconds") expect(attempts[1]! - attempts[0]!).toBeGreaterThanOrEqual(1000);
+    if (kind === "date") expect(attempts[1]!).toBeGreaterThanOrEqual(retryAt);
+    expect(fake.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
+  });
+
+  it("cancels a throttled registration without losing the confirmed post", async () => {
+    const controller = new AbortController();
+    const fake = fakeFetch({ bridgeStatus: 429, bridgeRetryAfter: "60" });
+    const session = new SlackBotSession({
+      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" },
+      fetchImpl: async (url, init) => {
+        if (String(url).includes("dp.example")) setTimeout(() => controller.abort(), 20);
+        return fake(url, init);
+      },
+    });
+    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" } }, controller.signal);
+    expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
+    expect(result.bridge_error).toMatch(/abort/i);
+    expect(fake.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(1);
+    expect(fake.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
   });
 
   it("does not claim routing when cloud intentionally declines registration", async () => {
