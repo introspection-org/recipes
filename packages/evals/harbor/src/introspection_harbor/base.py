@@ -39,7 +39,7 @@ BAKED_RECIPE_DIR = "/opt/introspection/recipe"
 # beside its own Recipe, so everything below the install step is shared.
 RUNTIME_LINK_NAME = "runtime"
 RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/{RUNTIME_LINK_NAME}"
-PI_LAUNCHER_PATH = "/usr/local/bin/pi"
+PI_LAUNCHER_PATH = "$HOME/.local/bin/pi"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
 RUNTIME_PROXY_PRELOAD_PATH = "/usr/local/lib/introspection-runtime/proxy-preload.js"
@@ -106,8 +106,9 @@ def pi_launcher_command() -> str:
     )
     return (
         "if command -v pi >/dev/null 2>&1; then exit 0; fi; "
-        f"printf '%s\\n' {shlex.quote(launcher)} > {PI_LAUNCHER_PATH} && "
-        f"chmod 0755 {PI_LAUNCHER_PATH}"
+        'mkdir -p "$HOME/.local/bin" && '
+        f"printf '%s\\n' {shlex.quote(launcher)} > \"{PI_LAUNCHER_PATH}\" && "
+        f'chmod 0755 "{PI_LAUNCHER_PATH}"'
     )
 
 

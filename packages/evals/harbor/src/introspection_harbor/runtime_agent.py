@@ -32,6 +32,6 @@ class IntrospectionRecipeAgent(RecipeAgentBase):
         (for example the Operator image) provides ``pi`` itself.
         """
 
-        await self.exec_as_root(environment, command=pi_launcher_command())
+        await self.exec_as_agent(environment, command=pi_launcher_command())
         await self.exec_as_agent(environment, command=prepare_recipe_command())
         await self.upload_replay_context(environment)

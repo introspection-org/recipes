@@ -140,7 +140,8 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertTrue(
             command.startswith("if command -v pi >/dev/null 2>&1; then exit 0; fi; ")
         )
-        self.assertIn("> /usr/local/bin/pi", command)
+        self.assertIn('mkdir -p "$HOME/.local/bin"', command)
+        self.assertIn('> "$HOME/.local/bin/pi"', command)
         self.assertIn("pi-coding-agent/dist/cli.js", command)
         self.assertIn("recipes/dist/pi-extension.js", command)
         self.assertNotIn("npm", command)
@@ -192,14 +193,18 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
         environment.upload_dir.assert_not_awaited()
         environment.upload_file.assert_not_awaited()
-        root_command = instance.exec_as_root.await_args.kwargs["command"]
-        self.assertIn("/usr/local/bin/pi", root_command)
-        agent_command = instance.exec_as_agent.await_args.kwargs["command"]
-        self.assertIn("test -f /opt/introspection/recipe/package.json", agent_command)
-        self.assertIn("mcp.local.example.json", agent_command)
-        for forbidden in ("npm", "git ", "introspection setup", "apt-get"):
-            self.assertNotIn(forbidden, root_command)
-            self.assertNotIn(forbidden, agent_command)
+        instance.exec_as_root.assert_not_awaited()
+        agent_commands = [
+            call.kwargs["command"] for call in instance.exec_as_agent.await_args_list
+        ]
+        self.assertIn("$HOME/.local/bin/pi", agent_commands[0])
+        self.assertIn(
+            "test -f /opt/introspection/recipe/package.json", agent_commands[1]
+        )
+        self.assertIn("mcp.local.example.json", agent_commands[1])
+        for command in agent_commands:
+            for forbidden in ("npm", "git ", "introspection setup", "apt-get"):
+                self.assertNotIn(forbidden, command)
 
     async def test_install_uploads_the_canonical_replay_context(self) -> None:
         spec = {
