@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.0...introspection-harbor-v0.5.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **harbor:** install pi launcher as agent ([#373](https://github.com/introspection-org/introspection-cli/issues/373)) ([ac28d4e](https://github.com/introspection-org/introspection-cli/commit/ac28d4ee27a453d16d334e1edb038245df982450))
+* **harbor:** run main commands with bash ([#374](https://github.com/introspection-org/introspection-cli/issues/374)) ([1520d5b](https://github.com/introspection-org/introspection-cli/commit/1520d5bb52ca583767741f601d0d7dab9035e72d))
+
 ## [0.5.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.4.7...introspection-harbor-v0.5.0) (2026-09-07)
 
 
