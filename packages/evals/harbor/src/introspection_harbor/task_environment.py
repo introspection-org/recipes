@@ -279,14 +279,21 @@ def exec_command(
 ) -> dict[str, Any]:
     """The exec spec for a Harbor shell command.
 
-    Harbor hands over a shell string, so it runs through `sh -c`. Per-command
-    environment has no server-side field, and is applied here as an `env`
-    prefix — which reaches the same process without the sandbox having to
-    carry it. `service` names one of the task's own compose services; the
-    main service is the agent slot and is left off the wire.
+    Harbor hands over a shell string. The Runtime-backed main slot uses Bash:
+    Harbor's installed-agent base prepends ``set -o pipefail``, which POSIX
+    ``sh`` implementations such as Dash reject. Sidecars remain on ``sh``
+    because they are arbitrary images that may not contain Bash. Per-command
+    environment has no server-side field, and is applied here as an ``env``
+    prefix. ``service`` names one of the task's own compose services; the main
+    service is the agent slot and is left off the wire.
     """
 
-    argv = ["/bin/sh", "-c", command]
+    shell = (
+        "/bin/sh"
+        if service is not None and service != MAIN_SERVICE_NAME
+        else "/bin/bash"
+    )
+    argv = [shell, "-c", command]
     if env:
         argv = ["env", *(f"{key}={value}" for key, value in env.items()), *argv]
     spec: dict[str, Any] = {

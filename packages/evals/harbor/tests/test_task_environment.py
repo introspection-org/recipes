@@ -180,14 +180,18 @@ class ComposeReadTest(unittest.TestCase):
 
 
 class ExecSpecTest(unittest.TestCase):
-    def test_a_shell_string_runs_through_sh_with_env_as_a_prefix(self) -> None:
-        # There is no per-command environment field on the row, so the
-        # variables ride an `env` prefix into the same process.
+    def test_a_main_shell_string_runs_through_bash_with_env_as_a_prefix(
+        self,
+    ) -> None:
+        # Harbor's installed-agent base prepends `set -o pipefail`, so the
+        # Runtime-backed main slot must use Bash rather than Dash's `sh`.
+        # There is no per-command environment field on the row, so variables
+        # ride an `env` prefix into the same process.
         self.assertEqual(
             exec_command("pytest -q", cwd=None, env=None, timeout_seconds=30),
             {
                 "kind": "exec",
-                "command": ["/bin/sh", "-c", "pytest -q"],
+                "command": ["/bin/bash", "-c", "pytest -q"],
                 "timeout_seconds": 30,
             },
         )
@@ -197,7 +201,7 @@ class ExecSpecTest(unittest.TestCase):
             ),
             {
                 "kind": "exec",
-                "command": ["env", "CI=1", "/bin/sh", "-c", "pytest -q"],
+                "command": ["env", "CI=1", "/bin/bash", "-c", "pytest -q"],
                 "timeout_seconds": 30,
                 "cwd": "/workspace",
             },
