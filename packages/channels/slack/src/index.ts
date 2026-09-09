@@ -23,8 +23,7 @@ export type {
 } from "./files.js";
 export { slackMessageBody, toPlainText } from "./format.js";
 export type { SlackMessageBody } from "./format.js";
-export { resolveSlackOrigin, slackDownloadRoot } from "./origin.js";
-export type { SlackEnv, SlackOrigin } from "./origin.js";
+export { slackDownloadRoot } from "./runtime.js";
 export {
   SLACK_CHANNEL_CAPABILITIES,
   SlackChannelAdapter,
@@ -38,27 +37,28 @@ export {
  * The package supplies transport and a capability descriptor; the tool names,
  * schemas, and opaque message handles come from
  * `@introspection-ai/recipes/channels`, so Slack cannot drift from any other
- * channel and cannot grow an addressing argument of its own.
+ * channel and cannot grow a provider-specific tool schema of its own.
  *
  * Recipes declare the provider. Each agent then selects complete tool names in
  * its YAML file.
  *
  * ```json
- * { "pi": { "connectors": [{ "provider": "slack" }] } }
+ * { "pi": { "channels": [{ "provider": "slack" }] } }
  * ```
  *
  * ```yaml
- * tools: [channel_reply, channel_read, channel_react, channel_fetch_file]
+ * tools: [channels]
  * ```
  *
- * Operations outside the bound channel tool set, including workspace search,
- * directory lookups, and posting to another conversation, are unsupported.
- * A separate proposal can define their contract and access model.
+ * Channel listing and explicit read/send targets use this session's
+ * credentials. Search, directory lookup, binding authorization and
+ * cross-channel reply routing are deferred.
  */
 export const slackRecipeConnectorModule = createChannelConnectorModule({
   provider: "slack",
   capabilities: SLACK_CHANNEL_CAPABILITIES,
-  createSession: ({ env, cwd }) => createSlackChannelSession({ env, cwd }),
+  createSession: ({ config, env, cwd }) =>
+    createSlackChannelSession({ config, env, cwd }),
 });
 
 export default slackRecipeConnectorModule;

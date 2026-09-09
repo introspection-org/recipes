@@ -7,7 +7,7 @@ import {
   type SlackBotSessionOptions,
   type SlackHttpResponse,
 } from "./client.js";
-import { slackDownloadRoot } from "./origin.js";
+import { slackDownloadRoot } from "./runtime.js";
 
 export const MAX_SLACK_FILE_BYTES = 100 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 120_000;

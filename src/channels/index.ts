@@ -1,9 +1,10 @@
 export { ChannelRefStore } from "./refs.js";
+export { resolveChannelConfig } from "./config.js";
+export type { ChannelConfig, ChannelEnvironment } from "./config.js";
 export {
   CHANNEL_TOOL_IDS,
   channelConnectorTools,
   channelToolIdsFor,
-  channelToolName,
   registerChannelTools,
 } from "./tools.js";
 export type {
@@ -24,6 +25,7 @@ export type {
   ChannelCapabilities,
   ChannelCursor,
   ChannelFileIdentity,
+  ChannelListEntry,
   ChannelReadPage,
   ChannelLocalFile,
   ChannelMessage,

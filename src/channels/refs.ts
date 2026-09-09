@@ -21,7 +21,7 @@ function handle(prefix: string): string {
  * Session-scoped opaque handles for messages and pagination cursors.
  *
  * The model only ever sees a handle this store minted, so it cannot name a
- * message it was never shown, and provider id formats stay out of tool schemas.
+ * message it was never shown to edit, retract, or react to.
  * The store is also where authorship lives. `resolveAuthored` is the single
  * check behind `channel_edit` and `channel_retract`, which keeps those tools
  * scoped to the agent's own messages rather than everything the provider
@@ -32,12 +32,12 @@ function handle(prefix: string): string {
 export class ChannelRefStore implements ChannelRefResolver {
   private readonly messages = new Map<MessageRef, ChannelMessageIdentity>();
   private readonly byIdentity = new Map<string, MessageRef>();
-  private readonly cursors = new Map<ChannelCursor, string>();
+  private readonly cursors = new Map<ChannelCursor, { value: string; scope?: string }>();
   private readonly files = new Map<FileRef, ChannelFileIdentity>();
   private readonly byFileIdentity = new Map<string, FileRef>();
 
   message(identity: ChannelMessageIdentity): MessageRef {
-    const key = `${identity.conversation} ${identity.id}`;
+    const key = JSON.stringify([identity.conversation, identity.thread ?? null, identity.id]);
     const existing = this.byIdentity.get(key);
     if (existing) {
       const previous = this.messages.get(existing)!;
@@ -75,24 +75,27 @@ export class ChannelRefStore implements ChannelRefResolver {
     return identity;
   }
 
-  cursor(providerCursor: string): ChannelCursor {
+  cursor(providerCursor: string, scope?: string): ChannelCursor {
     const cursor = handle(CURSOR_PREFIX);
-    this.cursors.set(cursor, providerCursor);
+    this.cursors.set(cursor, { value: providerCursor, scope });
     return cursor;
   }
 
-  resolveCursor(cursor: ChannelCursor): string {
+  resolveCursor(cursor: ChannelCursor, scope?: string): string {
     const providerCursor = this.cursors.get(cursor);
     if (!providerCursor) {
       throw new Error(
-        `Unknown cursor '${cursor}'. Use a cursor returned by a previous channel_read call.`,
+        `Unknown cursor '${cursor}'. Use a cursor returned by a previous channels read call.`,
       );
     }
-    return providerCursor;
+    if (providerCursor.scope !== scope) {
+      throw new Error("Cursor belongs to another channel or thread. Repeat the original read target.");
+    }
+    return providerCursor.value;
   }
 
   file(identity: ChannelFileIdentity): FileRef {
-    const key = `${identity.conversation} ${identity.id}`;
+    const key = JSON.stringify([identity.conversation, identity.thread ?? null, identity.id]);
     const existing = this.byFileIdentity.get(key);
     if (existing) return existing;
     const ref = handle(FILE_PREFIX);

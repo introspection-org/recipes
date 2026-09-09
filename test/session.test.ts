@@ -11,6 +11,7 @@ import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpBindingError } from "../src/mcp.js";
+import { registerChannelTools } from "../src/channels/index.js";
 import type { LoadMemoryIndexOptions } from "../src/memory.js";
 import {
   resolveRecipe,
@@ -242,6 +243,75 @@ describe("createAgentSession", () => {
     expect(handle.session.systemPrompt).toContain("Conformance agent");
   });
 
+  it("settles only after the required-channel-reply continuation, with a bounded failure", async () => {
+    const { recipeDir, workspaceDir } = fixture({ tools: ["channels"] });
+    const handle = await open({ recipeDir, cwd: workspaceDir, extensionFactories: [
+      (pi) => registerChannelTools(pi, {
+        provider: "test",
+        capabilities: { react: false, edit: false, retract: false, read: false,
+          attach: false, fetchFile: false, documents: false, resolveAuthors: false, permalinks: false },
+        reply: async () => ({ ref: "message-1" }),
+      }, { target: { provider: "test", conversation: "C1" }, requireReply: true }),
+    ] });
+    scriptReply(handle, "Private answer without a tool call");
+    const scripted = handle.session.agent.streamFunction;
+    handle.session.agent.streamFunction = (model, context, options) => {
+      const users = context.messages.filter((message) => message.role === "user");
+      expect(JSON.stringify(users[0])).toContain("hello");
+      expect(JSON.stringify(users[0])).not.toContain("<channel_context>");
+      expect(context.systemPrompt).toContain('<channel_context>\n{"provider":"test","channel_id":"C1","conversation_scope":"conversation"}\n</channel_context>');
+      for (const reminder of users.filter((message) => JSON.stringify(message).includes("No successful final channel reply"))) {
+        expect(JSON.stringify(reminder)).toContain("<channel_context>");
+        expect(JSON.stringify(reminder)).toContain("C1");
+      }
+      return scripted(model, context, options);
+    };
+    const events: string[] = [];
+    const unsubscribe = handle.session.subscribe((event) => {
+      if (event.type === "agent_end" || event.type === "agent_settled") events.push(event.type);
+    });
+    try {
+      await handle.session.prompt("hello");
+      expect(events).toEqual(["agent_end", "agent_end", "agent_settled"]);
+      expect(handle.session.messages.filter((message) => message.role === "custom" && message.customType === "channel-delivery-failed")).toHaveLength(1);
+      // A new inbound prompt gets its own single corrective attempt.
+      await handle.session.prompt("another question");
+      expect(events).toEqual(["agent_end", "agent_end", "agent_settled", "agent_end", "agent_end", "agent_settled"]);
+    } finally { unsubscribe(); }
+  });
+
+  it("delivers through the real channels tool during the corrective continuation", async () => {
+    const { recipeDir, workspaceDir } = fixture({ tools: ["channels"] });
+    const reply = vi.fn(async () => ({ ref: "message-1" }));
+    const handle = await open({ recipeDir, cwd: workspaceDir, extensionFactories: [
+      (pi) => registerChannelTools(pi, {
+        provider: "test",
+        capabilities: { react: false, edit: false, retract: false, read: false,
+          attach: false, fetchFile: false, documents: false, resolveAuthors: false, permalinks: false },
+        reply,
+      }, { target: { provider: "test", conversation: "C1" }, requireReply: true }),
+    ] });
+    let calls = 0;
+    handle.session.agent.streamFunction = () => {
+      const stream = new MockAssistantStream();
+      const message = assistantMessage("Private answer");
+      if (++calls === 2) {
+        message.content = [{ type: "toolCall", id: "reply-1", name: "channels", arguments: { command: "reply", text: "Delivered answer", final: true } }];
+        message.stopReason = "toolUse";
+      }
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: assistantMessage("") });
+        stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+      });
+      return stream;
+    };
+    await handle.session.prompt("hello");
+    expect(calls).toBe(3);
+    expect(reply, JSON.stringify(handle.session.messages.filter((message) => message.role === "toolResult"))).toHaveBeenCalledOnce();
+    expect(reply).toHaveBeenCalledWith(expect.objectContaining({ target: { provider: "test", conversation: "C1" } }), { text: "Delivered answer" });
+    expect(handle.session.messages.some((message) => message.role === "custom" && message.customType === "channel-delivery-failed")).toBe(false);
+  });
+
   it("loads memory before the host transforms the resolved prompt", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const memoriesDir = join(workspaceDir, "memories");
@@ -309,9 +379,9 @@ describe("createAgentSession", () => {
   it("starts connector sessions with the default Slack loadout", async () => {
     const { recipeDir, workspaceDir } = fixture({
       dependencies: { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" },
-      tools: ["channel_read", "channel_react", "channel_reply"],
+      tools: ["channels"],
       manifestPi: {
-        connectors: [{ provider: "slack" }],
+        channels: [{ provider: "slack" }],
       },
     });
     installSlackRecipeConnector(recipeDir);
@@ -319,9 +389,7 @@ describe("createAgentSession", () => {
 
     expect(handle.session.getActiveToolNames()).toEqual(
       expect.arrayContaining([
-        "channel_read",
-        "channel_react",
-        "channel_reply",
+        "channels",
       ])
     );
     expect(handle.session.getActiveToolNames()).not.toContain("tool_search");
@@ -330,9 +398,9 @@ describe("createAgentSession", () => {
   it("rejects connector tools unsupported by the provider", async () => {
     const { recipeDir, workspaceDir } = fixture({
       dependencies: { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" },
-      tools: ["channel_reply", "channel_delete_workspace"],
+      tools: ["channels", "channel_delete_workspace"],
       manifestPi: {
-        connectors: [{ provider: "slack" }],
+        channels: [{ provider: "slack" }],
       },
     });
     installSlackRecipeConnector(recipeDir);

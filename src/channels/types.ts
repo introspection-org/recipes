@@ -1,26 +1,13 @@
 /**
  * Provider-neutral channel primitives.
  *
- * A channel-origin task answers exactly one conversation. These types describe
- * what an agent may do *inside* that conversation, in vocabulary that is the
- * same for Slack, Teams, or anything else, so one prompt serves every channel.
- *
- * Two properties are structural rather than documented:
- *
- * - **The destination is bound.** An adapter method takes the conversation from
- *   the trusted `ChannelTarget` the host resolved; no tool schema built from
- *   these types carries a channel, thread, workspace, or user argument.
- * - **Unsupported is absent.** Tools are registered from `ChannelCapabilities`,
- *   so a channel that cannot read earlier messages simply has no read tool. A
- *   tool that always answers "unsupported" costs a model turn and teaches
- *   nothing.
- *
- * Operations outside this bound channel set, including workspace search,
- * directory lookups, and sends to another conversation, are unsupported. Their
- * contract and access model are deferred to a separate proposal.
+ * Reply defaults to the host-resolved origin. Adapters may opt into explicit
+ * read/send destinations within their existing credential session. This is a
+ * tool contract, not a sandbox-wide authorization boundary. Unsupported
+ * operations are absent. Search and directory lookup are not part of it.
  */
 
-/** The conversation a task answers. Resolved by the host, never by the model. */
+/** A conversation within one provider credential session. */
 export interface ChannelTarget {
   readonly provider: string;
   /** Provider conversation id (Slack channel, Teams conversation). */
@@ -41,6 +28,10 @@ export interface ChannelTarget {
  * already wasted a turn on.
  */
 export interface ChannelCapabilities {
+  /** Accept explicit read targets and expose send. Absent preserves bound tools. */
+  readonly targeting?: boolean;
+  /** List conversations available to this provider credential session. */
+  readonly list?: boolean;
   readonly react: boolean;
   readonly edit: boolean;
   readonly retract: boolean;
@@ -73,10 +64,7 @@ export type ChannelCursor = string;
 /**
  * An opaque handle for one file seen in this conversation.
  *
- * Same reasoning as `MessageRef`, and for the same threat: a provider file id
- * is reachable across every conversation the bot belongs to, so accepting one
- * from the model would reintroduce the addressing argument the bound tier
- * exists to remove — just spelled `file` instead of `channel`.
+ * Like message refs, files must have been observed in this credential session.
  */
 export type FileRef = string;
 
@@ -90,11 +78,8 @@ export interface ChannelAttachment {
   /**
    * Opaque session handle, not the provider's file id.
    *
-   * Minted when the file is seen in this conversation, and the only
-   * thing `channel_fetch_file` accepts. A raw provider file id would be an
-   * addressing argument in everything but name: a bot can usually read files
-   * from every conversation it belongs to, so a model that could pass one
-   * could reach a file this conversation never carried.
+   * Minted when the file is seen in this credential session, and the only
+   * thing `channel_fetch_file` accepts. Raw provider file IDs are not accepted.
    */
   readonly id: FileRef;
   readonly name?: string;
@@ -102,11 +87,14 @@ export interface ChannelAttachment {
   readonly size?: number;
 }
 
-/** One message as the model sees it: opaque ref, resolved author, no provider ids. */
+/** A message handle, resolved author, and optional provider thread coordinates. */
 export interface ChannelMessage {
   readonly ref: MessageRef;
   readonly author: ChannelAuthor;
   readonly text: string;
+  /** Provider thread root/topic usable with the read command's thread_id. */
+  readonly thread_id?: string;
+  readonly reply_count?: number;
   readonly timestamp?: string;
   readonly permalink?: string;
   readonly attachments?: readonly ChannelAttachment[];
@@ -115,6 +103,7 @@ export interface ChannelMessage {
 export interface ChannelPostResult {
   readonly ref: MessageRef;
   readonly permalink?: string;
+  readonly target?: ChannelTarget;
   /**
    * Whether the platform recorded the posted thread for reply bridging. False
    * with a reason is not a failure of the post — the message is out.
@@ -126,6 +115,15 @@ export interface ChannelPostResult {
 export interface ChannelReadPage {
   readonly messages: readonly ChannelMessage[];
   readonly cursor?: ChannelCursor;
+  readonly target?: ChannelTarget;
+  /** Direction of subsequent pages; messages within a page are chronological. */
+  readonly next_direction?: "older" | "newer";
+}
+
+export interface ChannelListEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: "public_channel" | "private_channel";
 }
 
 export interface ChannelLocalFile {
@@ -150,6 +148,8 @@ export interface ChannelMessageIdentity {
 export interface ChannelFileIdentity {
   readonly conversation: string;
   readonly id: string;
+  /** Read target where this file was observed; absent/null means the timeline. */
+  readonly thread?: string | null;
 }
 
 /**
@@ -180,7 +180,7 @@ export interface ChannelAdapterContext {
 /**
  * What a provider package implements.
  *
- * Every method takes the bound conversation from `ChannelAdapterContext`. An
+ * Every method takes its resolved conversation from `ChannelAdapterContext`. An
  * optional method must be present exactly when the matching capability is
  * true — `channelConnectorTools` asserts that, so a capability cannot claim
  * something the adapter cannot do.
@@ -195,6 +195,13 @@ export interface ChannelAdapter {
     ctx: ChannelAdapterContext,
     input: { text: string },
   ): Promise<ChannelPostResult>;
+  /** Explicit send; does not imply cross-channel reply routing support. */
+  send?(
+    ctx: ChannelAdapterContext,
+    input: { text: string },
+  ): Promise<ChannelPostResult>;
+  /** List conversations available to this credential session. */
+  list?(signal?: AbortSignal): Promise<readonly ChannelListEntry[]>;
 
   react?(
     ctx: ChannelAdapterContext,

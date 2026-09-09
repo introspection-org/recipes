@@ -64,17 +64,45 @@ function fixture(): string {
 }
 
 describe("Recipe Format", () => {
+  it.each([true, false, "true", 1, null])("validates requireReply %s", (requireReply) => {
+    const recipeDir = fixture();
+    const pkg = JSON.parse(readFileSync(join(recipeDir, "package.json"), "utf8"));
+    pkg.pi.channels = [{ provider: "slack", requireReply }];
+    pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
+    writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+    const manifest = readPiPackageManifest(recipeDir);
+    expect(validatePiPackageManifest(manifest).valid).toBe(typeof requireReply === "boolean");
+    if (typeof requireReply === "boolean") expect(manifest.channels?.[0]?.requireReply).toBe(requireReply);
+  });
+  it.each([
+    { commands: ["read", "reply"], valid: true },
+    { commands: [], valid: true },
+    { commands: ["read", "read"], valid: false },
+    { commands: [""], valid: false },
+    { commands: "read", valid: false },
+    { commands: [42], valid: false },
+  ])("validates connector command allowlist $commands", ({ commands, valid }) => {
+    const recipeDir = fixture();
+    const pkg = JSON.parse(readFileSync(join(recipeDir, "package.json"), "utf8"));
+    pkg.pi.channels = [{ provider: "slack", commands }];
+    pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
+    writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+    const manifest = readPiPackageManifest(recipeDir);
+    expect(validatePiPackageManifest(manifest).valid).toBe(valid);
+    if (valid) expect(manifest.channels?.[0]?.commands).toEqual(commands);
+  });
+
   it("reads a declarative Slack connector", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8")
     );
-    pkg.pi.connectors = [{ provider: "slack" }];
+    pkg.pi.channels = [{ provider: "slack" }];
     pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
     const manifest = readPiPackageManifest(recipeDir);
-    expect(manifest.connectors).toEqual([{ provider: "slack" }]);
+    expect(manifest.channels).toEqual([{ provider: "slack" }]);
     expect(validatePiPackageManifest(manifest)).toEqual({
       valid: true,
       findings: [],
@@ -86,7 +114,7 @@ describe("Recipe Format", () => {
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8")
     );
-    pkg.pi.connectors = [
+    pkg.pi.channels = [
       {
         provider: "slack",
         tools: { include: ["slack_origin"] },
@@ -101,7 +129,7 @@ describe("Recipe Format", () => {
       expect.arrayContaining([
         expect.objectContaining({
           message:
-            "package.json#pi.connectors[0] contains unknown field(s): tools",
+            "package.json#pi.channels[0] contains unknown field(s): tools",
         }),
       ])
     );
@@ -112,7 +140,7 @@ describe("Recipe Format", () => {
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8")
     );
-    pkg.pi.connectors = [{ provider: "discord" }];
+    pkg.pi.channels = [{ provider: "discord" }];
     pkg.dependencies = {
       "@introspection-ai/recipe-channel-discord": "0.1.0",
     };
@@ -129,7 +157,7 @@ describe("Recipe Format", () => {
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8")
     );
-    pkg.pi.connectors = [{ provider: "slack" }];
+    pkg.pi.channels = [{ provider: "slack" }];
     pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
     writeFileSync(
@@ -172,14 +200,14 @@ describe("Recipe Format", () => {
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8")
     );
-    pkg.pi.connectors = [{ provider: "slack" }];
+    pkg.pi.channels = [{ provider: "slack" }];
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
     const report = validatePiPackageManifest(readPiPackageManifest(recipeDir));
 
     expect(report.valid).toBe(false);
     expect(report.findings.map((finding) => finding.message)).toContain(
-      `package.json#pi.connectors provider 'slack' requires dependency '${SLACK_RECIPE_CHANNEL_PACKAGE}'`
+      `package.json#pi.channels provider 'slack' requires dependency '${SLACK_RECIPE_CHANNEL_PACKAGE}'`
     );
   });
 

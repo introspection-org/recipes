@@ -129,11 +129,11 @@ tests.
 - `@introspection-ai/recipes/pi-extension` — Pi extension entrypoint
 - `@introspection-ai/recipes/extensions` — session identity and conditional
   Recipe extension helpers
-- `@introspection-ai/recipes/channels` is the provider neutral `channel_*` tool
-  contract: capability descriptors, opaque message references, and the
-  registration that binds every tool to the task's own conversation
+- `@introspection-ai/recipes/channels` defines the provider-neutral `channels`
+  tool, capability descriptors, and opaque message references. Replies answer
+  the task's origin; capable adapters also support explicit read and send targets.
 - `@introspection-ai/recipe-channel-slack` is the optional Slack adapter. A
-  Recipe adds it as a dependency when it declares Slack in `pi.connectors`.
+  Recipe adds it as a dependency when it declares Slack in `pi.channels`.
 - `@introspection-ai/recipes/agents` — portable agent-run controller and tool
   contract
 - `@introspection-ai/recipes/interactions` — portable user-input and approval contract

@@ -53,7 +53,7 @@ For the selected agent, the extension:
 1. reads the root `package.json#pi` resource declarations;
 2. resolves the agent YAML, including `from:` inheritance;
 3. selects the model, thinking level, and tool allowlist;
-4. loads providers from `pi.connectors` and registers the tools selected by the agent;
+4. loads providers from `pi.channels` and registers the tools selected by the agent;
 5. loads selected skills, package prompts, and the complete Recipe extension closure;
 6. materializes declared MCP bindings from host or local configuration;
 7. exposes only the declared subagents through the shared `agent` tool.

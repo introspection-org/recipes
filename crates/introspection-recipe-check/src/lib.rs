@@ -569,7 +569,7 @@ fn validate_pi_config(
         "extensions",
         "skills",
         "prompts",
-        "connectors",
+        "channels",
         "mcp",
         "runtime",
     ]
@@ -611,27 +611,26 @@ fn validate_pi_config(
         resolved.insert(key, paths);
     }
 
-    validate_connector_config(pi.get("connectors"), &package.dependencies, ctx);
+    if let Some(channels) = pi.get("channels") {
+        validate_channel_config(channels, &package.dependencies, ctx);
+    }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
 
     resolved
 }
 
-fn validate_connector_config(
-    value: Option<&JsonValue>,
+fn validate_channel_config(
+    value: &JsonValue,
     dependencies: &BTreeSet<String>,
     ctx: &mut CheckContext,
 ) {
-    let Some(value) = value else {
-        return;
-    };
     let JsonValue::Array(connectors) = value else {
         ctx.error(
-            "pi.connectors_invalid",
+            "pi.channels_invalid",
             PACKAGE_JSON,
-            "package.json#pi.connectors must be an array",
-            Some("use a list of connector declarations"),
+            "package.json#pi.channels must be an array",
+            Some("use a list of channel declarations"),
         );
         return;
     };
@@ -640,36 +639,51 @@ fn validate_connector_config(
     for (index, connector) in connectors.iter().enumerate() {
         let JsonValue::Object(connector) = connector else {
             ctx.error(
-                "pi.connectors_invalid",
+                "pi.channels_invalid",
                 PACKAGE_JSON,
-                format!("package.json#pi.connectors[{index}] must be an object"),
-                Some("remove the entry or make it a connector declaration"),
+                format!("package.json#pi.channels[{index}] must be an object"),
+                Some("remove the entry or make it a channel declaration"),
             );
             continue;
         };
-        for key in connector.keys().filter(|key| key.as_str() != "provider") {
+        for key in connector.keys().filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply")) {
             ctx.error(
-                "pi.connectors_invalid",
+                "pi.channels_invalid",
                 PACKAGE_JSON,
-                format!("package.json#pi.connectors[{index}] contains unknown field '{key}'"),
-                Some("use only provider"),
+                format!("package.json#pi.channels[{index}] contains unknown field '{key}'"),
+                Some("use provider, optional commands, and optional requireReply"),
             );
+        }
+
+        if connector.get("requireReply").is_some_and(|value| !value.is_boolean()) {
+            ctx.error("pi.channels_invalid", PACKAGE_JSON,
+                format!("package.json#pi.channels[{index}].requireReply must be a boolean"), Some("use true or false"));
+        }
+        if let Some(commands) = connector.get("commands") {
+            let valid = commands.as_array().is_some_and(|values| {
+                let mut seen = BTreeSet::new();
+                values.iter().all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty() && seen.insert(value)))
+            });
+            if !valid {
+                ctx.error("pi.channels_invalid", PACKAGE_JSON,
+                    format!("package.json#pi.channels[{index}].commands must be an array of unique non-empty strings"), Some("use a list of unique command names"));
+            }
         }
 
         let provider = string_value(connector.get("provider"));
         match provider.as_deref() {
             Some(provider) if !providers.insert(provider.to_owned()) => ctx.error(
-                "pi.connectors_invalid",
+                "pi.channels_invalid",
                 PACKAGE_JSON,
-                format!("package.json#pi.connectors contains duplicate provider '{provider}'"),
-                Some("declare each connector provider once"),
+                format!("package.json#pi.channels contains duplicate provider '{provider}'"),
+                Some("declare each channel provider once"),
             ),
             Some(_) => {}
             None => ctx.error(
-                "pi.connectors_invalid",
+                "pi.channels_invalid",
                 PACKAGE_JSON,
-                format!("package.json#pi.connectors[{index}].provider must be non-empty"),
-                Some("name the connector provider"),
+                format!("package.json#pi.channels[{index}].provider must be non-empty"),
+                Some("name the channel provider"),
             ),
         }
 
@@ -677,9 +691,9 @@ fn validate_connector_config(
             let package = format!("@introspection-ai/recipe-channel-{provider}");
             if !dependencies.contains(&package) {
                 ctx.error(
-                    "pi.connectors_invalid",
+                    "pi.channels_invalid",
                     PACKAGE_JSON,
-                    format!("package.json#pi.connectors provider '{provider}' requires dependency '{package}'"),
+                    format!("package.json#pi.channels provider '{provider}' requires dependency '{package}'"),
                     Some("add the channel package to package.json#dependencies and commit the lockfile"),
                 );
             }
@@ -3132,7 +3146,7 @@ mod tests {
             },
             "pi": {
                 "agents": ["agents/*.yaml"],
-                "connectors": [{
+                "channels": [{
                     "provider": "slack"
                 }]
             }
@@ -3182,7 +3196,7 @@ mod tests {
 
         assert!(!report.valid);
         assert!(report.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "pi.connectors_invalid"
+            diagnostic.code == "pi.channels_invalid"
                 && diagnostic.message.contains("recipe-channel-slack")
         }));
 
@@ -3196,15 +3210,13 @@ mod tests {
             let mut package: JsonValue =
                 serde_json::from_str(package_file.content.as_deref().expect("package content"))
                     .expect("parse package");
-            package["dependencies"]["@introspection-ai/recipe-channel-slack"] =
-                invalid_version;
-            package_file.content =
-                Some(serde_json::to_string_pretty(&package).expect("serialize"));
+            package["dependencies"]["@introspection-ai/recipe-channel-slack"] = invalid_version;
+            package_file.content = Some(serde_json::to_string_pretty(&package).expect("serialize"));
 
             let report = check_recipe_files(&files);
 
             assert!(report.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == "pi.connectors_invalid"
+                diagnostic.code == "pi.channels_invalid"
                     && diagnostic.message.contains("recipe-channel-slack")
             }));
         }
@@ -3212,12 +3224,40 @@ mod tests {
 
     #[test]
     fn accepts_generic_connector_declarations() {
-        let report = check_recipe_files(&connector_recipe(&[
-            "slack_origin",
-            "slack_custom_report",
-        ]));
+        let report =
+            check_recipe_files(&connector_recipe(&["slack_origin", "slack_custom_report"]));
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn connector_command_allowlist_shape() {
+        for (commands, valid) in [
+            (json!(["read", "reply"]), true), (json!([]), true),
+            (json!(["read", "read"]), false), (json!([""]), false),
+            (json!("read"), false), (json!([42]), false),
+        ] {
+            let mut files = connector_recipe(&["channels"]);
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
+            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            package["pi"]["channels"][0]["commands"] = commands;
+            package_file.content = Some(serde_json::to_string(&package).unwrap());
+            let report = check_recipe_files(&files);
+            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), valid);
+        }
+    }
+
+    #[test]
+    fn connector_required_reply_shape() {
+        for value in [json!(true), json!(false), json!("true"), json!(1), JsonValue::Null] {
+            let mut files = connector_recipe(&["channels"]);
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
+            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            package["pi"]["channels"][0]["requireReply"] = value.clone();
+            package_file.content = Some(serde_json::to_string(&package).unwrap());
+            let report = check_recipe_files(&files);
+            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), value.is_boolean());
+        }
     }
 
     #[test]
@@ -3231,14 +3271,14 @@ mod tests {
         let mut package: JsonValue =
             serde_json::from_str(package_file.content.as_deref().expect("package content"))
                 .expect("parse package");
-        package["pi"]["connectors"][0]["tools"] = json!({ "include": ["origin"] });
+        package["pi"]["channels"][0]["tools"] = json!({ "include": ["origin"] });
         package_file.content = Some(serde_json::to_string_pretty(&package).expect("serialize"));
 
         let report = check_recipe_files(&files);
 
         assert!(!report.valid);
         assert!(report.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "pi.connectors_invalid"
+            diagnostic.code == "pi.channels_invalid"
                 && diagnostic.message.contains("unknown field 'tools'")
         }));
     }
