@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.1](https://github.com/introspection-org/recipes/compare/v0.25.0...v0.25.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* ensure managed fetch during Pi lifecycle ([#260](https://github.com/introspection-org/recipes/issues/260)) ([4a4f6dc](https://github.com/introspection-org/recipes/commit/4a4f6dc65cd2f7899f6a5bf17d90aa874a3f5e22))
+
+## [0.25.0](https://github.com/introspection-org/recipes/compare/v0.24.0...v0.25.0) (2026-09-07)
+
+
+### Features
+
+* **slack:** register issue thread routing after channel sends ([#261](https://github.com/introspection-org/recipes/issues/261)) ([19c8987](https://github.com/introspection-org/recipes/commit/19c89870bc756e8a37d64212e7c9fb91239fb131))
+
 ## [0.24.0](https://github.com/introspection-org/recipes/compare/v0.23.0...v0.24.0) (2026-09-04)
 
 
