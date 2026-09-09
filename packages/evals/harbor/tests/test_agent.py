@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from introspection_harbor.base import (
+    RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
     managed_model_environment,
     managed_runtime_preloads_command,
     pi_args,
@@ -59,11 +60,17 @@ class RunSpecTest(unittest.TestCase):
 
 class LaunchCommandTest(unittest.TestCase):
     def test_authored_run_launches_the_baked_pi_directly(self) -> None:
-        args = pi_args(_AUTHORED_SPEC["candidate"], _AUTHORED_SPEC)
+        args = pi_args(
+            _AUTHORED_SPEC["candidate"],
+            _AUTHORED_SPEC,
+            provider_http_extension_path=RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
+        )
         self.assertEqual(
             args,
             [
                 "pi",
+                "--extension",
+                "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js",
                 "--recipe",
                 "/opt/introspection/recipe",
                 "--print",
@@ -76,16 +83,24 @@ class LaunchCommandTest(unittest.TestCase):
 
     def test_inherited_agent_is_selected_by_declared_name(self) -> None:
         candidate = {**_AUTHORED_SPEC["candidate"], "agent": "agent2"}
-        args = pi_args(candidate, _AUTHORED_SPEC)
-        self.assertEqual(args[3:5], ["--agent", "agent2"])
+        args = pi_args(
+            candidate,
+            _AUTHORED_SPEC,
+            provider_http_extension_path=RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
+        )
+        self.assertEqual(args[5:7], ["--agent", "agent2"])
 
     def test_declared_model_is_selected(self) -> None:
         candidate = {
             **_AUTHORED_SPEC["candidate"],
             "model": "anthropic/claude-sonnet-4-6",
         }
-        args = pi_args(candidate, _AUTHORED_SPEC)
-        self.assertEqual(args[3:5], ["--model", "anthropic/claude-sonnet-4-6"])
+        args = pi_args(
+            candidate,
+            _AUTHORED_SPEC,
+            provider_http_extension_path=RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
+        )
+        self.assertEqual(args[5:7], ["--model", "anthropic/claude-sonnet-4-6"])
 
     def test_replay_runs_through_introspection_local(self) -> None:
         spec = {
@@ -102,6 +117,7 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertEqual(args[-1], "@/tmp/introspection-eval-prompt.md")
         self.assertNotIn("production prompt", args)
         self.assertNotIn("--session", args)
+        self.assertNotIn("provider-http-pi-extension.js", args)
 
     def test_run_command_captures_events_and_preserves_exit_status(self) -> None:
         command = recipe_run_command(["pi", "--recipe", "x"], "pi.jsonl")
@@ -243,7 +259,9 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(remote_path, "/tmp/introspection-eval-prompt.md")
         self.assertEqual(uploaded_path.name, "prompt.md")
         self.assertIn(
-            "pi --recipe /opt/introspection/recipe",
+            "pi --extension "
+            "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js "
+            "--recipe /opt/introspection/recipe",
             captured["command"],
         )
         self.assertIn("@/tmp/introspection-eval-prompt.md", captured["command"])

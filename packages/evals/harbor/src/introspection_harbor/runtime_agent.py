@@ -12,11 +12,18 @@ from typing import override
 
 from harbor.environments.base import BaseEnvironment
 
-from .base import RecipeAgentBase, pi_launcher_command, prepare_recipe_command
+from .base import (
+    RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
+    RecipeAgentBase,
+    pi_launcher_command,
+    prepare_recipe_command,
+)
 
 
 class IntrospectionRecipeAgent(RecipeAgentBase):
     """Run the Recipe baked into the trial image, as selected by the CLI."""
+
+    provider_http_extension_path = RUNTIME_PROVIDER_HTTP_EXTENSION_PATH
 
     @staticmethod
     @override

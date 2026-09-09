@@ -46,6 +46,9 @@ RUNTIME_PROXY_PRELOAD_PATH = "/usr/local/lib/introspection-runtime/proxy-preload
 RUNTIME_TELEMETRY_PRELOAD_PATH = (
     "/usr/local/lib/introspection-runtime/cli-telemetry-preload.js"
 )
+RUNTIME_PROVIDER_HTTP_EXTENSION_PATH = (
+    "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js"
+)
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 PROXY_KEY_ENV = "INTROSPECTION_PROXY_KEY"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
@@ -117,6 +120,7 @@ def pi_args(
     candidate: dict[str, Any],
     spec: dict[str, Any],
     recipe_dir: str = BAKED_RECIPE_DIR,
+    provider_http_extension_path: str | None = None,
 ) -> list[str]:
     """Build the Pi invocation, via ``introspection local`` only for a replay.
 
@@ -141,9 +145,10 @@ def pi_args(
     else:
         args = [
             "pi",
-            "--recipe",
-            recipe_dir,
         ]
+        if provider_http_extension_path:
+            args.extend(["--extension", provider_http_extension_path])
+        args.extend(["--recipe", recipe_dir])
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
         if candidate.get("model"):
@@ -241,6 +246,7 @@ class RecipeAgentBase(BaseInstalledAgent):
     # Where this adapter's Recipe ends up. The Runtime image bakes it; an
     # adapter that has to create the directory itself overrides this.
     recipe_dir: str = BAKED_RECIPE_DIR
+    provider_http_extension_path: str | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -285,7 +291,12 @@ class RecipeAgentBase(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=recipe_run_command(
-                pi_args(candidate, self._spec, self.recipe_dir),
+                pi_args(
+                    candidate,
+                    self._spec,
+                    self.recipe_dir,
+                    self.provider_http_extension_path,
+                ),
                 self._OUTPUT_FILENAME,
                 prelude=self.run_prelude(),
                 recipe_dir=self.recipe_dir,
