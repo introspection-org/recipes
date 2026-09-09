@@ -26,9 +26,11 @@ from harbor.models.trajectories import (
 ADAPTER_VERSION = version("introspection-harbor")
 
 
-def pi_events_to_atif(path: Path) -> Trajectory:
+def pi_messages(output: str) -> list[dict[str, Any]]:
+    """Read the canonical messages from Pi's mixed JSONL and diagnostic output."""
+
     messages: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
+    for line in output.splitlines():
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -37,6 +39,26 @@ def pi_events_to_atif(path: Path) -> Trajectory:
             event.get("message"), dict
         ):
             messages.append(event["message"])
+    return messages
+
+
+def pi_terminal_provider_error(output: str) -> str | None:
+    """Return the final provider failure, ignoring errors Pi later recovered from."""
+
+    for message in reversed(pi_messages(output)):
+        if message.get("role") != "assistant":
+            continue
+        if message.get("stopReason") != "error":
+            return None
+        detail = message.get("errorMessage")
+        return (
+            detail.strip() if isinstance(detail, str) and detail.strip() else "unknown"
+        )
+    return None
+
+
+def pi_events_to_atif(path: Path) -> Trajectory:
+    messages = pi_messages(path.read_text())
 
     steps: list[Step] = []
     calls: dict[str, tuple[int, ToolCall]] = {}

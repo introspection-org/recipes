@@ -15,11 +15,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, override
 
-from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
+from harbor.agents.installed.base import (
+    BaseInstalledAgent,
+    NonZeroAgentExitCodeError,
+    with_prompt_template,
+)
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
-from .trajectory import ADAPTER_VERSION, pi_events_to_atif
+from .trajectory import ADAPTER_VERSION, pi_events_to_atif, pi_terminal_provider_error
 
 RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
 # Where the Runtime image puts the Recipe. Mirrors INTROSPECTION_RECIPE_ROOT's
@@ -288,7 +292,7 @@ class RecipeAgentBase(BaseInstalledAgent):
             await environment.upload_file(prompt_path, REMOTE_EVAL_PROMPT_PATH)
 
         env = managed_model_environment(candidate.get("model"))
-        await self.exec_as_agent(
+        result = await self.exec_as_agent(
             environment,
             command=recipe_run_command(
                 pi_args(
@@ -303,6 +307,8 @@ class RecipeAgentBase(BaseInstalledAgent):
             ),
             **({"env": env} if env else {}),
         )
+        if detail := pi_terminal_provider_error(result.stdout or ""):
+            raise NonZeroAgentExitCodeError(f"Pi provider error: {detail}")
 
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:

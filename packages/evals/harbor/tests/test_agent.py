@@ -4,7 +4,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+
+from harbor.agents.installed.base import NonZeroAgentExitCodeError
 
 from introspection_harbor.base import (
     RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
@@ -17,7 +20,10 @@ from introspection_harbor.base import (
     selected_prompt,
 )
 from introspection_harbor.runtime_agent import IntrospectionRecipeAgent
-from introspection_harbor.trajectory import pi_events_to_atif
+from introspection_harbor.trajectory import (
+    pi_events_to_atif,
+    pi_terminal_provider_error,
+)
 
 _AUTHORED_SPEC = {
     "schema_version": 2,
@@ -248,6 +254,7 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
         async def capture_exec(*args, **kwargs):
             captured.update(kwargs)
+            return SimpleNamespace(stdout="")
 
         instance.exec_as_agent = capture_exec
         await instance.run.__wrapped__(
@@ -268,6 +275,26 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("large inline instruction", captured["command"])
         self.assertNotIn("env", captured)
         self.assertNotIn("cwd", captured)
+
+    async def test_run_rejects_a_terminal_provider_error(self) -> None:
+        instance = _agent(_AUTHORED_SPEC)
+        instance.exec_as_agent = AsyncMock(
+            return_value=SimpleNamespace(
+                stdout=(
+                    "not-json diagnostic output\n"
+                    '{"type":"message_end","message":{"role":"assistant",'
+                    '"stopReason":"error","errorMessage":"401 authentication_error"}}\n'
+                )
+            )
+        )
+        environment = Mock()
+        environment.upload_file = AsyncMock()
+
+        with self.assertRaisesRegex(
+            NonZeroAgentExitCodeError,
+            "Pi provider error: 401 authentication_error",
+        ):
+            await instance.run.__wrapped__(instance, "instruction", environment, Mock())
 
 
 class TrajectoryTest(unittest.TestCase):
@@ -363,6 +390,31 @@ class TrajectoryTest(unittest.TestCase):
             self.assertEqual(context.n_cache_tokens, 1)
             self.assertEqual(context.cost_usd, 0.5)
             self.assertEqual(context.metadata["introspection"], {"kind": "authored"})
+
+    def test_completion_accepts_a_retry_that_ends_successfully(self) -> None:
+        events = [
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "error",
+                    "errorMessage": "transient provider error",
+                    "content": [],
+                    "usage": {},
+                },
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "stopReason": "stop",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": {},
+                },
+            },
+        ]
+        output = "".join(json.dumps(event) + "\n" for event in events)
+        self.assertIsNone(pi_terminal_provider_error(output))
 
     def test_post_run_is_a_no_op_without_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
