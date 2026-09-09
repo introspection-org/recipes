@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.1...introspection-harbor-v0.5.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **harbor:** inherit child task credentials ([#380](https://github.com/introspection-org/introspection-cli/issues/380)) ([4a55521](https://github.com/introspection-org/introspection-cli/commit/4a555216bc1e4ab249ad555a673b7daed65d6e15))
+* **harbor:** load provider HTTP compatibility in Pi ([#381](https://github.com/introspection-org/introspection-cli/issues/381)) ([840381f](https://github.com/introspection-org/introspection-cli/commit/840381f3ef0919001029a35f48533329d118a0b6))
+
 ## [0.5.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.0...introspection-harbor-v0.5.1) (2026-09-08)
 
 
