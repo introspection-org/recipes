@@ -43,7 +43,12 @@ from harbor.environments.tar_transfer import (
     remote_unpack_command,
 )
 
-from .base import load_run_spec
+from .base import (
+    MANAGED_PROVIDER_KEYS,
+    PROXY_KEY_ENV,
+    SESSION_TOKEN_ENV,
+    load_run_spec,
+)
 from .client import (
     ControlPlaneClient,
     DataPlaneClient,
@@ -105,6 +110,20 @@ POLL_SECONDS = 3.0
 # is a loop of those.
 COMMAND_WAIT_SLICE_SECONDS = 60
 TRANSFER_DIR = "/tmp"
+
+# Harbor runs in the parent Operator task. Its agent adapter and a task's
+# ``*.env`` interpolation can therefore put parent credentials in a per-command
+# variable. An Introspection evaluation task owns its credential environment:
+# both managed-provider and BYOK modes put the child's session locator in these
+# variables, and egress resolves it to the effective provider credential.
+# Passing any parent override would shadow that child contract for the process.
+CHILD_OWNED_CREDENTIAL_ENV = frozenset(
+    {
+        SESSION_TOKEN_ENV,
+        PROXY_KEY_ENV,
+        *MANAGED_PROVIDER_KEYS.values(),
+    }
+)
 
 # Harbor prepares these before a trial and writes evidence into them
 # (`EnvironmentPaths`: /logs and its agent/verifier/artifacts children, /tests).
@@ -386,6 +405,27 @@ class IntrospectionEnvironment(BaseEnvironment):
         """
 
         return None
+
+    def _merge_env(self, env: dict[str, str] | None) -> dict[str, str] | None:
+        """Keep the child task's credential environment authoritative.
+
+        Harbor itself runs inside the parent Operator task. Provider variables
+        may arrive from the Recipe agent adapter or Harbor's task-env
+        interpolation. An Introspection evaluation sandbox already has its own
+        child locator in managed and BYOK modes, so omit every credential
+        override and let the command inherit the child's values. Raw BYOK
+        secrets belong behind egress and must not cross this task boundary.
+        """
+
+        merged = super()._merge_env(env)
+        if not merged:
+            return merged
+        filtered = {
+            name: value
+            for name, value in merged.items()
+            if name not in CHILD_OWNED_CREDENTIAL_ENV
+        }
+        return filtered or None
 
     @override
     def _validate_definition(self) -> None:

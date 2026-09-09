@@ -11,7 +11,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from harbor.environments.base import BaseEnvironment
 from harbor.models.trial.paths import EnvironmentPaths
 
 from introspection_harbor.client import (
@@ -206,6 +208,39 @@ class ExecSpecTest(unittest.TestCase):
                 "cwd": "/workspace",
             },
         )
+
+
+class ManagedCredentialBoundaryTest(unittest.TestCase):
+    def test_parent_credentials_do_not_shadow_child_task_credentials(self) -> None:
+        """Managed and BYOK commands must inherit the child's locator."""
+
+        environment = object.__new__(IntrospectionEnvironment)
+        merged = {
+            # The Recipe agent supplies the first shape directly; Harbor task
+            # env interpolation supplies the same parent value to a verifier.
+            "OPENAI_API_KEY": "operator-locator",
+            # A distinct value is still parent-owned. Platform BYOK is resolved
+            # by egress from the child locator, never copied into this command.
+            "ANTHROPIC_API_KEY": "raw-byok-secret",
+            "INTROSPECTION_PROXY_KEY": "operator-locator",
+            "INTROSPECTION_TOKEN": "operator-locator",
+            "UV_CACHE_DIR": "/tmp/uv-cache",
+        }
+        with patch.object(BaseEnvironment, "_merge_env", return_value=merged):
+            result = environment._merge_env(None)
+
+        self.assertEqual(result, {"UV_CACHE_DIR": "/tmp/uv-cache"})
+
+    def test_noncredential_command_environment_is_preserved(self) -> None:
+        environment = object.__new__(IntrospectionEnvironment)
+        merged = {
+            "TASK_SETTING": "value",
+            "UV_CACHE_DIR": "/tmp/uv-cache",
+        }
+        with patch.object(BaseEnvironment, "_merge_env", return_value=merged):
+            result = environment._merge_env(None)
+
+        self.assertEqual(result, merged)
 
 
 class ServiceScopedSpecTest(unittest.TestCase):

@@ -47,6 +47,7 @@ RUNTIME_TELEMETRY_PRELOAD_PATH = (
     "/usr/local/lib/introspection-runtime/cli-telemetry-preload.js"
 )
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
+PROXY_KEY_ENV = "INTROSPECTION_PROXY_KEY"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
 # Under managed egress the provider key Pi presents is the session locator;
 # the egress proxy swaps it for the real credential. Nothing else from the
