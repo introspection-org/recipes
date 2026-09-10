@@ -47,6 +47,7 @@ from .base import (
     MANAGED_PROVIDER_KEYS,
     PROXY_KEY_ENV,
     SESSION_TOKEN_ENV,
+    is_runtime_id,
     load_run_spec,
 )
 from .client import (
@@ -220,6 +221,23 @@ def unused_dockerfile(document: dict[str, Any], environment_dir: Path) -> Path |
         if context == root and dockerfile == "Dockerfile":
             return None
     return path
+
+
+async def trial_runtime_id(
+    spec: dict[str, Any],
+    control_plane: ControlPlaneClient,
+    environment: str,
+) -> str:
+    """Return the immutable Runtime version this trial records and starts.
+
+    UUID selectors pin an exact production-selected version. Slugs retain
+    environment-lane resolution.
+    """
+
+    runtime = str(spec["candidate"]["runtime"])
+    if is_runtime_id(runtime):
+        return runtime
+    return await control_plane.resolve_runtime(runtime, environment)
 
 
 def sidecar_services(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -595,8 +613,8 @@ class IntrospectionEnvironment(BaseEnvironment):
     async def start(self, force_build: bool) -> None:
         self._warn_if_the_login_expires_mid_trial()
         document = read_compose(self.environment_dir)
-        runtime_id = await self.control_plane.resolve_runtime(
-            self._spec["candidate"]["runtime"], self._task_environment
+        runtime_id = await trial_runtime_id(
+            self._spec, self.control_plane, self._task_environment
         )
         references = await self.resolve_images(document)
         compose = translate_compose(document, references)

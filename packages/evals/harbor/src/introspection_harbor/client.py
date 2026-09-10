@@ -87,9 +87,8 @@ def load_control_plane_credentials(
 ) -> ControlPlaneCredentials:
     """Resolve the Control Plane session, which resolves a Runtime selector.
 
-    A task is created with a `runtime_id`, but a trial names a Runtime the way
-    a person does — by group slug plus environment lane — and only the Control
-    Plane knows which version is active there.
+    A task is created with a `runtime_id`, but a trial may select a Runtime by
+    group slug plus environment lane or pin an exact version UUID.
     """
 
     env = os.environ if environ is None else environ

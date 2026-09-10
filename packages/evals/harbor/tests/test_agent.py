@@ -125,6 +125,18 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertNotIn("--session", args)
         self.assertNotIn("provider-http-pi-extension.js", args)
 
+    def test_replay_with_runtime_id_uses_the_only_baked_manifest(self) -> None:
+        spec = {
+            **_AUTHORED_SPEC,
+            "candidate": {
+                **_AUTHORED_SPEC["candidate"],
+                "runtime": "01990000-0000-7000-8000-000000000001",
+            },
+            "input": {"replay_context_path": "/host/replay-context.json"},
+        }
+        args = pi_args(spec["candidate"], spec)
+        self.assertNotIn("--runtime", args)
+
     def test_run_command_captures_events_and_preserves_exit_status(self) -> None:
         command = recipe_run_command(["pi", "--recipe", "x"], "pi.jsonl")
         self.assertTrue(command.startswith("cd /opt/introspection/recipe && "))

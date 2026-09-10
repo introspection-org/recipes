@@ -14,6 +14,7 @@ import shlex
 import tempfile
 from pathlib import Path
 from typing import Any, override
+from uuid import UUID
 
 from harbor.agents.installed.base import (
     BaseInstalledAgent,
@@ -43,6 +44,17 @@ BAKED_RECIPE_DIR = "/opt/introspection/recipe"
 # beside its own Recipe, so everything below the install step is shared.
 RUNTIME_LINK_NAME = "runtime"
 RUNTIME_LINK_DIR = f"{BAKED_RECIPE_DIR}/{RUNTIME_LINK_NAME}"
+
+
+def is_runtime_id(value: str) -> bool:
+    """Whether a Runtime selector is an immutable version UUID."""
+
+    try:
+        return str(UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
 PI_LAUNCHER_PATH = "$HOME/.local/bin/pi"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
@@ -139,9 +151,9 @@ def pi_args(
             "local",
             "--work-dir",
             recipe_dir,
-            "--runtime",
-            candidate["runtime"],
         ]
+        if not is_runtime_id(candidate["runtime"]):
+            args.extend(["--runtime", candidate["runtime"]])
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
         args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])

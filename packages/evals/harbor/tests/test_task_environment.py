@@ -11,7 +11,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from harbor.environments.base import BaseEnvironment
 from harbor.models.trial.paths import EnvironmentPaths
@@ -35,6 +35,7 @@ from introspection_harbor.task_environment import (
     read_compose,
     sidecar_services,
     translate_compose,
+    trial_runtime_id,
     unused_dockerfile,
 )
 
@@ -179,6 +180,40 @@ class ComposeReadTest(unittest.TestCase):
             )
             with self.assertRaises(ComposeUnsupportedError):
                 build_context({"build": ["nope"]}, directory)
+
+
+class RuntimeSelectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_production_runtime_id_bypasses_environment_lane_resolution(
+        self,
+    ) -> None:
+        control_plane = AsyncMock()
+        selected = await trial_runtime_id(
+            {
+                "candidate": {
+                    "runtime": "01990000-0000-7000-8000-000000000001",
+                }
+            },
+            control_plane,
+            "development",
+        )
+
+        self.assertEqual(selected, "01990000-0000-7000-8000-000000000001")
+        control_plane.resolve_runtime.assert_not_awaited()
+
+    async def test_legacy_run_resolves_slug_in_requested_lane(self) -> None:
+        control_plane = AsyncMock()
+        control_plane.resolve_runtime.return_value = "resolved-runtime"
+
+        selected = await trial_runtime_id(
+            {"candidate": {"runtime": "traffic-violations-agent"}},
+            control_plane,
+            "production",
+        )
+
+        self.assertEqual(selected, "resolved-runtime")
+        control_plane.resolve_runtime.assert_awaited_once_with(
+            "traffic-violations-agent", "production"
+        )
 
 
 class ExecSpecTest(unittest.TestCase):
