@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.2...introspection-harbor-v0.6.0) (2026-09-10)
+
+
+### Features
+
+* **harbor:** support exact runtime pins ([#391](https://github.com/introspection-org/introspection-cli/issues/391)) ([58b8e42](https://github.com/introspection-org/introspection-cli/commit/58b8e42b7f379e7f33e0b0791da0fac3760fda93))
+
+
+### Bug Fixes
+
+* **harbor:** fail trials on terminal provider errors ([#364](https://github.com/introspection-org/introspection-cli/issues/364)) ([2434669](https://github.com/introspection-org/introspection-cli/commit/2434669f2de081a578eb0430bc7df88b27cd2115))
+
 ## [0.5.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.1...introspection-harbor-v0.5.2) (2026-09-09)
 
 
