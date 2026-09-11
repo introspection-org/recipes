@@ -162,12 +162,12 @@ pub fn parse_template_manifest(text: &str) -> Result<TemplateManifest, TemplateE
             manifest.version
         )));
     }
-    let mut seen: BTreeMap<&str, ()> = BTreeMap::new();
+    let mut seen: BTreeMap<&str, VariableKind> = BTreeMap::new();
     for variable in &manifest.variables {
         if variable.name.is_empty() {
             return Err(TemplateError::new("a template variable needs a name"));
         }
-        if seen.insert(variable.name.as_str(), ()).is_some() {
+        if seen.insert(variable.name.as_str(), variable.kind).is_some() {
             return Err(TemplateError::new(format!(
                 "{MANIFEST_PATH} declares '{}' twice",
                 variable.name
@@ -180,11 +180,24 @@ pub fn parse_template_manifest(text: &str) -> Result<TemplateManifest, TemplateE
             )));
         }
         if let Some(when) = variable.when.as_deref() {
-            if !seen.contains_key(when) {
-                return Err(TemplateError::new(format!(
-                    "'{}' is conditional on '{when}', which is not declared before it",
-                    variable.name
-                )));
+            match seen.get(when) {
+                None => {
+                    return Err(TemplateError::new(format!(
+                        "'{}' is conditional on '{when}', which is not declared before it",
+                        variable.name
+                    )))
+                }
+                // Refused rather than coerced, because the failure is silent
+                // and inverted: a missing `type: boolean` leaves the default
+                // string "false", which is non-empty and therefore true, so
+                // the feature turns itself on and then demands its values.
+                Some(kind) if *kind != VariableKind::Boolean => {
+                    return Err(TemplateError::new(format!(
+                        "'{}' is conditional on '{when}', which is not a boolean",
+                        variable.name
+                    )))
+                }
+                Some(_) => {}
             }
         }
     }
@@ -581,6 +594,19 @@ variables:
         )
         .expect_err("refused");
         assert!(error.message().contains("twice"));
+    }
+
+    #[test]
+    fn a_when_naming_a_non_boolean_is_refused() {
+        let error = parse_template_manifest(
+            "version: 1\nvariables:\n  - name: mode\n    default: \"false\"\n  - name: url\n    when: mode\n    default: x\n",
+        )
+        .expect_err("refused");
+        assert!(
+            error.message().contains("not a boolean"),
+            "{}",
+            error.message()
+        );
     }
 
     #[test]
