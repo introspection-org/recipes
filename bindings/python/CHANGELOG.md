@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.5.0...introspection-recipe-check-python-v0.6.0) (2026-09-11)
+
+
+### Features
+
+* **template:** render a template repository into a Recipe ([#270](https://github.com/introspection-org/recipes/issues/270)) ([0f33c0b](https://github.com/introspection-org/recipes/commit/0f33c0b6115e536209f59a14c66a9e27f8702b1b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.5.0 to 0.6.0
+
 ## [0.5.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.4.0...introspection-recipe-check-python-v0.5.0) (2026-09-04)
 
 
