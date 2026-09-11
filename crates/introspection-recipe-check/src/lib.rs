@@ -7,6 +7,7 @@
 mod judges;
 pub mod resources;
 pub mod spec;
+pub mod template;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path};
