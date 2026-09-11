@@ -155,7 +155,9 @@ def _local_path(location: str | os.PathLike[str]) -> Path:
     if parsed.scheme in ("", "file"):
         if parsed.scheme == "file":
             if parsed.netloc not in ("", "localhost"):
-                raise ValueError(f"{text} names a remote host; only local templates are read")
+                raise ValueError(
+                    f"{text} names a remote host; only local templates are read"
+                )
             return Path(unquote(parsed.path))
         return Path(text)
     raise ValueError(f"{text} is not a local path; only local templates are read")

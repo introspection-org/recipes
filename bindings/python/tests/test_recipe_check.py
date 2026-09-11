@@ -80,7 +80,10 @@ def _template() -> introspection_recipe_check.RecipeFiles:
                 "content": "name: coding-agent\npath: .\ndescription: Customizable Pi coding agent\n",
             },
             {"path": "package.json", "content": '{"name": "coding-agent"}'},
-            {"path": "SYSTEM.md", "content": "You are {{slug}}, talking to {{mcp_backend_url}}.\n"},
+            {
+                "path": "SYSTEM.md",
+                "content": "You are {{slug}}, talking to {{mcp_backend_url}}.\n",
+            },
         ],
         "directories": [],
     }
@@ -105,9 +108,14 @@ def test_format_rewrites_identity_and_fills_declared_values() -> None:
     )
     assert ".introspection/my-agent.yaml" in _paths(formatted)
     assert ".introspection/coding-agent.yaml" not in _paths(formatted)
-    assert "name: My Agent" in (_content(formatted, ".introspection/my-agent.yaml") or "")
+    assert "name: My Agent" in (
+        _content(formatted, ".introspection/my-agent.yaml") or ""
+    )
     assert _content(formatted, "package.json") == '{"name": "my-agent"}'
-    assert _content(formatted, "SYSTEM.md") == "You are my-agent, talking to https://mcp.example.com.\n"
+    assert (
+        _content(formatted, "SYSTEM.md")
+        == "You are my-agent, talking to https://mcp.example.com.\n"
+    )
 
 
 def test_format_leaves_an_undeclared_token_alone() -> None:
@@ -146,7 +154,9 @@ def test_format_refuses_a_slug_the_platform_would_not_accept() -> None:
 
 def test_load_recipe_dir_reads_a_local_path(tmp_path) -> None:
     (tmp_path / ".introspection").mkdir()
-    (tmp_path / ".introspection" / "coding-agent.yaml").write_text("name: coding-agent\npath: .\n")
+    (tmp_path / ".introspection" / "coding-agent.yaml").write_text(
+        "name: coding-agent\npath: .\n"
+    )
     (tmp_path / "package.json").write_text('{"name": "coding-agent"}')
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main")
@@ -161,4 +171,6 @@ def test_load_recipe_dir_refuses_a_remote_location() -> None:
     import pytest
 
     with pytest.raises(ValueError):
-        introspection_recipe_check.load_recipe_dir("https://github.com/introspection-recipes/template-starter")
+        introspection_recipe_check.load_recipe_dir(
+            "https://github.com/introspection-recipes/template-starter"
+        )
