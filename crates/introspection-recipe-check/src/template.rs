@@ -1,0 +1,542 @@
+//! Render a template repository into a Recipe.
+//!
+//! I/O-free like the rest of this crate: a [`RecipeFiles`] snapshot of the
+//! template repository in, the rendered snapshot out. Hosts own discovery and
+//! writeback — the CLI writes a checkout, the control plane writes a first
+//! commit.
+//!
+//! A template repository is **not** a Recipe, and says so by its shape:
+//!
+//! ```text
+//! template.yaml          the variables, their types, defaults and prompts
+//! template/              the payload, and the only thing rendered
+//!   .introspection/{{ slug }}.yaml.tmpl
+//!   package.json.tmpl
+//!   SYSTEM.md            no suffix: copied byte for byte
+//! tests/cases.yaml       render these, then check the output
+//! ```
+//!
+//! Two rules carry the design. **`.tmpl` opts a file in**, so a prompt full of
+//! `{{ }}` — which is most of what a Recipe is — survives untouched unless its
+//! author asked for rendering. And **paths render too**, so `{{ slug }}` names
+//! a file or a directory as readily as it fills one.
+//!
+//! Substitution only, deliberately: no conditionals, no loops, no engine. What
+//! a template has to produce is a working starting point that an agent then
+//! edits, and every feature beyond `{{ name }}` is one the generated Recipe
+//! carries no trace of. Double braces rather than single because a template's
+//! files are mostly JSON, and `{` would have to be escaped in every one of
+//! them.
+
+use std::collections::BTreeMap;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{RecipeFile, RecipeFiles};
+
+/// The template repository's own manifest.
+pub const MANIFEST_PATH: &str = "template.yaml";
+
+/// The only directory that is rendered. Everything outside it is the template
+/// repository's own machinery — its tests, its CI, its README.
+pub const PAYLOAD_DIR: &str = "template/";
+
+/// Suffix marking a file as rendered. Dropped from the output path.
+pub const RENDER_SUFFIX: &str = ".tmpl";
+
+/// What a template declares about itself.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TemplateManifest {
+    #[serde(default = "default_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Declaration order is preserved, because it is the order a host prompts in.
+    #[serde(default)]
+    pub variables: Vec<TemplateVariable>,
+}
+
+fn default_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TemplateVariable {
+    pub name: String,
+    #[serde(default, rename = "type")]
+    pub kind: VariableKind,
+    /// May reference variables declared before it (`default: "{{ slug }}"`).
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub choices: Vec<String>,
+    /// Names an earlier boolean; the variable applies only when it is true. A
+    /// variable that does not apply is neither prompted for nor required.
+    #[serde(default)]
+    pub when: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableKind {
+    #[default]
+    String,
+    Boolean,
+    Integer,
+    Choice,
+}
+
+/// A resolved value. Everything renders as text; only `when` reads truth.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VariableValue {
+    Boolean(bool),
+    Integer(i64),
+    String(String),
+}
+
+impl VariableValue {
+    pub fn as_text(&self) -> String {
+        match self {
+            Self::Boolean(value) => value.to_string(),
+            Self::Integer(value) => value.to_string(),
+            Self::String(value) => value.clone(),
+        }
+    }
+
+    fn is_true(&self) -> bool {
+        match self {
+            Self::Boolean(value) => *value,
+            Self::Integer(value) => *value != 0,
+            Self::String(value) => !value.is_empty(),
+        }
+    }
+}
+
+/// Raised for the whole template when it cannot be rendered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateError(String);
+
+impl TemplateError {
+    fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for TemplateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TemplateError {}
+
+/// Parse `template.yaml`.
+pub fn parse_template_manifest(text: &str) -> Result<TemplateManifest, TemplateError> {
+    let manifest: TemplateManifest = serde_saphyr::from_str(text)
+        .map_err(|error| TemplateError::new(format!("parsing {MANIFEST_PATH}: {error}")))?;
+    if manifest.version != 1 {
+        return Err(TemplateError::new(format!(
+            "{MANIFEST_PATH} declares version {}, which this renderer does not understand",
+            manifest.version
+        )));
+    }
+    let mut seen: BTreeMap<&str, ()> = BTreeMap::new();
+    for variable in &manifest.variables {
+        if variable.name.is_empty() {
+            return Err(TemplateError::new("a template variable needs a name"));
+        }
+        if seen.insert(variable.name.as_str(), ()).is_some() {
+            return Err(TemplateError::new(format!(
+                "{MANIFEST_PATH} declares '{}' twice",
+                variable.name
+            )));
+        }
+        if variable.kind == VariableKind::Choice && variable.choices.is_empty() {
+            return Err(TemplateError::new(format!(
+                "'{}' is a choice with no choices",
+                variable.name
+            )));
+        }
+        if let Some(when) = variable.when.as_deref() {
+            if !seen.contains_key(when) {
+                return Err(TemplateError::new(format!(
+                    "'{}' is conditional on '{when}', which is not declared before it",
+                    variable.name
+                )));
+            }
+        }
+    }
+    Ok(manifest)
+}
+
+/// Resolve caller-supplied values against the manifest, filling defaults.
+pub fn resolve_variables(
+    manifest: &TemplateManifest,
+    supplied: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, VariableValue>, TemplateError> {
+    let mut resolved: BTreeMap<String, VariableValue> = BTreeMap::new();
+    for variable in &manifest.variables {
+        if let Some(when) = variable.when.as_deref() {
+            if !resolved
+                .get(when)
+                .map(VariableValue::is_true)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+        }
+        let raw = match supplied.get(&variable.name) {
+            Some(value) => value.clone(),
+            None => match &variable.default {
+                // A default may reference the values already resolved.
+                Some(default) => substitute(default, &resolved)?,
+                None => {
+                    return Err(TemplateError::new(format!(
+                        "'{}' has no value and no default",
+                        variable.name
+                    )))
+                }
+            },
+        };
+        resolved.insert(variable.name.clone(), coerce(variable, &raw)?);
+    }
+    for name in supplied.keys() {
+        if !manifest.variables.iter().any(|v| &v.name == name) {
+            return Err(TemplateError::new(format!(
+                "'{name}' is not declared by {MANIFEST_PATH}"
+            )));
+        }
+    }
+    Ok(resolved)
+}
+
+/// Render the template repository's payload with `variables` already resolved.
+pub fn render_template(
+    files: &RecipeFiles,
+    variables: &BTreeMap<String, VariableValue>,
+) -> Result<RecipeFiles, TemplateError> {
+    let mut out = RecipeFiles {
+        files: Vec::new(),
+        directories: Vec::new(),
+    };
+
+    for file in &files.files {
+        let Some(relative) = file.path.strip_prefix(PAYLOAD_DIR) else {
+            continue;
+        };
+        let path = substitute(relative, variables)?;
+        match relative.ends_with(RENDER_SUFFIX) {
+            true => {
+                let content = file.content.as_deref().ok_or_else(|| {
+                    TemplateError::new(format!(
+                        "{} was not read, so it cannot be rendered",
+                        file.path
+                    ))
+                })?;
+                out.files.push(RecipeFile {
+                    path: path
+                        .strip_suffix(RENDER_SUFFIX)
+                        .unwrap_or(&path)
+                        .to_string(),
+                    content: Some(substitute(content, variables)?),
+                });
+            }
+            // Copied byte for byte: whatever braces it holds are its own.
+            false => out.files.push(RecipeFile {
+                path,
+                content: file.content.clone(),
+            }),
+        }
+    }
+
+    for directory in &files.directories {
+        let Some(relative) = directory.strip_prefix(PAYLOAD_DIR) else {
+            continue;
+        };
+        out.directories.push(substitute(relative, variables)?);
+    }
+
+    if out.files.is_empty() {
+        return Err(TemplateError::new(format!(
+            "the template has no files under {PAYLOAD_DIR}"
+        )));
+    }
+    Ok(out)
+}
+
+/// Replace every `{{ key }}` with its value.
+///
+/// An undeclared token is an error rather than an empty string or a
+/// pass-through: the file opted in by carrying `.tmpl`, so a token it does not
+/// declare is a typo, and the alternative is a Recipe that renders, validates,
+/// and is quietly missing the value someone chose.
+fn substitute(
+    text: &str,
+    variables: &BTreeMap<String, VariableValue>,
+) -> Result<String, TemplateError> {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find("{{") {
+        let (head, tail) = rest.split_at(open);
+        out.push_str(head);
+        let Some(close) = tail.find("}}") else {
+            return Err(TemplateError::new(format!(
+                "an unclosed '{{{{' in {}",
+                snippet(text)
+            )));
+        };
+        let key = tail[2..close].trim();
+        match variables.get(key) {
+            Some(value) => out.push_str(&value.as_text()),
+            None => {
+                return Err(TemplateError::new(format!(
+                    "'{key}' is not a declared variable, in {}",
+                    snippet(text)
+                )))
+            }
+        }
+        rest = &tail[close + 2..];
+    }
+    out.push_str(rest);
+    Ok(out)
+}
+
+fn snippet(text: &str) -> String {
+    let first = text.lines().next().unwrap_or_default();
+    if first.len() > 60 {
+        format!("'{}…'", &first[..60])
+    } else {
+        format!("'{first}'")
+    }
+}
+
+fn coerce(variable: &TemplateVariable, raw: &str) -> Result<VariableValue, TemplateError> {
+    match variable.kind {
+        VariableKind::String => Ok(VariableValue::String(raw.to_string())),
+        VariableKind::Boolean => match raw {
+            "true" | "True" | "yes" | "1" => Ok(VariableValue::Boolean(true)),
+            "false" | "False" | "no" | "0" | "" => Ok(VariableValue::Boolean(false)),
+            other => Err(TemplateError::new(format!(
+                "'{other}' is not a boolean for '{}'",
+                variable.name
+            ))),
+        },
+        VariableKind::Integer => raw.parse::<i64>().map(VariableValue::Integer).map_err(|_| {
+            TemplateError::new(format!("'{raw}' is not an integer for '{}'", variable.name))
+        }),
+        VariableKind::Choice => {
+            if variable.choices.iter().any(|choice| choice == raw) {
+                Ok(VariableValue::String(raw.to_string()))
+            } else {
+                Err(TemplateError::new(format!(
+                    "'{raw}' is not one of the choices for '{}': {}",
+                    variable.name,
+                    variable.choices.join(", ")
+                )))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MANIFEST: &str = r#"
+version: 1
+name: Coding agent
+variables:
+  - name: slug
+    type: string
+    prompt: Runtime slug
+  - name: name
+    type: string
+    default: "{{ slug }}"
+  - name: model
+    type: choice
+    choices: [claude-opus-5, claude-sonnet-5]
+    default: claude-opus-5
+  - name: use_mcp
+    type: boolean
+    default: "false"
+  - name: mcp_backend_url
+    type: string
+    when: use_mcp
+    default: ""
+"#;
+
+    fn template() -> RecipeFiles {
+        RecipeFiles {
+            files: vec![
+                RecipeFile::new("template.yaml", MANIFEST),
+                RecipeFile::new(
+                    "template/.introspection/{{ slug }}.yaml.tmpl",
+                    "name: {{ name }}\npath: .\n",
+                ),
+                RecipeFile::new(
+                    "template/package.json.tmpl",
+                    "{\n  \"name\": \"{{ slug }}\",\n  \"model\": \"{{ model }}\"\n}\n",
+                ),
+                // No suffix: a prompt keeps its own braces.
+                RecipeFile::new("template/SYSTEM.md", "Answer with {{ user_input }}.\n"),
+                RecipeFile::new("tests/cases.yaml", "cases: []\n"),
+                RecipeFile::new("README.md", "# the template repository itself\n"),
+            ],
+            directories: vec![],
+        }
+    }
+
+    fn supplied(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    fn render(pairs: &[(&str, &str)]) -> Result<RecipeFiles, TemplateError> {
+        let manifest = parse_template_manifest(MANIFEST)?;
+        let values = resolve_variables(&manifest, &supplied(pairs))?;
+        render_template(&template(), &values)
+    }
+
+    fn paths(files: &RecipeFiles) -> Vec<&str> {
+        files.files.iter().map(|f| f.path.as_str()).collect()
+    }
+
+    fn content<'a>(files: &'a RecipeFiles, path: &str) -> &'a str {
+        files
+            .files
+            .iter()
+            .find(|f| f.path == path)
+            .and_then(|f| f.content.as_deref())
+            .unwrap_or_else(|| panic!("{path} missing from {:?}", paths(files)))
+    }
+
+    #[test]
+    fn renders_paths_and_drops_the_suffix() {
+        let out = render(&[("slug", "my-agent")]).expect("render");
+        assert!(paths(&out).contains(&".introspection/my-agent.yaml"));
+        assert!(paths(&out).contains(&"package.json"));
+    }
+
+    #[test]
+    fn only_the_payload_is_rendered() {
+        let out = render(&[("slug", "my-agent")]).expect("render");
+        // The template repository's own machinery never reaches the Recipe.
+        assert!(!paths(&out).iter().any(|p| p.contains("cases.yaml")));
+        assert!(!paths(&out).contains(&"README.md"));
+        assert!(!paths(&out).contains(&"template.yaml"));
+    }
+
+    #[test]
+    fn a_file_without_the_suffix_keeps_its_own_braces() {
+        let out = render(&[("slug", "my-agent")]).expect("render");
+        assert_eq!(
+            content(&out, "SYSTEM.md"),
+            "Answer with {{ user_input }}.\n"
+        );
+    }
+
+    #[test]
+    fn a_default_may_reference_an_earlier_variable() {
+        let out = render(&[("slug", "my-agent")]).expect("render");
+        assert!(content(&out, ".introspection/my-agent.yaml").contains("name: my-agent"));
+    }
+
+    #[test]
+    fn a_supplied_value_wins_over_the_default() {
+        let out = render(&[("slug", "my-agent"), ("name", "My Agent")]).expect("render");
+        assert!(content(&out, ".introspection/my-agent.yaml").contains("name: My Agent"));
+        assert!(paths(&out).contains(&".introspection/my-agent.yaml"));
+    }
+
+    #[test]
+    fn a_choice_outside_its_choices_is_refused() {
+        let error = render(&[("slug", "my-agent"), ("model", "gpt-4")]).expect_err("refused");
+        assert!(error.message().contains("not one of the choices"));
+    }
+
+    #[test]
+    fn an_undeclared_variable_is_refused_rather_than_ignored() {
+        let error = render(&[("slug", "my-agent"), ("mdoel", "x")]).expect_err("refused");
+        assert!(error.message().contains("not declared"));
+    }
+
+    #[test]
+    fn a_typo_in_a_rendered_file_is_an_error_not_an_empty_string() {
+        let manifest = parse_template_manifest(MANIFEST).expect("manifest");
+        let values =
+            resolve_variables(&manifest, &supplied(&[("slug", "my-agent")])).expect("values");
+        let mut files = template();
+        files.files.push(RecipeFile::new(
+            "template/AGENTS.md.tmpl",
+            "I am {{ slgu }}.\n",
+        ));
+        let error = render_template(&files, &values).expect_err("refused");
+        assert!(error
+            .message()
+            .contains("'slgu' is not a declared variable"));
+    }
+
+    #[test]
+    fn a_conditional_variable_is_skipped_when_its_condition_is_false() {
+        let manifest = parse_template_manifest(MANIFEST).expect("manifest");
+        let values =
+            resolve_variables(&manifest, &supplied(&[("slug", "my-agent")])).expect("values");
+        assert!(!values.contains_key("mcp_backend_url"));
+
+        let enabled = resolve_variables(
+            &manifest,
+            &supplied(&[
+                ("slug", "my-agent"),
+                ("use_mcp", "true"),
+                ("mcp_backend_url", "https://x"),
+            ]),
+        )
+        .expect("values");
+        assert_eq!(
+            enabled.get("mcp_backend_url").map(VariableValue::as_text),
+            Some("https://x".to_string())
+        );
+    }
+
+    #[test]
+    fn a_missing_value_with_no_default_is_refused() {
+        let manifest =
+            parse_template_manifest("version: 1\nvariables:\n  - name: slug\n").expect("manifest");
+        let error = resolve_variables(&manifest, &BTreeMap::new()).expect_err("refused");
+        assert!(error.message().contains("no value and no default"));
+    }
+
+    #[test]
+    fn a_manifest_declaring_a_variable_twice_is_refused() {
+        let error = parse_template_manifest(
+            "version: 1\nvariables:\n  - name: slug\n    default: a\n  - name: slug\n    default: b\n",
+        )
+        .expect_err("refused");
+        assert!(error.message().contains("twice"));
+    }
+
+    #[test]
+    fn a_future_manifest_version_is_refused() {
+        let error = parse_template_manifest("version: 2\n").expect_err("refused");
+        assert!(error.message().contains("does not understand"));
+    }
+
+    #[test]
+    fn an_unclosed_token_is_refused() {
+        let values = BTreeMap::new();
+        let error = substitute("{{ unclosed", &values).expect_err("refused");
+        assert!(error.message().contains("unclosed"));
+    }
+}

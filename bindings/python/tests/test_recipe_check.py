@@ -75,18 +75,39 @@ def test_judge_parser_preserves_cloud_compatibility_surface() -> None:
     assert legacy[0].definition.to_dict()["name"] == "legacy"
 
 
-def _template() -> introspection_recipe_check.RecipeFiles:
+TEMPLATE_MANIFEST = """
+version: 1
+name: Coding agent
+variables:
+  - name: slug
+    type: string
+  - name: name
+    type: string
+    default: "{{ slug }}"
+"""
+
+
+def _template_repo() -> introspection_recipe_check.RecipeFiles:
     return {
         "files": [
+            {"path": "template.yaml", "content": TEMPLATE_MANIFEST},
             {
-                "path": ".introspection/coding-agent.yaml",
-                "content": "name: coding-agent\npath: .\ndescription: Customizable Pi coding agent\n",
+                "path": "template/.introspection/{{ slug }}.yaml.tmpl",
+                "content": "name: {{ name }}\npath: .\n",
             },
-            {"path": "package.json", "content": '{"name": "coding-agent"}'},
             {
-                "path": "SYSTEM.md",
-                "content": "You are {{slug}}, talking to {{mcp_backend_url}}.\n",
+                "path": "template/package.json.tmpl",
+                "content": '{"name":"{{ slug }}","pi":{"agents":["agents/*.yaml"]}}',
             },
+            {
+                "path": "template/agents/agent.yaml",
+                "content": "name: agent\nmodel:\n  name: test/model\n",
+            },
+            {
+                "path": "template/SYSTEM.md",
+                "content": "Answer with {{ user_input }}.\n",
+            },
+            {"path": "README.md", "content": "# the template repository\n"},
         ],
         "directories": [],
     }
@@ -100,71 +121,60 @@ def _content(files: introspection_recipe_check.RecipeFiles, path: str) -> str | 
     return next(entry["content"] for entry in files["files"] if entry["path"] == path)
 
 
-def test_format_rewrites_identity_and_fills_declared_values() -> None:
-    formatted = introspection_recipe_check.format_recipe_files(
-        _template(),
-        introspection_recipe_check.RecipeIdentity(
-            slug="my-agent",
-            name="My Agent",
-            variables={"mcp_backend_url": "https://mcp.example.com"},
-        ),
-    )
-    assert ".introspection/my-agent.yaml" in _paths(formatted)
-    assert ".introspection/coding-agent.yaml" not in _paths(formatted)
-    assert "name: My Agent" in (
-        _content(formatted, ".introspection/my-agent.yaml") or ""
-    )
-    assert _content(formatted, "package.json") == '{"name": "my-agent"}'
-    assert (
-        _content(formatted, "SYSTEM.md")
-        == "You are my-agent, talking to https://mcp.example.com.\n"
-    )
+def test_parse_template_manifest_keeps_declaration_order() -> None:
+    manifest = introspection_recipe_check.parse_template_manifest(TEMPLATE_MANIFEST)
+    assert [variable.name for variable in manifest.variables] == ["slug", "name"]
+    assert manifest.version == 1
 
 
-def test_format_leaves_an_undeclared_token_alone() -> None:
-    formatted = introspection_recipe_check.format_recipe_files(
-        _template(),
-        introspection_recipe_check.RecipeIdentity(slug="my-agent"),
+def test_render_template_renders_paths_and_drops_the_suffix() -> None:
+    variables = introspection_recipe_check.resolve_template_variables(
+        TEMPLATE_MANIFEST, {"slug": "my-agent"}
     )
-    assert "{{mcp_backend_url}}" in (_content(formatted, "SYSTEM.md") or "")
+    rendered = introspection_recipe_check.render_template(_template_repo(), variables)
+    assert ".introspection/my-agent.yaml" in _paths(rendered)
+    assert "package.json" in _paths(rendered)
+    # the template repository's own files never reach the Recipe
+    assert "README.md" not in _paths(rendered)
+    assert "template.yaml" not in _paths(rendered)
 
 
-def test_identity_reads_a_runtime_payload() -> None:
-    identity = introspection_recipe_check.RecipeIdentity.from_runtime(
-        {
-            "id": "0199-runtime",
-            "slug": "my-agent",
-            "name": "My Agent",
-            "description": "Reviews pull requests",
-            "kind": "byor",
-        }
+def test_a_file_without_the_suffix_keeps_its_braces() -> None:
+    variables = introspection_recipe_check.resolve_template_variables(
+        TEMPLATE_MANIFEST, {"slug": "my-agent"}
     )
-    assert (identity.slug, identity.name) == ("my-agent", "My Agent")
-    formatted = introspection_recipe_check.format_recipe_files(_template(), identity)
-    assert "description: Reviews pull requests" in (
-        _content(formatted, ".introspection/my-agent.yaml") or ""
+    rendered = introspection_recipe_check.render_template(_template_repo(), variables)
+    assert _content(rendered, "SYSTEM.md") == "Answer with {{ user_input }}.\n"
+
+
+def test_check_template_cases_validates_the_rendered_recipe() -> None:
+    results = introspection_recipe_check.check_template_cases(
+        _template_repo(),
+        [{"name": "defaults", "variables": {"slug": "my-agent"}}],
     )
+    assert len(results) == 1
+    assert results[0].name == "defaults"
+    assert results[0].valid, results[0].report.diagnostics
+    assert ".introspection/my-agent.yaml" in _paths(results[0].rendered)
 
 
-def test_format_refuses_a_slug_the_platform_would_not_accept() -> None:
+def test_an_undeclared_variable_is_refused() -> None:
     with pytest.raises(ValueError):
-        introspection_recipe_check.format_recipe_files(
-            _template(), introspection_recipe_check.RecipeIdentity(slug="My Agent")
+        introspection_recipe_check.resolve_template_variables(
+            TEMPLATE_MANIFEST, {"slug": "my-agent", "mdoel": "x"}
         )
 
 
 def test_load_recipe_dir_reads_a_local_path(tmp_path: Path) -> None:
-    (tmp_path / ".introspection").mkdir()
-    (tmp_path / ".introspection" / "coding-agent.yaml").write_text(
-        "name: coding-agent\npath: .\n"
-    )
-    (tmp_path / "package.json").write_text('{"name": "coding-agent"}')
+    (tmp_path / "template").mkdir()
+    (tmp_path / "template.yaml").write_text(TEMPLATE_MANIFEST)
+    (tmp_path / "template" / "package.json.tmpl").write_text('{"name":"{{ slug }}"}')
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main")
 
     for location in (str(tmp_path), f"file://{tmp_path}"):
         snapshot = introspection_recipe_check.load_recipe_dir(location)
-        assert ".introspection/coding-agent.yaml" in _paths(snapshot)
+        assert "template.yaml" in _paths(snapshot)
         assert not any(path.startswith(".git") for path in _paths(snapshot))
 
 
