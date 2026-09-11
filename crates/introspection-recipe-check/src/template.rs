@@ -225,13 +225,14 @@ pub fn render_template(
     files: &RecipeFiles,
     variables: &BTreeMap<String, VariableValue>,
 ) -> Result<RecipeFiles, TemplateError> {
+    let payload = payload_prefix(files)?;
     let mut out = RecipeFiles {
         files: Vec::new(),
         directories: Vec::new(),
     };
 
     for file in &files.files {
-        let Some(relative) = file.path.strip_prefix(PAYLOAD_DIR) else {
+        let Some(relative) = file.path.strip_prefix(payload) else {
             continue;
         };
         let path = substitute(relative, variables)?;
@@ -260,18 +261,43 @@ pub fn render_template(
     }
 
     for directory in &files.directories {
-        let Some(relative) = directory.strip_prefix(PAYLOAD_DIR) else {
+        let Some(relative) = directory.strip_prefix(payload) else {
             continue;
         };
         out.directories.push(substitute(relative, variables)?);
     }
 
     if out.files.is_empty() {
-        return Err(TemplateError::new(format!(
-            "the template has no files under {PAYLOAD_DIR}"
-        )));
+        return Err(TemplateError::new("the template has no files"));
     }
     Ok(out)
+}
+
+/// Which part of the repository is the payload.
+///
+/// A repository that declares nothing is its own payload, copied whole. That
+/// is what lets an ordinary Recipe repository serve as a starting point with
+/// no ceremony at all: `template.yaml` and `template/` are what you add when
+/// you want variables, not a toll for being cloned.
+///
+/// Declaring `template.yaml` without a `template/` is the one shape that is
+/// refused, because it can only be a half-finished template repository — and
+/// treating it as its own payload would copy the manifest and the tests into
+/// somebody's Recipe.
+fn payload_prefix(files: &RecipeFiles) -> Result<&'static str, TemplateError> {
+    let has_payload = files
+        .files
+        .iter()
+        .any(|file| file.path.starts_with(PAYLOAD_DIR));
+    if has_payload {
+        return Ok(PAYLOAD_DIR);
+    }
+    if files.files.iter().any(|file| file.path == MANIFEST_PATH) {
+        return Err(TemplateError::new(format!(
+            "{MANIFEST_PATH} declares a template but there is no {PAYLOAD_DIR} directory"
+        )));
+    }
+    Ok("")
 }
 
 /// Replace every `{{ key }}` with its value.
@@ -538,5 +564,153 @@ variables:
         let values = BTreeMap::new();
         let error = substitute("{{ unclosed", &values).expect_err("refused");
         assert!(error.message().contains("unclosed"));
+    }
+}
+
+/// Make the rendered Recipe answer to `slug`, whatever the template did.
+///
+/// The platform derives a Runtime group's identity from the manifest's
+/// filename, so a Recipe seeded for a group named `x` must carry
+/// `.introspection/x.yaml` or its first push matches no row and versions
+/// nothing — silently, because nothing is wrong with either side on its own.
+///
+/// A template that declares `slug` and names its manifest for it has already
+/// done this, and the call is a no-op. One that does not — an ordinary Recipe
+/// repository someone chose as a starting point — is corrected here. That is
+/// the whole reason both mechanisms exist: rendering is what a template opts
+/// into, and identity is what the caller is owed regardless.
+pub fn ensure_identity(
+    files: &RecipeFiles,
+    slug: &str,
+    name: Option<&str>,
+) -> Result<RecipeFiles, TemplateError> {
+    let prefix = ".introspection/";
+    let wanted = format!("{prefix}{slug}.yaml");
+    let mut manifests = files.files.iter().filter(|file| {
+        file.path.strip_prefix(prefix).is_some_and(|rest| {
+            !rest.contains('/') && (rest.ends_with(".yaml") || rest.ends_with(".yml"))
+        })
+    });
+    let Some(manifest) = manifests.next() else {
+        return Ok(files.clone());
+    };
+    if manifests.next().is_some() {
+        return Err(TemplateError::new(
+            "the Recipe declares more than one Runtime manifest, so which one names it is ambiguous",
+        ));
+    }
+    let display = name.unwrap_or(slug);
+    let mut out = files.clone();
+    for file in &mut out.files {
+        if file.path != manifest.path {
+            continue;
+        }
+        if let Some(content) = file.content.as_deref() {
+            file.content = Some(rename_in_manifest(content, display));
+        }
+        file.path = wanted.clone();
+    }
+    Ok(out)
+}
+
+/// Rewrite the manifest's `name:`, leaving every other line as written.
+fn rename_in_manifest(text: &str, name: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut renamed = false;
+    for line in text.lines() {
+        if !renamed && line.starts_with("name:") {
+            out.push_str(&format!("name: {name}\n"));
+            renamed = true;
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if !renamed {
+        out.push_str(&format!("name: {name}\n"));
+    }
+    out
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn recipe(manifest_path: &str, manifest: &str) -> RecipeFiles {
+        RecipeFiles {
+            files: vec![
+                RecipeFile::new(manifest_path, manifest),
+                RecipeFile::new("package.json", "{\"name\":\"x\"}"),
+            ],
+            directories: vec![],
+        }
+    }
+
+    fn paths(files: &RecipeFiles) -> Vec<&str> {
+        files.files.iter().map(|f| f.path.as_str()).collect()
+    }
+
+    #[test]
+    fn renames_a_manifest_a_template_did_not_template() {
+        let out = ensure_identity(
+            &recipe(
+                ".introspection/coding-agent.yaml",
+                "name: coding-agent\npath: .\n",
+            ),
+            "my-agent",
+            None,
+        )
+        .expect("identity");
+        assert!(paths(&out).contains(&".introspection/my-agent.yaml"));
+        let manifest = out.files[0].content.clone().unwrap();
+        assert!(manifest.contains("name: my-agent"));
+    }
+
+    #[test]
+    fn is_a_no_op_when_the_template_already_named_it() {
+        let already = recipe(".introspection/my-agent.yaml", "name: my-agent\npath: .\n");
+        let out = ensure_identity(&already, "my-agent", None).expect("identity");
+        assert_eq!(out, already);
+    }
+
+    #[test]
+    fn keeps_a_display_name_distinct_from_the_slug() {
+        let out = ensure_identity(
+            &recipe(
+                ".introspection/coding-agent.yaml",
+                "name: coding-agent\npath: .\n",
+            ),
+            "my-agent",
+            Some("My Agent"),
+        )
+        .expect("identity");
+        assert!(paths(&out).contains(&".introspection/my-agent.yaml"));
+        assert!(out.files[0]
+            .content
+            .as_deref()
+            .unwrap()
+            .contains("name: My Agent"));
+    }
+
+    #[test]
+    fn a_recipe_with_no_manifest_is_left_alone() {
+        let bare = RecipeFiles {
+            files: vec![RecipeFile::new("package.json", "{}")],
+            directories: vec![],
+        };
+        assert_eq!(
+            ensure_identity(&bare, "my-agent", None).expect("identity"),
+            bare
+        );
+    }
+
+    #[test]
+    fn two_manifests_are_refused_rather_than_guessed() {
+        let mut files = recipe(".introspection/a.yaml", "name: a\npath: .\n");
+        files.files.push(RecipeFile::new(
+            ".introspection/b.yaml",
+            "name: b\npath: .\n",
+        ));
+        assert!(ensure_identity(&files, "my-agent", None).is_err());
     }
 }

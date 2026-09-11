@@ -142,6 +142,27 @@ def render_template(snapshot: RecipeFiles, variables: dict[str, object]) -> Reci
     )
 
 
+def ensure_identity(
+    snapshot: RecipeFiles, slug: str, name: str | None = None
+) -> RecipeFiles:
+    """Make a rendered Recipe answer to `slug`, whatever the template did.
+
+    A template that declares `slug` and names its manifest for it has already
+    done this and the call changes nothing. One that does not — an ordinary
+    Recipe repository someone chose as a starting point — is corrected, because
+    the platform reads a Runtime group's identity off the manifest filename and
+    a mismatch versions nothing on first push.
+    """
+    return cast(
+        RecipeFiles,
+        json.loads(
+            _native.ensure_identity_json(
+                json.dumps(snapshot, separators=(",", ":")), slug, name
+            )
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TemplateCaseResult:
     """One `tests/cases.yaml` case: what it rendered, and whether it checks."""

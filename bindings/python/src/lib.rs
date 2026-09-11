@@ -4,7 +4,7 @@ use introspection_recipe_check::spec::{
     judge_definition_json_schema, parse_judge_definitions, JudgeSource,
 };
 use introspection_recipe_check::template::{
-    parse_template_manifest, render_template, resolve_variables, VariableValue,
+    ensure_identity, parse_template_manifest, render_template, resolve_variables, VariableValue,
 };
 use introspection_recipe_check::{check_recipe_files, RecipeFiles};
 use pyo3::exceptions::PyValueError;
@@ -62,6 +62,22 @@ fn render_template_json(
         .map_err(|error| PyValueError::new_err(format!("failed to encode rendered recipe: {error}")))
 }
 
+/// Make a rendered snapshot answer to `slug`, whatever the template did.
+#[pyfunction]
+#[pyo3(signature = (snapshot_json, slug, name=None))]
+fn ensure_identity_json(
+    snapshot_json: &str,
+    slug: &str,
+    name: Option<&str>,
+) -> PyResult<String> {
+    let snapshot: RecipeFiles = serde_json::from_str(snapshot_json)
+        .map_err(|error| PyValueError::new_err(format!("invalid recipe snapshot: {error}")))?;
+    let out = ensure_identity(&snapshot, slug, name)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    serde_json::to_string(&out)
+        .map_err(|error| PyValueError::new_err(format!("failed to encode recipe: {error}")))
+}
+
 /// Strictly parse serialized judge YAML sources into normalized definitions.
 #[pyfunction]
 fn parse_judge_definitions_json(py: Python<'_>, sources_json: &str) -> PyResult<String> {
@@ -86,6 +102,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(parse_template_manifest_json, module)?)?;
     module.add_function(wrap_pyfunction!(resolve_template_variables_json, module)?)?;
     module.add_function(wrap_pyfunction!(render_template_json, module)?)?;
+    module.add_function(wrap_pyfunction!(ensure_identity_json, module)?)?;
     module.add_function(wrap_pyfunction!(parse_judge_definitions_json, module)?)?;
     module.add_function(wrap_pyfunction!(judge_definition_schema_json, module)?)?;
     Ok(())
