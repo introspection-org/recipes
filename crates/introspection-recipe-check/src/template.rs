@@ -320,19 +320,19 @@ pub fn render_template(
 /// treating it as its own payload would copy the manifest and the tests into
 /// somebody's Recipe.
 fn payload_prefix(files: &RecipeFiles) -> Result<&'static str, TemplateError> {
-    let has_payload = files
+    if !files.files.iter().any(|file| file.path == MANIFEST_PATH) {
+        return Ok("");
+    }
+    if files
         .files
         .iter()
-        .any(|file| file.path.starts_with(PAYLOAD_DIR));
-    if has_payload {
+        .any(|file| file.path.starts_with(PAYLOAD_DIR))
+    {
         return Ok(PAYLOAD_DIR);
     }
-    if files.files.iter().any(|file| file.path == MANIFEST_PATH) {
-        return Err(TemplateError::new(format!(
-            "{MANIFEST_PATH} declares a template but there is no {PAYLOAD_DIR} directory"
-        )));
-    }
-    Ok("")
+    Err(TemplateError::new(format!(
+        "{MANIFEST_PATH} declares a template but there is no {PAYLOAD_DIR} directory"
+    )))
 }
 
 /// Replace every `{{ key }}` with its value.
@@ -739,15 +739,38 @@ pub fn ensure_identity(
 
 fn validate_path(path: &str) -> Result<(), TemplateError> {
     if path.is_empty()
-        || path.contains(['\\', ':'])
+        || path.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
         || path.chars().any(char::is_control)
         || path.split('/').any(|part| {
-            part.is_empty() || part == "." || part == ".." || part.eq_ignore_ascii_case(".git")
+            part.is_empty()
+                || part.ends_with(['.', ' '])
+                || part.eq_ignore_ascii_case(".git")
+                || windows_device_name(part)
         })
     {
         return Err(TemplateError::new(format!("invalid output path '{path}'")));
     }
     Ok(())
+}
+
+fn windows_device_name(component: &str) -> bool {
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        upper.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+    })
 }
 
 fn validate_output(files: &RecipeFiles) -> Result<(), TemplateError> {
@@ -1163,5 +1186,79 @@ mod safety_tests {
         assert_eq!(json["name"], name);
         assert_eq!(yaml["name"], name);
         assert!(substitute("{{ name | unknown }}", &values).is_err());
+    }
+}
+
+#[cfg(test)]
+mod portability_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_recipe_keeps_its_template_directory_and_root_files() {
+        let input = RecipeFiles {
+            files: vec![
+                RecipeFile::new("package.json", "{}"),
+                RecipeFile::new(".introspection/example.yaml", "name: Example\npath: .\n"),
+                RecipeFile::new("template/example.txt", "example"),
+            ],
+            directories: vec!["template/empty".to_string()],
+        };
+        assert_eq!(render_template(&input, &BTreeMap::new()).unwrap(), input);
+        let mut declared = input.clone();
+        declared
+            .files
+            .push(RecipeFile::new(MANIFEST_PATH, "version: 1\n"));
+        let out = render_template(&declared, &BTreeMap::new()).unwrap();
+        assert_eq!(out.files, vec![RecipeFile::new("example.txt", "example")]);
+        assert_eq!(out.directories, vec!["empty"]);
+        declared
+            .files
+            .retain(|file| !file.path.starts_with(PAYLOAD_DIR));
+        assert!(render_template(&declared, &BTreeMap::new()).is_err());
+    }
+
+    #[test]
+    fn rejects_windows_reserved_components_in_files_and_directories() {
+        for name in [
+            "CON",
+            "nul.txt",
+            "aUx",
+            "PRN.log",
+            "COM1",
+            "lpt9.txt",
+            "COM¹",
+            "LPT².txt",
+            "CONIN$",
+            "CONOUT$",
+            "CON .txt",
+            "trailing.",
+            "trailing ",
+            "a<b",
+            "a>b",
+            "a\"b",
+            "a|b",
+            "a?b",
+            "a*b",
+        ] {
+            let values =
+                BTreeMap::from([("name".to_string(), VariableValue::String(name.to_string()))]);
+            let mut input = RecipeFiles {
+                files: vec![RecipeFile::new("template/{{ name }}.tmpl", "x")],
+                directories: vec![],
+            };
+            assert!(render_template(&input, &values).is_err(), "file {name}");
+            input.files = vec![RecipeFile::new("template/safe.txt", "x")];
+            input.directories = vec!["template/nested/{{ name }}".to_string()];
+            assert!(
+                render_template(&input, &values).is_err(),
+                "directory {name}"
+            );
+            input.files = vec![RecipeFile::new("template/nested/{{ name }}/child", "x")];
+            input.directories.clear();
+            assert!(render_template(&input, &values).is_err(), "parent {name}");
+        }
+        for name in ["console", "null.txt", "COM10", "LPT0", "a.b", "some name"] {
+            assert!(validate_path(name).is_ok(), "{name}");
+        }
     }
 }

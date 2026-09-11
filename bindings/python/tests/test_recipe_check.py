@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import introspection_recipe_check
+from introspection_recipe_check._api import _normalize_file_url_path
 import pytest
 
 
@@ -273,3 +274,26 @@ def test_render_rejects_unsafe_and_colliding_paths() -> None:
         }
         with pytest.raises(ValueError):
             introspection_recipe_check.render_template(snapshot, {})
+
+
+@pytest.mark.parametrize(
+    "path,windows,expected",
+    [
+        ("/C:/templates/x", True, "C:/templates/x"),
+        ("/c:/templates/my repo", True, "c:/templates/my repo"),
+        ("/C:/templates/x", False, "/C:/templates/x"),
+        ("/tmp/templates", False, "/tmp/templates"),
+        ("/tmp/templates", True, "/tmp/templates"),
+    ],
+)
+def test_file_url_path_normalization(path: str, windows: bool, expected: str) -> None:
+    assert _normalize_file_url_path(path, windows=windows) == expected
+
+
+def test_local_file_url_with_spaces(tmp_path: Path) -> None:
+    root = tmp_path / "my templates"
+    root.mkdir()
+    (root / "keep.txt").write_text("content")
+    assert _paths(introspection_recipe_check.load_recipe_dir(root.as_uri())) == {
+        "keep.txt"
+    }

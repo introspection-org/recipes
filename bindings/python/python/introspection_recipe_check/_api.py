@@ -272,9 +272,15 @@ def _local_path(location: str | os.PathLike[str]) -> Path:
                 raise ValueError(
                     "UNC and device paths are not local template locations"
                 )
-            return Path(decoded)
+            return Path(_normalize_file_url_path(decoded, windows=os.name == "nt"))
         return Path(text)
     raise ValueError(f"{text} is not a local path; only local templates are read")
+
+
+def _normalize_file_url_path(path: str, *, windows: bool) -> str:
+    if windows and path.startswith("/") and _has_drive_letter(path[1:]):
+        return path[1:]
+    return path
 
 
 def _has_drive_letter(text: str) -> bool:
