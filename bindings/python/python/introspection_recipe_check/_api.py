@@ -207,35 +207,57 @@ def check_template_cases(
 def load_recipe_dir(location: str | os.PathLike[str]) -> RecipeFiles:
     """Read a local template repository or Recipe directory into a snapshot.
 
-    Accepts a plain path (`./template-starter`, `/srv/x`) or a `file://` URL.
-    It never fetches: a remote template is the caller's to clone, so the
-    library holds no network surface and cannot be pointed at one by a value
-    off a request.
+    Accepts a plain path (`./template-starter`, `/srv/x`, `C:\\templates\\x`) or a
+    `file://` URL. It never fetches: a remote template is the caller's to clone,
+    so the library holds no network surface and cannot be pointed at one by a
+    value off a request.
     """
     root = Path(_local_path(location))
     if not root.is_dir():
         raise ValueError(f"{root} is not a directory")
     files: list[RecipeFile] = []
     directories: list[str] = []
-    for entry in sorted(root.rglob("*")):
-        relative = entry.relative_to(root).as_posix()
-        if _ignored(relative):
-            continue
-        # A symlink is never followed. `is_file()` and `read_text()` both
-        # resolve one, so a template carrying `secret -> /etc/passwd` would
-        # otherwise read outside its own root and land that content in the
-        # commit the caller writes. A template has no use for one.
-        if entry.is_symlink():
-            continue
-        if entry.is_dir():
-            directories.append(relative)
-        elif entry.is_file():
-            files.append({"path": relative, "content": _read_text(entry)})
+    for parent, dirnames, filenames in os.walk(root):
+        # Pruned in place rather than filtered afterwards, so a template with a
+        # populated node_modules below a package is never walked at all.
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if name not in _IGNORED_DIRS and not Path(parent, name).is_symlink()
+        )
+        base = Path(parent)
+        for name in dirnames:
+            directories.append((base / name).relative_to(root).as_posix())
+        for name in sorted(filenames):
+            entry = base / name
+            # A symlink is never followed. `is_file()` and `read_text()` both
+            # resolve one, so a template carrying `secret -> /etc/passwd` would
+            # otherwise read outside its own root and land that content in the
+            # commit the caller writes. A template has no use for one.
+            if entry.is_symlink() or not entry.is_file():
+                continue
+            files.append(
+                {
+                    "path": entry.relative_to(root).as_posix(),
+                    "content": _read_text(entry),
+                }
+            )
+    files.sort(key=lambda entry: entry["path"])
+    directories.sort()
     return {"files": files, "directories": directories}
+
+
+"""Directories that are never a template's content, at any depth."""
+_IGNORED_DIRS = frozenset({".git", "node_modules", "target", "__pycache__"})
 
 
 def _local_path(location: str | os.PathLike[str]) -> Path:
     text = os.fspath(location)
+    # A Windows drive letter parses as a URL scheme, so `C:\\x` would otherwise
+    # be rejected as a remote location on the Windows wheel. Recognise a native
+    # path before treating the string as a URL at all.
+    if os.path.isabs(text) or _has_drive_letter(text):
+        return Path(text)
     parsed = urlparse(text)
     if parsed.scheme in ("", "file"):
         if parsed.scheme == "file":
@@ -248,10 +270,8 @@ def _local_path(location: str | os.PathLike[str]) -> Path:
     raise ValueError(f"{text} is not a local path; only local templates are read")
 
 
-def _ignored(relative: str) -> bool:
-    """Skip a repository's own history and build output, never its content."""
-    head = relative.split("/", 1)[0]
-    return head in (".git", "node_modules", "target", "__pycache__")
+def _has_drive_letter(text: str) -> bool:
+    return len(text) > 1 and text[0].isalpha() and text[1] == ":"
 
 
 def _read_text(path: Path) -> str | None:

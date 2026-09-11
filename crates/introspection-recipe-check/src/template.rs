@@ -91,6 +91,18 @@ pub enum VariableKind {
     Choice,
 }
 
+impl VariableKind {
+    /// What an inapplicable variable renders as, so the off branch of an
+    /// optional feature still produces a file.
+    fn empty(self) -> VariableValue {
+        match self {
+            Self::Boolean => VariableValue::Boolean(false),
+            Self::Integer => VariableValue::Integer(0),
+            Self::String | Self::Choice => VariableValue::String(String::new()),
+        }
+    }
+}
+
 /// A resolved value. Everything renders as text; only `when` reads truth.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -186,29 +198,37 @@ pub fn resolve_variables(
 ) -> Result<BTreeMap<String, VariableValue>, TemplateError> {
     let mut resolved: BTreeMap<String, VariableValue> = BTreeMap::new();
     for variable in &manifest.variables {
-        if let Some(when) = variable.when.as_deref() {
-            if !resolved
+        let applies = match variable.when.as_deref() {
+            Some(when) => resolved
                 .get(when)
                 .map(VariableValue::is_true)
-                .unwrap_or(false)
-            {
-                continue;
-            }
-        }
+                .unwrap_or(false),
+            None => true,
+        };
         let raw = match supplied.get(&variable.name) {
-            Some(value) => value.clone(),
+            Some(value) => Some(value.clone()),
             None => match &variable.default {
                 // A default may reference the values already resolved.
-                Some(default) => substitute(default, &resolved)?,
-                None => {
-                    return Err(TemplateError::new(format!(
-                        "'{}' has no value and no default",
-                        variable.name
-                    )))
-                }
+                Some(default) => Some(substitute(default, &resolved)?),
+                None => None,
             },
         };
-        resolved.insert(variable.name.clone(), coerce(variable, &raw)?);
+        let value = match (raw, applies) {
+            (Some(raw), _) => coerce(variable, &raw)?,
+            // `when` suppresses the *requirement*, never the binding. The
+            // payload has no conditionals, so a file naming an optional
+            // variable must still render when the feature is off — leaving it
+            // unbound would make the off branch unrenderable, which is the
+            // common case rather than the exotic one.
+            (None, false) => variable.kind.empty(),
+            (None, true) => {
+                return Err(TemplateError::new(format!(
+                    "'{}' has no value and no default",
+                    variable.name
+                )))
+            }
+        };
+        resolved.insert(variable.name.clone(), value);
     }
     for name in supplied.keys() {
         if !manifest.variables.iter().any(|v| &v.name == name) {
@@ -337,13 +357,18 @@ fn substitute(
     Ok(out)
 }
 
+/// A short, safe excerpt naming where a bad token was found.
+///
+/// Truncated by characters: template contents are arbitrary UTF-8, and slicing
+/// at a byte offset panics when a multibyte character straddles it — turning a
+/// reportable template error into a crash.
 fn snippet(text: &str) -> String {
     let first = text.lines().next().unwrap_or_default();
-    if first.len() > 60 {
-        format!("'{}…'", &first[..60])
-    } else {
-        format!("'{first}'")
+    let mut taken: String = first.chars().take(60).collect();
+    if taken.chars().count() < first.chars().count() {
+        taken.push('…');
     }
+    format!("'{taken}'")
 }
 
 fn coerce(variable: &TemplateVariable, raw: &str) -> Result<VariableValue, TemplateError> {
@@ -515,11 +540,16 @@ variables:
     }
 
     #[test]
-    fn a_conditional_variable_is_skipped_when_its_condition_is_false() {
+    fn a_conditional_variable_binds_empty_rather_than_going_unbound() {
         let manifest = parse_template_manifest(MANIFEST).expect("manifest");
         let values =
             resolve_variables(&manifest, &supplied(&[("slug", "my-agent")])).expect("values");
-        assert!(!values.contains_key("mcp_backend_url"));
+        // Bound, not absent: a payload naming it must still render with the
+        // feature off, and there are no conditionals to guard the reference.
+        assert_eq!(
+            values.get("mcp_backend_url"),
+            Some(&VariableValue::String(String::new()))
+        );
 
         let enabled = resolve_variables(
             &manifest,
@@ -876,5 +906,86 @@ mod identity_tests {
             "name: b\npath: .\n",
         ));
         assert!(ensure_identity(&files, "my-agent", None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+
+    const OPTIONAL: &str = r#"
+version: 1
+variables:
+  - name: slug
+    type: string
+  - name: use_mcp
+    type: boolean
+    default: "false"
+  - name: mcp_backend_url
+    type: string
+    when: use_mcp
+    default: ""
+  - name: mcp_port
+    type: integer
+    when: use_mcp
+"#;
+
+    fn repo(content: &str) -> RecipeFiles {
+        RecipeFiles {
+            files: vec![
+                RecipeFile::new("template.yaml", OPTIONAL),
+                RecipeFile::new("template/mcp.json.tmpl", content),
+            ],
+            directories: vec![],
+        }
+    }
+
+    fn values(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn the_off_branch_of_an_optional_feature_still_renders() {
+        let manifest = parse_template_manifest(OPTIONAL).expect("manifest");
+        let resolved =
+            resolve_variables(&manifest, &values(&[("slug", "my-agent")])).expect("resolve");
+        let out = render_template(
+            &repo("{\"url\":\"{{ mcp_backend_url }}\",\"port\":{{ mcp_port }}}"),
+            &resolved,
+        )
+        .expect("an inactive variable still binds");
+        assert_eq!(
+            out.files[0].content.as_deref(),
+            Some("{\"url\":\"\",\"port\":0}")
+        );
+    }
+
+    #[test]
+    fn an_inactive_variable_needs_no_default() {
+        let manifest = parse_template_manifest(OPTIONAL).expect("manifest");
+        // `mcp_port` declares no default and is not supplied; it is only
+        // required when the feature it belongs to is on.
+        let resolved =
+            resolve_variables(&manifest, &values(&[("slug", "my-agent")])).expect("resolve");
+        assert_eq!(resolved.get("mcp_port"), Some(&VariableValue::Integer(0)));
+    }
+
+    #[test]
+    fn an_active_variable_with_no_default_is_still_required() {
+        let manifest = parse_template_manifest(OPTIONAL).expect("manifest");
+        let error = resolve_variables(&manifest, &values(&[("slug", "x"), ("use_mcp", "true")]))
+            .expect_err("mcp_port is required once the feature is on");
+        assert!(error.message().contains("no value and no default"));
+    }
+
+    #[test]
+    fn a_multibyte_character_at_the_snippet_boundary_does_not_panic() {
+        // 59 ASCII bytes, then a character that straddles byte offset 60.
+        let line = format!("{}é {{{{ nope }}}}", "x".repeat(59));
+        let error = substitute(&line, &BTreeMap::new()).expect_err("undeclared");
+        assert!(error.message().contains("nope"));
     }
 }
