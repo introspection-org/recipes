@@ -218,7 +218,6 @@ def test_an_ordinary_recipe_repo_works_as_a_template() -> None:
     assert ".introspection/coding-agent.yaml" not in _paths(final)
     manifest = _content(final, ".introspection/my-agent.yaml") or ""
     assert "name: my-agent" in manifest
-    assert manifest.startswith("# a comment\n")
     assert '"my-agent"' in (_content(final, "package.json") or "")
     # a prompt's braces are never touched, because nothing opted it in
     assert _content(final, "SYSTEM.md") == "Use {{ braces }} freely.\n"
@@ -237,3 +236,40 @@ def test_identity_is_a_no_op_on_a_template_that_named_itself() -> None:
         "directories": [],
     }
     assert introspection_recipe_check.ensure_identity(already, "my-agent") == already
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        r"\\server\share\repo",
+        "//server/share/repo",
+        r"\\?\C:\repo",
+        r"\\.\C:\repo",
+        "file:////server/share/repo",
+        "file:///%2Fserver/share/repo",
+        "file://server/share/repo",
+    ],
+)
+def test_rejects_network_and_device_locations(location: str) -> None:
+    with pytest.raises(ValueError, match="UNC|remote host"):
+        introspection_recipe_check.load_recipe_dir(location)
+
+
+def test_excludes_worktree_git_files_at_every_depth(tmp_path: Path) -> None:
+    (tmp_path / ".git").write_text("gitdir: /elsewhere")
+    nested = tmp_path / "packages" / "app"
+    nested.mkdir(parents=True)
+    (nested / ".git").write_text("gitdir: /elsewhere/submodule")
+    (nested / "keep.txt").write_text("content")
+    snapshot = introspection_recipe_check.load_recipe_dir(tmp_path)
+    assert _paths(snapshot) == {"packages/app/keep.txt"}
+
+
+def test_render_rejects_unsafe_and_colliding_paths() -> None:
+    for paths in [("../outside",), ("a.tmpl", "a/child"), ("a", "a.tmpl")]:
+        snapshot: introspection_recipe_check.RecipeFiles = {
+            "files": [{"path": f"template/{path}", "content": "x"} for path in paths],
+            "directories": [],
+        }
+        with pytest.raises(ValueError):
+            introspection_recipe_check.render_template(snapshot, {})

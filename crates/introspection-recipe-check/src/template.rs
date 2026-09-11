@@ -28,7 +28,7 @@
 //! files are mostly JSON, and `{` would have to be escaped in every one of
 //! them.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -167,7 +167,7 @@ pub fn parse_template_manifest(text: &str) -> Result<TemplateManifest, TemplateE
         if variable.name.is_empty() {
             return Err(TemplateError::new("a template variable needs a name"));
         }
-        if seen.insert(variable.name.as_str(), variable.kind).is_some() {
+        if seen.contains_key(variable.name.as_str()) {
             return Err(TemplateError::new(format!(
                 "{MANIFEST_PATH} declares '{}' twice",
                 variable.name
@@ -200,6 +200,7 @@ pub fn parse_template_manifest(text: &str) -> Result<TemplateManifest, TemplateE
                 Some(_) => {}
             }
         }
+        seen.insert(variable.name.as_str(), variable.kind);
     }
     Ok(manifest)
 }
@@ -303,6 +304,7 @@ pub fn render_template(
     if out.files.is_empty() {
         return Err(TemplateError::new("the template has no files"));
     }
+    validate_output(&out)?;
     Ok(out)
 }
 
@@ -354,15 +356,24 @@ fn substitute(
                 snippet(text)
             )));
         };
-        let key = tail[2..close].trim();
-        match variables.get(key) {
-            Some(value) => out.push_str(&value.as_text()),
-            None => {
-                return Err(TemplateError::new(format!(
-                    "'{key}' is not a declared variable, in {}",
-                    snippet(text)
-                )))
-            }
+        let token = tail[2..close].trim();
+        let (key, encoding) = match token.split_once('|') {
+            Some((key, encoding)) => (key.trim(), Some(encoding.trim())),
+            None => (token, None),
+        };
+        let value = variables.get(key).ok_or_else(|| {
+            TemplateError::new(format!(
+                "'{key}' is not a declared variable, in {}",
+                snippet(text)
+            ))
+        })?;
+        match encoding {
+            None => out.push_str(&value.as_text()),
+            Some("json" | "yaml") => out.push_str(
+                &serde_json::to_string(value)
+                    .map_err(|error| TemplateError::new(error.to_string()))?,
+            ),
+            Some(other) => return Err(TemplateError::new(format!("unknown encoding '{other}'"))),
         }
         rest = &tail[close + 2..];
     }
@@ -640,6 +651,18 @@ pub fn ensure_identity(
     slug: &str,
     name: Option<&str>,
 ) -> Result<RecipeFiles, TemplateError> {
+    if slug.is_empty()
+        || slug.len() > 63
+        || !slug.split('-').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        })
+    {
+        return Err(TemplateError::new("invalid Runtime slug"));
+    }
+    validate_output(files)?;
     let prefix = ".introspection/";
     let wanted = format!("{prefix}{slug}.yaml");
     let mut manifests = files.files.iter().filter(|file| {
@@ -655,125 +678,112 @@ pub fn ensure_identity(
             "the Recipe declares more than one Runtime manifest, so which one names it is ambiguous",
         ));
     }
-    let display = name.unwrap_or(slug);
-    // The manifest's own `path:` says where the package sits beside it.
-    let package_dir = manifest
+    let content = manifest
         .content
         .as_deref()
-        .and_then(manifest_path_value)
-        .unwrap_or_else(|| ".".to_string());
+        .ok_or_else(|| TemplateError::new("Runtime manifest was not read"))?;
+    let mut parsed: serde_json::Map<String, serde_json::Value> = serde_saphyr::from_str(content)
+        .map_err(|error| TemplateError::new(format!("parsing Runtime manifest: {error}")))?;
+    let package_dir = match parsed.get("path") {
+        None => ".",
+        Some(serde_json::Value::String(path)) => path.as_str(),
+        Some(_) => return Err(TemplateError::new("Runtime manifest path must be a string")),
+    };
     let package_path = if package_dir == "." || package_dir.is_empty() {
         "package.json".to_string()
     } else {
         format!("{}/package.json", package_dir.trim_end_matches('/'))
     };
-
+    validate_path(&package_path)?;
+    let display = name.unwrap_or(slug);
+    let rewritten = if parsed.get("name").and_then(|v| v.as_str()) == Some(display) {
+        content.to_string()
+    } else {
+        parsed.insert(
+            "name".to_string(),
+            serde_json::Value::String(display.to_string()),
+        );
+        serde_saphyr::to_string(&parsed)
+            .map_err(|error| TemplateError::new(format!("serializing Runtime manifest: {error}")))?
+    };
     let mut out = files.clone();
     for file in &mut out.files {
         if file.path == manifest.path {
-            if let Some(content) = file.content.as_deref() {
-                file.content = Some(rename_in_manifest(content, display));
-            }
+            file.content = Some(rewritten.clone());
             file.path = wanted.clone();
         } else if file.path == package_path {
-            if let Some(content) = file.content.as_deref() {
-                file.content = Some(rename_package(content, slug));
+            let content = file
+                .content
+                .as_deref()
+                .ok_or_else(|| TemplateError::new("package.json was not read"))?;
+            let mut package: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(content).map_err(|error| {
+                    TemplateError::new(format!("parsing package.json: {error}"))
+                })?;
+            if package.get("name").and_then(|v| v.as_str()) != Some(slug) {
+                package.insert(
+                    "name".to_string(),
+                    serde_json::Value::String(slug.to_string()),
+                );
+                file.content = Some(
+                    serde_json::to_string_pretty(&package)
+                        .map_err(|error| TemplateError::new(error.to_string()))?
+                        + "\n",
+                );
             }
         }
     }
+    validate_output(&out)?;
     Ok(out)
 }
 
-/// The manifest's `path:` scalar, ignoring quotes and any trailing comment.
-fn manifest_path_value(text: &str) -> Option<String> {
-    let raw = text.lines().find_map(|line| line.strip_prefix("path:"))?;
-    let trimmed = raw.trim();
-    for quote in ['\'', '"'] {
-        if let Some(rest) = trimmed.strip_prefix(quote) {
-            if let Some(end) = rest.find(quote) {
-                return Some(rest[..end].to_string());
+fn validate_path(path: &str) -> Result<(), TemplateError> {
+    if path.is_empty()
+        || path.contains(['\\', ':'])
+        || path.chars().any(char::is_control)
+        || path.split('/').any(|part| {
+            part.is_empty() || part == "." || part == ".." || part.eq_ignore_ascii_case(".git")
+        })
+    {
+        return Err(TemplateError::new(format!("invalid output path '{path}'")));
+    }
+    Ok(())
+}
+
+fn validate_output(files: &RecipeFiles) -> Result<(), TemplateError> {
+    let mut paths = BTreeSet::new();
+    for file in &files.files {
+        validate_path(&file.path)?;
+        if !paths.insert(file.path.as_str()) {
+            return Err(TemplateError::new(format!(
+                "duplicate output path '{}'",
+                file.path
+            )));
+        }
+    }
+    for path in files
+        .files
+        .iter()
+        .map(|file| &file.path)
+        .chain(files.directories.iter())
+    {
+        validate_path(path)?;
+        if files.directories.contains(path) && paths.contains(path.as_str()) {
+            return Err(TemplateError::new(format!(
+                "file/directory collision at '{path}'"
+            )));
+        }
+        let mut ancestor = path.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            if paths.contains(parent) {
+                return Err(TemplateError::new(format!(
+                    "file/directory collision at '{parent}'"
+                )));
             }
+            ancestor = parent;
         }
     }
-    Some(match trimmed.find(" #") {
-        Some(at) => trimmed[..at].trim_end().to_string(),
-        None => trimmed.to_string(),
-    })
-}
-
-/// Point `package.json` at the new Recipe.
-///
-/// Rewrites the value in place rather than reserialising: a JSON round trip
-/// reorders keys and reflows the file, so the first diff an author saw of
-/// their own Recipe would be noise they did not write.
-fn rename_package(contents: &str, slug: &str) -> String {
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(contents) else {
-        return contents.to_string();
-    };
-    let Some(current) = parsed.get("name").and_then(serde_json::Value::as_str) else {
-        return contents.to_string();
-    };
-    let Some(value_at) = root_name_key_end(contents) else {
-        return contents.to_string();
-    };
-    let (head, tail) = contents.split_at(value_at);
-    format!(
-        "{head}{}",
-        tail.replacen(&format!("\"{current}\""), &format!("\"{slug}\""), 1)
-    )
-}
-
-/// Byte offset just past the *root* object's `"name"` key.
-///
-/// Depth-tracking rather than the first `"name"` token: a Recipe that
-/// describes itself in a nested object can hold an earlier one, and rewriting
-/// from there renames something that is not the package while leaving the
-/// package itself untouched — a silent wrong answer.
-fn root_name_key_end(contents: &str) -> Option<usize> {
-    let bytes = contents.as_bytes();
-    let (mut depth, mut index) = (0usize, 0usize);
-    while index < bytes.len() {
-        match bytes[index] {
-            b'{' | b'[' => depth += 1,
-            b'}' | b']' => depth = depth.saturating_sub(1),
-            b'"' => {
-                let start = index + 1;
-                let mut end = start;
-                while end < bytes.len() && bytes[end] != b'"' {
-                    end += if bytes[end] == b'\\' { 2 } else { 1 };
-                }
-                if end >= bytes.len() {
-                    return None;
-                }
-                if depth == 1 && &contents[start..end] == "name" {
-                    return Some(end + 1);
-                }
-                index = end;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    None
-}
-
-/// Rewrite the manifest's `name:`, leaving every other line as written.
-fn rename_in_manifest(text: &str, name: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut renamed = false;
-    for line in text.lines() {
-        if !renamed && line.starts_with("name:") {
-            out.push_str(&format!("name: {name}\n"));
-            renamed = true;
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    if !renamed {
-        out.push_str(&format!("name: {name}\n"));
-    }
-    out
+    Ok(())
 }
 
 #[cfg(test)]
@@ -879,7 +889,10 @@ mod identity_tests {
             .find(|f| f.path == "packages/app/package.json")
             .and_then(|f| f.content.as_deref())
             .expect("package");
-        assert_eq!(package, "{\"name\":\"my-agent\"}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(package).unwrap()["name"],
+            "my-agent"
+        );
     }
 
     #[test]
@@ -1013,5 +1026,142 @@ variables:
         let line = format!("{}é {{{{ nope }}}}", "x".repeat(59));
         let error = substitute(&line, &BTreeMap::new()).expect_err("undeclared");
         assert!(error.message().contains("nope"));
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+
+    fn files(entries: &[(&str, &str)]) -> RecipeFiles {
+        RecipeFiles {
+            files: entries
+                .iter()
+                .map(|(path, text)| RecipeFile::new(*path, *text))
+                .collect(),
+            directories: vec![],
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_rendered_paths_and_identity_slugs() {
+        for path in [
+            "../../outside",
+            "/absolute",
+            "C:/outside",
+            "a\\b",
+            "a//b",
+            "a/../b",
+            ".git/config",
+            "a\0b",
+        ] {
+            let values =
+                BTreeMap::from([("path".to_string(), VariableValue::String(path.to_string()))]);
+            assert!(
+                render_template(&files(&[("template/{{ path }}.tmpl", "x")]), &values).is_err(),
+                "{path}"
+            );
+            let mut dirs = files(&[("template/a", "x")]);
+            dirs.directories.push("template/{{ path }}".to_string());
+            assert!(render_template(&dirs, &values).is_err(), "directory {path}");
+            assert!(
+                ensure_identity(&files(&[]), path, None).is_err(),
+                "slug {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_and_implicit_directory_collisions() {
+        for entries in [
+            vec![("template/a", "x"), ("template/a.tmpl", "y")],
+            vec![("template/a.tmpl", "x"), ("template/a/b", "y")],
+            vec![("template/a/b", "y"), ("template/a.tmpl", "x")],
+        ] {
+            assert!(render_template(&files(&entries), &BTreeMap::new()).is_err());
+        }
+        let mut explicit = files(&[("template/a.tmpl", "x")]);
+        explicit.directories.push("template/a".to_string());
+        assert!(render_template(&explicit, &BTreeMap::new()).is_err());
+        let valid = files(&[("template/a/b", "x"), ("template/a/c", "y")]);
+        assert!(render_template(&valid, &BTreeMap::new()).is_ok());
+        let mut rename = files(&[
+            (".introspection/a.yaml", "name: a\n"),
+            (".introspection/b.yaml/child", "x"),
+        ]);
+        assert!(ensure_identity(&rename, "b", None).is_err());
+        rename.directories.push(".introspection/b.yaml".to_string());
+        assert!(ensure_identity(&rename, "b", None).is_err());
+    }
+
+    #[test]
+    fn rejects_self_and_forward_conditions() {
+        for condition in ["flag", "later"] {
+            let yaml = format!("variables:\n  - name: flag\n    type: boolean\n    when: {condition}\n  - name: later\n    type: boolean\n");
+            assert!(parse_template_manifest(&yaml).is_err());
+        }
+    }
+
+    #[test]
+    fn identity_round_trips_yaml_strings_and_preserves_other_fields() {
+        for name in [
+            "Support: Europe",
+            "Agent # 1",
+            "line one\nline two",
+            "true",
+            "Agent \\\"quoted\\\"",
+        ] {
+            let input = files(&[(
+                ".introspection/a.yaml",
+                "name: |\n  previous\n  multiline\npath: .\nruntime:\n  kind: agent\n",
+            )]);
+            let out = ensure_identity(&input, "a", Some(name)).unwrap();
+            let value: serde_json::Value =
+                serde_saphyr::from_str(out.files[0].content.as_deref().unwrap()).unwrap();
+            assert_eq!(value["name"], name);
+            assert_eq!(value["runtime"]["kind"], "agent");
+            assert_eq!(ensure_identity(&out, "a", Some(name)).unwrap(), out);
+        }
+    }
+
+    #[test]
+    fn decodes_yaml_package_paths_and_json_names() {
+        let input = files(&[
+            (
+                ".introspection/a.yaml",
+                "name: a\npath: \"packages/\\u0061pp\"\n",
+            ),
+            (
+                "packages/app/package.json",
+                r#"{"metadata":{"name":"old"},"name":"\u006fld"}"#,
+            ),
+        ]);
+        let out = ensure_identity(&input, "new", None).unwrap();
+        let package: serde_json::Value =
+            serde_json::from_str(out.files[1].content.as_deref().unwrap()).unwrap();
+        assert_eq!(package["name"], "new");
+        assert_eq!(package["metadata"]["name"], "old");
+    }
+
+    #[test]
+    fn explicit_encodings_round_trip_values_without_recursive_substitution() {
+        let name = "Agent: \"quoted\"\n{{ name }}";
+        let values =
+            BTreeMap::from([("name".to_string(), VariableValue::String(name.to_string()))]);
+        let out = render_template(
+            &files(&[
+                ("template/a.json.tmpl", "{\"name\": {{ name | json }}}"),
+                ("template/a.yaml.tmpl", "name: {{ name | yaml }}\n"),
+            ]),
+            &values,
+        )
+        .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(out.files[0].content.as_deref().unwrap()).unwrap();
+        let yaml: serde_json::Value =
+            serde_saphyr::from_str(out.files[1].content.as_deref().unwrap()).unwrap();
+        assert_eq!(json["name"], name);
+        assert_eq!(yaml["name"], name);
+        assert!(substitute("{{ name | unknown }}", &values).is_err());
     }
 }

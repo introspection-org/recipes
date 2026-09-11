@@ -234,7 +234,7 @@ def load_recipe_dir(location: str | os.PathLike[str]) -> RecipeFiles:
             # resolve one, so a template carrying `secret -> /etc/passwd` would
             # otherwise read outside its own root and land that content in the
             # commit the caller writes. A template has no use for one.
-            if entry.is_symlink() or not entry.is_file():
+            if name == ".git" or entry.is_symlink() or not entry.is_file():
                 continue
             files.append(
                 {
@@ -253,6 +253,8 @@ _IGNORED_DIRS = frozenset({".git", "node_modules", "target", "__pycache__"})
 
 def _local_path(location: str | os.PathLike[str]) -> Path:
     text = os.fspath(location)
+    if text.replace("\\", "/").startswith("//"):
+        raise ValueError("UNC and device paths are not local template locations")
     # A Windows drive letter parses as a URL scheme, so `C:\\x` would otherwise
     # be rejected as a remote location on the Windows wheel. Recognise a native
     # path before treating the string as a URL at all.
@@ -265,7 +267,12 @@ def _local_path(location: str | os.PathLike[str]) -> Path:
                 raise ValueError(
                     f"{text} names a remote host; only local templates are read"
                 )
-            return Path(unquote(parsed.path))
+            decoded = unquote(parsed.path)
+            if decoded.replace("\\", "/").startswith("//"):
+                raise ValueError(
+                    "UNC and device paths are not local template locations"
+                )
+            return Path(decoded)
         return Path(text)
     raise ValueError(f"{text} is not a local path; only local templates are read")
 
