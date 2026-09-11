@@ -5,10 +5,13 @@ from ._api import (
     ParsedJudgeDefinition,
     RecipeFile,
     RecipeFiles,
+    RecipeIdentity,
     Report,
     Span,
     check_recipe_files,
+    format_recipe_files,
     judge_definition_schema,
+    load_recipe_dir,
     parse_judge_definitions,
 )
 from ._native import __version__
@@ -20,10 +23,13 @@ __all__ = [
     "ParsedJudgeDefinition",
     "RecipeFile",
     "RecipeFiles",
+    "RecipeIdentity",
     "Report",
     "Span",
     "__version__",
     "check_recipe_files",
+    "format_recipe_files",
     "judge_definition_schema",
+    "load_recipe_dir",
     "parse_judge_definitions",
 ]

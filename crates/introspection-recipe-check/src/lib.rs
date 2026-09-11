@@ -4,6 +4,7 @@
 //! [`RecipeFiles`] snapshot of a recipe directory and returns a [`Report`].
 //! Hosts own filesystem discovery and any environment-specific policy.
 
+pub mod format;
 mod judges;
 pub mod resources;
 pub mod spec;
