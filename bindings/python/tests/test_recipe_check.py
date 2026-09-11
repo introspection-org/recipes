@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import introspection_recipe_check
+import pytest
 
 
 def test_accepts_portable_runtime_requirements() -> None:
@@ -144,15 +147,13 @@ def test_identity_reads_a_runtime_payload() -> None:
 
 
 def test_format_refuses_a_slug_the_platform_would_not_accept() -> None:
-    import pytest
-
     with pytest.raises(ValueError):
         introspection_recipe_check.format_recipe_files(
             _template(), introspection_recipe_check.RecipeIdentity(slug="My Agent")
         )
 
 
-def test_load_recipe_dir_reads_a_local_path(tmp_path) -> None:
+def test_load_recipe_dir_reads_a_local_path(tmp_path: Path) -> None:
     (tmp_path / ".introspection").mkdir()
     (tmp_path / ".introspection" / "coding-agent.yaml").write_text(
         "name: coding-agent\npath: .\n"
@@ -168,8 +169,6 @@ def test_load_recipe_dir_reads_a_local_path(tmp_path) -> None:
 
 
 def test_load_recipe_dir_refuses_a_remote_location() -> None:
-    import pytest
-
     with pytest.raises(ValueError):
         introspection_recipe_check.load_recipe_dir(
             "https://github.com/introspection-recipes/template-starter"
