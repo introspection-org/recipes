@@ -183,3 +183,57 @@ def test_load_recipe_dir_refuses_a_remote_location() -> None:
         introspection_recipe_check.load_recipe_dir(
             "https://github.com/introspection-recipes/template-starter"
         )
+
+
+def test_an_ordinary_recipe_repo_works_as_a_template() -> None:
+    """No template.yaml, no template/, not one .tmpl file.
+
+    This is the "start from this repo" path: nothing renders, but the caller
+    still gets a Recipe named for the Runtime they asked for, because identity
+    is owed whether the template declared it or not.
+    """
+    plain: introspection_recipe_check.RecipeFiles = {
+        "files": [
+            {
+                "path": ".introspection/coding-agent.yaml",
+                "content": "# a comment\nname: coding-agent\npath: .\n",
+            },
+            {
+                "path": "package.json",
+                "content": '{"name":"coding-agent","pi":{"agents":["agents/*.yaml"]}}',
+            },
+            {
+                "path": "agents/agent.yaml",
+                "content": "name: agent\nmodel:\n  name: test/model\n",
+            },
+            {"path": "SYSTEM.md", "content": "Use {{ braces }} freely.\n"},
+        ],
+        "directories": [],
+    }
+
+    rendered = introspection_recipe_check.render_template(plain, {})
+    final = introspection_recipe_check.ensure_identity(rendered, "my-agent")
+
+    assert ".introspection/my-agent.yaml" in _paths(final)
+    assert ".introspection/coding-agent.yaml" not in _paths(final)
+    manifest = _content(final, ".introspection/my-agent.yaml") or ""
+    assert "name: my-agent" in manifest
+    assert manifest.startswith("# a comment\n")
+    assert '"my-agent"' in (_content(final, "package.json") or "")
+    # a prompt's braces are never touched, because nothing opted it in
+    assert _content(final, "SYSTEM.md") == "Use {{ braces }} freely.\n"
+    assert introspection_recipe_check.check_recipe_files(final).valid
+
+
+def test_identity_is_a_no_op_on_a_template_that_named_itself() -> None:
+    already: introspection_recipe_check.RecipeFiles = {
+        "files": [
+            {
+                "path": ".introspection/my-agent.yaml",
+                "content": "name: my-agent\npath: .\n",
+            },
+            {"path": "package.json", "content": '{"name":"my-agent"}'},
+        ],
+        "directories": [],
+    }
+    assert introspection_recipe_check.ensure_identity(already, "my-agent") == already

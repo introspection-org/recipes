@@ -600,17 +600,105 @@ pub fn ensure_identity(
         ));
     }
     let display = name.unwrap_or(slug);
+    // The manifest's own `path:` says where the package sits beside it.
+    let package_dir = manifest
+        .content
+        .as_deref()
+        .and_then(manifest_path_value)
+        .unwrap_or_else(|| ".".to_string());
+    let package_path = if package_dir == "." || package_dir.is_empty() {
+        "package.json".to_string()
+    } else {
+        format!("{}/package.json", package_dir.trim_end_matches('/'))
+    };
+
     let mut out = files.clone();
     for file in &mut out.files {
-        if file.path != manifest.path {
-            continue;
+        if file.path == manifest.path {
+            if let Some(content) = file.content.as_deref() {
+                file.content = Some(rename_in_manifest(content, display));
+            }
+            file.path = wanted.clone();
+        } else if file.path == package_path {
+            if let Some(content) = file.content.as_deref() {
+                file.content = Some(rename_package(content, slug));
+            }
         }
-        if let Some(content) = file.content.as_deref() {
-            file.content = Some(rename_in_manifest(content, display));
-        }
-        file.path = wanted.clone();
     }
     Ok(out)
+}
+
+/// The manifest's `path:` scalar, ignoring quotes and any trailing comment.
+fn manifest_path_value(text: &str) -> Option<String> {
+    let raw = text.lines().find_map(|line| line.strip_prefix("path:"))?;
+    let trimmed = raw.trim();
+    for quote in ['\'', '"'] {
+        if let Some(rest) = trimmed.strip_prefix(quote) {
+            if let Some(end) = rest.find(quote) {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    Some(match trimmed.find(" #") {
+        Some(at) => trimmed[..at].trim_end().to_string(),
+        None => trimmed.to_string(),
+    })
+}
+
+/// Point `package.json` at the new Recipe.
+///
+/// Rewrites the value in place rather than reserialising: a JSON round trip
+/// reorders keys and reflows the file, so the first diff an author saw of
+/// their own Recipe would be noise they did not write.
+fn rename_package(contents: &str, slug: &str) -> String {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return contents.to_string();
+    };
+    let Some(current) = parsed.get("name").and_then(serde_json::Value::as_str) else {
+        return contents.to_string();
+    };
+    let Some(value_at) = root_name_key_end(contents) else {
+        return contents.to_string();
+    };
+    let (head, tail) = contents.split_at(value_at);
+    format!(
+        "{head}{}",
+        tail.replacen(&format!("\"{current}\""), &format!("\"{slug}\""), 1)
+    )
+}
+
+/// Byte offset just past the *root* object's `"name"` key.
+///
+/// Depth-tracking rather than the first `"name"` token: a Recipe that
+/// describes itself in a nested object can hold an earlier one, and rewriting
+/// from there renames something that is not the package while leaving the
+/// package itself untouched — a silent wrong answer.
+fn root_name_key_end(contents: &str) -> Option<usize> {
+    let bytes = contents.as_bytes();
+    let (mut depth, mut index) = (0usize, 0usize);
+    while index < bytes.len() {
+        match bytes[index] {
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b'"' => {
+                let start = index + 1;
+                let mut end = start;
+                while end < bytes.len() && bytes[end] != b'"' {
+                    end += if bytes[end] == b'\\' { 2 } else { 1 };
+                }
+                if end >= bytes.len() {
+                    return None;
+                }
+                if depth == 1 && &contents[start..end] == "name" {
+                    return Some(end + 1);
+                }
+                index = end;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Rewrite the manifest's `name:`, leaving every other line as written.
@@ -668,7 +756,15 @@ mod identity_tests {
 
     #[test]
     fn is_a_no_op_when_the_template_already_named_it() {
-        let already = recipe(".introspection/my-agent.yaml", "name: my-agent\npath: .\n");
+        // A template that declared `slug` and named both its manifest and its
+        // package for it is already correct, and nothing is rewritten.
+        let already = RecipeFiles {
+            files: vec![
+                RecipeFile::new(".introspection/my-agent.yaml", "name: my-agent\npath: .\n"),
+                RecipeFile::new("package.json", "{\"name\":\"my-agent\"}"),
+            ],
+            directories: vec![],
+        };
         let out = ensure_identity(&already, "my-agent", None).expect("identity");
         assert_eq!(out, already);
     }
@@ -690,6 +786,74 @@ mod identity_tests {
             .as_deref()
             .unwrap()
             .contains("name: My Agent"));
+    }
+
+    #[test]
+    fn renames_the_package_beside_the_manifest() {
+        let out = ensure_identity(
+            &recipe(
+                ".introspection/coding-agent.yaml",
+                "name: coding-agent\npath: .\n",
+            ),
+            "my-agent",
+            None,
+        )
+        .expect("identity");
+        let package = out
+            .files
+            .iter()
+            .find(|f| f.path == "package.json")
+            .and_then(|f| f.content.as_deref())
+            .expect("package");
+        assert!(package.contains("\"my-agent\""), "{package}");
+    }
+
+    #[test]
+    fn finds_the_package_through_the_manifest_path() {
+        let mut files = recipe(
+            ".introspection/coding-agent.yaml",
+            "name: coding-agent\npath: 'packages/app' # where it lives\n",
+        );
+        files.files[1] =
+            RecipeFile::new("packages/app/package.json", "{\"name\":\"coding-agent\"}");
+        let out = ensure_identity(&files, "my-agent", None).expect("identity");
+        let package = out
+            .files
+            .iter()
+            .find(|f| f.path == "packages/app/package.json")
+            .and_then(|f| f.content.as_deref())
+            .expect("package");
+        assert_eq!(package, "{\"name\":\"my-agent\"}");
+    }
+
+    #[test]
+    fn renames_the_root_package_not_an_earlier_nested_one() {
+        let mut files = recipe(
+            ".introspection/coding-agent.yaml",
+            "name: coding-agent\npath: .\n",
+        );
+        files.files[1] = RecipeFile::new(
+            "package.json",
+            "{\n  \"scripts\": {\"name\": \"coding-agent-build\"},\n  \"name\": \"coding-agent\"\n}",
+        );
+        let out = ensure_identity(&files, "my-agent", None).expect("identity");
+        let package: serde_json::Value = serde_json::from_str(
+            out.files
+                .iter()
+                .find(|f| f.path == "package.json")
+                .and_then(|f| f.content.as_deref())
+                .expect("package"),
+        )
+        .expect("valid json");
+        assert_eq!(
+            package.get("name").and_then(|v| v.as_str()),
+            Some("my-agent")
+        );
+        assert_eq!(
+            package.pointer("/scripts/name").and_then(|v| v.as_str()),
+            Some("coding-agent-build"),
+            "the nested value is not the package name"
+        );
     }
 
     #[test]
