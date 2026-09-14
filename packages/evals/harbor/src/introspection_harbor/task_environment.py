@@ -40,7 +40,6 @@ from harbor.environments.tar_transfer import (
     extract_dir_from_file,
     pack_dir_to_file,
     remote_pack_command,
-    remote_unpack_command,
 )
 
 from .base import (
@@ -142,6 +141,16 @@ HARBOR_VOLUME_MOUNTS: dict[str, str] = {
     # names the oracle.
     "harbor-solution": "/solution",
 }
+
+
+def _remote_unpack_command(archive_path: str, target_dir: str) -> str:
+    """Extract into a mounted directory without replacing its metadata."""
+    return (
+        f"mkdir -p {shlex.quote(target_dir)} && "
+        f"tar --no-overwrite-dir -xzf {shlex.quote(archive_path)} "
+        f"-C {shlex.quote(target_dir)}"
+    )
+
 
 # `EnvironmentPaths.default_skills_dir` (/harbor/skills) is deliberately NOT
 # mounted. It is a source an agent reads, not a destination Harbor writes, and
@@ -872,7 +881,7 @@ class IntrospectionEnvironment(BaseEnvironment):
                 archive = Path(scratch) / "upload.tar.gz"
                 pack_dir_to_file(source_dir, archive, compress=True)
                 await self.upload_file(archive, remote)
-            result = await self.exec(remote_unpack_command(remote, target_dir))
+            result = await self.exec(_remote_unpack_command(remote, target_dir))
             if result.return_code != 0:
                 raise DataPlaneError(
                     f"unpacking {remote} into {target_dir} failed: "

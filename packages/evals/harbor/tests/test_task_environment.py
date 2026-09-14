@@ -8,6 +8,10 @@ The transport itself is exercised against a real plane, not mocked here.
 from __future__ import annotations
 
 import json
+import os
+import stat
+import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,6 +32,7 @@ from introspection_harbor.task_environment import (
     PLANE_TASK_TIMEOUT_SECONDS,
     ComposeUnsupportedError,
     IntrospectionEnvironment,
+    _remote_unpack_command,
     build_context,
     download_command,
     exec_command,
@@ -434,6 +439,35 @@ class HarborDirectoryTest(unittest.TestCase):
         # `/` and failed — with the failure attributed to the trial rather than
         # to the setup. Asking for the user we actually are makes that honest.
         self.assertIsNone(IntrospectionEnvironment._reset_dirs_user(None))  # ty: ignore[invalid-argument-type]
+
+    def test_upload_preserves_the_mounted_directory_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            source = root / "source"
+            source.mkdir(mode=0o700)
+            executable = source / "verify.sh"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            archived_mtime = 1_600_000_000
+            os.utime(source, (archived_mtime, archived_mtime))
+            archive = root / "input archive.tar.gz"
+            with tarfile.open(archive, "w:gz") as handle:
+                handle.add(source, arcname=".")
+
+            target = root / "mounted tests"
+            target.mkdir(mode=0o770)
+            original_mode = stat.S_IMODE(target.stat().st_mode)
+            original_mtime = 1_700_000_000
+            os.utime(target, (original_mtime, original_mtime))
+
+            subprocess.run(
+                ["/bin/sh", "-c", _remote_unpack_command(str(archive), str(target))],
+                check=True,
+            )
+
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), original_mode)
+            self.assertNotEqual(int(target.stat().st_mtime), archived_mtime)
+            self.assertEqual(stat.S_IMODE((target / "verify.sh").stat().st_mode), 0o755)
 
     def test_the_agent_slot_mounts_somewhere_it_can_write(self) -> None:
         """`/logs` and `/tests` sit directly under `/`, which uid 1000 cannot create.
