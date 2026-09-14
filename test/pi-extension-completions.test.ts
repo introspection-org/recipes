@@ -315,6 +315,50 @@ describe("recipe child agent completion delivery", () => {
     }
   });
 
+  it("announces a run rehydrated as interrupted after a process restart", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-completions-"));
+    try {
+      const projectDir = join(root, "project");
+      const runDir = join(projectDir, ".pi", "agents", "recipe-agent-9");
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(
+        join(runDir, "status.json"),
+        `${JSON.stringify({
+          id: "recipe-agent-9",
+          agent: "explorer",
+          prompt: "old task",
+          status: "running",
+          startedAt: new Date().toISOString(),
+          toolCalls: [],
+        })}\n`
+      );
+
+      const pool = runnerPool();
+      const { pi, ctx } = await startSession(pool.createChildAgentRunner, root);
+
+      // Rehydration runs during session_start, before any child runs. A
+      // child that died with the previous process must still wake the
+      // parent — without this, nothing would ever tell it.
+      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await vi.waitFor(() => {
+        expect(completionMessages(pi)).toHaveLength(1);
+      });
+      const { message } = completionMessages(pi)[0]!;
+      expect(message.content).toContain("(recipe-agent-9)");
+      expect(message.content).toContain("[interrupted]");
+      expect(message.details?.completions?.[0]).toEqual(
+        expect.objectContaining({
+          id: "recipe-agent-9",
+          agent: "explorer",
+          status: "interrupted",
+          error: "Pi session restarted while the run was in flight",
+        })
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("renders the wake-up notice compactly in the TUI", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-completions-"));
     try {

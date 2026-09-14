@@ -114,6 +114,33 @@ export function createInProcessRunController(
     return run;
   }
 
+  /**
+   * Most recent `status === "completed"` run for `agentName`, per the
+   * retention rule on `AgentRunController`. A failed or interrupted run —
+   * even the most recent one for this role — is never eligible.
+   */
+  function lastCompletedRun(agentName: string): AgentRunSummary | null {
+    let latest: AgentRunSummary | null = null;
+    for (const run of runs.values()) {
+      const summary = run.summary;
+      if (summary.agent_name !== agentName || summary.status !== "completed") {
+        continue;
+      }
+      if (
+        !latest ||
+        (summary.completed_at ?? 0) > (latest.completed_at ?? 0)
+      ) {
+        latest = summary;
+      }
+    }
+    return latest;
+  }
+
+  function withPriorEpisode(prompt: string, prior: AgentRunSummary | null): string {
+    if (!prior?.output?.trim()) return prompt;
+    return `<prior_episode>\n${prior.output.trim()}\n</prior_episode>\n\n${prompt}`;
+  }
+
   async function executePrompt(run: ChildRun, prompt: string): Promise<void> {
     await acquireSlot();
     try {
@@ -208,6 +235,7 @@ export function createInProcessRunController(
 
     async start(input): Promise<AgentRunSummary> {
       const id = `agent-run-${randomUUID().slice(0, 8)}`;
+      const prior = input.continue ? lastCompletedRun(input.name) : null;
       const run: ChildRun = {
         summary: {
           agent_run_id: id,
@@ -225,7 +253,7 @@ export function createInProcessRunController(
         waiters: [],
       };
       runs.set(id, run);
-      run.settled = executePrompt(run, input.prompt);
+      run.settled = executePrompt(run, withPriorEpisode(input.prompt, prior));
       return run.summary;
     },
 

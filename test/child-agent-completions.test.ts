@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPLETION_BATCH_WINDOW_MS,
   ChildCompletionQueue,
+  envelopeFromInterruptedRehydrate,
   envelopeFromRun,
   renderCompletionNotice,
   type ChildCompletionEnvelope,
@@ -79,6 +80,26 @@ describe("ChildCompletionQueue", () => {
       "recipe-agent-1",
       "recipe-agent-2",
     ]);
+  });
+
+  it("flushes crash-recovered interruptions immediately, like failures", async () => {
+    const queue = new ChildCompletionQueue();
+    const delivered: ChildCompletionEnvelope[][] = [];
+    queue.setDeliverer(() => {
+      const batch = queue.consumeBatch();
+      if (batch.length > 0) delivered.push(batch);
+    });
+
+    queue.enqueue(
+      envelope({
+        id: "recipe-agent-1",
+        status: "interrupted",
+        error: "Pi session restarted while the run was in flight",
+      })
+    );
+    await microtasks();
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]?.[0]?.status).toBe("interrupted");
   });
 
   it("acknowledged envelopes are never delivered", async () => {
@@ -200,9 +221,42 @@ describe("envelopeFromRun", () => {
     ).toEqual(expect.objectContaining({ status: "failed", error: "boom" }));
   });
 
-  it("returns null for running and interrupted runs", () => {
+  it("returns null for running and live/explicit interrupted runs", () => {
     expect(envelopeFromRun(run({ status: "running" }))).toBeNull();
+    // A model/user-initiated interrupt is already visible in-turn to
+    // whoever called it, so envelopeFromRun must stay silent about it — the
+    // caller of `interrupt` never notified through this path. Only
+    // rehydrate's crash-recovery case uses envelopeFromInterruptedRehydrate,
+    // covered below.
     expect(envelopeFromRun(run({ status: "interrupted" }))).toBeNull();
+  });
+});
+
+describe("envelopeFromInterruptedRehydrate", () => {
+  function run(overrides: Partial<ChildRunSnapshot>): ChildRunSnapshot {
+    return {
+      id: "recipe-agent-3",
+      agent: "explorer",
+      prompt: "old task",
+      status: "interrupted",
+      startedAt: "2026-07-07T00:00:00.000Z",
+      completedAt: "2026-07-07T00:00:05.000Z",
+      error: "Pi session restarted while the run was in flight",
+      toolCalls: [],
+      ...overrides,
+    };
+  }
+
+  it("always produces a notice, unlike envelopeFromRun, since the caller already knows this is the crash-recovery case", () => {
+    expect(envelopeFromInterruptedRehydrate(run({}))).toEqual(
+      expect.objectContaining({
+        id: "recipe-agent-3",
+        agent: "explorer",
+        status: "interrupted",
+        error: "Pi session restarted while the run was in flight",
+        duration_ms: 5_000,
+      })
+    );
   });
 });
 
@@ -223,5 +277,18 @@ describe("renderCompletionNotice", () => {
     expect(notice).toContain("child output");
     expect(notice).toContain("Agent failed: boom");
     expect(notice).toContain('action "status"');
+  });
+
+  it("renders a crash-recovered interruption distinctly from a failure", () => {
+    const notice = renderCompletionNotice([
+      envelope({
+        id: "recipe-agent-3",
+        status: "interrupted",
+        error: "Pi session restarted while the run was in flight",
+      }),
+    ]);
+    expect(notice).toContain(
+      "Agent interrupted: Pi session restarted while the run was in flight"
+    );
   });
 });

@@ -1607,4 +1607,116 @@ describe("in-process run controller", () => {
     await controller.wait(run.agent_run_id);
     await controller.close(run.agent_run_id);
   });
+
+  describe("continue", () => {
+    /** Child runner whose successive dispatches follow a fixed script; records every prompt it received. */
+    function scriptedController(
+      script: ReadonlyArray<{ output?: string; errorMessage?: string }>
+    ) {
+      const prompts: string[] = [];
+      let call = -1;
+      const sessionFactory = async (): Promise<RecipeSessionHandle> => {
+        call += 1;
+        const step = script[call] ?? {};
+        const messages = step.errorMessage
+          ? [{ ...assistantMessage("", "error"), errorMessage: step.errorMessage }]
+          : [assistantMessage(step.output ?? "")];
+        return {
+          session: {
+            messages,
+            prompt: vi.fn(async (text: string) => {
+              prompts.push(text);
+            }),
+            abort: vi.fn(async () => {}),
+          },
+          dispose: vi.fn(async () => {}),
+        } as unknown as RecipeSessionHandle;
+      };
+      return { sessionFactory, prompts };
+    }
+
+    it("with no prior run for the role behaves exactly like omitting it", async () => {
+      const { recipeDir, workspaceDir } = fixture();
+      const { sessionFactory, prompts } = scriptedController([
+        { output: "first output" },
+      ]);
+      const controller = createInProcessRunController({
+        recipe: resolveRecipe({ recipeDir }),
+        cwd: workspaceDir,
+        env: cleanEnv(),
+        sessionFactory,
+      });
+      const run = await controller.start({
+        name: "helper",
+        prompt: "first task",
+        continue: true,
+      });
+      await controller.wait(run.agent_run_id);
+      expect(prompts).toEqual(["first task"]);
+    });
+
+    it("prepends the prior completed run's output exactly once", async () => {
+      const { recipeDir, workspaceDir } = fixture();
+      const { sessionFactory, prompts } = scriptedController([
+        { output: "first output" },
+        { output: "second output" },
+      ]);
+      const controller = createInProcessRunController({
+        recipe: resolveRecipe({ recipeDir }),
+        cwd: workspaceDir,
+        env: cleanEnv(),
+        sessionFactory,
+      });
+      const first = await controller.start({
+        name: "helper",
+        prompt: "first task",
+        continue: true,
+      });
+      await controller.wait(first.agent_run_id);
+
+      const second = await controller.start({
+        name: "helper",
+        prompt: "second task",
+        continue: true,
+      });
+      await controller.wait(second.agent_run_id);
+
+      expect(prompts[0]).toBe("first task");
+      expect(prompts[1]).toBe(
+        "<prior_episode>\nfirst output\n</prior_episode>\n\nsecond task"
+      );
+      expect(prompts[1]?.match(/<prior_episode>/g)).toHaveLength(1);
+      // The run's own displayed prompt stays the caller's original text.
+      expect(second.prompt).toBe("second task");
+    });
+
+    it("never reuses a failed run's output, even as the most recent dispatch for that role", async () => {
+      const { recipeDir, workspaceDir } = fixture();
+      const { sessionFactory, prompts } = scriptedController([
+        { errorMessage: "boom" },
+        { output: "retry output" },
+      ]);
+      const controller = createInProcessRunController({
+        recipe: resolveRecipe({ recipeDir }),
+        cwd: workspaceDir,
+        env: cleanEnv(),
+        sessionFactory,
+      });
+      const failed = await controller.start({
+        name: "helper",
+        prompt: "first task",
+        continue: true,
+      });
+      const settled = await controller.wait(failed.agent_run_id);
+      expect(settled.status).toBe("failed");
+
+      const retry = await controller.start({
+        name: "helper",
+        prompt: "second task",
+        continue: true,
+      });
+      await controller.wait(retry.agent_run_id);
+      expect(prompts[1]).toBe("second task");
+    });
+  });
 });

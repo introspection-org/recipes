@@ -10,10 +10,18 @@
  * during the turn teardown itself would be stranded on current pi releases).
  *
  * Successes batch briefly so N parallel children produce one notice;
- * failures flush immediately. Runs whose terminal output the model already
- * saw synchronously (`action:"wait"` or a terminal `status` read) are
- * acknowledged out of the queue so nothing is delivered
- * twice.
+ * failures and crash-recovery interruptions flush immediately. Runs whose
+ * terminal output the model already saw synchronously (`action:"wait"` or a
+ * terminal `status` read) are acknowledged out of the queue so nothing is
+ * delivered twice.
+ *
+ * A run rehydrated as `interrupted` (the process restarted while it was
+ * in flight — see `child-agent-store.ts`) also produces an envelope here.
+ * Without it, a child that dies with the process leaves no signal at all:
+ * unlike a normal failure, nothing would ever tell the parent it was
+ * waiting on something. A live, still-`running` run is never eligible —
+ * only a run's own terminal settlement (normal or crash-recovered) enqueues
+ * a notice.
  */
 
 import type { ChildRunSnapshot } from "./child-agent-store.js";
@@ -28,16 +36,16 @@ export interface ChildCompletionEnvelope {
   id: string;
   agent: string;
   label?: string;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "interrupted";
   output_preview?: string;
   error?: string;
   duration_ms?: number;
 }
 
-export function envelopeFromRun(
-  run: ChildRunSnapshot
-): ChildCompletionEnvelope | null {
-  if (run.status !== "completed" && run.status !== "failed") return null;
+function buildEnvelope(
+  run: ChildRunSnapshot,
+  status: ChildCompletionEnvelope["status"]
+): ChildCompletionEnvelope {
   const started = Date.parse(run.startedAt);
   const completed = run.completedAt ? Date.parse(run.completedAt) : NaN;
   const duration =
@@ -48,11 +56,40 @@ export function envelopeFromRun(
     id: run.id,
     agent: run.agent,
     label: run.label,
-    status: run.status,
+    status,
     output_preview: run.output?.slice(0, OUTPUT_PREVIEW_CHARS),
     error: run.error,
     duration_ms: duration,
   };
+}
+
+/**
+ * Envelope for a run's own live settlement. Deliberately excludes
+ * `"interrupted"`: a model/user-initiated `interrupt`/`close` is already
+ * visible in-turn to whoever just called it, so it must never also produce
+ * a background notice. Crash-recovered interruption is a different case —
+ * see `envelopeFromInterruptedRehydrate`.
+ */
+export function envelopeFromRun(
+  run: ChildRunSnapshot
+): ChildCompletionEnvelope | null {
+  if (run.status !== "completed" && run.status !== "failed") return null;
+  return buildEnvelope(run, run.status);
+}
+
+/**
+ * Envelope for a run rehydrated as `interrupted` after the process
+ * restarted while it was in flight (`child-agent-store.ts`). Unlike
+ * `envelopeFromRun`, this never gates on status: the caller
+ * (`rehydrateChildRuns` in `pi-extension.ts`) already knows this is exactly
+ * the crash-recovery case, which is the one `"interrupted"` outcome that
+ * must produce a notice — without it, a child that died with the process
+ * leaves no signal at all that the parent was waiting on something.
+ */
+export function envelopeFromInterruptedRehydrate(
+  run: ChildRunSnapshot
+): ChildCompletionEnvelope {
+  return buildEnvelope(run, "interrupted");
 }
 
 /**
@@ -66,8 +103,8 @@ export function renderCompletionNotice(
     const label = envelope.label ? ` — ${envelope.label}` : "";
     const header = `[${envelope.agent}] (${envelope.id})${label} [${envelope.status}]`;
     const body =
-      envelope.status === "failed"
-        ? `Agent failed: ${envelope.error ?? "unknown error"}`
+      envelope.status === "failed" || envelope.status === "interrupted"
+        ? `Agent ${envelope.status}: ${envelope.error ?? "unknown error"}`
         : envelope.output_preview?.trim() || "(no output)";
     return `${header}\n${body}`;
   });
@@ -93,7 +130,7 @@ export class ChildCompletionQueue {
 
   enqueue(envelope: ChildCompletionEnvelope): void {
     this.pending.push(envelope);
-    if (envelope.status === "failed") {
+    if (envelope.status === "failed" || envelope.status === "interrupted") {
       this.flushNow();
       return;
     }
