@@ -4,8 +4,9 @@
 ``introspection_harbor.agent:IntrospectionRecipeAgent``. Which adapter that
 resolves to is chosen by ``INTROSPECTION_HARBOR_ADAPTER``:
 
-- ``runtime`` (default): the trial image is the Runtime image; only the
-  image's own Pi is exposed (``runtime_agent``).
+- ``runtime`` (default): the trial image is the Runtime image; its Recipe is
+  either baked or materialized by the task before the image's Pi is exposed
+  (``runtime_agent``).
 - ``bootstrap``: a foreign trial image; the Recipe, Pi and the CLI are
   installed into it, then the run is the same (``bootstrap_agent``).
 """

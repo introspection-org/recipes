@@ -582,6 +582,8 @@ class IntrospectionEnvironment(BaseEnvironment):
             "idle_timeout_seconds": self._trial_timeout,
             "metadata": metadata,
         }
+        if recipe_sha := candidate.get("recipe_git_commit_sha"):
+            body["recipe_git_commit_sha"] = recipe_sha
         if agent := candidate.get("agent"):
             body["agent_name"] = agent
         if compose is not None:
@@ -648,15 +650,17 @@ class IntrospectionEnvironment(BaseEnvironment):
 
     @override
     async def stop(self, delete: bool) -> None:
-        if self._task_id is not None:
-            await self.client.delete_task(self._task_id)
+        try:
+            if delete and self._task_id is not None:
+                await self.client.delete_task(self._task_id)
+        finally:
             self._task_id = None
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
-        if self._control_plane is not None:
-            await self._control_plane.aclose()
-            self._control_plane = None
+            if self._client is not None:
+                await self._client.aclose()
+                self._client = None
+            if self._control_plane is not None:
+                await self._control_plane.aclose()
+                self._control_plane = None
 
     # -- commands ----------------------------------------------------------
 

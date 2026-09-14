@@ -31,7 +31,8 @@ CREDENTIALS_PATH = Path.home() / ".introspection" / "credentials.json"
 # wait longer than a minute is a loop of these rather than one long request.
 MAX_COMMAND_WAIT_SECONDS = 60
 # Stamped on every file this adapter creates, so a project's file list shows
-# what these are and a sweep can find them.
+# what these are and a future platform-owned sweep can find them. No such sweep
+# exists yet; callers with files:delete remove them best-effort.
 TRANSFER_PURPOSE = "harbor_transfer"
 # Generous: a create returns as soon as the row exists, and every long wait in
 # this module is a bounded server-held read rather than an open stream.
@@ -209,14 +210,21 @@ class DataPlaneClient:
         return response.json()
 
     async def delete_task(self, task_id: str) -> None:
-        """Cancel whatever is running and soft-delete the task, in one call.
+        """Best-effort release of a trial task after Harbor has its result.
 
         The only cancel route is per-run and deliberately leaves the sandbox
         warm so the task can take another turn — the opposite of teardown, and
-        it needs a run id besides. The delete is what releases the trial.
+        it needs a run id besides. A credential with ``tasks:delete`` releases
+        the trial immediately. Operator deliberately has no destructive scope,
+        so its delete is refused and the task's wall-clock ceiling releases the
+        sandbox instead. Cleanup must not turn an otherwise valid score into a
+        failed trial.
         """
 
-        await self._request("DELETE", f"/v1/tasks/{task_id}")
+        try:
+            await self._request("DELETE", f"/v1/tasks/{task_id}")
+        except DataPlaneError:
+            pass
 
     # -- commands ----------------------------------------------------------
 
@@ -256,9 +264,9 @@ class DataPlaneClient:
 
         `encryption: false` puts it in the raw blob store rather than the
         encrypted one, which is what the build-context and upload-command
-        paths already read. These are machine-generated tars that exist for
-        one transfer and are deleted straight after, so paying envelope
-        encryption for them buys nothing.
+        paths already read. These are machine-generated tars intended for one
+        transfer. Callers with files:delete remove them afterwards; Operator
+        deliberately lacks that scope, and no platform TTL exists yet.
         """
 
         response = await self._request(
@@ -274,10 +282,11 @@ class DataPlaneClient:
         return response.json()
 
     async def delete_file(self, file_id: str) -> None:
-        """Drop a transfer artifact once it has been read.
+        """Attempt to drop a transfer artifact once it has been read.
 
         Best effort: a trial that fails mid-transfer should surface that
-        failure, not a cleanup error on top of it.
+        failure, not a cleanup error on top of it. Operator deliberately lacks
+        files:delete, so its artifacts remain until project deletion.
         """
 
         try:

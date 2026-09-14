@@ -34,6 +34,51 @@ in how the Recipe and Pi reach the trial, and where the evidence comes from.
 INTROSPECTION_HARBOR_ADAPTER=bootstrap introspection eval run --runner harbor --path evals/swe-task
 ```
 
+### Committed candidates through an existing Runtime
+
+Use `introspection eval run --runner harbor --runtime <slug-or-id>
+--commit-sha <full-pushed-sha> --path <recipe-relative-suite> --agent <name>`.
+The CLI fetches the exact SHA from the Runtime's registered Recipe repository
+using the existing Git credential helper and checks it out temporarily for
+Harbor suite discovery. It keeps the Runtime selected by `--runtime`; every
+trial sends that Runtime ID and the candidate SHA to the Task API. Neither a
+local checkout nor a branch flag is required. Operator forwards `--commit-sha`
+to this same command.
+Committed-run results default to the invoking directory's `eval-runs/` (or
+`INTROSPECTION_EVAL_RUNS_DIR`); they survive checkout cleanup. Any explicit
+Harbor `--jobs-dir` must be an absolute path outside the temporary checkout.
+
+The Task API resolves that Runtime's trusted `RuntimeSpawnContext` and replaces
+only its Recipe commit for the eval Task. Repository, subpath, Runtime identity,
+bindings, resources, and image policy remain server-owned. The trial reuses the
+selected Runtime's published image. Runtime-agent stages the exact candidate
+checkout in the writable Task workspace, clears the baked Recipe directory's
+contents, copies the selected Recipe subpath into that existing directory, and
+reruns normal Recipe setup. The disposable sandbox keeps no backup of the baked
+source. There is no second workspace repository, manual token handling,
+uploaded checkout helper, candidate archive, or candidate bake. The pushed
+commit does not need its own Runtime-version record. A checkout, replacement,
+materialization, or dependency setup error is infrastructure/setup failure,
+not an agent regression.
+
+Run the focused adapter checks with:
+
+```sh
+uv run python -m unittest tests.test_task_environment
+```
+
+These prove server-derived candidate selection, committed provenance, and the run
+environment without starting a platform Task or calling a model. The Harbor package must be released and
+installed in Operator before the production wrapper selects this adapter; the
+local Operator build already consumes the CLI checkout's Harbor wheel.
+
+Operator also sets `INTROSPECTION_EVAL_RUNS_DIR` to its Task outputs
+`eval-runs/` directory. The CLI writes native artifacts and `run.json` there
+directly, so their recorded paths survive detached-checkout cleanup. It must
+be an absolute path. `introspection eval view` honors the same override.
+Standalone CLI runs still default to Recipe-local `eval-runs/`; generated
+results are never included in committed candidate transport.
+
 ### Which images the bootstrap adapter can use
 
 The bootstrap installs a toolchain into someone else's image, and on an
@@ -226,11 +271,22 @@ a Runtime built from its image.
 ### Transfer artifacts
 
 Uploads are staged through the Files API as raw (`encryption: false`) files
-stamped `purpose: harbor_transfer`, and deleted as soon as the sandbox has the
-bytes — they are machine-generated tars that exist for one transfer, so
-envelope encryption buys nothing. A `download` output is written by the plane
-through the encrypted store, so that one is only deleted promptly, not stored
-raw.
+stamped `purpose: harbor_transfer`. The adapter attempts best-effort deletion as
+soon as the sandbox has the bytes. An `evals` API key includes `files:delete`,
+so direct CLI orchestration can soft-delete their rows; the Operator session deliberately
+lacks that destructive scope, so its delete is refused and suppressed rather
+than turning a successful trial into a cleanup failure. No TTL or transfer-file
+sweep currently exists. The Files API delete does not itself erase blob bytes.
+Download outputs also use raw storage (`metadata.encryption=false`) and have
+the same retention limitation. This applies to Harbor's remaining test-input,
+prompt, replay, sidecar and result transfers; candidate Git checkout and setup
+do not create transfer Files.
+
+Trial Task teardown follows the same best-effort rule. A caller holding
+`tasks:delete` releases the sandbox immediately. The Operator deliberately has
+no destructive scope, so its refused delete is suppressed and the Task's
+configured wall-clock ceiling releases the sandbox instead; that expected
+cleanup path does not turn a valid verifier score into `completed_with_errors`.
 
 Known gaps, all of them in the command contract rather than this adapter:
 `exec`'s `user` cannot be honoured (the sandbox runs every command as its own
@@ -275,8 +331,10 @@ trial it:
    the observed model, which `introspection eval run` verifies against the
    agent YAML.
 
-Recipe source is never uploaded, patched, or dependency-installed inside the
-trial. Test a changed Recipe by publishing it as a new Runtime version.
+Recipe source is never uploaded or patched inside the trial. An exact-commit
+evaluation uses the selected Runtime version's published bake when available;
+its ordinary cold path otherwise materializes that version's requested SHA
+before this adapter runs.
 
 ## E2B through scoped Data Plane egress
 

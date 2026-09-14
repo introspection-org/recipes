@@ -216,6 +216,30 @@ class RuntimeSelectionTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class RuntimeTaskBodyTest(unittest.TestCase):
+    def test_candidate_trial_pins_the_commit_in_the_selected_runtime(self) -> None:
+        environment = object.__new__(IntrospectionEnvironment)
+        environment._spec = {
+            "candidate": {
+                "runtime": "01990000-0000-7000-8000-000000000001",
+                "agent": "agent",
+                "recipe_git_commit_sha": "a" * 40,
+                "recipe_repository_id": "repository-id",
+            },
+            "trial": {"index": 1, "count": 1},
+        }
+        environment._trial_timeout = 300
+
+        body = environment.create_task_body(
+            "01990000-0000-7000-8000-000000000001", None
+        )
+
+        self.assertEqual(body["runtime_id"], "01990000-0000-7000-8000-000000000001")
+        self.assertEqual(body["agent_name"], "agent")
+        self.assertEqual(body["recipe_git_commit_sha"], "a" * 40)
+        self.assertNotIn("repositories", body)
+
+
 class ExecSpecTest(unittest.TestCase):
     def test_a_main_shell_string_runs_through_bash_with_env_as_a_prefix(
         self,

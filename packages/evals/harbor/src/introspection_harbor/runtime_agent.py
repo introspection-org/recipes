@@ -1,9 +1,10 @@
 """Harbor adapter for a trial whose image is the Runtime image.
 
 The Data Plane published that image for the Recipe, so everything the agent
-needs is already inside it: the Recipe at ``/opt/introspection/recipe``, Pi
-and the Recipes extension under the runtime link, and the Introspection CLI.
-The adapter installs nothing; it only makes the image's Pi reachable.
+needs is already inside it: Pi, the Recipes extension under the runtime link,
+and the Introspection CLI. The Recipe at ``/opt/introspection/recipe`` is either
+the baked source or an exact commit prepared by runtime-agent before Harbor
+starts. The adapter installs nothing; it only makes the image's Pi reachable.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .base import (
 
 
 class IntrospectionRecipeAgent(RecipeAgentBase):
-    """Run the Recipe baked into the trial image, as selected by the CLI."""
+    """Run the Recipe materialized in the selected Runtime image."""
 
     provider_http_extension_path = RUNTIME_PROVIDER_HTTP_EXTENSION_PATH
 
@@ -32,7 +33,7 @@ class IntrospectionRecipeAgent(RecipeAgentBase):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
-        """Verify the baked Recipe and expose the image's Pi on ``PATH``.
+        """Verify the materialized Recipe and expose the image's Pi on ``PATH``.
 
         Nothing is downloaded: the launcher only points at the Pi that the
         Runtime image already carries, and it is skipped when the image

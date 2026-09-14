@@ -81,6 +81,14 @@ class TaskLifecycleTest(unittest.TestCase):
             (seen[0].method, seen[0].url.path), ("DELETE", "/v1/tasks/task-1")
         )
 
+    def test_teardown_is_best_effort_without_destructive_scope(self) -> None:
+        """Operator leaves cleanup to the task timeout instead of losing a score."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, json={"detail": "missing tasks:delete"})
+
+        asyncio.run(_client(handler).delete_task("task-1"))
+
 
 if __name__ == "__main__":
     unittest.main()
