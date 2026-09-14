@@ -70,6 +70,15 @@ export function notifyAgentRunEvent(
   }
 }
 
+/**
+ * Retention rule every implementation honors: a run's `output` is eligible
+ * to be reused as another dispatch's leading context (see `start`'s
+ * `continue` input) only when that run's terminal `status` is
+ * `"completed"`. A `"failed"`, `"interrupted"`, or `"closed"` run's output
+ * must never be treated as reusable context — a controller that reuses it
+ * anyway is violating this contract, not exercising an implementation
+ * choice.
+ */
 export interface AgentRunController {
   list(): AgentRunSummary[];
   get(id: string): AgentRunSummary | null;
@@ -77,6 +86,16 @@ export interface AgentRunController {
     name: string;
     prompt: string;
     label?: string;
+    /**
+     * Resolve the most recent `status === "completed"` run for `name` (per
+     * the retention rule above) and prepend its output as a leading
+     * `<prior_episode>` block ahead of `prompt`, before the new run starts.
+     * No prior completed run for `name` (first dispatch, or every prior
+     * dispatch failed) behaves identically to omitting this flag. Default
+     * `false`/omitted: every `start()` is independent, unchanged from
+     * today's behavior.
+     */
+    continue?: boolean;
     onUpdate?: (summary: AgentRunSummary) => void | Promise<void>;
   }): Promise<AgentRunSummary>;
   wait(id: string, signal?: AbortSignal): Promise<AgentRunSummary>;
@@ -103,6 +122,7 @@ const AgentToolParams = Type.Object({
   label: Type.Optional(Type.String()),
   id: Type.Optional(Type.String()),
   message: Type.Optional(Type.String()),
+  continue: Type.Optional(Type.Boolean()),
 });
 
 type AgentToolInput = Static<typeof AgentToolParams>;
@@ -176,6 +196,7 @@ export function createAgentTool(
       `Available agent roles: ${[...agents.keys()].join(", ")}. Pass a role as name; use label to distinguish concurrent runs.`,
       "Use status, wait, message, interrupt, or close with that id.",
       "Message steers a running child at the next message boundary; on a settled child it resumes the same session.",
+      "Pass continue: true on start to build on that role's own most recent successful run, if one exists; omit it to start independent of any prior run.",
     ].join(" "),
     parameters: AgentToolParams,
     async execute(_callId, rawParams, signal, onUpdate) {
@@ -195,6 +216,7 @@ export function createAgentTool(
             name: params.name,
             prompt: params.prompt,
             label: params.label,
+            continue: params.continue,
             onUpdate(update) {
               return onUpdate?.({
                 content: [{ type: "text" as const, text: "" }],

@@ -31,6 +31,7 @@ import {
 } from "./child-agent-store.js";
 import {
   ChildCompletionQueue,
+  envelopeFromInterruptedRehydrate,
   envelopeFromRun,
   renderCompletionNotice,
   type ChildCompletionEnvelope,
@@ -530,6 +531,12 @@ export function createRecipesExtension(
         snapshot.completedAt = snapshot.completedAt ?? new Date().toISOString();
         snapshot.error = "Pi session restarted while the run was in flight";
         await persistRun(cwd, snapshot);
+        // Unlike a normal failure, nothing else ever observes this
+        // transition happening — the process that would have settled the
+        // run is the one that died. Without this, a child killed by a
+        // restart leaves the parent with no signal at all that it was
+        // waiting on something.
+        completions.enqueue(envelopeFromInterruptedRehydrate(snapshot));
       }
       archivedRuns.set(snapshot.id, snapshot);
       restored += 1;
@@ -539,6 +546,30 @@ export function createRecipesExtension(
 
   function findRunSnapshot(id: string): ChildRunSnapshot | undefined {
     return childRuns.get(id) ?? archivedRuns.get(id);
+  }
+
+  /**
+   * Most recent `status === "completed"` run for `agentName`, per the
+   * retention rule on `AgentRunController` (`agents.ts`). A failed or
+   * interrupted run is never eligible, even when it's the most recent
+   * dispatch for this role — reusing a broken run's output as later context
+   * is exactly what the rule exists to prevent.
+   */
+  function lastCompletedRunFor(agentName: string): ChildRunSnapshot | undefined {
+    let latest: ChildRunSnapshot | undefined;
+    const candidates = [...childRuns.values(), ...archivedRuns.values()];
+    for (const run of candidates) {
+      if (run.agent !== agentName || run.status !== "completed") continue;
+      if (!latest || (run.completedAt ?? "") > (latest.completedAt ?? "")) {
+        latest = run;
+      }
+    }
+    return latest;
+  }
+
+  function withPriorEpisode(prompt: string, prior: ChildRunSnapshot | undefined): string {
+    if (!prior?.output?.trim()) return prompt;
+    return `<prior_episode>\n${prior.output.trim()}\n</prior_episode>\n\n${prompt}`;
   }
 
   const localRunController: AgentRunController = {
@@ -558,13 +589,15 @@ export function createRecipesExtension(
       if (!state || !localAgentContext) {
         throw new Error("No recipe session is active");
       }
+      const prior = input.continue ? lastCompletedRunFor(input.name) : undefined;
       const run = await runChildAgent(
         state,
         input.name,
         input.prompt,
         input.label,
         localAgentContext,
-        input.onUpdate
+        input.onUpdate,
+        withPriorEpisode(input.prompt, prior)
       );
       return controllerSummary(run);
     },
@@ -1154,7 +1187,12 @@ export function createRecipesExtension(
     prompt: string,
     label: string | undefined,
     ctx: ExtensionContext,
-    onUpdate?: (summary: AgentRunSummary) => void | Promise<void>
+    onUpdate?: (summary: AgentRunSummary) => void | Promise<void>,
+    // The prompt actually sent to the child's model, when it differs from
+    // `prompt` (the displayed/persisted value) — the `continue`-prepended
+    // `<prior_episode>` block should not clutter run summaries and status
+    // displays, only what the child itself receives.
+    executionPrompt: string = prompt
   ): Promise<ChildRun> {
     const id = nextChildRunId();
     let run: ChildRun | undefined;
@@ -1224,7 +1262,7 @@ export function createRecipesExtension(
     };
     notifyUpdate();
     void persistRun(launchState.cwd, run);
-    run.promise = executeChildPrompt(run, prompt, launchState.cwd);
+    run.promise = executeChildPrompt(run, executionPrompt, launchState.cwd);
     childRuns.set(id, run);
     return run;
   }
