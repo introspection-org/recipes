@@ -1,9 +1,21 @@
 # Subagent Run Retention And Continuity
 
-**Status:** Proposal, pending review. Extends the `agent` delegation tool
-described in [`agent-composition.md`](./agent-composition.md) and the
-`AgentRunController` contract every host implements
-(`src/run-controller.ts`, `src/agents.ts`).
+**Status:** §1-§3 implemented, both in the default in-memory controller
+(`src/run-controller.ts`) and the persistence-backed one (`src/pi-extension.ts`),
+with conformance tests on both. §4 turned out unnecessary — see its section
+below — and is dropped rather than built. Extends the `agent` delegation
+tool described in [`agent-composition.md`](./agent-composition.md) and the
+`AgentRunController` contract every host implements.
+
+One deviation found during implementation, beyond scope as originally
+written: `pi-extension.ts`'s own `rehydrateChildRuns` already had full
+`ChildAgentRunStore`-backed persistence and rehydration wired up — §2's
+"wire up `ChildAgentRunStore`" was only true of the SDK's simpler in-memory
+default controller, not of the actual host extension. What §2 became there
+instead: closing the same crash-path notification gap §2 in the
+`introspection-cloud` companion doc describes, since `pi-extension.ts`'s
+`rehydrateChildRuns` had the identical gap — a run rehydrated as
+`interrupted` never produced a completion notice, unlike a normal failure.
 
 ## Context
 
@@ -133,17 +145,20 @@ Update `docs/agent-composition.md` § Root Agents and Subagents with a short
 note once this lands, since that section is the normative description of
 delegation today.
 
-### 4. Portable run-hierarchy metadata hook
+### 4. Portable run-hierarchy metadata hook — dropped, not built
 
-`CreateRecipeChildAgentRunnerOptions`/`RecipeSessionOtelOptions` already let
-a host supply `AgentMeta { conversationId, agentId, agentName }` for
-telemetry. Add optional `runId` / `runParentId` / `runRootId` alongside it,
-passed through unchanged to the host's own OTel instrumentation call. This
-package does not interpret these values or require them — they exist purely
-so a host like ours, which already derives a real run-hierarchy tree over
-OTel baggage, can attach it without teaching this package about baggage,
-ClickHouse, or anything host-specific. A host that doesn't supply them sees
-no behavior change.
+Originally proposed: extend `AgentMeta { conversationId, agentId, agentName }`
+with optional `runId` / `runParentId` / `runRootId` so a host could attach
+its own run hierarchy without this package knowing anything about how.
+
+This is unnecessary. `@introspection-sdk/introspection-pi`'s
+`instrumentAgent`/`instrumentSession` already accept an `extraAttributes`
+hook — arbitrary attributes a host layers onto every span, not fixed to
+three named fields. Our own `runtime-agent` already uses exactly this to
+attach `introspection.run.id` / `.run.parent_id` / `.run.root_id` (see the
+`introspection-cloud` companion doc's Context section). Widening `AgentMeta`
+would have been a narrower, redundant path to something the existing hook
+already does more generally. No change needed here.
 
 ## Evaluation plan
 
@@ -217,15 +232,22 @@ ownership boundary and should be scoped with whoever owns that workflow.
 
 ## Rollout
 
-1. §1 (documentation-only) and §2 (`ChildAgentRunStore` wiring) can land
-   together — no wire-contract change, additive to the default controller.
-2. §4 (portable metadata hook) lands alongside or after §2 — purely additive
-   to `AgentMeta`.
-3. §3 (`continue` flag) lands last, since it's the only model-facing wire
-   change and is the one piece a consuming host (ours included) needs to
-   coordinate a release around.
-4. The deterministic conformance cases land with the section they verify,
-   not as a separate follow-up — a behavior change without its conformance
-   case is exactly the drift the suite exists to prevent.
-5. The judged evaluation dataset is scoped and built separately once this
-   design is signed off, against whichever repo owns `judges eval`.
+1. ~~§1 (documentation-only) and §2 (`ChildAgentRunStore` wiring) can land
+   together — no wire-contract change, additive to the default controller.~~
+   Landed together: the retention-rule doc comment, `pi-extension.ts`'s
+   crash-path notification fix, and deterministic tests for both.
+2. ~~§4 (portable metadata hook) lands alongside or after §2.~~ Dropped —
+   see §4 above.
+3. ~~§3 (`continue` flag) lands last.~~ Landed in the same PR as §1/§2 rather
+   than separately: implementing all three together surfaced the §2
+   deviation (above) that would have been easy to miss doing them apart,
+   and every consuming host still needs its own coordinated release to
+   actually expose `continue` to a recipe author, which this PR does not
+   do on its own.
+4. The deterministic conformance cases landed with the section they verify:
+   `test/child-agent-completions.test.ts` for the crash-path notice,
+   `test/pi-extension-continue.test.ts` and `test/session.test.ts`'s
+   `continue` describe block for retention + continuation, on both
+   controller implementations.
+5. The judged evaluation dataset is still scoped and built separately, once
+   this design is signed off, against whichever repo owns `judges eval`.
