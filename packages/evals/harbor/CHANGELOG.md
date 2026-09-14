@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.6.0...introspection-harbor-v0.7.0) (2026-09-14)
+
+
+### Features
+
+* **evals:** run Harbor at exact Recipe commits ([#394](https://github.com/introspection-org/introspection-cli/issues/394)) ([f4d86b3](https://github.com/introspection-org/introspection-cli/commit/f4d86b3b812047e3a7723159535c26c74854ca8c))
+
+
+### Bug Fixes
+
+* **harbor:** preserve mounted directory metadata ([#398](https://github.com/introspection-org/introspection-cli/issues/398)) ([7b0bbb7](https://github.com/introspection-org/introspection-cli/commit/7b0bbb761258ff5394e6946367fe32e5589a6cee))
+
 ## [0.6.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.5.2...introspection-harbor-v0.6.0) (2026-09-10)
 
 
