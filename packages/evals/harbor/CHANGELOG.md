@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.0...introspection-harbor-v0.7.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **harbor:** skip mounted archive root metadata ([#400](https://github.com/introspection-org/introspection-cli/issues/400)) ([8d14a61](https://github.com/introspection-org/introspection-cli/commit/8d14a61e922b51068407999f76cb834c66514c1e))
+
 ## [0.7.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.6.0...introspection-harbor-v0.7.0) (2026-09-14)
 
 
