@@ -20,8 +20,11 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+
+from harbor.environments.tar_transfer import pack_dir_to_file
 
 from introspection_harbor.bootstrap_agent import (
     BOOTSTRAP_BASE_DIR,
@@ -31,6 +34,7 @@ from introspection_harbor.bootstrap_agent import (
     node_prerequisite_command,
     toolchain_install_command,
 )
+from introspection_harbor.task_environment import _remote_unpack_command
 
 # The sandbox runs the trial as this user. Override where a mirror image grants
 # uid 1000 ownership of its npm prefix, which a stock image does not.
@@ -205,6 +209,58 @@ class BootstrapAgainstRealImagesTest(unittest.TestCase):
                 result = self._run(image, command, network=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertNotIn("EACCES", result.stderr)
+
+
+@unittest.skipUnless(
+    os.environ.get("HARBOR_BOOTSTRAP_DOCKER") == "1", "set HARBOR_BOOTSTRAP_DOCKER=1"
+)
+@unittest.skipUnless(_docker_available(), "docker is not available")
+class DirectoryTransferAgainstMountedVolumeTest(unittest.TestCase):
+    def test_upload_does_not_change_the_root_owned_mount(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            root.chmod(0o755)
+            source = root / "source"
+            source.mkdir(mode=0o700)
+            executable = source / "verify.sh"
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+            archive = root / "upload.tar.gz"
+            pack_dir_to_file(source, archive, compress=True)
+            archive.chmod(0o644)
+
+            unpack = _remote_unpack_command("/transfer/upload.tar.gz", "/tests")
+            command = (
+                f"{unpack} && "
+                "stat -c '%a %u:%g' /tests && "
+                "stat -c '%a' /tests/verify.sh"
+            )
+            result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--user",
+                    SANDBOX_UID,
+                    "--network",
+                    "none",
+                    "--mount",
+                    "type=tmpfs,destination=/tests,tmpfs-mode=1777",
+                    "--volume",
+                    f"{root}:/transfer:ro",
+                    os.environ.get("HARBOR_IMAGE_BARE", "debian:bookworm-slim"),
+                    "/bin/sh",
+                    "-c",
+                    command,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ["1777 0:0", "755"])
 
 
 if __name__ == "__main__":

@@ -144,10 +144,13 @@ HARBOR_VOLUME_MOUNTS: dict[str, str] = {
 
 
 def _remote_unpack_command(archive_path: str, target_dir: str) -> str:
-    """Extract into a mounted directory without replacing its metadata."""
+    """Extract children into a mounted directory without touching its metadata."""
+    # Harbor's packer roots every member at `.`; strip only that synthetic root
+    # so tar skips its metadata instead of applying it to the mounted target.
     return (
         f"mkdir -p {shlex.quote(target_dir)} && "
-        f"tar --no-overwrite-dir -xzf {shlex.quote(archive_path)} "
+        f"tar --no-overwrite-dir --strip-components=1 "
+        f"-xzf {shlex.quote(archive_path)} "
         f"-C {shlex.quote(target_dir)}"
     )
 

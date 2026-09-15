@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import stat
 import subprocess
-import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from harbor.environments.base import BaseEnvironment
+from harbor.environments.tar_transfer import pack_dir_to_file
 from harbor.models.trial.paths import EnvironmentPaths
 
 from introspection_harbor.client import (
@@ -451,17 +452,18 @@ class HarborDirectoryTest(unittest.TestCase):
             archived_mtime = 1_600_000_000
             os.utime(source, (archived_mtime, archived_mtime))
             archive = root / "input archive.tar.gz"
-            with tarfile.open(archive, "w:gz") as handle:
-                handle.add(source, arcname=".")
+            pack_dir_to_file(source, archive, compress=True)
 
             target = root / "mounted tests"
-            target.mkdir(mode=0o770)
+            target.mkdir(mode=0o1777)
             original_mode = stat.S_IMODE(target.stat().st_mode)
             original_mtime = 1_700_000_000
             os.utime(target, (original_mtime, original_mtime))
 
+            command = _remote_unpack_command(str(archive), str(target))
+            self.assertIn("--strip-components=1", shlex.split(command))
             subprocess.run(
-                ["/bin/sh", "-c", _remote_unpack_command(str(archive), str(target))],
+                ["/bin/sh", "-c", command],
                 check=True,
             )
 
