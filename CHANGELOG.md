@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/introspection-org/recipes/compare/v0.25.1...v0.26.0) (2026-09-16)
+
+
+### Features
+
+* **template:** render a template repository into a Recipe ([#270](https://github.com/introspection-org/recipes/issues/270)) ([0f33c0b](https://github.com/introspection-org/recipes/commit/0f33c0b6115e536209f59a14c66a9e27f8702b1b))
+
+
+### Bug Fixes
+
+* **recipe-check:** ensure_identity renames the lockfile root with the package ([#276](https://github.com/introspection-org/recipes/issues/276)) ([7d8a8be](https://github.com/introspection-org/recipes/commit/7d8a8be9e43d325442e201d57df7da683dddd11d))
+
 ## [0.25.1](https://github.com/introspection-org/recipes/compare/v0.25.0...v0.25.1) (2026-09-07)
 
 
