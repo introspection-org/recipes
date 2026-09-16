@@ -695,6 +695,9 @@ pub fn ensure_identity(
         format!("{}/package.json", package_dir.trim_end_matches('/'))
     };
     validate_path(&package_path)?;
+    let package_root = package_path.trim_end_matches("package.json");
+    let lockfile_paths = ["package-lock.json", "npm-shrinkwrap.json"]
+        .map(|lockfile| format!("{package_root}{lockfile}"));
     let display = name.unwrap_or(slug);
     let rewritten = if parsed.get("name").and_then(|v| v.as_str()) == Some(display) {
         content.to_string()
@@ -727,6 +730,50 @@ pub fn ensure_identity(
                 );
                 file.content = Some(
                     serde_json::to_string_pretty(&package)
+                        .map_err(|error| TemplateError::new(error.to_string()))?
+                        + "\n",
+                );
+            }
+        } else if lockfile_paths.contains(&file.path) {
+            // npm records the root package's name twice in a v2+ lockfile,
+            // at the top level and under `packages[""]`; a lockfile that
+            // still names the template beside a renamed package.json is the
+            // drift that textual seeding used to leave behind.
+            let content = file
+                .content
+                .as_deref()
+                .ok_or_else(|| TemplateError::new(format!("{} was not read", file.path)))?;
+            let mut lock: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(content).map_err(|error| {
+                    TemplateError::new(format!("parsing {}: {error}", file.path))
+                })?;
+            // A root with no `name` at all (npm writes one when package.json
+            // had none) counts as wrong too: npm adds the field on the next
+            // install, which is the drift this exists to remove.
+            let mut changed = false;
+            if lock.get("name").and_then(|v| v.as_str()) != Some(slug) {
+                lock.insert(
+                    "name".to_string(),
+                    serde_json::Value::String(slug.to_string()),
+                );
+                changed = true;
+            }
+            if let Some(root) = lock
+                .get_mut("packages")
+                .and_then(|packages| packages.get_mut(""))
+                .and_then(|root| root.as_object_mut())
+            {
+                if root.get("name").and_then(|v| v.as_str()) != Some(slug) {
+                    root.insert(
+                        "name".to_string(),
+                        serde_json::Value::String(slug.to_string()),
+                    );
+                    changed = true;
+                }
+            }
+            if changed {
+                file.content = Some(
+                    serde_json::to_string_pretty(&lock)
                         .map_err(|error| TemplateError::new(error.to_string()))?
                         + "\n",
                 );
@@ -841,6 +888,70 @@ mod identity_tests {
         assert!(paths(&out).contains(&".introspection/my-agent.yaml"));
         let manifest = out.files[0].content.clone().unwrap();
         assert!(manifest.contains("name: my-agent"));
+    }
+
+    #[test]
+    fn renames_the_lockfile_root_with_the_package() {
+        let files = RecipeFiles {
+            files: vec![
+                RecipeFile::new(".introspection/coding-agent.yaml", "name: coding-agent\npath: .\n"),
+                RecipeFile::new("package.json", "{\"name\":\"coding-agent\"}"),
+                RecipeFile::new(
+                    "package-lock.json",
+                    "{\"name\":\"coding-agent\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"coding-agent\",\"version\":\"0.1.0\"},\"node_modules/left-pad\":{\"version\":\"1.3.0\"}}}",
+                ),
+            ],
+            directories: vec![],
+        };
+        let out = ensure_identity(&files, "my-agent", None).expect("identity");
+        let lock: serde_json::Value = serde_json::from_str(
+            out.files
+                .iter()
+                .find(|f| f.path == "package-lock.json")
+                .and_then(|f| f.content.as_deref())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(lock["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["version"], "0.1.0");
+        assert_eq!(
+            lock["packages"]["node_modules/left-pad"]["version"],
+            "1.3.0"
+        );
+        assert_eq!(lock["lockfileVersion"], 3);
+    }
+
+    #[test]
+    fn names_a_lockfile_root_that_had_no_name() {
+        // A package.json without a name yields a lockfile whose root omits it
+        // too; npm would add the slug on the next install, so it is added now.
+        let files = RecipeFiles {
+            files: vec![
+                RecipeFile::new(
+                    ".introspection/coding-agent.yaml",
+                    "name: coding-agent\npath: .\n",
+                ),
+                RecipeFile::new("package.json", "{\"version\":\"0.1.0\"}"),
+                RecipeFile::new(
+                    "package-lock.json",
+                    "{\"lockfileVersion\":3,\"packages\":{\"\":{\"version\":\"0.1.0\"}}}",
+                ),
+            ],
+            directories: vec![],
+        };
+        let out = ensure_identity(&files, "my-agent", None).expect("identity");
+        let lock: serde_json::Value = serde_json::from_str(
+            out.files
+                .iter()
+                .find(|f| f.path == "package-lock.json")
+                .and_then(|f| f.content.as_deref())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(lock["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["version"], "0.1.0");
     }
 
     #[test]
