@@ -747,8 +747,11 @@ pub fn ensure_identity(
                 serde_json::from_str(content).map_err(|error| {
                     TemplateError::new(format!("parsing {}: {error}", file.path))
                 })?;
+            // A root with no `name` at all (npm writes one when package.json
+            // had none) counts as wrong too: npm adds the field on the next
+            // install, which is the drift this exists to remove.
             let mut changed = false;
-            if lock.get("name").is_some_and(|v| v.as_str() != Some(slug)) {
+            if lock.get("name").and_then(|v| v.as_str()) != Some(slug) {
                 lock.insert(
                     "name".to_string(),
                     serde_json::Value::String(slug.to_string()),
@@ -760,7 +763,7 @@ pub fn ensure_identity(
                 .and_then(|packages| packages.get_mut(""))
                 .and_then(|root| root.as_object_mut())
             {
-                if root.get("name").is_some_and(|v| v.as_str() != Some(slug)) {
+                if root.get("name").and_then(|v| v.as_str()) != Some(slug) {
                     root.insert(
                         "name".to_string(),
                         serde_json::Value::String(slug.to_string()),
@@ -917,6 +920,38 @@ mod identity_tests {
             "1.3.0"
         );
         assert_eq!(lock["lockfileVersion"], 3);
+    }
+
+    #[test]
+    fn names_a_lockfile_root_that_had_no_name() {
+        // A package.json without a name yields a lockfile whose root omits it
+        // too; npm would add the slug on the next install, so it is added now.
+        let files = RecipeFiles {
+            files: vec![
+                RecipeFile::new(
+                    ".introspection/coding-agent.yaml",
+                    "name: coding-agent\npath: .\n",
+                ),
+                RecipeFile::new("package.json", "{\"version\":\"0.1.0\"}"),
+                RecipeFile::new(
+                    "package-lock.json",
+                    "{\"lockfileVersion\":3,\"packages\":{\"\":{\"version\":\"0.1.0\"}}}",
+                ),
+            ],
+            directories: vec![],
+        };
+        let out = ensure_identity(&files, "my-agent", None).expect("identity");
+        let lock: serde_json::Value = serde_json::from_str(
+            out.files
+                .iter()
+                .find(|f| f.path == "package-lock.json")
+                .and_then(|f| f.content.as_deref())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(lock["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["name"], "my-agent");
+        assert_eq!(lock["packages"][""]["version"], "0.1.0");
     }
 
     #[test]
