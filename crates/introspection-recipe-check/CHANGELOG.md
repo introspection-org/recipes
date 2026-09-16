@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.6.0...introspection-recipe-check-v0.6.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **recipe-check:** ensure_identity renames the lockfile root with the package ([#276](https://github.com/introspection-org/recipes/issues/276)) ([7d8a8be](https://github.com/introspection-org/recipes/commit/7d8a8be9e43d325442e201d57df7da683dddd11d))
+
 ## [0.6.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.5.0...introspection-recipe-check-v0.6.0) (2026-09-11)
 
 
