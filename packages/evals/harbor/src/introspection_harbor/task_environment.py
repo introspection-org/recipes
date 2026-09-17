@@ -106,9 +106,8 @@ DEFAULT_START_TIMEOUT_SECONDS = 3600.0
 DEFAULT_IMAGE_TIMEOUT_SECONDS = 1800.0
 DEFAULT_EXEC_TIMEOUT_SECONDS = 900
 POLL_SECONDS = 3.0
-# One command read is held by the plane for at most a minute, so a longer wait
-# is a loop of those.
-COMMAND_WAIT_SLICE_SECONDS = 60
+# Keep each held read below the shortest proxy request timeout on the path.
+COMMAND_WAIT_SLICE_SECONDS = 20
 TRANSFER_DIR = "/tmp"
 
 # Harbor runs in the parent Operator task. Its agent adapter and a task's

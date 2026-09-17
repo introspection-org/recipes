@@ -29,6 +29,7 @@ from introspection_harbor.client import (
     pull_reference,
 )
 from introspection_harbor.task_environment import (
+    COMMAND_WAIT_SLICE_SECONDS,
     HARBOR_VOLUME_MOUNTS,
     PLANE_TASK_TIMEOUT_SECONDS,
     ComposeUnsupportedError,
@@ -110,6 +111,31 @@ class ComposeTranslationTest(unittest.TestCase):
                 assert compose is not None
                 self.assertEqual(set(compose["services"]), {"main"})
                 self.assertEqual(set(compose["volumes"]), set(HARBOR_VOLUME_MOUNTS))
+
+
+class CommandWaitTest(unittest.IsolatedAsyncioTestCase):
+    async def test_held_reads_stay_below_the_proxy_timeout(self) -> None:
+        environment = object.__new__(IntrospectionEnvironment)
+        environment._task_id = "task-id"
+        environment._client = AsyncMock()
+        environment._client.create_command.return_value = {
+            "id": "command-id",
+            "status": "running",
+        }
+        environment._client.get_command.return_value = {
+            "id": "command-id",
+            "status": "completed",
+        }
+
+        result = await environment.run_command({"kind": "exec"}, budget=90)
+
+        self.assertEqual(result["status"], "completed")
+        environment._client.get_command.assert_awaited_once_with(
+            "task-id",
+            "command-id",
+            wait_seconds=COMMAND_WAIT_SLICE_SECONDS,
+        )
+        self.assertLess(COMMAND_WAIT_SLICE_SECONDS, 30)
 
 
 class MainSlotTest(unittest.TestCase):
