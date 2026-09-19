@@ -914,7 +914,7 @@ wheels = [
 
 [[package]]
 name = "introspection-harbor"
-version = "0.7.1"
+version = "0.7.2"
 source = { editable = "." }
 dependencies = [
     { name = "harbor", extra = ["e2b"] },

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.1...introspection-harbor-v0.7.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* **eval:** use repository URL for committed checkout ([#404](https://github.com/introspection-org/introspection-cli/issues/404)) ([54a2cf1](https://github.com/introspection-org/introspection-cli/commit/54a2cf12ff3927e3ced7acfac05d01b7addd6c0f))
+
 ## [0.7.1](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.0...introspection-harbor-v0.7.1) (2026-09-15)
 
 
