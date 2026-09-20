@@ -250,6 +250,17 @@ jobs:
             exit 1
           fi
 
+          # A republish is refused, so a rerun after a partial failure cannot move
+          # the tag by publishing again. Fail loudly rather than leave it behind.
+          assert_tagged() {
+            local have
+            have="$(npm view "$1@$2" version 2>/dev/null || true)"
+            if [[ "$have" != "$3" ]]; then
+              echo "$1@$2 is '$have', not $3 -- run: npm dist-tag add $1@$3 $2" >&2
+              exit 1
+            fi
+          }
+
           package_name="$(node -p "require('./package.json').name")"
           version="$(node -p "require('./package.json').version")"
           root_tag="latest"
@@ -264,6 +275,7 @@ jobs:
               platform_name="$(node -p "require('./$d/package.json').name")"
               if npm view "$platform_name@$version" version >/dev/null 2>&1; then
                 echo "$platform_name@$version is already published"
+                assert_tagged "$platform_name" "$root_tag" "$version"
               else
                 npm publish "$d" --access public --tag "$root_tag"
               fi
@@ -271,6 +283,7 @@ jobs:
 
             if npm view "$package_name@$version" version >/dev/null 2>&1; then
               echo "$package_name@$version is already published"
+              assert_tagged "$package_name" "$root_tag" "$version"
             else
               pnpm publish --access public --tag "$root_tag" --no-git-checks
             fi
@@ -303,6 +316,7 @@ jobs:
               fi
               if npm view "$channel_name@$channel_version" version >/dev/null 2>&1; then
                 echo "$channel_name@$channel_version is already published"
+                assert_tagged "$channel_name" "$channel_tag" "$channel_version"
               else
                 pnpm --filter "$channel_name" publish --access public --tag "$channel_tag" --no-git-checks
               fi
