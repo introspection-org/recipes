@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.6.0...introspection-recipe-check-v0.7.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278))
+
+### Features
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278)) ([144e356](https://github.com/introspection-org/recipes/commit/144e356e83e0ad1f58c6833b786453b5be549789))
+
+
+### Bug Fixes
+
+* **recipe-check:** ensure_identity renames the lockfile root with the package ([#276](https://github.com/introspection-org/recipes/issues/276)) ([7d8a8be](https://github.com/introspection-org/recipes/commit/7d8a8be9e43d325442e201d57df7da683dddd11d))
+
 ## [0.6.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.5.0...introspection-recipe-check-v0.6.0) (2026-09-11)
 
 
