@@ -88,6 +88,7 @@ struct Package {
     pi: Option<JsonValue>,
     dependencies: BTreeSet<String>,
     runtime_dependencies: bool,
+    package_manager: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,6 +378,7 @@ fn read_package(ctx: &mut CheckContext) -> Option<Package> {
             .unwrap_or_default(),
         runtime_dependencies: has_non_empty_object(object.get("dependencies"))
             || has_non_empty_object(object.get("optionalDependencies")),
+        package_manager: string_value(object.get("packageManager")),
     })
 }
 
@@ -408,6 +410,19 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             "Local capability configuration must not be distributed with a Recipe",
             Some("remove .pi/mcp.local.json and keep only a redacted example when needed"),
         );
+    }
+
+    if let Some(package_manager) = package.package_manager.as_deref() {
+        // Corepack refuses to run pnpm when this names another manager, so the
+        // documented install aborts before any lockfile rule applies.
+        if !package_manager.split('@').next().is_some_and(|name| name == "pnpm") {
+            ctx.error(
+                "package.package_manager_not_pnpm",
+                PACKAGE_JSON,
+                format!("Recipes install with pnpm, but packageManager names '{package_manager}'"),
+                Some("set it to a pnpm version, or remove the field"),
+            );
+        }
     }
 
     for lockfile in FOREIGN_LOCKFILES {
@@ -4268,6 +4283,34 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "package.lockfile_missing"));
+    }
+
+    #[test]
+    fn a_foreign_package_manager_is_rejected() {
+        for (declared, valid) in [
+            ("pnpm@10.33.0", true),
+            ("pnpm", true),
+            ("npm@10", false),
+            ("yarn@4.0.0", false),
+        ] {
+            let package = json!({
+                "name": "managed-recipe",
+                "pi": {},
+                "packageManager": declared
+            });
+            let input = recipe_files(&[(
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            )]);
+
+            let report = check_recipe_files(&input);
+
+            let rejected = report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "package.package_manager_not_pnpm");
+            assert_eq!(!rejected, valid, "packageManager {declared}");
+        }
     }
 
     #[test]
