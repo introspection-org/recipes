@@ -397,7 +397,7 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             "package.lockfile_missing",
             PACKAGE_JSON,
             "Recipe declares runtime dependencies but has no lockfile",
-            Some("commit package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock"),
+            Some("commit pnpm-lock.yaml"),
         );
     }
 
@@ -408,6 +408,17 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             "Local capability configuration must not be distributed with a Recipe",
             Some("remove .pi/mcp.local.json and keep only a redacted example when needed"),
         );
+    }
+
+    for lockfile in FOREIGN_LOCKFILES {
+        if ctx.has_file(lockfile) {
+            ctx.error(
+                "package.lockfile_not_pnpm",
+                lockfile,
+                format!("Recipes install with pnpm, so {lockfile} is never read"),
+                Some("delete it and commit pnpm-lock.yaml instead"),
+            );
+        }
     }
 
     for lockfile in ["package-lock.json", "npm-shrinkwrap.json"] {
@@ -458,6 +469,11 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
         }
     }
 }
+
+/// The one lockfile a Recipe may carry: `install-recipe-dependencies` runs
+/// `pnpm install --frozen-lockfile`, which reads no other.
+const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
+const FOREIGN_LOCKFILES: [&str; 3] = ["package-lock.json", "npm-shrinkwrap.json", "yarn.lock"];
 
 const MCP_LOCAL_EXAMPLE: &str = ".pi/mcp.local.example.json";
 
@@ -647,7 +663,10 @@ fn validate_channel_config(
             );
             continue;
         };
-        for key in connector.keys().filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply")) {
+        for key in connector
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply"))
+        {
             ctx.error(
                 "pi.channels_invalid",
                 PACKAGE_JSON,
@@ -656,14 +675,25 @@ fn validate_channel_config(
             );
         }
 
-        if connector.get("requireReply").is_some_and(|value| !value.is_boolean()) {
-            ctx.error("pi.channels_invalid", PACKAGE_JSON,
-                format!("package.json#pi.channels[{index}].requireReply must be a boolean"), Some("use true or false"));
+        if connector
+            .get("requireReply")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            ctx.error(
+                "pi.channels_invalid",
+                PACKAGE_JSON,
+                format!("package.json#pi.channels[{index}].requireReply must be a boolean"),
+                Some("use true or false"),
+            );
         }
         if let Some(commands) = connector.get("commands") {
             let valid = commands.as_array().is_some_and(|values| {
                 let mut seen = BTreeSet::new();
-                values.iter().all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty() && seen.insert(value)))
+                values.iter().all(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+                })
             });
             if !valid {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
@@ -2854,14 +2884,7 @@ fn string_value(value: Option<&JsonValue>) -> Option<String> {
 }
 
 fn has_dependency_lockfile(ctx: &CheckContext) -> bool {
-    [
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-    ]
-    .iter()
-    .any(|name| ctx.path_exists(name))
+    ctx.path_exists(PNPM_LOCKFILE)
 }
 
 fn has_non_empty_object(value: Option<&JsonValue>) -> bool {
@@ -3234,30 +3257,61 @@ mod tests {
     #[test]
     fn connector_command_allowlist_shape() {
         for (commands, valid) in [
-            (json!(["read", "reply"]), true), (json!([]), true),
-            (json!(["read", "read"]), false), (json!([""]), false),
-            (json!("read"), false), (json!([42]), false),
+            (json!(["read", "reply"]), true),
+            (json!([]), true),
+            (json!(["read", "read"]), false),
+            (json!([""]), false),
+            (json!("read"), false),
+            (json!([42]), false),
         ] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
-            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files
+                .files
+                .iter_mut()
+                .find(|file| file.path == PACKAGE_JSON)
+                .unwrap();
+            let mut package: JsonValue =
+                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["commands"] = commands;
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), valid);
+            assert_eq!(
+                !report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "pi.channels_invalid"),
+                valid
+            );
         }
     }
 
     #[test]
     fn connector_required_reply_shape() {
-        for value in [json!(true), json!(false), json!("true"), json!(1), JsonValue::Null] {
+        for value in [
+            json!(true),
+            json!(false),
+            json!("true"),
+            json!(1),
+            JsonValue::Null,
+        ] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
-            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files
+                .files
+                .iter_mut()
+                .find(|file| file.path == PACKAGE_JSON)
+                .unwrap();
+            let mut package: JsonValue =
+                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["requireReply"] = value.clone();
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), value.is_boolean());
+            assert_eq!(
+                !report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "pi.channels_invalid"),
+                value.is_boolean()
+            );
         }
     }
 
@@ -4259,6 +4313,34 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "package.lockfile_missing"));
+    }
+
+    #[test]
+    fn an_npm_lockfile_never_satisfies_the_requirement() {
+        // It used to: the check accepted four names while the runtime installs
+        // with pnpm, so a Recipe validated green and then failed to install.
+        let package = json!({
+            "name": "npm-locked-recipe",
+            "pi": {},
+            "dependencies": { "example": "1.0.0" }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("package-lock.json", "{\"lockfileVersion\": 3}"),
+        ]);
+
+        let report = check_recipe_files(&input);
+
+        let codes: Vec<&str> = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        assert!(codes.contains(&"package.lockfile_missing"));
+        assert!(codes.contains(&"package.lockfile_not_pnpm"));
     }
 
     #[test]
