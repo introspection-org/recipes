@@ -197,6 +197,19 @@ function deferred<T = void>() {
   return { promise, resolve, reject };
 }
 
+/** Pi 0.86 folds the `systemPrompt` shorthand into the leading system message. */
+function leadingSystemText(context: { messages: readonly unknown[] }): string {
+  const system = context.messages.find(
+    (message): message is { role: "system"; content: string | { text?: string }[]; sections?: Record<string, string | null> } =>
+      (message as { role?: string }).role === "system",
+  );
+  if (!system) return "";
+  const content = typeof system.content === "string"
+    ? system.content
+    : system.content.map((part) => part.text ?? "").join("");
+  return [content, ...Object.values(system.sections ?? {})].filter(Boolean).join("\n");
+}
+
 describe("createAgentSession", () => {
   const cleanups: Array<() => void> = [];
   const handles: RecipeSessionHandle[] = [];
@@ -259,7 +272,7 @@ describe("createAgentSession", () => {
       const users = context.messages.filter((message) => message.role === "user");
       expect(JSON.stringify(users[0])).toContain("hello");
       expect(JSON.stringify(users[0])).not.toContain("<channel_context>");
-      expect(context.systemPrompt).toContain('<channel_context>\n{"provider":"test","channel_id":"C1","conversation_scope":"conversation"}\n</channel_context>');
+      expect(leadingSystemText(context)).toContain('<channel_context>\n{"provider":"test","channel_id":"C1","conversation_scope":"conversation"}\n</channel_context>');
       for (const reminder of users.filter((message) => JSON.stringify(message).includes("No successful final channel reply"))) {
         expect(JSON.stringify(reminder)).toContain("<channel_context>");
         expect(JSON.stringify(reminder)).toContain("C1");
@@ -449,6 +462,7 @@ describe("createAgentSession", () => {
       enabled: true,
       maxRetries: 4,
       baseDelayMs: 250,
+      maxAgentDelayMs: 60000,
     });
     expect(handle.session.settingsManager.getProviderRetrySettings()).toEqual({
       timeoutMs: 30000,
@@ -465,13 +479,15 @@ describe("createAgentSession", () => {
   });
 
   it("forwards transparent AI options and provider routing to root and subagent requests", async () => {
+    // Exercise OpenRouter's OpenAI-compatible serializer. Pi 0.85 routes
+    // Anthropic models through the native Anthropic API instead.
     const { recipeDir, workspaceDir } = fixture();
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
       [
         "name: agent",
         "ai:",
-        "  model: openrouter/anthropic/claude-sonnet-4.5",
+        "  model: openrouter/openai/gpt-4.1",
         "  options:",
         "    max_tokens: 321",
         "    sampling_params:",
@@ -537,7 +553,7 @@ describe("createAgentSession", () => {
     for (const handle of [root, child]) {
       const captured = await captureSerializedPayload(handle);
       expect(captured.payload).toMatchObject({
-        model: "anthropic/claude-sonnet-4.5",
+        model: "openai/gpt-4.1",
         max_completion_tokens: 321,
         future_option: "enabled",
         provider: {
@@ -695,7 +711,7 @@ describe("createAgentSession", () => {
       [
         "name: agent",
         "ai:",
-        "  model: openai-codex/gpt-5.4",
+        "  model: openai-codex/gpt-5.5",
         "  thinking_level: off",
         "  options:",
         "    temperature: 0.4",

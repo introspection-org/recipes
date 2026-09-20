@@ -29,7 +29,7 @@ For direct Pi use:
 pi install npm:@introspection-ai/recipes
 ```
 
-Recipes currently requires Node.js 24 or later and Pi `^0.82`.
+Recipes currently requires Node.js 24 or later and Pi `>=0.86.1`.
 
 ## Selection
 

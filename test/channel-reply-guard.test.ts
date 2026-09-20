@@ -1,4 +1,18 @@
+import type { NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+
+// Pi 0.86 requires the collection-complete shape; the guard reads none of it.
+const systemPromptOptions: NormalizedBuildSystemPromptOptions = {
+  cwd: process.cwd(),
+  selectedTools: [],
+  toolSnippets: {},
+  toolGuidelines: {},
+  promptGuidelines: [],
+  appendSystemPrompt: "",
+  sections: {},
+  contextFiles: [],
+  skills: [],
+};
 import { createChannelConnectorModule, registerChannelTools, type ChannelAdapter } from "../src/channels/index.js";
 import { channelCommand } from "./helpers/channel-command.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
@@ -19,7 +33,7 @@ function setup(requireReply?: boolean, origin = true) {
       return { provider: "test", conversation: "C1", thread: "T1" };
     },
   });
-  const start = () => pi.emitExtensionEvent({ type: "before_agent_start", prompt: "hello", systemPrompt: "base", systemPromptOptions: { cwd: process.cwd() } }, {});
+  const start = () => pi.emitExtensionEvent({ type: "before_agent_start", prompt: "hello", systemPrompt: "base", systemPromptOptions }, {});
   const end = (stopReason = "stop", signal?: AbortSignal) => pi.emitExtensionEvent({
     type: "agent_end", messages: [{ role: "assistant", stopReason } as never],
   }, { signal });

@@ -83,12 +83,16 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Prove the floor the peer range advertises, read from the range itself so
+      # a bump cannot leave this job testing a version we no longer support.
       - run: |
+          floor="$(node -p "require('./package.json').peerDependencies['@earendil-works/pi-coding-agent'].replace(/[^0-9.]/g, '')")"
+          echo "pi floor: $floor"
           pnpm pkg set \
-            devDependencies.@earendil-works/pi-agent-core=0.82.0 \
-            devDependencies.@earendil-works/pi-ai=0.82.0 \
-            devDependencies.@earendil-works/pi-coding-agent=0.82.0 \
-            devDependencies.@earendil-works/pi-tui=0.82.0
+            devDependencies.@earendil-works/pi-agent-core="$floor" \
+            devDependencies.@earendil-works/pi-ai="$floor" \
+            devDependencies.@earendil-works/pi-coding-agent="$floor" \
+            devDependencies.@earendil-works/pi-tui="$floor"
           pnpm install --no-frozen-lockfile
 
       - run: |
