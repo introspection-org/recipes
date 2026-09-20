@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.26.0](https://github.com/introspection-org/recipes/compare/v0.25.1...v0.26.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278))
+* run on Pi 0.86.1 with no upper bound ([#280](https://github.com/introspection-org/recipes/issues/280))
+
+### Features
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278)) ([144e356](https://github.com/introspection-org/recipes/commit/144e356e83e0ad1f58c6833b786453b5be549789))
+* run on Pi 0.86.1 with no upper bound ([#280](https://github.com/introspection-org/recipes/issues/280)) ([d8d5ec2](https://github.com/introspection-org/recipes/commit/d8d5ec2901c628982abd7273fda9fccdbdc4ac2e))
+* **template:** render a template repository into a Recipe ([#270](https://github.com/introspection-org/recipes/issues/270)) ([0f33c0b](https://github.com/introspection-org/recipes/commit/0f33c0b6115e536209f59a14c66a9e27f8702b1b))
+
+
+### Bug Fixes
+
+* **recipe-check:** ensure_identity renames the lockfile root with the package ([#276](https://github.com/introspection-org/recipes/issues/276)) ([7d8a8be](https://github.com/introspection-org/recipes/commit/7d8a8be9e43d325442e201d57df7da683dddd11d))
+* **release:** publish npm packages straight to their final dist-tag ([#279](https://github.com/introspection-org/recipes/issues/279)) ([2d37b3e](https://github.com/introspection-org/recipes/commit/2d37b3ed3a0d1b62636dabdf11a54d9ec9b7b4e8))
+
 ## [0.25.1](https://github.com/introspection-org/recipes/compare/v0.25.0...v0.25.1) (2026-09-07)
 
 

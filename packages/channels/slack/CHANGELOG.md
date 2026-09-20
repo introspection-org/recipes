@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.3.0...recipe-channel-slack-v0.4.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278))
+* run on Pi 0.86.1 with no upper bound ([#280](https://github.com/introspection-org/recipes/issues/280))
+
+### Features
+
+* only pnpm-lock.yaml satisfies the Recipe lockfile requirement ([#278](https://github.com/introspection-org/recipes/issues/278)) ([144e356](https://github.com/introspection-org/recipes/commit/144e356e83e0ad1f58c6833b786453b5be549789))
+* run on Pi 0.86.1 with no upper bound ([#280](https://github.com/introspection-org/recipes/issues/280)) ([d8d5ec2](https://github.com/introspection-org/recipes/commit/d8d5ec2901c628982abd7273fda9fccdbdc4ac2e))
+
 ## [0.3.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.2.0...recipe-channel-slack-v0.3.0) (2026-09-07)
 
 
