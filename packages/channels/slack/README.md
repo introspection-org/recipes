@@ -9,7 +9,9 @@ The package supplies Slack Web API transport and a capability descriptor. The
 tool names and schemas come from `@introspection-ai/recipes/channels`, so a
 Recipe written against `channels reply` is not written against Slack.
 
-Install it alongside the SDK; pnpm writes the range and the lockfile pins it:
+Install it alongside the SDK, then widen the range pnpm writes — it saves a
+caret by default, and a caret on a `0.x` version pins the MINOR, so `^0.4.0`
+would strand the Recipe on the adapter's next release:
 
 ```bash
 pnpm add @introspection-ai/recipes @introspection-ai/recipe-channel-slack
@@ -17,6 +19,12 @@ pnpm add @introspection-ai/recipes @introspection-ai/recipe-channel-slack
 
 ```json
 {
+  "dependencies": {
+    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
+  },
+  "peerDependencies": {
+    "@introspection-ai/recipes": "*"
+  },
   "pi": {
     "channels": [
       {

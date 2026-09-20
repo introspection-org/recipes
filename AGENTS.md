@@ -25,7 +25,13 @@
   `@introspection-ai/recipes` and the Pi packages, and a Recipe's agent runs
   inside the runtime's module graph — so those must resolve to one shared
   instance, and the runtime supplies them. Anything the host does not import is
-  an ordinary dependency the Recipe brings.
+  an ordinary dependency the Recipe brings. ⚠️ **One carve-out**: an extension
+  needing a helper subpath newer than the active host declares
+  `@introspection-ai/recipes` as an ordinary dependency too. The loader prefers
+  a Recipe-installed copy for exactly this reason
+  (`src/recipe-extensions.ts::recipeExtensionAliases`), and a peer alone is
+  never installed, so the import would silently resolve to the older host copy
+  and fail.
 - **A channel adapter is a dependency, not a peer.** There is one per provider,
   so the runtime carries none. A peer declaration fails `recipes check`, and
   would not load even if it passed: the managed install runs `pnpm install
