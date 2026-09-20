@@ -5,7 +5,7 @@
 - Follow SemVer for all package releases.
 - Use `MAJOR.MINOR.PATCH` for stable releases.
 - Use SemVer prerelease identifiers for beta releases, for example `0.1.0-beta.0`, `0.1.0-beta.1`, then `0.1.0` for the stable release.
-- Treat breaking changes as major version bumps, new backwards-compatible features as minor bumps, and backwards-compatible bug fixes as patch bumps.
+- **At or above 1.0**, treat breaking changes as major version bumps, new backwards-compatible features as minor bumps, and backwards-compatible bug fixes as patch bumps. Below 1.0, read the next bullet first — every package here is still `0.x`, so it governs.
 - **Below 1.0 the minor IS the breaking boundary.** Every package here sets
   `bump-minor-pre-major: true`, so `feat!:` publishes 0.25.1 -> 0.26.0, not
   1.0.0 — and that is the SemVer fence, because a caret on a `0.x` version pins
@@ -39,15 +39,21 @@
   every relock. Use `>=0.26.0`, in `dependencies` and `peerDependencies` alike,
   and note `workspace:^` publishes as `^`, so a published peer must be written
   out. Keep the caret for third-party packages, where an unreviewed relock
-  would take someone else's breaking change.
+  would take someone else's breaking change. ⚠️ **Pi is the exception**: third
+  party, but the host supplies it, so a Recipe declares `>=` and lets the
+  runtime image resolve the version. A caret there restores the upper bound
+  #280 removed, and `test/pi-floor-parity.test.ts` fails on it.
 - **A version written in two places will drift.** Derive it. The supported Pi
   floor is read out of `peerDependencies` by the `pi-minimum` CI job and pinned
   by `test/pi-floor-parity.test.ts`; copying it into a job or a doc is how it
   went stale twice in one change.
 - **Where the packages come from.** `@introspection-ai/recipes`,
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/mcp-client-*` and
-  `introspection-recipe-check` are all published from THIS repository, so a
-  change that spans them is one release train, not a coordination problem.
+  `introspection-recipe-check` are all published from THIS repository, but on
+  **two release trains**: `release-please-config.json` covers the npm packages
+  and `release-please-checker-config.json` the checker and its Python binding,
+  each with its own manifest and release PR. A change spanning both publishes
+  twice and needs coordinating; it is not atomic.
   `@introspection-ai/cli` comes from `introspection-cli`, the language SDKs
   (`@introspection-sdk/*`) from `introspection-js-sdk`, and `@earendil-works/*`
   (Pi) is third-party.
