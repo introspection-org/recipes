@@ -88,6 +88,7 @@ struct Package {
     pi: Option<JsonValue>,
     dependencies: BTreeSet<String>,
     runtime_dependencies: bool,
+    package_manager: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,6 +378,7 @@ fn read_package(ctx: &mut CheckContext) -> Option<Package> {
             .unwrap_or_default(),
         runtime_dependencies: has_non_empty_object(object.get("dependencies"))
             || has_non_empty_object(object.get("optionalDependencies")),
+        package_manager: string_value(object.get("packageManager")),
     })
 }
 
@@ -397,7 +399,7 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             "package.lockfile_missing",
             PACKAGE_JSON,
             "Recipe declares runtime dependencies but has no lockfile",
-            Some("commit package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, or yarn.lock"),
+            Some("commit pnpm-lock.yaml"),
         );
     }
 
@@ -408,6 +410,30 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             "Local capability configuration must not be distributed with a Recipe",
             Some("remove .pi/mcp.local.json and keep only a redacted example when needed"),
         );
+    }
+
+    if let Some(package_manager) = package.package_manager.as_deref() {
+        // Corepack refuses to run pnpm when this names another manager, so the
+        // documented install aborts before any lockfile rule applies.
+        if !is_pnpm_package_manager(package_manager) {
+            ctx.error(
+                "package.package_manager_not_pnpm",
+                PACKAGE_JSON,
+                format!("packageManager must be pnpm@<version>, not '{package_manager}'"),
+                Some("Corepack rejects a bare name or a partial version; or remove the field"),
+            );
+        }
+    }
+
+    for lockfile in FOREIGN_LOCKFILES {
+        if ctx.has_file(lockfile) {
+            ctx.error(
+                "package.lockfile_not_pnpm",
+                lockfile,
+                format!("Recipes install with pnpm, so {lockfile} is never read"),
+                Some("delete it and commit pnpm-lock.yaml instead"),
+            );
+        }
     }
 
     for lockfile in ["package-lock.json", "npm-shrinkwrap.json"] {
@@ -458,6 +484,28 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
         }
     }
 }
+
+/// Corepack requires a complete `name@semver` descriptor: it refuses a bare
+/// name ("No version specified") and a partial version ("expected a semver
+/// version"), so validating the name alone still lets the install abort.
+fn is_pnpm_package_manager(declared: &str) -> bool {
+    let Some(version) = declared.strip_prefix("pnpm@") else {
+        return false;
+    };
+    // Corepack accepts an optional `+<hash>` integrity suffix after the version.
+    let version = version.split_once('+').map_or(version, |(head, _)| head);
+    let (core, _) = version.split_once('-').unwrap_or((version, ""));
+    let mut parts = core.split('.');
+    let numeric = |part: Option<&str>| {
+        part.is_some_and(|value| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+    };
+    numeric(parts.next()) && numeric(parts.next()) && numeric(parts.next()) && parts.next().is_none()
+}
+
+/// The one lockfile a Recipe may carry: `install-recipe-dependencies` runs
+/// `pnpm install --frozen-lockfile`, which reads no other.
+const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
+const FOREIGN_LOCKFILES: [&str; 3] = ["package-lock.json", "npm-shrinkwrap.json", "yarn.lock"];
 
 const MCP_LOCAL_EXAMPLE: &str = ".pi/mcp.local.example.json";
 
@@ -2854,14 +2902,7 @@ fn string_value(value: Option<&JsonValue>) -> Option<String> {
 }
 
 fn has_dependency_lockfile(ctx: &CheckContext) -> bool {
-    [
-        "package-lock.json",
-        "npm-shrinkwrap.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-    ]
-    .iter()
-    .any(|name| ctx.path_exists(name))
+    ctx.path_exists(PNPM_LOCKFILE)
 }
 
 fn has_non_empty_object(value: Option<&JsonValue>) -> bool {
@@ -4259,6 +4300,68 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "package.lockfile_missing"));
+    }
+
+    #[test]
+    fn a_foreign_package_manager_is_rejected() {
+        // Verified against Corepack 0.34.6: everything false here aborts the
+        // documented install rather than merely naming another manager.
+        for (declared, valid) in [
+            ("pnpm@10.33.0", true),
+            ("pnpm@10.33.0+sha512.abc123", true),
+            ("pnpm@10.33.0-beta.1", true),
+            ("pnpm", false),
+            ("pnpm@bogus", false),
+            ("pnpm@10.33", false),
+            ("npm@10.9.0", false),
+            ("yarn@4.0.0", false),
+        ] {
+            let package = json!({
+                "name": "managed-recipe",
+                "pi": {},
+                "packageManager": declared
+            });
+            let input = recipe_files(&[(
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            )]);
+
+            let report = check_recipe_files(&input);
+
+            let rejected = report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "package.package_manager_not_pnpm");
+            assert_eq!(!rejected, valid, "packageManager {declared}");
+        }
+    }
+
+    #[test]
+    fn an_npm_lockfile_never_satisfies_the_requirement() {
+        // It used to: the check accepted four names while the runtime installs
+        // with pnpm, so a Recipe validated green and then failed to install.
+        let package = json!({
+            "name": "npm-locked-recipe",
+            "pi": {},
+            "dependencies": { "example": "1.0.0" }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("package-lock.json", "{\"lockfileVersion\": 3}"),
+        ]);
+
+        let report = check_recipe_files(&input);
+
+        let codes: Vec<&str> = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        assert!(codes.contains(&"package.lockfile_missing"));
+        assert!(codes.contains(&"package.lockfile_not_pnpm"));
     }
 
     #[test]

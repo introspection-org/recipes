@@ -9,11 +9,14 @@ The package supplies Slack Web API transport and a capability descriptor. The
 tool names and schemas come from `@introspection-ai/recipes/channels`, so a
 Recipe written against `channels reply` is not written against Slack.
 
+Install it alongside the SDK; pnpm writes the range and the lockfile pins it:
+
+```bash
+pnpm add @introspection-ai/recipes @introspection-ai/recipe-channel-slack
+```
+
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": "^0.3.0"
-  },
   "pi": {
     "channels": [
       {
