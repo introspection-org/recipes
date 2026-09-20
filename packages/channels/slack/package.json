@@ -32,7 +32,7 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.86.1",
     "typebox": "*",
-    "@introspection-ai/recipes": "workspace:>=0.26.0"
+    "@introspection-ai/recipes": "workspace:>=0.26.0 <1.0.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
