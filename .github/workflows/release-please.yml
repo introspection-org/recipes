@@ -219,15 +219,14 @@ jobs:
       - run: pnpm pack:check
 
       # `npm publish` authenticates with npm trusted publishing (OIDC) against
-      # the publisher configured on each package, which pins this repository,
-      # this workflow filename, and the `publish` environment. NODE_AUTH_TOKEN
-      # is deliberately NOT set for the step: an _authToken in .npmrc takes
-      # precedence over OIDC and would bypass the trusted publisher. The secret
-      # arrives under a name .npmrc does not interpolate, and the tag promotion
-      # below exports it, because OIDC authenticates `npm publish` alone.
+      # the publisher configured on each package. NODE_AUTH_TOKEN is deliberately
+      # NOT set: an _authToken in .npmrc takes precedence over OIDC and would
+      # bypass the trusted publisher. Each package therefore publishes straight
+      # to its final tag, because OIDC authenticates `npm publish` and nothing
+      # else -- a staged tag would need a stored token to promote, and that is
+      # what left `latest` five releases behind.
       - name: Publish
         env:
-          NPM_PROMOTION_TOKEN: ${{ secrets.NPM_TOKEN }}
           ROOT_RELEASE_CREATED: ${{ needs.release-please.outputs.root_release_created }}
           SLACK_CHANNEL_RELEASE_CREATED: ${{ needs.release-please.outputs.slack_channel_release_created }}
           MANUAL_ROOT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root') }}
@@ -251,7 +250,16 @@ jobs:
             exit 1
           fi
 
-          staging_tag="release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # A republish is refused, so a rerun after a partial failure cannot move
+          # the tag by publishing again. Fail loudly rather than leave it behind.
+          assert_tagged() {
+            local have
+            have="$(npm view "$1@$2" version 2>/dev/null || true)"
+            if [[ "$have" != "$3" ]]; then
+              echo "$1@$2 is '$have', not $3 -- run: npm dist-tag add $1@$3 $2" >&2
+              exit 1
+            fi
+          }
 
           package_name="$(node -p "require('./package.json').name")"
           version="$(node -p "require('./package.json').version")"
@@ -262,22 +270,22 @@ jobs:
 
           # Platform packages first, so the optionalDependencies the root
           # manifest names already resolve when it is published.
-          platform_names=()
           if [[ "$publish_root" == "true" ]]; then
             for d in npm/dist/mcp-client-*; do
               platform_name="$(node -p "require('./$d/package.json').name")"
-              platform_names+=("$platform_name")
               if npm view "$platform_name@$version" version >/dev/null 2>&1; then
                 echo "$platform_name@$version is already published"
+                assert_tagged "$platform_name" "$root_tag" "$version"
               else
-                npm publish "$d" --access public --tag "$staging_tag"
+                npm publish "$d" --access public --tag "$root_tag"
               fi
             done
 
             if npm view "$package_name@$version" version >/dev/null 2>&1; then
               echo "$package_name@$version is already published"
+              assert_tagged "$package_name" "$root_tag" "$version"
             else
-              pnpm publish --access public --tag "$staging_tag" --no-git-checks
+              pnpm publish --access public --tag "$root_tag" --no-git-checks
             fi
           fi
 
@@ -286,9 +294,6 @@ jobs:
             channel_dirs+=("packages/channels/slack")
           fi
 
-          channel_names=()
-          channel_versions=()
-          channel_tags=()
           if [[ "${#channel_dirs[@]}" -gt 0 ]]; then
             for channel_dir in "${channel_dirs[@]}"; do
               channel_name="$(node -p "require('./$channel_dir/package.json').name")"
@@ -311,34 +316,11 @@ jobs:
               fi
               if npm view "$channel_name@$channel_version" version >/dev/null 2>&1; then
                 echo "$channel_name@$channel_version is already published"
+                assert_tagged "$channel_name" "$channel_tag" "$channel_version"
               else
-                pnpm --filter "$channel_name" publish --access public --tag "$staging_tag" --no-git-checks
+                pnpm --filter "$channel_name" publish --access public --tag "$channel_tag" --no-git-checks
               fi
-              channel_names+=("$channel_name")
-              channel_versions+=("$channel_version")
-              channel_tags+=("$channel_tag")
             done
-          fi
-
-          # npm's OIDC credential authenticates `npm publish` and `npm stage
-          # publish` alone, so the tag promotion needs the stored token. It is
-          # exported here rather than on the step, so every publish above ran
-          # without an _authToken and therefore over OIDC.
-          export NODE_AUTH_TOKEN="$NPM_PROMOTION_TOKEN"
-
-          # Move the normal tags only after every requested package exists.
-          # The root tag moves last, so a failed channel package publish does
-          # not advertise a core release whose documented package is unavailable.
-          if [[ "$publish_root" == "true" ]]; then
-            for platform_name in "${platform_names[@]}"; do
-              npm dist-tag add "$platform_name@$version" "$root_tag"
-            done
-          fi
-          for index in "${!channel_names[@]}"; do
-            npm dist-tag add "${channel_names[$index]}@${channel_versions[$index]}" "${channel_tags[$index]}"
-          done
-          if [[ "$publish_root" == "true" ]]; then
-            npm dist-tag add "$package_name@$version" "$root_tag"
           fi
 
   publish-crate:

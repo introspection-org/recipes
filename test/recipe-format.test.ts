@@ -753,15 +753,25 @@ describe("release train isolation", () => {
     expect(workflow).not.toContain("npm access set status=public");
   });
 
-  it("does not fail a release by deleting temporary npm tags", () => {
+  it("publishes to the final tag, because OIDC cannot move one afterwards", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
       join(root, ".github", "workflows", "release-please.yml"),
       "utf8"
     );
 
-    expect(workflow).toContain('--tag "$staging_tag"');
-    expect(workflow).toContain('npm dist-tag add "$package_name@$version" "$root_tag"');
-    expect(workflow).not.toContain("npm dist-tag rm");
+    // Trusted publishing authenticates `npm publish` alone. Staging a release
+    // under a temporary tag and promoting it needs a stored token, which 403'd
+    // on every release for five releases and left `latest` behind.
+    expect(workflow).toContain('--tag "$root_tag"');
+    expect(workflow).toContain('--tag "$channel_tag"');
+    expect(workflow).not.toContain("staging_tag");
+    // The string survives inside assert_tagged's hint; what must not survive
+    // is a dist-tag the release actually runs.
+    expect(workflow).not.toMatch(/^\s*npm dist-tag/m);
+    expect(workflow).not.toContain("NPM_PROMOTION_TOKEN");
+    expect(workflow).not.toMatch(/export NODE_AUTH_TOKEN/);
+    // A republish is refused, so a rerun cannot move the tag by publishing again.
+    expect(workflow).toContain("assert_tagged");
   });
 });
