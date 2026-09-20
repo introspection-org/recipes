@@ -415,12 +415,12 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
     if let Some(package_manager) = package.package_manager.as_deref() {
         // Corepack refuses to run pnpm when this names another manager, so the
         // documented install aborts before any lockfile rule applies.
-        if !package_manager.split('@').next().is_some_and(|name| name == "pnpm") {
+        if !is_pnpm_package_manager(package_manager) {
             ctx.error(
                 "package.package_manager_not_pnpm",
                 PACKAGE_JSON,
-                format!("Recipes install with pnpm, but packageManager names '{package_manager}'"),
-                Some("set it to a pnpm version, or remove the field"),
+                format!("packageManager must be pnpm@<version>, not '{package_manager}'"),
+                Some("Corepack rejects a bare name or a partial version; or remove the field"),
             );
         }
     }
@@ -483,6 +483,23 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
             }
         }
     }
+}
+
+/// Corepack requires a complete `name@semver` descriptor: it refuses a bare
+/// name ("No version specified") and a partial version ("expected a semver
+/// version"), so validating the name alone still lets the install abort.
+fn is_pnpm_package_manager(declared: &str) -> bool {
+    let Some(version) = declared.strip_prefix("pnpm@") else {
+        return false;
+    };
+    // Corepack accepts an optional `+<hash>` integrity suffix after the version.
+    let version = version.split_once('+').map_or(version, |(head, _)| head);
+    let (core, _) = version.split_once('-').unwrap_or((version, ""));
+    let mut parts = core.split('.');
+    let numeric = |part: Option<&str>| {
+        part.is_some_and(|value| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+    };
+    numeric(parts.next()) && numeric(parts.next()) && numeric(parts.next()) && parts.next().is_none()
 }
 
 /// The one lockfile a Recipe may carry: `install-recipe-dependencies` runs
@@ -4287,10 +4304,16 @@ mod tests {
 
     #[test]
     fn a_foreign_package_manager_is_rejected() {
+        // Verified against Corepack 0.34.6: everything false here aborts the
+        // documented install rather than merely naming another manager.
         for (declared, valid) in [
             ("pnpm@10.33.0", true),
-            ("pnpm", true),
-            ("npm@10", false),
+            ("pnpm@10.33.0+sha512.abc123", true),
+            ("pnpm@10.33.0-beta.1", true),
+            ("pnpm", false),
+            ("pnpm@bogus", false),
+            ("pnpm@10.33", false),
+            ("npm@10.9.0", false),
             ("yarn@4.0.0", false),
         ] {
             let package = json!({
