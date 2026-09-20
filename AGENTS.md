@@ -15,7 +15,7 @@
 - Use Conventional Commit prefixes so release-please can infer release notes and version bumps:
   - `fix:` for patch changes.
   - `feat:` for minor changes.
-  - `feat!:` or a `BREAKING CHANGE:` footer for major changes.
+  - `feat!:` or a `BREAKING CHANGE:` footer for breaking changes — which release-please publishes as a **minor** bump while the package is `0.x`, not a major one.
 - Do not manually bump `package.json` for routine releases unless the task is explicitly setting up or correcting release metadata. Let release-please update versions through its release PRs.
 - Keep npm dist-tags aligned with release stability: beta prereleases use `beta`, stable releases use `latest`.
 
