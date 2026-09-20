@@ -663,10 +663,7 @@ fn validate_channel_config(
             );
             continue;
         };
-        for key in connector
-            .keys()
-            .filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply"))
-        {
+        for key in connector.keys().filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply")) {
             ctx.error(
                 "pi.channels_invalid",
                 PACKAGE_JSON,
@@ -675,25 +672,14 @@ fn validate_channel_config(
             );
         }
 
-        if connector
-            .get("requireReply")
-            .is_some_and(|value| !value.is_boolean())
-        {
-            ctx.error(
-                "pi.channels_invalid",
-                PACKAGE_JSON,
-                format!("package.json#pi.channels[{index}].requireReply must be a boolean"),
-                Some("use true or false"),
-            );
+        if connector.get("requireReply").is_some_and(|value| !value.is_boolean()) {
+            ctx.error("pi.channels_invalid", PACKAGE_JSON,
+                format!("package.json#pi.channels[{index}].requireReply must be a boolean"), Some("use true or false"));
         }
         if let Some(commands) = connector.get("commands") {
             let valid = commands.as_array().is_some_and(|values| {
                 let mut seen = BTreeSet::new();
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
+                values.iter().all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty() && seen.insert(value)))
             });
             if !valid {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
@@ -3257,61 +3243,30 @@ mod tests {
     #[test]
     fn connector_command_allowlist_shape() {
         for (commands, valid) in [
-            (json!(["read", "reply"]), true),
-            (json!([]), true),
-            (json!(["read", "read"]), false),
-            (json!([""]), false),
-            (json!("read"), false),
-            (json!([42]), false),
+            (json!(["read", "reply"]), true), (json!([]), true),
+            (json!(["read", "read"]), false), (json!([""]), false),
+            (json!("read"), false), (json!([42]), false),
         ] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files
-                .files
-                .iter_mut()
-                .find(|file| file.path == PACKAGE_JSON)
-                .unwrap();
-            let mut package: JsonValue =
-                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
+            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["commands"] = commands;
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(
-                !report
-                    .diagnostics
-                    .iter()
-                    .any(|d| d.code == "pi.channels_invalid"),
-                valid
-            );
+            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), valid);
         }
     }
 
     #[test]
     fn connector_required_reply_shape() {
-        for value in [
-            json!(true),
-            json!(false),
-            json!("true"),
-            json!(1),
-            JsonValue::Null,
-        ] {
+        for value in [json!(true), json!(false), json!("true"), json!(1), JsonValue::Null] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files
-                .files
-                .iter_mut()
-                .find(|file| file.path == PACKAGE_JSON)
-                .unwrap();
-            let mut package: JsonValue =
-                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
+            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["requireReply"] = value.clone();
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(
-                !report
-                    .diagnostics
-                    .iter()
-                    .any(|d| d.code == "pi.channels_invalid"),
-                value.is_boolean()
-            );
+            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), value.is_boolean());
         }
     }
 
