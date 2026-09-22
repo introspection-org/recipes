@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "../src/mcp-catalog.js";
+} from "../src/mcp/catalog.js";
 import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
 import {
   MCP_DAEMON_FINGERPRINT_ENV,

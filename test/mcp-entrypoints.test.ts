@@ -9,7 +9,7 @@ import {
   mcpCliEntrypointPath,
   mcpClientEntrypointPath,
   mcporterCliEntrypointPath,
-} from "../src/mcp.js";
+} from "../src/mcp/index.js";
 
 /**
  * The session shim `exec`s these by absolute path, resolved from a string at

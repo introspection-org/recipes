@@ -13,27 +13,27 @@ import {
   MCP_DAEMON_SOCKET_ENV,
   MCP_DAEMON_TOKEN_ENV,
   MCP_SESSION_ROOT_ENV,
-} from "./mcp/daemon/protocol.js";
+} from "./daemon/protocol.js";
 import {
   resolvePiPackageMcpManifestPaths,
   type RecipePackageManifest,
   type RecipePackageMcpConfig,
   type RecipeMcpToolSelection,
-} from "./recipe-package.js";
-import { generatedBindingEnvVars } from "./recipe-mcp-config.js";
+} from "../recipe-package.js";
+import { generatedBindingEnvVars } from "../recipe-mcp-config.js";
 import {
   mcpSelectionAllowsTool,
   type ScopedMcpToolSelection,
-} from "./mcp-policy.js";
+} from "./policy.js";
 
-export { preloadMcpCatalogs } from "./mcp-catalog.js";
+export { preloadMcpCatalogs } from "./catalog.js";
 export {
   executableRecipeToolNames,
   mcpSelectionAllowsTool,
   normalizeMcpServerId,
   resolveAgentMcpSelections,
   type ScopedMcpToolSelection,
-} from "./mcp-policy.js";
+} from "./policy.js";
 
 export interface McpToolCatalogEntry {
   name: string;
@@ -279,18 +279,24 @@ export function mcporterCliEntrypointPath(): string {
   return fileURLToPath(import.meta.resolve("mcporter/cli"));
 }
 
+/**
+ * `name` is relative to THIS module's own directory: `dist/mcp/` once compiled,
+ * `src/mcp/` when running from source, where nothing is built beside it and the
+ * repository's dist is the answer. Resolved from a string at run time, so no
+ * type checker sees it — moving this module changes both prefixes.
+ */
 function compiledEntrypoint(name: string): string {
   const adjacent = fileURLToPath(new URL(`./${name}`, import.meta.url));
   if (existsSync(adjacent)) return adjacent;
-  return fileURLToPath(new URL(`../dist/${name}`, import.meta.url));
+  return fileURLToPath(new URL(`../../dist/mcp/${name}`, import.meta.url));
 }
 
 export function mcpCliEntrypointPath(): string {
-  return compiledEntrypoint("mcp/cli/index.js");
+  return compiledEntrypoint("cli/index.js");
 }
 
 export function mcpClientEntrypointPath(): string {
-  return compiledEntrypoint("mcp-client.js");
+  return compiledEntrypoint("client-entry.js");
 }
 
 export function nativeMcpClientPath(

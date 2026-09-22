@@ -8,7 +8,7 @@ import {
   resolve,
   sep,
 } from "node:path";
-import { executableRecipeToolNames } from "../mcp-policy.js";
+import { executableRecipeToolNames } from "../mcp/policy.js";
 import {
   loadValidatedRecipeAgentDefinitions,
   loadRecipeSystemPrompt,

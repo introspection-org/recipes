@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   mcpDaemonRequestContext,
   mcpTraceContextFromEnv,
-} from "../src/mcp-trace-context.js";
+} from "../src/mcp/trace-context.js";
 
 describe("MCP daemon trace context", () => {
   it("captures only the current invocation's W3C carrier", () => {

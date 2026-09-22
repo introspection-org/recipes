@@ -23,7 +23,7 @@ import {
   describeUnknownRunServer,
   searchMcpTools,
 } from "../src/mcp/cli/index.js";
-import { preloadMcpCatalogs } from "../src/mcp-catalog.js";
+import { preloadMcpCatalogs } from "../src/mcp/catalog.js";
 import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
 import {
   buildMcporterConfig,
@@ -40,7 +40,7 @@ import {
   snapshotMcpEnvironment,
   stopMcpDaemon,
   type McpSessionConfig,
-} from "../src/mcp.js";
+} from "../src/mcp/index.js";
 import type { RecipePackageManifest } from "../src/recipe-package.js";
 
 describe("MCP environment leasing", () => {
@@ -508,10 +508,10 @@ describe("static MCP session materialization", () => {
       expect(script).toContain("MCPORTER_CONFIG:=");
       if (nativeMcpClientPath()) {
         expect(script).toContain(nativeMcpClientPath());
-        expect(script).toContain("mcp-client.js' --start-daemon");
+        expect(script).toContain("client-entry.js' --start-daemon");
         expect(script).toContain("native_status");
         expect(script).not.toContain("PI_RECIPES_MCP_NATIVE_REQUIRED");
-        expect(script).not.toContain('mcp-client.js\' "$@"');
+        expect(script).not.toContain('client-entry.js\' "$@"');
       }
     } finally {
       rmSync(root, { recursive: true, force: true });

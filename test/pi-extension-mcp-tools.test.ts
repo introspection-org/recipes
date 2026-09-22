@@ -14,13 +14,13 @@ const mocks = vi.hoisted(() => ({
   preloadMcpCatalogs: vi.fn(),
 }));
 
-vi.mock("../src/mcp-catalog.js", () => ({
+vi.mock("../src/mcp/catalog.js", () => ({
   preloadMcpCatalogs: mocks.preloadMcpCatalogs,
   clearMcpCatalogPreload: vi.fn(),
 }));
 
 import { createRecipesExtension } from "../src/pi-extension.js";
-import { piMcpToolName } from "../src/mcp-tools.js";
+import { piMcpToolName } from "../src/mcp/tools.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 describe("Pi extension MCP tools mode", () => {

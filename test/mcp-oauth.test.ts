@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultMcporterConfigPath,
   materializeMcpSession,
-} from "../src/mcp.js";
+} from "../src/mcp/index.js";
 import type { RecipePackageManifest } from "../src/recipe-package.js";
 
 describe("MCP OAuth session configuration", () => {

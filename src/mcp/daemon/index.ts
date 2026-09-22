@@ -25,7 +25,7 @@ import {
   type McpDaemonRequest,
   serializeMcpDaemonEnvelope,
 } from "./protocol.js";
-import { mcpDaemonRequestContext } from "../../mcp-trace-context.js";
+import { mcpDaemonRequestContext } from "../trace-context.js";
 
 const configuredSocketPath = process.env[MCP_DAEMON_SOCKET_ENV];
 const configuredToken = process.env[MCP_DAEMON_TOKEN_ENV];

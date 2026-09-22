@@ -23,7 +23,7 @@ import {
   renderToolContract,
   renderToolSignature,
   type ContractTool,
-} from "../../mcp-contract.js";
+} from "../contract.js";
 import {
   mcpCallHelpText,
   mcpCliHelpText,
@@ -39,7 +39,7 @@ import {
   type McpSessionConfig,
   type McpSessionServer,
   type McpToolCatalogEntry,
-} from "../../mcp.js";
+} from "../index.js";
 import {
   createMcpCliSessionPolicy,
   validateDelegatedMcpCommand,

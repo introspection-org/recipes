@@ -25,7 +25,7 @@ import {
 import {
   mcpSelectionAllowsTool,
   normalizeMcpServerId,
-} from "./mcp-policy.js";
+} from "./mcp/policy.js";
 
 export interface RecipeSystemInstructions {
   mode: "append" | "replace";

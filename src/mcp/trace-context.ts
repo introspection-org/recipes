@@ -5,7 +5,7 @@ import {
   type Context,
 } from "@opentelemetry/api";
 
-import type { McpDaemonTraceContext } from "./mcp/daemon/protocol.js";
+import type { McpDaemonTraceContext } from "./daemon/protocol.js";
 
 const TRACEPARENT =
   /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i;

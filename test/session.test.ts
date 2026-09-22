@@ -10,7 +10,7 @@ import {
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { McpBindingError } from "../src/mcp.js";
+import { McpBindingError } from "../src/mcp/index.js";
 import { registerChannelTools } from "../src/channels/index.js";
 import type { LoadMemoryIndexOptions } from "../src/memory.js";
 import {

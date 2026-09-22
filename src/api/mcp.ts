@@ -7,7 +7,7 @@ export {
   preloadMcpCatalogs,
   resolveAgentMcpSelections,
   resolveMcpLocalConfigPath,
-} from "../mcp.js";
+} from "../mcp/index.js";
 export type {
   LocalMcpServer,
   MaterializedMcpSession,
@@ -17,5 +17,5 @@ export type {
   McpSessionConfig,
   McpSessionServer,
   McpToolCatalogEntry,
-} from "../mcp.js";
-export type { ScopedMcpToolSelection } from "../mcp-policy.js";
+} from "../mcp/index.js";
+export type { ScopedMcpToolSelection } from "../mcp/policy.js";

@@ -51,14 +51,14 @@ import {
   materializeSessionMcpCli,
   resolveAgentMcpSelections,
   stopMcpDaemon,
-} from "./mcp.js";
+} from "./mcp/index.js";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "./mcp-catalog.js";
+} from "./mcp/catalog.js";
 import { type RecipeAgentDefinition } from "./recipe-agent.js";
 import type { RecipeAgentMcpMode } from "./recipe-agent.js";
-import { createMcpToolSet } from "./mcp-tools.js";
+import { createMcpToolSet } from "./mcp/tools.js";
 import {
   applyRecipeAgentPayloadPolicy,
   applyRecipeAgentModelConfigToModel,

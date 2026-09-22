@@ -31,7 +31,7 @@ import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "./mcp-catalog.js";
+} from "./mcp/catalog.js";
 import {
   createIsolatedMcpEnvironment,
   configureMcpLocalConfigPath,
@@ -45,8 +45,8 @@ import {
   stopMcpDaemon,
   type McpLocalConfig,
   type ScopedMcpToolSelection,
-} from "./mcp.js";
-import { createMcpToolSet } from "./mcp-tools.js";
+} from "./mcp/index.js";
+import { createMcpToolSet } from "./mcp/tools.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
