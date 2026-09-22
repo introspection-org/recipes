@@ -430,21 +430,32 @@ async function runProgram(options: {
      *
      * A provider result is serialized whole. Ignoring `write()`'s return value
      * let every frame a slow child had not read yet accumulate in the parent —
-     * memory the RSS watchdog cannot see, because it measures the child. The
-     * drain wait races the child's exit so a killed child cannot strand it.
+     * memory the RSS watchdog cannot see, because it measures the child.
+     *
+     * ⚠️ Writes are chained, not merely awaited by their own caller. A fan-out
+     * completes concurrently, so per-caller backpressure still lets every other
+     * caller push a full frame in after the stream is already saturated: the
+     * call budget times the frame bound, not one frame. Chaining keeps at most
+     * one frame in flight. The drain wait races the child's exit so a killed
+     * child cannot strand it.
      */
+    let writes: Promise<void> = Promise.resolve();
     const write = (message: unknown): Promise<void> => {
-      if (child.stdin.destroyed || settled) return Promise.resolve();
-      if (child.stdin.write(`${JSON.stringify(message)}\n`)) return Promise.resolve();
-      return new Promise((resolve) => {
-        const done = () => {
-          child.stdin.off("drain", done);
-          child.off("close", done);
-          resolve();
-        };
-        child.stdin.once("drain", done);
-        child.once("close", done);
-      });
+      const send = async (): Promise<void> => {
+        if (child.stdin.destroyed || settled) return;
+        if (child.stdin.write(`${JSON.stringify(message)}\n`)) return;
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            child.stdin.off("drain", done);
+            child.off("close", done);
+            resolve();
+          };
+          child.stdin.once("drain", done);
+          child.once("close", done);
+        });
+      };
+      writes = writes.then(send, send);
+      return writes;
     };
 
     const serviceCall = async (id: number, server: string, tool: string, args: unknown) => {
@@ -483,7 +494,10 @@ async function runProgram(options: {
           }
         );
         const value = mcpResultValue(authorized, raw, options.env);
-        const frame = JSON.stringify(value)?.length ?? 0;
+        // Encoded bytes, not UTF-16 code units: CJK text is roughly 2.5x
+        // longer once encoded, so `.length` would let a "4 MiB" frame past at
+        // about 10 MiB.
+        const frame = Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
         if (frame > MAX_RESULT_FRAME_BYTES) {
           throw new Error(
             `Result of ${server}.${tool} is ${frame} bytes, over the ${MAX_RESULT_FRAME_BYTES}-byte limit for one call. Narrow the query or request fewer fields.`
@@ -509,7 +523,10 @@ async function runProgram(options: {
       // arrives. Servicing a `call` frame now would start a provider write
       // after cancellation, against a drain that has already been taken.
       if (settled) return;
-      received += chunk.length;
+      received += Buffer.byteLength(chunk, "utf8");
+      // `received` is the byte-accurate bound. The buffer check stays on
+      // `.length` because it runs per chunk against a string up to the limit
+      // itself, and it can only under-count — which `received` already caught.
       if (received > MAX_CHILD_OUTPUT_BYTES || buffer.length > MAX_CHILD_OUTPUT_BYTES) {
         fail(
           `Program produced more than ${MAX_CHILD_OUTPUT_BYTES} bytes of output and was terminated. Return a summary rather than the raw results.`

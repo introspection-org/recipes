@@ -562,6 +562,21 @@ describe("mcp execute mode", () => {
     expect(text).toContain("Narrow the query");
   }, 20_000);
 
+  it("measures the result frame in encoded bytes, not code units", async () => {
+    // CJK is about 2.5x longer encoded than its UTF-16 length, so counting
+    // `.length` let a "4 MiB" frame through at roughly 10 MiB.
+    mocks.callMcpDaemonTool.mockResolvedValue(
+      // Comfortably under 4 MiB by code units, over it once encoded.
+      structured({ rows: "\u65e5".repeat(2 * 1024 * 1024) })
+    );
+    const { text } = await run(
+      toolSet(everything),
+      `try { await attio.list_records({ object: "deals" }); return "no error"; }
+       catch (error) { return error.message; }`
+    );
+    expect(text).toContain("over the");
+  }, 20_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
