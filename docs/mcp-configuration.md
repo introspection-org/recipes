@@ -12,7 +12,7 @@ package policy  ∩  selected-agent policy  =  authorized tools
                               +
  endpoint from package manifest or local/host binding
                               ↓
-                 CLI or Pi-registered tools
+        CLI command, Pi-registered tools, or one `execute` surface
 ```
 
 ## 1. Declare the package boundary
@@ -91,6 +91,84 @@ to hide all authorized tools for a server, then optionally list exact tools in
 or a sole `"*"` selector. `eager` wins when a tool matches both fields, but
 neither field can authorize a tool excluded by `include`/`exclude`.
 
+`mode: execute` registers neither a command nor one tool per capability. It
+registers exactly two tools — `execute` and `tool_search` — however many
+servers are bound:
+
+```yaml
+tools:
+  - read
+mcp:
+  mode: execute
+  servers:
+    attio:
+      include: ["*"]
+    loops:
+      include: ["search", "describe", "execute"]
+```
+
+`execute` takes a short async JavaScript program and returns its value. Every
+authorized tool is a function on the program's surface — `tools["<server>"].<tool>(args)`,
+and a server whose id is a valid identifier is also a bare global:
+
+```js
+// Bracket access always works. Dot access needs an identifier-safe name, and
+// many servers publish hyphenated ones, as Attio does here.
+const page = await tools["attio"]["list-records"]({ object: "deals" });
+const quiet = parseDeals(page).filter((deal) => deal.last_activity < cutoff);
+for (const deal of quiet) await loops.execute({ action: "send", to: deal.email });
+return { emailed: quiet.length };
+```
+
+Only the returned value enters the conversation, so a fan-out that would be one
+model turn per record is one turn in total. Each call returns the tool's
+structured result or throws, so ordinary `try`/`catch` works, and `console.log`
+is captured alongside the value.
+
+The callable surface is the same `package ∩ agent` intersection `tools` mode
+registers with Pi, resolved by the same code, so the two modes cannot disagree
+about what an agent may call. A program naming anything outside it fails; it
+cannot widen its own authorization.
+
+The program runs in its own process with no environment, under Node's
+permission model, inside a fresh `vm` context. It holds no credentials, and the
+authorized tools are its only way to reach a provider. `execute` is not a
+substitute for `bash`, and an agent that carries only `execute` does not gain
+one.
+
+⚠️ What is enforced and what is defence in depth differ, and the difference is
+worth knowing. Node's permission model gates the filesystem, subprocesses,
+workers and addons — those are denied outright, and an escape from the `vm`
+context does not recover them. It has **no network gate**. The runner therefore
+removes the network globals *and `process` itself* from its own realm before
+the program starts, keeping only the stdio it captured first:
+`process.getBuiltinModule("node:http")` returns a working socket API
+synchronously with no import to block, so removing `fetch` alone left the path
+open and only taking the capability root closes it.
+
+That is still defence in depth rather than a boundary — it removes the paths
+that are known and reachable, and cannot prove none remains. What bounds
+network reachability is the sandbox's egress policy, and what makes an escape
+low-value is that the process is spawned with `env: {}` and holds no credential
+to present.
+
+⚠️ A program that fails part-way leaves whatever provider writes already
+succeeded. Nothing is rolled back and non-idempotent writes are not retried;
+the error reports how many calls ran. Prefer an idempotency key the provider
+honours over a program that assumes it can re-run cleanly.
+
+Three budgets bound a program: a wall clock
+(`PI_RECIPES_MCP_EXECUTE_TIMEOUT_MS`, 300 s), a call count
+(`PI_RECIPES_MCP_EXECUTE_MAX_CALLS`, 100) and resident memory
+(`PI_RECIPES_MCP_EXECUTE_MAX_MEMORY_MB`, 512). Exceeding any of them fails the
+tool call. The memory bound is enforced from the parent as well as by the
+child's heap cap, because V8's cap does not cover typed arrays — hold results
+in batches rather than accumulating them.
+
+`defer` and `eager` are invalid in `execute` mode for the same reason they are
+invalid in `cli` mode: they select what Pi registers, and this mode registers
+one tool.
+
 Deferred tools remain authorized and discoverable. When at least one connector
 or MCP tool is deferred, Recipes registers `tool_search`. Calling it searches
 the inactive tools already allowed for the agent and adds the best matches to
@@ -98,8 +176,12 @@ Pi's active tool set for the next model request. It never grants access beyond
 the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
 
-`defer` and `eager` are invalid in CLI mode. An omitted agent `mcp` block
-inherits its base policy. Once a child declares `mcp`, the complete block
+In `execute` mode there is nothing to activate, so `tool_search` answers with
+the signature a program needs — the callable expression and the argument
+schema — for every match. The tool, the query and the skill that calls it are
+the same either way; only what comes back differs.
+
+An omitted agent `mcp` block inherits its base policy. Once a child declares `mcp`, the complete block
 replaces the inherited policy; restate its mode, servers, authorization, and
 activation selectors. This makes external capability changes reviewable at the
 derived agent. Every resolved agent owns its mode independently.
@@ -167,6 +249,13 @@ own registered tool catalog and active set. The MCP daemon and mcporter config
 remain private to those wrappers; shell tools do not receive an `mcp` command,
 `MCPORTER_CONFIG`, or MCP session path.
 
+In execute mode the program process receives none of it either — not the daemon
+socket, not its token, not the session path. It asks the session to make each
+call, which re-checks the agent's policy before anything leaves. This is why a
+program cannot reach a server the agent did not select, and why escaping the
+program's `vm` context wins nothing: there is no credential in that process to
+present.
+
 Pi receives each tool's MCP input schema. If the server declares
 `outputSchema`, Recipes retains and validates it locally against successful
 `structuredContent`; providers do not currently receive it as a tool
@@ -174,3 +263,9 @@ declaration field. Text, image, resource, resource-link, audio, and structured
 results are normalized to Pi tool results. Duplicate structured JSON text is
 removed, errors become ordinary failed tool calls, and model-visible text is
 bounded to 50 KiB or 2,000 lines by default.
+
+An `execute` program sees the same results as data rather than as blocks:
+`structuredContent` when the server produced any, otherwise the text content
+parsed as JSON when it parses. `outputSchema` is validated the same way, a tool
+error becomes a thrown error inside the program, and the same 50 KiB / 2,000
+line bound applies to what the program returns.

@@ -47,10 +47,12 @@ import {
   type ScopedMcpToolSelection,
 } from "./mcp.js";
 import { createMcpToolSet } from "./mcp-tools.js";
+import { createMcpExecuteToolSet } from "./mcp-execute.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  type RecipeDisclosedTool,
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
@@ -75,6 +77,7 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
+import { type RecipeAgentMcpMode } from "./recipe-agent.js";
 import {
   formatMemoryForPrompt,
   loadMemoryIndex,
@@ -319,7 +322,15 @@ interface MaterializedSessionMcp {
   tools?: ToolDefinition[];
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
+  disclosedTools?: RecipeDisclosedTool[];
+  /** Execute mode promises `tool_search` even with nothing to disclose. */
+  executeMode?: boolean;
   release?: () => Promise<void>;
+}
+
+/** Every mode but `cli` puts tools in front of Pi rather than behind a command. */
+function mcpModeRegistersTools(mode: RecipeAgentMcpMode): boolean {
+  return mode !== "cli";
 }
 
 const leasedMcpEnvironments = new WeakSet<NodeJS.ProcessEnv>();
@@ -375,10 +386,12 @@ async function configureSessionMcp(
   opts: CreateAgentSessionInternalOptions
 ): Promise<MaterializedSessionMcp> {
   const selections = scopedMcpSelections(recipe);
-  if (selections.length === 0) {
+  const mode = recipe.mcp?.mode ?? "cli";
+  // Read the mode first: execute promises a two-tool surface even with nothing
+  // selected, so bailing on an empty selection would deny it that.
+  if (selections.length === 0 && mode !== "execute") {
     return { available: false, materialized: false };
   }
-  const mode = recipe.mcp?.mode ?? "cli";
   const hostProvisioned = opts.mcpProvisioning === "host";
   const mcpCwd = opts.mcpRuntimeDir ?? cwd;
   const snapshot =
@@ -411,7 +424,7 @@ async function configureSessionMcp(
   };
 
   try {
-    if (!hostProvisioned && mode === "tools") {
+    if (!hostProvisioned && mcpModeRegistersTools(mode)) {
       const isolated = await createIsolatedMcpEnvironment(env);
       runtimeEnv = isolated.env;
       privateDirectory = isolated.directory;
@@ -446,7 +459,7 @@ async function configureSessionMcp(
       });
     }
 
-    if (mode === "tools") {
+    if (mcpModeRegistersTools(mode)) {
       const catalogs =
         session.servers.length > 0
           ? await preloadMcpCatalogs({
@@ -454,18 +467,24 @@ async function configureSessionMcp(
               allowPartial: true,
             })
           : [];
-      const materialized = createMcpToolSet({
+      const modeOptions = {
         session,
         catalogs,
         mcp: recipe.mcp!,
         env: runtimeEnv,
-      });
+      };
+      const executeSet =
+        mode === "execute" ? createMcpExecuteToolSet(modeOptions) : undefined;
+      const materialized = executeSet ?? createMcpToolSet(modeOptions);
       return {
         available: true,
         materialized: !hostProvisioned,
         tools: materialized.tools,
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
+        ...(executeSet
+          ? { disclosedTools: executeSet.disclosed, executeMode: true }
+          : {}),
         release,
       };
     }
@@ -807,6 +826,11 @@ async function createSessionForAgent(
         getActiveTools: () => session?.getActiveToolNames() ?? [],
         setActiveTools: (names) => session?.setActiveToolsByName(names),
       },
+      ...(mcp.disclosedTools ? { disclosed: mcp.disclosedTools } : {}),
+      ...(mcp.executeMode ? { alwaysRegister: true } : {}),
+      // `mcp_search` is the compatibility name for the DEFERRED-tool
+      // behaviour. Execute mode discloses rather than defers, and its surface
+      // is documented as two tools, so a disclosure must not summon a third.
     }, (mcp.deferredToolNames?.length ?? 0) > 0);
     const occupiedSearchTool = toolSearchTools.find((tool) =>
       occupiedToolNames.has(tool.name)
