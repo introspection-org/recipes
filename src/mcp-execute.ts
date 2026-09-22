@@ -351,7 +351,9 @@ export function createMcpExecuteToolSet(options: {
     description: [
       "Run a short async JavaScript program against this Recipe's authorized tools and return its value.",
       "",
-      "Every authorized tool is an async function: `tools[\"<server>\"].<tool>(args)`, and a server whose id is a valid identifier is also a bare global (`attio.search_records({...})`). Each returns the tool's structured result, or throws, so ordinary `try`/`catch` works.",
+      "Every authorized tool is an async function. `tools[\"<server>\"][\"<tool>\"](args)` always works; dot access needs the name to be a valid identifier, which many are not — MCP servers commonly publish hyphenated names, so prefer the bracket form unless the listing below shows otherwise. The listing gives each tool's exact callable form.",
+      "",
+      "A call returns the server's structured result when it declares one, otherwise its text content — parsed as JSON when it parses, and left as a string when it does not. A server with no output schema usually means strings: parse out what you need rather than assuming fields. A failed call throws, so ordinary `try`/`catch` works.",
       "",
       "Write the body only — no wrapper, no imports. `return` the value you want; it is the only thing that enters the conversation, so filter and aggregate here rather than returning raw pages. `console.log` is captured. `sleep(ms)` is available. There is no network, no filesystem and no shell.",
       "",
@@ -363,7 +365,7 @@ export function createMcpExecuteToolSet(options: {
     parameters: Type.Object({
       code: Type.String({
         description:
-          "The program body. Async; `return` the result. Example: `const d = await tools[\"attio\"].list_records({object:\"deals\"}); return d.records.length;`",
+          "The program body. Async; `return` the result. Example: `const page = await tools[\"attio\"][\"list-records\"]({ object: \"deals\" }); return page.length;`",
       }),
     }),
     executionMode: "sequential",

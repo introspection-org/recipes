@@ -112,8 +112,10 @@ authorized tool is a function on the program's surface — `tools["<server>"].<t
 and a server whose id is a valid identifier is also a bare global:
 
 ```js
-const page = await attio.list_records({ object: "deals" });
-const quiet = page.records.filter((record) => record.last_activity < cutoff);
+// Bracket access always works. Dot access needs an identifier-safe name, and
+// many servers publish hyphenated ones, as Attio does here.
+const page = await tools["attio"]["list-records"]({ object: "deals" });
+const quiet = parseDeals(page).filter((deal) => deal.last_activity < cutoff);
 for (const deal of quiet) await loops.execute({ action: "send", to: deal.email });
 return { emailed: quiet.length };
 ```
