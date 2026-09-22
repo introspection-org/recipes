@@ -6,7 +6,7 @@ import {
   ensureMcpDaemon,
   exchangeMcpDaemon,
   mcpDaemonEnvironment,
-} from "./mcp-daemon-client.js";
+} from "./mcp/daemon/client.js";
 import { mcpTraceContextFromEnv } from "./mcp-trace-context.js";
 
 function commandNeedsStdin(args: readonly string[]): boolean {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createMcpCliSessionPolicy,
   validateDelegatedMcpCommand,
-} from "../src/mcp-cli-policy.js";
+} from "../src/mcp/cli/policy.js";
 
 function policy() {
   return createMcpCliSessionPolicy(

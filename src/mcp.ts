@@ -13,7 +13,7 @@ import {
   MCP_DAEMON_SOCKET_ENV,
   MCP_DAEMON_TOKEN_ENV,
   MCP_SESSION_ROOT_ENV,
-} from "./mcp-daemon-protocol.js";
+} from "./mcp/daemon/protocol.js";
 import {
   resolvePiPackageMcpManifestPaths,
   type RecipePackageManifest,
@@ -286,7 +286,7 @@ function compiledEntrypoint(name: string): string {
 }
 
 export function mcpCliEntrypointPath(): string {
-  return compiledEntrypoint("mcp-cli.js");
+  return compiledEntrypoint("mcp/cli/index.js");
 }
 
 export function mcpClientEntrypointPath(): string {

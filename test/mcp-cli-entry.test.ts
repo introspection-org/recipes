@@ -9,7 +9,9 @@ const distCli = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "dist",
-  "mcp-cli.js"
+  "mcp",
+  "cli",
+  "index.js"
 );
 
 describe("mcp CLI entry", () => {

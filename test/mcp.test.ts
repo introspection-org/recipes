@@ -22,9 +22,9 @@ import {
   describeUnavailableRunTool,
   describeUnknownRunServer,
   searchMcpTools,
-} from "../src/mcp-cli.js";
+} from "../src/mcp/cli/index.js";
 import { preloadMcpCatalogs } from "../src/mcp-catalog.js";
-import { callMcpDaemonTool } from "../src/mcp-daemon-client.js";
+import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
 import {
   buildMcporterConfig,
   clearMcpSession,
@@ -124,7 +124,7 @@ function runMcpCli(
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [join(process.cwd(), "dist", "mcp-cli.js"), ...args],
+      [join(process.cwd(), "dist", "mcp", "cli", "index.js"), ...args],
       {
         env: { ...process.env, ...env },
         stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],

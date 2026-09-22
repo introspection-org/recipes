@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { stderr, stdout } from "node:process";
 
-import { isDirectEntry } from "./direct-cli.js";
-import { main } from "./mcp-cli-core.js";
+import { isDirectEntry } from "../../direct-cli.js";
+import { main } from "./core.js";
 
-export * from "./mcp-cli-core.js";
+export * from "./core.js";
 
 if (isDirectEntry(import.meta.url)) {
   let brokenPipe = false;

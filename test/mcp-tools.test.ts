@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   callMcpDaemonTool: vi.fn(),
 }));
 
-vi.mock("../src/mcp-daemon-client.js", () => ({
+vi.mock("../src/mcp/daemon/client.js", () => ({
   callMcpDaemonTool: mocks.callMcpDaemonTool,
 }));
 

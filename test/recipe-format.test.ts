@@ -647,11 +647,11 @@ describe("npm package boundary", () => {
     expect(existsSync(join(root, "src", "serve.ts"))).toBe(false);
     // Internal snapshot bridge used by `pi --recipe`; it is not exposed in
     // package.json#bin and therefore does not restore a Recipes CLI.
-    expect(existsSync(join(root, "crates", "introspection-recipe-check", "src", "main.rs"))).toBe(true);
+    expect(existsSync(join(root, "packages", "recipe-check", "src", "main.rs"))).toBe(true);
     // Python bindings share the source repository and release train but are
     // published separately; they never enter the npm package boundary.
-    expect(existsSync(join(root, "bindings", "python"))).toBe(true);
-    expect(pkg.files.some((path) => path.startsWith("bindings/"))).toBe(false);
+    expect(existsSync(join(root, "packages", "recipe-check-python"))).toBe(true);
+    expect(pkg.files.some((path) => path.startsWith("packages/"))).toBe(false);
     expect(existsSync(join(root, "harbor"))).toBe(false);
     expect(existsSync(join(root, "docs", "recipe-evals.md"))).toBe(false);
   });

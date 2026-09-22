@@ -1,4 +1,4 @@
 {
-  "crates/introspection-recipe-check": "0.7.0",
-  "bindings/python": "0.7.0"
+  "packages/recipe-check": "0.7.0",
+  "packages/recipe-check-python": "0.7.0"
 }
