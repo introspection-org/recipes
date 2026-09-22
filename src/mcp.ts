@@ -279,7 +279,7 @@ export function mcporterCliEntrypointPath(): string {
   return fileURLToPath(import.meta.resolve("mcporter/cli"));
 }
 
-export function compiledEntrypoint(name: string): string {
+function compiledEntrypoint(name: string): string {
   const adjacent = fileURLToPath(new URL(`./${name}`, import.meta.url));
   if (existsSync(adjacent)) return adjacent;
   return fileURLToPath(new URL(`../dist/${name}`, import.meta.url));

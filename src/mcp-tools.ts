@@ -47,7 +47,7 @@ export interface McpToolSet {
   canonicalToPiName: ReadonlyMap<string, string>;
 }
 
-export interface UsableMcpTool {
+interface UsableMcpTool {
   serverId: string;
   serverName: string;
   catalog: McpToolCatalogEntry;
@@ -492,25 +492,14 @@ function compileUsableTools(
   return { usable, unusable };
 }
 
-export interface AuthorizedMcpTools {
-  usable: UsableMcpTool[];
-  unusable: Map<string, string>;
-  catalogs: McpCatalogServer[];
-}
-
-/**
- * The authorized tool set: package policy ∩ this agent's policy.
- *
- * Every mode resolves its callable surface through here, so `tools` and
- * `execute` cannot drift into different answers about what an agent may call.
- * A host-provisioned daemon may serve more than one agent, so the resolved
- * agent's policy is re-applied before any catalog entry becomes callable.
- */
-export function resolveAuthorizedMcpTools(options: {
+export function createMcpToolSet(options: {
   session: McpSessionConfig;
   catalogs: readonly McpCatalogServer[];
   mcp: RecipeAgentMcp;
-}): AuthorizedMcpTools {
+  env: NodeJS.ProcessEnv;
+}): McpToolSet {
+  // A host-provisioned daemon may serve more than one agent. Re-apply this
+  // resolved agent's policy before any catalog entry becomes a Pi tool.
   const session: McpSessionConfig = {
     ...options.session,
     servers: options.session.servers.filter((server) =>
@@ -537,109 +526,6 @@ export function resolveAuthorizedMcpTools(options: {
     );
   }
   const { usable, unusable } = compileUsableTools(session, catalogs);
-  return { usable, unusable, catalogs };
-}
-
-/** The model-visible output clamp, shared by every mode that returns text. */
-export function guardText(
-  text: string,
-  env: NodeJS.ProcessEnv
-): { text: string; truncated?: { originalBytes: number; originalLines: number } } {
-  const guarded = guardContent([{ type: "text", text }], env);
-  const rendered = guarded.content
-    .filter(
-      (block): block is { type: "text"; text: string } => block.type === "text"
-    )
-    .map((block) => block.text)
-    .join("\n");
-  return {
-    text: rendered,
-    ...(guarded.truncated
-      ? {
-          truncated: {
-            originalBytes: guarded.truncated.originalBytes,
-            originalLines: guarded.truncated.originalLines,
-          },
-        }
-      : {}),
-  };
-}
-
-export function mcpCallTimeoutMs(env: NodeJS.ProcessEnv): number {
-  return positiveInteger(
-    env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
-    DEFAULT_CALL_TIMEOUT_MS
-  );
-}
-
-export function validateMcpToolInput(
-  tool: UsableMcpTool,
-  input: Recordish
-): void {
-  if (!tool.validateInput(input)) {
-    throw new Error(
-      `MCP tool '${tool.canonicalName}' received arguments that do not match inputSchema: ${schemaErrors(
-        tool.validateInput
-      )}`
-    );
-  }
-}
-
-/**
- * The data a program sees, rather than the blocks a model sees.
- *
- * `structuredContent` when the server produced any, else the text content
- * parsed as JSON when it parses. Errors throw so `try`/`catch` in the program
- * behaves the way its author expects.
- */
-export function mcpResultValue(
-  tool: UsableMcpTool,
-  raw: unknown,
-  env: NodeJS.ProcessEnv
-): unknown {
-  const result = asRecord(raw);
-  if (!result) {
-    throw new Error(
-      `MCP tool '${tool.canonicalName}' returned a malformed result.`
-    );
-  }
-  if (result.isError === true) throw new Error(errorText(result, env));
-  const structuredContent = asRecord(result.structuredContent);
-  if (tool.validateOutput) {
-    if (!structuredContent) {
-      throw new Error(
-        `MCP tool '${tool.canonicalName}' declares outputSchema but returned no structuredContent. The remote outcome is unknown; do not retry automatically.`
-      );
-    }
-    if (!tool.validateOutput(structuredContent)) {
-      throw new Error(
-        `MCP tool '${tool.canonicalName}' returned structuredContent that does not match outputSchema: ${schemaErrors(
-          tool.validateOutput
-        )}. The remote outcome is unknown; do not retry automatically.`
-      );
-    }
-  }
-  if (structuredContent) return structuredContent;
-  const text = contentBlocks(result, undefined)
-    .filter(
-      (block): block is { type: "text"; text: string } => block.type === "text"
-    )
-    .map((block) => block.text)
-    .join("\n");
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-export function createMcpToolSet(options: {
-  session: McpSessionConfig;
-  catalogs: readonly McpCatalogServer[];
-  mcp: RecipeAgentMcp;
-  env: NodeJS.ProcessEnv;
-}): McpToolSet {
-  const { usable, unusable, catalogs } = resolveAuthorizedMcpTools(options);
   const activeCanonical = activeCanonicalNames(options.mcp, usable);
   const requestedEager = new Set(
     Object.entries(options.mcp.servers).flatMap(([serverId, policy]) =>
@@ -717,7 +603,13 @@ export function createMcpToolSet(options: {
         : "sequential",
     async execute(_toolCallId, params, signal) {
       const input = asRecord(params) ?? {};
-      validateMcpToolInput(tool, input);
+      if (!tool.validateInput(input)) {
+        throw new Error(
+          `MCP tool '${tool.canonicalName}' received arguments that do not match inputSchema: ${schemaErrors(
+            tool.validateInput
+          )}`
+        );
+      }
       const raw = await callMcpDaemonTool(
         tool.serverId,
         tool.catalog.name,
@@ -725,7 +617,10 @@ export function createMcpToolSet(options: {
         {
           env: options.env,
           signal,
-          timeoutMs: mcpCallTimeoutMs(options.env),
+          timeoutMs: positiveInteger(
+            options.env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
+            DEFAULT_CALL_TIMEOUT_MS
+          ),
         }
       );
       return validateResult(tool, raw, options.env);

@@ -122,7 +122,6 @@ type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
 enum AgentMcpMode {
     Cli,
     Tools,
-    Execute,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1939,13 +1938,12 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
     let mode = match mcp.get("mode") {
         Some(JsonValue::String(value)) if value == "cli" => Some(AgentMcpMode::Cli),
         Some(JsonValue::String(value)) if value == "tools" => Some(AgentMcpMode::Tools),
-        Some(JsonValue::String(value)) if value == "execute" => Some(AgentMcpMode::Execute),
         Some(_) => {
             ctx.error(
                 "agent.mcp_mode_invalid",
                 path,
-                "Agent mcp.mode must be 'cli', 'tools' or 'execute'",
-                Some("set mcp.mode to cli, tools or execute"),
+                "Agent mcp.mode must be 'cli' or 'tools'",
+                Some("set mcp.mode to cli or tools"),
             );
             None
         }
@@ -2024,10 +2022,7 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             let Some(value) = server.get(key) else {
                 continue;
             };
-            if matches!(key, "defer" | "eager")
-                && mode.is_some()
-                && mode != Some(AgentMcpMode::Tools)
-            {
+            if matches!(key, "defer" | "eager") && mode == Some(AgentMcpMode::Cli) {
                 ctx.error(
                     "agent.mcp_activation_invalid",
                     path,
@@ -2402,7 +2397,7 @@ fn resolved_agent_mcp(
         return (!inherited.servers.is_empty() || inherited.mode.is_some()).then_some(inherited);
     };
     let mut merged = child.clone();
-    if merged.mode.is_some() && merged.mode != Some(AgentMcpMode::Tools) {
+    if merged.mode == Some(AgentMcpMode::Cli) {
         for selection in merged.servers.values_mut() {
             selection.defer = None;
             selection.eager = None;
@@ -3376,54 +3371,6 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
-    }
-
-    #[test]
-    fn accepts_the_execute_mcp_mode() {
-        let input = selector_recipe(
-            json!({ "include": ["search_profiles"] }),
-            concat!(
-                "  mode: execute\n",
-                "  servers:\n",
-                "    salesforce:\n",
-                "      include:\n",
-                "        - search_profiles\n",
-            ),
-            false,
-        );
-
-        let report = check_recipe_files(&input);
-
-        assert!(report.valid, "{:?}", report.diagnostics);
-    }
-
-    #[test]
-    fn rejects_activation_selectors_outside_tools_mode() {
-        let input = selector_recipe(
-            json!({ "include": ["search_profiles"] }),
-            concat!(
-                "  mode: execute\n",
-                "  servers:\n",
-                "    salesforce:\n",
-                "      include:\n",
-                "        - search_profiles\n",
-                "      defer:\n",
-                "        - search_profiles\n",
-            ),
-            false,
-        );
-
-        let report = check_recipe_files(&input);
-
-        assert!(!report.valid);
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.code == "agent.mcp_activation_invalid"),
-            "{:?}",
-            report.diagnostics
-        );
     }
 
     #[test]

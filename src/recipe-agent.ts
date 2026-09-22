@@ -43,7 +43,7 @@ export interface RecipeAgentMcpServer {
   eager?: string[];
 }
 
-export type RecipeAgentMcpMode = "cli" | "tools" | "execute";
+export type RecipeAgentMcpMode = "cli" | "tools";
 
 export interface RecipeAgentMcp {
   /** Omission inherits the parent mode or defaults the resolved root to CLI. */
@@ -321,7 +321,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     };
   }
   const mode =
-    raw.mode === "cli" || raw.mode === "tools" || raw.mode === "execute"
+    raw.mode === "cli" || raw.mode === "tools"
       ? raw.mode as RecipeAgentMcpMode
       : undefined;
   const mcp: ParsedRecipeAgentMcp = {
@@ -361,8 +361,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
             ? stringArray(server.eager).map((selector) => selector.trim())
             : undefined
         ) ||
-        (mode !== undefined &&
-          mode !== "tools" &&
+        (mode === "cli" &&
           (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager")))
       );
     }
@@ -372,8 +371,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     !Object.hasOwn(raw, "servers") ||
     (Object.hasOwn(raw, "mode") &&
         raw.mode !== "cli" &&
-        raw.mode !== "tools" &&
-        raw.mode !== "execute") ||
+        raw.mode !== "tools") ||
     Object.keys(rawServers).some((serverId) => !serverId.trim()) ||
     hasNormalizedMcpServerCollision(Object.keys(rawServers)) ||
     !raw.servers ||

@@ -2,7 +2,6 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export const RECIPE_TOOL_SEARCH_NAME = "tool_search";
-export const RECIPE_EXECUTE_TOOL_NAME = "execute";
 export const LEGACY_MCP_TOOL_SEARCH_NAME = "mcp_search";
 
 export interface RecipeToolActivation {
@@ -14,21 +13,6 @@ export interface RecipeToolSearchOptions {
   tools: readonly RecipeSearchableTool[];
   deferredToolNames: readonly string[];
   activation: RecipeToolActivation;
-  /**
-   * Capabilities callable through `execute` rather than registered with Pi.
-   *
-   * There is nothing to activate for these, so a match is answered with the
-   * signature the program needs. Same tool, same query, different mechanics —
-   * which is what lets one skill be written against either MCP mode.
-   */
-  disclosed?: readonly RecipeDisclosedTool[];
-  /** Register even with nothing to search, for modes that promise the tool. */
-  alwaysRegister?: boolean;
-}
-
-export interface RecipeDisclosedTool extends RecipeSearchableTool {
-  /** How the program names it, e.g. `attio.search_records` or `tools["a-b"].x`. */
-  readonly callable: string;
 }
 
 export interface RecipeSearchableTool {
@@ -38,83 +22,9 @@ export interface RecipeSearchableTool {
   readonly parameters?: unknown;
 }
 
-const DESCRIPTION_MAX_CHARS = 200;
-const SCHEMA_NAME_MAX_CHARS = 60;
-const SCHEMA_NAMES_MAX_CHARS = 400;
-const SCHEMA_MAX_CHARS = 1_200;
-
-/**
- * A disclosed tool's arguments, bounded.
- *
- * A search returns up to ten of these and they are model-visible, so an
- * unbounded serialization of a large catalog schema would blow past the limits
- * `execute` applies to its own output. A truncated JSON blob is worse than
- * useless for writing a call, so an oversized schema degrades to its property
- * names and required set instead.
- */
-function renderParameters(parameters: unknown): string {
-  const rendered = JSON.stringify(parameters ?? {});
-  if (rendered.length <= SCHEMA_MAX_CHARS) return rendered;
-  const schema = parameters as {
-    properties?: Record<string, unknown>;
-    required?: unknown;
-  };
-  const names = nameList(Object.keys(schema?.properties ?? {}));
-  const required = nameList(
-    Array.isArray(schema?.required) ? schema.required.map(String) : []
-  );
-  return names
-    ? `{ properties: ${names}${required ? `; required: ${required}` : ""} } (schema too large to show in full)`
-    : "(schema too large to show)";
-}
-
-/**
- * A comma-separated list of names, itself bounded.
- *
- * The fallback exists because the schema was already too large; a schema with
- * thousands of properties would otherwise route around the very limit that
- * sent it here.
- */
-function nameList(names: readonly string[]): string {
-  const kept: string[] = [];
-  let length = 0;
-  for (const name of names) {
-    const clipped = clip(name, SCHEMA_NAME_MAX_CHARS);
-    if (length + clipped.length > SCHEMA_NAMES_MAX_CHARS) {
-      kept.push(`…${names.length - kept.length} more`);
-      break;
-    }
-    kept.push(clipped);
-    length += clipped.length + 2;
-  }
-  return kept.join(", ");
-}
-
-function clip(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
-}
-
-/**
- * A disclosed tool's description, bounded.
- *
- * Ten of these are model-visible in one result. The schema beside them was
- * already clamped; leaving the prose unbounded routed around that.
- */
-function clipDescription(description: string): string {
-  return clip(description.split("\n")[0] ?? "", DESCRIPTION_MAX_CHARS);
-}
-
-interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {
-  tool: T;
+interface ScoredTool {
+  tool: RecipeSearchableTool;
   score: number;
-}
-
-/**
- * A candidate carries which catalog it came from, so one ranked list can be
- * split back into activations and signatures without matching on name.
- */
-interface RankedCandidate extends ScoredTool {
-  disclosed: boolean;
 }
 
 function words(value: string): string[] {
@@ -220,13 +130,7 @@ export function createRecipeToolSearch(
     }
     return tool;
   });
-  const disclosed = options.disclosed ?? [];
-  // Execute mode documents a stable two-tool surface, so its `tool_search` is
-  // registered even with nothing to disclose — a skill that calls it should get
-  // a no-match answer, not an unavailable tool.
-  if (deferred.length === 0 && disclosed.length === 0 && !options.alwaysRegister) {
-    return undefined;
-  }
+  if (deferred.length === 0) return undefined;
   if (toolsByName.has(RECIPE_TOOL_SEARCH_NAME)) {
     throw new Error(
       `Recipe tool name '${RECIPE_TOOL_SEARCH_NAME}' is reserved by the session`
@@ -237,9 +141,7 @@ export function createRecipeToolSearch(
     name: RECIPE_TOOL_SEARCH_NAME,
     label: "Tool search",
     description:
-      disclosed.length > 0
-        ? "Search the tools allowed for this Recipe. Matches that run inside `execute` come back as signatures to call from a program; matches registered with Pi are enabled for the next model request."
-        : "Search inactive tools allowed for this Recipe and enable the best matches for the next model request.",
+      "Search inactive tools allowed for this Recipe and enable the best matches for the next model request.",
     parameters: Type.Object({
       query: Type.String({
         description: "Capability or task to find a tool for.",
@@ -254,22 +156,9 @@ export function createRecipeToolSearch(
       const query = typeof input.query === "string" ? input.query : "";
       const limit = typeof input.limit === "number" ? input.limit : 3;
       const active = new Set(options.activation.getActiveTools());
-      // Ranked as one list, not once per kind: two independent `slice(0, limit)`
-      // calls would return 2x the requested matches and, worse, activate
-      // deferred tools that were not among the best `limit` overall.
-      const candidates: RankedCandidate[] = [
-        ...deferred
-          .filter((tool) => !active.has(tool.name))
-          .map((tool) => ({ tool, disclosed: false as const })),
-        ...disclosed.map((tool) => ({ tool, disclosed: true as const })),
-      ]
-        .map(
-          ({ tool, disclosed }): RankedCandidate => ({
-            tool,
-            disclosed,
-            score: scoreTool(tool, query),
-          })
-        )
+      const matches = deferred
+        .filter((tool) => !active.has(tool.name))
+        .map((tool): ScoredTool => ({ tool, score: scoreTool(tool, query) }))
         .filter((match) => match.score > 0)
         .sort(
           (left, right) =>
@@ -277,11 +166,6 @@ export function createRecipeToolSearch(
             left.tool.name.localeCompare(right.tool.name)
         )
         .slice(0, limit);
-      const matches = candidates.filter((match) => !match.disclosed);
-      const signatures = candidates.filter(
-        (match): match is RankedCandidate & { tool: RecipeDisclosedTool } =>
-          match.disclosed
-      );
       const added = matches.map((match) => match.tool.name);
       if (added.length > 0) {
         options.activation.setActiveTools([...active, ...added]);
@@ -293,44 +177,17 @@ export function createRecipeToolSearch(
           description: tool.description,
         })),
         added,
-        signatures: signatures.map(({ tool }) => ({
-          name: tool.name,
-          callable: tool.callable,
-          description: tool.description,
-          parameters: tool.parameters,
-        })),
       };
-      const sections: string[] = [];
-      if (matches.length > 0) {
-        sections.push(
-          [
-            `Enabled ${matches.length} Recipe tool(s) for the next model request:`,
-            ...matches.map(
-              ({ tool }) =>
-                `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`
-            ),
-          ].join("\n")
-        );
-      }
-      if (signatures.length > 0) {
-        sections.push(
-          [
-            `Call these from an \`${RECIPE_EXECUTE_TOOL_NAME}\` program:`,
-            ...signatures.map(({ tool }) =>
-              [
-                `- ${tool.callable}(args)${
-                  tool.description ? ` — ${clipDescription(tool.description)}` : ""
-                }`,
-                `  args: ${renderParameters(tool.parameters)}`,
-              ].join("\n")
-            ),
-          ].join("\n")
-        );
-      }
       const text =
-        sections.length === 0
+        matches.length === 0
           ? `No inactive Recipe tools matched "${query}".`
-          : sections.join("\n\n");
+          : [
+              `Enabled ${matches.length} Recipe tool(s) for the next model request:`,
+              ...matches.map(
+                ({ tool }) =>
+                  `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`
+              ),
+            ].join("\n");
       return {
         content: [{ type: "text" as const, text }],
         details,

@@ -59,7 +59,6 @@ import {
 import { type RecipeAgentDefinition } from "./recipe-agent.js";
 import type { RecipeAgentMcpMode } from "./recipe-agent.js";
 import { createMcpToolSet } from "./mcp-tools.js";
-import { createMcpExecuteToolSet } from "./mcp-execute.js";
 import {
   applyRecipeAgentPayloadPolicy,
   applyRecipeAgentModelConfigToModel,
@@ -80,7 +79,6 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
-  type RecipeDisclosedTool,
 } from "./tool-search.js";
 
 export interface RecipesExtensionOptions {
@@ -146,8 +144,6 @@ interface RecipeLaunchState {
   agentMcpMode: RecipeAgentMcpMode;
   initialMcpToolNames: string[];
   mcpDeferredToolNames: string[];
-  mcpDisclosedTools: RecipeDisclosedTool[];
-  mcpExecuteMode: boolean;
   initialConnectorToolNames: string[];
   connectorToolNames: string[];
   connectorDeferredToolNames: string[];
@@ -731,8 +727,6 @@ export function createRecipesExtension(
       agentMcpMode: "cli",
       initialMcpToolNames: [],
       mcpDeferredToolNames: [],
-      mcpDisclosedTools: [],
-      mcpExecuteMode: false,
       initialConnectorToolNames: [],
       connectorToolNames: [],
       connectorDeferredToolNames: [],
@@ -927,12 +921,7 @@ export function createRecipesExtension(
       ...launchState.connectorDeferredToolNames,
       ...launchState.mcpDeferredToolNames,
     ];
-    const disclosedTools = launchState.mcpDisclosedTools;
-    const searchable =
-      deferredToolNames.length > 0 ||
-      disclosedTools.length > 0 ||
-      launchState.mcpExecuteMode;
-    if (searchable && !launchState.toolSearchRegistered) {
+    if (deferredToolNames.length > 0 && !launchState.toolSearchRegistered) {
       const toolSearchTools = createRecipeToolSearchTools({
         tools: pi.getAllTools(),
         deferredToolNames,
@@ -940,8 +929,6 @@ export function createRecipesExtension(
           getActiveTools: () => pi.getActiveTools(),
           setActiveTools: (names) => pi.setActiveTools(names),
         },
-        ...(disclosedTools.length > 0 ? { disclosed: disclosedTools } : {}),
-        ...(launchState.mcpExecuteMode ? { alwaysRegister: true } : {}),
       }, launchState.mcpDeferredToolNames.length > 0);
       if (toolSearchTools.length === 0) {
         throw new Error("Recipe tool search has no deferred tools");
@@ -959,7 +946,7 @@ export function createRecipesExtension(
       ...launchState.initialConnectorToolNames,
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),
       ...launchState.initialMcpToolNames,
-      ...(searchable ? [RECIPE_TOOL_SEARCH_NAME] : []),
+      ...(deferredToolNames.length > 0 ? [RECIPE_TOOL_SEARCH_NAME] : []),
       ...(launchState.mcpDeferredToolNames.length > 0
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
@@ -989,8 +976,6 @@ export function createRecipesExtension(
     launchState.agentMcpMode = resolvedMcpMode(launchState);
     launchState.initialMcpToolNames = [];
     launchState.mcpDeferredToolNames = [];
-    launchState.mcpDisclosedTools = [];
-    launchState.mcpExecuteMode = false;
     configureMcpLocalConfigPath({
       cwd: launchState.cwd,
       recipeDir: launchState.resolved.recipeDir,
@@ -1064,11 +1049,7 @@ export function createRecipesExtension(
     const rootSelections = mcpSelectionsForAgent(
       launchState.resolved.definition
     );
-    // Execute mode promises `execute` + `tool_search` whatever the catalog
-    // holds, and `servers: {}` is a valid way to declare it before any server
-    // is bound. Only a recipe with no `mcp` block at all, or another mode with
-    // nothing selected, has nothing to register.
-    if (!rootMcp || (rootSelections.length === 0 && rootMcp.mode !== "execute")) {
+    if (!rootMcp || rootSelections.length === 0) {
       launchState.mcpConfigured = true;
       return;
     }
@@ -1084,8 +1065,7 @@ export function createRecipesExtension(
         env: privateRuntime.env,
         mcporterConfigPath: privateRuntime.mcporterConfigPath,
       });
-      const empty = session.servers.length === 0;
-      if (empty) {
+      if (session.servers.length === 0) {
         const detail = formatMcpConfigurationDiagnostics(
           session.diagnostics ?? []
         );
@@ -1096,32 +1076,19 @@ export function createRecipesExtension(
           ].join("\n"),
           "warning"
         );
-        // Execute mode promises a two-tool surface whatever the catalog holds,
-        // and the session API already keeps that promise for an empty session.
-        // Returning here would make the same recipe expose different tools
-        // depending on which host launched it.
-        if (launchState.agentMcpMode !== "execute") {
-          launchState.mcpConfigured = true;
-          return;
-        }
+        launchState.mcpConfigured = true;
+        return;
       }
-      const catalogs = empty
-        ? []
-        : await preloadMcpCatalogs({
-            env: privateRuntime.env,
-            allowPartial: true,
-          });
-      const modeOptions = {
+      const catalogs = await preloadMcpCatalogs({
+        env: privateRuntime.env,
+        allowPartial: true,
+      });
+      const materialized = createMcpToolSet({
         session,
         catalogs,
         mcp: rootMcp,
         env: privateRuntime.env,
-      };
-      const executeSet =
-        launchState.agentMcpMode === "execute"
-          ? createMcpExecuteToolSet(modeOptions)
-          : undefined;
-      const materialized = executeSet ?? createMcpToolSet(modeOptions);
+      });
       const existing = new Set(pi.getAllTools().map((tool) => tool.name));
       for (const tool of materialized.tools) {
         if (existing.has(tool.name)) {
@@ -1143,19 +1110,15 @@ export function createRecipesExtension(
       launchState.initialMcpToolNames =
         materialized.initialActiveToolNames;
       launchState.mcpDeferredToolNames = materialized.deferredToolNames;
-      launchState.mcpDisclosedTools = executeSet?.disclosed ?? [];
-      launchState.mcpExecuteMode = executeSet !== undefined;
       for (const toolName of materialized.toolNames) {
         launchState.extensionAllowedToolNames.add(toolName);
       }
       ctx.ui.notify(
-        executeSet
-          ? `Recipe MCP execute: ${executeSet.disclosed.length} tool(s) callable from a program, searchable with ${RECIPE_TOOL_SEARCH_NAME}`
-          : `Recipe MCP tools: ${materialized.toolNames.length} registered, ${materialized.initialActiveToolNames.length} initially active${
-              materialized.deferredToolNames.length > 0
-                ? `, ${materialized.deferredToolNames.length} deferred`
-                : ""
-            }`,
+        `Recipe MCP tools: ${materialized.toolNames.length} registered, ${materialized.initialActiveToolNames.length} initially active${
+          materialized.deferredToolNames.length > 0
+            ? `, ${materialized.deferredToolNames.length} deferred`
+            : ""
+        }`,
         "info"
       );
       const diagnostics = [
