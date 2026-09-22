@@ -22,7 +22,29 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..");
+
+/**
+ * Found by walking up rather than by a fixed depth. A literal `..` was correct
+ * while this lived at the repository root and silently became the mcp-client
+ * crate when it moved under `packages/`, which only a release could discover —
+ * CI never runs this script.
+ */
+function findRepoRoot(from) {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, "package.json");
+    if (fs.existsSync(candidate)) {
+      const name = JSON.parse(fs.readFileSync(candidate, "utf8")).name;
+      if (name === "@introspection-ai/recipes") return dir;
+    }
+    if (path.dirname(dir) === dir) {
+      throw new Error(
+        `could not locate the @introspection-ai/recipes package.json above ${from}`
+      );
+    }
+  }
+}
+
+const repoRoot = findRepoRoot(here);
 
 const version = process.argv[2];
 const artifactsDir = path.resolve(process.argv[3] ?? path.join(here, "artifacts"));

@@ -117,5 +117,11 @@
 		"typebox": "^1.0.56",
 		"typescript": "^7.0.2",
 		"vitest": "^4.0.18"
+	},
+	"optionalDependencies": {
+		"@introspection-ai/mcp-client-linux-x64": "9.9.9",
+		"@introspection-ai/mcp-client-linux-arm64": "9.9.9",
+		"@introspection-ai/mcp-client-darwin-arm64": "9.9.9",
+		"@introspection-ai/mcp-client-darwin-x64": "9.9.9"
 	}
 }
