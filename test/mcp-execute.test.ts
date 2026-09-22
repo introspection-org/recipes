@@ -154,8 +154,9 @@ describe("mcp execute mode", () => {
   });
 
   it("launches the runner under the permission model", () => {
-    const args = executeChildArgs("/pkg/dist/mcp-execute-child.js", "/pkg/package.json");
+    const args = executeChildArgs("/pkg/dist/mcp-execute-child.js", "/pkg/package.json", 512);
     expect(args[0]).toBe("--permission");
+    expect(args).toContain("--max-old-space-size=512");
     expect(args).toContain("--allow-fs-read=/pkg/dist");
     expect(args).toContain("--allow-fs-read=/pkg/package.json");
     // Nothing else is granted: the session directory stays unreadable.
@@ -337,6 +338,19 @@ describe("mcp execute mode", () => {
     ).rejects.toThrow(/more than \d+ bytes of output/);
   }, 30_000);
 
+  it("terminates a program that allocates past its memory bound", async () => {
+    // Typed arrays live outside V8's heap, so `--max-old-space-size` does not
+    // bound them (measured: 3 GiB RSS under a 64 MiB cap). The program also
+    // never yields, so only a bound enforced from the parent can stop it.
+    await expect(
+      run(
+        toolSet(everything, { PI_RECIPES_MCP_EXECUTE_MAX_MEMORY_MB: "128" }),
+        `const keep = [];
+         for (;;) keep.push(new Uint8Array(8 * 1024 * 1024).fill(1));`
+      )
+    ).rejects.toThrow(/exceeded 128MB of memory/);
+  }, 30_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
@@ -454,6 +468,46 @@ describe("tool search over an execute catalog", () => {
     expect(details.signatures[0]!.callable).toBe("attio.update_record");
     const text = (result.content as Array<{ text: string }>)[0]!.text;
     expect(text).toContain("attio.update_record(args)");
+  });
+
+  it("spends one limit across both catalogs", async () => {
+    // Ranking each kind separately returned `limit` of each, so the caller got
+    // twice what it asked for and deferred tools were activated that were not
+    // among the best `limit` overall.
+    const set = createMcpExecuteToolSet({
+      session,
+      catalogs,
+      mcp: everything,
+      env: {},
+    });
+    const deferredTools = ["record_lookup", "record_notes", "record_export"].map(
+      (name) => ({ name, description: `record ${name}` })
+    );
+    const active: string[] = [];
+    const search = createRecipeToolSearch({
+      tools: deferredTools,
+      deferredToolNames: deferredTools.map((tool) => tool.name),
+      activation: {
+        getActiveTools: () => active,
+        setActiveTools: (names) => active.splice(0, active.length, ...names),
+      },
+      disclosed: set.disclosed,
+    });
+    const result = await (search!.execute as any)(
+      "call-1",
+      { query: "record", limit: 2 },
+      undefined,
+      undefined
+    );
+    const details = result.details as {
+      added: string[];
+      matches: Array<{ name: string }>;
+      signatures: Array<{ callable: string }>;
+    };
+    expect(details.matches.length + details.signatures.length).toBe(2);
+    // Whatever ranked, activation never exceeds the limit either.
+    expect(details.added).toEqual(details.matches.map((match) => match.name));
+    expect(active).toEqual(details.added);
   });
 });
 

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createContext, runInContext } from "node:vm";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -37,6 +37,8 @@ const ABORT_GRACE_MS = 1_000;
 // inside the sandbox, so the stream is bounded as it is read.
 const MAX_CHILD_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
+const DEFAULT_MAX_MEMORY_MB = 512;
+const MEMORY_POLL_MS = 250;
 
 /** A timeout that never outlives the race it was created for. */
 function timeoutIn<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => void } {
@@ -150,14 +152,34 @@ function callableExpression(
  */
 export function executeChildArgs(
   childPath: string,
-  manifest: string | undefined
+  manifest: string | undefined,
+  maxMemoryMb: number
 ): string[] {
   return [
     "--permission",
+    `--max-old-space-size=${maxMemoryMb}`,
     `--allow-fs-read=${dirname(childPath)}`,
     ...(manifest ? [`--allow-fs-read=${manifest}`] : []),
     childPath,
   ];
+}
+
+/**
+ * Resident memory of a running child, in MiB.
+ *
+ * `--max-old-space-size` bounds V8's heap but not external memory, so a
+ * program filling typed arrays grows unchecked under it — measured at 3 GiB
+ * RSS against a 64 MiB cap. This is what bounds that, and it reads `/proc`,
+ * so it is Linux-only; the heap cap is the portable backstop.
+ */
+function residentMemoryMb(pid: number): number | undefined {
+  try {
+    const status = readFileSync(`/proc/${pid}/status`, "utf8");
+    const kb = /^VmRSS:\s+(\d+) kB$/m.exec(status);
+    return kb ? Number(kb[1]) / 1024 : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 interface ProgramOutcome {
@@ -191,9 +213,13 @@ async function runProgram(options: {
     );
   }
   const manifest = nearestPackageManifest(childPath);
+  const maxMemoryMb = positiveInteger(
+    options.env.PI_RECIPES_MCP_EXECUTE_MAX_MEMORY_MB,
+    DEFAULT_MAX_MEMORY_MB
+  );
   const child = spawn(
     process.execPath,
-    executeChildArgs(childPath, manifest),
+    executeChildArgs(childPath, manifest, maxMemoryMb),
     {
       // No credentials, no daemon token, no egress URL. This is the boundary,
       // not a convenience: an escaped program has nothing to authenticate with.
@@ -255,6 +281,7 @@ async function runProgram(options: {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(watchdog);
       options.signal?.removeEventListener("abort", onAbort);
       // The child is killed first so it cannot start anything else, then what
       // is already in flight is drained. A drain that outlives its own bound
@@ -275,6 +302,14 @@ async function runProgram(options: {
       () => fail(`Program exceeded ${timeoutMs}ms and was terminated.`),
       timeoutMs
     );
+    const watchdog = setInterval(() => {
+      const resident = residentMemoryMb(child.pid ?? -1);
+      if (resident !== undefined && resident > maxMemoryMb) {
+        fail(
+          `Program exceeded ${maxMemoryMb}MB of memory and was terminated. Process the results in batches rather than holding them all at once.`
+        );
+      }
+    }, MEMORY_POLL_MS);
     const onAbort = () => fail("Program was cancelled.");
     if (options.signal?.aborted) {
       onAbort();

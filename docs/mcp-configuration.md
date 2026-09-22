@@ -157,9 +157,13 @@ succeeded. Nothing is rolled back and non-idempotent writes are not retried;
 the error reports how many calls ran. Prefer an idempotency key the provider
 honours over a program that assumes it can re-run cleanly.
 
-Two budgets bound a program: a wall clock
-(`PI_RECIPES_MCP_EXECUTE_TIMEOUT_MS`, 300 s) and a call count
-(`PI_RECIPES_MCP_EXECUTE_MAX_CALLS`, 100). Exceeding either fails the tool call.
+Three budgets bound a program: a wall clock
+(`PI_RECIPES_MCP_EXECUTE_TIMEOUT_MS`, 300 s), a call count
+(`PI_RECIPES_MCP_EXECUTE_MAX_CALLS`, 100) and resident memory
+(`PI_RECIPES_MCP_EXECUTE_MAX_MEMORY_MB`, 512). Exceeding any of them fails the
+tool call. The memory bound is enforced from the parent as well as by the
+child's heap cap, because V8's cap does not cover typed arrays — hold results
+in batches rather than accumulating them.
 
 `defer` and `eager` are invalid in `execute` mode for the same reason they are
 invalid in `cli` mode: they select what Pi registers, and this mode registers

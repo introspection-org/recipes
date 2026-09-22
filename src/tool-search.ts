@@ -68,6 +68,14 @@ interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {
   score: number;
 }
 
+/**
+ * A candidate carries which catalog it came from, so one ranked list can be
+ * split back into activations and signatures without matching on name.
+ */
+interface RankedCandidate extends ScoredTool {
+  disclosed: boolean;
+}
+
 function words(value: string): string[] {
   return value
     .toLowerCase()
@@ -200,18 +208,34 @@ export function createRecipeToolSearch(
       const query = typeof input.query === "string" ? input.query : "";
       const limit = typeof input.limit === "number" ? input.limit : 3;
       const active = new Set(options.activation.getActiveTools());
-      const rank = <T extends RecipeSearchableTool>(candidates: readonly T[]) =>
-        candidates
-          .map((tool): ScoredTool<T> => ({ tool, score: scoreTool(tool, query) }))
-          .filter((match) => match.score > 0)
-          .sort(
-            (left, right) =>
-              right.score - left.score ||
-              left.tool.name.localeCompare(right.tool.name)
-          )
-          .slice(0, limit);
-      const matches = rank(deferred.filter((tool) => !active.has(tool.name)));
-      const signatures = rank(disclosed);
+      // Ranked as one list, not once per kind: two independent `slice(0, limit)`
+      // calls would return 2x the requested matches and, worse, activate
+      // deferred tools that were not among the best `limit` overall.
+      const candidates: RankedCandidate[] = [
+        ...deferred
+          .filter((tool) => !active.has(tool.name))
+          .map((tool) => ({ tool, disclosed: false as const })),
+        ...disclosed.map((tool) => ({ tool, disclosed: true as const })),
+      ]
+        .map(
+          ({ tool, disclosed }): RankedCandidate => ({
+            tool,
+            disclosed,
+            score: scoreTool(tool, query),
+          })
+        )
+        .filter((match) => match.score > 0)
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.tool.name.localeCompare(right.tool.name)
+        )
+        .slice(0, limit);
+      const matches = candidates.filter((match) => !match.disclosed);
+      const signatures = candidates.filter(
+        (match): match is RankedCandidate & { tool: RecipeDisclosedTool } =>
+          match.disclosed
+      );
       const added = matches.map((match) => match.tool.name);
       if (added.length > 0) {
         options.activation.setActiveTools([...active, ...added]);
