@@ -12,7 +12,7 @@ import {
  * messages steer what the model tries next, so their wording is part of the
  * contract, not incidental.
  */
-describe("mcp search arguments", () => {
+describe("mcp search options", () => {
   it("joins positionals into the query and defaults the rest", () => {
     expect(parseSearchArgs(["contact", "lookup"])).toEqual({
       query: "contact lookup",
@@ -98,7 +98,7 @@ describe("mcp list --timeout", () => {
   });
 });
 
-describe("mcp list arguments", () => {
+describe("mcp list options", () => {
   it.each([
     [["list"]],
     [["list", "contacts"]],
