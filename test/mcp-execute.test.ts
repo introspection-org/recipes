@@ -326,6 +326,29 @@ describe("mcp execute mode", () => {
     expect(text.length).toBeLessThan(1_500);
   });
 
+  it("terminates a program whose output would exhaust the host", async () => {
+    // The clamp on model-visible text runs after the frame is buffered and
+    // parsed, so an enormous return value is a host-memory problem first.
+    await expect(
+      run(
+        toolSet(everything),
+        `return "x".repeat(9 * 1024 * 1024);`
+      )
+    ).rejects.toThrow(/more than \d+ bytes of output/);
+  }, 30_000);
+
+  it("does not hold the event loop after a program finishes", async () => {
+    mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
+    const started = Date.now();
+    await run(
+      toolSet(everything),
+      `await attio.list_records({ object: "deals" }); return "done";`
+    );
+    // A drain deadline left scheduled would keep a one-shot process alive for
+    // its full window after the result is already available.
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 15_000);
+
   it("gives the program no host globals", async () => {
     const { text } = await run(
       toolSet(everything),

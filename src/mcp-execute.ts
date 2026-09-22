@@ -31,6 +31,21 @@ const DEFAULT_PROGRAM_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_CALLS = 100;
 const DRAIN_TIMEOUT_MS = 5_000;
 const ABORT_GRACE_MS = 1_000;
+// The program's own output is clamped before it reaches the model, but that
+// clamp runs after the host has buffered and parsed the frame. A program that
+// returns something enormous would otherwise exhaust the host's memory from
+// inside the sandbox, so the stream is bounded as it is read.
+const MAX_CHILD_OUTPUT_BYTES = 8 * 1024 * 1024;
+const MAX_STDERR_BYTES = 64 * 1024;
+
+/** A timeout that never outlives the race it was created for. */
+function timeoutIn<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => void } {
+  let handle: ReturnType<typeof setTimeout>;
+  const promise = new Promise<T>((resolve) => {
+    handle = setTimeout(() => resolve(value), ms);
+  });
+  return { promise, cancel: () => clearTimeout(handle) };
+}
 
 export interface McpExecuteCallRecord {
   server: string;
@@ -223,16 +238,17 @@ async function runProgram(options: {
         options.env.PI_RECIPES_MCP_EXECUTE_DRAIN_MS,
         DRAIN_TIMEOUT_MS
       );
+      const deadline = timeoutIn(drainMs, false);
       const settledInTime = await Promise.race([
         Promise.allSettled([...inFlight]).then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), drainMs)),
+        deadline.promise,
       ]);
+      deadline.cancel();
       if (settledInTime) return;
       abandoned.abort();
-      await Promise.race([
-        Promise.allSettled([...inFlight]),
-        new Promise((resolve) => setTimeout(resolve, ABORT_GRACE_MS)),
-      ]);
+      const grace = timeoutIn(ABORT_GRACE_MS, undefined);
+      await Promise.race([Promise.allSettled([...inFlight]), grace.promise]);
+      grace.cancel();
     };
 
     const finish = (outcome: () => void, abortInFlight: boolean) => {
@@ -319,8 +335,16 @@ async function runProgram(options: {
     };
 
     let buffer = "";
+    let received = 0;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
+      received += chunk.length;
+      if (received > MAX_CHILD_OUTPUT_BYTES || buffer.length > MAX_CHILD_OUTPUT_BYTES) {
+        fail(
+          `Program produced more than ${MAX_CHILD_OUTPUT_BYTES} bytes of output and was terminated. Return a summary rather than the raw results.`
+        );
+        return;
+      }
       buffer += chunk;
       let newline = buffer.indexOf("\n");
       while (newline !== -1) {
@@ -360,7 +384,8 @@ async function runProgram(options: {
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      // Only the tail is ever reported, so only the tail is ever held.
+      stderr = (stderr + chunk).slice(-MAX_STDERR_BYTES);
     });
     child.stdin.on("error", () => {
       // The child is gone; the failure is reported by `close` or the timeout.
