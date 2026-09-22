@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export const RECIPE_TOOL_SEARCH_NAME = "tool_search";
+export const RECIPE_EXECUTE_TOOL_NAME = "execute";
 export const LEGACY_MCP_TOOL_SEARCH_NAME = "mcp_search";
 
 export interface RecipeToolActivation {
@@ -13,6 +14,19 @@ export interface RecipeToolSearchOptions {
   tools: readonly RecipeSearchableTool[];
   deferredToolNames: readonly string[];
   activation: RecipeToolActivation;
+  /**
+   * Capabilities callable through `execute` rather than registered with Pi.
+   *
+   * There is nothing to activate for these, so a match is answered with the
+   * signature the program needs. Same tool, same query, different mechanics —
+   * which is what lets one skill be written against either MCP mode.
+   */
+  disclosed?: readonly RecipeDisclosedTool[];
+}
+
+export interface RecipeDisclosedTool extends RecipeSearchableTool {
+  /** How the program names it, e.g. `attio.search_records` or `tools["a-b"].x`. */
+  readonly callable: string;
 }
 
 export interface RecipeSearchableTool {
@@ -22,8 +36,8 @@ export interface RecipeSearchableTool {
   readonly parameters?: unknown;
 }
 
-interface ScoredTool {
-  tool: RecipeSearchableTool;
+interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {
+  tool: T;
   score: number;
 }
 
@@ -130,7 +144,8 @@ export function createRecipeToolSearch(
     }
     return tool;
   });
-  if (deferred.length === 0) return undefined;
+  const disclosed = options.disclosed ?? [];
+  if (deferred.length === 0 && disclosed.length === 0) return undefined;
   if (toolsByName.has(RECIPE_TOOL_SEARCH_NAME)) {
     throw new Error(
       `Recipe tool name '${RECIPE_TOOL_SEARCH_NAME}' is reserved by the session`
@@ -141,7 +156,9 @@ export function createRecipeToolSearch(
     name: RECIPE_TOOL_SEARCH_NAME,
     label: "Tool search",
     description:
-      "Search inactive tools allowed for this Recipe and enable the best matches for the next model request.",
+      disclosed.length > 0
+        ? "Search the tools allowed for this Recipe. Matches that run inside `execute` come back as signatures to call from a program; matches registered with Pi are enabled for the next model request."
+        : "Search inactive tools allowed for this Recipe and enable the best matches for the next model request.",
     parameters: Type.Object({
       query: Type.String({
         description: "Capability or task to find a tool for.",
@@ -156,16 +173,18 @@ export function createRecipeToolSearch(
       const query = typeof input.query === "string" ? input.query : "";
       const limit = typeof input.limit === "number" ? input.limit : 3;
       const active = new Set(options.activation.getActiveTools());
-      const matches = deferred
-        .filter((tool) => !active.has(tool.name))
-        .map((tool): ScoredTool => ({ tool, score: scoreTool(tool, query) }))
-        .filter((match) => match.score > 0)
-        .sort(
-          (left, right) =>
-            right.score - left.score ||
-            left.tool.name.localeCompare(right.tool.name)
-        )
-        .slice(0, limit);
+      const rank = <T extends RecipeSearchableTool>(candidates: readonly T[]) =>
+        candidates
+          .map((tool): ScoredTool<T> => ({ tool, score: scoreTool(tool, query) }))
+          .filter((match) => match.score > 0)
+          .sort(
+            (left, right) =>
+              right.score - left.score ||
+              left.tool.name.localeCompare(right.tool.name)
+          )
+          .slice(0, limit);
+      const matches = rank(deferred.filter((tool) => !active.has(tool.name)));
+      const signatures = rank(disclosed);
       const added = matches.map((match) => match.tool.name);
       if (added.length > 0) {
         options.activation.setActiveTools([...active, ...added]);
@@ -177,17 +196,42 @@ export function createRecipeToolSearch(
           description: tool.description,
         })),
         added,
+        signatures: signatures.map(({ tool }) => ({
+          name: tool.name,
+          callable: tool.callable,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
       };
+      const sections: string[] = [];
+      if (matches.length > 0) {
+        sections.push(
+          [
+            `Enabled ${matches.length} Recipe tool(s) for the next model request:`,
+            ...matches.map(
+              ({ tool }) =>
+                `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`
+            ),
+          ].join("\n")
+        );
+      }
+      if (signatures.length > 0) {
+        sections.push(
+          [
+            `Call these from an \`${RECIPE_EXECUTE_TOOL_NAME}\` program:`,
+            ...signatures.map(({ tool }) =>
+              [
+                `- ${tool.callable}(args)${tool.description ? ` — ${tool.description}` : ""}`,
+                `  args: ${JSON.stringify(tool.parameters ?? {})}`,
+              ].join("\n")
+            ),
+          ].join("\n")
+        );
+      }
       const text =
-        matches.length === 0
+        sections.length === 0
           ? `No inactive Recipe tools matched "${query}".`
-          : [
-              `Enabled ${matches.length} Recipe tool(s) for the next model request:`,
-              ...matches.map(
-                ({ tool }) =>
-                  `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`
-              ),
-            ].join("\n");
+          : sections.join("\n\n");
       return {
         content: [{ type: "text" as const, text }],
         details,
