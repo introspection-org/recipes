@@ -386,10 +386,12 @@ async function configureSessionMcp(
   opts: CreateAgentSessionInternalOptions
 ): Promise<MaterializedSessionMcp> {
   const selections = scopedMcpSelections(recipe);
-  if (selections.length === 0) {
+  const mode = recipe.mcp?.mode ?? "cli";
+  // Read the mode first: execute promises a two-tool surface even with nothing
+  // selected, so bailing on an empty selection would deny it that.
+  if (selections.length === 0 && mode !== "execute") {
     return { available: false, materialized: false };
   }
-  const mode = recipe.mcp?.mode ?? "cli";
   const hostProvisioned = opts.mcpProvisioning === "host";
   const mcpCwd = opts.mcpRuntimeDir ?? cwd;
   const snapshot =

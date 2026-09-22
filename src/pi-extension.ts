@@ -1064,7 +1064,11 @@ export function createRecipesExtension(
     const rootSelections = mcpSelectionsForAgent(
       launchState.resolved.definition
     );
-    if (!rootMcp || rootSelections.length === 0) {
+    // Execute mode promises `execute` + `tool_search` whatever the catalog
+    // holds, and `servers: {}` is a valid way to declare it before any server
+    // is bound. Only a recipe with no `mcp` block at all, or another mode with
+    // nothing selected, has nothing to register.
+    if (!rootMcp || (rootSelections.length === 0 && rootMcp.mode !== "execute")) {
       launchState.mcpConfigured = true;
       return;
     }
