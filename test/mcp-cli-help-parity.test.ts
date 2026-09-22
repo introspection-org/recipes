@@ -7,11 +7,11 @@ import {
   mcpRunHelpText,
   mcpSearchHelpText,
   parseSearchArgs,
-} from "../src/mcp-cli-core.js";
+} from "../src/mcp/cli/core.js";
 import {
   createMcpCliSessionPolicy,
   validateDelegatedMcpCommand,
-} from "../src/mcp-cli-policy.js";
+} from "../src/mcp/cli/policy.js";
 
 /**
  * Help text is what an agent reads before it writes a command, so a flag

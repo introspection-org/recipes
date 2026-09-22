@@ -1,11 +1,11 @@
 import { Readable, Writable } from "node:stream";
 import { parentPort, workerData } from "node:worker_threads";
 
-import { executeMcpCommand } from "./mcp-cli-core.js";
+import { executeMcpCommand } from "./core.js";
 import {
   installMcpCommandIoRouting,
   type McpRuntime,
-} from "./mcp-command-context.js";
+} from "./command-context.js";
 
 interface RunWorkerData {
   args: string[];

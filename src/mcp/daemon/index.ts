@@ -11,8 +11,8 @@ import { createRuntime } from "mcporter";
 import {
   installMcpCommandIoRouting,
   type McpRuntime,
-} from "./mcp-command-context.js";
-import { discoverMcpCatalogs, executeMcpCommand } from "./mcp-cli-core.js";
+} from "../cli/command-context.js";
+import { discoverMcpCatalogs, executeMcpCommand } from "../cli/core.js";
 import {
   MCP_DAEMON_FINGERPRINT_ENV,
   MCP_DAEMON_MAX_FRAME_BYTES,
@@ -23,8 +23,8 @@ import {
   type McpDaemonEnvelope,
   type McpDaemonRequest,
   serializeMcpDaemonEnvelope,
-} from "./mcp-daemon-protocol.js";
-import { mcpDaemonRequestContext } from "./mcp-trace-context.js";
+} from "./protocol.js";
+import { mcpDaemonRequestContext } from "../../mcp-trace-context.js";
 
 const configuredSocketPath = process.env[MCP_DAEMON_SOCKET_ENV];
 const configuredToken = process.env[MCP_DAEMON_TOKEN_ENV];
@@ -173,7 +173,7 @@ async function executeRun(
 ): Promise<number> {
   const sharedRuntime = await runtime();
   const worker = new Worker(
-    fileURLToPath(new URL("./mcp-run-worker.js", import.meta.url)),
+    fileURLToPath(new URL("../cli/run-worker.js", import.meta.url)),
     {
       workerData: {
         args: request.args,

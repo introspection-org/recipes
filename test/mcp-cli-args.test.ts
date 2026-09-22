@@ -4,7 +4,7 @@ import {
   compactListArgumentError,
   parseListTimeoutMs,
   parseSearchArgs,
-} from "../src/mcp-cli-core.js";
+} from "../src/mcp/cli/core.js";
 
 /**
  * The CLI's option parsing is `node:util` parseArgs rather than hand-rolled

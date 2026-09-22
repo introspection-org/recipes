@@ -17,20 +17,20 @@ import {
   currentMcpCommandContext,
   runWithMcpCommandContext,
   type McpRuntime,
-} from "./mcp-command-context.js";
+} from "./command-context.js";
 import {
   catalogOutputSchema,
   renderToolContract,
   renderToolSignature,
   type ContractTool,
-} from "./mcp-contract.js";
+} from "../../mcp-contract.js";
 import {
   mcpCallHelpText,
   mcpCliHelpText,
   mcpListHelpText,
   mcpRunHelpText,
   mcpSearchHelpText,
-} from "./mcp-cli-help.js";
+} from "./help.js";
 import {
   defaultMcporterConfigPath,
   defaultMcpSessionPath,
@@ -39,12 +39,12 @@ import {
   type McpSessionConfig,
   type McpSessionServer,
   type McpToolCatalogEntry,
-} from "./mcp.js";
+} from "../../mcp.js";
 import {
   createMcpCliSessionPolicy,
   validateDelegatedMcpCommand,
-} from "./mcp-cli-policy.js";
-import type { McpCatalogServer } from "./mcp-daemon-protocol.js";
+} from "./policy.js";
+import type { McpCatalogServer } from "../daemon/protocol.js";
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000;
@@ -187,7 +187,7 @@ export {
   mcpListHelpText,
   mcpRunHelpText,
   mcpSearchHelpText,
-} from "./mcp-cli-help.js";
+} from "./help.js";
 
 function isHelpArg(value: string | undefined): boolean {
   return value === "--help" || value === "-h" || value === "help";

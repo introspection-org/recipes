@@ -13,16 +13,16 @@ import {
   MCP_SESSION_ROOT_ENV,
   type McpDaemonEnvelope,
   type McpDaemonRequest,
-} from "./mcp-daemon-protocol.js";
-import { mcpTraceContextFromEnv } from "./mcp-trace-context.js";
+} from "./protocol.js";
+import { mcpTraceContextFromEnv } from "../../mcp-trace-context.js";
 
 const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;
 
 function daemonPath(): string {
-  const adjacent = fileURLToPath(new URL("./mcp-daemon.js", import.meta.url));
+  const adjacent = fileURLToPath(new URL("./index.js", import.meta.url));
   if (existsSync(adjacent)) return adjacent;
-  return fileURLToPath(new URL("../dist/mcp-daemon.js", import.meta.url));
+  return fileURLToPath(new URL("../../../dist/mcp-daemon.js", import.meta.url));
 }
 
 export function mcpDaemonEnvironment(env: NodeJS.ProcessEnv = process.env): {

@@ -6,8 +6,8 @@ import type { ValidateFunction } from "ajv";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { callMcpDaemonTool } from "./mcp-daemon-client.js";
-import type { McpCatalogServer } from "./mcp-daemon-protocol.js";
+import { callMcpDaemonTool } from "./mcp/daemon/client.js";
+import type { McpCatalogServer } from "./mcp/daemon/protocol.js";
 import { mcpSelectionAllowsTool } from "./mcp-policy.js";
 import type {
   McpSessionConfig,
