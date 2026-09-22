@@ -36,6 +36,8 @@ export interface RecipeSearchableTool {
   readonly parameters?: unknown;
 }
 
+const SCHEMA_NAME_MAX_CHARS = 60;
+const SCHEMA_NAMES_MAX_CHARS = 400;
 const SCHEMA_MAX_CHARS = 1_200;
 
 /**
@@ -54,13 +56,39 @@ function renderParameters(parameters: unknown): string {
     properties?: Record<string, unknown>;
     required?: unknown;
   };
-  const names = Object.keys(schema?.properties ?? {});
-  const required = Array.isArray(schema?.required) ? schema.required : [];
-  return names.length > 0
-    ? `{ properties: ${names.join(", ")}${
-        required.length > 0 ? `; required: ${required.join(", ")}` : ""
-      } } (schema too large to show in full)`
+  const names = nameList(Object.keys(schema?.properties ?? {}));
+  const required = nameList(
+    Array.isArray(schema?.required) ? schema.required.map(String) : []
+  );
+  return names
+    ? `{ properties: ${names}${required ? `; required: ${required}` : ""} } (schema too large to show in full)`
     : "(schema too large to show)";
+}
+
+/**
+ * A comma-separated list of names, itself bounded.
+ *
+ * The fallback exists because the schema was already too large; a schema with
+ * thousands of properties would otherwise route around the very limit that
+ * sent it here.
+ */
+function nameList(names: readonly string[]): string {
+  const kept: string[] = [];
+  let length = 0;
+  for (const name of names) {
+    const clipped = clip(name, SCHEMA_NAME_MAX_CHARS);
+    if (length + clipped.length > SCHEMA_NAMES_MAX_CHARS) {
+      kept.push(`…${names.length - kept.length} more`);
+      break;
+    }
+    kept.push(clipped);
+    length += clipped.length + 2;
+  }
+  return kept.join(", ");
+}
+
+function clip(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {

@@ -37,6 +37,8 @@ const ABORT_GRACE_MS = 1_000;
 // inside the sandbox, so the stream is bounded as it is read.
 const MAX_CHILD_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
+const SURFACE_DESCRIPTION_MAX_CHARS = 200;
+const SURFACE_MAX_CHARS = 4_000;
 const DEFAULT_MAX_MEMORY_MB = 512;
 const PROC_POLL_MS = 250;
 // `ps` costs a spawn per sample, so it is read far less often than /proc.
@@ -512,15 +514,29 @@ function programResultText(outcome: {
 
 function describeSurface(disclosed: readonly RecipeDisclosedTool[]): string {
   const eager = disclosed.slice(0, 12);
+  // This goes out with every model request, before `execute` is ever called,
+  // so a catalog with long descriptions would inflate the prompt past the
+  // guards that only apply to a program's own output.
   const lines = eager.map(
-    (tool) => `- ${tool.callable}(args) — ${tool.description.split("\n")[0]}`
+    (tool) =>
+      `- ${tool.callable}(args) — ${clipLine(tool.description, SURFACE_DESCRIPTION_MAX_CHARS)}`
   );
   if (disclosed.length > eager.length) {
     lines.push(
       `- …and ${disclosed.length - eager.length} more; find them with ${RECIPE_TOOL_SEARCH_NAME}.`
     );
   }
-  return lines.join("\n");
+  const surface = lines.join("\n");
+  // Clipped whole, not per line: twelve bounded descriptions can still add up.
+  return surface.length <= SURFACE_MAX_CHARS
+    ? surface
+    : `${surface.slice(0, SURFACE_MAX_CHARS)}\n…`;
+}
+
+/** A description's first line, clipped — this ships in a tool definition. */
+function clipLine(value: string, max: number): string {
+  const line = value.split("\n")[0] ?? "";
+  return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
 }
 
 /**

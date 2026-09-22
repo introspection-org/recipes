@@ -196,6 +196,30 @@ describe("mcp execute mode", () => {
     expect(args.filter((arg) => arg.startsWith("--allow"))).toHaveLength(2);
   });
 
+  it("caps a long description in the surface it sends every request", () => {
+    const set = createMcpExecuteToolSet({
+      session,
+      catalogs: [
+        {
+          ...catalogs[0]!,
+          tools: [
+            {
+              name: "list_records",
+              description: "x".repeat(50_000),
+              input_schema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      ],
+      mcp: everything,
+      env: {},
+    });
+    // The surface ships in the tool definition, before `execute` is called.
+    const description = set.tools[0]!.description ?? "";
+    expect(description.length).toBeLessThan(5_000);
+    expect(description).toContain("attio.list_records(args)");
+  });
+
   it("registers one tool whatever the catalog size", () => {
     const set = toolSet(everything);
     expect(set.toolNames).toEqual(["execute"]);
@@ -435,6 +459,9 @@ describe("mcp execute mode", () => {
          builtinModule: Realm(
            "try { return typeof process.getBuiltinModule('node:http') } catch (e) { return e.constructor.name }"
          )(),
+         socketViaConsole: Realm(
+           "try { return console._stdout.constructor.name } catch (e) { return e.constructor.name }"
+         )(),
          envKeys: proc === undefined ? [] : Object.keys(proc.env),
          dynamicImport,
        };`
@@ -446,6 +473,9 @@ describe("mcp execute mode", () => {
       // synchronous route to `node:http` that deleting `fetch` alone left open.
       processInRealm: "undefined",
       builtinModule: "ReferenceError",
+      // `console._stdout.constructor` is `net.Socket`, and it connects under
+      // `--permission` — a retained stream object is a capability root too.
+      socketViaConsole: "ReferenceError",
       envKeys: [],
       dynamicImport: "ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING",
     });
@@ -504,6 +534,49 @@ describe("tool search over an execute catalog", () => {
     expect(details.signatures[0]!.callable).toBe("attio.update_record");
     const text = (result.content as Array<{ text: string }>)[0]!.text;
     expect(text).toContain("attio.update_record(args)");
+  });
+
+  it("bounds a schema whose fallback is itself oversized", async () => {
+    // The fallback exists because the schema was already too large; a schema
+    // with thousands of properties would route around that same limit.
+    const wide = {
+      type: "object",
+      properties: Object.fromEntries(
+        Array.from({ length: 2_000 }, (_, index) => [
+          `property_number_${index}`,
+          { type: "string" },
+        ])
+      ),
+      required: Array.from({ length: 2_000 }, (_, index) => `property_number_${index}`),
+    };
+    const set = createMcpExecuteToolSet({
+      session,
+      catalogs: [
+        {
+          ...catalogs[0]!,
+          tools: [
+            { name: "list_records", description: "list records", input_schema: wide },
+          ],
+        },
+      ],
+      mcp: everything,
+      env: {},
+    });
+    const search = createRecipeToolSearch({
+      tools: [],
+      deferredToolNames: [],
+      activation: { getActiveTools: () => [], setActiveTools: () => {} },
+      disclosed: set.disclosed,
+    });
+    const result = await (search!.execute as any)(
+      "call-1",
+      { query: "list records" },
+      undefined,
+      undefined
+    );
+    const text = (result.content as Array<{ text: string }>)[0]!.text;
+    expect(text).toContain("more");
+    expect(text.length).toBeLessThan(2_000);
   });
 
   it("spends one limit across both catalogs", async () => {

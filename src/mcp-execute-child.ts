@@ -46,6 +46,11 @@ for (const name of [
   "Headers",
   "FormData",
   "process",
+  // `console._stdout.constructor` is `net.Socket`, which connects under
+  // `--permission` — a retained stream object is a capability root just as
+  // `process` was. The program gets a synthetic console; this is the runner
+  // realm's, which nothing here uses.
+  "console",
 ]) {
   try {
     delete (globalThis as Record<string, unknown>)[name];
