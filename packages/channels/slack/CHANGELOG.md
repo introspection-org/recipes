@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.4.0...recipe-channel-slack-v0.4.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **channels:** publish an open SDK peer range ([#281](https://github.com/introspection-org/recipes/issues/281)) ([a1f5a47](https://github.com/introspection-org/recipes/commit/a1f5a47021bb6d2e173f1b5f6ad93326ae7d95e7))
+
 ## [0.4.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.3.0...recipe-channel-slack-v0.4.0) (2026-09-20)
 
 
