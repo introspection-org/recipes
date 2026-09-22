@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,10 @@ vi.mock("../src/mcp-daemon-client.js", () => ({
   callMcpDaemonTool: mocks.callMcpDaemonTool,
 }));
 
-import { createMcpExecuteToolSet } from "../src/mcp-execute.js";
+import {
+  createMcpExecuteToolSet,
+  mcpExecuteChildPath,
+} from "../src/mcp-execute.js";
 import type { McpExecuteDetails } from "../src/mcp-execute.js";
 import { createRecipeToolSearch } from "../src/tool-search.js";
 import type { McpSessionConfig } from "../src/mcp.js";
@@ -95,6 +98,12 @@ function structured(value: unknown) {
 describe("mcp execute mode", () => {
   beforeEach(() => {
     mocks.callMcpDaemonTool.mockReset();
+  });
+
+  // The runner is a build artifact resolved by path, so a build that stops
+  // shipping it would otherwise surface as "exited (1) without a result".
+  it("ships the program runner alongside the compiled output", () => {
+    expect(existsSync(mcpExecuteChildPath())).toBe(true);
   });
 
   it("registers one tool whatever the catalog size", () => {

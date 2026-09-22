@@ -107,6 +107,11 @@ async function runProgram(options: {
   signal?: AbortSignal;
 }): Promise<ProgramOutcome> {
   const childPath = mcpExecuteChildPath();
+  if (!existsSync(childPath)) {
+    throw new Error(
+      `The execute program runner is missing at ${childPath}. It is a build artifact, so a source checkout needs \`pnpm build\` before execute mode can run.`
+    );
+  }
   const manifest = nearestPackageManifest(childPath);
   const child = spawn(
     process.execPath,
@@ -260,7 +265,7 @@ async function runProgram(options: {
     child.on("close", (code) => {
       fail(
         `Program runner exited (${code}) without a result.${
-          stderr.trim() ? ` ${stderr.trim().split("\n").slice(-3).join(" ")}` : ""
+          stderr.trim() ? `\n${runnerStderr(stderr)}` : ""
         }`
       );
     });
@@ -274,6 +279,12 @@ async function runProgram(options: {
       })),
     });
   });
+}
+
+/** Enough of a dead runner's own output to diagnose it, and no more. */
+function runnerStderr(stderr: string): string {
+  const lines = stderr.trim().split("\n").slice(-20).join("\n");
+  return lines.length > 2_000 ? `${lines.slice(0, 2_000)}…` : lines;
 }
 
 function programResultText(outcome: {

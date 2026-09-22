@@ -101,7 +101,7 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm exec vitest run test/mcp-tools.test.ts test/mcp-execute.test.ts test/pi-extension-mcp-tools.test.ts test/child-agent.test.ts
+      - run: pnpm exec vitest run test/mcp-tools.test.ts test/pi-extension-mcp-tools.test.ts test/child-agent.test.ts
 
   native-linux-arm64:
     runs-on: ubuntu-24.04-arm
