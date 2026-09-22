@@ -39,7 +39,6 @@ const FORBIDDEN_DELEGATED_FLAGS = new Set([
   "--tail-log",
   "--brief",
   "--signatures",
-  "--args",
   "--no-oauth",
   "--oauth-timeout",
   "--raw-strings",
@@ -178,9 +177,13 @@ function validateList(
   };
 }
 
+// mcporter parses --args, --params and --json through one handler
+// (dist/cli/call-arguments.js), so all three spellings reach the same place.
 const CALL_FLAGS_WITH_VALUE = new Set([
+  "--args",
   "--json",
   "--output",
+  "--params",
   "--timeout",
 ]);
 
@@ -235,11 +238,6 @@ function validateCall(
   const targetError = validateExactTarget(policy, selector.server, selector.tool);
   if (targetError) return { error: targetError };
   const blocked = forbiddenFlag(args.slice(2));
-  if (blocked === "--args") {
-    return {
-      error: "mcp call option '--args' was removed; use --json <object|-> for structured tool arguments.",
-    };
-  }
   if (blocked) return { error: `mcp call option '${blocked}' is unavailable in recipe sessions.` };
   const syntaxError = callSyntaxError(args.slice(2));
   if (syntaxError) return { error: syntaxError };

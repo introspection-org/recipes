@@ -135,14 +135,33 @@ describe("recipe-session mcporter policy", () => {
     ["list", "contacts", "--brief"],
     ["list", "contacts", "--signatures"],
     ["list", "contacts", "--no-oauth"],
-    ["call", "contacts.search_contacts", "--args", "{}"],
     ["call", "contacts.search_contacts", "--no-oauth"],
     ["call", "contacts.search_contacts", "--raw-strings"],
   ])("rejects removed compatibility syntax: %j", (...args) => {
-    const error = validateDelegatedMcpCommand(args as string[], policy()).error;
-    if (args.includes("--args")) expect(error).toContain("use --json");
-    else expect(error).toContain("unavailable");
+    expect(
+      validateDelegatedMcpCommand(args as string[], policy()).error
+    ).toContain("unavailable");
   });
+
+  // mcporter maps --args, --params and --json onto one handler, so rejecting a
+  // spelling the client accepts only makes the session CLI harder to delegate.
+  it.each([["--args"], ["--json"], ["--params"]])(
+    "accepts %s as a JSON-arguments flag",
+    (flag) => {
+      expect(
+        validateDelegatedMcpCommand(
+          ["call", "contacts.search_contacts", flag, '{"query":"Ada"}'],
+          policy()
+        ).error
+      ).toBeUndefined();
+      expect(
+        validateDelegatedMcpCommand(
+          ["call", "contacts.search_contacts", `${flag}={"query":"Ada"}`],
+          policy()
+        ).error
+      ).toBeUndefined();
+    }
+  );
 
   it.each([
     ["list", "--http-url", "https://attacker.example/mcp"],
