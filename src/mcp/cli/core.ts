@@ -927,25 +927,47 @@ const LIST_OPTIONS = {
   verbose: { type: "boolean" },
 } as const;
 
+const LIST_BOOLEAN_FLAGS = new Set(
+  Object.entries(LIST_OPTIONS)
+    .filter(([, spec]) => spec.type === "boolean")
+    .map(([name]) => name)
+);
+
+/**
+ * Execution matches exact tokens — `compactList` reads the target from
+ * `args[1]` and tests `args.includes("--schema")` — so anything this accepts
+ * but those cannot see is silently dropped rather than run.
+ */
+function isValidListOption(arg: string): boolean {
+  const name = optionName(arg).slice(2);
+  if (!(name in LIST_OPTIONS)) return false;
+  return !(arg.includes("=") && LIST_BOOLEAN_FLAGS.has(name));
+}
+
 export function compactListArgumentError(args: readonly string[]): string | undefined {
+  const rest = args.slice(1);
+  // The target has to lead, because that is where the policy and `compactList`
+  // both look for it. One parsed out from behind a flag would be accepted here
+  // and ignored there, listing every server instead of the one asked for.
+  const target = rest[0] !== undefined && !rest[0].startsWith("-");
+  const options = target ? rest.slice(1) : rest;
   try {
     const { positionals } = parseArgs({
-      args: [...args.slice(1)],
+      args: [...options],
       options: LIST_OPTIONS,
       allowPositionals: true,
     });
-    // One target at most: a server, or a server.tool.
-    if (positionals.length > 1) {
-      return `Unexpected mcp list argument '${positionals[1]}'.`;
+    if (positionals.length > 0) {
+      return `Unexpected mcp list argument '${positionals[0]}'.`;
     }
     return undefined;
   } catch {
-    const unknown = args
-      .slice(1)
-      .find((arg) => arg.startsWith("-") && !(optionName(arg).slice(2) in LIST_OPTIONS));
-    // No unknown option means a trailing `--timeout`, which parseListTimeoutMs
+    const offending = options.find(
+      (arg) => arg.startsWith("-") && !isValidListOption(arg)
+    );
+    // Nothing invalid means a trailing `--timeout`, which parseListTimeoutMs
     // reports with the message that names the value it wanted.
-    return unknown ? `Unknown mcp list option '${unknown}'.` : undefined;
+    return offending ? `Unknown mcp list option '${offending}'.` : undefined;
   }
 }
 

@@ -128,4 +128,18 @@ describe("mcp list arguments", () => {
       "Unknown mcp list option '--nope'."
     );
   });
+
+  // Both of these parse cleanly but are invisible to execution, which reads the
+  // target from args[1] and tests exact tokens like `args.includes("--schema")`.
+  it("rejects a target hiding behind a flag", () => {
+    expect(compactListArgumentError(["list", "--quiet", "contacts"])).toBe(
+      "Unexpected mcp list argument 'contacts'."
+    );
+  });
+
+  it("rejects a value on a boolean flag", () => {
+    expect(
+      compactListArgumentError(["list", "contacts.search_contacts", "--schema=false"])
+    ).toBe("Unknown mcp list option '--schema=false'.");
+  });
 });
