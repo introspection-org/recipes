@@ -469,6 +469,9 @@ async function runProgram(options: {
       buffer += chunk;
       let newline = buffer.indexOf("\n");
       while (newline !== -1) {
+        // Re-checked per frame, not once per chunk: `done` and a later `call`
+        // can coalesce into one read, and `finish()` settles mid-loop.
+        if (settled) return;
         const line = buffer.slice(0, newline).trim();
         buffer = buffer.slice(newline + 1);
         newline = buffer.indexOf("\n");

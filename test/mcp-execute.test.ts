@@ -522,6 +522,30 @@ describe("mcp execute mode", () => {
     expect(mocks.callMcpDaemonTool.mock.calls.length).toBe(atSettle);
   }, 20_000);
 
+  it("ignores a call frame coalesced behind done in one chunk", async () => {
+    // A delayed microtask emits `call` after `done`, and both can land in a
+    // single stdout read — so a per-chunk guard settles and then services the
+    // write anyway.
+    mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
+    const { details } = await run(
+      toolSet(everything, { PI_RECIPES_MCP_EXECUTE_MAX_CALLS: "1000" }),
+      `for (let i = 0; i < 50; i += 1) {
+         void Promise.resolve()
+           .then(() => Promise.resolve())
+           .then(() => attio.update_record({ id: String(i) }));
+       }
+       return "done";`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Either the call was admitted before settling and is recorded, or it was
+    // never started — never started-and-unreported.
+    // An invariant, not a regression guard for the per-frame check: every
+    // timing reachable here is already covered by the per-chunk guard, so this
+    // passes with and without it. It still pins the property that matters —
+    // a call is never started-and-unreported.
+    expect(mocks.callMcpDaemonTool.mock.calls.length).toBe(details.calls.length);
+  }, 20_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
