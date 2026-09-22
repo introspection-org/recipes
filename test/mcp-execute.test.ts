@@ -135,6 +135,23 @@ describe("mcp execute mode", () => {
     ]);
   });
 
+  it("advertises bracket syntax for a name that cannot hold a binding", () => {
+    // `undefined` is a valid normalized server id and a valid identifier, but
+    // the binding is non-writable, so the bare form resolves to the primitive.
+    const immutable = createMcpExecuteToolSet({
+      session: { ...session, servers: [{ ...session.servers[0]!, id: "undefined" }] },
+      catalogs: [{ ...catalogs[0]!, id: "undefined" }],
+      mcp: {
+        mode: "execute",
+        servers: { undefined: { include: ["list_records"] } },
+      } as RecipeAgentMcp,
+      env: {},
+    });
+    expect(immutable.disclosed.map((tool) => tool.callable)).toEqual([
+      'tools["undefined"].list_records',
+    ]);
+  });
+
   it("registers one tool whatever the catalog size", () => {
     const set = toolSet(everything);
     expect(set.toolNames).toEqual(["execute"]);
@@ -265,6 +282,39 @@ describe("mcp execute mode", () => {
     expect(details.calls[0]!.tool).toBe("update_record");
     expect(mocks.callMcpDaemonTool).toHaveBeenCalledTimes(1);
   }, 15_000);
+
+  it("cancels a call that outlives the drain rather than abandoning it", async () => {
+    let aborted = false;
+    mocks.callMcpDaemonTool.mockImplementation(
+      async (_s: unknown, _t: unknown, _a: unknown, opts: { signal?: AbortSignal }) =>
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(structured({ ok: true })), 30_000);
+          opts.signal?.addEventListener("abort", () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          });
+        })
+    );
+    const { details } = await run(
+      toolSet(everything, { PI_RECIPES_MCP_EXECUTE_DRAIN_MS: "200" }),
+      `void attio.update_record({ id: "a" }); return "done";`
+    );
+    // The drain gave up, so the call must have been cancelled and recorded —
+    // never left running against the provider with nothing said about it.
+    expect(aborted).toBe(true);
+    expect(details.calls).toHaveLength(1);
+    expect(details.calls[0]!.ok).toBe(false);
+  }, 20_000);
+
+  it("clamps the failure text of a program that logged a large result", async () => {
+    const { text } = await run(
+      toolSet(everything, { PI_RECIPES_MCP_MAX_OUTPUT_BYTES: "400" }),
+      `console.log("x".repeat(5000)); throw new Error("boom");`
+    ).catch((error: Error) => ({ text: error.message }));
+    expect(text).toContain("Output truncated");
+    expect(text.length).toBeLessThan(1_500);
+  });
 
   it("gives the program no host globals", async () => {
     const { text } = await run(

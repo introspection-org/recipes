@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createContext, runInContext } from "node:vm";
 import { existsSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
 
@@ -29,6 +30,7 @@ import {
 const DEFAULT_PROGRAM_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_CALLS = 100;
 const DRAIN_TIMEOUT_MS = 5_000;
+const ABORT_GRACE_MS = 1_000;
 
 export interface McpExecuteCallRecord {
   server: string;
@@ -77,28 +79,36 @@ function nearestPackageManifest(from: string): string | undefined {
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-/**
- * Names a server id cannot take as a bare global.
- *
- * Reserved words are a syntax error as a variable, and the runner's own globals
- * already hold those bindings — advertising `sleep.foo` would send the model to
- * a call that throws while `tools["sleep"].foo` works.
- */
-const UNAVAILABLE_GLOBALS = new Set([
-  "tools", "console", "sleep",
-  "await", "break", "case", "catch", "class", "const", "continue", "debugger",
-  "default", "delete", "do", "else", "enum", "export", "extends", "false",
-  "finally", "for", "function", "if", "implements", "import", "in",
-  "instanceof", "interface", "let", "new", "null", "package", "private",
-  "protected", "public", "return", "static", "super", "switch", "this",
-  "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
-]);
+/** What the runner installs itself, so a server id cannot take the binding. */
+const RUNNER_GLOBALS = new Set(["tools", "console", "sleep"]);
 
+const PROBE = Object.freeze({ bareGlobal: true });
+
+/**
+ * Which server ids can be reached as a bare global, established by trying it.
+ *
+ * A denylist of reserved words is the obvious implementation and the wrong one:
+ * it has to enumerate every name that cannot hold a binding, and the ones that
+ * get missed fail silently — `delete` is a syntax error, `undefined` and `NaN`
+ * are non-writable so the assignment does not take, and each is only found once
+ * a model is sent to a call that throws. Running the candidate in a throwaway
+ * context answers all of them at once, and answers anything not thought of.
+ */
 function bareGlobalServers(serverIds: Iterable<string>): Set<string> {
   return new Set(
-    [...serverIds].filter(
-      (id) => IDENTIFIER.test(id) && !UNAVAILABLE_GLOBALS.has(id)
-    )
+    [...serverIds].filter((id) => {
+      if (!IDENTIFIER.test(id) || RUNNER_GLOBALS.has(id)) return false;
+      try {
+        return (
+          runInContext(
+            `typeof ${id} === "object" && ${id} !== null && ${id}.bareGlobal === true`,
+            createContext({ [id]: PROBE })
+          ) === true
+        );
+      } catch {
+        return false;
+      }
+    })
   );
 }
 
@@ -182,6 +192,34 @@ async function runProgram(options: {
   const abandoned = new AbortController();
 
   return await new Promise<ProgramOutcome>((resolve, reject) => {
+    /**
+     * Settle only once every started call has completed or been cancelled.
+     *
+     * Giving up on the wait is not the same as giving up on the call: a drain
+     * that simply stopped waiting would resolve the tool while a provider write
+     * was still running, which is the under-reporting this tracking exists to
+     * prevent. So the deadline cancels rather than abandons, and the cancelled
+     * call still records its own outcome.
+     */
+    const drain = async (abortFirst: boolean): Promise<void> => {
+      if (abortFirst) abandoned.abort();
+      if (inFlight.size === 0) return;
+      const drainMs = positiveInteger(
+        options.env.PI_RECIPES_MCP_EXECUTE_DRAIN_MS,
+        DRAIN_TIMEOUT_MS
+      );
+      const settledInTime = await Promise.race([
+        Promise.allSettled([...inFlight]).then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), drainMs)),
+      ]);
+      if (settledInTime) return;
+      abandoned.abort();
+      await Promise.race([
+        Promise.allSettled([...inFlight]),
+        new Promise((resolve) => setTimeout(resolve, ABORT_GRACE_MS)),
+      ]);
+    };
+
     const finish = (outcome: () => void, abortInFlight: boolean) => {
       if (settled) return;
       settled = true;
@@ -191,15 +229,7 @@ async function runProgram(options: {
       // is already in flight is drained. A drain that outlives its own bound
       // stops being waited on rather than holding the turn open.
       child.kill("SIGKILL");
-      if (abortInFlight) abandoned.abort();
-      const drained =
-        inFlight.size === 0
-          ? Promise.resolve()
-          : Promise.race([
-              Promise.allSettled([...inFlight]),
-              new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
-            ]);
-      void drained.then(outcome);
+      void drain(abortInFlight).then(outcome);
     };
     const fail = (
       message: string,
@@ -445,11 +475,19 @@ export function createMcpExecuteToolSet(options: {
         });
       } catch (error) {
         if (error instanceof ProgramFailure) {
-          const logs = error.logs.length > 0
-            ? `\n\n${error.logs.map((entry) => `[${entry.level}] ${entry.text}`).join("\n")}`
-            : "";
+          const logs =
+            error.logs.length > 0
+              ? `\n\n${error.logs
+                  .map((entry) => `[${entry.level}] ${entry.text}`)
+                  .join("\n")}`
+              : "";
+          // A program that logged a raw page and then threw would otherwise
+          // reach the model unclamped, past the bound its own success path has.
           throw new Error(
-            `${error.message}${logs}\n\n${error.calls.length} tool call(s) ran before the failure; provider writes are not rolled back.`
+            guardText(
+              `${error.message}${logs}\n\n${error.calls.length} tool call(s) ran before the failure; provider writes are not rolled back.`,
+              options.env
+            ).text
           );
         }
         throw error;
