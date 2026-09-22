@@ -13,7 +13,7 @@ import type {
   McpSessionConfig,
   McpToolCatalogEntry,
 } from "./index.js";
-import type { RecipeAgentMcp } from "../recipe-agent.js";
+import type { RecipeAgentMcp } from "../recipe/agent.js";
 import {
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,

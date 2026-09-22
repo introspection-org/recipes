@@ -7,7 +7,7 @@ import {
   defaultMcporterConfigPath,
   materializeMcpSession,
 } from "../src/mcp/index.js";
-import type { RecipePackageManifest } from "../src/recipe-package.js";
+import type { RecipePackageManifest } from "../src/recipe/package.js";
 
 describe("MCP OAuth session configuration", () => {
   it("projects OAuth references without contacting the server", async () => {

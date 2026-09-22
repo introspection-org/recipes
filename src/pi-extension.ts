@@ -17,7 +17,7 @@ import {
   type RecipeChildAgentRunner,
   type RecipeChildToolEvent,
 } from "./child-agent.js";
-import { loadRecipeExtensionFactory } from "./recipe-extensions.js";
+import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
@@ -56,14 +56,14 @@ import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
 } from "./mcp/catalog.js";
-import { type RecipeAgentDefinition } from "./recipe-agent.js";
-import type { RecipeAgentMcpMode } from "./recipe-agent.js";
+import { type RecipeAgentDefinition } from "./recipe/agent.js";
+import type { RecipeAgentMcpMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
 import {
   applyRecipeAgentPayloadPolicy,
   applyRecipeAgentModelConfigToModel,
   cloneModelForRecipe,
-} from "./recipe-model.js";
+} from "./recipe/model.js";
 import {
   resolveRecipe,
   type ResolvedRecipeAgent,

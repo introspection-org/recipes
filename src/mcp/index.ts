@@ -19,8 +19,8 @@ import {
   type RecipePackageManifest,
   type RecipePackageMcpConfig,
   type RecipeMcpToolSelection,
-} from "../recipe-package.js";
-import { generatedBindingEnvVars } from "../recipe-mcp-config.js";
+} from "../recipe/package.js";
+import { generatedBindingEnvVars } from "../recipe/mcp-config.js";
 import {
   mcpSelectionAllowsTool,
   type ScopedMcpToolSelection,

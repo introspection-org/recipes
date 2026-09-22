@@ -10,7 +10,7 @@ import {
   resolveRecipeCredentials,
   resolveRecipeModel,
 } from "./model-binding.js";
-import { applyRecipeAgentModelConfigToModel } from "./recipe-model.js";
+import { applyRecipeAgentModelConfigToModel } from "./recipe/model.js";
 import {
   type ResolvedRecipe,
 } from "./recipe/resolve.js";

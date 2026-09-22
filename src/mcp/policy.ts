@@ -1,5 +1,5 @@
-import type { RecipeMcpToolSelection } from "../recipe-package.js";
-import type { RecipeAgentMcp } from "../recipe-agent.js";
+import type { RecipeMcpToolSelection } from "../recipe/package.js";
+import type { RecipeAgentMcp } from "../recipe/agent.js";
 
 export interface ScopedMcpToolSelection {
   serverId: string;

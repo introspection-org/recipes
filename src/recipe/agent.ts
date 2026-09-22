@@ -7,13 +7,13 @@ import {
   parseRecipeAgentModelConfig,
   RecipeModelConfigError,
   type RecipeAgentModelConfig,
-} from "./recipe-model.js";
+} from "./model.js";
 import {
   mergeRecipeAgentSessionConfig,
   parseRecipeAgentSessionConfig,
   RecipeSessionConfigError,
   type RecipeAgentSessionConfig,
-} from "./recipe-session.js";
+} from "./session.js";
 import {
   assertRecipePathContained,
   isValidRecipeMcpToolSelection,
@@ -21,11 +21,11 @@ import {
   parseRecipeMcpToolSelection,
   readPiPackageManifest,
   RecipePackageError,
-} from "./recipe-package.js";
+} from "./package.js";
 import {
   mcpSelectionAllowsTool,
   normalizeMcpServerId,
-} from "./mcp/policy.js";
+} from "../mcp/policy.js";
 
 export interface RecipeSystemInstructions {
   mode: "append" | "replace";

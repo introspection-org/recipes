@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
 if (process.platform === "win32") {
@@ -13,7 +14,13 @@ if (process.platform === "win32") {
 const root = resolve(import.meta.dirname, "..");
 const nativeClient =
   process.env.MCP_CLIENT_BIN ?? join(root, "target", "release", "mcp-client");
-const nodeClient = join(root, "dist", "mcp-client.js");
+// Asked for rather than hardcoded: this path has moved twice, and the SDK
+// already owns the resolution the session shim uses. `bench:mcp-client` runs
+// `build:ts` first, so dist is present.
+const { mcpClientEntrypointPath } = await import(
+  pathToFileURL(join(root, "dist", "mcp", "index.js")).href
+);
+const nodeClient = mcpClientEntrypointPath();
 const iterations = Number(process.env.ITERATIONS ?? 50);
 const parallelism = Number(process.env.PARALLELISM ?? 6);
 const directory = await mkdtemp(join(tmpdir(), "recipes-mcp-benchmark-"));

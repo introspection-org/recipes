@@ -59,7 +59,7 @@ import {
   RecipeModelTransportError,
   resolveRecipeCredentials,
 } from "./model-binding.js";
-import { loadRecipeExtensionFactory } from "./recipe-extensions.js";
+import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
@@ -70,7 +70,7 @@ import {
   applyRecipeAgentModelConfigToModel,
   applyRecipeAgentModelConfigToSession,
   cloneModelForRecipe,
-} from "./recipe-model.js";
+} from "./recipe/model.js";
 import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,

@@ -16,19 +16,19 @@ import {
   type RecipeAgentMcp,
   type RecipeAgentMcpMode,
   type RecipeSystemInstructions,
-} from "../recipe-agent.js";
-import type { RecipeAgentModelConfig } from "../recipe-model.js";
-import type { RecipeAgentSessionConfig } from "../recipe-session.js";
-import { resolveAgentSkillPaths } from "../recipe-skills.js";
+} from "./agent.js";
+import type { RecipeAgentModelConfig } from "./model.js";
+import type { RecipeAgentSessionConfig } from "./session.js";
+import { resolveAgentSkillPaths } from "./skills.js";
 import {
   packageResourcePaths,
   readPiPackageManifest,
   validatePiPackageManifest,
   type PiPackageManifest,
-} from "../recipe-package.js";
+} from "./package.js";
 
-export type { RecipePackageManifest } from "../recipe-package.js";
-export type { RecipeAgentMcp } from "../recipe-agent.js";
+export type { RecipePackageManifest } from "./package.js";
+export type { RecipeAgentMcp } from "./agent.js";
 
 export interface ResolvedRecipeAgentMcp
   extends Omit<RecipeAgentMcp, "mode"> {
