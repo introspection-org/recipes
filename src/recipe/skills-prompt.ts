@@ -5,32 +5,48 @@ import {
 
 const SKILL_FILE_READ_TOOLS = ["read", "bash"] as const;
 
+export interface SystemPromptEvent {
+  readonly systemPrompt: string;
+  readonly systemPromptOptions: {
+    readonly skills?: readonly Skill[];
+    readonly selectedTools?: readonly string[];
+  };
+}
+
+export interface SystemPromptLaunchState {
+  readonly resolvedRecipe: {
+    readonly resources: { readonly hasSystemPrompt: boolean };
+  };
+  readonly resolved: {
+    systemPromptOverride(base: string | undefined): string | undefined;
+  };
+}
+
 /**
- * Compose the prompt returned by the installed Pi extension.
+ * Build the prompt returned by the installed Pi extension.
  *
  * Pi forwards a rendered system prompt that already contains its skills block.
  * When root SYSTEM.md exists, systemPromptOverride keeps the recipe prompt and
  * drops that block. Append the same block Pi would have rendered, using the
- * skills and tools from before_agent_start. Leave prompts without SYSTEM.md
- * unchanged so the forwarded block is not repeated. Embedded sessions append
- * the block themselves and must not use this helper.
+ * skills and tools on the event. Leave prompts without SYSTEM.md unchanged so
+ * the forwarded block is not repeated. Embedded sessions append the block
+ * themselves and must not use this helper.
  */
-export function composeInstalledSystemPrompt(options: {
-  hasSystemPrompt: boolean;
-  recipePrompt: string | undefined;
-  skills?: readonly Skill[];
-  selectedTools?: readonly string[];
-}): string | undefined {
-  if (!options.hasSystemPrompt) return options.recipePrompt;
+export function createSystemPrompt(
+  event: SystemPromptEvent,
+  launchState: SystemPromptLaunchState
+): string | undefined {
+  const recipePrompt = launchState.resolved.systemPromptOverride(event.systemPrompt);
+  if (!launchState.resolvedRecipe.resources.hasSystemPrompt) return recipePrompt;
+  const selectedTools = event.systemPromptOptions.selectedTools ?? [];
+  const skills = event.systemPromptOptions.skills ?? [];
   const fileReadTool = SKILL_FILE_READ_TOOLS.find((tool) =>
-    options.selectedTools?.includes(tool)
+    selectedTools.includes(tool)
   );
-  const skillsPrompt =
-    fileReadTool && options.skills
-      ? formatSkillsForPrompt([...options.skills], fileReadTool).trim()
-      : "";
-  if (!skillsPrompt) return options.recipePrompt;
-  return [options.recipePrompt, `<skills>\n${skillsPrompt}\n</skills>`]
-    .filter((part): part is string => Boolean(part))
-    .join("\n\n");
+  const skillsPrompt = fileReadTool
+    ? formatSkillsForPrompt([...skills], fileReadTool).trim()
+    : "";
+  if (!skillsPrompt) return recipePrompt;
+  const skillsSection = `<skills>\n${skillsPrompt}\n</skills>`;
+  return recipePrompt ? `${recipePrompt}\n\n${skillsSection}` : skillsSection;
 }
