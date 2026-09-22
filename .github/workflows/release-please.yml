@@ -39,8 +39,8 @@ jobs:
     outputs:
       root_release_created: ${{ steps.root_release.outputs.release_created }}
       slack_channel_release_created: ${{ steps.root_release.outputs['packages/channels/slack--release_created'] }}
-      crate_release_created: ${{ steps.checker_release.outputs['crates/introspection-recipe-check--release_created'] }}
-      python_release_created: ${{ steps.checker_release.outputs['bindings/python--release_created'] }}
+      crate_release_created: ${{ steps.checker_release.outputs['packages/recipe-check--release_created'] }}
+      python_release_created: ${{ steps.checker_release.outputs['packages/recipe-check-python--release_created'] }}
     steps:
       # Each train owns a different manifest. Concurrent release PRs therefore
       # never edit the same version-state file.
@@ -146,7 +146,7 @@ jobs:
       - run: cargo build --release --target ${{ matrix.target }} -p pi-mcp-client
 
       # Staged by rust target, which is the layout build-mcp-client-packages.mjs
-      # reads; the os/cpu mapping lives in npm/targets.json, not in this matrix.
+      # reads; the os/cpu mapping lives in packages/mcp-client/npm/targets.json, not in this matrix.
       - name: Stage the binary
         shell: bash
         run: |
@@ -208,13 +208,13 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
-          rm -rf npm/artifacts && mkdir -p npm/artifacts
+          rm -rf packages/mcp-client/npm/artifacts && mkdir -p packages/mcp-client/npm/artifacts
           for artifact in native-tool-artifacts/native-tools-*; do
             # Each artifact holds a <rust-target>/mcp-client tree (see the upload above).
-            cp -R "$artifact"/. npm/artifacts/
+            cp -R "$artifact"/. packages/mcp-client/npm/artifacts/
           done
-          find npm/artifacts -maxdepth 2 -type f -print
-          node npm/build-mcp-client-packages.mjs "$version" npm/artifacts
+          find packages/mcp-client/npm/artifacts -maxdepth 2 -type f -print
+          node packages/mcp-client/npm/build-mcp-client-packages.mjs "$version" packages/mcp-client/npm/artifacts
 
       - run: pnpm pack:check
 
@@ -271,7 +271,7 @@ jobs:
           # Platform packages first, so the optionalDependencies the root
           # manifest names already resolve when it is published.
           if [[ "$publish_root" == "true" ]]; then
-            for d in npm/dist/mcp-client-*; do
+            for d in packages/mcp-client/npm/dist/mcp-client-*; do
               platform_name="$(node -p "require('./$d/package.json').name")"
               if npm view "$platform_name@$version" version >/dev/null 2>&1; then
                 echo "$platform_name@$version is already published"
@@ -391,7 +391,7 @@ jobs:
           maturin-version: v1.11.5
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --locked --compatibility pypi --out dist --manifest-path bindings/python/Cargo.toml
+          args: --release --locked --compatibility pypi --out dist --manifest-path packages/recipe-check-python/Cargo.toml
 
       - uses: actions/upload-artifact@v7
         with:
@@ -424,7 +424,7 @@ jobs:
         with:
           version: "0.11.21"
 
-      - run: uvx --from maturin==1.11.5 maturin sdist --out dist --manifest-path bindings/python/Cargo.toml
+      - run: uvx --from maturin==1.11.5 maturin sdist --out dist --manifest-path packages/recipe-check-python/Cargo.toml
 
       - uses: actions/download-artifact@v8
         with:

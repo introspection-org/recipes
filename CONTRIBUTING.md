@@ -31,7 +31,7 @@ Pi records the local package path in `~/.pi/agent/settings.json`. Re-run
 ## Validation library
 
 The pure validation library used by `introspection check` lives in
-[`crates/introspection-recipe-check`](crates/introspection-recipe-check). For changes there, also
+[`packages/recipe-check`](packages/recipe-check). For changes there, also
 run:
 
 ```bash
