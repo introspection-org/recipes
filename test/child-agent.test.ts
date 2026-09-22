@@ -24,7 +24,7 @@ vi.mock("../src/session.js", () => ({
   createAgentSessionInternal: mocks.createAgentSession,
 }));
 
-import { createRecipeChildAgentRunner } from "../src/child-agent.js";
+import { createRecipeChildAgentRunner } from "../src/child/agent.js";
 
 function writeRecipe(
   root: string,

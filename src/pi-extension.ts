@@ -16,7 +16,7 @@ import {
   type CreateRecipeChildAgentRunner,
   type RecipeChildAgentRunner,
   type RecipeChildToolEvent,
-} from "./child-agent.js";
+} from "./child/agent.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
@@ -28,13 +28,13 @@ import {
   ChildAgentRunStore,
   type ChildRunSnapshot,
   type ChildToolActivity,
-} from "./child-agent-store.js";
+} from "./child/agent-store.js";
 import {
   ChildCompletionQueue,
   envelopeFromRun,
   renderCompletionNotice,
   type ChildCompletionEnvelope,
-} from "./child-agent-completions.js";
+} from "./child/agent-completions.js";
 import {
   AGENT_RUN_EVENT_ENTRY_TYPE,
   type AgentRunEvent,

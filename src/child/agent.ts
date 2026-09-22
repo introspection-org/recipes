@@ -4,17 +4,17 @@ import {
   type AgentSessionEvent,
   type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import { autoResolveInteractions } from "./interactions.js";
-import { createIsolatedChildSession } from "./child-session.js";
+import { autoResolveInteractions } from "../interactions.js";
+import { createIsolatedChildSession } from "./session.js";
 import {
   resolveRecipeCredentials,
   resolveRecipeModel,
-} from "./model-binding.js";
-import { applyRecipeAgentModelConfigToModel } from "./recipe/model.js";
+} from "../model-binding.js";
+import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import {
   type ResolvedRecipe,
-} from "./recipe/resolve.js";
-import type { RecipeSessionHandle } from "./session.js";
+} from "../recipe/resolve.js";
+import type { RecipeSessionHandle } from "../session.js";
 
 export interface CreateRecipeChildAgentRunnerOptions {
   /** Immutable Recipe graph shared with the root Pi session. */
