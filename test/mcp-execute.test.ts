@@ -16,6 +16,7 @@ import {
   createMcpExecuteToolSet,
   executeChildArgs,
   mcpExecuteChildPath,
+  memoryBoundIsEnforced,
 } from "../src/mcp-execute.js";
 import type { McpExecuteDetails } from "../src/mcp-execute.js";
 import { createRecipeToolSearch } from "../src/tool-search.js";
@@ -135,6 +136,38 @@ describe("mcp execute mode", () => {
       'tools["sleep"].update_record',
     ]);
   });
+
+  it("installs a bare global whose name has setter semantics", async () => {
+    // `__proto__` normalizes to a valid server id and the probe binds it fine,
+    // but installing it by assignment runs Object.prototype's setter and binds
+    // nothing — so the advertised bare call resolved to Object.prototype.
+    mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
+    const set = createMcpExecuteToolSet({
+      session: {
+        ...session,
+        servers: [{ ...session.servers[0]!, id: "__proto__" }],
+      },
+      catalogs: [{ ...catalogs[0]!, id: "__proto__" }],
+      mcp: {
+        mode: "execute",
+        // Computed, not literal: `{ __proto__: … }` would set the prototype
+        // rather than declare a server, which is the same trap under test.
+        servers: { ["__proto__"]: { include: ["*"] } },
+      } as RecipeAgentMcp,
+      env: {},
+    });
+    expect(set.disclosed.map((tool) => tool.callable)).toContain(
+      "__proto__.list_records"
+    );
+    // The advertised form has to be the one that reaches the tool.
+    const { details } = await run(
+      set,
+      `return await __proto__.list_records({ object: "deals" });`
+    );
+    expect(details.calls).toEqual([
+      expect.objectContaining({ server: "__proto__", tool: "list_records", ok: true }),
+    ]);
+  }, 15_000);
 
   it("advertises bracket syntax for a name that cannot hold a binding", () => {
     // `undefined` is a valid normalized server id and a valid identifier, but
@@ -338,10 +371,10 @@ describe("mcp execute mode", () => {
     ).rejects.toThrow(/more than \d+ bytes of output/);
   }, 30_000);
 
-  // The watchdog reads /proc, so off Linux only the heap cap is left — which
-  // this program would walk straight past. Skipped rather than failed: the gap
-  // is the platform's, and CI runs the suite on Linux only.
-  it.skipIf(!existsSync("/proc"))("terminates a program that allocates past its memory bound", async () => {
+  // Windows has no RSS reader, so only the heap cap is left there — which this
+  // program would walk straight past. Skipped rather than failed: the gap is
+  // the platform's, and it is the same predicate the runner itself branches on.
+  it.skipIf(!memoryBoundIsEnforced())("terminates a program that allocates past its memory bound", async () => {
     // Typed arrays live outside V8's heap, so `--max-old-space-size` does not
     // bound them (measured: 3 GiB RSS under a 64 MiB cap). The program also
     // never yields, so only a bound enforced from the parent can stop it.

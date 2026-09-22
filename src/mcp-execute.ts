@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createContext, runInContext } from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
@@ -38,7 +38,9 @@ const ABORT_GRACE_MS = 1_000;
 const MAX_CHILD_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
 const DEFAULT_MAX_MEMORY_MB = 512;
-const MEMORY_POLL_MS = 250;
+const PROC_POLL_MS = 250;
+// `ps` costs a spawn per sample, so it is read far less often than /proc.
+const PS_POLL_MS = 1_000;
 
 /** A timeout that never outlives the race it was created for. */
 function timeoutIn<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => void } {
@@ -165,21 +167,53 @@ export function executeChildArgs(
 }
 
 /**
- * Resident memory of a running child, in MiB.
+ * How to sample a running child's resident memory, chosen once per host.
  *
  * `--max-old-space-size` bounds V8's heap but not external memory, so a
  * program filling typed arrays grows unchecked under it — measured at 3 GiB
- * RSS against a 64 MiB cap. This is what bounds that, and it reads `/proc`,
- * so it is Linux-only; the heap cap is the portable backstop.
+ * RSS against a 64 MiB cap. Sampling RSS from the parent is what bounds that,
+ * and it cannot be done portably: `/proc` is Linux, `ps` covers the other
+ * POSIX hosts, and Windows has neither (its `tasklist` memory column is
+ * locale-formatted, and a parser that silently misreads would be worse than
+ * the documented gap). Where no reader exists the heap cap is all that is
+ * left, which `memoryBoundIsEnforced` reports rather than hides.
  */
-function residentMemoryMb(pid: number): number | undefined {
-  try {
-    const status = readFileSync(`/proc/${pid}/status`, "utf8");
-    const kb = /^VmRSS:\s+(\d+) kB$/m.exec(status);
-    return kb ? Number(kb[1]) / 1024 : undefined;
-  } catch {
-    return undefined;
+function residentMemoryReader(): { read: (pid: number) => number | undefined; pollMs: number } | undefined {
+  if (existsSync("/proc/self/status")) {
+    return {
+      pollMs: PROC_POLL_MS,
+      read: (pid) => {
+        try {
+          const kb = /^VmRSS:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+          return kb ? Number(kb[1]) / 1024 : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+    };
   }
+  if (process.platform === "win32") return undefined;
+  return {
+    pollMs: PS_POLL_MS,
+    read: (pid) => {
+      try {
+        const kb = Number(
+          execFileSync("ps", ["-o", "rss=", "-p", String(pid)], {
+            encoding: "utf8",
+            timeout: 2_000,
+          }).trim()
+        );
+        return Number.isFinite(kb) && kb > 0 ? kb / 1024 : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+  };
+}
+
+/** Whether this host can enforce the memory bound, or only the heap cap. */
+export function memoryBoundIsEnforced(): boolean {
+  return residentMemoryReader() !== undefined;
 }
 
 interface ProgramOutcome {
@@ -302,14 +336,18 @@ async function runProgram(options: {
       () => fail(`Program exceeded ${timeoutMs}ms and was terminated.`),
       timeoutMs
     );
-    const watchdog = setInterval(() => {
-      const resident = residentMemoryMb(child.pid ?? -1);
-      if (resident !== undefined && resident > maxMemoryMb) {
-        fail(
-          `Program exceeded ${maxMemoryMb}MB of memory and was terminated. Process the results in batches rather than holding them all at once.`
-        );
-      }
-    }, MEMORY_POLL_MS);
+    const memory = residentMemoryReader();
+    const watchdog = setInterval(
+      () => {
+        const resident = memory?.read(child.pid ?? -1);
+        if (resident !== undefined && resident > maxMemoryMb) {
+          fail(
+            `Program exceeded ${maxMemoryMb}MB of memory and was terminated. Process the results in batches rather than holding them all at once.`
+          );
+        }
+      },
+      memory?.pollMs ?? PROC_POLL_MS
+    );
     const onAbort = () => fail("Program was cancelled.");
     if (options.signal?.aborted) {
       onAbort();

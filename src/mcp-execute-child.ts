@@ -144,7 +144,16 @@ async function run(message: StartMessage): Promise<void> {
   };
   for (const server of message.globals) {
     const namespace = surface[server];
-    if (namespace && !Object.hasOwn(globals, server)) globals[server] = namespace;
+    if (!namespace || Object.hasOwn(globals, server)) continue;
+    // Defined, not assigned: `globals.__proto__ = ns` runs Object.prototype's
+    // setter and installs nothing, so the host would advertise a bare global
+    // the program cannot call.
+    Object.defineProperty(globals, server, {
+      value: namespace,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
 
   const context = createContext(globals);
