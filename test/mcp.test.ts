@@ -1059,8 +1059,15 @@ describe("lazy MCP CLI discovery", () => {
       const startedAt = Date.now();
       const catalogs = await preloadMcpCatalogs({
         env,
+        // Generous on purpose. Nothing listens on port 9, so the offline server
+        // fails by connection refusal rather than by this budget — which means
+        // a short one only ever raced the HEALTHY server's daemon spawn and
+        // discovery, and lost at 247ms against 250 on a loaded runner. The wall
+        // clock below is what proves the failing server did not stall the
+        // preload, and it proves it harder now that the timeout is 20x longer
+        // than the bound.
         allowPartial: true,
-        timeoutMs: 250,
+        timeoutMs: 5_000,
       });
       expect(Date.now() - startedAt).toBeLessThan(1_500);
       expect(catalogs.find((server) => server.id === "stub")?.error).toBeFalsy();
