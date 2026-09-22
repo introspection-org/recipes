@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { RecipePackageManifest } from "./recipe-package.js";
+import type { RecipePackageManifest } from "./package.js";
 
 export interface RecipeMcpLocalConfigResult {
   path: string;

@@ -14,7 +14,7 @@ import {
   packageResourcePaths,
   readPiPackageManifest,
   validatePiPackageManifest,
-} from "../src/recipe-package.js";
+} from "../src/recipe/package.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { SLACK_RECIPE_CHANNEL_PACKAGE } from "./helpers/recipe-connectors.js";
 

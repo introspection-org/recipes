@@ -3,14 +3,14 @@
 ## [0.27.0](https://github.com/introspection-org/recipes/compare/v0.26.0...v0.27.0) (2026-09-22)
 
 
-### Features
-
-* **mcp:** add an execute mode that runs a program over the authorized catalog ([#286](https://github.com/introspection-org/recipes/issues/286)) ([3aae69a](https://github.com/introspection-org/recipes/commit/3aae69a51416a4fbcf7ab10c5cce44c0d71d6e01))
-
-
 ### Bug Fixes
 
 * **channels:** publish an open SDK peer range ([#281](https://github.com/introspection-org/recipes/issues/281)) ([a1f5a47](https://github.com/introspection-org/recipes/commit/a1f5a47021bb6d2e173f1b5f6ad93326ae7d95e7))
+
+
+### Reverted before release
+
+`mcp.mode: execute` ([#286](https://github.com/introspection-org/recipes/issues/286)) was merged and then reverted ([f5b172c](https://github.com/introspection-org/recipes/commit/f5b172c13eda9516ffbb4b7213bd1f4a4d391fd1)) in this range, so it is **not** in 0.27.0. Release-please lists a reverted feature because a revert does not remove the original commit from its scan window; the entry is corrected here rather than deleted, because `git log v0.26.0..v0.27.0` still shows both commits. `cli` and `tools` remain the two MCP modes.
 
 ## [0.26.0](https://github.com/introspection-org/recipes/compare/v0.25.1...v0.26.0) (2026-09-20)
 

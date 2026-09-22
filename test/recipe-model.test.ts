@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadValidatedRecipeAgentDefinitions,
   validateRecipeAgentDefinitions,
-} from "../src/recipe-agent.js";
+} from "../src/recipe/agent.js";
 import {
   applyRecipeAgentModelConfigToModel,
   applyRecipeAgentModelConfigToSession,
@@ -14,11 +14,11 @@ import {
   parseRecipeAgentAiConfig,
   parseRecipeAgentModelConfig,
   RecipeModelConfigError,
-} from "../src/recipe-model.js";
+} from "../src/recipe/model.js";
 import {
   mergeRecipeAgentSessionConfig,
   parseRecipeAgentSessionConfig,
-} from "../src/recipe-session.js";
+} from "../src/recipe/session.js";
 
 describe("parseRecipeAgentAiConfig", () => {
   it("normalizes future Pi options without flattening nested payloads", () => {

@@ -1,4 +1,4 @@
-import type { McpToolCatalogEntry } from "../../mcp.js";
+import type { McpToolCatalogEntry } from "../index.js";
 
 export const MCP_DAEMON_SOCKET_ENV = "PI_RECIPES_MCP_DAEMON_SOCKET";
 export const MCP_DAEMON_TOKEN_ENV = "PI_RECIPES_MCP_DAEMON_TOKEN";

@@ -11,9 +11,9 @@ vi.mock("../src/mcp/daemon/client.js", () => ({
 import {
   createMcpToolSet,
   piMcpToolName,
-} from "../src/mcp-tools.js";
-import type { McpSessionConfig } from "../src/mcp.js";
-import type { RecipeAgentMcp } from "../src/recipe-agent.js";
+} from "../src/mcp/tools.js";
+import type { McpSessionConfig } from "../src/mcp/index.js";
+import type { RecipeAgentMcp } from "../src/recipe/agent.js";
 
 const session: McpSessionConfig = {
   version: 1,

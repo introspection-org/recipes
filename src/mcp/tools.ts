@@ -6,18 +6,18 @@ import type { ValidateFunction } from "ajv";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { callMcpDaemonTool } from "./mcp/daemon/client.js";
-import type { McpCatalogServer } from "./mcp/daemon/protocol.js";
-import { mcpSelectionAllowsTool } from "./mcp-policy.js";
+import { callMcpDaemonTool } from "./daemon/client.js";
+import type { McpCatalogServer } from "./daemon/protocol.js";
+import { mcpSelectionAllowsTool } from "./policy.js";
 import type {
   McpSessionConfig,
   McpToolCatalogEntry,
-} from "./mcp.js";
-import type { RecipeAgentMcp } from "./recipe-agent.js";
+} from "./index.js";
+import type { RecipeAgentMcp } from "../recipe/agent.js";
 import {
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
-} from "./tool-search.js";
+} from "../tool-search.js";
 
 const DEFAULT_OUTPUT_MAX_BYTES = 50 * 1024;
 const DEFAULT_OUTPUT_MAX_LINES = 2_000;

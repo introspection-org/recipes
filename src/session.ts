@@ -31,7 +31,7 @@ import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "./mcp-catalog.js";
+} from "./mcp/catalog.js";
 import {
   createIsolatedMcpEnvironment,
   configureMcpLocalConfigPath,
@@ -45,8 +45,8 @@ import {
   stopMcpDaemon,
   type McpLocalConfig,
   type ScopedMcpToolSelection,
-} from "./mcp.js";
-import { createMcpToolSet } from "./mcp-tools.js";
+} from "./mcp/index.js";
+import { createMcpToolSet } from "./mcp/tools.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
@@ -59,7 +59,7 @@ import {
   RecipeModelTransportError,
   resolveRecipeCredentials,
 } from "./model-binding.js";
-import { loadRecipeExtensionFactory } from "./recipe-extensions.js";
+import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
@@ -70,7 +70,7 @@ import {
   applyRecipeAgentModelConfigToModel,
   applyRecipeAgentModelConfigToSession,
   cloneModelForRecipe,
-} from "./recipe-model.js";
+} from "./recipe/model.js";
 import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,

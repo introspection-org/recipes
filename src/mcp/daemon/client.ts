@@ -14,7 +14,7 @@ import {
   type McpDaemonEnvelope,
   type McpDaemonRequest,
 } from "./protocol.js";
-import { mcpTraceContextFromEnv } from "../../mcp-trace-context.js";
+import { mcpTraceContextFromEnv } from "../trace-context.js";
 
 const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;

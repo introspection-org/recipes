@@ -47,8 +47,8 @@ const persistGate = vi.hoisted(() => {
 
 // Replace ChildAgentRunStore with an in-memory store whose *terminal* write
 // blocks on the gate; the initial "running" write and reads pass through.
-vi.mock("../src/child-agent-store.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/child-agent-store.js")>();
+vi.mock("../src/child/agent-store.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/child/agent-store.js")>();
   class GatedStore {
     constructor(_workspaceDir: string) {}
     async writeStatus(snapshot: { status: string }): Promise<void> {
