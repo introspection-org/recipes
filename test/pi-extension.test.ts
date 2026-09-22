@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import {
+  formatSkillsForPrompt,
+  type AgentToolResult,
+  type Skill,
+} from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createRecipesExtension } from "../src/pi-extension.js";
@@ -1198,6 +1202,109 @@ describe("Recipes extension for Pi", () => {
       expect(promptResults).toEqual([
         {
           systemPrompt: "Agent replacement prompt",
+        },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("appends Pi's skills prompt when SYSTEM.md replaces the forwarded prompt", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-skills-prompt-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const skillPath = join(recipeDir, "skills", "repo-index", "SKILL.md");
+      const skills: Skill[] = [
+        {
+          name: "repo-index",
+          description: "Index repo",
+          filePath: skillPath,
+          baseDir: join(recipeDir, "skills", "repo-index"),
+          disableModelInvocation: false,
+          sourceInfo: {
+            path: skillPath,
+            source: "recipe",
+            scope: "project",
+            origin: "package",
+          },
+        },
+      ];
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension()(pi);
+
+      const promptResults = await pi.emitExtensionEvent(
+        {
+          type: "before_agent_start",
+          prompt: "hello",
+          systemPrompt: `Default Pi prompt\n\n<skills>\n${formatSkillsForPrompt(skills, "read").trim()}\n</skills>`,
+          systemPromptOptions: {
+            skills,
+            selectedTools: ["read", "bash"],
+          },
+        } as any,
+        extensionContext(projectDir)
+      );
+
+      const skillsSection = `<skills>\n${formatSkillsForPrompt(skills, "read").trim()}\n</skills>`;
+      expect(promptResults).toEqual([
+        {
+          systemPrompt: `Base recipe prompt\n\nAgent-specific prompt\n\n${skillsSection}`,
+        },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the forwarded skills block when the recipe has no SYSTEM.md", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-skills-prompt-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      rmSync(join(recipeDir, "SYSTEM.md"));
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const skillPath = join(recipeDir, "skills", "repo-index", "SKILL.md");
+      const skills: Skill[] = [
+        {
+          name: "repo-index",
+          description: "Index repo",
+          filePath: skillPath,
+          baseDir: join(recipeDir, "skills", "repo-index"),
+          disableModelInvocation: false,
+          sourceInfo: {
+            path: skillPath,
+            source: "recipe",
+            scope: "project",
+            origin: "package",
+          },
+        },
+      ];
+      const forwarded = `Default Pi prompt\n\n<skills>\n${formatSkillsForPrompt(skills, "read").trim()}\n</skills>`;
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension()(pi);
+
+      const promptResults = await pi.emitExtensionEvent(
+        {
+          type: "before_agent_start",
+          prompt: "hello",
+          systemPrompt: forwarded,
+          systemPromptOptions: {
+            skills,
+            selectedTools: ["read"],
+          },
+        } as any,
+        extensionContext(projectDir)
+      );
+
+      expect(promptResults).toEqual([
+        {
+          systemPrompt: `${forwarded}\n\nAgent-specific prompt`,
         },
       ]);
     } finally {

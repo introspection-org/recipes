@@ -69,6 +69,7 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
+import { composeInstalledSystemPrompt } from "./recipe/skills-prompt.js";
 import {
   createAgentTool,
   type AgentRunController,
@@ -1518,9 +1519,14 @@ export function createRecipesExtension(
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return {};
       return {
-        systemPrompt: launchState.resolved.systemPromptOverride(
-          event.systemPrompt
-        ),
+        systemPrompt: composeInstalledSystemPrompt({
+          hasSystemPrompt: launchState.resolvedRecipe.resources.hasSystemPrompt,
+          recipePrompt: launchState.resolved.systemPromptOverride(
+            event.systemPrompt
+          ),
+          skills: event.systemPromptOptions.skills,
+          selectedTools: event.systemPromptOptions.selectedTools,
+        }),
       };
     });
   };
