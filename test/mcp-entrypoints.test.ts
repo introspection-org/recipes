@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 
 import {
@@ -49,5 +50,15 @@ describe("the bundled daemon and its run worker", () => {
   it("resolves the worker as its own sibling", () => {
     const bundle = readFileSync(join(dist, "mcp-daemon.js"), "utf8");
     expect(bundle).toContain('"./mcp-run-worker.js"');
+  });
+
+  // Imported from dist, not from source: run from `src/`, both branches of
+  // `daemonPath` miss and fall through to the same answer, so only the built
+  // layout can tell the bundle from the tsc tree beside it.
+  it("spawns the bundled daemon, not the tsc tree", async () => {
+    const built = (await import(
+      pathToFileURL(join(dist, "mcp", "daemon", "client.js")).href
+    )) as { daemonPath: () => string };
+    expect(built.daemonPath()).toBe(join(dist, "mcp-daemon.js"));
   });
 });
