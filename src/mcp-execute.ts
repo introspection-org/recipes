@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createContext, runInContext } from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, parse } from "node:path";
@@ -37,6 +37,9 @@ const ABORT_GRACE_MS = 1_000;
 // inside the sandbox, so the stream is bounded as it is read.
 const MAX_CHILD_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
+// One provider result, bounded before it is queued for the child. The child's
+// own RSS watchdog cannot see frames still sitting in the parent's stream.
+const MAX_RESULT_FRAME_BYTES = 4 * 1024 * 1024;
 const SURFACE_DESCRIPTION_MAX_CHARS = 200;
 const SURFACE_MAX_CHARS = 4_000;
 const DEFAULT_MAX_MEMORY_MB = 512;
@@ -202,11 +205,14 @@ export function executeChildArgs(
  * the documented gap). Where no reader exists the heap cap is all that is
  * left, which `memoryBoundIsEnforced` reports rather than hides.
  */
-function residentMemoryReader(): { read: (pid: number) => number | undefined; pollMs: number } | undefined {
+function residentMemoryReader():
+  | { read: (pid: number) => Promise<number | undefined>; pollMs: number }
+  | undefined {
   if (existsSync("/proc/self/status")) {
     return {
       pollMs: PROC_POLL_MS,
-      read: (pid) => {
+      // A /proc read is a memory copy, not I/O, so this one stays synchronous.
+      read: async (pid) => {
         try {
           const kb = /^VmRSS:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
           return kb ? Number(kb[1]) / 1024 : undefined;
@@ -222,8 +228,8 @@ function residentMemoryReader(): { read: (pid: number) => number | undefined; po
       // `WorkingSet64` is a raw int64. `tasklist`'s memory column is
       // locale-formatted and would fail open on a misparse, which is worse
       // than no reader; this one cannot.
-      read: (pid) => {
-        const bytes = sampleNumber("powershell.exe", [
+      read: async (pid) => {
+        const bytes = await sampleNumber("powershell.exe", [
           "-NoProfile",
           "-NonInteractive",
           "-Command",
@@ -236,23 +242,36 @@ function residentMemoryReader(): { read: (pid: number) => number | undefined; po
   return {
     pollMs: PS_POLL_MS,
     // `ps` reports KiB.
-    read: (pid) => {
-      const kb = sampleNumber("ps", ["-o", "rss=", "-p", String(pid)]);
+    read: async (pid) => {
+      const kb = await sampleNumber("ps", ["-o", "rss=", "-p", String(pid)]);
       return kb === undefined ? undefined : kb / 1024;
     },
   };
 }
 
-/** One numeric sample from a process-inspection command, or nothing. */
-function sampleNumber(command: string, args: readonly string[]): number | undefined {
-  try {
-    const value = Number(
-      execFileSync(command, args, { encoding: "utf8", timeout: 5_000 }).trim()
+/**
+ * One numeric sample from a process-inspection command, or nothing.
+ *
+ * Asynchronous because this runs on the host's main loop once per second for
+ * the life of every program: a synchronous spawn — PowerShell, most of all —
+ * would stall the session, and a slow one would stall it for the full timeout.
+ */
+function sampleNumber(
+  command: string,
+  args: readonly string[]
+): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      command,
+      [...args],
+      { encoding: "utf8", timeout: 5_000 },
+      (error, stdout) => {
+        if (error) return resolve(undefined);
+        const value = Number(stdout.trim());
+        resolve(Number.isFinite(value) && value > 0 ? value : undefined);
+      }
     );
-    return Number.isFinite(value) && value > 0 ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  });
 }
 
 /** Whether this host can enforce the memory bound, or only the heap cap. */
@@ -381,14 +400,21 @@ async function runProgram(options: {
       timeoutMs
     );
     const memory = residentMemoryReader();
+    let sampling = false;
     const watchdog = setInterval(
       () => {
-        const resident = memory?.read(child.pid ?? -1);
-        if (resident !== undefined && resident > maxMemoryMb) {
-          fail(
-            `Program exceeded ${maxMemoryMb}MB of memory and was terminated. Process the results in batches rather than holding them all at once.`
-          );
-        }
+        // One sample at a time: a slow reader must not queue spawns behind it.
+        if (!memory || sampling || settled) return;
+        sampling = true;
+        void memory.read(child.pid ?? -1).then((resident) => {
+          sampling = false;
+          if (settled) return;
+          if (resident !== undefined && resident > maxMemoryMb) {
+            fail(
+              `Program exceeded ${maxMemoryMb}MB of memory and was terminated. Process the results in batches rather than holding them all at once.`
+            );
+          }
+        });
       },
       memory?.pollMs ?? PROC_POLL_MS
     );
@@ -399,8 +425,26 @@ async function runProgram(options: {
     }
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
-    const write = (message: unknown) => {
-      if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
+    /**
+     * Write one frame to the child, respecting backpressure.
+     *
+     * A provider result is serialized whole. Ignoring `write()`'s return value
+     * let every frame a slow child had not read yet accumulate in the parent —
+     * memory the RSS watchdog cannot see, because it measures the child. The
+     * drain wait races the child's exit so a killed child cannot strand it.
+     */
+    const write = (message: unknown): Promise<void> => {
+      if (child.stdin.destroyed || settled) return Promise.resolve();
+      if (child.stdin.write(`${JSON.stringify(message)}\n`)) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          child.stdin.off("drain", done);
+          child.off("close", done);
+          resolve();
+        };
+        child.stdin.once("drain", done);
+        child.once("close", done);
+      });
     };
 
     const serviceCall = async (id: number, server: string, tool: string, args: unknown) => {
@@ -439,15 +483,21 @@ async function runProgram(options: {
           }
         );
         const value = mcpResultValue(authorized, raw, options.env);
+        const frame = JSON.stringify(value)?.length ?? 0;
+        if (frame > MAX_RESULT_FRAME_BYTES) {
+          throw new Error(
+            `Result of ${server}.${tool} is ${frame} bytes, over the ${MAX_RESULT_FRAME_BYTES}-byte limit for one call. Narrow the query or request fewer fields.`
+          );
+        }
         record.ok = true;
         record.ms = Date.now() - started;
         calls.push(record);
-        write({ type: "result", id, ok: true, value });
+        await write({ type: "result", id, ok: true, value });
       } catch (error) {
         record.ms = Date.now() - started;
         record.error = error instanceof Error ? error.message : String(error);
         calls.push(record);
-        write({ type: "result", id, ok: false, error: record.error });
+        await write({ type: "result", id, ok: false, error: record.error });
       }
     };
 

@@ -546,6 +546,22 @@ describe("mcp execute mode", () => {
     expect(mocks.callMcpDaemonTool.mock.calls.length).toBe(details.calls.length);
   }, 20_000);
 
+  it("refuses a provider result too large to queue for the child", async () => {
+    // The frame is serialized whole into the child's stdin. The RSS watchdog
+    // measures the child, so anything still queued in the parent is invisible
+    // to it — the bound has to be applied before the write.
+    mocks.callMcpDaemonTool.mockResolvedValue(
+      structured({ rows: "z".repeat(5 * 1024 * 1024) })
+    );
+    const { text } = await run(
+      toolSet(everything),
+      `try { await attio.list_records({ object: "deals" }); return "no error"; }
+       catch (error) { return error.message; }`
+    );
+    expect(text).toContain("over the");
+    expect(text).toContain("Narrow the query");
+  }, 20_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
