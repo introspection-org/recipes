@@ -36,6 +36,7 @@ export interface RecipeSearchableTool {
   readonly parameters?: unknown;
 }
 
+const DESCRIPTION_MAX_CHARS = 200;
 const SCHEMA_NAME_MAX_CHARS = 60;
 const SCHEMA_NAMES_MAX_CHARS = 400;
 const SCHEMA_MAX_CHARS = 1_200;
@@ -89,6 +90,16 @@ function nameList(names: readonly string[]): string {
 
 function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/**
+ * A disclosed tool's description, bounded.
+ *
+ * Ten of these are model-visible in one result. The schema beside them was
+ * already clamped; leaving the prose unbounded routed around that.
+ */
+function clipDescription(description: string): string {
+  return clip(description.split("\n")[0] ?? "", DESCRIPTION_MAX_CHARS);
 }
 
 interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {
@@ -300,7 +311,9 @@ export function createRecipeToolSearch(
             `Call these from an \`${RECIPE_EXECUTE_TOOL_NAME}\` program:`,
             ...signatures.map(({ tool }) =>
               [
-                `- ${tool.callable}(args)${tool.description ? ` — ${tool.description}` : ""}`,
+                `- ${tool.callable}(args)${
+                  tool.description ? ` — ${clipDescription(tool.description)}` : ""
+                }`,
                 `  args: ${renderParameters(tool.parameters)}`,
               ].join("\n")
             ),

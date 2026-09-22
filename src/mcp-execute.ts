@@ -194,23 +194,43 @@ function residentMemoryReader(): { read: (pid: number) => number | undefined; po
       },
     };
   }
-  if (process.platform === "win32") return undefined;
+  if (process.platform === "win32") {
+    return {
+      pollMs: PS_POLL_MS,
+      // `WorkingSet64` is a raw int64. `tasklist`'s memory column is
+      // locale-formatted and would fail open on a misparse, which is worse
+      // than no reader; this one cannot.
+      read: (pid) => {
+        const bytes = sampleNumber("powershell.exe", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `(Get-Process -Id ${pid} -ErrorAction Stop).WorkingSet64`,
+        ]);
+        return bytes === undefined ? undefined : bytes / 1_048_576;
+      },
+    };
+  }
   return {
     pollMs: PS_POLL_MS,
+    // `ps` reports KiB.
     read: (pid) => {
-      try {
-        const kb = Number(
-          execFileSync("ps", ["-o", "rss=", "-p", String(pid)], {
-            encoding: "utf8",
-            timeout: 2_000,
-          }).trim()
-        );
-        return Number.isFinite(kb) && kb > 0 ? kb / 1024 : undefined;
-      } catch {
-        return undefined;
-      }
+      const kb = sampleNumber("ps", ["-o", "rss=", "-p", String(pid)]);
+      return kb === undefined ? undefined : kb / 1024;
     },
   };
+}
+
+/** One numeric sample from a process-inspection command, or nothing. */
+function sampleNumber(command: string, args: readonly string[]): number | undefined {
+  try {
+    const value = Number(
+      execFileSync(command, args, { encoding: "utf8", timeout: 5_000 }).trim()
+    );
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Whether this host can enforce the memory bound, or only the heap cap. */
@@ -492,11 +512,32 @@ function runnerStderr(stderr: string): string {
   return lines.length > 2_000 ? `${lines.slice(0, 2_000)}…` : lines;
 }
 
+/**
+ * A call whose remote outcome the daemon could not resolve.
+ *
+ * Cancellation reaches the daemon but not the provider — mcporter exposes no
+ * AbortSignal — so a write abandoned at the drain deadline may still be
+ * running. The record carried that, but only in `details`, where the model
+ * never sees it and reads the program's value as an unqualified success.
+ */
+function unresolvedCalls(calls: readonly McpExecuteCallRecord[]): McpExecuteCallRecord[] {
+  return calls.filter((call) => !call.ok && call.error?.includes("remote outcome is unknown"));
+}
+
 function programResultText(outcome: {
   value: unknown;
   logs: Array<{ level: string; text: string }>;
+  calls: readonly McpExecuteCallRecord[];
 }): string {
   const parts: string[] = [];
+  const unresolved = unresolvedCalls(outcome.calls);
+  if (unresolved.length > 0) {
+    parts.push(
+      `⚠️ ${unresolved.length} call(s) were cancelled with the remote outcome unknown and may still be running: ${unresolved
+        .map((call) => `${call.server}.${call.tool}`)
+        .join(", ")}. Do not retry them automatically; check the provider's state.`
+    );
+  }
   if (outcome.logs.length > 0) {
     parts.push(
       outcome.logs.map((entry) => `[${entry.level}] ${entry.text}`).join("\n")

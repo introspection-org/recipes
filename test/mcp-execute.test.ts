@@ -411,6 +411,34 @@ describe("mcp execute mode", () => {
     ).rejects.toThrow(/exceeded 128MB of memory/);
   }, 30_000);
 
+  it("tells the model when a cancelled call's remote outcome is unknown", async () => {
+    // Cancellation reaches the daemon but not the provider, so an abandoned
+    // write may still be running. The record carried that only in `details`,
+    // where the model never sees it and reads the value as plain success.
+    mocks.callMcpDaemonTool.mockImplementation(
+      async (_s: unknown, _t: unknown, _a: unknown, opts: { signal?: AbortSignal }) =>
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(structured({ ok: true })), 30_000);
+          opts.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            // The shape the daemon client actually throws when it detaches.
+            reject(
+              new Error(
+                "MCP tool call 'attio.update_record' was cancelled; remote outcome is unknown; do not retry automatically."
+              )
+            );
+          });
+        })
+    );
+    const { text, details } = await run(
+      toolSet(everything, { PI_RECIPES_MCP_EXECUTE_DRAIN_MS: "200" }),
+      `void attio.update_record({ id: "1" }); return "done";`
+    );
+    expect(details.calls).toHaveLength(1);
+    expect(text).toContain("remote outcome unknown");
+    expect(text).toContain("attio.update_record");
+  }, 20_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
@@ -576,6 +604,43 @@ describe("tool search over an execute catalog", () => {
     );
     const text = (result.content as Array<{ text: string }>)[0]!.text;
     expect(text).toContain("more");
+    expect(text.length).toBeLessThan(2_000);
+  });
+
+  it("clamps a long description in a search disclosure", async () => {
+    // Sibling of the execute-surface cap: the schema beside these was already
+    // bounded, so leaving the prose unbounded routed around that.
+    const set = createMcpExecuteToolSet({
+      session,
+      catalogs: [
+        {
+          ...catalogs[0]!,
+          tools: [
+            {
+              name: "list_records",
+              description: `list records ${"y".repeat(50_000)}`,
+              input_schema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      ],
+      mcp: everything,
+      env: {},
+    });
+    const search = createRecipeToolSearch({
+      tools: [],
+      deferredToolNames: [],
+      activation: { getActiveTools: () => [], setActiveTools: () => {} },
+      disclosed: set.disclosed,
+    });
+    const result = await (search!.execute as any)(
+      "call-1",
+      { query: "list records" },
+      undefined,
+      undefined
+    );
+    const text = (result.content as Array<{ text: string }>)[0]!.text;
+    expect(text).toContain("attio.list_records(args)");
     expect(text.length).toBeLessThan(2_000);
   });
 
