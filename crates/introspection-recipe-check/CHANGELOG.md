@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.7.0...introspection-recipe-check-v0.8.0) (2026-09-22)
+
+
+### Features
+
+* **mcp:** add an execute mode that runs a program over the authorized catalog ([#286](https://github.com/introspection-org/recipes/issues/286)) ([3aae69a](https://github.com/introspection-org/recipes/commit/3aae69a51416a4fbcf7ab10c5cce44c0d71d6e01))
+
 ## [0.7.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.6.0...introspection-recipe-check-v0.7.0) (2026-09-20)
 
 

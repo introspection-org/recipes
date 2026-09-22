@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.7.0...introspection-recipe-check-python-v0.8.0) (2026-09-22)
+
+
+### Miscellaneous Chores
+
+* **introspection-recipe-check-python:** Synchronize introspection-recipe-check versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.7.0 to 0.8.0
+
 ## [0.7.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.6.0...introspection-recipe-check-python-v0.7.0) (2026-09-20)
 
 
