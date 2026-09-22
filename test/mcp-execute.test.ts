@@ -338,7 +338,10 @@ describe("mcp execute mode", () => {
     ).rejects.toThrow(/more than \d+ bytes of output/);
   }, 30_000);
 
-  it("terminates a program that allocates past its memory bound", async () => {
+  // The watchdog reads /proc, so off Linux only the heap cap is left — which
+  // this program would walk straight past. Skipped rather than failed: the gap
+  // is the platform's, and CI runs the suite on Linux only.
+  it.skipIf(!existsSync("/proc"))("terminates a program that allocates past its memory bound", async () => {
     // Typed arrays live outside V8's heap, so `--max-old-space-size` does not
     // bound them (measured: 3 GiB RSS under a 64 MiB cap). The program also
     // never yields, so only a bound enforced from the parent can stop it.
