@@ -577,6 +577,27 @@ describe("mcp execute mode", () => {
     expect(text).toContain("over the");
   }, 20_000);
 
+  it("bounds results queued for the child across a fan-out", async () => {
+    // Serializing the writes does not bound the queue: each waiting closure
+    // pins its own frame, so a wide fan-out holds the call budget times the
+    // frame bound in the parent — where the child watchdog cannot see it.
+    mocks.callMcpDaemonTool.mockImplementation(async () =>
+      structured({ rows: "y".repeat(3 * 1024 * 1024) })
+    );
+    const { details } = await run(
+      toolSet(everything),
+      `const results = await Promise.allSettled(
+         Array.from({ length: 8 }, () => attio.list_records({ object: "deals" }))
+       );
+       return results.filter((r) => r.status === "rejected").length;`
+    );
+    // Some calls are refused rather than all eight queueing ~24 MiB.
+    const refused = details.calls.filter((call) =>
+      call.error?.includes("queued for the program")
+    );
+    expect(refused.length).toBeGreaterThan(0);
+  }, 30_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();

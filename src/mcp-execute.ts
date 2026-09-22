@@ -40,6 +40,9 @@ const MAX_STDERR_BYTES = 64 * 1024;
 // One provider result, bounded before it is queued for the child. The child's
 // own RSS watchdog cannot see frames still sitting in the parent's stream.
 const MAX_RESULT_FRAME_BYTES = 4 * 1024 * 1024;
+// All results queued for the child at once. The write chain serializes the
+// writes; the closures waiting their turn still pin their frames.
+const MAX_PENDING_WRITE_BYTES = 8 * 1024 * 1024;
 const SURFACE_DESCRIPTION_MAX_CHARS = 200;
 const SURFACE_MAX_CHARS = 4_000;
 const DEFAULT_MAX_MEMORY_MB = 512;
@@ -440,19 +443,25 @@ async function runProgram(options: {
      * child cannot strand it.
      */
     let writes: Promise<void> = Promise.resolve();
-    const write = (message: unknown): Promise<void> => {
+    let pending = 0;
+    const write = (frame: string, bytes = 0): Promise<void> => {
+      pending += bytes;
       const send = async (): Promise<void> => {
-        if (child.stdin.destroyed || settled) return;
-        if (child.stdin.write(`${JSON.stringify(message)}\n`)) return;
-        await new Promise<void>((resolve) => {
-          const done = () => {
-            child.stdin.off("drain", done);
-            child.off("close", done);
-            resolve();
-          };
-          child.stdin.once("drain", done);
-          child.once("close", done);
-        });
+        try {
+          if (child.stdin.destroyed || settled) return;
+          if (child.stdin.write(`${frame}\n`)) return;
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              child.stdin.off("drain", done);
+              child.off("close", done);
+              resolve();
+            };
+            child.stdin.once("drain", done);
+            child.once("close", done);
+          });
+        } finally {
+          pending -= bytes;
+        }
       };
       writes = writes.then(send, send);
       return writes;
@@ -494,24 +503,38 @@ async function runProgram(options: {
           }
         );
         const value = mcpResultValue(authorized, raw, options.env);
-        // Encoded bytes, not UTF-16 code units: CJK text is roughly 2.5x
-        // longer once encoded, so `.length` would let a "4 MiB" frame past at
-        // about 10 MiB.
-        const frame = Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
-        if (frame > MAX_RESULT_FRAME_BYTES) {
+        // Serialized once, here: the size check and the write need the same
+        // bytes, and doing it twice would double the cost on the payloads this
+        // is guarding against. Encoded bytes, not UTF-16 code units — CJK is
+        // roughly 2.5x longer encoded, so `.length` would let a "4 MiB" frame
+        // past at about 10 MiB.
+        const frame = JSON.stringify({ type: "result", id, ok: true, value });
+        const bytes = Buffer.byteLength(frame, "utf8");
+        if (bytes > MAX_RESULT_FRAME_BYTES) {
           throw new Error(
-            `Result of ${server}.${tool} is ${frame} bytes, over the ${MAX_RESULT_FRAME_BYTES}-byte limit for one call. Narrow the query or request fewer fields.`
+            `Result of ${server}.${tool} is ${bytes} bytes, over the ${MAX_RESULT_FRAME_BYTES}-byte limit for one call. Narrow the query or request fewer fields.`
+          );
+        }
+        // The write chain bounds what is *being written*; it does nothing about
+        // results waiting their turn, because each queued closure pins its own
+        // frame. Without this, a fan-out holds the call budget times the frame
+        // bound in the parent — the very memory the child watchdog cannot see.
+        if (pending + bytes > MAX_PENDING_WRITE_BYTES) {
+          throw new Error(
+            `Result of ${server}.${tool} could not be delivered: ${pending + bytes} bytes are queued for the program, over the ${MAX_PENDING_WRITE_BYTES}-byte limit. Await calls in smaller batches rather than fanning out this wide.`
           );
         }
         record.ok = true;
         record.ms = Date.now() - started;
         calls.push(record);
-        await write({ type: "result", id, ok: true, value });
+        await write(frame, bytes);
       } catch (error) {
         record.ms = Date.now() - started;
         record.error = error instanceof Error ? error.message : String(error);
         calls.push(record);
-        await write({ type: "result", id, ok: false, error: record.error });
+        // Error frames are small and are never refused: the program must learn
+        // that its call failed, including when the reason was a bound above.
+        await write(JSON.stringify({ type: "result", id, ok: false, error: record.error }));
       }
     };
 
@@ -590,7 +613,7 @@ async function runProgram(options: {
       );
     });
 
-    write({
+    write(JSON.stringify({
       type: "start",
       // Wrapped here, not in the child: the bare-global probe must evaluate
       // candidates under exactly the grammar the program runs in, so the
@@ -601,7 +624,7 @@ async function runProgram(options: {
         tool: tool.catalog.name,
       })),
       globals: [...options.bareGlobals],
-    });
+    }));
   });
 }
 
