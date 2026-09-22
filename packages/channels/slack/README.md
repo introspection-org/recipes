@@ -23,7 +23,7 @@ pnpm add @introspection-ai/recipes @introspection-ai/recipe-channel-slack
     "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
   },
   "peerDependencies": {
-    "@introspection-ai/recipes": "*"
+    "@introspection-ai/recipes": ">=0.26.0 <1.0.0"
   },
   "pi": {
     "channels": [

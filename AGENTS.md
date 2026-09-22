@@ -42,13 +42,20 @@
   it is a ceiling, not a floor. For our own packages (`@introspection-ai/*`,
   `@introspection/*`) that ceiling buys nothing and costs a republish every
   time a sibling ticks: the lockfile already pins what installs, and CI gates
-  every relock. Use `>=0.26.0`, in `dependencies` and `peerDependencies` alike,
-  and note `workspace:^` publishes as `^`, so a published peer must be written
-  out. Keep the caret for third-party packages, where an unreviewed relock
-  would take someone else's breaking change. ⚠️ **Pi is the exception**: third
-  party, but the host supplies it, so a Recipe declares `>=` and lets the
-  runtime image resolve the version. A caret there restores the upper bound
-  #280 removed, and `test/pi-floor-parity.test.ts` fails on it.
+  every relock. The shape is an open lower bound with a **major** cap —
+  `>=0.26.0 <1.0.0`, in `dependencies` and `peerDependencies` alike, which is
+  what `packages/channels/slack/package.json` ships. The cap is not a ceiling
+  anything hits: below 1.0 nothing crosses it, and 1.0.0 will be a deliberate
+  declaration that the API is stable, so leaving the range unbounded would
+  claim compatibility with a release nobody has reviewed. Note `workspace:^`
+  publishes as `^`, so a published peer must be written out. Keep the caret for
+  third-party packages, where an unreviewed relock would take someone else's
+  breaking change. ⚠️ **Pi is the exception, and takes no cap either**: third
+  party, but the host supplies it, so the SDK declares a bare `>=0.86.1` and
+  lets the runtime image resolve the version. `test/pi-floor-parity.test.ts`
+  asserts that exact shape (`/^>=\d+\.\d+\.\d+$/`), so a `<1.0.0` bound fails
+  it just as a caret does — and a caret would also restore the upper bound #280
+  removed.
 - **A version written in two places will drift.** Derive it. The supported Pi
   floor is read out of `peerDependencies` by the `pi-minimum` CI job and pinned
   by `test/pi-floor-parity.test.ts`; copying it into a job or a doc is how it
