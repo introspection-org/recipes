@@ -323,6 +323,8 @@ interface MaterializedSessionMcp {
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
   disclosedTools?: RecipeDisclosedTool[];
+  /** Execute mode promises `tool_search` even with nothing to disclose. */
+  executeMode?: boolean;
   release?: () => Promise<void>;
 }
 
@@ -478,7 +480,9 @@ async function configureSessionMcp(
         tools: materialized.tools,
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
-        ...(executeSet ? { disclosedTools: executeSet.disclosed } : {}),
+        ...(executeSet
+          ? { disclosedTools: executeSet.disclosed, executeMode: true }
+          : {}),
         release,
       };
     }
@@ -821,6 +825,7 @@ async function createSessionForAgent(
         setActiveTools: (names) => session?.setActiveToolsByName(names),
       },
       ...(mcp.disclosedTools ? { disclosed: mcp.disclosedTools } : {}),
+      ...(mcp.executeMode ? { alwaysRegister: true } : {}),
       // `mcp_search` is the compatibility name for the DEFERRED-tool
       // behaviour. Execute mode discloses rather than defers, and its surface
       // is documented as two tools, so a disclosure must not summon a third.

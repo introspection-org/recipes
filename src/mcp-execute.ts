@@ -114,21 +114,35 @@ const PROBE = Object.freeze({ bareGlobal: true });
  * are non-writable so the assignment does not take, and each is only found once
  * a model is sent to a call that throws. Running the candidate in a throwaway
  * context answers all of them at once, and answers anything not thought of.
+ *
+ * ⚠️ It has to run in the grammar the program runs in, not at top level. `await`
+ * is a valid identifier in a script and a syntax error inside an async
+ * function; `arguments` binds to the wrapper's own arguments object and shadows
+ * the injected namespace. The wrapper is therefore host-owned and sent to the
+ * child, so the probe and the program cannot disagree about it.
  */
+const PROBE_RESULT = "__recipeBareGlobalProbe";
+
 function bareGlobalServers(serverIds: Iterable<string>): Set<string> {
   return new Set(
     [...serverIds].filter((id) => {
       if (!IDENTIFIER.test(id) || RUNNER_GLOBALS.has(id)) return false;
+      // The wrapper is async, so it returns a promise — but its body runs
+      // synchronously up to the first await, and there is none. Assign and
+      // read back rather than awaiting a probe.
+      const sandbox: Record<string, unknown> = { [id]: PROBE };
       try {
-        return (
-          runInContext(
-            `typeof ${id} === "object" && ${id} !== null && ${id}.bareGlobal === true`,
-            createContext({ [id]: PROBE })
-          ) === true
+        runInContext(
+          wrapProgram(
+            `globalThis.${PROBE_RESULT} = typeof ${id} === "object" && ${id} !== null && ${id}.bareGlobal === true;`
+          ),
+          createContext(sandbox),
+          { filename: "probe.js" }
         );
       } catch {
         return false;
       }
+      return sandbox[PROBE_RESULT] === true;
     })
   );
 }
@@ -154,6 +168,14 @@ function callableExpression(
  * dropped `--permission` would take the filesystem, subprocess and worker
  * denials with it.
  */
+/**
+ * The grammar a program runs in. Host-owned, so the bare-global probe and the
+ * child evaluate candidates under exactly the same wrapper.
+ */
+export function wrapProgram(code: string): string {
+  return `(async function recipeExecuteProgram() {\n${code}\n})()`;
+}
+
 export function executeChildArgs(
   childPath: string,
   manifest: string | undefined,
@@ -433,6 +455,10 @@ async function runProgram(options: {
     let received = 0;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
+      // The child is killed at settlement, but data already queued still
+      // arrives. Servicing a `call` frame now would start a provider write
+      // after cancellation, against a drain that has already been taken.
+      if (settled) return;
       received += chunk.length;
       if (received > MAX_CHILD_OUTPUT_BYTES || buffer.length > MAX_CHILD_OUTPUT_BYTES) {
         fail(
@@ -496,7 +522,10 @@ async function runProgram(options: {
 
     write({
       type: "start",
-      code: options.code,
+      // Wrapped here, not in the child: the bare-global probe must evaluate
+      // candidates under exactly the grammar the program runs in, so the
+      // wrapper has one definition and the two cannot disagree.
+      code: wrapProgram(options.code),
       tools: [...options.registry.values()].map((tool) => ({
         server: tool.serverId,
         tool: tool.catalog.name,
@@ -653,9 +682,19 @@ export function createMcpExecuteToolSet(options: {
               : "";
           // A program that logged a raw page and then threw would otherwise
           // reach the model unclamped, past the bound its own success path has.
+          const unresolved = unresolvedCalls(error.calls);
+          // A failed execution is the one most likely to be retried, so the
+          // calls whose remote outcome is unknown matter more here than on the
+          // success path, not less.
+          const unknown =
+            unresolved.length > 0
+              ? `\n\n⚠️ ${unresolved.length} call(s) were cancelled with the remote outcome unknown and may still be running: ${unresolved
+                  .map((call) => `${call.server}.${call.tool}`)
+                  .join(", ")}. Do not retry them automatically; check the provider's state.`
+              : "";
           throw new Error(
             guardText(
-              `${error.message}${logs}\n\n${error.calls.length} tool call(s) ran before the failure; provider writes are not rolled back.`,
+              `${error.message}${logs}\n\n${error.calls.length} tool call(s) ran before the failure; provider writes are not rolled back.${unknown}`,
               options.env
             ).text
           );

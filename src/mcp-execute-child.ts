@@ -66,6 +66,7 @@ interface ChildToolRef {
 
 interface StartMessage {
   type: "start";
+  /** The program, already wrapped in its async function by the host. */
   code: string;
   tools: ChildToolRef[];
   /** Server ids the host advertised as bare globals. */
@@ -164,7 +165,8 @@ async function run(message: StartMessage): Promise<void> {
   const context = createContext(globals);
   try {
     const value = await runInContext(
-      `(async function recipeExecuteProgram() {\n${message.code}\n})()`,
+      // Already wrapped by the host, which owns that grammar.
+      message.code,
       context,
       { filename: "program.js" }
     );

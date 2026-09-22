@@ -169,6 +169,36 @@ describe("mcp execute mode", () => {
     ]);
   }, 15_000);
 
+  it("advertises bracket syntax for names the program's grammar forbids", () => {
+    // The probe has to run in the grammar the program runs in: `await` is a
+    // valid identifier at top level and a syntax error inside an async
+    // function, and `arguments` binds to the wrapper's own arguments object.
+    const grammar = createMcpExecuteToolSet({
+      session: {
+        ...session,
+        servers: [
+          { ...session.servers[0]!, id: "await" },
+          { ...session.servers[0]!, id: "arguments" },
+        ],
+      },
+      catalogs: [
+        { ...catalogs[0]!, id: "await" },
+        { ...catalogs[0]!, id: "arguments" },
+      ],
+      mcp: {
+        mode: "execute",
+        servers: { await: { include: ["*"] }, arguments: { include: ["*"] } },
+      } as RecipeAgentMcp,
+      env: {},
+    });
+    expect(grammar.disclosed.map((tool) => tool.callable)).toEqual([
+      'tools["await"].list_records',
+      'tools["await"].update_record',
+      'tools["arguments"].list_records',
+      'tools["arguments"].update_record',
+    ]);
+  });
+
   it("advertises bracket syntax for a name that cannot hold a binding", () => {
     // `undefined` is a valid normalized server id and a valid identifier, but
     // the binding is non-writable, so the bare form resolves to the primitive.
@@ -439,6 +469,59 @@ describe("mcp execute mode", () => {
     expect(text).toContain("attio.update_record");
   }, 20_000);
 
+  it("names unresolved calls when the program itself fails", async () => {
+    // A failed execution is the one most likely to be retried, so this path
+    // needs the warning more than the success path does.
+    mocks.callMcpDaemonTool.mockImplementation(
+      async (_s: unknown, _t: unknown, _a: unknown, opts: { signal?: AbortSignal }) =>
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(structured({ ok: true })), 30_000);
+          opts.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(
+              new Error(
+                "MCP tool call 'attio.update_record' was cancelled; remote outcome is unknown; do not retry automatically."
+              )
+            );
+          });
+        })
+    );
+    await expect(
+      run(
+        toolSet(everything, { PI_RECIPES_MCP_EXECUTE_DRAIN_MS: "200" }),
+        `void attio.update_record({ id: "1" }); throw new Error("boom");`
+      )
+    ).rejects.toThrow(/remote outcome unknown[\s\S]*attio\.update_record/);
+  }, 20_000);
+
+  it("starts no provider call after the run has settled", async () => {
+    // The child is killed at settlement, but stdout already queued still
+    // arrives; servicing one of those frames would start a write after
+    // cancellation, against a drain that has already been taken.
+    mocks.callMcpDaemonTool.mockImplementation(
+      async () => structured({ ok: true })
+    );
+    await expect(
+      run(
+        toolSet(everything, {
+          PI_RECIPES_MCP_EXECUTE_TIMEOUT_MS: "400",
+          PI_RECIPES_MCP_EXECUTE_MAX_CALLS: "100000",
+          PI_RECIPES_MCP_EXECUTE_DRAIN_MS: "50",
+        }),
+        // Emits right up to the kill, so frames are still buffered when the
+        // wall clock fires — which is what makes the race reachable at all.
+        `for (let i = 0; i < 200000; i += 1) {
+           void attio.list_records({ object: "deals" });
+           if (i % 50 === 0) await sleep(1);
+         }
+         return "never";`
+      )
+    ).rejects.toThrow(/exceeded/);
+    const atSettle = mocks.callMcpDaemonTool.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(mocks.callMcpDaemonTool.mock.calls.length).toBe(atSettle);
+  }, 20_000);
+
   it("does not hold the event loop after a program finishes", async () => {
     mocks.callMcpDaemonTool.mockResolvedValue(structured({ ok: true }));
     const started = Date.now();
@@ -642,6 +725,28 @@ describe("tool search over an execute catalog", () => {
     const text = (result.content as Array<{ text: string }>)[0]!.text;
     expect(text).toContain("attio.list_records(args)");
     expect(text.length).toBeLessThan(2_000);
+  });
+
+  it("keeps tool_search for an execute catalog with nothing to disclose", async () => {
+    // Execute mode documents a two-tool surface, so a skill calling
+    // `tool_search` should get a no-match answer, not an unavailable tool.
+    const search = createRecipeToolSearch({
+      tools: [],
+      deferredToolNames: [],
+      activation: { getActiveTools: () => [], setActiveTools: () => {} },
+      disclosed: [],
+      alwaysRegister: true,
+    });
+    expect(search).toBeDefined();
+    const result = await (search!.execute as any)(
+      "call-1",
+      { query: "anything" },
+      undefined,
+      undefined
+    );
+    expect((result.content as Array<{ text: string }>)[0]!.text).toContain(
+      "No inactive Recipe tools matched"
+    );
   });
 
   it("spends one limit across both catalogs", async () => {

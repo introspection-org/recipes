@@ -147,6 +147,7 @@ interface RecipeLaunchState {
   initialMcpToolNames: string[];
   mcpDeferredToolNames: string[];
   mcpDisclosedTools: RecipeDisclosedTool[];
+  mcpExecuteMode: boolean;
   initialConnectorToolNames: string[];
   connectorToolNames: string[];
   connectorDeferredToolNames: string[];
@@ -731,6 +732,7 @@ export function createRecipesExtension(
       initialMcpToolNames: [],
       mcpDeferredToolNames: [],
       mcpDisclosedTools: [],
+      mcpExecuteMode: false,
       initialConnectorToolNames: [],
       connectorToolNames: [],
       connectorDeferredToolNames: [],
@@ -926,7 +928,10 @@ export function createRecipesExtension(
       ...launchState.mcpDeferredToolNames,
     ];
     const disclosedTools = launchState.mcpDisclosedTools;
-    const searchable = deferredToolNames.length > 0 || disclosedTools.length > 0;
+    const searchable =
+      deferredToolNames.length > 0 ||
+      disclosedTools.length > 0 ||
+      launchState.mcpExecuteMode;
     if (searchable && !launchState.toolSearchRegistered) {
       const toolSearchTools = createRecipeToolSearchTools({
         tools: pi.getAllTools(),
@@ -936,6 +941,7 @@ export function createRecipesExtension(
           setActiveTools: (names) => pi.setActiveTools(names),
         },
         ...(disclosedTools.length > 0 ? { disclosed: disclosedTools } : {}),
+        ...(launchState.mcpExecuteMode ? { alwaysRegister: true } : {}),
       }, launchState.mcpDeferredToolNames.length > 0);
       if (toolSearchTools.length === 0) {
         throw new Error("Recipe tool search has no deferred tools");
@@ -984,6 +990,7 @@ export function createRecipesExtension(
     launchState.initialMcpToolNames = [];
     launchState.mcpDeferredToolNames = [];
     launchState.mcpDisclosedTools = [];
+    launchState.mcpExecuteMode = false;
     configureMcpLocalConfigPath({
       cwd: launchState.cwd,
       recipeDir: launchState.resolved.recipeDir,
@@ -1124,6 +1131,7 @@ export function createRecipesExtension(
         materialized.initialActiveToolNames;
       launchState.mcpDeferredToolNames = materialized.deferredToolNames;
       launchState.mcpDisclosedTools = executeSet?.disclosed ?? [];
+      launchState.mcpExecuteMode = executeSet !== undefined;
       for (const toolName of materialized.toolNames) {
         launchState.extensionAllowedToolNames.add(toolName);
       }

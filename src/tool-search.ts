@@ -22,6 +22,8 @@ export interface RecipeToolSearchOptions {
    * which is what lets one skill be written against either MCP mode.
    */
   disclosed?: readonly RecipeDisclosedTool[];
+  /** Register even with nothing to search, for modes that promise the tool. */
+  alwaysRegister?: boolean;
 }
 
 export interface RecipeDisclosedTool extends RecipeSearchableTool {
@@ -219,7 +221,12 @@ export function createRecipeToolSearch(
     return tool;
   });
   const disclosed = options.disclosed ?? [];
-  if (deferred.length === 0 && disclosed.length === 0) return undefined;
+  // Execute mode documents a stable two-tool surface, so its `tool_search` is
+  // registered even with nothing to disclose — a skill that calls it should get
+  // a no-match answer, not an unavailable tool.
+  if (deferred.length === 0 && disclosed.length === 0 && !options.alwaysRegister) {
+    return undefined;
+  }
   if (toolsByName.has(RECIPE_TOOL_SEARCH_NAME)) {
     throw new Error(
       `Recipe tool name '${RECIPE_TOOL_SEARCH_NAME}' is reserved by the session`
