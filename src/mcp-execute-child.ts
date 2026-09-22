@@ -17,6 +17,32 @@
 
 import { createContext, runInContext } from "node:vm";
 
+/**
+ * Node's permission model gates the filesystem, subprocesses, workers and
+ * addons, but it has no network gate — an escaped program would otherwise find
+ * a working `fetch` in this realm and could post tool results anywhere. Remove
+ * the surface before the program runs. This is defence in depth, not the
+ * boundary: what actually bounds reachability is the sandbox's own egress
+ * policy, and what makes an escape low-value is that this process holds no
+ * credential.
+ */
+for (const name of [
+  "fetch",
+  "WebSocket",
+  "EventSource",
+  "XMLHttpRequest",
+  "Response",
+  "Request",
+  "Headers",
+  "FormData",
+]) {
+  try {
+    delete (globalThis as Record<string, unknown>)[name];
+  } catch {
+    // A non-configurable global stays; the sandbox egress policy still applies.
+  }
+}
+
 interface ChildToolRef {
   server: string;
   tool: string;
@@ -26,6 +52,8 @@ interface StartMessage {
   type: "start";
   code: string;
   tools: ChildToolRef[];
+  /** Server ids the host advertised as bare globals. */
+  globals: string[];
 }
 
 interface CallResultMessage {
@@ -55,11 +83,6 @@ function callParent(server: string, tool: string, args: unknown): Promise<unknow
     pending.set(id, { resolve, reject });
     send({ type: "call", id, server, tool, args });
   });
-}
-
-/** Identifier-safe server ids also become bare globals; the rest need `tools[...]`. */
-function identifierSafe(value: string): boolean {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value);
 }
 
 function buildSurface(tools: readonly ChildToolRef[]): Record<string, unknown> {
@@ -108,10 +131,9 @@ async function run(message: StartMessage): Promise<void> {
         setTimeout(resolve, Math.min(Math.max(Number(ms) || 0, 0), 30_000))
       ),
   };
-  for (const [server, namespace] of Object.entries(surface)) {
-    if (identifierSafe(server) && !Object.hasOwn(globals, server)) {
-      globals[server] = namespace;
-    }
+  for (const server of message.globals) {
+    const namespace = surface[server];
+    if (namespace && !Object.hasOwn(globals, server)) globals[server] = namespace;
   }
 
   const context = createContext(globals);

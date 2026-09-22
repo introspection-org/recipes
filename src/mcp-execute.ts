@@ -28,6 +28,7 @@ import {
 
 const DEFAULT_PROGRAM_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_CALLS = 100;
+const DRAIN_TIMEOUT_MS = 5_000;
 
 export interface McpExecuteCallRecord {
   server: string;
@@ -74,11 +75,42 @@ function nearestPackageManifest(from: string): string | undefined {
   }
 }
 
-function callableExpression(serverId: string, toolName: string): string {
-  const safeServer = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(serverId);
-  const safeTool = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(toolName);
-  const namespace = safeServer ? serverId : `tools[${JSON.stringify(serverId)}]`;
-  return safeTool
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * Names a server id cannot take as a bare global.
+ *
+ * Reserved words are a syntax error as a variable, and the runner's own globals
+ * already hold those bindings — advertising `sleep.foo` would send the model to
+ * a call that throws while `tools["sleep"].foo` works.
+ */
+const UNAVAILABLE_GLOBALS = new Set([
+  "tools", "console", "sleep",
+  "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false",
+  "finally", "for", "function", "if", "implements", "import", "in",
+  "instanceof", "interface", "let", "new", "null", "package", "private",
+  "protected", "public", "return", "static", "super", "switch", "this",
+  "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
+]);
+
+function bareGlobalServers(serverIds: Iterable<string>): Set<string> {
+  return new Set(
+    [...serverIds].filter(
+      (id) => IDENTIFIER.test(id) && !UNAVAILABLE_GLOBALS.has(id)
+    )
+  );
+}
+
+function callableExpression(
+  serverId: string,
+  toolName: string,
+  bareGlobals: ReadonlySet<string>
+): string {
+  const namespace = bareGlobals.has(serverId)
+    ? serverId
+    : `tools[${JSON.stringify(serverId)}]`;
+  return IDENTIFIER.test(toolName)
     ? `${namespace}.${toolName}`
     : `${namespace}[${JSON.stringify(toolName)}]`;
 }
@@ -103,6 +135,7 @@ class ProgramFailure extends Error {
 async function runProgram(options: {
   code: string;
   registry: ReadonlyMap<string, UsableMcpTool>;
+  bareGlobals: ReadonlySet<string>;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
 }): Promise<ProgramOutcome> {
@@ -141,18 +174,41 @@ async function runProgram(options: {
   let stderr = "";
   let settled = false;
   let admitted = 0;
+  // A program can start a call without awaiting it. The call is still a real
+  // provider call, so it has to be accounted for before the tool reports an
+  // outcome — otherwise `void attio["update-record"](...)` returns success with
+  // an empty call list while the write is still in flight.
+  const inFlight = new Set<Promise<void>>();
+  const abandoned = new AbortController();
 
   return await new Promise<ProgramOutcome>((resolve, reject) => {
-    const finish = (outcome: () => void) => {
+    const finish = (outcome: () => void, abortInFlight: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
+      // The child is killed first so it cannot start anything else, then what
+      // is already in flight is drained. A drain that outlives its own bound
+      // stops being waited on rather than holding the turn open.
       child.kill("SIGKILL");
-      outcome();
+      if (abortInFlight) abandoned.abort();
+      const drained =
+        inFlight.size === 0
+          ? Promise.resolve()
+          : Promise.race([
+              Promise.allSettled([...inFlight]),
+              new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS)),
+            ]);
+      void drained.then(outcome);
     };
-    const fail = (message: string, logs: Array<{ level: string; text: string }> = []) =>
-      finish(() => reject(new ProgramFailure(message, calls, logs)));
+    const fail = (
+      message: string,
+      logs: Array<{ level: string; text: string }> = []
+    ) =>
+      finish(
+        () => reject(new ProgramFailure(message, calls, logs)),
+        true
+      );
 
     const timer = setTimeout(
       () => fail(`Program exceeded ${timeoutMs}ms and was terminated.`),
@@ -201,7 +257,7 @@ async function runProgram(options: {
           {
             env: options.env,
             timeoutMs: mcpCallTimeoutMs(options.env),
-            ...(options.signal ? { signal: options.signal } : {}),
+            signal: abandoned.signal,
           }
         );
         const value = mcpResultValue(authorized, raw, options.env);
@@ -234,19 +290,22 @@ async function runProgram(options: {
           continue;
         }
         if (message.type === "call") {
-          void serviceCall(
+          const call = serviceCall(
             Number(message.id),
             String(message.server),
             String(message.tool),
             message.args
-          );
+          ).finally(() => inFlight.delete(call));
+          inFlight.add(call);
           continue;
         }
         const logs = Array.isArray(message.logs)
           ? (message.logs as Array<{ level: string; text: string }>)
           : [];
         if (message.type === "done") {
-          finish(() => resolve({ value: message.value, logs, calls }));
+          // Not aborted: a fire-and-forget call is allowed to complete so the
+          // record describes what actually reached the provider.
+          finish(() => resolve({ value: message.value, logs, calls }), false);
           continue;
         }
         if (message.type === "error") {
@@ -277,6 +336,7 @@ async function runProgram(options: {
         server: tool.serverId,
         tool: tool.catalog.name,
       })),
+      globals: [...options.bareGlobals],
     });
   });
 }
@@ -337,12 +397,13 @@ export function createMcpExecuteToolSet(options: {
 }): McpExecuteToolSet {
   const { usable, unusable } = resolveAuthorizedMcpTools(options);
   const registry = new Map(usable.map((tool) => [tool.canonicalName, tool]));
+  const bareGlobals = bareGlobalServers(usable.map((tool) => tool.serverId));
   const disclosed: RecipeDisclosedTool[] = usable.map((tool) => ({
     name: tool.canonicalName,
     label: tool.catalog.name,
     description: tool.catalog.description ?? `MCP tool ${tool.canonicalName}`,
     parameters: tool.inputSchema,
-    callable: callableExpression(tool.serverId, tool.catalog.name),
+    callable: callableExpression(tool.serverId, tool.catalog.name, bareGlobals),
   }));
 
   const execute: ToolDefinition = {
@@ -355,7 +416,7 @@ export function createMcpExecuteToolSet(options: {
       "",
       "A call returns the server's structured result when it declares one, otherwise its text content — parsed as JSON when it parses, and left as a string when it does not. A server with no output schema usually means strings: parse out what you need rather than assuming fields. A failed call throws, so ordinary `try`/`catch` works.",
       "",
-      "Write the body only — no wrapper, no imports. `return` the value you want; it is the only thing that enters the conversation, so filter and aggregate here rather than returning raw pages. `console.log` is captured. `sleep(ms)` is available. There is no network, no filesystem and no shell.",
+      "Write the body only — no wrapper, no imports. `return` the value you want; it is the only thing that enters the conversation, so filter and aggregate here rather than returning raw pages. `console.log` is captured. `sleep(ms)` is available. There is no filesystem, no shell and no network client: the authorized tools are the only way out.",
       "",
       "Prefer this over one tool call per record: a loop that reads thirty deals and writes three times each is one call here.",
       "",
@@ -378,6 +439,7 @@ export function createMcpExecuteToolSet(options: {
         outcome = await runProgram({
           code,
           registry,
+          bareGlobals,
           env: options.env,
           ...(signal ? { signal } : {}),
         });

@@ -106,6 +106,35 @@ describe("mcp execute mode", () => {
     expect(existsSync(mcpExecuteChildPath())).toBe(true);
   });
 
+  it("advertises bracket syntax for a server id that cannot be a bare global", () => {
+    const reserved = createMcpExecuteToolSet({
+      session: {
+        ...session,
+        servers: [
+          { ...session.servers[0]!, id: "delete" },
+          { ...session.servers[0]!, id: "sleep" },
+        ],
+      },
+      catalogs: [
+        { ...catalogs[0]!, id: "delete" },
+        { ...catalogs[0]!, id: "sleep" },
+      ],
+      mcp: {
+        mode: "execute",
+        servers: { delete: { include: ["*"] }, sleep: { include: ["*"] } },
+      } as RecipeAgentMcp,
+      env: {},
+    });
+    // `delete` is a reserved word and `sleep` is one of the runner's own
+    // globals; a bare-global form would send the model to a call that throws.
+    expect(reserved.disclosed.map((tool) => tool.callable)).toEqual([
+      'tools["delete"].list_records',
+      'tools["delete"].update_record',
+      'tools["sleep"].list_records',
+      'tools["sleep"].update_record',
+    ]);
+  });
+
   it("registers one tool whatever the catalog size", () => {
     const set = toolSet(everything);
     expect(set.toolNames).toEqual(["execute"]);
@@ -219,6 +248,24 @@ describe("mcp execute mode", () => {
     expect(mocks.callMcpDaemonTool).not.toHaveBeenCalled();
   });
 
+  it("records a call the program started but never awaited", async () => {
+    mocks.callMcpDaemonTool.mockImplementation(
+      async () =>
+        await new Promise((resolve) =>
+          setTimeout(() => resolve(structured({ ok: true })), 200)
+        )
+    );
+    const { details } = await run(
+      toolSet(everything),
+      `void attio.update_record({ id: "a" }); return "done";`
+    );
+    // The write reached the provider, so the outcome has to say so rather than
+    // reporting success with an empty call list.
+    expect(details.calls).toHaveLength(1);
+    expect(details.calls[0]!.tool).toBe("update_record");
+    expect(mocks.callMcpDaemonTool).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
   it("gives the program no host globals", async () => {
     const { text } = await run(
       toolSet(everything),
@@ -249,6 +296,8 @@ describe("mcp execute mode", () => {
        try { await Realm("return import('node:child_process')")(); dynamicImport = "REACHABLE"; }
        catch (error) { dynamicImport = error.code ?? "blocked"; }
        return {
+         fetchInRealm: Realm("return typeof fetch")(),
+         webSocketInRealm: Realm("return typeof WebSocket")(),
          envKeys: Object.keys(proc.env),
          permissionModel: typeof proc.permission?.has === "function",
          canSpawn: proc.permission?.has("child") ?? true,
@@ -258,6 +307,8 @@ describe("mcp execute mode", () => {
        };`
     );
     expect(JSON.parse(text)).toEqual({
+      fetchInRealm: "undefined",
+      webSocketInRealm: "undefined",
       envKeys: [],
       permissionModel: true,
       canSpawn: false,

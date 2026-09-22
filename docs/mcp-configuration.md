@@ -131,10 +131,19 @@ about what an agent may call. A program naming anything outside it fails; it
 cannot widen its own authorization.
 
 The program runs in its own process with no environment, under Node's
-permission model, inside a fresh `vm` context. It therefore has no network, no
-filesystem, no shell, no credentials, and no way to reach a provider except by
-calling an authorized tool. `execute` is not a substitute for `bash`, and an
-agent that carries only `execute` does not gain a shell.
+permission model, inside a fresh `vm` context. It holds no credentials, and the
+authorized tools are its only way to reach a provider. `execute` is not a
+substitute for `bash`, and an agent that carries only `execute` does not gain
+one.
+
+⚠️ What is enforced and what is defence in depth differ, and the difference is
+worth knowing. Node's permission model gates the filesystem, subprocesses,
+workers and addons — those are denied outright, and an escape from the `vm`
+context does not recover them. It has **no network gate**, so the runner
+removes `fetch` and the other network globals from its own realm before the
+program starts. That closes the reachable path rather than proving none exists;
+what bounds network reachability is the sandbox's egress policy, and what makes
+an escape low-value is that the process holds no credential to present.
 
 ⚠️ A program that fails part-way leaves whatever provider writes already
 succeeded. Nothing is rolled back and non-idempotent writes are not retried;
