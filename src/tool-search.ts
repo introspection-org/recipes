@@ -36,6 +36,33 @@ export interface RecipeSearchableTool {
   readonly parameters?: unknown;
 }
 
+const SCHEMA_MAX_CHARS = 1_200;
+
+/**
+ * A disclosed tool's arguments, bounded.
+ *
+ * A search returns up to ten of these and they are model-visible, so an
+ * unbounded serialization of a large catalog schema would blow past the limits
+ * `execute` applies to its own output. A truncated JSON blob is worse than
+ * useless for writing a call, so an oversized schema degrades to its property
+ * names and required set instead.
+ */
+function renderParameters(parameters: unknown): string {
+  const rendered = JSON.stringify(parameters ?? {});
+  if (rendered.length <= SCHEMA_MAX_CHARS) return rendered;
+  const schema = parameters as {
+    properties?: Record<string, unknown>;
+    required?: unknown;
+  };
+  const names = Object.keys(schema?.properties ?? {});
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  return names.length > 0
+    ? `{ properties: ${names.join(", ")}${
+        required.length > 0 ? `; required: ${required.join(", ")}` : ""
+      } } (schema too large to show in full)`
+    : "(schema too large to show)";
+}
+
 interface ScoredTool<T extends RecipeSearchableTool = RecipeSearchableTool> {
   tool: T;
   score: number;
@@ -222,7 +249,7 @@ export function createRecipeToolSearch(
             ...signatures.map(({ tool }) =>
               [
                 `- ${tool.callable}(args)${tool.description ? ` — ${tool.description}` : ""}`,
-                `  args: ${JSON.stringify(tool.parameters ?? {})}`,
+                `  args: ${renderParameters(tool.parameters)}`,
               ].join("\n")
             ),
           ].join("\n")

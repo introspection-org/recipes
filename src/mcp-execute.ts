@@ -125,6 +125,26 @@ function callableExpression(
     : `${namespace}[${JSON.stringify(toolName)}]`;
 }
 
+/**
+ * How the runner is launched.
+ *
+ * Exported so the permission flags are assertable: the program cannot check
+ * them from inside once `process` is removed from its realm, and a silently
+ * dropped `--permission` would take the filesystem, subprocess and worker
+ * denials with it.
+ */
+export function executeChildArgs(
+  childPath: string,
+  manifest: string | undefined
+): string[] {
+  return [
+    "--permission",
+    `--allow-fs-read=${dirname(childPath)}`,
+    ...(manifest ? [`--allow-fs-read=${manifest}`] : []),
+    childPath,
+  ];
+}
+
 interface ProgramOutcome {
   value: unknown;
   logs: Array<{ level: string; text: string }>;
@@ -158,12 +178,7 @@ async function runProgram(options: {
   const manifest = nearestPackageManifest(childPath);
   const child = spawn(
     process.execPath,
-    [
-      "--permission",
-      `--allow-fs-read=${dirname(childPath)}`,
-      ...(manifest ? [`--allow-fs-read=${manifest}`] : []),
-      childPath,
-    ],
+    executeChildArgs(childPath, manifest),
     {
       // No credentials, no daemon token, no egress URL. This is the boundary,
       // not a convenience: an escaped program has nothing to authenticate with.

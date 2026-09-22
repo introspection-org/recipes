@@ -936,7 +936,7 @@ export function createRecipesExtension(
           setActiveTools: (names) => pi.setActiveTools(names),
         },
         ...(disclosedTools.length > 0 ? { disclosed: disclosedTools } : {}),
-      }, launchState.mcpDeferredToolNames.length > 0 || disclosedTools.length > 0);
+      }, launchState.mcpDeferredToolNames.length > 0);
       if (toolSearchTools.length === 0) {
         throw new Error("Recipe tool search has no deferred tools");
       }
@@ -954,8 +954,7 @@ export function createRecipesExtension(
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),
       ...launchState.initialMcpToolNames,
       ...(searchable ? [RECIPE_TOOL_SEARCH_NAME] : []),
-      ...(launchState.mcpDeferredToolNames.length > 0 ||
-      disclosedTools.length > 0
+      ...(launchState.mcpDeferredToolNames.length > 0
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
     ]);

@@ -14,6 +14,7 @@ vi.mock("../src/mcp-daemon-client.js", () => ({
 
 import {
   createMcpExecuteToolSet,
+  executeChildArgs,
   mcpExecuteChildPath,
 } from "../src/mcp-execute.js";
 import type { McpExecuteDetails } from "../src/mcp-execute.js";
@@ -150,6 +151,15 @@ describe("mcp execute mode", () => {
     expect(immutable.disclosed.map((tool) => tool.callable)).toEqual([
       'tools["undefined"].list_records',
     ]);
+  });
+
+  it("launches the runner under the permission model", () => {
+    const args = executeChildArgs("/pkg/dist/mcp-execute-child.js", "/pkg/package.json");
+    expect(args[0]).toBe("--permission");
+    expect(args).toContain("--allow-fs-read=/pkg/dist");
+    expect(args).toContain("--allow-fs-read=/pkg/package.json");
+    // Nothing else is granted: the session directory stays unreadable.
+    expect(args.filter((arg) => arg.startsWith("--allow"))).toHaveLength(2);
   });
 
   it("registers one tool whatever the catalog size", () => {
@@ -334,36 +344,36 @@ describe("mcp execute mode", () => {
   // `node:vm` is not a security boundary, so the boundary is the process the
   // program runs in. `sleep` is a host function, which is the escape hatch the
   // context cannot close; reach the runner's own realm through it and assert
-  // that what it finds there is worthless. Both defences are checked because
-  // either one alone would decay silently: the empty environment leaves nothing
-  // to authenticate with, and the permission model leaves nothing to spawn.
+  // that what it finds there is worthless. The permission model itself is
+  // asserted separately, on the spawn arguments — once `process` is gone the
+  // program can no longer read `process.permission` to check it from inside.
   it("holds the boundary after a vm escape into the runner realm", async () => {
     const { text } = await run(
       toolSet(everything),
       `const Realm = sleep.constructor;
-       const proc = Realm("return process")();
+       const proc = Realm("return typeof process === 'undefined' ? undefined : process")();
        let dynamicImport;
        try { await Realm("return import('node:child_process')")(); dynamicImport = "REACHABLE"; }
        catch (error) { dynamicImport = error.code ?? "blocked"; }
        return {
          fetchInRealm: Realm("return typeof fetch")(),
          webSocketInRealm: Realm("return typeof WebSocket")(),
-         envKeys: Object.keys(proc.env),
-         permissionModel: typeof proc.permission?.has === "function",
-         canSpawn: proc.permission?.has("child") ?? true,
-         canStartWorker: proc.permission?.has("worker") ?? true,
-         canReadSessionDir: proc.permission?.has("fs.read", "/") ?? true,
+         processInRealm: Realm("return typeof process")(),
+         builtinModule: Realm(
+           "try { return typeof process.getBuiltinModule('node:http') } catch (e) { return e.constructor.name }"
+         )(),
+         envKeys: proc === undefined ? [] : Object.keys(proc.env),
          dynamicImport,
        };`
     );
     expect(JSON.parse(text)).toEqual({
       fetchInRealm: "undefined",
       webSocketInRealm: "undefined",
+      // Removing `process` takes `getBuiltinModule` with it, which is the
+      // synchronous route to `node:http` that deleting `fetch` alone left open.
+      processInRealm: "undefined",
+      builtinModule: "ReferenceError",
       envKeys: [],
-      permissionModel: true,
-      canSpawn: false,
-      canStartWorker: false,
-      canReadSessionDir: false,
       dynamicImport: "ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING",
     });
   });

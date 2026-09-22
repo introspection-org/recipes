@@ -821,8 +821,10 @@ async function createSessionForAgent(
         setActiveTools: (names) => session?.setActiveToolsByName(names),
       },
       ...(mcp.disclosedTools ? { disclosed: mcp.disclosedTools } : {}),
-    }, (mcp.deferredToolNames?.length ?? 0) > 0 ||
-      (mcp.disclosedTools?.length ?? 0) > 0);
+      // `mcp_search` is the compatibility name for the DEFERRED-tool
+      // behaviour. Execute mode discloses rather than defers, and its surface
+      // is documented as two tools, so a disclosure must not summon a third.
+    }, (mcp.deferredToolNames?.length ?? 0) > 0);
     const occupiedSearchTool = toolSearchTools.find((tool) =>
       occupiedToolNames.has(tool.name)
     );

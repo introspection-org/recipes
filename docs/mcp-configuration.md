@@ -139,11 +139,18 @@ one.
 ⚠️ What is enforced and what is defence in depth differ, and the difference is
 worth knowing. Node's permission model gates the filesystem, subprocesses,
 workers and addons — those are denied outright, and an escape from the `vm`
-context does not recover them. It has **no network gate**, so the runner
-removes `fetch` and the other network globals from its own realm before the
-program starts. That closes the reachable path rather than proving none exists;
-what bounds network reachability is the sandbox's egress policy, and what makes
-an escape low-value is that the process holds no credential to present.
+context does not recover them. It has **no network gate**. The runner therefore
+removes the network globals *and `process` itself* from its own realm before
+the program starts, keeping only the stdio it captured first:
+`process.getBuiltinModule("node:http")` returns a working socket API
+synchronously with no import to block, so removing `fetch` alone left the path
+open and only taking the capability root closes it.
+
+That is still defence in depth rather than a boundary — it removes the paths
+that are known and reachable, and cannot prove none remains. What bounds
+network reachability is the sandbox's egress policy, and what makes an escape
+low-value is that the process is spawned with `env: {}` and holds no credential
+to present.
 
 ⚠️ A program that fails part-way leaves whatever provider writes already
 succeeded. Nothing is rolled back and non-idempotent writes are not retried;

@@ -18,14 +18,24 @@
 import { createContext, runInContext } from "node:vm";
 
 /**
+ * Capture the runner's own stdio, then take the capability root away.
+ *
  * Node's permission model gates the filesystem, subprocesses, workers and
- * addons, but it has no network gate — an escaped program would otherwise find
- * a working `fetch` in this realm and could post tool results anywhere. Remove
- * the surface before the program runs. This is defence in depth, not the
- * boundary: what actually bounds reachability is the sandbox's own egress
- * policy, and what makes an escape low-value is that this process holds no
- * credential.
+ * addons, but it has no network gate — and removing `fetch` alone is not
+ * enough, because `process.getBuiltinModule("node:http")` hands back a working
+ * socket API synchronously, with no import to block. Deleting `process`
+ * removes that, `process.binding` and everything else reachable through it in
+ * one move, while the captured streams keep this runner working.
+ *
+ * ⚠️ This is defence in depth, not a boundary. It removes the paths that are
+ * known and reachable; it cannot prove none remains. What bounds network
+ * reachability is the sandbox's egress policy, and what makes an escape
+ * low-value is that this process is spawned with `env: {}` and holds no
+ * credential to present.
  */
+const stdout = process.stdout;
+const stdin = process.stdin;
+
 for (const name of [
   "fetch",
   "WebSocket",
@@ -35,6 +45,7 @@ for (const name of [
   "Request",
   "Headers",
   "FormData",
+  "process",
 ]) {
   try {
     delete (globalThis as Record<string, unknown>)[name];
@@ -74,7 +85,7 @@ let nextCallId = 0;
 let started = false;
 
 function send(message: unknown): void {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  stdout.write(`${JSON.stringify(message)}\n`);
 }
 
 function callParent(server: string, tool: string, args: unknown): Promise<unknown> {
@@ -169,8 +180,8 @@ function handle(message: ParentMessage): void {
 }
 
 let buffer = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk: string) => {
+stdin.setEncoding("utf8");
+stdin.on("data", (chunk: string) => {
   buffer += chunk;
   let newline = buffer.indexOf("\n");
   while (newline !== -1) {
