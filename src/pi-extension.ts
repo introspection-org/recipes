@@ -1080,7 +1080,8 @@ export function createRecipesExtension(
         env: privateRuntime.env,
         mcporterConfigPath: privateRuntime.mcporterConfigPath,
       });
-      if (session.servers.length === 0) {
+      const empty = session.servers.length === 0;
+      if (empty) {
         const detail = formatMcpConfigurationDiagnostics(
           session.diagnostics ?? []
         );
@@ -1091,13 +1092,21 @@ export function createRecipesExtension(
           ].join("\n"),
           "warning"
         );
-        launchState.mcpConfigured = true;
-        return;
+        // Execute mode promises a two-tool surface whatever the catalog holds,
+        // and the session API already keeps that promise for an empty session.
+        // Returning here would make the same recipe expose different tools
+        // depending on which host launched it.
+        if (launchState.agentMcpMode !== "execute") {
+          launchState.mcpConfigured = true;
+          return;
+        }
       }
-      const catalogs = await preloadMcpCatalogs({
-        env: privateRuntime.env,
-        allowPartial: true,
-      });
+      const catalogs = empty
+        ? []
+        : await preloadMcpCatalogs({
+            env: privateRuntime.env,
+            allowPartial: true,
+          });
       const modeOptions = {
         session,
         catalogs,
