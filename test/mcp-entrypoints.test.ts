@@ -1,6 +1,9 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { join } from "node:path";
+import { readFileSync } from "node:fs";
+
 import {
   mcpCliEntrypointPath,
   mcpClientEntrypointPath,
@@ -23,5 +26,28 @@ describe("the entrypoints the mcp shim execs", () => {
     const path = resolve();
     expect(path).toMatch(/\.(js|mjs|cjs)$/);
     expect(existsSync(path), path).toBe(true);
+  });
+});
+
+/**
+ * `build-mcp-daemon.mjs` bundles the daemon and the run worker as flat
+ * siblings in dist, while their sources sit in different folders. The daemon
+ * reaches the worker by `new URL(...)` against its own bundled location, so
+ * the specifier names the OUTPUT layout — rewrite it to match the source tree
+ * and it typechecks, builds, and fails only when a run starts a worker.
+ */
+describe("the bundled daemon and its run worker", () => {
+  const dist = join(import.meta.dirname, "..", "dist");
+
+  it.each([["mcp-daemon.js"], ["mcp-run-worker.js"]])(
+    "emits %s at the dist root",
+    (name) => {
+      expect(existsSync(join(dist, name)), name).toBe(true);
+    }
+  );
+
+  it("resolves the worker as its own sibling", () => {
+    const bundle = readFileSync(join(dist, "mcp-daemon.js"), "utf8");
+    expect(bundle).toContain('"./mcp-run-worker.js"');
   });
 });

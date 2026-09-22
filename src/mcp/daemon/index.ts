@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { context } from "@opentelemetry/api";
@@ -166,6 +167,19 @@ function runTimeoutMs(): number {
   return Number.isSafeInteger(value) && value > 0 ? value : 120_000;
 }
 
+/**
+ * The daemon runs from two layouts. `build-mcp-daemon.mjs` bundles it to
+ * `dist/mcp-daemon.js` with the worker beside it as `dist/mcp-run-worker.js`,
+ * while tsc emits this module at `dist/mcp/daemon/index.js` with the worker at
+ * `dist/mcp/cli/run-worker.js`. Neither path is visible to the type checker,
+ * and picking the wrong one fails only once a run starts a worker.
+ */
+function runWorkerPath(): string {
+  const bundled = new URL("./mcp-run-worker.js", import.meta.url);
+  if (existsSync(bundled)) return fileURLToPath(bundled);
+  return fileURLToPath(new URL("../cli/run-worker.js", import.meta.url));
+}
+
 async function executeRun(
   request: Extract<McpDaemonRequest, { type: "execute" }>,
   socket: Socket,
@@ -173,7 +187,7 @@ async function executeRun(
 ): Promise<number> {
   const sharedRuntime = await runtime();
   const worker = new Worker(
-    fileURLToPath(new URL("../cli/run-worker.js", import.meta.url)),
+    runWorkerPath(),
     {
       workerData: {
         args: request.args,
