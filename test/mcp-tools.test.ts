@@ -250,6 +250,92 @@ describe("MCP tools mode", () => {
     expect(schema.properties.filter.properties.role.type).toBe("string");
   });
 
+  it("dereferences a local schema ref that indexes an array", () => {
+    const materialized = createMcpToolSet({
+      session,
+      catalogs: [
+        {
+          id: "nextplay",
+          name: "NextPlay",
+          tools: [
+            {
+              name: "create_record",
+              input_schema: {
+                $schema: "http://json-schema.org/draft-07/schema#",
+                type: "object",
+                properties: {
+                  values: {
+                    type: "object",
+                    additionalProperties: {
+                      anyOf: [
+                        {
+                          anyOf: [
+                            { type: "object", additionalProperties: {} },
+                            { type: ["string", "number", "boolean"] },
+                          ],
+                        },
+                        {
+                          type: "array",
+                          items: {
+                            $ref: "#/properties/values/additionalProperties/anyOf/0",
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+                required: ["values"],
+                additionalProperties: false,
+              },
+            },
+          ],
+        },
+      ],
+      mcp: {
+        mode: "tools",
+        servers: { nextplay: { include: ["create_record"] } },
+      },
+      env: {},
+    });
+    expect(materialized.diagnostics).toEqual([]);
+    const schema = materialized.tools[0]?.parameters as any;
+    const items =
+      schema.properties.values.additionalProperties.anyOf[1].items;
+    expect(items.$ref).toBeUndefined();
+    expect(items.anyOf[0].type).toBe("object");
+    expect(items.anyOf[1].type).toEqual(["string", "number", "boolean"]);
+    const missing = createMcpToolSet({
+      session,
+      catalogs: [
+        {
+          id: "nextplay",
+          name: "NextPlay",
+          tools: [
+            {
+              name: "create_record",
+              input_schema: {
+                type: "object",
+                properties: {
+                  values: {
+                    type: "array",
+                    items: { $ref: "#/properties/values/9" },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+      mcp: {
+        mode: "tools",
+        servers: { nextplay: { include: ["create_record"] } },
+      },
+      env: {},
+    });
+    expect(missing.tools).toEqual([]);
+    expect(missing.diagnostics[0]).toMatch(/unresolved JSON Schema reference/);
+  });
+
   it("turns MCP errors into thrown tool errors and guards large output", async () => {
     const { materialized } = createTools(
       {

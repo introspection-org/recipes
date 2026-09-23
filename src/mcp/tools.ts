@@ -102,6 +102,14 @@ function jsonPointerValue(root: Recordish, ref: string): unknown {
   let current: unknown = root;
   for (const rawPart of ref.slice(2).split("/")) {
     const part = rawPart.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (Array.isArray(current)) {
+      const index = Number(part);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        throw new Error(`unresolved JSON Schema reference '${ref}'`);
+      }
+      current = current[index];
+      continue;
+    }
     const record = asRecord(current);
     if (!record || !Object.hasOwn(record, part)) {
       throw new Error(`unresolved JSON Schema reference '${ref}'`);
