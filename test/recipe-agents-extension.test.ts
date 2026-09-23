@@ -3,7 +3,7 @@ import {
   createAgentTool,
   type AgentRunController,
 } from "../src/agents.js";
-import type { RecipeAgentDefinition } from "../src/recipe-agent.js";
+import type { RecipeAgentDefinition } from "../src/recipe/agent.js";
 
 function agents(): ReadonlyMap<string, RecipeAgentDefinition> {
   const explorer: RecipeAgentDefinition = {

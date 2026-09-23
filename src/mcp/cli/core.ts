@@ -4,7 +4,7 @@ import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/prom
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { stdin as input, stderr, stdout } from "node:process";
-import { inspect } from "node:util";
+import { inspect, parseArgs } from "node:util";
 import { isMainThread, Worker } from "node:worker_threads";
 import type { Readable, Writable } from "node:stream";
 import {
@@ -17,14 +17,20 @@ import {
   currentMcpCommandContext,
   runWithMcpCommandContext,
   type McpRuntime,
-} from "./mcp-command-context.js";
+} from "./command-context.js";
 import {
   catalogOutputSchema,
   renderToolContract,
   renderToolSignature,
   type ContractTool,
-} from "./mcp-contract.js";
-import { mcpCliHelpText } from "./mcp-cli-help.js";
+} from "../contract.js";
+import {
+  mcpCallHelpText,
+  mcpCliHelpText,
+  mcpListHelpText,
+  mcpRunHelpText,
+  mcpSearchHelpText,
+} from "./help.js";
 import {
   defaultMcporterConfigPath,
   defaultMcpSessionPath,
@@ -33,12 +39,12 @@ import {
   type McpSessionConfig,
   type McpSessionServer,
   type McpToolCatalogEntry,
-} from "./mcp.js";
+} from "../index.js";
 import {
   createMcpCliSessionPolicy,
   validateDelegatedMcpCommand,
-} from "./mcp-cli-policy.js";
-import type { McpCatalogServer } from "./mcp-daemon-protocol.js";
+} from "./policy.js";
+import type { McpCatalogServer } from "../daemon/protocol.js";
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000;
@@ -176,89 +182,12 @@ export class McpRunToolError extends Error {
   }
 }
 
-export function mcpListHelpText(): string {
-  return [
-    "Usage: mcp list [server | server.tool] [flags]",
-    "",
-    "Shows a compact view of tools materialized in this recipe session.",
-    "",
-    "Flags:",
-    "  --all-parameters          Include every optional parameter.",
-    "  --schema                  Show a compact input/output contract for one exact tool.",
-    "  --verbose                 Include full tool and parameter descriptions.",
-    "  --status                  Show concise status for an exact server target.",
-    "  --quiet, --exit-code      Health checks for an exact server target.",
-    "  --timeout <ms>            Override discovery timeout for an exact target.",
-    "  JSON is reserved for actual tool results; metadata is compact text.",
-    "",
-    "URLs, ad-hoc transports, config overrides, and persistence are unavailable in recipe sessions.",
-  ].join("\n");
-}
-
-export function mcpCallHelpText(): string {
-  return [
-    "Usage: mcp call <server>.<tool> [arguments] [flags]",
-    "",
-    "Calls exact tools materialized in this recipe session.",
-    "",
-    "Arguments:",
-    "  key=value                 Named arguments with schema-aware coercion.",
-    "  key=@path                 Read an exact UTF-8 string; use @@ for a literal @.",
-    "  --json <json|->           Supply a structured JSON object directly or from stdin.",
-    '  Array example: mcp call server.tool --json \'{"tags":["a","b"]}\'.',
-    "  Quote argument tokens containing shell operators such as |, <, >, &, or ;. JSON stdin avoids nested shell quoting.",
-    "",
-    "Output/runtime flags:",
-    "  --output text|markdown|json|raw",
-    "  --timeout <ms>",
-    "  Machine-readable output is forwarded unchanged.",
-    "  When parsing JSON, keep stderr separate and do not truncate stdout with head or sed.",
-    "",
-    "URLs, ad-hoc transports, config overrides, and persistence are unavailable in recipe sessions.",
-  ].join("\n");
-}
-
-export function mcpSearchHelpText(): string {
-  return [
-    'Usage: mcp search "what you need" [--limit N] [--regex]',
-    "",
-    "Searches only MCP tools available in this session.",
-    "Results include the exact tool ref, description, and required fields.",
-    "Try broader or alternate terms when no result matches.",
-    "Use `mcp list <server>` only to identify exact tool names, then inspect one candidate with `mcp list <server.tool> --schema`.",
-  ].join("\n");
-}
-
-export function mcpRunHelpText(): string {
-  return [
-    "Usage: mcp run [--var KEY=value] [--json-errors] [file]",
-    "",
-    'Runs a short JavaScript workflow with available MCP tools such as `tools["server"]["tool"]`.',
-    "With no file, code is read from stdin. Keep heredocs quoted and pass dynamic values with --var.",
-    "Scripts are killed after 120s by default (override with PI_RECIPES_MCP_RUN_TIMEOUT_MS).",
-    "Each tool call is capped at 60s; workflows allow at most 100 calls and run 16 at a time by default.",
-    "Extra calls wait in a FIFO queue and inherit the remaining workflow deadline.",
-    "Always await or return tool-call chains.",
-    "Detached .then/.catch calls fail if still pending when the script exits.",
-    "Structured MCP errors retain code, retryable, action, request_id, and outcome fields when supplied.",
-    "Calls return decoded JSON by default, so read response fields directly from the awaited value.",
-    "Only when a tool documents another response type, call the format on the tool itself: tool.text(args), tool.markdown(args), tool.images(args), tool.content(args), tool.structuredContent(args), or tool.raw(args).",
-    "Use Promise.all for independent reads. Await dependent calls and mutations in order.",
-    "Do not loop over mcp call in the shell. Use mcp run for repeated calls and print only the fields needed.",
-    "Use --var/vars for dynamic input; process.argv is intentionally unavailable inside workflows.",
-    "--json-errors emits a structured error object on stderr while preserving the nonzero exit code.",
-    "MCP calls are always headless. If authentication is required, ask the user to authenticate the connection outside the agent session, then retry.",
-    "A synchronous busy-loop is force-killed at the deadline.",
-    "Code runs with the same OS privileges as the active shell sandbox; mcp run is not a separate security boundary.",
-    "",
-    "Example — batch or compose multiple calls:",
-    "  mcp run <<'JS'",
-    '  const ids = ["id-1", "id-2", "id-3"]',
-    '  const results = await Promise.all(ids.map(id => tools["server"]["tool"]({ id })))',
-    "  console.log(JSON.stringify(results.map(result => ({ id: result.id, name: result.name })), null, 2))",
-    "  JS",
-  ].join("\n");
-}
+export {
+  mcpCallHelpText,
+  mcpListHelpText,
+  mcpRunHelpText,
+  mcpSearchHelpText,
+} from "./help.js";
 
 function isHelpArg(value: string | undefined): boolean {
   return value === "--help" || value === "-h" || value === "help";
@@ -782,34 +711,55 @@ export async function discoverMcpCatalogs(
   );
 }
 
-function parseSearchArgs(
+const SEARCH_OPTIONS = {
+  limit: { type: "string" },
+  regex: { type: "boolean" },
+} as const;
+
+function optionName(value: string): string {
+  const equals = value.indexOf("=");
+  return equals === -1 ? value : value.slice(0, equals);
+}
+
+export function parseSearchArgs(
   args: string[]
 ):
   | { query: string; limit: number; regex: boolean; error?: undefined }
   | { error: string } {
-  const queryParts: string[] = [];
-  let limit = 8;
-  let regex = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json") return { error: "mcp search metadata is compact text; JSON is reserved for tool results." };
-    if (arg === "--regex") {
-      regex = true;
-      continue;
-    }
-    if (arg === "--limit" || arg.startsWith("--limit=")) {
-      const raw = arg === "--limit" ? args[++index] : arg.slice("--limit=".length);
-      const value = Number(raw);
-      if (!Number.isInteger(value) || value <= 0) {
-        return { error: `--limit expects a positive integer, got '${raw ?? ""}'.` };
-      }
-      limit = Math.floor(value);
-      continue;
-    }
-    if (arg.startsWith("-")) return { error: `Unknown mcp search option '${arg}'.` };
-    queryParts.push(arg);
+  if (args.some((arg) => optionName(arg) === "--json")) {
+    return { error: "mcp search metadata is compact text; JSON is reserved for tool results." };
   }
-  return { query: queryParts.join(" "), limit, regex };
+  let parsed: ReturnType<typeof parseArgs<{ options: typeof SEARCH_OPTIONS; allowPositionals: true }>>;
+  try {
+    parsed = parseArgs({ args, options: SEARCH_OPTIONS, allowPositionals: true });
+  } catch (error) {
+    // An agent reads these and decides what to try next, so the wording stays
+    // ours rather than Node's.
+    if ((error as NodeJS.ErrnoException).code === "ERR_PARSE_ARGS_INVALID_OPTION_VALUE") {
+      // parseArgs rejects an option-shaped value (`--limit -1`) before it is
+      // read, so the value has to be recovered to name it back.
+      const index = args.findIndex((arg) => optionName(arg) === "--limit");
+      const flag = args[index] ?? "";
+      const raw = flag.includes("=")
+        ? flag.slice(flag.indexOf("=") + 1)
+        : (args[index + 1] ?? "");
+      return { error: `--limit expects a positive integer, got '${raw}'.` };
+    }
+    const unknown = args.find(
+      (arg) => arg.startsWith("-") && !(optionName(arg).slice(2) in SEARCH_OPTIONS)
+    );
+    return { error: `Unknown mcp search option '${unknown}'.` };
+  }
+  const { values, positionals } = parsed;
+  let limit = 8;
+  if (values.limit !== undefined) {
+    const value = Number(values.limit);
+    if (!Number.isInteger(value) || value <= 0) {
+      return { error: `--limit expects a positive integer, got '${values.limit}'.` };
+    }
+    limit = value;
+  }
+  return { query: positionals.join(" "), limit, regex: values.regex === true };
 }
 
 async function searchCatalog(args: string[]): Promise<number> {
@@ -908,18 +858,19 @@ function toolCount(count: number): string {
 export function parseListTimeoutMs(args: readonly string[]): number | string {
   const configured = process.env.MCPORTER_LIST_TIMEOUT;
   let raw = configured && /^[1-9]\d*$/.test(configured) ? configured : String(DEFAULT_LIST_TIMEOUT_MS);
-  for (let index = 1; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--timeout") {
-      const value = args[index + 1];
-      if (!value) return "mcp list: --timeout requires a value.";
-      raw = value;
-      break;
+  // Non-strict: every other option on this line belongs to mcporter.
+  const { values } = parseArgs({
+    args: [...args.slice(1)],
+    options: { timeout: { type: "string" } },
+    strict: false,
+    allowPositionals: true,
+  });
+  if (values.timeout !== undefined) {
+    // A trailing `--timeout` parses as a boolean rather than throwing.
+    if (typeof values.timeout !== "string" || values.timeout === "") {
+      return "mcp list: --timeout requires a value.";
     }
-    if (arg?.startsWith("--timeout=")) {
-      raw = arg.slice("--timeout=".length);
-      break;
-    }
+    raw = values.timeout;
   }
   if (!/^[1-9]\d*$/.test(raw)) {
     return "mcp list: --timeout must be a positive integer (milliseconds).";
@@ -965,30 +916,59 @@ function writeCompactListError(error: unknown): void {
   filter.flush();
 }
 
-function compactListArgumentError(args: readonly string[]): string | undefined {
-  const flags = new Set([
-    "--all-parameters",
-    "--schema",
-    "--verbose",
-    "--status",
-    "--quiet",
-    "--exit-code",
-    "--no-oauth",
-  ]);
-  const start = args[1] && !args[1].startsWith("-") ? 2 : 1;
-  for (let index = start; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--timeout") {
-      index += 1;
-      continue;
+const LIST_OPTIONS = {
+  "all-parameters": { type: "boolean" },
+  "exit-code": { type: "boolean" },
+  "no-oauth": { type: "boolean" },
+  quiet: { type: "boolean" },
+  schema: { type: "boolean" },
+  status: { type: "boolean" },
+  timeout: { type: "string" },
+  verbose: { type: "boolean" },
+} as const;
+
+const LIST_BOOLEAN_FLAGS = new Set(
+  Object.entries(LIST_OPTIONS)
+    .filter(([, spec]) => spec.type === "boolean")
+    .map(([name]) => name)
+);
+
+/**
+ * Execution matches exact tokens — `compactList` reads the target from
+ * `args[1]` and tests `args.includes("--schema")` — so anything this accepts
+ * but those cannot see is silently dropped rather than run.
+ */
+function isValidListOption(arg: string): boolean {
+  const name = optionName(arg).slice(2);
+  if (!(name in LIST_OPTIONS)) return false;
+  return !(arg.includes("=") && LIST_BOOLEAN_FLAGS.has(name));
+}
+
+export function compactListArgumentError(args: readonly string[]): string | undefined {
+  const rest = args.slice(1);
+  // The target has to lead, because that is where the policy and `compactList`
+  // both look for it. One parsed out from behind a flag would be accepted here
+  // and ignored there, listing every server instead of the one asked for.
+  const target = rest[0] !== undefined && !rest[0].startsWith("-");
+  const options = target ? rest.slice(1) : rest;
+  try {
+    const { positionals } = parseArgs({
+      args: [...options],
+      options: LIST_OPTIONS,
+      allowPositionals: true,
+    });
+    if (positionals.length > 0) {
+      return `Unexpected mcp list argument '${positionals[0]}'.`;
     }
-    if (arg.startsWith("--timeout=")) continue;
-    if (flags.has(arg)) continue;
-    return arg.startsWith("-")
-      ? `Unknown mcp list option '${arg}'.`
-      : `Unexpected mcp list argument '${arg}'.`;
+    return undefined;
+  } catch {
+    const offending = options.find(
+      (arg) => arg.startsWith("-") && !isValidListOption(arg)
+    );
+    // Nothing invalid means a trailing `--timeout`, which parseListTimeoutMs
+    // reports with the message that names the value it wanted.
+    return offending ? `Unknown mcp list option '${offending}'.` : undefined;
   }
-  return undefined;
 }
 
 async function compactList(args: string[]): Promise<number> {

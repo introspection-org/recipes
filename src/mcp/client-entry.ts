@@ -6,8 +6,8 @@ import {
   ensureMcpDaemon,
   exchangeMcpDaemon,
   mcpDaemonEnvironment,
-} from "./mcp-daemon-client.js";
-import { mcpTraceContextFromEnv } from "./mcp-trace-context.js";
+} from "./daemon/client.js";
+import { mcpTraceContextFromEnv } from "./trace-context.js";
 
 function commandNeedsStdin(args: readonly string[]): boolean {
   if (args.some((arg, index) => arg === "--json" && args[index + 1] === "-")) return true;

@@ -53,21 +53,21 @@ jobs:
         with:
           version: "0.11.21"
           enable-cache: true
-          cache-dependency-glob: bindings/python/uv.lock
+          cache-dependency-glob: packages/recipe-check-python/uv.lock
 
-      - run: uv sync --project bindings/python --locked
+      - run: uv sync --project packages/recipe-check-python --locked
 
-      - run: uv run --project bindings/python --locked ruff format --check bindings/python/python bindings/python/tests
+      - run: uv run --project packages/recipe-check-python --locked ruff format --check packages/recipe-check-python/python packages/recipe-check-python/tests
 
-      - run: uv run --project bindings/python --locked ruff check bindings/python/python bindings/python/tests
+      - run: uv run --project packages/recipe-check-python --locked ruff check packages/recipe-check-python/python packages/recipe-check-python/tests
 
-      - run: uv run --project bindings/python --locked mypy --strict bindings/python/python bindings/python/tests
+      - run: uv run --project packages/recipe-check-python --locked mypy --strict packages/recipe-check-python/python packages/recipe-check-python/tests
 
-      - run: uv run --project bindings/python --locked maturin build --release --out dist --manifest-path bindings/python/Cargo.toml
+      - run: uv run --project packages/recipe-check-python --locked maturin build --release --out dist --manifest-path packages/recipe-check-python/Cargo.toml
 
-      - run: uv pip install --python bindings/python/.venv/bin/python --reinstall dist/*.whl
+      - run: uv pip install --python packages/recipe-check-python/.venv/bin/python --reinstall dist/*.whl
 
-      - run: uv run --project bindings/python --no-sync pytest bindings/python/tests
+      - run: uv run --project packages/recipe-check-python --no-sync pytest packages/recipe-check-python/tests
 
   pi-minimum:
     runs-on: ubuntu-latest

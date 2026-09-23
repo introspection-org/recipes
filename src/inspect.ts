@@ -1,6 +1,6 @@
-import { generatedBindingEnvVars } from "./recipe-mcp-config.js";
+import { generatedBindingEnvVars } from "./recipe/mcp-config.js";
 import { expectedProviderEnvVars } from "./provider-env.js";
-import type { RecipeAgentConfigField } from "./recipe-agent.js";
+import type { RecipeAgentConfigField } from "./recipe/agent.js";
 import type { ResolvedRecipe, ResolvedRecipeAgent } from "./recipe/resolve.js";
 
 export interface RecipeAgentInspection {

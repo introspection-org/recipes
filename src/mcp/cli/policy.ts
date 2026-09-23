@@ -2,7 +2,7 @@ import {
   mcpSessionAllowsTool,
   type McpSessionConfig,
   type McpSessionServer,
-} from "./mcp.js";
+} from "../index.js";
 
 export interface McpCliSessionPolicy {
   servers: Map<string, McpSessionServer>;

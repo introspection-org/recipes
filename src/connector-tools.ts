@@ -1,11 +1,11 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { loadRecipeModule } from "./recipe-extensions.js";
+import { loadRecipeModule } from "./recipe/extensions.js";
 import {
   recipeChannelPackageName,
   type RecipePackageChannel,
   type RecipePackageManifest,
-} from "./recipe-package.js";
+} from "./recipe/package.js";
 
 export interface RecipeConnectorToolDefinition {
   readonly id: string;

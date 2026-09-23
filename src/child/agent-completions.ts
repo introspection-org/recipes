@@ -16,7 +16,7 @@
  * twice.
  */
 
-import type { ChildRunSnapshot } from "./child-agent-store.js";
+import type { ChildRunSnapshot } from "./agent-store.js";
 
 /** Batching window for successful completions. Failures skip it. */
 export const COMPLETION_BATCH_WINDOW_MS = 2_000;

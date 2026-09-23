@@ -16,8 +16,8 @@ import {
   type CreateRecipeChildAgentRunner,
   type RecipeChildAgentRunner,
   type RecipeChildToolEvent,
-} from "./child-agent.js";
-import { loadRecipeExtensionFactory } from "./recipe-extensions.js";
+} from "./child/agent.js";
+import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
@@ -28,13 +28,13 @@ import {
   ChildAgentRunStore,
   type ChildRunSnapshot,
   type ChildToolActivity,
-} from "./child-agent-store.js";
+} from "./child/agent-store.js";
 import {
   ChildCompletionQueue,
   envelopeFromRun,
   renderCompletionNotice,
   type ChildCompletionEnvelope,
-} from "./child-agent-completions.js";
+} from "./child/agent-completions.js";
 import {
   AGENT_RUN_EVENT_ENTRY_TYPE,
   type AgentRunEvent,
@@ -51,19 +51,19 @@ import {
   materializeSessionMcpCli,
   resolveAgentMcpSelections,
   stopMcpDaemon,
-} from "./mcp.js";
+} from "./mcp/index.js";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "./mcp-catalog.js";
-import { type RecipeAgentDefinition } from "./recipe-agent.js";
-import type { RecipeAgentMcpMode } from "./recipe-agent.js";
-import { createMcpToolSet } from "./mcp-tools.js";
+} from "./mcp/catalog.js";
+import { type RecipeAgentDefinition } from "./recipe/agent.js";
+import type { RecipeAgentMcpMode } from "./recipe/agent.js";
+import { createMcpToolSet } from "./mcp/tools.js";
 import {
   applyRecipeAgentPayloadPolicy,
   applyRecipeAgentModelConfigToModel,
   cloneModelForRecipe,
-} from "./recipe-model.js";
+} from "./recipe/model.js";
 import {
   resolveRecipe,
   type ResolvedRecipeAgent,

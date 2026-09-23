@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialStore, Model } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import type { ResolvedRecipe } from "./recipe/resolve.js";
+import type { ResolvedRecipe } from "../recipe/resolve.js";
 import type {
   MemoryContextOverride,
   MemoryContextSource,
-} from "./memory.js";
+} from "../memory.js";
 import {
   createAgentSessionInternal,
   type CreateAgentSessionInternalOptions,
   type RecipeSessionHandle,
   type RecipeSessionOtelOptions,
-} from "./session.js";
+} from "../session.js";
 
 export interface CreateIsolatedChildSessionOptions {
   recipe: ResolvedRecipe;

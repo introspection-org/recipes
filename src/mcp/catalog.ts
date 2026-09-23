@@ -4,8 +4,8 @@ import {
   ensureMcpDaemon,
   exchangeMcpDaemon,
   mcpDaemonEnvironment,
-} from "./mcp-daemon-client.js";
-import type { McpCatalogServer } from "./mcp-daemon-protocol.js";
+} from "./daemon/client.js";
+import type { McpCatalogServer } from "./daemon/protocol.js";
 
 const DEFAULT_CATALOG_ATTEMPT_TIMEOUT_MS = 5_000;
 const catalogPreloads = new Map<string, Promise<McpCatalogServer[]>>();
@@ -81,4 +81,4 @@ export function clearMcpCatalogPreload(env: NodeJS.ProcessEnv = process.env): vo
   }
 }
 
-export type { McpCatalogServer } from "./mcp-daemon-protocol.js";
+export type { McpCatalogServer } from "./daemon/protocol.js";

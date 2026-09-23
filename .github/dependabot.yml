@@ -3,8 +3,8 @@ version: 2
 # Three ecosystems in one repo, each with its own manifest root:
 #
 #   npm    -> / (the published @introspection-ai/recipes package; pnpm)
-#   cargo  -> / (cargo workspace: crates/* + bindings/python)
-#   uv     -> /bindings/python (maturin build + dev toolchain, own uv.lock)
+#   cargo  -> / (cargo workspace: packages/{mcp-client,recipe-check,recipe-check-python})
+#   uv     -> /packages/recipe-check-python (maturin build + dev toolchain, own uv.lock)
 #
 # Commit messages: `prefix: "chore"` + `include: "scope"` renders
 # `chore(deps): …` / `chore(deps-dev): …` — Dependabot appends the (deps) scope
@@ -120,7 +120,7 @@ updates:
   # uv release via `astral-sh/setup-uv` + `[tool.uv] required-version`. Bumping
   # uv itself stays manual — those two must move together.
   - package-ecosystem: "uv"
-    directory: "/bindings/python"
+    directory: "/packages/recipe-check-python"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { resolveAgentSkillPaths } from "../src/recipe-skills.js";
+import { resolveAgentSkillPaths } from "../src/recipe/skills.js";
 
 describe("recipe agent skills", () => {
   it("exposes only skills selected by the active agent", () => {

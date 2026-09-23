@@ -22,9 +22,9 @@ import {
   describeUnavailableRunTool,
   describeUnknownRunServer,
   searchMcpTools,
-} from "../src/mcp-cli.js";
-import { preloadMcpCatalogs } from "../src/mcp-catalog.js";
-import { callMcpDaemonTool } from "../src/mcp-daemon-client.js";
+} from "../src/mcp/cli/index.js";
+import { preloadMcpCatalogs } from "../src/mcp/catalog.js";
+import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
 import {
   buildMcporterConfig,
   clearMcpSession,
@@ -40,8 +40,8 @@ import {
   snapshotMcpEnvironment,
   stopMcpDaemon,
   type McpSessionConfig,
-} from "../src/mcp.js";
-import type { RecipePackageManifest } from "../src/recipe-package.js";
+} from "../src/mcp/index.js";
+import type { RecipePackageManifest } from "../src/recipe/package.js";
 
 describe("MCP environment leasing", () => {
   it("preserves daemon generation across isolation and restoration", () => {
@@ -124,7 +124,7 @@ function runMcpCli(
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [join(process.cwd(), "dist", "mcp-cli.js"), ...args],
+      [join(process.cwd(), "dist", "mcp", "cli", "index.js"), ...args],
       {
         env: { ...process.env, ...env },
         stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
@@ -508,10 +508,10 @@ describe("static MCP session materialization", () => {
       expect(script).toContain("MCPORTER_CONFIG:=");
       if (nativeMcpClientPath()) {
         expect(script).toContain(nativeMcpClientPath());
-        expect(script).toContain("mcp-client.js' --start-daemon");
+        expect(script).toContain("client-entry.js' --start-daemon");
         expect(script).toContain("native_status");
         expect(script).not.toContain("PI_RECIPES_MCP_NATIVE_REQUIRED");
-        expect(script).not.toContain('mcp-client.js\' "$@"');
+        expect(script).not.toContain('client-entry.js\' "$@"');
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1059,8 +1059,15 @@ describe("lazy MCP CLI discovery", () => {
       const startedAt = Date.now();
       const catalogs = await preloadMcpCatalogs({
         env,
+        // Generous on purpose. Nothing listens on port 9, so the offline server
+        // fails by connection refusal rather than by this budget — which means
+        // a short one only ever raced the HEALTHY server's daemon spawn and
+        // discovery, and lost at 247ms against 250 on a loaded runner. The wall
+        // clock below is what proves the failing server did not stall the
+        // preload, and it proves it harder now that the timeout is 20x longer
+        // than the bound.
         allowPartial: true,
-        timeoutMs: 250,
+        timeoutMs: 5_000,
       });
       expect(Date.now() - startedAt).toBeLessThan(1_500);
       expect(catalogs.find((server) => server.id === "stub")?.error).toBeFalsy();
