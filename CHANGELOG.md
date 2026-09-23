@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/introspection-org/recipes/compare/v0.27.0...v0.27.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **release:** unblock the 0.27.0 publish, and finish the src/ grouping ([#291](https://github.com/introspection-org/recipes/issues/291)) ([d1d1df0](https://github.com/introspection-org/recipes/commit/d1d1df0f8221103a2836d27c1ca8548ea80965f0))
+
 ## [0.27.0](https://github.com/introspection-org/recipes/compare/v0.26.0...v0.27.0) (2026-09-22)
 
 
