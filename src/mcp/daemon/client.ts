@@ -13,16 +13,20 @@ import {
   MCP_SESSION_ROOT_ENV,
   type McpDaemonEnvelope,
   type McpDaemonRequest,
-} from "./mcp-daemon-protocol.js";
-import { mcpTraceContextFromEnv } from "./mcp-trace-context.js";
+} from "./protocol.js";
+import { mcpTraceContextFromEnv } from "../trace-context.js";
 
 const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;
 
-function daemonPath(): string {
-  const adjacent = fileURLToPath(new URL("./mcp-daemon.js", import.meta.url));
-  if (existsSync(adjacent)) return adjacent;
-  return fileURLToPath(new URL("../dist/mcp-daemon.js", import.meta.url));
+export function daemonPath(): string {
+  // The BUNDLE, not this module's tsc sibling. `build-mcp-daemon.mjs` emits a
+  // self-contained `dist/mcp-daemon.js`; spawning the unbundled daemon would
+  // resolve the whole module graph at startup, which is the cost the bundle
+  // exists to avoid. From source neither exists, so the fallback runs.
+  const bundled = fileURLToPath(new URL("../../mcp-daemon.js", import.meta.url));
+  if (existsSync(bundled)) return bundled;
+  return fileURLToPath(new URL("../../../dist/mcp-daemon.js", import.meta.url));
 }
 
 export function mcpDaemonEnvironment(env: NodeJS.ProcessEnv = process.env): {

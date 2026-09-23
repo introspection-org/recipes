@@ -2,8 +2,8 @@ import { build } from "esbuild";
 
 await build({
   entryPoints: {
-    "mcp-daemon": "src/mcp-daemon.ts",
-    "mcp-run-worker": "src/mcp-run-worker.ts",
+    "mcp-daemon": "src/mcp/daemon/index.ts",
+    "mcp-run-worker": "src/mcp/cli/run-worker.ts",
   },
   outdir: "dist",
   bundle: true,

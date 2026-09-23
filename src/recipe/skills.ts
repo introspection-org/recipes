@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { parse } from "yaml";
-import { assertRecipePathContained } from "./recipe-package.js";
+import { assertRecipePathContained } from "./package.js";
 
 function skillName(filePath: string, recipeDir: string): string {
   try {

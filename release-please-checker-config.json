@@ -8,13 +8,13 @@
   "separate-pull-requests": true,
   "group-pull-request-title-pattern": "chore(${branch}): release introspection-recipe-check libraries",
   "packages": {
-    "crates/introspection-recipe-check": {
+    "packages/recipe-check": {
       "release-type": "rust",
       "component": "introspection-recipe-check",
       "include-component-in-tag": true,
       "bump-minor-pre-major": true
     },
-    "bindings/python": {
+    "packages/recipe-check-python": {
       "release-type": "rust",
       "component": "introspection-recipe-check-python",
       "include-component-in-tag": true,

@@ -16,7 +16,7 @@ process.stdin.on("end", () => {
 
   const forbidden = files.filter(
     (path) =>
-      path.startsWith("bindings/") ||
+      path.startsWith("packages/recipe-check-python/") ||
       path.startsWith("harbor/") ||
       path === "dist/testing.js" ||
       path === "dist/testing.d.ts"

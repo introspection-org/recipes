@@ -1,6 +1,6 @@
 {
 	"name": "@introspection-ai/recipes",
-	"version": "0.26.0",
+	"version": "0.27.0",
 	"description": "The open format for vertical agents, built on Pi.",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -97,7 +97,7 @@
 		"@introspection-sdk/introspection-pi": "^0.23.0",
 		"@opentelemetry/api": "^1.9.1",
 		"ajv": "^8.20.0",
-		"mcporter": "0.13.10",
+		"mcporter": "0.13.13",
 		"yaml": "^2.9.0"
 	},
 	"peerDependencies": {

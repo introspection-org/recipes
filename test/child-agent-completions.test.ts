@@ -11,8 +11,8 @@ import {
   envelopeFromRun,
   renderCompletionNotice,
   type ChildCompletionEnvelope,
-} from "../src/child-agent-completions.js";
-import type { ChildRunSnapshot } from "../src/child-agent-store.js";
+} from "../src/child/agent-completions.js";
+import type { ChildRunSnapshot } from "../src/child/agent-store.js";
 
 function envelope(
   overrides: Partial<ChildCompletionEnvelope> = {}

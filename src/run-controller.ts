@@ -8,8 +8,8 @@ import type {
 } from "./agents.js";
 import { notifyAgentRunEvent } from "./agents.js";
 import { autoResolveInteractions } from "./interactions.js";
-import { promptResultError, promptResultText } from "./child-agent.js";
-import { createIsolatedChildSession } from "./child-session.js";
+import { promptResultError, promptResultText } from "./child/agent.js";
+import { createIsolatedChildSession } from "./child/session.js";
 import type {
   CreateAgentSessionInternalOptions,
   RecipeSessionOtelOptions,

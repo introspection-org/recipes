@@ -1,4 +1,4 @@
-import type { McpToolCatalogEntry } from "./mcp.js";
+import type { McpToolCatalogEntry } from "./index.js";
 
 type Schema = Record<string, unknown>;
 

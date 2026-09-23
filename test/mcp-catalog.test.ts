@@ -7,14 +7,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
-} from "../src/mcp-catalog.js";
-import { callMcpDaemonTool } from "../src/mcp-daemon-client.js";
+} from "../src/mcp/catalog.js";
+import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
 import {
   MCP_DAEMON_FINGERPRINT_ENV,
   MCP_DAEMON_SOCKET_ENV,
   MCP_DAEMON_TOKEN_ENV,
   serializeMcpDaemonEnvelope,
-} from "../src/mcp-daemon-protocol.js";
+} from "../src/mcp/daemon/protocol.js";
 
 const servers: Server[] = [];
 const directories: string[] = [];

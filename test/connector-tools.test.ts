@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadRecipeConnectors } from "../src/connector-tools.js";
 import {
   readPiPackageManifest,
-} from "../src/recipe-package.js";
+} from "../src/recipe/package.js";
 
 describe("Recipe connector packages", () => {
   const cleanups: string[] = [];

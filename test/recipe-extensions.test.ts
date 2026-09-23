@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   loadRecipeExtensionFactory,
   resolvePackageFromHost,
-} from "../src/recipe-extensions.js";
+} from "../src/recipe/extensions.js";
 
 describe("recipe extension package resolution", () => {
   const cleanups: string[] = [];

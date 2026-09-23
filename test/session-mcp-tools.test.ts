@@ -6,12 +6,12 @@ const mocks = vi.hoisted(() => ({
   preloadMcpCatalogs: vi.fn(),
 }));
 
-vi.mock("../src/mcp-catalog.js", () => ({
+vi.mock("../src/mcp/catalog.js", () => ({
   clearMcpCatalogPreload: mocks.clearMcpCatalogPreload,
   preloadMcpCatalogs: mocks.preloadMcpCatalogs,
 }));
 
-import { piMcpToolName } from "../src/mcp-tools.js";
+import { piMcpToolName } from "../src/mcp/tools.js";
 import {
   resolveRecipe,
 } from "../src/recipe/resolve.js";

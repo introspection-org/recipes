@@ -3,7 +3,7 @@ import {
   compactSchemaType,
   renderToolContract,
   renderToolSignature,
-} from "../src/mcp-contract.js";
+} from "../src/mcp/contract.js";
 
 describe("compact MCP contracts", () => {
   const inputSchema = {
