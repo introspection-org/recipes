@@ -70,7 +70,10 @@
   `@introspection-ai/cli` comes from `introspection-cli`, the language SDKs
   (`@introspection-sdk/*`) from `introspection-js-sdk`, and `@earendil-works/*`
   (Pi) is third-party.
-- **Recipes commit `pnpm-lock.yaml` and nothing else.** The managed install runs
-  `--frozen-lockfile`; `package-lock.json`, `npm-shrinkwrap.json` and
+- **pnpm is the only JavaScript lockfile a Recipe commits.** The managed install
+  runs `--frozen-lockfile`; `package-lock.json`, `npm-shrinkwrap.json` and
   `yarn.lock` are rejected, as is a `packageManager` field that is not a
-  complete `pnpm@<version>`.
+  complete `pnpm@<version>`. This is about npm and yarn, not about lockfiles in
+  general — a Recipe declaring `pi.runtime.python` MUST also commit the
+  `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
+  that file is missing.

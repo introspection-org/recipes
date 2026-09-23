@@ -9,13 +9,19 @@ The package supplies Slack Web API transport and a capability descriptor. The
 tool names and schemas come from `@introspection-ai/recipes/channels`, so a
 Recipe written against `channels reply` is not written against Slack.
 
-Install it alongside the SDK, then widen the range pnpm writes — it saves a
-caret by default, and a caret on a `0.x` version pins the MINOR, so `^0.4.0`
-would strand the Recipe on the adapter's next release:
+The adapter is a dependency; the SDK is a peer the runtime supplies, so they
+install differently. Adding both in one `pnpm add` puts both in
+`dependencies` — and a Recipe-local copy of the SDK is the one
+`recipeExtensionAliases()` prefers, which is how a Recipe ends up running a
+different SDK instance from its host:
 
 ```bash
-pnpm add @introspection-ai/recipes @introspection-ai/recipe-channel-slack
+pnpm add @introspection-ai/recipe-channel-slack
+pnpm add --save-peer @introspection-ai/recipes
 ```
+
+Then widen both ranges: pnpm saves a caret, and a caret on a `0.x` version pins
+the MINOR, so `^0.4.0` would strand the Recipe on the adapter's next release.
 
 ```json
 {
