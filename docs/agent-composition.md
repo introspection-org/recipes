@@ -30,7 +30,10 @@ system_instructions:
 
 When a Recipe has no `SYSTEM.md`, Pi's normal base prompt is the starting
 prompt. When `SYSTEM.md` exists, it becomes the recipe-wide starting prompt.
-Recipes then applies the selected agent's `system_instructions` mode.
+Recipes then applies the selected agent's `system_instructions` mode. On
+`pi --recipe`, Recipes appends Pi's skills prompt after that composed prompt
+when the agent has model-invocable skills and a `read` or `bash` tool. The
+appended text is Pi's `formatSkillsForPrompt` output, wrapped in `<skills>`.
 
 ## Derive Agents With `from:`
 

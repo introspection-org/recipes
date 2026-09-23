@@ -235,7 +235,9 @@ credentials, retries, persistence, and result processing.
 
 `SYSTEM.md`, when present, is package-wide instruction source. Agent
 `system_instructions.mode` determines whether agent instructions append to or
-replace the current prompt.
+replace the current prompt. On `pi --recipe`, Recipes then appends Pi's skills
+prompt when the selected agent has model-invocable skills and a `read` or
+`bash` tool.
 
 Skills follow the [Agent Skills](https://agentskills.io) directory convention
 and are selected from the resources declared by `pi.skills`. A skill is named

@@ -69,6 +69,7 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
+import { createSystemPrompt } from "./recipe/skills-prompt.js";
 import {
   createAgentTool,
   type AgentRunController,
@@ -1518,9 +1519,7 @@ export function createRecipesExtension(
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return {};
       return {
-        systemPrompt: launchState.resolved.systemPromptOverride(
-          event.systemPrompt
-        ),
+        systemPrompt: createSystemPrompt(event, launchState),
       };
     });
   };
