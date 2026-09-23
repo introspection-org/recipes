@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.2](https://github.com/introspection-org/recipes/compare/v0.27.1...v0.27.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* keep Pi's skills prompt when SYSTEM.md replaces the generated prompt ([#288](https://github.com/introspection-org/recipes/issues/288)) ([6c04661](https://github.com/introspection-org/recipes/commit/6c046618a8de02d5ae99be63537f9c5ed94c23b2))
+
 ## [0.27.1](https://github.com/introspection-org/recipes/compare/v0.27.0...v0.27.1) (2026-09-23)
 
 
