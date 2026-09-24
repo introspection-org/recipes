@@ -95,6 +95,13 @@ function compileSchema(
   }
 }
 
+/** RFC 6901 array index: "0", or digits without a leading zero. */
+function canonicalArrayIndex(part: string): number | undefined {
+  if (!/^(0|[1-9][0-9]*)$/.test(part)) return undefined;
+  const index = Number(part);
+  return Number.isSafeInteger(index) ? index : undefined;
+}
+
 function jsonPointerValue(root: Recordish, ref: string): unknown {
   if (!ref.startsWith("#/")) {
     throw new Error(`unsupported non-local JSON Schema reference '${ref}'`);
@@ -103,8 +110,8 @@ function jsonPointerValue(root: Recordish, ref: string): unknown {
   for (const rawPart of ref.slice(2).split("/")) {
     const part = rawPart.replace(/~1/g, "/").replace(/~0/g, "~");
     if (Array.isArray(current)) {
-      const index = Number(part);
-      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+      const index = canonicalArrayIndex(part);
+      if (index === undefined || index >= current.length) {
         throw new Error(`unresolved JSON Schema reference '${ref}'`);
       }
       current = current[index];

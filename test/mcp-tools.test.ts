@@ -336,6 +336,46 @@ describe("MCP tools mode", () => {
     expect(missing.diagnostics[0]).toMatch(/unresolved JSON Schema reference/);
   });
 
+  it("rejects non-canonical JSON Pointer array indexes", () => {
+    for (const token of ["01", "1e0", ""]) {
+      const materialized = createMcpToolSet({
+        session,
+        catalogs: [
+          {
+            id: "nextplay",
+            name: "NextPlay",
+            tools: [
+              {
+                name: "create_record",
+                input_schema: {
+                  type: "object",
+                  properties: {
+                    values: {
+                      anyOf: [{ type: "string" }, { type: "number" }],
+                    },
+                    choice: {
+                      $ref: `#/properties/values/anyOf/${token}`,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+        mcp: {
+          mode: "tools",
+          servers: { nextplay: { include: ["create_record"] } },
+        },
+        env: {},
+      });
+      expect(materialized.tools, `token ${JSON.stringify(token)}`).toEqual([]);
+      expect(
+        materialized.diagnostics[0],
+        `token ${JSON.stringify(token)}`
+      ).toMatch(/unresolved JSON Schema reference/);
+    }
+  });
+
   it("turns MCP errors into thrown tool errors and guards large output", async () => {
     const { materialized } = createTools(
       {
