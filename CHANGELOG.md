@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.3](https://github.com/introspection-org/recipes/compare/v0.27.2...v0.27.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* resolve JSON Schema refs that index arrays ([#296](https://github.com/introspection-org/recipes/issues/296)) ([5ef03a8](https://github.com/introspection-org/recipes/commit/5ef03a8772960fd39a08dc8dda9c1116fae7dec8))
+
 ## [0.27.2](https://github.com/introspection-org/recipes/compare/v0.27.1...v0.27.2) (2026-09-23)
 
 
