@@ -188,8 +188,9 @@ the selected agent narrows model-visible capability:
   deterministically and loaded for every root and child session.
 - `package.json#pi.mcp` defines the package's upper-bound MCP policy.
   `agent.mcp` narrows tool access per server.
-- `agent.tools` is the exact allowlist for Pi built-ins and tools registered by
-  the package extension closure.
+- `agent.tools` is the exact allowlist for Pi built-ins, the Recipes
+  `current-time` host tool, and tools registered by the package extension
+  closure.
 - `agent.subagents` controls which other recipe agents are visible through the
   `agent` tool.
 - Prompt templates declared by the package are recipe resources; they are not
