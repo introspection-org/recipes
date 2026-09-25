@@ -279,16 +279,12 @@ export function mcporterCliEntrypointPath(): string {
   return fileURLToPath(import.meta.resolve("mcporter/cli"));
 }
 
-/**
- * `name` is relative to THIS module's own directory: `dist/mcp/` once compiled,
- * `src/mcp/` when running from source, where nothing is built beside it and the
- * repository's dist is the answer. Resolved from a string at run time, so no
- * type checker sees it — moving this module changes both prefixes.
- */
+// A host can inline this module into a relocated bundle. Resolve executable
+// files from the installed package, whose layout survives that relocation.
 function compiledEntrypoint(name: string): string {
-  const adjacent = fileURLToPath(new URL(`./${name}`, import.meta.url));
-  if (existsSync(adjacent)) return adjacent;
-  return fileURLToPath(new URL(`../../dist/mcp/${name}`, import.meta.url));
+  return fileURLToPath(
+    new URL(`mcp/${name}`, import.meta.resolve("@introspection-ai/recipes"))
+  );
 }
 
 export function mcpCliEntrypointPath(): string {
