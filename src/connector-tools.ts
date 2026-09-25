@@ -1,5 +1,6 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { BROWSER_TOOL_NAME, createBrowserExtension } from "./browser/index.js";
 import { loadRecipeModule } from "./recipe/extensions.js";
 import {
   recipeChannelPackageName,
@@ -155,6 +156,22 @@ export async function loadRecipeConnectors(
       };
     })
   );
+  // The browser is platform-provided, not a provider package: one built-in
+  // connector whose page work the runtime-supplied browser-agent performs.
+  if (manifest.browser && agentTools.includes(BROWSER_TOOL_NAME) && manifest.browser.commands?.length !== 0) {
+    loaded.push({
+      extension: {
+        owner: "<browser>",
+        factory: createBrowserExtension({
+          tools: [BROWSER_TOOL_NAME],
+          ...(manifest.browser.commands !== undefined ? { commands: manifest.browser.commands } : {}),
+          ...(manifest.browser.allowedDomains !== undefined ? { allowedDomains: manifest.browser.allowedDomains } : {}),
+          env: options.env,
+        }),
+      },
+      selected: [{ id: BROWSER_TOOL_NAME, name: BROWSER_TOOL_NAME, defaultActive: true }],
+    });
+  }
   const selected = loaded.flatMap((connector) => connector.selected);
   const registeredNames = selected.map((tool) => tool.name);
   if (new Set(registeredNames).size !== registeredNames.length) {
