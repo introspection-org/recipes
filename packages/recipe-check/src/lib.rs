@@ -754,7 +754,7 @@ fn validate_channel_config(
     }
 }
 
-const BROWSER_COMMANDS: [&str; 7] = ["observe", "act", "scroll", "navigate", "tabs", "screenshot", "run"];
+const BROWSER_COMMANDS: [&str; 8] = ["observe", "act", "press", "scroll", "navigate", "tabs", "screenshot", "run"];
 const BROWSER_PROFILE_MODES: [&str; 3] = ["none", "optional", "required"];
 
 fn validate_browser_config(value: &JsonValue, ctx: &mut CheckContext) {

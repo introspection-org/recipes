@@ -11,6 +11,7 @@ import { Check } from "typebox/value";
 export const BROWSER_COMMANDS = [
   "observe",
   "act",
+  "press",
   "scroll",
   "navigate",
   "tabs",
@@ -89,7 +90,10 @@ export interface BrowserToolHost {
 
 const DESCRIPTIONS: Record<BrowserCommandId, string> = {
   observe: "Read the page as an element table. Each element has an el_… handle for act.",
-  act: "Click, type into, or select on an element a previous observe returned.",
+  act:
+    "Click, type into, or select on an element a previous observe returned. " +
+    "To click what the element table does not list, omit element and pass x and y in the latest screenshot's pixels.",
+  press: "Press keys on the focused element, in order: Enter, Escape, Tab, arrows, Space, letters, Shift+Tab, Control+a.",
   scroll: "Scroll the page by most of a viewport.",
   navigate: `Load a URL in the current tab, or tab_id "new" for a new tab.`,
   tabs: "List open tabs.",
@@ -107,10 +111,14 @@ function commandParameters(command: BrowserCommandId): Record<string, TSchema> {
     case "act":
       return {
         ...tab,
-        element: Type.String({ minLength: 1 }),
+        element: Type.Optional(Type.String({ minLength: 1 })),
         action: Type.Union([Type.Literal("click"), Type.Literal("type"), Type.Literal("select")]),
         text: Type.Optional(Type.String()),
+        x: Type.Optional(Type.Integer({ minimum: 0 })),
+        y: Type.Optional(Type.Integer({ minimum: 0 })),
       };
+    case "press":
+      return { ...tab, keys: Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 32 }) };
     case "scroll":
       return { ...tab, direction: Type.Union([Type.Literal("up"), Type.Literal("down")]) };
     case "navigate":
@@ -142,11 +150,19 @@ export function hostAllowed(url: string, allowed: readonly string[]): boolean {
 }
 
 function toolResult(details: unknown) {
-  const shot = details as { mime_type?: string; data?: string; screenshot?: string };
+  const shot = details as {
+    mime_type?: string;
+    data?: string;
+    width?: number;
+    height?: number;
+    screenshot?: string;
+  };
   const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
   if (shot && typeof shot.data === "string" && shot.mime_type) {
     content.push({ type: "image", data: shot.data, mimeType: shot.mime_type });
-    return { content, details: { mime_type: shot.mime_type } };
+    const size = shot.width && shot.height ? { width: shot.width, height: shot.height } : {};
+    if (shot.width && shot.height) content.push({ type: "text", text: `${shot.width}x${shot.height} pixels` });
+    return { content, details: { mime_type: shot.mime_type, ...size } };
   }
   if (shot && typeof shot.screenshot === "string") {
     const { screenshot, ...rest } = shot;

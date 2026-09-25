@@ -43,7 +43,7 @@ function agentModule() {
         async call(input) {
           calls.push(input);
           if (input.command === "navigate") await options.validateTarget?.(input.url as string);
-          if (input.command === "screenshot") return { mime_type: "image/jpeg", data: "AAAA" };
+          if (input.command === "screenshot") return { mime_type: "image/jpeg", data: "AAAA", width: 800, height: 600 };
           if (input.command === "observe") return { url: "https://app.example.com", elements: [], screenshot: "BBBB" };
           if (input.command === "run") return { status: "done", drivers: options.drivers?.(input) };
           return { ok: true, echo: input };
@@ -128,7 +128,9 @@ describe("browser tool", () => {
     expect(agent.connects).toEqual([
       { endpoint: "http://127.0.0.1:9222", options: { allowedDomains: ["app.example.com", "*.shop.test"] } },
     ]);
-    expect(agent.calls.map((c) => c.command)).toEqual(["act", "tabs"]);
+    await exec(pi, { command: "press", keys: ["ArrowLeft", "Space"] });
+    await exec(pi, { command: "act", action: "click", x: 10, y: 20 });
+    expect(agent.calls.map((c) => c.command)).toEqual(["act", "tabs", "press", "act"]);
   });
 
   it("returns screenshots as image content", async () => {
@@ -136,7 +138,10 @@ describe("browser tool", () => {
     const pi = createMockExtensionAPI();
     registerBrowserTool(pi, { env: ENV, loadAgent: async () => agent.module });
     const shot = (await exec(pi, { command: "screenshot" })) as { content: Array<{ type: string; data?: string }> };
-    expect(shot.content).toEqual([{ type: "image", data: "AAAA", mimeType: "image/jpeg" }]);
+    expect(shot.content).toEqual([
+      { type: "image", data: "AAAA", mimeType: "image/jpeg" },
+      { type: "text", text: "800x600 pixels" },
+    ]);
     const observed = (await exec(pi, { command: "observe" })) as { content: Array<{ type: string }>; details: object };
     expect(observed.content.map((c) => c.type)).toEqual(["image", "text"]);
     expect(observed.details).not.toHaveProperty("screenshot");
@@ -147,6 +152,7 @@ describe("browser tool", () => {
     registerBrowserTool(pi, { env: ENV, loadAgent: async () => agentModule().module });
     await expect(exec(pi, { command: "act", element: "el_a_1" })).rejects.toThrow(/follow the command schema/);
     await expect(exec(pi, { command: "observe", bogus: 1 })).rejects.toThrow(/follow the command schema/);
+    await expect(exec(pi, { command: "press", keys: [] })).rejects.toThrow(/follow the command schema/);
   });
 
   it("applies the Recipe's allowed domains on navigate", async () => {
