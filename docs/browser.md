@@ -28,11 +28,12 @@ rejected before the browser is touched.
 | Command | Arguments | Result |
 | --- | --- | --- |
 | `observe` | `tab_id?`, `cursor?` | The page as an element table: URL, title, visible text, and one row per control with an `el_…` handle, role, name, value and allowed actions. `next_cursor` pages long tables. |
-| `act` | `element`, `action` (`click`, `type`, `select`), `text?` | Performs the action on a handle from a previous `observe`. `type` replaces the value. |
+| `act` | `element`, `action` (`click`, `type`, `select`), `text?` | Performs the action on a handle from a previous `observe`. `type` replaces the value. A `click` may take `x` and `y` in place of `element`: a point of the latest `screenshot`, for what the element table does not list. |
+| `press` | `keys`, `tab_id?` | Presses key chords in order on the focused element: `Enter`, `Escape`, `Tab`, arrows, `Space`, `Home`/`End`, `PageUp`/`PageDown`, `Backspace`/`Delete`, letters, digits, with `Shift+`, `Control+`, `Alt+`, `Meta+`. Text goes through `act` `type`. |
 | `scroll` | `direction` (`up`, `down`), `tab_id?` | Scrolls most of a viewport. |
 | `navigate` | `url`, `tab_id?` | Loads the URL; `tab_id: "new"` opens a tab. |
 | `tabs` | — | Lists open tabs. |
-| `screenshot` | `tab_id?` | A JPEG of the page, returned as image content. Prefer `observe`: text is cheaper and precise. |
+| `screenshot` | `tab_id?` | A JPEG of the viewport, returned as image content with its pixel size. Prefer `observe`: text is cheaper and precise. |
 | `run` | `goal`, `inputs?`, `max_steps?` | Hands a routine flow to the fast browser driver. |
 
 ### Handles

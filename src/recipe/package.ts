@@ -87,7 +87,7 @@ export interface RecipePackageBrowser {
   profile?: "none" | "optional" | "required";
 }
 
-const BROWSER_COMMAND_NAMES = ["observe", "act", "scroll", "navigate", "tabs", "screenshot", "run"];
+const BROWSER_COMMAND_NAMES = ["observe", "act", "press", "scroll", "navigate", "tabs", "screenshot", "run"];
 const BROWSER_PROFILE_MODES = ["none", "optional", "required"];
 
 export function recipeChannelPackageName(provider: string): string {
