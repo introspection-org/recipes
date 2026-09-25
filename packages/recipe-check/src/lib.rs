@@ -619,6 +619,7 @@ fn validate_pi_config(
         "skills",
         "prompts",
         "channels",
+        "browser",
         "mcp",
         "runtime",
     ]
@@ -662,6 +663,9 @@ fn validate_pi_config(
 
     if let Some(channels) = pi.get("channels") {
         validate_channel_config(channels, &package.dependencies, ctx);
+    }
+    if let Some(browser) = pi.get("browser") {
+        validate_browser_config(browser, ctx);
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
@@ -747,6 +751,57 @@ fn validate_channel_config(
                 );
             }
         }
+    }
+}
+
+const BROWSER_COMMANDS: [&str; 8] = ["observe", "act", "press", "scroll", "navigate", "tabs", "screenshot", "run"];
+const BROWSER_PROFILE_MODES: [&str; 3] = ["none", "optional", "required"];
+
+fn validate_browser_config(value: &JsonValue, ctx: &mut CheckContext) {
+    let Some(browser) = value.as_object() else {
+        ctx.error(
+            "pi.browser_invalid",
+            PACKAGE_JSON,
+            "package.json#pi.browser must be an object",
+            Some("use an object with optional commands, allowedDomains and profile"),
+        );
+        return;
+    };
+    for key in browser.keys().filter(|key| !matches!(key.as_str(), "commands" | "allowedDomains" | "profile")) {
+        ctx.error(
+            "pi.browser_invalid",
+            PACKAGE_JSON,
+            format!("package.json#pi.browser contains unknown field '{key}'"),
+            Some("use optional commands, allowedDomains and profile"),
+        );
+    }
+    let unique_strings = |value: &JsonValue| {
+        value.as_array().is_some_and(|values| {
+            let mut seen = BTreeSet::new();
+            values.iter().all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty() && seen.insert(value)))
+        })
+    };
+    if let Some(commands) = browser.get("commands") {
+        if !unique_strings(commands) {
+            ctx.error("pi.browser_invalid", PACKAGE_JSON,
+                "package.json#pi.browser.commands must be an array of unique non-empty strings", Some("use a list of unique command names"));
+        } else {
+            for command in commands.as_array().into_iter().flatten().filter_map(JsonValue::as_str) {
+                if !BROWSER_COMMANDS.contains(&command) {
+                    ctx.error("pi.browser_invalid", PACKAGE_JSON,
+                        format!("package.json#pi.browser.commands contains unknown command '{command}'"),
+                        Some(format!("use any of: {}", BROWSER_COMMANDS.join(", "))));
+                }
+            }
+        }
+    }
+    if browser.get("allowedDomains").is_some_and(|value| !unique_strings(value)) {
+        ctx.error("pi.browser_invalid", PACKAGE_JSON,
+            "package.json#pi.browser.allowedDomains must be an array of unique non-empty strings", Some("list host names, or *.host for subdomains"));
+    }
+    if browser.get("profile").is_some_and(|value| !value.as_str().is_some_and(|mode| BROWSER_PROFILE_MODES.contains(&mode))) {
+        ctx.error("pi.browser_invalid", PACKAGE_JSON,
+            format!("package.json#pi.browser.profile must be one of: {}", BROWSER_PROFILE_MODES.join(", ")), None::<String>);
     }
 }
 
@@ -3299,6 +3354,31 @@ mod tests {
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
             assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), value.is_boolean());
+        }
+    }
+
+    #[test]
+    fn browser_declaration_shape() {
+        for (browser, valid) in [
+            (json!({}), true),
+            (json!({ "commands": ["observe", "act", "run"], "allowedDomains": ["app.example.com", "*.shop.test"], "profile": "optional" }), true),
+            (json!({ "commands": [] }), true),
+            (json!([]), false),
+            (json!({ "commands": ["observe", "observe"] }), false),
+            (json!({ "commands": ["teleport"] }), false),
+            (json!({ "allowedDomains": [""] }), false),
+            (json!({ "profile": "sometimes" }), false),
+            (json!({ "backend": "sidecar" }), false),
+        ] {
+            let mut files = connector_recipe(&["browser"]);
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
+            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            package["pi"]["browser"] = browser.clone();
+            package_file.content = Some(serde_json::to_string(&package).unwrap());
+            let report = check_recipe_files(&files);
+            let flagged = report.diagnostics.iter().any(|d| d.code == "pi.browser_invalid");
+            assert_eq!(!flagged, valid, "{browser}");
+            assert!(!report.diagnostics.iter().any(|d| d.code == "pi.unknown_key"));
         }
     }
 
