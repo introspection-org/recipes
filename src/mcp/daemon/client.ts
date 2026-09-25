@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { open, readFile, rm } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
@@ -20,13 +19,10 @@ const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;
 
 export function daemonPath(): string {
-  // The BUNDLE, not this module's tsc sibling. `build-mcp-daemon.mjs` emits a
-  // self-contained `dist/mcp-daemon.js`; spawning the unbundled daemon would
-  // resolve the whole module graph at startup, which is the cost the bundle
-  // exists to avoid. From source neither exists, so the fallback runs.
-  const bundled = fileURLToPath(new URL("../../mcp-daemon.js", import.meta.url));
-  if (existsSync(bundled)) return bundled;
-  return fileURLToPath(new URL("../../../dist/mcp-daemon.js", import.meta.url));
+  // Launch the package's built daemon even when a host bundles this client.
+  return fileURLToPath(
+    new URL("mcp-daemon.js", import.meta.resolve("@introspection-ai/recipes"))
+  );
 }
 
 export function mcpDaemonEnvironment(env: NodeJS.ProcessEnv = process.env): {
