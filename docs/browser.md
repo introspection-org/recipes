@@ -17,7 +17,7 @@ An agent selects it with `tools: [browser]`. The host fails when an agent names
 | Field | Meaning |
 | --- | --- |
 | `commands` | Allowlist of commands for every agent in the Recipe. Omitted: every supported command. An empty list registers no tool. |
-| `allowedDomains` | Hosts the browser may reach. The platform admits them on the task's egress; the tool refuses navigation elsewhere. `*.example.com` also matches `example.com`. Omitted: only the platform's default egress hosts. |
+| `allowedDomains` | Hosts the browser may reach. The platform admits them on the task's egress; the tool refuses navigation elsewhere. `*.example.com` admits subdomains only; list `example.com` too for the apex. Omitted: only the platform's default egress hosts. |
 | `profile` | `none`, `optional` or `required`: whether a task must name a stored browser profile (signed-in cookies). Defaults to `none`. |
 
 Unknown or unsupported commands fail at registration, and invalid arguments are
