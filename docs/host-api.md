@@ -157,6 +157,10 @@ filesystem, environment, and network authority. Hosts accepting third-party
 Recipes must provide their own review, sandbox, and tenant-isolation boundary
 before session construction.
 
+`${VAR}` resolution and the session environment come from `env`, defaulting to
+`process.env`. Set `RECIPES_CURRENT_TIME` to an ISO 8601 UTC timestamp to freeze
+the `current-time` tool for local launchers and evals.
+
 In CLI mode, default MCP provisioning leases the supplied `env` object until
 the handle is disposed and restores its prior MCP/PATH state afterward.
 Concurrent CLI sessions must receive separate environment objects. Tools mode

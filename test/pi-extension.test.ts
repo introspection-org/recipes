@@ -435,6 +435,7 @@ describe("Recipes extension for Pi", () => {
       expect([...pi.tools.keys()].sort()).toEqual([
         "agent",
         "channels",
+        "current-time",
       ]);
       expect(pi.activeTools.sort()).toEqual([
         "channels",
@@ -1528,6 +1529,37 @@ describe("Recipes extension for Pi", () => {
         ),
         "warning"
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("exposes current-time when the agent selects it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      writeFileSync(
+        join(recipeDir, "defs", "main.yaml"),
+        [
+          "name: main",
+          "model:",
+          "  name: openai/gpt-4.1",
+          "tools: [current-time]",
+        ].join("\n")
+      );
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension()(pi);
+      const notify = vi.fn();
+
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(join(root, "project"), notify)
+      );
+
+      expect(pi.tools.has("current-time")).toBe(true);
+      expect(pi.activeTools).toEqual(["current-time"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

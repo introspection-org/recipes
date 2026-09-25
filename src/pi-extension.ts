@@ -75,6 +75,7 @@ import {
   type AgentRunController,
   type AgentRunSummary,
 } from "./agents.js";
+import { createCurrentTimeTool } from "./current-time.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   createRecipeToolSearchTools,
@@ -1415,6 +1416,7 @@ export function createRecipesExtension(
       return text;
     };
     pi.registerTool(agentTool);
+    pi.registerTool(createCurrentTimeTool(env));
 
     pi.on("session_start", async (_event, ctx) => {
       if (!ensureManagedFetch()) {
