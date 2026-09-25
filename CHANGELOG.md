@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.4](https://github.com/introspection-org/recipes/compare/v0.27.3...v0.27.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* **mcp:** resolve bundled entrypoints from the installed package ([#300](https://github.com/introspection-org/recipes/issues/300)) ([07852c5](https://github.com/introspection-org/recipes/commit/07852c549e08ee6e654f9245cc502a031dd21c34))
+
 ## [0.27.3](https://github.com/introspection-org/recipes/compare/v0.27.2...v0.27.3) (2026-09-24)
 
 
