@@ -71,6 +71,7 @@ describe("resolveBrowserConfig", () => {
       cdpUrl: "http://127.0.0.1:9222",
       allowedDomains: ["app.example.com", "*.shop.test"],
       jevUrl: "http://api.typesafe.ai",
+      jevManaged: false,
     });
   });
 
@@ -171,7 +172,24 @@ describe("browser tool", () => {
       loadAgent: async () => agent.module,
     });
     await exec(pi, { command: "run", goal: "Design stays in Lisbon", inputs: { Destination: "Lisbon" } });
-    expect(agent.jev).toEqual([{ baseUrl: "http://api.typesafe.ai", apiKey: "locator", slots: { Destination: "Lisbon" } }]);
+    expect(agent.jev).toEqual([
+      expect.objectContaining({ baseUrl: "http://api.typesafe.ai", apiKey: "locator", slots: { Destination: "Lisbon" } }),
+    ]);
+  });
+
+  it("marks Jev usage as managed only when the platform says the gateway pays for it", async () => {
+    const byok = (env: NodeJS.ProcessEnv) => {
+      const agent = agentModule();
+      const pi = createMockExtensionAPI();
+      registerBrowserTool(pi, { env: { ...ENV, INTROSPECTION_TASK_BROWSER_JEV_URL: "http://api.typesafe.ai", ...env }, loadAgent: async () => agent.module });
+      return exec(pi, { command: "run", goal: "g" }).then(() => {
+        const opts = agent.jev[0] as { telemetry: { attributes: () => Record<string, unknown> } };
+        return opts.telemetry.attributes()["introspection.byok"];
+      });
+    };
+    expect(await byok({ INTROSPECTION_TASK_BROWSER_JEV_MANAGED: "true" })).toBe(false);
+    expect(await byok({ INTROSPECTION_TASK_BROWSER_JEV_MANAGED: "false" })).toBe(true);
+    expect(await byok({})).toBe(true);
   });
 
   it("fails calls, not the session, when the task has no browser, and retries loading", async () => {
