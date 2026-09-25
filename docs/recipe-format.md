@@ -127,6 +127,22 @@ are enabled. Incoming turns then require a successful final `reply`, so an
 enabled command allowlist must include `reply`. Set `requireReply: false` for
 intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
 
+## Browser
+
+`pi.browser` declares that the Recipe's agents may drive the task's browser
+through one `browser` tool. It carries no endpoint or credential; the host binds
+the browser when it starts a task.
+
+```json
+{"pi":{"browser":{"commands":["observe","act","navigate"],"allowedDomains":["app.example.com"]}}}
+```
+
+`commands` restricts the tool for every agent (omitted: all supported; empty:
+no tool). `allowedDomains` narrows navigation within the platform's allowlist.
+`profile` is `none` (default), `optional` or `required`. An agent lists
+`browser` in its `tools`; the host fails when an agent names it and the Recipe
+does not declare `pi.browser`. See [Browser tool](browser.md).
+
 ## Agents
 
 `pi.agents` may declare YAML agent definitions explicitly. When omitted,
