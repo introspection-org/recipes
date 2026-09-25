@@ -35,6 +35,8 @@ export interface BrowserConfig {
    * provider egress so the key never enters the sandbox. Absent: no `run`.
    */
   jevUrl?: string;
+  /** Jev rides the platform gateway, whose key the platform bills for. */
+  jevManaged?: boolean;
 }
 
 export function resolveBrowserConfig(env: NodeJS.ProcessEnv): BrowserConfig | null {
@@ -45,7 +47,8 @@ export function resolveBrowserConfig(env: NodeJS.ProcessEnv): BrowserConfig | nu
     .map((d) => d.trim())
     .filter(Boolean);
   const jevUrl = env.INTROSPECTION_TASK_BROWSER_JEV_URL?.trim();
-  return { cdpUrl, allowedDomains, ...(jevUrl ? { jevUrl } : {}) };
+  const jevManaged = env.INTROSPECTION_TASK_BROWSER_JEV_MANAGED?.trim() === "true";
+  return { cdpUrl, allowedDomains, ...(jevUrl ? { jevUrl, jevManaged } : {}) };
 }
 
 /** The slice of `@introspection-sdk/browser-agent` this module uses. */
@@ -59,7 +62,12 @@ export interface BrowserAgentModule {
     drivers?: (input: Record<string, unknown>) => unknown[];
     validateTarget?: (url: string) => void | Promise<void>;
   }): { commands: readonly string[]; call(input: Record<string, unknown>): Promise<unknown> };
-  JevDriver: new (options: { baseUrl?: string; apiKey?: string; slots?: Record<string, string> }) => unknown;
+  JevDriver: new (options: {
+    baseUrl?: string;
+    apiKey?: string;
+    slots?: Record<string, string>;
+    telemetry?: { attributes?: () => Record<string, unknown> };
+  }) => unknown;
 }
 
 export async function loadBrowserAgent(): Promise<BrowserAgentModule> {
@@ -216,6 +224,8 @@ export function registerBrowserTool(pi: BrowserToolHost, options: RegisterBrowse
                   baseUrl: config.jevUrl,
                   apiKey: env.INTROSPECTION_TOKEN,
                   slots: input.inputs as Record<string, string> | undefined,
+                  // Unset reads as BYOK, so a plane that predates the flag is never billed.
+                  telemetry: { attributes: () => ({ "introspection.byok": !config.jevManaged }) },
                 }),
               ],
             }

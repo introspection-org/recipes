@@ -68,6 +68,7 @@ The host reads the browser from the task environment, beside
 | `INTROSPECTION_TASK_BROWSER_CDP_URL` | CDP endpoint of the task's browser, loopback inside the sandbox. Absent: the tool still registers and fails when called. |
 | `INTROSPECTION_TASK_BROWSER_ALLOWED_DOMAINS` | Comma-separated platform allowlist. |
 | `INTROSPECTION_TASK_BROWSER_JEV_URL` | Driver route for `run`, reached through the sandbox's provider egress so the model key never enters the sandbox. |
+| `INTROSPECTION_TASK_BROWSER_JEV_MANAGED` | `true` when that route is the platform's managed gateway. The tool stamps `introspection.byok` on the driver's usage spans from it, and anything else reads as the project's own key. |
 
 The page work lives in `@introspection-sdk/browser-agent`, which the runtime
 supplies; the Recipe does not depend on it. Hosts register the tool with
