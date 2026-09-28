@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.2...introspection-harbor-v0.8.0) (2026-09-28)
+
+
+### Features
+
+* **eval:** select a runner's own agent with --agent harbor:oracle, and refuse an unpushed plane trial ([#439](https://github.com/introspection-org/introspection-cli/issues/439)) ([050c505](https://github.com/introspection-org/introspection-cli/commit/050c505e54064f2fefd91d6928c0223ecd495338))
+
 ## [0.7.2](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.1...introspection-harbor-v0.7.2) (2026-09-19)
 
 
