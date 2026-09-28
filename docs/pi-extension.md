@@ -74,8 +74,10 @@ messages, and tool calls across the run tree without a second transcript store.
 ## Local capability bindings
 
 Recipe source may include `.pi/mcp.local.example.json`, but secrets belong in
-the environment or an ignored `.pi/mcp.local.json`. A host may synthesize the
-same bindings in memory.
+the environment or an ignored `.pi/mcp.local.json`. A committed
+`.pi/mcp.local.json` validates only as an evaluation binding, every server a
+loopback streamable HTTP endpoint (see [MCP configuration](mcp-configuration.md)).
+A host may synthesize the same bindings in memory.
 
 Bindings are resolved fail-closed for required servers. Optional servers may
 remain unavailable. See [MCP configuration](mcp-configuration.md).
