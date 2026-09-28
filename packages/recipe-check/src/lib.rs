@@ -267,6 +267,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
         validate_package_identity(&package, &mut ctx);
         validate_dependency_package(&package, &mut ctx);
         let resources = validate_pi_config(&package, &mut ctx);
+        validate_mcp_local_config(&mut ctx);
         validate_mcp_local_example(&mut ctx);
 
         let mcp_tool_policy = package
@@ -403,15 +404,6 @@ fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
         );
     }
 
-    if ctx.has_file(".pi/mcp.local.json") {
-        ctx.error(
-            "package.local_config_present",
-            ".pi/mcp.local.json",
-            "Local capability configuration must not be distributed with a Recipe",
-            Some("remove .pi/mcp.local.json and keep only a redacted example when needed"),
-        );
-    }
-
     if let Some(package_manager) = package.package_manager.as_deref() {
         // Corepack refuses to run pnpm when this names another manager, so the
         // documented install aborts before any lockfile rule applies.
@@ -507,7 +499,111 @@ fn is_pnpm_package_manager(declared: &str) -> bool {
 const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const FOREIGN_LOCKFILES: [&str; 3] = ["package-lock.json", "npm-shrinkwrap.json", "yarn.lock"];
 
+const MCP_LOCAL_CONFIG: &str = ".pi/mcp.local.json";
 const MCP_LOCAL_EXAMPLE: &str = ".pi/mcp.local.example.json";
+const LOCAL_CONFIG_PRESENT: &str = "package.local_config_present";
+const LOCAL_CONFIG_HELP: &str = "commit only evaluation bindings: every server streamable_http to a loopback URL such as http://localhost:<port>/mcp, with no auth flow; keep any other local configuration out of the Recipe";
+
+/// A committed `.pi/mcp.local.json` is accepted only as an evaluation binding:
+/// every server reaches a loopback address over streamable HTTP, so the file
+/// can stand a fake in for a declared server and nothing else. An evaluation
+/// runs the fake beside the Recipe; a real endpoint or credential stays local.
+fn validate_mcp_local_config(ctx: &mut CheckContext) {
+    if !ctx.has_file(MCP_LOCAL_CONFIG) {
+        return;
+    }
+    let Some(content) = ctx.content(MCP_LOCAL_CONFIG).map(str::to_owned) else {
+        ctx.error(
+            LOCAL_CONFIG_PRESENT,
+            MCP_LOCAL_CONFIG,
+            "Local capability configuration must not be distributed with a Recipe: .pi/mcp.local.json content was not provided, so it cannot be accepted as an evaluation binding",
+            Some(LOCAL_CONFIG_HELP),
+        );
+        return;
+    };
+    for reason in non_evaluation_binding_reasons(&content) {
+        ctx.error(
+            LOCAL_CONFIG_PRESENT,
+            MCP_LOCAL_CONFIG,
+            format!(
+                "Local capability configuration must not be distributed with a Recipe: {reason}"
+            ),
+            Some(LOCAL_CONFIG_HELP),
+        );
+    }
+}
+
+/// Everything in a `.pi/mcp.local.json` that makes it more than an evaluation
+/// binding. Empty means every server is a loopback streamable HTTP endpoint.
+fn non_evaluation_binding_reasons(content: &str) -> Vec<String> {
+    let parsed: JsonValue = match serde_json::from_str(content) {
+        Ok(value) => value,
+        Err(err) => return vec![format!(".pi/mcp.local.json is not valid JSON: {err}")],
+    };
+    let JsonValue::Object(map) = parsed else {
+        return vec![".pi/mcp.local.json must be an object".to_owned()];
+    };
+    let Some(servers) = map.get("servers") else {
+        return Vec::new();
+    };
+    let JsonValue::Array(servers) = servers else {
+        return vec!["servers must be an array".to_owned()];
+    };
+    let mut reasons = Vec::new();
+    for (index, server) in servers.iter().enumerate() {
+        let JsonValue::Object(server) = server else {
+            reasons.push(format!("servers[{index}] must be an object"));
+            continue;
+        };
+        if let Some(transport) = server.get("transport") {
+            if string_value(Some(transport)).as_deref() != Some("streamable_http") {
+                reasons.push(format!(
+                    "servers[{index}].transport must be streamable_http"
+                ));
+            }
+        }
+        for key in ["auth", "command"] {
+            if server.contains_key(key) {
+                reasons.push(format!(
+                    "servers[{index}].{key} binds more than a loopback endpoint"
+                ));
+            }
+        }
+        match string_value(server.get("url")) {
+            Some(url) if is_loopback_http_url(&url) => {}
+            _ => reasons.push(format!(
+                "servers[{index}].url must be an absolute HTTP(S) URL to a loopback host (localhost, 127.0.0.0/8 or ::1); an environment reference is not expanded in a committed binding"
+            )),
+        }
+        match server.get("headers") {
+            None => {}
+            Some(JsonValue::Object(headers)) => {
+                for (key, value) in headers {
+                    if !matches!(value, JsonValue::String(_)) {
+                        reasons.push(format!("servers[{index}].headers.{key} must be a string"));
+                    }
+                }
+            }
+            Some(_) => reasons.push(format!("servers[{index}].headers must be an object")),
+        }
+    }
+    reasons
+}
+
+fn is_loopback_http_url(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        None => false,
+    }
+}
 
 fn validate_mcp_local_example(ctx: &mut CheckContext) {
     if !ctx.has_file(MCP_LOCAL_EXAMPLE) {
@@ -695,7 +791,10 @@ fn validate_channel_config(
             );
             continue;
         };
-        for key in connector.keys().filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply")) {
+        for key in connector
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "provider" | "commands" | "requireReply"))
+        {
             ctx.error(
                 "pi.channels_invalid",
                 PACKAGE_JSON,
@@ -704,14 +803,25 @@ fn validate_channel_config(
             );
         }
 
-        if connector.get("requireReply").is_some_and(|value| !value.is_boolean()) {
-            ctx.error("pi.channels_invalid", PACKAGE_JSON,
-                format!("package.json#pi.channels[{index}].requireReply must be a boolean"), Some("use true or false"));
+        if connector
+            .get("requireReply")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            ctx.error(
+                "pi.channels_invalid",
+                PACKAGE_JSON,
+                format!("package.json#pi.channels[{index}].requireReply must be a boolean"),
+                Some("use true or false"),
+            );
         }
         if let Some(commands) = connector.get("commands") {
             let valid = commands.as_array().is_some_and(|values| {
                 let mut seen = BTreeSet::new();
-                values.iter().all(|value| value.as_str().is_some_and(|value| !value.trim().is_empty() && seen.insert(value)))
+                values.iter().all(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+                })
             });
             if !valid {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
@@ -3275,30 +3385,61 @@ mod tests {
     #[test]
     fn connector_command_allowlist_shape() {
         for (commands, valid) in [
-            (json!(["read", "reply"]), true), (json!([]), true),
-            (json!(["read", "read"]), false), (json!([""]), false),
-            (json!("read"), false), (json!([42]), false),
+            (json!(["read", "reply"]), true),
+            (json!([]), true),
+            (json!(["read", "read"]), false),
+            (json!([""]), false),
+            (json!("read"), false),
+            (json!([42]), false),
         ] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
-            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files
+                .files
+                .iter_mut()
+                .find(|file| file.path == PACKAGE_JSON)
+                .unwrap();
+            let mut package: JsonValue =
+                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["commands"] = commands;
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), valid);
+            assert_eq!(
+                !report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "pi.channels_invalid"),
+                valid
+            );
         }
     }
 
     #[test]
     fn connector_required_reply_shape() {
-        for value in [json!(true), json!(false), json!("true"), json!(1), JsonValue::Null] {
+        for value in [
+            json!(true),
+            json!(false),
+            json!("true"),
+            json!(1),
+            JsonValue::Null,
+        ] {
             let mut files = connector_recipe(&["channels"]);
-            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).unwrap();
-            let mut package: JsonValue = serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
+            let package_file = files
+                .files
+                .iter_mut()
+                .find(|file| file.path == PACKAGE_JSON)
+                .unwrap();
+            let mut package: JsonValue =
+                serde_json::from_str(package_file.content.as_deref().unwrap()).unwrap();
             package["pi"]["channels"][0]["requireReply"] = value.clone();
             package_file.content = Some(serde_json::to_string(&package).unwrap());
             let report = check_recipe_files(&files);
-            assert_eq!(!report.diagnostics.iter().any(|d| d.code == "pi.channels_invalid"), value.is_boolean());
+            assert_eq!(
+                !report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "pi.channels_invalid"),
+                value.is_boolean()
+            );
         }
     }
 
@@ -4365,15 +4506,98 @@ mod tests {
     }
 
     #[test]
-    fn rejects_local_capability_configuration_in_the_recipe_snapshot() {
-        let package = json!({ "name": "local-config-recipe", "pi": {} });
-        let input = recipe_files(&[
+    fn a_committed_local_binding_is_accepted_only_as_a_loopback_evaluation_binding() {
+        for (content, accepted) in [
+            (r#"{"servers":[]}"#, true),
+            (r#"{}"#, true),
             (
-                "package.json",
-                &serde_json::to_string_pretty(&package).expect("serialize package"),
+                r#"{"servers":[{"id":"attio","transport":"streamable_http","url":"http://localhost:4318/attio/mcp"},{"id":"resend","url":"http://127.0.0.1:4318/resend/mcp","headers":{"X-Fake":"1"}}]}"#,
+                true,
             ),
-            (".pi/mcp.local.json", r#"{"servers":[]}"#),
-        ]);
+            (
+                r#"{"servers":[{"id":"a","url":"https://[::1]:8443/mcp"}]}"#,
+                true,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://LOCALHOST/mcp"}]}"#,
+                true,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"https://contacts.example.com/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://fake-attio:4318/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://10.0.0.1/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"${ATTIO_MCP_URL}"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"ws://localhost:4318/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","transport":"stdio","url":"http://localhost/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://localhost/mcp","auth":"oauth"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://localhost/mcp","command":"npx"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://localhost/mcp","headers":{"X":1}}]}"#,
+                false,
+            ),
+            (r#"{"servers":[{"id":"a"}]}"#, false),
+            (r#"{"servers":["a"]}"#, false),
+            (r#"{"servers":{}}"#, false),
+            (r#"[]"#, false),
+            (r#"{"#, false),
+        ] {
+            let package = json!({ "name": "local-config-recipe", "pi": {} });
+            let input = recipe_files(&[
+                (
+                    "package.json",
+                    &serde_json::to_string_pretty(&package).expect("serialize package"),
+                ),
+                (".pi/mcp.local.json", content),
+            ]);
+
+            let report = check_recipe_files(&input);
+            let rejected = report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "package.local_config_present");
+            assert_eq!(!rejected, accepted, "{content}: {:?}", report.diagnostics);
+        }
+    }
+
+    #[test]
+    fn a_committed_local_binding_without_content_is_rejected() {
+        let package = json!({ "name": "local-config-recipe", "pi": {} });
+        let input = RecipeFiles {
+            files: vec![
+                RecipeFile::new(
+                    "package.json",
+                    serde_json::to_string_pretty(&package).expect("serialize package"),
+                ),
+                RecipeFile {
+                    path: ".pi/mcp.local.json".to_owned(),
+                    content: None,
+                },
+            ],
+            directories: Vec::new(),
+        };
 
         let report = check_recipe_files(&input);
         assert!(report

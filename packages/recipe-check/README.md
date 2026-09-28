@@ -11,7 +11,9 @@ The checker validates the portable authored contract:
 - package and agent MCP authorization policy;
 - direct-child `judges/*.yaml` definitions and their typed authored schema;
 - dependency lockfile presence and npm lockfile identity;
-- exclusion of local capability configuration from distributable snapshots.
+- exclusion of local capability configuration from distributable snapshots,
+  accepting a committed `.pi/mcp.local.json` only as a loopback evaluation
+  binding.
 
 It deliberately does not validate host manifests, credentials, deployment
 resources, licenses, or local endpoint bindings. The exported `resources`
