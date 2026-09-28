@@ -271,6 +271,14 @@ class RuntimeTaskBodyTest(unittest.TestCase):
         self.assertEqual(body["recipe_git_commit_sha"], "a" * 40)
         self.assertNotIn("repositories", body)
 
+        # One of Harbor's own agents drives the trial through exec, so the task
+        # is not told to run a Recipe agent of that name.
+        environment._spec["candidate"]["agent"] = "harbor:oracle"
+        body = environment.create_task_body(
+            "01990000-0000-7000-8000-000000000001", None
+        )
+        self.assertNotIn("agent_name", body)
+
 
 class ExecSpecTest(unittest.TestCase):
     def test_a_main_shell_string_runs_through_bash_with_env_as_a_prefix(

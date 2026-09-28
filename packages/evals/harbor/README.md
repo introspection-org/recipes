@@ -16,6 +16,40 @@ introspection eval run --runner harbor --path evals/refund-task --agent agent2
 The selected agent YAML is the only source of the evaluated model; the CLI and
 adapter do not apply a separate model override.
 
+### Harbor's own agents
+
+A prefixed agent names one of Harbor's agents instead of a Recipe agent:
+`harbor:oracle` runs the task's `solution/` through the environment's exec and
+`harbor:nop` sends no turn, both without a Recipe agent or a model. Harbor is
+invoked with that agent in place of the Recipe adapter, and on the
+Introspection environment the task keeps the Recipe's default agent while the
+solution runs through the task's commands. The prefix is the runner's name, so
+it is refused with a runner that has no agents of its own, and `-a` after `--`
+stays refused: the common option is the one way to choose.
+
+```sh
+introspection eval run --runner harbor --path evals/refund-task --agent harbor:oracle
+```
+
+### Local Docker on the Runtime image
+
+With no `--env` and `INTROSPECTION_HARBOR_ENVIRONMENT` unset, Harbor runs its
+local Docker environment and the default `runtime` adapter expects the trial
+image to carry the Recipe under `/opt/introspection/recipe` and the runtime
+under `/usr/local/lib/introspection-runtime`, which is what the Runtime image
+has. A plane's Runtime images are private, but `make ensure-runtime-images` in
+`introspection-cloud` builds the same image as `introspection-runtime-agent:latest`,
+so a task's `environment/Dockerfile` can start from it:
+
+```dockerfile
+FROM introspection-runtime-agent:latest
+COPY --chown=appuser:appuser . /opt/introspection/recipe
+```
+
+The Recipe's `.pi/mcp.local.json` binds a fake MCP server the compose file
+serves as a sidecar, and the adapter seeds it from `.pi/mcp.local.example.json`
+when the file is absent. A foreign image takes the `bootstrap` adapter instead.
+
 ## Two adapters, one launch
 
 `introspection eval run` selects `introspection_harbor.agent:IntrospectionRecipeAgent`;
@@ -43,7 +77,10 @@ using the existing Git credential helper and checks it out temporarily for
 Harbor suite discovery. It keeps the Runtime selected by `--runtime`; every
 trial sends that Runtime ID and the candidate SHA to the Task API. Neither a
 local checkout nor a branch flag is required. Operator forwards `--commit-sha`
-to this same command.
+to this same command. Naming `IntrospectionEnvironment` by hand through `--env`
+without `--commit-sha` sends the local `HEAD` as the commit to materialize, so
+the CLI refuses a dirty working tree or a commit on no remote branch: the plane
+evaluates what was pushed, never the working tree.
 Committed-run results default to the invoking directory's `eval-runs/` (or
 `INTROSPECTION_EVAL_RUNS_DIR`); they survive checkout cleanup. Any explicit
 Harbor `--jobs-dir` must be an absolute path outside the temporary checkout.

@@ -61,6 +61,10 @@ from .client import (
 ENVIRONMENT_TYPE = "introspection"
 TASK_KIND = "eval"
 TASK_TAG = "harbor"
+# `introspection eval run --agent harbor:<name>` records the run spec's agent
+# with this prefix: one of Harbor's own agents (`oracle`, `nop`) drives the
+# trial, no Recipe agent runs, and the task keeps the Recipe's default.
+HARBOR_AGENT_PREFIX = "harbor:"
 # The keys a `main` service may carry: it names the agent slot, which the
 # Runtime image fills, so anything describing an image is not ours to honour.
 MAIN_SERVICE_KEYS = frozenset({"volumes", "depends_on"})
@@ -595,7 +599,8 @@ class IntrospectionEnvironment(BaseEnvironment):
         }
         if recipe_sha := candidate.get("recipe_git_commit_sha"):
             body["recipe_git_commit_sha"] = recipe_sha
-        if agent := candidate.get("agent"):
+        agent = candidate.get("agent")
+        if agent and not agent.startswith(HARBOR_AGENT_PREFIX):
             body["agent_name"] = agent
         if compose is not None:
             body["compose"] = compose
