@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/introspection-org/recipes/compare/v0.27.4...v0.28.0) (2026-09-29)
+
+
+### Features
+
+* **recipe-check:** accept a committed .pi/mcp.local.json as a loopback evaluation binding ([#305](https://github.com/introspection-org/recipes/issues/305)) ([973a0be](https://github.com/introspection-org/recipes/commit/973a0bee59779e6b3c97d82ee84f90a867df7e08))
+
 ## [0.27.4](https://github.com/introspection-org/recipes/compare/v0.27.3...v0.27.4) (2026-09-25)
 
 
