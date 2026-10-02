@@ -281,6 +281,13 @@ hook execution.
 `tools` is an allowlist. A host MUST expose no undeclared Pi or extension tool
 through this field.
 
+Recipes also provides `current-time`. Agents opt in with `tools: [current-time]`.
+The tool returns the current time in UTC as an ISO 8601 timestamp and does not
+use a shell. When `RECIPES_CURRENT_TIME` is set to an ISO 8601 UTC timestamp,
+the tool returns that frozen value so local launchers and evals can pin the
+clock. When unset, it returns live UTC. A non-UTC or unparseable value fails
+closed. Package extensions MUST NOT register the same name.
+
 `subagents` names agents the selected agent may invoke. A host MUST expose only
 those resolved definitions through the shared `agent` tool. How child work is
 scheduled or isolated belongs to the host.

@@ -27,6 +27,10 @@ import {
   type AgentRunController,
   type AgentRunEventObserver,
 } from "./agents.js";
+import {
+  CURRENT_TIME_TOOL_NAME,
+  createCurrentTimeTool,
+} from "./current-time.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   clearMcpCatalogPreload,
@@ -593,6 +597,7 @@ async function createSessionForAgent(
       "grep",
       "find",
       "ls",
+      CURRENT_TIME_TOOL_NAME,
       ...(opts.customTools ?? []).map((tool) => tool.name),
       ...(recipe.subagents.size > 0 && opts.runController !== null
         ? ["agent"]
@@ -840,6 +845,12 @@ async function createSessionForAgent(
     const customTools = [
       ...(environmentBash ? [environmentBash] : []),
       ...(opts.customTools ?? []),
+      ...(tools.includes(CURRENT_TIME_TOOL_NAME) &&
+      !(opts.customTools ?? []).some(
+        (tool) => tool.name === CURRENT_TIME_TOOL_NAME
+      )
+        ? [createCurrentTimeTool(env)]
+        : []),
       ...(wantsSubagents
         ? [
             createAgentTool(

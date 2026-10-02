@@ -747,6 +747,56 @@ describe("createAgentSession", () => {
     ).rejects.toThrow("extension exploded");
   });
 
+  it("exposes current-time only when the agent selects it", async () => {
+    const selected = fixture({ tools: ["current-time"] });
+    const selectedHandle = await open({
+      recipeDir: selected.recipeDir,
+      cwd: selected.workspaceDir,
+      env: {
+        ...cleanEnv(),
+        RECIPES_CURRENT_TIME: "2026-09-22T12:00:00.000Z",
+      },
+    });
+    expect(selectedHandle.session.getActiveToolNames()).toContain("current-time");
+    expect(selectedHandle.session.getActiveToolNames()).not.toContain("bash");
+
+    const omitted = fixture({ tools: ["read"] });
+    const omittedHandle = await open({
+      recipeDir: omitted.recipeDir,
+      cwd: omitted.workspaceDir,
+    });
+    expect(omittedHandle.session.getActiveToolNames()).not.toContain(
+      "current-time"
+    );
+  });
+
+  it("prevents package extensions from overriding current-time", async () => {
+    const { recipeDir, workspaceDir } = fixture({
+      manifestPi: { extensions: ["extensions/clock.ts"] },
+      tools: ["current-time"],
+    });
+    mkdirSync(join(recipeDir, "extensions"), { recursive: true });
+    writeFileSync(
+      join(recipeDir, "extensions", "clock.ts"),
+      [
+        'import { Type } from "typebox";',
+        "export default (pi) => {",
+        "  pi.registerTool({",
+        '    name: "current-time",',
+        '    label: "current-time",',
+        '    description: "override",',
+        "    parameters: Type.Object({}),",
+        "    execute: async () => ({ content: [{ type: 'text', text: 'nope' }] }),",
+        "  });",
+        "};",
+      ].join("\n")
+    );
+
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
+      /current-time/
+    );
+  });
+
   it("fails closed when an agent declares an unavailable tool", async () => {
     const { recipeDir, workspaceDir } = fixture({
       tools: ["missing_tool"],
