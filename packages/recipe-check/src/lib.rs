@@ -61,9 +61,25 @@ pub struct Report {
     pub resources: BTreeMap<String, usize>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    #[default]
+    Error,
+    Warning,
+}
+
+impl Severity {
+    pub const fn is_error(self) -> bool {
+        matches!(self, Self::Error)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub code: String,
+    #[serde(default)]
+    pub severity: Severity,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
@@ -218,6 +234,7 @@ impl CheckContext {
     fn push(
         &mut self,
         code: impl Into<String>,
+        severity: Severity,
         path: impl Into<String>,
         span: Option<Span>,
         message: impl Into<String>,
@@ -225,6 +242,7 @@ impl CheckContext {
     ) {
         self.diagnostics.push(Diagnostic {
             code: code.into(),
+            severity,
             path: path.into(),
             span,
             message: message.into(),
@@ -239,7 +257,17 @@ impl CheckContext {
         message: impl Into<String>,
         help: Option<impl Into<String>>,
     ) {
-        self.push(code, path, None, message, help);
+        self.push(code, Severity::Error, path, None, message, help);
+    }
+
+    fn warning(
+        &mut self,
+        code: impl Into<String>,
+        path: impl Into<String>,
+        message: impl Into<String>,
+        help: Option<impl Into<String>>,
+    ) {
+        self.push(code, Severity::Warning, path, None, message, help);
     }
 
     fn error_at(
@@ -250,7 +278,7 @@ impl CheckContext {
         message: impl Into<String>,
         help: Option<impl Into<String>>,
     ) {
-        self.push(code, path, span, message, help);
+        self.push(code, Severity::Error, path, span, message, help);
     }
 }
 
@@ -290,7 +318,10 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
         resource_counts.insert("judges".to_owned(), judge_count);
     }
 
-    let valid = ctx.diagnostics.is_empty();
+    let valid = !ctx
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity.is_error());
     Report {
         valid,
         diagnostics: ctx.diagnostics,
@@ -396,7 +427,7 @@ fn validate_package_identity(package: &Package, ctx: &mut CheckContext) {
 
 fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
     if package.runtime_dependencies && !has_dependency_lockfile(ctx) {
-        ctx.error(
+        ctx.warning(
             "package.lockfile_missing",
             PACKAGE_JSON,
             "Recipe declares runtime dependencies but has no lockfile",
@@ -491,7 +522,10 @@ fn is_pnpm_package_manager(declared: &str) -> bool {
     let numeric = |part: Option<&str>| {
         part.is_some_and(|value| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
     };
-    numeric(parts.next()) && numeric(parts.next()) && numeric(parts.next()) && parts.next().is_none()
+    numeric(parts.next())
+        && numeric(parts.next())
+        && numeric(parts.next())
+        && parts.next().is_none()
 }
 
 /// The one lockfile a Recipe may carry: `install-recipe-dependencies` runs
@@ -4415,7 +4449,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_dependencies_require_a_committed_lockfile() {
+    fn a_missing_lockfile_warns_without_invalidating_the_recipe() {
         let package = json!({
             "name": "dependency-recipe",
             "pi": {},
@@ -4427,10 +4461,12 @@ mod tests {
         )]);
 
         let missing = check_recipe_files(&input);
-        assert!(missing
+        let warning = missing
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "package.lockfile_missing"));
+            .find(|diagnostic| diagnostic.code == "package.lockfile_missing")
+            .expect("lockfile_missing diagnostic");
+        assert_eq!(warning.severity, Severity::Warning);
 
         input.files.push(RecipeFile::new(
             "pnpm-lock.yaml",
@@ -4441,6 +4477,7 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "package.lockfile_missing"));
+        assert_eq!(missing.valid, locked.valid);
     }
 
     #[test]
