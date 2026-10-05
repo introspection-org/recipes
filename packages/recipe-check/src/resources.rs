@@ -27,7 +27,7 @@
 
 use serde_json::Value as JsonValue;
 
-use crate::Diagnostic;
+use crate::{Diagnostic, Severity};
 
 const KNOWN_SECTIONS: [&str; 2] = ["requests", "limits"];
 const KNOWN_REQUEST_QUANTITIES: [&str; 3] = ["cpu", "memory", "storage"];
@@ -319,6 +319,7 @@ fn push(
 ) {
     diagnostics.push(Diagnostic {
         code: code.to_owned(),
+        severity: Severity::Error,
         path: path.to_owned(),
         span: None,
         message: message.into(),

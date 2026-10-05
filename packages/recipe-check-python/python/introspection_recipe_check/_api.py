@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Literal, TypedDict, cast
 from urllib.parse import unquote, urlparse
 
 from . import _native
@@ -39,6 +39,7 @@ class Diagnostic:
     message: str
     span: Span | None = None
     help: str | None = None
+    severity: Literal["error", "warning"] = "error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,4 +367,5 @@ def _diagnostic(raw: dict[str, object]) -> Diagnostic:
             else None
         ),
         help=cast(str | None, raw.get("help")),
+        severity=cast(Literal["error", "warning"], raw.get("severity", "error")),
     )

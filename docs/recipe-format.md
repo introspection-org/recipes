@@ -77,10 +77,11 @@ Recipe fields inside supported `pi` structures are validation errors unless a
 later format version explicitly defines them.
 
 When a Recipe declares non-empty `dependencies` or `optionalDependencies`, it
-MUST commit `pnpm-lock.yaml`. A `packageManager` field, if present, MUST be a
-complete `pnpm@<version>` descriptor; Corepack refuses a bare name, a partial
-version, or another manager. A Recipe installs with
-`pnpm install --frozen-lockfile`, so `package-lock.json`,
+SHOULD commit `pnpm-lock.yaml`; without one the check warns and each install
+resolves the declared ranges afresh. A `packageManager` field, if present, MUST
+be a complete `pnpm@<version>` descriptor; Corepack refuses a bare name, a
+partial version, or another manager. A Recipe installs with pnpm, so
+`package-lock.json`,
 `npm-shrinkwrap.json` and `yarn.lock` are rejected: they pin nothing that is
 read. An npm lockfile left in the tree MUST still carry the same package name
 and version as `package.json`.
