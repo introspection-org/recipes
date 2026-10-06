@@ -575,6 +575,31 @@ export function cloneModelForRecipe<T extends Model<any>>(model: T): T {
   };
 }
 
+/** The Anthropic betas pi-ai adds from a model's own compat flags when no `anthropic-beta` header is set. */
+function modelBetas(model: Model<any>): string[] {
+  const compat = (model.compat ?? {}) as {
+    supportsMidConvoEffort?: boolean;
+    supportsMidConvoSystemMessages?: boolean;
+    supportsMidConvoToolChanges?: boolean;
+    allowedFallbackModels?: unknown[];
+  };
+  return [
+    ...(compat.supportsMidConvoEffort === true
+      ? [
+          "mid-conversation-output-config-2026-07-01",
+          "thinking-binding-controls-2026-08-01",
+        ]
+      : []),
+    ...(compat.supportsMidConvoSystemMessages === true &&
+    compat.supportsMidConvoToolChanges === true
+      ? ["inline-tools-2026-09-15"]
+      : []),
+    ...((compat.allowedFallbackModels?.length ?? 0) > 0
+      ? ["server-side-fallback-2026-07-01"]
+      : []),
+  ];
+}
+
 /** Apply provider routing and header options onto a pi-ai model instance. */
 export function applyRecipeAgentModelConfigToModel<T extends Model<any>>(
   model: T,
@@ -592,8 +617,13 @@ export function applyRecipeAgentModelConfigToModel<T extends Model<any>>(
       ?.split(",")
       .map((item) => item.trim())
       .filter(Boolean);
+    // pi-ai sends exactly the betas an `anthropic-beta` header names, so a header without them would drop the ones
+    // pi-ai adds for the model itself.
     const betas = [
-      ...new Set([...(existing ?? []), ...config.anthropic.betas]),
+      ...new Set([
+        ...(existing ?? modelBetas(model)),
+        ...config.anthropic.betas,
+      ]),
     ];
     model.headers = {
       ...(model.headers ?? {}),
