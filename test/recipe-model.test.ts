@@ -355,6 +355,26 @@ describe("applyRecipeAgentModelConfigToModel", () => {
     expect(applied.compat?.openRouterRouting).toEqual({ sort: "throughput" });
     expect(applied.headers?.["anthropic-beta"]).toBe("existing,new-beta");
   });
+
+  it("keeps the betas pi-ai adds for the model itself", () => {
+    const model = {
+      compat: {
+        supportsMidConvoEffort: true,
+        supportsMidConvoSystemMessages: true,
+        supportsMidConvoToolChanges: true,
+      },
+    } as never;
+    const applied = applyRecipeAgentModelConfigToModel(model, {
+      anthropic: { betas: ["context-management-2025-06-27"] },
+    }) as { headers?: Record<string, string> };
+
+    expect(applied.headers?.["anthropic-beta"]?.split(",")).toEqual([
+      "mid-conversation-output-config-2026-07-01",
+      "thinking-binding-controls-2026-08-01",
+      "inline-tools-2026-09-15",
+      "context-management-2025-06-27",
+    ]);
+  });
 });
 
 describe("applyRecipeAgentModelConfigToSession", () => {
