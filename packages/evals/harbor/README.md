@@ -199,6 +199,14 @@ task from an *agent* adapter and leaving the Harbor environment idle — reads
 the Recipe's judges back instead, which measures a Recipe but cannot score
 somebody else's benchmark. That shape was prototyped and withdrawn.
 
+### A verifier that calls a model
+
+A judge script in `tests/test.sh` that uses the OpenAI or Anthropic SDK, or
+LiteLLM, works unchanged. Its calls use the sandbox's managed credential.
+
+Do not pass a provider key in `[verifier.env]`; it is ignored. Other providers
+are not supported for judges yet.
+
 `main` is the agent slot and the Runtime image fills it — the agent base plus
 the Recipe, either baked or materialized from git — so the eval logic belongs
 in the Recipe repository beside the Recipe it measures. A `main` service

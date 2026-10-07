@@ -19,7 +19,9 @@ from unittest.mock import AsyncMock, patch
 
 from harbor.environments.base import BaseEnvironment
 from harbor.environments.tar_transfer import pack_dir_to_file
+from harbor.models.task.config import TaskOS
 from harbor.models.trial.paths import EnvironmentPaths
+from harbor.utils.scripts import build_execution_command
 
 from introspection_harbor.client import (
     CREDENTIALS_PATH,
@@ -38,12 +40,14 @@ from introspection_harbor.task_environment import (
     build_context,
     download_command,
     exec_command,
+    is_verifier_command,
     main_service,
     read_compose,
     sidecar_services,
     translate_compose,
     trial_runtime_id,
     unused_dockerfile,
+    verifier_egress_command,
 )
 
 COMPOSE = {
@@ -340,6 +344,65 @@ class ManagedCredentialBoundaryTest(unittest.TestCase):
             result = environment._merge_env(None)
 
         self.assertEqual(result, merged)
+
+
+class VerifierEgressTest(unittest.TestCase):
+    def test_only_the_test_script_is_a_verifier_command(self) -> None:
+        paths = EnvironmentPaths()
+        built = build_execution_command(
+            str(paths.tests_dir / "test.sh"),
+            stdout_path=str(paths.verifier_dir / "test-stdout.txt"),
+            task_os=TaskOS.LINUX,
+        )
+
+        self.assertTrue(is_verifier_command(built))
+        self.assertTrue(is_verifier_command("('/tests/my test.sh') > out 2>&1"))
+        self.assertTrue(is_verifier_command("/tests/test.sh"))
+        self.assertFalse(is_verifier_command("chmod +x /tests/test.sh"))
+        self.assertFalse(is_verifier_command("pi --print @/tmp/prompt.md"))
+
+    def _run(self, env: dict[str, str]) -> dict[str, str]:
+        command = verifier_egress_command("env")
+        output = subprocess.run(
+            ["/bin/bash", "-c", command],
+            env={"PATH": os.environ["PATH"], **env},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+
+    def test_model_calls_go_plain_http_through_child_egress(self) -> None:
+        result = self._run(
+            {
+                "INTROSPECTION_EGRESS_URL": "http://egress:8081",
+                "HTTP_PROXY": "http://general:8080",
+            }
+        )
+
+        self.assertEqual(result["HTTP_PROXY"], "http://egress:8081")
+        self.assertEqual(result["http_proxy"], "http://egress:8081")
+        self.assertEqual(result["OPENAI_BASE_URL"], "http://api.openai.com/v1")
+        self.assertEqual(result["ANTHROPIC_BASE_URL"], "http://api.anthropic.com")
+
+    def test_a_base_url_the_task_set_is_kept(self) -> None:
+        result = self._run(
+            {
+                "INTROSPECTION_EGRESS_URL": "http://egress:8081",
+                "OPENAI_BASE_URL": "http://gateway.example.test/v1",
+            }
+        )
+
+        self.assertEqual(result["OPENAI_BASE_URL"], "http://gateway.example.test/v1")
+
+    def test_nothing_changes_without_child_egress(self) -> None:
+        """A plain-HTTP base URL without the proxy would expose the key."""
+
+        result = self._run({"HTTP_PROXY": "http://general:8080"})
+
+        self.assertEqual(result["HTTP_PROXY"], "http://general:8080")
+        self.assertNotIn("OPENAI_BASE_URL", result)
+        self.assertNotIn("ANTHROPIC_BASE_URL", result)
 
 
 class ServiceScopedSpecTest(unittest.TestCase):

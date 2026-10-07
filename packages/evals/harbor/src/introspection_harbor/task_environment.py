@@ -41,6 +41,7 @@ from harbor.environments.tar_transfer import (
     pack_dir_to_file,
     remote_pack_command,
 )
+from harbor.models.trial.paths import EnvironmentPaths
 
 from .base import (
     MANAGED_PROVIDER_KEYS,
@@ -144,6 +145,53 @@ HARBOR_VOLUME_MOUNTS: dict[str, str] = {
     # names the oracle.
     "harbor-solution": "/solution",
 }
+
+# A verifier that calls a model (Harbor's LLM-judge pattern) holds the child's
+# session locator, not a provider key, and egress swaps the locator only on a
+# plain-HTTP request it can read. An SDK's default `https://` base URL sends
+# the locator straight to the provider, which answers 401. These are the base
+# URLs each SDK and LiteLLM read, in the plain-HTTP form egress rewrites.
+VERIFIER_PROVIDER_BASE_URLS: dict[str, str] = {
+    "OPENAI_BASE_URL": "http://api.openai.com/v1",
+    "OPENAI_API_BASE": "http://api.openai.com/v1",
+    "ANTHROPIC_BASE_URL": "http://api.anthropic.com",
+    "ANTHROPIC_API_BASE": "http://api.anthropic.com",
+}
+CHILD_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL"
+
+
+def is_verifier_command(command: str) -> bool:
+    """Whether Harbor's Verifier built this command.
+
+    The Verifier runs the task's test script by its path under `/tests`, in a
+    subshell whose output it redirects, and nothing else execs from there.
+    That is the only mark it leaves: the environment is not told which phase a
+    command belongs to.
+    """
+
+    tests_dir = EnvironmentPaths().tests_dir.as_posix()
+    return command.lstrip("('\" ").startswith(f"{tests_dir}/")
+
+
+def verifier_egress_command(command: str) -> str:
+    """Route the verifier's model calls through managed egress.
+
+    The egress URL exists only in the child sandbox, so the shell resolves it
+    there. The base URLs and the proxy are set together or not at all: a
+    plain-HTTP base URL without the proxy would put the locator on the wire.
+    A base URL the task set itself in `[verifier.env]` is left alone.
+    """
+
+    egress = f"${CHILD_EGRESS_URL_ENV}"
+    exports = " ".join(
+        f'{name}="${{{name}:-{url}}}"'
+        for name, url in VERIFIER_PROVIDER_BASE_URLS.items()
+    )
+    return (
+        f'if [ -n "${{{CHILD_EGRESS_URL_ENV}:-}}" ]; then '
+        f'export HTTP_PROXY="{egress}" http_proxy="{egress}" {exports}; '
+        f"fi; {command}"
+    )
 
 
 def _remote_unpack_command(archive_path: str, target_dir: str) -> str:
@@ -750,6 +798,8 @@ class IntrospectionEnvironment(BaseEnvironment):
                 "introspection sandbox cannot run as %r; using the sandbox user",
                 requested,
             )
+        if is_verifier_command(command):
+            command = verifier_egress_command(command)
         return await self._run_exec(
             command,
             cwd=effective_exec_cwd(cwd, self.task_env_config.workdir, None),
