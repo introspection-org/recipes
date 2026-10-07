@@ -79,6 +79,8 @@ class LaunchCommandTest(unittest.TestCase):
                 "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js",
                 "--recipe",
                 "/opt/introspection/recipe",
+                "--session-dir",
+                "/logs/agent/pi/sessions",
                 "--print",
                 "--mode",
                 "json",
@@ -123,7 +125,40 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertEqual(args[-1], "@/tmp/introspection-eval-prompt.md")
         self.assertNotIn("production prompt", args)
         self.assertNotIn("--session", args)
+        self.assertNotIn("--session-dir", args)
         self.assertNotIn("provider-http-pi-extension.js", args)
+
+    def test_resumed_step_continues_the_previous_pi_session(self) -> None:
+        args = pi_args(_AUTHORED_SPEC["candidate"], _AUTHORED_SPEC, resume=True)
+        self.assertEqual(
+            args,
+            [
+                "pi",
+                "--recipe",
+                "/opt/introspection/recipe",
+                "--session-dir",
+                "/logs/agent/pi/sessions",
+                "--continue",
+                "--print",
+                "--mode",
+                "json",
+                "--approve",
+                "@/tmp/introspection-eval-prompt.md",
+            ],
+        )
+
+    def test_first_step_starts_a_new_pi_session(self) -> None:
+        self.assertNotIn(
+            "--continue", pi_args(_AUTHORED_SPEC["candidate"], _AUTHORED_SPEC)
+        )
+
+    def test_replay_refuses_to_resume(self) -> None:
+        spec = {
+            **_AUTHORED_SPEC,
+            "input": {"replay_context_path": "/host/replay-context.json"},
+        }
+        with self.assertRaisesRegex(ValueError, "cannot resume a previous step"):
+            pi_args(spec["candidate"], spec, resume=True)
 
     def test_replay_with_runtime_id_uses_the_only_baked_manifest(self) -> None:
         spec = {
@@ -287,6 +322,27 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("large inline instruction", captured["command"])
         self.assertNotIn("env", captured)
         self.assertNotIn("cwd", captured)
+
+    async def test_resume_continues_the_session_for_that_step_only(self) -> None:
+        instance = _agent(_AUTHORED_SPEC)
+        environment = Mock()
+        environment.upload_file = AsyncMock()
+        commands: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            commands.append(kwargs["command"])
+            return SimpleNamespace(stdout="")
+
+        instance.exec_as_agent = capture_exec
+        self.assertTrue(instance.SUPPORTS_RESUME)
+        # What Harbor's ``resume`` does around ``run`` for a later step.
+        instance._resume = True
+        await instance.run.__wrapped__(instance, "approval", environment, Mock())
+        instance._resume = False
+        await instance.run.__wrapped__(instance, "request", environment, Mock())
+
+        self.assertIn("--continue --print", commands[0])
+        self.assertNotIn("--continue", commands[1])
 
     async def test_run_rejects_a_terminal_provider_error(self) -> None:
         instance = _agent(_AUTHORED_SPEC)

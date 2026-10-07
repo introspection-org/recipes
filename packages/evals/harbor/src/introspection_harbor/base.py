@@ -58,6 +58,10 @@ def is_runtime_id(value: str) -> bool:
 PI_LAUNCHER_PATH = "$HOME/.local/bin/pi"
 REMOTE_REPLAY_CONTEXT_PATH = "/tmp/introspection-replay-context.json"
 REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
+# Same place Harbor's own Pi agent keeps sessions. Harbor empties the agent log
+# directory before a step that starts fresh and preserves it for one that
+# resumes, so a session here is exactly as long-lived as the conversation.
+PI_SESSION_DIR = "/logs/agent/pi/sessions"
 RUNTIME_PROXY_PRELOAD_PATH = "/usr/local/lib/introspection-runtime/proxy-preload.js"
 RUNTIME_TELEMETRY_PRELOAD_PATH = (
     "/usr/local/lib/introspection-runtime/cli-telemetry-preload.js"
@@ -137,15 +141,26 @@ def pi_args(
     spec: dict[str, Any],
     recipe_dir: str = BAKED_RECIPE_DIR,
     provider_http_extension_path: str | None = None,
+    resume: bool = False,
 ) -> list[str]:
     """Build the Pi invocation, via ``introspection local`` only for a replay.
 
     A production-conversation replay needs the CLI to hydrate the native Pi
     session from the canonical replay context immediately before Pi starts. An
     authored run has no such state and launches Pi directly.
+
+    ``resume`` continues the session the previous step of the same trial left
+    in ``PI_SESSION_DIR``, so a later step of a multi-step task is the next
+    turn of one conversation rather than a new one.
     """
 
     if (spec.get("input") or {}).get("replay_context_path"):
+        if resume:
+            # The replay context would be hydrated again over the session the
+            # previous step produced.
+            raise ValueError(
+                "a production-conversation replay cannot resume a previous step"
+            )
         args = [
             "introspection",
             "local",
@@ -169,6 +184,9 @@ def pi_args(
             args.extend(["--agent", candidate["agent"]])
         if candidate.get("model"):
             args.extend(["--model", candidate["model"]])
+        args.extend(["--session-dir", PI_SESSION_DIR])
+        if resume:
+            args.append("--continue")
     args.extend(
         ["--print", "--mode", "json", "--approve", f"@{REMOTE_EVAL_PROMPT_PATH}"]
     )
@@ -258,6 +276,9 @@ class RecipeAgentBase(BaseInstalledAgent):
     """
 
     SUPPORTS_ATIF = True
+    # Harbor calls ``resume`` for the later steps of a multi-step task when the
+    # run sets ``--resume-trajectory``; ``run`` then continues the Pi session.
+    SUPPORTS_RESUME = True
     _OUTPUT_FILENAME = "pi.jsonl"
     # Where this adapter's Recipe ends up. The Runtime image bakes it; an
     # adapter that has to create the directory itself overrides this.
@@ -312,6 +333,7 @@ class RecipeAgentBase(BaseInstalledAgent):
                     self._spec,
                     self.recipe_dir,
                     self.provider_http_extension_path,
+                    resume=self._resume,
                 ),
                 self._OUTPUT_FILENAME,
                 prelude=self.run_prelude(),

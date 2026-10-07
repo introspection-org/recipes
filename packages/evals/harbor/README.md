@@ -31,6 +31,21 @@ stays refused: the common option is the one way to choose.
 introspection eval run --runner harbor --path evals/refund-task --agent harbor:oracle
 ```
 
+### Multi-step tasks
+
+The steps of a multi-step task are turns of one conversation: a later step
+sees everything the earlier steps said and did.
+
+- `--fresh-steps` starts a new conversation at every step instead.
+- Harbor's own agents (`harbor:oracle`, `harbor:nop`) and production replays
+  always start fresh.
+- With `harbor run` directly, steps are fresh unless you pass
+  `--resume-trajectory`.
+
+A verifier can read the whole conversation from the Pi session in
+`/logs/agent/pi/sessions`. `pi.jsonl` and `trajectory.json` cover the current
+step only.
+
 ### Local Docker on the Runtime image
 
 With no `--env` and `INTROSPECTION_HARBOR_ENVIRONMENT` unset, Harbor runs its
@@ -364,13 +379,15 @@ trial it:
 
    ```sh
    pi --recipe /opt/introspection/recipe \
+     --session-dir /logs/agent/pi/sessions \
      --print --mode json --approve \
      @/tmp/introspection-eval-prompt.md
    ```
 
    A production-conversation replay runs the same command through
    `introspection local --replay-context`, which creates the temporary native
-   Pi session immediately before Pi starts;
+   Pi session immediately before Pi starts. Every step after the first adds
+   `--continue` when the run resumes (see [Multi-step tasks](#multi-step-tasks));
 3. captures Pi's JSON event stream as `pi.jsonl` under the agent log directory
    and converts it into `trajectory.json` (ATIF) with token usage, cost, and
    the observed model, which `introspection eval run` verifies against the
