@@ -768,9 +768,20 @@ export function createRecipesExtension(
   ): void {
     sessionConfigurationError = message;
     pi.setActiveTools([]);
-    ctx?.ui.notify(`Recipe session cannot start: ${message}`, "warning");
+    reportSessionFailure(`Recipe session cannot start: ${message}`, ctx);
+  }
+
+  // Print and JSON mode do not render notifications, and the agent is aborted
+  // at start: without stderr the caller would see only "This operation was
+  // aborted". Stdout stays reserved for the mode's own output.
+  function reportSessionFailure(
+    text: string,
+    ctx?: Pick<ExtensionContext, "ui" | "mode">
+  ): void {
+    ctx?.ui.notify(text, "warning");
     if (ctx?.mode === "json" || ctx?.mode === "print") {
       process.exitCode = 1;
+      process.stderr.write(`${text}\n`);
     }
   }
 
@@ -1443,13 +1454,7 @@ export function createRecipesExtension(
         const message = err instanceof Error ? err.message : String(err);
         sessionConfigurationError = message;
         pi.setActiveTools([]);
-        ctx.ui.notify(
-          `Recipe MCP failed to configure: ${message}`,
-          "warning"
-        );
-        if (ctx.mode === "json" || ctx.mode === "print") {
-          process.exitCode = 1;
-        }
+        reportSessionFailure(`Recipe MCP failed to configure: ${message}`, ctx);
         return;
       }
       try {
