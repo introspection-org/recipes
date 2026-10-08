@@ -12,6 +12,7 @@ import json
 import os
 import shlex
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any, override
 from uuid import UUID
@@ -23,6 +24,7 @@ from harbor.agents.installed.base import (
 )
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+from harbor.models.task.config import MCPServerConfig
 from harbor.models.trajectories import Trajectory
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.trajectory_utils import compute_model_usage
@@ -202,15 +204,50 @@ def pi_args(
     return args
 
 
-def prepare_recipe_command(recipe_dir: str = BAKED_RECIPE_DIR) -> str:
-    """Check the Recipe is where the launch expects it and seed its local MCP config."""
+def mcp_binding(mcp_servers: Sequence[MCPServerConfig]) -> str:
+    """The task's MCP servers as Pi's ``.pi/mcp.local.json``.
 
+    A declared ``name`` is the id of the server the Recipe declares. Pi binds
+    streamable HTTP only, so any other transport is refused.
+    """
+
+    for server in mcp_servers:
+        if server.transport != "streamable-http":
+            raise ValueError(
+                f"MCP server {server.name!r} uses transport {server.transport!r}; "
+                "a Recipe binds streamable-http servers only"
+            )
+    return json.dumps(
+        {
+            "servers": [
+                {"id": server.name, "transport": "streamable_http", "url": server.url}
+                for server in mcp_servers
+            ]
+        }
+    )
+
+
+def prepare_recipe_command(
+    recipe_dir: str = BAKED_RECIPE_DIR,
+    mcp_servers: Sequence[MCPServerConfig] = (),
+) -> str:
+    """Check the Recipe is where the launch expects it and write its local MCP config.
+
+    The servers a task declares in ``[[environment.mcp_servers]]`` are the
+    binding. Without any, the Recipe's example file seeds it.
+    """
+
+    binding_path = f"{recipe_dir}/.pi/mcp.local.json"
+    if mcp_servers:
+        return (
+            f"test -f {recipe_dir}/package.json && mkdir -p {recipe_dir}/.pi && "
+            f"printf %s {shlex.quote(mcp_binding(mcp_servers))} >{binding_path}"
+        )
     return (
         f"test -f {recipe_dir}/package.json && "
         f"if [ -f {recipe_dir}/.pi/mcp.local.example.json ] && "
-        f"[ ! -f {recipe_dir}/.pi/mcp.local.json ]; then "
-        f"cp {recipe_dir}/.pi/mcp.local.example.json "
-        f"{recipe_dir}/.pi/mcp.local.json; fi"
+        f"[ ! -f {binding_path} ]; then "
+        f"cp {recipe_dir}/.pi/mcp.local.example.json {binding_path}; fi"
     )
 
 

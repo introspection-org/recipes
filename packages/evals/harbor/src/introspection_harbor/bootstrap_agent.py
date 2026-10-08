@@ -226,6 +226,7 @@ class IntrospectionBootstrapAgent(RecipeAgentBase):
         )
         await self.exec_as_agent(
             environment,
-            command=TOOLCHAIN_PRELUDE + prepare_recipe_command(BOOTSTRAP_RECIPE_DIR),
+            command=TOOLCHAIN_PRELUDE
+            + prepare_recipe_command(BOOTSTRAP_RECIPE_DIR, self.mcp_servers),
         )
         await self.upload_replay_context(environment)

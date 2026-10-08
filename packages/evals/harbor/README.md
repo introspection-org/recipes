@@ -63,8 +63,10 @@ COPY --chown=appuser:appuser . /opt/introspection/recipe
 ```
 
 The Recipe's `.pi/mcp.local.json` binds a fake MCP server the compose file
-serves as a sidecar, and the adapter seeds it from `.pi/mcp.local.example.json`
-when the file is absent. A foreign image takes the `bootstrap` adapter instead.
+serves as a sidecar. The adapter writes it from the task's
+`[[environment.mcp_servers]]`, where `name` is the server id the Recipe
+declares and the transport is `streamable-http`. A task that declares none
+gets the file seeded from `.pi/mcp.local.example.json` when it is absent. A foreign image takes the `bootstrap` adapter instead.
 
 ## Two adapters, one launch
 

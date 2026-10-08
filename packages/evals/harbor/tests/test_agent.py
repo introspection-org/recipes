@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
+from harbor.models.task.config import MCPServerConfig
 
 from introspection_harbor.base import (
     RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
@@ -15,6 +17,7 @@ from introspection_harbor.base import (
     managed_runtime_preloads_command,
     pi_args,
     pi_launcher_command,
+    prepare_recipe_command,
     recipe_run_command,
     require_run_spec_v2,
     selected_prompt,
@@ -36,6 +39,7 @@ _AUTHORED_SPEC = {
 def _agent(spec: dict) -> IntrospectionRecipeAgent:
     instance = object.__new__(IntrospectionRecipeAgent)
     instance._spec = spec
+    instance.mcp_servers = []
     instance._OUTPUT_FILENAME = "pi.jsonl"
     return instance
 
@@ -275,6 +279,40 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         for command in agent_commands:
             for forbidden in ("npm", "git ", "introspection setup", "apt-get"):
                 self.assertNotIn(forbidden, command)
+
+    async def test_install_binds_the_mcp_servers_the_task_declares(self) -> None:
+        instance = _agent(_AUTHORED_SPEC)
+        instance.mcp_servers = [
+            MCPServerConfig(
+                name="attio", transport="http", url="http://fakes:4318/attio/mcp"
+            )
+        ]
+        instance.exec_as_agent = AsyncMock()
+
+        await instance.install(Mock())
+
+        command = instance.exec_as_agent.await_args_list[1].kwargs["command"]
+        self.assertNotIn("mcp.local.example.json", command)
+        binding, target = shlex.split(command)[-2:]
+        self.assertEqual(
+            json.loads(binding),
+            {
+                "servers": [
+                    {
+                        "id": "attio",
+                        "transport": "streamable_http",
+                        "url": "http://fakes:4318/attio/mcp",
+                    }
+                ]
+            },
+        )
+        self.assertEqual(target, ">/opt/introspection/recipe/.pi/mcp.local.json")
+
+    def test_a_task_mcp_server_pi_cannot_bind_is_refused(self) -> None:
+        server = MCPServerConfig(name="crm", transport="stdio", command="crm-mcp")
+
+        with self.assertRaisesRegex(ValueError, "'crm' uses transport 'stdio'"):
+            prepare_recipe_command(mcp_servers=[server])
 
     async def test_install_uploads_the_canonical_replay_context(self) -> None:
         spec = {

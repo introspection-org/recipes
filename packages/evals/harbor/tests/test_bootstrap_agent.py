@@ -20,6 +20,7 @@ from introspection_harbor.workspace import (
 
 def _agent(workspace: Path, recipe: Path) -> IntrospectionBootstrapAgent:
     instance = object.__new__(IntrospectionBootstrapAgent)
+    instance.mcp_servers = []
     instance._spec = {
         "schema_version": 2,
         "candidate": {

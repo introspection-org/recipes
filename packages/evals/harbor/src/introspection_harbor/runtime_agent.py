@@ -41,5 +41,8 @@ class IntrospectionRecipeAgent(RecipeAgentBase):
         """
 
         await self.exec_as_agent(environment, command=pi_launcher_command())
-        await self.exec_as_agent(environment, command=prepare_recipe_command())
+        await self.exec_as_agent(
+            environment,
+            command=prepare_recipe_command(mcp_servers=self.mcp_servers),
+        )
         await self.upload_replay_context(environment)
