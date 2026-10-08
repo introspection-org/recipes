@@ -162,6 +162,9 @@ def pi_messages_to_atif(messages: list[dict[str, Any]]) -> Trajectory:
                 ObservationResult(
                     source_call_id=message["toolCallId"],
                     content=rendered,
+                    # ATIF has no error field on a result; `extra` is its
+                    # place for result-level metadata.
+                    extra={"is_error": True} if message.get("isError") else None,
                 )
             )
             step.observation = Observation(results=results)

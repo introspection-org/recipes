@@ -22,6 +22,7 @@ from introspection_harbor.base import (
 from introspection_harbor.runtime_agent import IntrospectionRecipeAgent
 from introspection_harbor.trajectory import (
     pi_events_to_atif,
+    pi_messages_to_atif,
     pi_terminal_provider_error,
 )
 
@@ -434,6 +435,35 @@ class TrajectoryTest(unittest.TestCase):
         self.assertEqual(metrics.total_completion_tokens, 5)
         self.assertEqual(metrics.total_cached_tokens, 3)
         self.assertEqual(metrics.total_cost_usd, 0.25)
+
+    def test_pi_events_mark_a_failed_tool_result(self) -> None:
+        def call(call_id: str) -> dict:
+            return {
+                "role": "assistant",
+                "content": [{"type": "toolCall", "id": call_id, "name": "read"}],
+            }
+
+        def result(call_id: str, **fields: bool) -> dict:
+            return {
+                "role": "toolResult",
+                "toolCallId": call_id,
+                "content": [{"type": "text", "text": call_id}],
+                **fields,
+            }
+
+        trajectory = pi_messages_to_atif(
+            [
+                call("failed"),
+                result("failed", isError=True),
+                call("passed"),
+                result("passed", isError=False),
+                call("unmarked"),
+                result("unmarked"),
+            ]
+        )
+
+        extras = [step.observation.results[0].extra for step in trajectory.steps]
+        self.assertEqual(extras, [{"is_error": True}, None, None])
 
     def test_post_run_writes_the_atif_trajectory_and_context_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
