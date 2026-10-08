@@ -459,6 +459,105 @@ class TrajectoryTest(unittest.TestCase):
             self.assertEqual(context.cost_usd, 0.5)
             self.assertEqual(context.metadata["introspection"], {"kind": "authored"})
 
+    def _continued_step(self, logs_dir: Path) -> None:
+        """A second step: Pi printed the approval turn; the session has both."""
+
+        def assistant(text: str, tokens: int) -> dict:
+            return {
+                "role": "assistant",
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+                "content": [{"type": "text", "text": text}],
+                "usage": {"input": tokens, "output": 1, "cost": {"total": 0.25}},
+            }
+
+        def user(text: str) -> dict:
+            return {"role": "user", "content": [{"type": "text", "text": text}]}
+
+        review = [user("Send the email."), assistant("Please review.", 10)]
+        approval = [user("Approved."), assistant("Sent.", 4)]
+        (logs_dir / "pi.jsonl").write_text(
+            "".join(
+                json.dumps({"type": "message_end", "message": message}) + "\n"
+                for message in approval
+            )
+        )
+        sessions = logs_dir / "pi" / "sessions" / "--opt-introspection-recipe--"
+        sessions.mkdir(parents=True)
+        (sessions / "2026-10-08T04-49-00-000Z_session.jsonl").write_text(
+            json.dumps({"type": "session", "id": "session"})
+            + "\n"
+            + json.dumps({"type": "message", "message": {"role": "system"}})
+            + "\n"
+            + "".join(
+                json.dumps({"type": "message", "message": message}) + "\n"
+                for message in [*review, *approval]
+            )
+        )
+
+    def test_a_continued_step_reports_the_whole_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            self._continued_step(logs_dir)
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+            context = Mock()
+
+            instance.populate_context_post_run(context)
+
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(
+                [(step["source"], step["message"]) for step in written["steps"]],
+                [
+                    ("user", "Send the email."),
+                    ("agent", "Please review."),
+                    ("user", "Approved."),
+                    ("agent", "Sent."),
+                ],
+            )
+            # Usage is this step's alone, so a trial does not count a turn twice.
+            self.assertEqual(context.n_input_tokens, 4)
+            self.assertEqual(context.cost_usd, 0.25)
+
+    def test_a_continued_step_reports_its_own_model_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            self._continued_step(logs_dir)
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+            context = Mock()
+
+            instance.populate_context_post_run(context)
+
+            usage = context.model_usage["anthropic/claude-sonnet-4-6"]
+            self.assertEqual(usage.n_input_tokens, 4)
+
+    def test_a_first_step_keeps_the_trajectory_of_its_own_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            message = {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "done"}],
+                "usage": {},
+            }
+            (logs_dir / "pi.jsonl").write_text(
+                json.dumps({"type": "message_end", "message": message}) + "\n"
+            )
+            sessions = logs_dir / "pi" / "sessions"
+            sessions.mkdir(parents=True)
+            (sessions / "session.jsonl").write_text(
+                json.dumps({"type": "message", "message": message}) + "\n"
+            )
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+            context = Mock(spec=["metadata"])
+
+            instance.populate_context_post_run(context)
+
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(len(written["steps"]), 1)
+            self.assertFalse(hasattr(context, "model_usage"))
+
     def test_completion_accepts_a_retry_that_ends_successfully(self) -> None:
         events = [
             {

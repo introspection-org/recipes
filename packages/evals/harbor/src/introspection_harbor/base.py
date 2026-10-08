@@ -12,7 +12,7 @@ import json
 import os
 import shlex
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, override
 from uuid import UUID
 
@@ -23,8 +23,17 @@ from harbor.agents.installed.base import (
 )
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+from harbor.models.trajectories import Trajectory
+from harbor.models.trial.paths import EnvironmentPaths
+from harbor.utils.trajectory_utils import compute_model_usage
 
-from .trajectory import ADAPTER_VERSION, pi_events_to_atif, pi_terminal_provider_error
+from .trajectory import (
+    ADAPTER_VERSION,
+    pi_events_to_atif,
+    pi_messages_to_atif,
+    pi_session_messages,
+    pi_terminal_provider_error,
+)
 
 RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
 # Where the Runtime image puts the Recipe. Mirrors INTROSPECTION_RECIPE_ROOT's
@@ -349,10 +358,19 @@ class RecipeAgentBase(BaseInstalledAgent):
         output_path = self.logs_dir / self._OUTPUT_FILENAME
         if not output_path.is_file():
             return
+        # This run alone: what the step cost.
         trajectory = pi_events_to_atif(output_path)
+        # A continued step's verifier grades the conversation, so the file it
+        # reads covers the earlier turns too, as Harbor's own resumable agents
+        # write it. Harbor uploads this directory to the sandbox afterwards.
+        conversation = self._session_trajectory(len(trajectory.steps)) or trajectory
         (self.logs_dir / "trajectory.json").write_text(
-            json.dumps(trajectory.to_json_dict(), indent=2)
+            json.dumps(conversation.to_json_dict(), indent=2)
         )
+        if conversation is not trajectory:
+            # Harbor fills a step's per-model usage from the file unless the
+            # agent reports it, which would count the earlier steps again.
+            context.model_usage = compute_model_usage(trajectory)
         if trajectory.final_metrics:
             context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
             context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
@@ -363,3 +381,12 @@ class RecipeAgentBase(BaseInstalledAgent):
             "atif": "trajectory.json",
             "introspection": (self._spec.get("input") or {}).get("metadata"),
         }
+
+    def _session_trajectory(self, step_count: int) -> Trajectory | None:
+        """The whole conversation, when the session holds more than this run."""
+
+        sessions_dir = self.logs_dir / PurePosixPath(PI_SESSION_DIR).relative_to(
+            EnvironmentPaths().agent_dir
+        )
+        conversation = pi_messages_to_atif(pi_session_messages(sessions_dir))
+        return conversation if len(conversation.steps) > step_count else None

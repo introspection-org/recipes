@@ -57,9 +57,37 @@ def pi_terminal_provider_error(output: str) -> str | None:
     return None
 
 
-def pi_events_to_atif(path: Path) -> Trajectory:
-    messages = pi_messages(path.read_text())
+def pi_session_messages(sessions_dir: Path) -> list[dict[str, Any]]:
+    """Read every message of the conversation from Pi's session file.
 
+    ``pi.jsonl`` is what one Pi run printed. The session file is what Pi keeps
+    across runs, so after ``--continue`` it also holds the earlier turns. Pi
+    names session files by start time; the last one is the session in use.
+    """
+
+    files = sorted(sessions_dir.rglob("*.jsonl")) if sessions_dir.is_dir() else []
+    if not files:
+        return []
+    messages: list[dict[str, Any]] = []
+    for line in files[-1].read_text().splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(entry, dict)
+            and entry.get("type") == "message"
+            and isinstance(entry.get("message"), dict)
+        ):
+            messages.append(entry["message"])
+    return messages
+
+
+def pi_events_to_atif(path: Path) -> Trajectory:
+    return pi_messages_to_atif(pi_messages(path.read_text()))
+
+
+def pi_messages_to_atif(messages: list[dict[str, Any]]) -> Trajectory:
     steps: list[Step] = []
     calls: dict[str, tuple[int, ToolCall]] = {}
     totals = {"input": 0, "output": 0, "cache": 0, "cost": 0.0}

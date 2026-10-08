@@ -42,9 +42,10 @@ sees everything the earlier steps said and did.
 - With `harbor run` directly, steps are fresh unless you pass
   `--resume-trajectory`.
 
-A verifier can read the whole conversation from the Pi session in
-`/logs/agent/pi/sessions`. `pi.jsonl` and `trajectory.json` cover the current
-step only.
+A verifier reads the conversation from `/logs/agent/trajectory.json`. On a step
+that continues the conversation it covers every turn so far, so a later step
+can be graded against what an earlier one said. `pi.jsonl` covers the current
+step only, and a step's reported tokens and cost are that step's alone.
 
 ### Local Docker on the Runtime image
 
