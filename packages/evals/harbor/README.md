@@ -68,6 +68,23 @@ serves as a sidecar. The adapter writes it from the task's
 declares and the transport is `streamable-http`. A task that declares none
 gets the file seeded from `.pi/mcp.local.example.json` when it is absent. A foreign image takes the `bootstrap` adapter instead.
 
+## Reading the trajectory in a verifier
+
+A task's verifier finds the conversation at `/logs/agent/trajectory.json`.
+`introspection_harbor.verifier` reads it without the check knowing the ATIF
+layout:
+
+```python
+from introspection_harbor.verifier import final_reply, load_trajectory, tool_calls
+
+trajectory = load_trajectory()
+final_reply(trajectory)  # the agent's last non-empty message
+tool_calls(trajectory)   # [{"name", "arguments", "result", "is_error"}], answered calls only
+```
+
+Add the package to the verifier's environment, for example
+`uvx --from harbor-rewardkit --with introspection-harbor rewardkit /tests`.
+
 ## Two adapters, one launch
 
 `introspection eval run` selects `introspection_harbor.agent:IntrospectionRecipeAgent`;
