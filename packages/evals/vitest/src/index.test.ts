@@ -1,9 +1,17 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { toolCalls, type JsonValue } from "vitest-evals";
+import { getHarnessRunFromError } from "vitest-evals/harness";
 
 import { createRecipeHarness, recipeCases, recipeJudge } from "./index.js";
 
@@ -44,6 +52,59 @@ function harnessContext() {
     },
   };
 }
+
+// The arguments before `--`; everything after it selects the run's own Pi session.
+function recipeArguments(args: string[]): string[] {
+  const separator = args.indexOf("--");
+  expect(args.slice(separator)).toEqual([
+    "--",
+    "--session-dir",
+    expect.stringContaining("introspection-vitest-session-"),
+    "--session-id",
+    expect.any(String),
+  ]);
+  return args.slice(0, separator);
+}
+
+// Stands in for `introspection`: logs each call's arguments and working
+// directory as one JSON line, then replies with the prompt.
+function recordingCli(directory: string, { failOn }: { failOn?: string } = {}): string {
+  const executable = join(directory, "introspection");
+  const log = join(directory, "calls.jsonl");
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const prompt = args[args.indexOf("--print") + 1];
+let bindings = null;
+try { bindings = JSON.parse(fs.readFileSync(".pi/mcp.local.json", "utf8")); } catch {}
+let replay = null;
+const replayPath = args.indexOf("--replay-context");
+if (replayPath !== -1) replay = JSON.parse(fs.readFileSync(args[replayPath + 1], "utf8"));
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, cwd: process.cwd(), bindings, replay }) + "\\n");
+if (prompt === ${JSON.stringify(failOn ?? "")}) { console.error("turn failed"); process.exit(3); }
+console.log(JSON.stringify({ type: "message_end", message: { role: "assistant",
+  content: [{ type: "text", text: "reply to " + prompt }], stopReason: "stop",
+  provider: "openai", model: "gpt-5",
+  usage: { input: 2, output: 1, cacheRead: 5, cost: { total: 0.25 } } } }));
+`,
+  );
+  chmodSync(executable, 0o700);
+  process.env.INTROSPECTION_CLI = executable;
+  delete process.env.INTROSPECTION_EVAL_RUN_SPEC;
+  return log;
+}
+
+type RecordedCall = {
+  args: string[];
+  cwd: string;
+  bindings: unknown;
+  replay: { cwd: string; trajectory: unknown[] } | null;
+};
+const recordedCalls = (log: string): RecordedCall[] =>
+  readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+const piFlag = (call: RecordedCall, name: string) => call.args[call.args.indexOf(name) + 1];
 
 describe("recipeCases", () => {
   it("loads rerunnable history and prompt cases from JSONL", () => {
@@ -135,7 +196,7 @@ describe("createRecipeHarness", () => {
       );
 
       expect(result.output).toBe("hello");
-      expect(readFileSync(argumentsPath, "utf8").trim().split("\n")).toEqual([
+      expect(recipeArguments(readFileSync(argumentsPath, "utf8").trim().split("\n"))).toEqual([
         "local",
         "--print",
         "say hello",
@@ -182,7 +243,9 @@ describe("createRecipeHarness", () => {
         harnessContext(),
       );
 
-      expect(readFileSync(argumentsPath, "utf8").split("\0").filter(Boolean)).toEqual([
+      expect(
+        recipeArguments(readFileSync(argumentsPath, "utf8").split("\0").filter(Boolean)),
+      ).toEqual([
         "local",
         "--print",
         rendered,
@@ -413,7 +476,7 @@ describe("createRecipeHarness", () => {
         }),
       );
 
-      const args = readFileSync(argumentsPath, "utf8").trim().split("\n");
+      const args = recipeArguments(readFileSync(argumentsPath, "utf8").trim().split("\n"));
       expect(args).toEqual([
         "local",
         "--runtime",
@@ -544,3 +607,221 @@ describe("recipeJudge", () => {
     },
   );
 });
+
+describe("continued runs", () => {
+  it.runIf(process.platform !== "win32")(
+    "sends the next turn in the same Pi session and reports the whole conversation",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      const log = recordingCli(directory);
+      const prepared: string[] = [];
+      const harness = createRecipeHarness({
+        beforeRun: ({ prompt }) => {
+          prepared.push(prompt);
+        },
+      });
+
+      const review = await harness.run({ prompt: "draft it" }, harnessContext());
+      const sent = await harness.run(
+        { prompt: "approved, send it", continue: review },
+        harnessContext(),
+      );
+
+      const [first, second] = recordedCalls(log);
+      expect(piFlag(second, "--session-id")).toBe(piFlag(first, "--session-id"));
+      expect(piFlag(second, "--session-dir")).toBe(piFlag(first, "--session-dir"));
+      expect(second.args).not.toContain("--replay-context");
+      // The session is prepared once, by its first turn.
+      expect(prepared).toEqual(["draft it"]);
+
+      expect(review.session.events.map((event) => (event as { content: string }).content))
+        .toEqual(["draft it", "reply to draft it"]);
+      expect(sent.output).toBe("reply to approved, send it");
+      expect(sent.session.events.map((event) => (event as { content: string }).content)).toEqual([
+        "draft it",
+        "reply to draft it",
+        "approved, send it",
+        "reply to approved, send it",
+      ]);
+      expect(review.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
+      expect(sent.usage).toMatchObject({
+        provider: "openai",
+        model: "gpt-5",
+        inputTokens: 4,
+        outputTokens: 2,
+        metadata: { cachedTokens: 10, costUsd: 0.5 },
+      });
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "keeps the earlier turns on a failed continued turn",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      recordingCli(directory, { failOn: "approved, send it" });
+      const harness = createRecipeHarness();
+      const review = await harness.run({ prompt: "draft it" }, harnessContext());
+
+      const failure = await harness
+        .run({ prompt: "approved, send it", continue: review }, harnessContext())
+        .catch((error: unknown) => error);
+
+      expect(String(failure)).toContain("introspection local exited 3");
+      const partial = getHarnessRunFromError(failure);
+      expect(partial?.session.events.map((event) => (event as { content: string }).content))
+        .toEqual(["draft it", "reply to draft it", "approved, send it"]);
+      expect(partial?.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "leaves a replaying turn in the session introspection local hydrates",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      const log = recordingCli(directory);
+      const harness = createRecipeHarness();
+
+      const replayed = await harness.run(
+        {
+          prompt: "continue",
+          history: [{ type: "message", role: "user", content: "earlier" }],
+        },
+        harnessContext(),
+      );
+
+      // Pi rejects `--session-id` beside the `--session` a replay is hydrated into.
+      const [call] = recordedCalls(log);
+      expect(call.args).toContain("--replay-context");
+      expect(call.args).not.toContain("--session-id");
+      expect(call.args).not.toContain("--session-dir");
+      await expect(
+        harness.run({ prompt: "next", continue: replayed }, harnessContext()),
+      ).rejects.toThrow("A run that replays history cannot be continued");
+    },
+  );
+
+  it("refuses a run that is not an open session of this test", async () => {
+    const harness = createRecipeHarness();
+    await expect(
+      harness.run({ prompt: "next", continue: { artifacts: {} } }, harnessContext()),
+    ).rejects.toThrow("input.continue must be an earlier run of the same test");
+  });
+});
+
+describe("per-run environment", () => {
+  it.runIf(process.platform !== "win32")(
+    "binds only the declared MCP servers, outside the Recipe checkout",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      const log = recordingCli(directory);
+      const servers = [{ id: "crm", transport: "streamable_http", url: "http://127.0.0.1:1/mcp" }];
+      const harness = createRecipeHarness({
+        beforeRun: () => ({ mcpServers: servers }),
+      });
+
+      const first = await harness.run({ prompt: "one" }, harnessContext());
+      await harness.run({ prompt: "two", continue: first }, harnessContext());
+
+      const [call, continued] = recordedCalls(log);
+      expect(call.bindings).toEqual({ servers });
+      expect(call.cwd).not.toBe(process.cwd());
+      expect(piFlag(call, "--work-dir")).toBe(process.cwd());
+      expect(call.args.slice(call.args.indexOf("--"))).toContain("--approve");
+      // A continued turn runs against the same bindings.
+      expect(continued.cwd).toBe(call.cwd);
+      expect(continued.bindings).toEqual({ servers });
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "replays history in the bound directory, not in the Recipe checkout",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      const log = recordingCli(directory);
+      const servers = [{ id: "crm", url: "http://127.0.0.1:1/mcp" }];
+      const harness = createRecipeHarness({ beforeRun: () => ({ mcpServers: servers }) });
+      const history = [{ type: "message" as const, role: "user" as const, content: "earlier" }];
+
+      // Pi resumes a hydrated session where its context says, and reads the
+      // project-local MCP bindings of that directory.
+      await harness.run({ prompt: "authored history", history }, harnessContext());
+
+      const supplied = join(directory, "production.json");
+      writeFileSync(
+        supplied,
+        JSON.stringify({ schema_version: 2, cwd: process.cwd(), trajectory: history }),
+      );
+      writeSpec({ replay_context_path: supplied });
+      process.env.INTROSPECTION_CLI = join(directory, "introspection");
+      await harness.run({ prompt: "production replay" }, harnessContext());
+
+      for (const call of recordedCalls(log)) {
+        expect(call.bindings).toEqual({ servers });
+        expect(call.replay?.trajectory).toEqual(history);
+        // The child reports its real path; the temporary directory may be a symlink.
+        expect(realpathSync(call.replay?.cwd ?? "")).toBe(realpathSync(call.cwd));
+        expect(call.cwd).not.toBe(process.cwd());
+      }
+      expect(JSON.parse(readFileSync(supplied, "utf8")).cwd).toBe(process.cwd());
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "hands the fixture to collectArtifacts, also when the turn fails",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      recordingCli(directory, { failOn: "break" });
+      const harness = createRecipeHarness<{ prompt: string }, { name: string }>({
+        beforeRun: () => ({ fixture: { name: "fakes" } }),
+        collectArtifacts: ({ fixture, result }) => ({
+          fixture: fixture.name,
+          completed: result !== undefined,
+        }),
+      });
+
+      const passed = await harness.run({ prompt: "work" }, harnessContext());
+      expect(passed.artifacts).toMatchObject({ fixture: "fakes", completed: true });
+
+      const failure = await harness
+        .run({ prompt: "break" }, harnessContext())
+        .catch((error: unknown) => error);
+      expect(getHarnessRunFromError(failure)?.artifacts).toMatchObject({
+        fixture: "fakes",
+        completed: false,
+      });
+    },
+  );
+});
+
+// One session per describe: its teardown must run when the first test finishes.
+describe("session teardown", () => {
+  const torndown: string[] = [];
+  let continuable: Awaited<ReturnType<ReturnType<typeof createRecipeHarness>["run"]>>;
+  let harness: ReturnType<typeof createRecipeHarness>;
+
+  it.runIf(process.platform !== "win32")("keeps the session open during the test", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+    temporaryDirectories.push(directory);
+    recordingCli(directory);
+    harness = createRecipeHarness({
+      beforeRun: () => ({ teardown: () => void torndown.push("closed") }),
+    });
+    continuable = await harness.run({ prompt: "one" }, harnessContext());
+    await harness.run({ prompt: "two", continue: continuable }, harnessContext());
+    expect(torndown).toEqual([]);
+  });
+
+  it.runIf(process.platform !== "win32")("tears down once when the test finishes", async () => {
+    expect(torndown).toEqual(["closed"]);
+    await expect(
+      harness.run({ prompt: "three", continue: continuable }, harnessContext()),
+    ).rejects.toThrow("its Pi session is no longer open");
+  });
+});
+

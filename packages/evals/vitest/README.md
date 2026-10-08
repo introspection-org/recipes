@@ -124,6 +124,66 @@ introspection judges eval useful-support-resolution
 introspection judges validate useful-support-resolution
 ```
 
+## Multi-turn cases
+
+Every `run()` starts its own Pi session, kept until the test finishes. Pass an
+earlier run as `continue` to send the next turn in that session:
+
+```ts
+it("sends only after approval", async ({ run }) => {
+  const review = await run({ prompt: "Send the re-engagement email" });
+  await expect(review).toSatisfyJudge(recipeJudge("review-before-send"), { threshold: 1 });
+
+  const sent = await run({ prompt: "Approved, send it", continue: review });
+  await expect(sent).toSatisfyJudge(recipeJudge("faithful-send-report"), { threshold: 1 });
+});
+```
+
+This is a real second turn, so anything the Recipe keeps in session state
+survives; replaying `history` restores messages and tool events only.
+
+`vitest-evals` records one harness run per test, and the CLI totals usage from
+that run. A continued run therefore reports the whole conversation: its
+transcript holds the earlier turns and its usage and cost are session totals.
+A failed continued turn still carries the earlier turns in its partial run.
+
+A run that replays `history`, or a production turn selected with
+`introspection eval run --from-conversation`, cannot be continued:
+`introspection local` hydrates the replay into a Pi session of its own, which
+ends with that turn. Scores
+recorded before a later `run()` are dropped from the report by `vitest-evals`
+([getsentry/vitest-evals#108](https://github.com/getsentry/vitest-evals/issues/108)).
+
+## Fixtures and MCP bindings
+
+`beforeRun` may return the environment of the session it starts:
+
+```ts
+const harness = createRecipeHarness<Input, Fakes>({
+  beforeRun: async ({ input }) => {
+    const fakes = await startFakes({ scenario: input.scenario });
+    return {
+      mcpServers: [{ id: "crm", transport: "streamable_http", url: fakes.url }],
+      fixture: fakes,
+      teardown: () => fakes.close(),
+    };
+  },
+  collectArtifacts: ({ fixture }) => ({ state: fixture.state() }),
+});
+```
+
+- `mcpServers` are written to `.pi/mcp.local.json` in a temporary working
+  directory. Pi runs there, trusts that file, and loads the Recipe from the
+  original directory through `--work-dir`. The Recipe checkout is not touched.
+  A session that declares servers runs only with that binding in place.
+- `fixture` is handed to `collectArtifacts`, which runs after every turn. When a
+  turn fails, `result` is absent and the artifacts are attached to the failed
+  run.
+- `teardown` runs once when the test finishes, so a continued run still has
+  its fixture and bindings.
+
+`beforeRun` runs for the first turn of a session, not for a continued run.
+
 ## Application context and system instructions
 
 The harness runs the Recipe through `introspection local`. `SYSTEM.md`, the

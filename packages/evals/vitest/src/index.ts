@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+
+import { onTestFinished } from "vitest";
 
 import {
   createJudge,
@@ -10,6 +13,7 @@ import {
   type NormalizedSession,
   type TranscriptEvent,
 } from "vitest-evals";
+import { attachHarnessRunToError, normalizeHarnessRun } from "vitest-evals/harness";
 
 const RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC";
 
@@ -22,7 +26,38 @@ export type RecipeCase<TExpected = unknown, TInput extends RecipeEvalInput = Rec
 export type RecipeEvalInput = {
   prompt: string;
   history?: RecipeHistoryEvent[];
+  /**
+   * An earlier run of the same test. The prompt is sent as the next turn of
+   * that run's Pi session, and this run reports the whole conversation.
+   */
+  continue?: RecipeContinuableRun;
   [key: string]: unknown;
+};
+
+/** The part of an earlier harness run that identifies its Pi session. */
+export type RecipeContinuableRun = {
+  artifacts?: Record<string, JsonValue>;
+};
+
+/** One MCP server binding, as written to Pi's `.pi/mcp.local.json`. */
+export type RecipeMcpServer = {
+  id: string;
+  url: string;
+  transport?: string;
+  [key: string]: JsonValue | undefined;
+};
+
+/** What `beforeRun` may set up for one Pi session. */
+export type RecipeRunEnvironment<TFixture = unknown> = {
+  /**
+   * The only MCP servers the Recipe is bound to for this session. They are
+   * written to a temporary working directory, never to the Recipe checkout.
+   */
+  mcpServers?: RecipeMcpServer[];
+  /** Passed to `collectArtifacts` for every turn of this session. */
+  fixture?: TFixture;
+  /** Runs once when the test finishes, whether it passed, failed or aborted. */
+  teardown?: () => void | Promise<void>;
 };
 
 export type RecipeHistoryEvent =
@@ -107,12 +142,20 @@ export type RecipeHarnessContext<TInput extends RecipeEvalInput> = {
   signal?: AbortSignal;
 };
 
-export type RecipeHarnessResultContext<TInput extends RecipeEvalInput> =
-  RecipeHarnessContext<TInput> & {
-    result: RecipeEvalResult;
-  };
+export type RecipeHarnessResultContext<
+  TInput extends RecipeEvalInput,
+  TFixture = unknown,
+> = RecipeHarnessContext<TInput> & {
+  /** Absent when the turn failed. */
+  result?: RecipeEvalResult;
+  /** The `fixture` returned by `beforeRun` for this session. */
+  fixture: TFixture;
+};
 
-export type CreateRecipeHarnessOptions<TInput extends RecipeEvalInput = RecipeEvalInput> = {
+export type CreateRecipeHarnessOptions<
+  TInput extends RecipeEvalInput = RecipeEvalInput,
+  TFixture = unknown,
+> = {
   name?: string;
   /**
    * Render the application-visible user message from a typed eval input.
@@ -124,9 +167,16 @@ export type CreateRecipeHarnessOptions<TInput extends RecipeEvalInput = RecipeEv
   renderPrompt?: (input: TInput) => string;
   /** @deprecated Use `renderPrompt` for new evals. */
   prompt?: (input: TInput) => string;
-  beforeRun?: (context: RecipeHarnessContext<TInput>) => void | Promise<void>;
+  /**
+   * Runs before the first turn of a Pi session; not again for a continued
+   * run. May return the session's MCP bindings, fixture and teardown.
+   */
+  beforeRun?: (
+    context: RecipeHarnessContext<TInput>,
+  ) => void | RecipeRunEnvironment<TFixture> | Promise<void | RecipeRunEnvironment<TFixture>>;
+  /** Runs after every turn, including a failed one, before teardown. */
   collectArtifacts?: (
-    context: RecipeHarnessResultContext<TInput>,
+    context: RecipeHarnessResultContext<TInput, TFixture>,
   ) => Record<string, JsonValue> | Promise<Record<string, JsonValue>>;
 };
 
@@ -301,69 +351,243 @@ function isRecipeHistoryEvent(value: unknown): value is RecipeHistoryEvent {
   return false;
 }
 
-export function createRecipeHarness<TInput extends RecipeEvalInput = RecipeEvalInput>(
-  options: CreateRecipeHarnessOptions<TInput> = {},
-) {
+const SESSION_ARTIFACT = "recipeSession";
+
+type RecipeSession = {
+  id: string;
+  directory: string;
+  /** Working directory holding the session's MCP bindings, when it has any. */
+  boundDirectory?: string;
+  fixture: unknown;
+  events: TranscriptEvent[];
+  piEvents: RecipeEvalEvent[];
+  usage: RecipeEvalResult["usage"];
+  toolCalls: number;
+  /**
+   * False once a turn has replayed history: `introspection local` runs such a
+   * turn in a session of its own, which is gone when the turn ends.
+   */
+  resumable: boolean;
+  closed: boolean;
+};
+
+const sessions = new Map<string, RecipeSession>();
+
+function openSession(environment: RecipeRunEnvironment | undefined): RecipeSession {
+  const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-session-"));
+  const session: RecipeSession = {
+    id: randomUUID(),
+    directory,
+    fixture: environment?.fixture,
+    events: [],
+    piEvents: [],
+    usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 },
+    toolCalls: 0,
+    resumable: true,
+    closed: false,
+  };
+  const close = async () => {
+    session.closed = true;
+    sessions.delete(session.id);
+    try {
+      await environment?.teardown?.();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  };
+  try {
+    if (environment?.mcpServers) {
+      // Fail closed: a session with declared servers runs only against them.
+      session.boundDirectory = join(directory, "workspace");
+      mkdirSync(join(session.boundDirectory, ".pi"), { recursive: true });
+      writeFileSync(
+        join(session.boundDirectory, ".pi", "mcp.local.json"),
+        JSON.stringify({ servers: environment.mcpServers }),
+        { mode: 0o600 },
+      );
+    }
+    sessions.set(session.id, session);
+  } catch (error) {
+    void close();
+    throw error;
+  }
+  return Object.assign(session, { close });
+}
+
+function continuedSession(run: RecipeContinuableRun): RecipeSession {
+  const id = run.artifacts?.[SESSION_ARTIFACT];
+  const session = typeof id === "string" ? sessions.get(id) : undefined;
+  if (!session || session.closed) {
+    throw new Error(
+      "input.continue must be an earlier run of the same test: its Pi session is no longer open",
+    );
+  }
+  if (!session.resumable) {
+    throw new Error(
+      "A run that replays history cannot be continued: its Pi session ends with the turn",
+    );
+  }
+  return session;
+}
+
+export function createRecipeHarness<
+  TInput extends RecipeEvalInput = RecipeEvalInput,
+  TFixture = unknown,
+>(options: CreateRecipeHarnessOptions<TInput, TFixture> = {}) {
   if (options.renderPrompt && options.prompt) {
     throw new Error("createRecipeHarness accepts renderPrompt or prompt, not both");
   }
   const promptFor = options.renderPrompt ?? options.prompt ?? ((input: TInput) => input.prompt);
   return createHarness<TInput, string>({
     name: options.name ?? "introspection-recipe",
-    run: async ({ input, signal }) => {
+    run: async ({ input, signal, artifacts, setArtifact }) => {
       const spec = readRunSpec();
-      const prompt = spec?.input.prompt ?? promptFor(input);
-      const history = spec?.input.history ?? input.history ?? [];
+      const continued = input.continue ? continuedSession(input.continue) : undefined;
+      if (continued && input.history?.length) {
+        throw new Error("A continued run takes its history from the session, not input.history");
+      }
+      // A replayed production turn replaces the first turn only.
+      const prompt = continued ? promptFor(input) : (spec?.input.prompt ?? promptFor(input));
+      const history = continued ? [] : (spec?.input.history ?? input.history ?? []);
       if (!prompt?.trim()) throw new Error("Recipe case input.prompt must not be empty");
       const context = { input, prompt, signal };
-      await options.beforeRun?.(context);
-      const result = await runRecipe(
-        { prompt, history },
-        { signal },
-      );
-      const customArtifacts = await options.collectArtifacts?.({ ...context, result });
-      const [provider, model] = splitModel(result.observedModel);
-      return {
-        output: result.output,
-        events: recipeTranscript(history, prompt, result.events),
-        usage: {
-          ...(provider ? { provider } : {}),
-          ...(model ? { model } : {}),
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          totalTokens: result.usage.inputTokens + result.usage.outputTokens,
-          toolCalls: result.toolCalls.length,
-          metadata: {
-            cachedTokens: result.usage.cachedTokens,
-            costUsd: result.usage.costUsd,
-          },
-        },
-        artifacts: {
-          completion: jsonValue(result.completion),
-          piEvents: jsonValue(result.events),
-          ...(customArtifacts ?? {}),
-        },
+
+      let session = continued;
+      if (!session) {
+        const environment = (await options.beforeRun?.(context)) ?? undefined;
+        const opened = openSession(environment) as RecipeSession & { close: () => Promise<void> };
+        session = opened;
+        try {
+          onTestFinished(opened.close);
+        } catch {
+          // Outside a Vitest test nothing can continue the session: close it after this turn.
+          session = Object.assign(opened, { closeAfterTurn: true });
+        }
+      }
+      const active = session as RecipeSession & {
+        close?: () => Promise<void>;
+        closeAfterTurn?: boolean;
       };
+      const artifactsFor = async (result?: RecipeEvalResult) =>
+        (await options.collectArtifacts?.({
+          ...context,
+          ...(result ? { result } : {}),
+          fixture: active.fixture as TFixture,
+        })) ?? {};
+
+      const turnStart: TranscriptEvent[] = [
+        ...history.map(historyTranscriptEvent),
+        { type: "message", role: "user", content: prompt },
+      ];
+      try {
+        let result: RecipeEvalResult;
+        try {
+          result = await runRecipe(
+            { prompt, history },
+            { signal, session: active, replay: !continued },
+          );
+        } catch (error) {
+          // The report keeps the conversation up to the failure and the fixture state.
+          const partial = normalizeHarnessRun(input, {
+            events: [...active.events, ...turnStart],
+            usage: sessionUsage(active, undefined),
+            artifacts: { [SESSION_ARTIFACT]: active.id, ...(await artifactsFor()) },
+            errors: [{ type: "RecipeRunError", message: String(error) }],
+          }, { signal, artifacts, setArtifact });
+          throw attachHarnessRunToError(error, partial);
+        }
+        active.events.push(...recipeTranscript(history, prompt, result.events));
+        active.piEvents.push(...result.events);
+        active.usage = {
+          inputTokens: active.usage.inputTokens + result.usage.inputTokens,
+          outputTokens: active.usage.outputTokens + result.usage.outputTokens,
+          cachedTokens: active.usage.cachedTokens + result.usage.cachedTokens,
+          costUsd: active.usage.costUsd + result.usage.costUsd,
+        };
+        active.toolCalls += result.toolCalls.length;
+        const customArtifacts = await artifactsFor(result);
+        return {
+          output: result.output,
+          // A continued run reports the whole conversation, because vitest-evals
+          // records one run per test and the CLI totals usage from that run.
+          events: [...active.events],
+          usage: sessionUsage(active, result.observedModel),
+          artifacts: {
+            completion: jsonValue(result.completion),
+            piEvents: jsonValue(active.piEvents),
+            [SESSION_ARTIFACT]: active.id,
+            ...customArtifacts,
+          },
+        };
+      } finally {
+        if (active.closeAfterTurn) await active.close?.();
+      }
     },
   });
 }
 
+function sessionUsage(session: RecipeSession, observedModel: string | undefined) {
+  const [provider, model] = splitModel(observedModel);
+  return {
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    inputTokens: session.usage.inputTokens,
+    outputTokens: session.usage.outputTokens,
+    totalTokens: session.usage.inputTokens + session.usage.outputTokens,
+    toolCalls: session.toolCalls,
+    metadata: {
+      cachedTokens: session.usage.cachedTokens,
+      costUsd: session.usage.costUsd,
+    },
+  };
+}
+
 export async function runRecipe(
   input: { prompt: string; history?: RecipeHistoryEvent[] },
-  options: { signal?: AbortSignal } = {},
+  options: {
+    signal?: AbortSignal;
+    /** Pi session to create or continue, and the bound working directory to run in. */
+    session?: { id: string; directory: string; boundDirectory?: string; resumable?: boolean };
+    /** False for a continued turn: its history is already in the session. */
+    replay?: boolean;
+  } = {},
 ): Promise<RecipeEvalResult> {
   const spec = readRunSpec();
   if (!input.prompt?.trim()) throw new Error("Recipe case input.prompt must not be empty");
+  const replay = options.replay ?? true;
+  const session = options.session;
 
   const args = ["local"];
+  // The Recipe stays where it is; only Pi's working directory moves to the bindings.
+  if (session?.boundDirectory) args.push("--work-dir", process.cwd());
   if (spec) args.push("--runtime", spec.candidate.runtime);
   if (spec?.candidate.agent) args.push("--agent", spec.candidate.agent);
   args.push("--print", input.prompt, "--mode", "json");
-  const temporaryReplay = !spec?.input.replay_context_path && input.history?.length
-    ? writeReplayContext(input.history)
+  const specReplay = spec?.input.replay_context_path;
+  const temporaryReplay = !replay
+    ? undefined
+    : specReplay
+      // A context written by the CLI names the Recipe checkout; a bound session gets a copy.
+      ? (session?.boundDirectory ? reboundReplayContext(specReplay, session.boundDirectory) : undefined)
+      : input.history?.length
+        ? writeReplayContext(input.history, session?.boundDirectory)
+        : undefined;
+  const replayContext = replay
+    ? (temporaryReplay?.path ?? specReplay)
     : undefined;
-  const replayContext = spec?.input.replay_context_path ?? temporaryReplay?.path;
   if (replayContext) args.push("--replay-context", replayContext);
+  // `introspection local` hydrates a replay into a Pi `--session` of its own,
+  // and Pi rejects `--session-id` beside it: a replaying turn keeps that session.
+  const ownSession = session && !replayContext ? session : undefined;
+  if (session && replayContext) session.resumable = false;
+  const piArgs = [
+    // Project-local bindings are read only when the run trusts them.
+    ...(session?.boundDirectory ? ["--approve"] : []),
+    ...(ownSession
+      ? ["--session-dir", join(ownSession.directory, "sessions"), "--session-id", ownSession.id]
+      : []),
+  ];
+  if (piArgs.length) args.push("--", ...piArgs);
 
   let stdout: string;
   let stderr: string;
@@ -373,6 +597,8 @@ export async function runRecipe(
       process.env.INTROSPECTION_CLI ?? "introspection",
       args,
       options.signal,
+      undefined,
+      session?.boundDirectory,
     ));
   } finally {
     temporaryReplay?.cleanup();
@@ -477,16 +703,33 @@ function historyTranscriptEvent(event: RecipeHistoryEvent): TranscriptEvent {
   };
 }
 
-function writeReplayContext(history: RecipeHistoryEvent[]) {
+// Pi resumes a hydrated session in the directory the context names, and reads
+// project-local MCP bindings from there: a bound session must replay in its
+// own working directory, or it would run against the checkout's bindings.
+function writeReplayContext(history: RecipeHistoryEvent[], boundDirectory?: string) {
   const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-history-"));
   const path = join(directory, "context.json");
   writeFileSync(path, JSON.stringify({
     schema_version: 2,
-    cwd: process.cwd(),
+    cwd: boundDirectory ?? process.cwd(),
     trajectory: history,
   }), { mode: 0o600 });
   return {
     path,
+    cleanup: () => rmSync(directory, { recursive: true, force: true }),
+  };
+}
+
+function reboundReplayContext(path: string, boundDirectory: string) {
+  const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-history-"));
+  const rebound = join(directory, "context.json");
+  writeFileSync(
+    rebound,
+    JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), cwd: boundDirectory }),
+    { mode: 0o600 },
+  );
+  return {
+    path: rebound,
     cleanup: () => rmSync(directory, { recursive: true, force: true }),
   };
 }
@@ -596,11 +839,18 @@ function readRunSpec(): RunSpec | undefined {
   return spec;
 }
 
-function run(command: string, args: string[], signal?: AbortSignal, stdin?: string) {
+function run(
+  command: string,
+  args: string[],
+  signal?: AbortSignal,
+  stdin?: string,
+  cwd?: string,
+) {
   return new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
       ...(signal ? { signal } : {}),
+      ...(cwd ? { cwd } : {}),
     });
     let stdout = "";
     let stderr = "";
