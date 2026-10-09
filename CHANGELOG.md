@@ -6,7 +6,6 @@
 ### Features
 
 * **agents:** let a delegated child delegate one more level ([#320](https://github.com/introspection-org/recipes/issues/320)) ([eef1c29](https://github.com/introspection-org/recipes/commit/eef1c2943c6513b089b006231179940740757b6b))
-* **recipe-check:** warn rather than fail on a missing lockfile ([#309](https://github.com/introspection-org/recipes/issues/309)) ([d0b1b0d](https://github.com/introspection-org/recipes/commit/d0b1b0df0ff4edb21a7b6c385d075551011fb9ca))
 
 
 ### Bug Fixes
