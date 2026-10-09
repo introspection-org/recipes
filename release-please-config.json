@@ -15,7 +15,6 @@
       "exclude-paths": [
         "packages/recipe-check",
         "packages/recipe-check-python",
-        "AGENTS.md",
         "docs"
       ]
     },

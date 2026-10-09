@@ -745,25 +745,22 @@ describe("release train isolation", () => {
     ))
       expect(excluded).toContain(path);
     // Release Please skips a commit for a package only when every file it
-    // touches is under an excluded path.
+    // touches is under an excluded directory; an exclude path matches only as
+    // a `path/` prefix, so a root file such as AGENTS.md cannot be excluded
+    // (CommitExclude.isRelevant).
     const releasesNpm = (files: string[]) =>
       files.some(
-        (file) =>
-          !excluded.some(
-            (path) => file === path || file.startsWith(`${path}/`),
-          ),
+        (file) => !excluded.some((path) => file.startsWith(`${path}/`)),
       );
-    // #309: a checker feature that also updated the shared docs.
+    // A checker change with its docs stays on the checker train.
     expect(
       releasesNpm([
-        "AGENTS.md",
         "docs/recipe-format.md",
         "packages/recipe-check-python/python/introspection_recipe_check/_api.py",
         "packages/recipe-check/src/lib.rs",
-        "packages/recipe-check/src/resources.rs",
       ]),
     ).toBe(false);
-    // #320: a root feature with its docs.
+    // A root feature with its docs releases npm.
     expect(
       releasesNpm([
         "docs/agent-composition.md",
