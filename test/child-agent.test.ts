@@ -24,7 +24,10 @@ vi.mock("../src/session.js", () => ({
   createAgentSessionInternal: mocks.createAgentSession,
 }));
 
-import { createRecipeChildAgentRunner } from "../src/child/agent.js";
+import {
+  createRecipeChildAgentRunner,
+  promptResultText,
+} from "../src/child/agent.js";
 
 function writeRecipe(
   root: string,
@@ -263,5 +266,28 @@ describe("Recipe child agent runner", () => {
     );
     expect(onAssistantMessage).toHaveBeenCalledWith("working", "delta");
     await runner.shutdown();
+  });
+});
+
+describe("promptResultText", () => {
+  const user = (text: string) => ({ role: "user", content: text });
+  const assistant = (text: string) => ({
+    role: "assistant",
+    content: [{ type: "text", text }],
+  });
+
+  it("answers from the last turn only", () => {
+    // A delegating child said it started runs, then answered a notice with nothing.
+    expect(
+      promptResultText({
+        messages: [user("plan"), assistant("Started two explorers."), user("<agent_run_completions>"), assistant("")],
+      })
+    ).toBe("");
+    // Within the turn, text before a trailing empty message still counts.
+    expect(
+      promptResultText({
+        messages: [user("plan"), assistant("Here it is."), { role: "toolResult", content: "ok" }, assistant("")],
+      })
+    ).toBe("Here it is.");
   });
 });

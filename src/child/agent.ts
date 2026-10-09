@@ -125,9 +125,12 @@ export function promptResultText(result: unknown): string {
   const record = result as Record<string, unknown>;
   if (typeof record.output === "string") return record.output;
   const messages = Array.isArray(record.messages) ? record.messages : [];
+  // The answer is the last turn's: stop at the prompt that opened it, so an
+  // empty last turn never reports an earlier turn's text.
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = asRecord(messages[index]);
     if (!message) continue;
+    if (message.role === "user") break;
     if (message.role && message.role !== "assistant") continue;
     const text = contentText(message.content).trim();
     if (text) return text;

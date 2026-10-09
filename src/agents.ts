@@ -308,10 +308,11 @@ export interface DelegatedRuns {
 }
 
 export function createDelegatedRuns(): DelegatedRuns {
-  // Keyed by run and completion time: a run resumed with `message` keeps its
-  // id, and its next result is new.
+  // A run resumed with `message` keeps its id, and its next result is new: a
+  // result is keyed by run and by when the run last did anything, which every
+  // controller reports and new work always moves.
   const completion = (run: AgentRunSummary) =>
-    `${run.agent_run_id}@${run.completed_at ?? ""}`;
+    `${run.agent_run_id}@${run.last_activity_at}@${run.completed_at ?? ""}`;
   const seen = new Set<string>();
   let runs: AgentRunController | undefined;
   let stopped = false;

@@ -1248,11 +1248,7 @@ export function createRecipesExtension(
         // The streamed buffer spans every turn the child took (a nested
         // child also takes a turn per batch of its own results), so the
         // final answer replaces it.
-        if (finalOutput) {
-          run.output = finalOutput;
-        } else if (!run.output?.trim()) {
-          run.output = "(no final response)";
-        }
+        run.output = finalOutput || "(no final response)";
         if (run.status === "running") run.status = "completed";
       } catch (err) {
         if (run.status !== "interrupted") {
