@@ -145,7 +145,9 @@ async function providerCredentialStore(
   }
   await store.modify(provider, async () => ({
     type: "api_key",
-    key: `test-${provider}-key`,
+    // Pi treats an OpenAI key without `sk-` as a ChatGPT sign-in and drops
+    // request options it does not accept.
+    key: `sk-test-${provider}-key`,
     ...(provider === "azure-openai-responses"
       ? { env: { AZURE_OPENAI_RESOURCE_NAME: "test-resource" } }
       : {}),
