@@ -7,9 +7,11 @@ import type {
   AgentRunSummary,
 } from "./agents.js";
 import { notifyAgentRunEvent } from "./agents.js";
-import { autoResolveInteractions } from "./interactions.js";
 import { promptResultError, promptResultText } from "./child/agent.js";
-import { createIsolatedChildSession } from "./child/session.js";
+import {
+  createIsolatedChildSession,
+  type IsolatedChildSessionHandle,
+} from "./child/session.js";
 import type {
   CreateAgentSessionInternalOptions,
   RecipeSessionOtelOptions,
@@ -35,8 +37,12 @@ export interface InProcessRunControllerOptions {
   concurrency?: number;
   /** Root session instrumentation inherited by in-process child sessions. */
   otel?: RecipeSessionOtelOptions;
-  /** Observe canonical Pi events from every child run. */
+  /** Observe canonical Pi events from every child run, at every depth. */
   onAgentRunEvent?: AgentRunEventObserver;
+  /** Depth of the runs this controller starts. Default 1 (root's children). */
+  depth?: number;
+  /** Run id of the session this controller serves. Default `"root"`. */
+  parentAgentRunId?: string;
   /** Child session factory; defaults to `createAgentSession`. Test/DI seam. */
   sessionFactory?: (
     options: CreateAgentSessionInternalOptions
@@ -45,7 +51,7 @@ export interface InProcessRunControllerOptions {
 
 interface ChildRun {
   summary: AgentRunSummary;
-  handle: RecipeSessionHandle | null;
+  handle: IsolatedChildSessionHandle | null;
   settled: Promise<void>;
   onUpdate?: ((summary: AgentRunSummary) => void | Promise<void>) | undefined;
   waiters: Array<() => void>;
@@ -60,8 +66,11 @@ class RunNotFoundError extends Error {
 
 /**
  * The default in-process subagent controller. Children are Recipe sessions
- * created through `createAgentSession`, with bounded concurrency and
- * one-level delegation.
+ * created through `createAgentSession`, with bounded concurrency. A child
+ * whose agent declares subagents delegates in turn through its own
+ * controller, down to `MAX_AGENT_RUN_DEPTH`. A run reports its result only
+ * once the runs it started have settled and it has processed them; closing or
+ * interrupting it closes or interrupts its whole subtree.
  *
  * Recovery rule every controller must honor: a child whose agent profile no
  * longer exists errors the parent's `agent` tool call — it never wedges it.
@@ -75,6 +84,8 @@ export function createInProcessRunController(
   const env = opts.env ?? process.env;
   const concurrency = Math.max(1, opts.concurrency ?? DEFAULT_SUBAGENT_CONCURRENCY);
   const runs = new Map<string, ChildRun>();
+  const depth = opts.depth ?? 1;
+  const parentAgentRunId = opts.parentAgentRunId ?? "root";
 
   let active = 0;
   const queue: Array<() => void> = [];
@@ -145,14 +156,22 @@ export function createInProcessRunController(
               }
             : {}),
           ...(opts.sessionFactory ? { sessionFactory: opts.sessionFactory } : {}),
+          agentRunId: run.summary.agent_run_id,
+          depth,
+          ...(opts.onAgentRunEvent
+            ? { onAgentRunEvent: opts.onAgentRunEvent }
+            : {}),
+          ...(opts.concurrency !== undefined
+            ? { concurrency: opts.concurrency }
+            : {}),
           onEvent: (event) => {
             notifyAgentRunEvent(opts.onAgentRunEvent, {
               type: "agent_run_event",
               agent_run_id: run.summary.agent_run_id,
-              parent_agent_run_id: "root",
+              parent_agent_run_id: parentAgentRunId,
               agent_name: run.summary.agent_name,
               invocation_name: run.summary.invocation_name,
-              depth: 1,
+              depth,
               event,
             });
             const record = event as { type?: string; toolName?: unknown };
@@ -170,9 +189,9 @@ export function createInProcessRunController(
           return;
         }
       }
-      // Children never own the root interaction lifecycle: their asks resolve
-      // internally so a child cannot strand the parent waiting on a user.
-      await autoResolveInteractions(() => run.handle!.session.prompt(prompt));
+      // Resolves once the child's own runs have settled and it has had the
+      // turn(s) that process their results; interactions auto-resolve.
+      await run.handle.run(prompt);
       if (run.summary.status !== "running") return;
       const result = {
         messages: [...run.handle.session.messages],
@@ -283,7 +302,7 @@ export function createInProcessRunController(
       const run = requireRun(id);
       if (run.summary.status === "running") {
         touch(run, { status: "interrupted", completed_at: Date.now() });
-        await run.handle?.session.abort().catch(() => {});
+        await run.handle?.interrupt().catch(() => {});
       }
       return run.summary;
     },
@@ -295,7 +314,7 @@ export function createInProcessRunController(
           status: "closed",
           completed_at: run.summary.completed_at ?? Date.now(),
         });
-        await run.handle?.session.abort().catch(() => {});
+        await run.handle?.interrupt().catch(() => {});
       }
       await run.handle?.dispose().catch(() => {});
       run.handle = null;

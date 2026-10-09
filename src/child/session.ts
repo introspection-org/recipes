@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialStore, Model } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import {
+  MAX_AGENT_RUN_DEPTH,
+  type AgentRunEventObserver,
+  type AgentRunSummary,
+} from "../agents.js";
+import { autoResolveInteractions } from "../interactions.js";
+import { promptResultError } from "./agent.js";
 import type { ResolvedRecipe } from "../recipe/resolve.js";
 import type {
   MemoryContextOverride,
@@ -14,6 +21,11 @@ import {
   type RecipeSessionHandle,
   type RecipeSessionOtelOptions,
 } from "../session.js";
+import {
+  OUTPUT_PREVIEW_CHARS,
+  renderCompletionNotice,
+  type ChildCompletionEnvelope,
+} from "./agent-completions.js";
 
 export interface CreateIsolatedChildSessionOptions {
   recipe: ResolvedRecipe;
@@ -27,19 +39,64 @@ export interface CreateIsolatedChildSessionOptions {
   modelOverride?: Model<any>;
   otel?: RecipeSessionOtelOptions;
   onEvent?: (event: AgentSessionEvent) => void;
+  /** The run this child serves; its own runs are attributed to it. */
+  agentRunId?: string;
+  /** This child's run depth. Default 1 (a child of the root session). */
+  depth?: number;
+  /** Observe events from runs this child starts in turn. */
+  onAgentRunEvent?: AgentRunEventObserver;
+  /** Concurrency of the controller serving this child's own runs. */
+  concurrency?: number;
   sessionFactory?: (
     options: CreateAgentSessionInternalOptions
   ) => Promise<RecipeSessionHandle>;
 }
 
+export interface IsolatedChildSessionHandle extends RecipeSessionHandle {
+  /**
+   * Prompt the child and return only once its work has settled: every agent
+   * run it started has finished, and the child has had a turn to process the
+   * results it had not already read through the `agent` tool. The child's
+   * final answer is then the last assistant message in `session.messages`.
+   */
+  run(prompt: string): Promise<void>;
+  /** Abort the child's turn and interrupt every run it started. */
+  interrupt(): Promise<void>;
+}
+
+function completionEnvelope(run: AgentRunSummary): ChildCompletionEnvelope {
+  const completed = run.completed_at;
+  return {
+    id: run.agent_run_id,
+    agent: run.invocation_name,
+    label: run.label,
+    status: run.status === "failed" ? "failed" : "completed",
+    ...(run.output
+      ? { output_preview: run.output.slice(0, OUTPUT_PREVIEW_CHARS) }
+      : {}),
+    ...(run.error ? { error: run.error } : {}),
+    ...(completed !== undefined && completed >= run.started_at
+      ? { duration_ms: completed - run.started_at }
+      : {}),
+  };
+}
+
 /**
  * Shared child-session primitive used by both the embedded and interactive Pi
- * controllers. It owns the child's private MCP state and always disables
- * recursive delegation.
+ * controllers. It owns the child's private MCP state. A child below
+ * `MAX_AGENT_RUN_DEPTH` whose agent declares subagents gets its own `agent`
+ * tool backed by an in-process controller; deeper children never delegate.
  */
 export async function createIsolatedChildSession(
   opts: CreateIsolatedChildSessionOptions
-): Promise<RecipeSessionHandle> {
+): Promise<IsolatedChildSessionHandle> {
+  const depth = opts.depth ?? 1;
+  const delegates =
+    depth < MAX_AGENT_RUN_DEPTH &&
+    opts.recipe.selectAgent(opts.agentName).subagents.size > 0;
+  // Run ids whose terminal result the child model already read through the
+  // `agent` tool (wait, terminal status, close) or was handed in a notice.
+  const seen = new Set<string>();
   const mcpRuntimeDir = await mkdtemp(join(tmpdir(), "recipes-child-mcp-"));
   try {
     const handle = await (opts.sessionFactory ?? createAgentSessionInternal)({
@@ -57,15 +114,108 @@ export async function createIsolatedChildSession(
       ...(opts.otel ? { otel: opts.otel } : {}),
       ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
       mcpRuntimeDir,
-      runController: null,
       sessionRole: "subagent",
+      ...(delegates
+        ? {
+            agentRun: {
+              id: opts.agentRunId ?? "child",
+              depth,
+            },
+            agentToolOptions: {
+              acknowledgeCompletions(ids: readonly string[]) {
+                for (const id of ids) seen.add(id);
+              },
+            },
+            ...(opts.onAgentRunEvent
+              ? { onAgentRunEvent: opts.onAgentRunEvent }
+              : {}),
+            ...(opts.concurrency !== undefined
+              ? { inProcessRunController: { concurrency: opts.concurrency } }
+              : {}),
+            ...(opts.sessionFactory
+              ? { sessionFactory: opts.sessionFactory }
+              : {}),
+          }
+        : { runController: null }),
     });
     let disposed = false;
+    let stopped = false;
+    // Session handles from an injected factory may predate `agentRuns`.
+    const ownRuns = () => handle.agentRuns?.list() ?? [];
+    const interruptOwnRuns = async () => {
+      await Promise.all(
+        ownRuns()
+          .filter((run) => run.status === "running")
+          .map((run) =>
+            handle.agentRuns.interrupt(run.agent_run_id).catch(() => {})
+          )
+      );
+    };
     return {
       ...handle,
+      async run(prompt: string): Promise<void> {
+        stopped = false;
+        let next: string | null = prompt;
+        let settled = false;
+        try {
+          while (next !== null) {
+            const input: string = next;
+            next = null;
+            // Children never own the root interaction lifecycle: their asks
+            // resolve internally so a child cannot strand the parent on a
+            // user.
+            await autoResolveInteractions(() => handle.session.prompt(input));
+            if (stopped || disposed) return;
+            if (promptResultError({ messages: handle.session.messages })) {
+              return;
+            }
+            // The turn can end while runs the child started in the
+            // background are still working. The child owns its prompt loop,
+            // so rather than a triggerTurn wake (which pi strands when it is
+            // queued during turn teardown) it waits here, after `prompt` has
+            // fully settled, then prompts again with the results it has not
+            // seen.
+            let running = ownRuns().filter((run) => run.status === "running");
+            while (running.length > 0) {
+              await Promise.all(
+                running.map((run) =>
+                  handle.agentRuns
+                    .wait(run.agent_run_id)
+                    .catch(() => undefined)
+                )
+              );
+              if (stopped || disposed) return;
+              running = ownRuns().filter((run) => run.status === "running");
+            }
+            const unseen = ownRuns().filter(
+              (run) =>
+                (run.status === "completed" || run.status === "failed") &&
+                !seen.has(run.agent_run_id)
+            );
+            for (const run of unseen) seen.add(run.agent_run_id);
+            if (unseen.length > 0) {
+              next = renderCompletionNotice(unseen.map(completionEnvelope));
+            }
+          }
+          settled = true;
+        } finally {
+          // A child that errors or stops early leaves no run working for it.
+          if (!settled) await interruptOwnRuns();
+        }
+      },
+      async interrupt(): Promise<void> {
+        stopped = true;
+        await Promise.all([
+          Promise.resolve()
+            .then(() => handle.session.abort())
+            .catch(() => {}),
+          interruptOwnRuns(),
+        ]);
+      },
       async dispose(): Promise<void> {
         if (disposed) return;
         disposed = true;
+        stopped = true;
         try {
           await handle.dispose();
         } finally {

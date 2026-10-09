@@ -37,6 +37,13 @@ export interface AgentRunSummary {
   error?: string;
 }
 
+/**
+ * Deepest delegated run. The root session is depth 0, its children depth 1,
+ * their children depth 2. A session at this depth never receives the `agent`
+ * tool, which also bounds recursive subagent references (a -> b -> a).
+ */
+export const MAX_AGENT_RUN_DEPTH = 2;
+
 /** Pi custom-entry type carrying one child run event. */
 export const AGENT_RUN_EVENT_ENTRY_TYPE = "agent_run_event";
 
