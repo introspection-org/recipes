@@ -1245,7 +1245,10 @@ export function createRecipesExtension(
         await run.runner.start();
         const result = await run.runner.prompt(prompt);
         const finalOutput = promptResultText(result);
-        if (finalOutput && finalOutput.length >= (run.output?.length ?? 0)) {
+        // The streamed buffer spans every turn the child took (a nested
+        // child also takes a turn per batch of its own results), so the
+        // final answer replaces it.
+        if (finalOutput) {
           run.output = finalOutput;
         } else if (!run.output?.trim()) {
           run.output = "(no final response)";

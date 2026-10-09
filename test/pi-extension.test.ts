@@ -1655,6 +1655,56 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
+  it("reports a child's final answer, not the text it streamed across its turns", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-final-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const createChildAgentRunner = vi.fn((opts: any = {}) => ({
+        async start() {},
+        async prompt() {
+          // A delegating child takes a turn, then another for its own results.
+          opts.onAssistantMessage?.("Started two explorers to look into it. ", "delta");
+          opts.onAssistantMessage?.("Done.", "delta");
+          return "Done.";
+        },
+        async steer() {},
+        async cancel() {},
+        async shutdown() {},
+      }));
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      const ctx = extensionContext(projectDir);
+
+      createRecipesExtension({ createChildAgentRunner })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx
+      );
+      const started = await pi.tools.get("agent")?.execute(
+        "tool-call-1",
+        { name: "explorer", prompt: "inspect" },
+        undefined,
+        undefined,
+        ctx
+      );
+      const completed = await pi.tools.get("agent")?.execute(
+        "tool-call-2",
+        { action: "wait", id: started?.details?.agent?.agent_run_id },
+        undefined,
+        undefined,
+        ctx
+      );
+
+      expect(completed?.details?.agent?.status).toBe("completed");
+      expect(completed?.details?.agent?.output).toBe("Done.");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("appends scoped child events to Pi's canonical session stream", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-events-"));
     try {

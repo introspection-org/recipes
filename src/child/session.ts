@@ -94,9 +94,13 @@ export async function createIsolatedChildSession(
   const delegates =
     depth < MAX_AGENT_RUN_DEPTH &&
     opts.recipe.selectAgent(opts.agentName).subagents.size > 0;
-  // Run ids whose terminal result the child model already read through the
-  // `agent` tool (wait, terminal status, close) or was handed in a notice.
+  // Results the child model already read through the `agent` tool (wait,
+  // terminal status, close) or was handed in a notice. Keyed by run and
+  // completion time: a run resumed with `message` keeps its id, and its next
+  // result is new.
   const seen = new Set<string>();
+  const completion = (run: AgentRunSummary) =>
+    `${run.agent_run_id}@${run.completed_at ?? ""}`;
   const mcpRuntimeDir = await mkdtemp(join(tmpdir(), "recipes-child-mcp-"));
   try {
     const handle = await (opts.sessionFactory ?? createAgentSessionInternal)({
@@ -123,7 +127,10 @@ export async function createIsolatedChildSession(
             },
             agentToolOptions: {
               acknowledgeCompletions(ids: readonly string[]) {
-                for (const id of ids) seen.add(id);
+                for (const id of ids) {
+                  const run = handle.agentRuns?.get(id);
+                  if (run) seen.add(completion(run));
+                }
               },
             },
             ...(opts.onAgentRunEvent
@@ -190,9 +197,9 @@ export async function createIsolatedChildSession(
             const unseen = ownRuns().filter(
               (run) =>
                 (run.status === "completed" || run.status === "failed") &&
-                !seen.has(run.agent_run_id)
+                !seen.has(completion(run))
             );
-            for (const run of unseen) seen.add(run.agent_run_id);
+            for (const run of unseen) seen.add(completion(run));
             if (unseen.length > 0) {
               next = renderCompletionNotice(unseen.map(completionEnvelope));
             }

@@ -1880,6 +1880,56 @@ describe("nested delegation", () => {
     await controller.shutdown();
   });
 
+  it("hands a child the new result of a run it resumed", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    // One explorer; on its result, send it back for more; answer from the second result.
+    const resume = (handle: RecipeSessionHandle, turns: string[]) => {
+      handle.session.agent.streamFunction = (_model, context) => {
+        const stream = new MockAssistantStream();
+        const last = context.messages.at(-1)!;
+        let message = assistantMessage("");
+        const text = messageText(last);
+        if (last.role === "user" && !text.includes("<agent_run_completions>")) {
+          turns.push("fan-out");
+          message.content = [
+            { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A" } },
+          ];
+          message.stopReason = "toolUse";
+        } else if (last.role === "toolResult") {
+          turns.push("yield");
+          message = assistantMessage("Waiting on the explorer.");
+        } else if (text.includes("found A")) {
+          turns.push("resume");
+          const id = /\((agent-run-[^)]+)\)/.exec(text)![1];
+          message.content = [
+            { type: "toolCall", id: "more", name: "agent", arguments: { action: "message", id, message: "find C" } },
+          ];
+          message.stopReason = "toolUse";
+        } else {
+          turns.push("answer");
+          message = assistantMessage(text.includes("found C") ? "Final: found C" : "Final: nothing new");
+        }
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: assistantMessage("") });
+          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+        });
+        return stream;
+      };
+    };
+    const { controller, gates, turns } = tree(recipeDir, workspaceDir, {}, resume);
+    const background = await controller.start({ name: "background", prompt: "plan" });
+    await vi.waitFor(() => expect(gates.has("find A")).toBe(true));
+    gates.get("find A")!.resolve(undefined);
+    await vi.waitFor(() => expect(gates.has("find C")).toBe(true));
+    gates.get("find C")!.resolve(undefined);
+
+    const settled = await controller.wait(background.agent_run_id);
+    expect(settled.status).toBe("completed");
+    expect(settled.output).toBe("Final: found C");
+    expect(turns).toEqual(["fan-out", "yield", "resume", "yield", "answer"]);
+    await controller.shutdown();
+  });
+
   it("interrupts and closes a child's runs with the child", async () => {
     const { recipeDir, workspaceDir } = fixture();
     for (const action of ["interrupt", "close"] as const) {
