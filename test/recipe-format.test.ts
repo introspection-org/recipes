@@ -658,6 +658,19 @@ describe("npm package boundary", () => {
 });
 
 describe("release train isolation", () => {
+  it("keeps the checker's packages out of the npm train's changelog", () => {
+    const root = join(import.meta.dirname, "..");
+    const read = (file: string) =>
+      JSON.parse(readFileSync(join(root, file), "utf8")) as {
+        packages: Record<string, { "exclude-paths"?: string[] }>;
+      };
+    const npmRoot = read("release-please-config.json").packages["."];
+    for (const path of Object.keys(
+      read("release-please-checker-config.json").packages
+    ))
+      expect(npmRoot?.["exclude-paths"]).toContain(path);
+  });
+
   it("uses distinct release-please labels for root and checker trains", () => {
     const root = join(import.meta.dirname, "..");
     const rootConfig = JSON.parse(
