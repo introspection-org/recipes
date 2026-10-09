@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.29.0](https://github.com/introspection-org/recipes/compare/v0.28.0...v0.29.0) (2026-10-09)
+
+
+### Features
+
+* **agents:** let a delegated child delegate one more level ([#320](https://github.com/introspection-org/recipes/issues/320)) ([eef1c29](https://github.com/introspection-org/recipes/commit/eef1c2943c6513b089b006231179940740757b6b))
+* **recipe-check:** warn rather than fail on a missing lockfile ([#309](https://github.com/introspection-org/recipes/issues/309)) ([d0b1b0d](https://github.com/introspection-org/recipes/commit/d0b1b0df0ff4edb21a7b6c385d075551011fb9ca))
+
+
+### Bug Fixes
+
+* **agents:** key a delegated run's results by its last activity, and report an empty last turn as no response ([#321](https://github.com/introspection-org/recipes/issues/321)) ([90a1578](https://github.com/introspection-org/recipes/commit/90a1578e69479d0cfd914251c8ad3d4101bd4b6a))
+* **model:** keep the Anthropic betas pi-ai adds for a model when a recipe declares its own ([#317](https://github.com/introspection-org/recipes/issues/317)) ([36cb1b5](https://github.com/introspection-org/recipes/commit/36cb1b5db93c248d61de006dee73013efe8d06b4))
+
 ## [0.28.0](https://github.com/introspection-org/recipes/compare/v0.27.4...v0.28.0) (2026-09-29)
 
 
