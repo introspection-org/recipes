@@ -11,7 +11,8 @@
     ".": {
       "release-type": "node",
       "package-name": "",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "exclude-paths": ["packages/recipe-check", "packages/recipe-check-python"]
     },
     "packages/channels/slack": {
       "release-type": "node",

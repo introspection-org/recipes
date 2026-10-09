@@ -39,7 +39,7 @@ function fixture(): string {
         agents: ["agents/*.yaml"],
         skills: ["skills/**/SKILL.md"],
       },
-    })
+    }),
   );
   writeFileSync(
     join(root, "agents", "agent.yaml"),
@@ -54,26 +54,34 @@ function fixture(): string {
       "  mode: append",
       "  content: Produce a sourced answer.",
       "",
-    ].join("\n")
+    ].join("\n"),
   );
   writeFileSync(
     join(root, "skills", "research", "SKILL.md"),
-    "---\nname: research\ndescription: Research with sources.\n---\n"
+    "---\nname: research\ndescription: Research with sources.\n---\n",
   );
   return root;
 }
 
 describe("Recipe Format", () => {
-  it.each([true, false, "true", 1, null])("validates requireReply %s", (requireReply) => {
-    const recipeDir = fixture();
-    const pkg = JSON.parse(readFileSync(join(recipeDir, "package.json"), "utf8"));
-    pkg.pi.channels = [{ provider: "slack", requireReply }];
-    pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
-    writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
-    const manifest = readPiPackageManifest(recipeDir);
-    expect(validatePiPackageManifest(manifest).valid).toBe(typeof requireReply === "boolean");
-    if (typeof requireReply === "boolean") expect(manifest.channels?.[0]?.requireReply).toBe(requireReply);
-  });
+  it.each([true, false, "true", 1, null])(
+    "validates requireReply %s",
+    (requireReply) => {
+      const recipeDir = fixture();
+      const pkg = JSON.parse(
+        readFileSync(join(recipeDir, "package.json"), "utf8"),
+      );
+      pkg.pi.channels = [{ provider: "slack", requireReply }];
+      pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
+      writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+      const manifest = readPiPackageManifest(recipeDir);
+      expect(validatePiPackageManifest(manifest).valid).toBe(
+        typeof requireReply === "boolean",
+      );
+      if (typeof requireReply === "boolean")
+        expect(manifest.channels?.[0]?.requireReply).toBe(requireReply);
+    },
+  );
   it.each([
     { commands: ["read", "reply"], valid: true },
     { commands: [], valid: true },
@@ -81,21 +89,26 @@ describe("Recipe Format", () => {
     { commands: [""], valid: false },
     { commands: "read", valid: false },
     { commands: [42], valid: false },
-  ])("validates connector command allowlist $commands", ({ commands, valid }) => {
-    const recipeDir = fixture();
-    const pkg = JSON.parse(readFileSync(join(recipeDir, "package.json"), "utf8"));
-    pkg.pi.channels = [{ provider: "slack", commands }];
-    pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
-    writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
-    const manifest = readPiPackageManifest(recipeDir);
-    expect(validatePiPackageManifest(manifest).valid).toBe(valid);
-    if (valid) expect(manifest.channels?.[0]?.commands).toEqual(commands);
-  });
+  ])(
+    "validates connector command allowlist $commands",
+    ({ commands, valid }) => {
+      const recipeDir = fixture();
+      const pkg = JSON.parse(
+        readFileSync(join(recipeDir, "package.json"), "utf8"),
+      );
+      pkg.pi.channels = [{ provider: "slack", commands }];
+      pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
+      writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+      const manifest = readPiPackageManifest(recipeDir);
+      expect(validatePiPackageManifest(manifest).valid).toBe(valid);
+      if (valid) expect(manifest.channels?.[0]?.commands).toEqual(commands);
+    },
+  );
 
   it("reads a declarative Slack connector", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
-      readFileSync(join(recipeDir, "package.json"), "utf8")
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.channels = [{ provider: "slack" }];
     pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
@@ -112,7 +125,7 @@ describe("Recipe Format", () => {
   it("rejects connector-wide tool configuration", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
-      readFileSync(join(recipeDir, "package.json"), "utf8")
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.channels = [
       {
@@ -124,21 +137,21 @@ describe("Recipe Format", () => {
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
     expect(
-      validatePiPackageManifest(readPiPackageManifest(recipeDir)).findings
+      validatePiPackageManifest(readPiPackageManifest(recipeDir)).findings,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message:
             "package.json#pi.channels[0] contains unknown field(s): tools",
         }),
-      ])
+      ]),
     );
   });
 
   it("derives the connector package from the provider", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
-      readFileSync(join(recipeDir, "package.json"), "utf8")
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.channels = [{ provider: "discord" }];
     pkg.dependencies = {
@@ -146,16 +159,14 @@ describe("Recipe Format", () => {
     };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
-    const report = validatePiPackageManifest(
-      readPiPackageManifest(recipeDir)
-    );
+    const report = validatePiPackageManifest(readPiPackageManifest(recipeDir));
     expect(report).toEqual({ valid: true, findings: [] });
   });
 
   it("leaves connector tool enforcement to the loaded connector package", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
-      readFileSync(join(recipeDir, "package.json"), "utf8")
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.channels = [{ provider: "slack" }];
     pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
@@ -168,7 +179,7 @@ describe("Recipe Format", () => {
         "  name: anthropic/claude-sonnet-4-5",
         "tools: [channel_read, channel_reply]",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(resolveRecipe({ recipeDir }).agents.get("agent")?.tools).toEqual([
@@ -187,7 +198,7 @@ describe("Recipe Format", () => {
         "  name: anthropic/claude-sonnet-4-5",
         "tools: [slack_custom_report]",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(resolveRecipe({ recipeDir }).agents.get("agent")?.tools).toEqual([
@@ -198,7 +209,7 @@ describe("Recipe Format", () => {
   it("requires the Slack connector package when Slack is declared", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(
-      readFileSync(join(recipeDir, "package.json"), "utf8")
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.channels = [{ provider: "slack" }];
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
@@ -207,7 +218,7 @@ describe("Recipe Format", () => {
 
     expect(report.valid).toBe(false);
     expect(report.findings.map((finding) => finding.message)).toContain(
-      `package.json#pi.channels provider 'slack' requires dependency '${SLACK_RECIPE_CHANNEL_PACKAGE}'`
+      `package.json#pi.channels provider 'slack' requires dependency '${SLACK_RECIPE_CHANNEL_PACKAGE}'`,
     );
   });
 
@@ -221,7 +232,7 @@ describe("Recipe Format", () => {
         "  name: anthropic/claude-sonnet-4-5",
         "tools: [tool_search]",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(resolveRecipe({ recipeDir }).agents.get("agent")?.tools).toEqual([
@@ -232,9 +243,14 @@ describe("Recipe Format", () => {
   it("resolves locked Python and approved system runtime requirements", () => {
     const recipeDir = fixture();
     mkdirSync(join(recipeDir, "python"), { recursive: true });
-    writeFileSync(join(recipeDir, "python", "pyproject.toml"), "[project]\nname='controls'\n");
+    writeFileSync(
+      join(recipeDir, "python", "pyproject.toml"),
+      "[project]\nname='controls'\n",
+    );
     writeFileSync(join(recipeDir, "python", "uv.lock"), "version = 1\n");
-    const pkg = JSON.parse(readFileSync(join(recipeDir, "package.json"), "utf8"));
+    const pkg = JSON.parse(
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
+    );
     pkg.pi.runtime = {
       python: {
         project: "python",
@@ -280,18 +296,31 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           skills: ["skills/**/SKILL.md"],
         },
-      })
+      }),
     );
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n"
+      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n",
     );
-    writeFileSync(join(recipeDir, "skills", "research", "SKILL.md"), "---\nname: research\n---\n");
     writeFileSync(
-      join(recipeDir, "skills", "research", "node_modules", "decoy", "SKILL.md"),
-      "decoy\n"
+      join(recipeDir, "skills", "research", "SKILL.md"),
+      "---\nname: research\n---\n",
     );
-    writeFileSync(join(recipeDir, "node_modules", "decoy", "skills", "SKILL.md"), "decoy\n");
+    writeFileSync(
+      join(
+        recipeDir,
+        "skills",
+        "research",
+        "node_modules",
+        "decoy",
+        "SKILL.md",
+      ),
+      "decoy\n",
+    );
+    writeFileSync(
+      join(recipeDir, "node_modules", "decoy", "skills", "SKILL.md"),
+      "decoy\n",
+    );
 
     const manifest = readPiPackageManifest(recipeDir);
     expect(packageResourcePaths(manifest, "skills")).toEqual([
@@ -312,11 +341,11 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           prompts: ["**/*.md"],
         },
-      })
+      }),
     );
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n"
+      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n",
     );
     writeFileSync(join(recipeDir, "nested", "review.md"), "Review\n");
 
@@ -332,15 +361,17 @@ describe("Recipe Format", () => {
     mkdirSync(join(recipeDir, "agents"), { recursive: true });
     writeFileSync(
       join(recipeDir, "package.json"),
-      JSON.stringify({ name: "minimal-agent", version: "1.0.0", pi: {} })
+      JSON.stringify({ name: "minimal-agent", version: "1.0.0", pi: {} }),
     );
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n"
+      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n",
     );
 
     const manifest = readPiPackageManifest(recipeDir);
-    expect(packageResourcePaths(manifest, "agents")).toEqual([join(recipeDir, "agents")]);
+    expect(packageResourcePaths(manifest, "agents")).toEqual([
+      join(recipeDir, "agents"),
+    ]);
     expect(resolveRecipe({ recipeDir }).selectAgent()).toMatchObject({
       name: "agent",
       modelSpec: "anthropic/claude-sonnet-4-5",
@@ -354,25 +385,30 @@ describe("Recipe Format", () => {
     mkdirSync(join(recipeDir, "agents"), { recursive: true });
     writeFileSync(
       join(recipeDir, "package.json"),
-      JSON.stringify({ name: "empty-agent", version: "1.0.0", pi: {} })
+      JSON.stringify({ name: "empty-agent", version: "1.0.0", pi: {} }),
     );
 
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      'Recipe "empty-agent" does not define any agents'
+      'Recipe "empty-agent" does not define any agents',
     );
   });
 
   it("distinguishes omitted resource conventions from explicit empty arrays", () => {
-    const recipeDir = mkdtempSync(join(tmpdir(), "recipe-format-explicit-empty-"));
+    const recipeDir = mkdtempSync(
+      join(tmpdir(), "recipe-format-explicit-empty-"),
+    );
     cleanups.push(() => rmSync(recipeDir, { recursive: true, force: true }));
     mkdirSync(join(recipeDir, "agents"), { recursive: true });
     mkdirSync(join(recipeDir, "skills", "ambient"), { recursive: true });
     mkdirSync(join(recipeDir, "prompts"), { recursive: true });
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n"
+      "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-5\n",
     );
-    writeFileSync(join(recipeDir, "skills", "ambient", "SKILL.md"), "---\nname: ambient\n---\n");
+    writeFileSync(
+      join(recipeDir, "skills", "ambient", "SKILL.md"),
+      "---\nname: ambient\n---\n",
+    );
     writeFileSync(join(recipeDir, "prompts", "ambient.md"), "ambient\n");
     writeFileSync(
       join(recipeDir, "package.json"),
@@ -382,7 +418,7 @@ describe("Recipe Format", () => {
           skills: [],
           prompts: [],
         },
-      })
+      }),
     );
 
     const resolved = resolveRecipe({ recipeDir }).selectAgent();
@@ -394,10 +430,10 @@ describe("Recipe Format", () => {
       JSON.stringify({
         name: "explicit-empty",
         pi: { agents: [] },
-      })
+      }),
     );
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      'Recipe "explicit-empty" does not define any agents'
+      'Recipe "explicit-empty" does not define any agents',
     );
   });
 
@@ -408,11 +444,11 @@ describe("Recipe Format", () => {
       JSON.stringify({
         name: "malformed-resources",
         pi: { agents: "agents/*.yaml" },
-      })
+      }),
     );
 
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      "package.json#pi.agents must be an array of non-empty strings"
+      "package.json#pi.agents must be an array of non-empty strings",
     );
   });
 
@@ -426,11 +462,11 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           extensions: ["extensions/policy-*.ts"],
         },
-      })
+      }),
     );
 
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      "declares extensions glob with no matches"
+      "declares extensions glob with no matches",
     );
   });
 
@@ -450,7 +486,9 @@ describe("Recipe Format", () => {
     expect(recipe.name).toBe("agent");
     expect(recipe.modelSpec).toBe("anthropic/claude-sonnet-4-5");
     expect(recipe.tools).toEqual(["read"]);
-    expect(recipe.skillPaths).toEqual([join(recipeDir, "skills", "research", "SKILL.md")]);
+    expect(recipe.skillPaths).toEqual([
+      join(recipeDir, "skills", "research", "SKILL.md"),
+    ]);
   });
 
   it("rejects resources that escape the package", () => {
@@ -460,10 +498,12 @@ describe("Recipe Format", () => {
       JSON.stringify({
         name: "escaping-agent",
         pi: { agents: ["../agents/*.yaml"] },
-      })
+      }),
     );
 
-    expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(/outside the package/);
+    expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
+      /outside the package/,
+    );
   });
 
   it("rejects traversal glob roots before scanning", () => {
@@ -473,19 +513,25 @@ describe("Recipe Format", () => {
       JSON.stringify({
         name: "escaping-agent",
         pi: { agents: ["../../**/*.yaml"] },
-      })
+      }),
     );
 
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      /resource glob resolves outside the package/
+      /resource glob resolves outside the package/,
     );
   });
 
   it("resolves the package extension closure deterministically", () => {
     const recipeDir = fixture();
     mkdirSync(join(recipeDir, "extensions"), { recursive: true });
-    writeFileSync(join(recipeDir, "extensions", "first.ts"), "export default () => {};\n");
-    writeFileSync(join(recipeDir, "extensions", "second.ts"), "export default () => {};\n");
+    writeFileSync(
+      join(recipeDir, "extensions", "first.ts"),
+      "export default () => {};\n",
+    );
+    writeFileSync(
+      join(recipeDir, "extensions", "second.ts"),
+      "export default () => {};\n",
+    );
     writeFileSync(
       join(recipeDir, "package.json"),
       JSON.stringify({
@@ -494,7 +540,7 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           extensions: ["extensions/second.ts", "extensions/first.ts"],
         },
-      })
+      }),
     );
 
     expect(resolveRecipe({ recipeDir }).selectAgent().extensionPaths).toEqual([
@@ -510,7 +556,7 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           extensions: ["extensions/*.ts"],
         },
-      })
+      }),
     );
     expect(resolveRecipe({ recipeDir }).selectAgent().extensionPaths).toEqual([
       join(recipeDir, "extensions", "first.ts"),
@@ -524,15 +570,21 @@ describe("Recipe Format", () => {
     mkdirSync(join(recipeDir, "extensions", "without-index"), {
       recursive: true,
     });
-    writeFileSync(join(recipeDir, "extensions", "z-last.ts"), "export default () => {};\n");
-    writeFileSync(join(recipeDir, "extensions", "a-first.js"), "export default () => {};\n");
+    writeFileSync(
+      join(recipeDir, "extensions", "z-last.ts"),
+      "export default () => {};\n",
+    );
+    writeFileSync(
+      join(recipeDir, "extensions", "a-first.js"),
+      "export default () => {};\n",
+    );
     writeFileSync(
       join(recipeDir, "extensions", "nested", "index.ts"),
-      "export default () => {};\n"
+      "export default () => {};\n",
     );
     writeFileSync(
       join(recipeDir, "extensions", "without-index", "ignored.ts"),
-      "export default () => {};\n"
+      "export default () => {};\n",
     );
     writeFileSync(
       join(recipeDir, "package.json"),
@@ -542,7 +594,7 @@ describe("Recipe Format", () => {
           agents: ["agents/*.yaml"],
           extensions: ["extensions"],
         },
-      })
+      }),
     );
 
     expect(resolveRecipe({ recipeDir }).selectAgent().extensionPaths).toEqual([
@@ -551,8 +603,14 @@ describe("Recipe Format", () => {
       join(recipeDir, "extensions", "z-last.ts"),
     ]);
 
-    writeFileSync(join(recipeDir, "extensions", "index.js"), "export default () => {};\n");
-    writeFileSync(join(recipeDir, "extensions", "index.ts"), "export default () => {};\n");
+    writeFileSync(
+      join(recipeDir, "extensions", "index.js"),
+      "export default () => {};\n",
+    );
+    writeFileSync(
+      join(recipeDir, "extensions", "index.ts"),
+      "export default () => {};\n",
+    );
     expect(resolveRecipe({ recipeDir }).selectAgent().extensionPaths).toEqual([
       join(recipeDir, "extensions", "index.ts"),
     ]);
@@ -562,7 +620,11 @@ describe("Recipe Format", () => {
     "rejects extension symlinks that execute outside the package",
     () => {
       const recipeDir = fixture();
-      const outside = join(recipeDir, "..", `${basename(recipeDir)}-outside.ts`);
+      const outside = join(
+        recipeDir,
+        "..",
+        `${basename(recipeDir)}-outside.ts`,
+      );
       writeFileSync(outside, "export default () => {};\n");
       cleanups.push(() => rmSync(outside, { force: true }));
       mkdirSync(join(recipeDir, "extensions"), { recursive: true });
@@ -575,28 +637,32 @@ describe("Recipe Format", () => {
             agents: ["agents/*.yaml"],
             extensions: ["extensions/outside.ts"],
           },
-        })
+        }),
       );
 
       expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-        "Recipe extensions resource resolves outside the package"
+        "Recipe extensions resource resolves outside the package",
       );
-    }
+    },
   );
 
   it.skipIf(process.platform === "win32")(
     "rejects SYSTEM.md symlinks that resolve outside the package",
     () => {
       const recipeDir = fixture();
-      const outside = join(recipeDir, "..", `${basename(recipeDir)}-outside-system.md`);
+      const outside = join(
+        recipeDir,
+        "..",
+        `${basename(recipeDir)}-outside-system.md`,
+      );
       writeFileSync(outside, "outside prompt\n");
       cleanups.push(() => rmSync(outside, { force: true }));
       symlinkSync(outside, join(recipeDir, "SYSTEM.md"));
 
       expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-        "Recipe SYSTEM.md resolves outside the package"
+        "Recipe SYSTEM.md resolves outside the package",
       );
-    }
+    },
   );
 });
 
@@ -616,7 +682,9 @@ describe("npm package boundary", () => {
 
   it("ships a library and Pi extension without a standalone CLI or server", () => {
     const root = join(import.meta.dirname, "..");
-    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    const pkg = JSON.parse(
+      readFileSync(join(root, "package.json"), "utf8"),
+    ) as {
       name: string;
       description: string;
       bin?: unknown;
@@ -625,7 +693,9 @@ describe("npm package boundary", () => {
     };
 
     expect(pkg.name).toBe("@introspection-ai/recipes");
-    expect(pkg.description).toBe("The open format for vertical agents, built on Pi.");
+    expect(pkg.description).toBe(
+      "The open format for vertical agents, built on Pi.",
+    );
     expect(pkg.bin).toBeUndefined();
     expect(pkg.exports).not.toHaveProperty("./serve");
     expect(pkg.exports).not.toHaveProperty("./agui");
@@ -647,10 +717,14 @@ describe("npm package boundary", () => {
     expect(existsSync(join(root, "src", "serve.ts"))).toBe(false);
     // Internal snapshot bridge used by `pi --recipe`; it is not exposed in
     // package.json#bin and therefore does not restore a Recipes CLI.
-    expect(existsSync(join(root, "packages", "recipe-check", "src", "main.rs"))).toBe(true);
+    expect(
+      existsSync(join(root, "packages", "recipe-check", "src", "main.rs")),
+    ).toBe(true);
     // Python bindings share the source repository and release train but are
     // published separately; they never enter the npm package boundary.
-    expect(existsSync(join(root, "packages", "recipe-check-python"))).toBe(true);
+    expect(existsSync(join(root, "packages", "recipe-check-python"))).toBe(
+      true,
+    );
     expect(pkg.files.some((path) => path.startsWith("packages/"))).toBe(false);
     expect(existsSync(join(root, "harbor"))).toBe(false);
     expect(existsSync(join(root, "docs", "recipe-evals.md"))).toBe(false);
@@ -658,10 +732,48 @@ describe("npm package boundary", () => {
 });
 
 describe("release train isolation", () => {
+  it("keeps the checker's commits out of the npm train's changelog", () => {
+    const root = join(import.meta.dirname, "..");
+    const read = (file: string) =>
+      JSON.parse(readFileSync(join(root, file), "utf8")) as {
+        packages: Record<string, { "exclude-paths"?: string[] }>;
+      };
+    const excluded =
+      read("release-please-config.json").packages["."]?.["exclude-paths"] ?? [];
+    for (const path of Object.keys(
+      read("release-please-checker-config.json").packages,
+    ))
+      expect(excluded).toContain(path);
+    // Release Please skips a commit for a package only when every file it
+    // touches is under an excluded directory; an exclude path matches only as
+    // a `path/` prefix, so a root file such as AGENTS.md cannot be excluded
+    // (CommitExclude.isRelevant).
+    const releasesNpm = (files: string[]) =>
+      files.some(
+        (file) => !excluded.some((path) => file.startsWith(`${path}/`)),
+      );
+    // A checker change stays on the checker train.
+    expect(
+      releasesNpm([
+        "packages/recipe-check-python/python/introspection_recipe_check/_api.py",
+        "packages/recipe-check/src/lib.rs",
+      ]),
+    ).toBe(false);
+    // The published docs release npm, alone or with code.
+    expect(releasesNpm(["docs/recipe-format.md"])).toBe(true);
+    expect(
+      releasesNpm([
+        "docs/agent-composition.md",
+        "src/agents.ts",
+        "test/session.test.ts",
+      ]),
+    ).toBe(true);
+  });
+
   it("uses distinct release-please labels for root and checker trains", () => {
     const root = join(import.meta.dirname, "..");
     const rootConfig = JSON.parse(
-      readFileSync(join(root, "release-please-config.json"), "utf8")
+      readFileSync(join(root, "release-please-config.json"), "utf8"),
     ) as {
       label?: string;
       "release-label"?: string;
@@ -669,7 +781,7 @@ describe("release train isolation", () => {
       packages?: Record<string, { "initial-version"?: string }>;
     };
     const checkerConfig = JSON.parse(
-      readFileSync(join(root, "release-please-checker-config.json"), "utf8")
+      readFileSync(join(root, "release-please-checker-config.json"), "utf8"),
     ) as {
       label?: string;
       "release-label"?: string;
@@ -700,13 +812,13 @@ describe("release train isolation", () => {
   it("does not record a false Slack release version", () => {
     const root = join(import.meta.dirname, "..");
     const manifest = JSON.parse(
-      readFileSync(join(root, ".release-please-manifest.json"), "utf8")
+      readFileSync(join(root, ".release-please-manifest.json"), "utf8"),
     ) as Record<string, string>;
     const slackPackage = JSON.parse(
       readFileSync(
         join(root, "packages", "channels", "slack", "package.json"),
-        "utf8"
-      )
+        "utf8",
+      ),
     ) as { version: string };
     const releasedVersion = manifest["packages/channels/slack"];
 
@@ -720,7 +832,7 @@ describe("release train isolation", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
       join(root, ".github", "workflows", "release-please.yml"),
-      "utf8"
+      "utf8",
     );
 
     expect(workflow).toContain("name: Verify root release state");
@@ -732,13 +844,11 @@ describe("release train isolation", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
       join(root, ".github", "workflows", "release-please.yml"),
-      "utf8"
+      "utf8",
     );
 
     expect(workflow).toContain("name: Verify checker release state");
-    expect(workflow).toContain(
-      '.name == "autorelease: pending-checker"'
-    );
+    expect(workflow).toContain('.name == "autorelease: pending-checker"');
     expect(workflow).toContain("Merged checker release PRs remain untagged");
   });
 
@@ -746,7 +856,7 @@ describe("release train isolation", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
       join(root, ".github", "workflows", "release-please.yml"),
-      "utf8"
+      "utf8",
     );
 
     expect(workflow).toContain("pnpm publish --access public");
@@ -757,7 +867,7 @@ describe("release train isolation", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
       join(root, ".github", "workflows", "release-please.yml"),
-      "utf8"
+      "utf8",
     );
 
     // Trusted publishing authenticates `npm publish` alone. Staging a release
