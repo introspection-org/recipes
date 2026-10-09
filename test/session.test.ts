@@ -17,6 +17,7 @@ import {
   resolveRecipe,
 } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
+import { createDelegatedRuns } from "../src/agents.js";
 import {
   createAgentSession,
   createAgentSessionInternal,
@@ -1878,6 +1879,42 @@ describe("nested delegation", () => {
     expect(settled.output).toBe("Waited: found A + found B");
     expect(turns).toEqual(["fan-out", "wait", "answer"]);
     await controller.shutdown();
+  });
+
+  it("lets a host run a delegating child itself and settle its runs", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    const gates = new Map<string, ReturnType<typeof deferred<void>>>();
+    const turns: string[] = [];
+    const delegated = createDelegatedRuns();
+    // A host's own controller made this child: it passes the run it serves
+    // through the public API, and settles the child's runs with the helper.
+    const child = await createAgentSession({
+      recipe: resolveRecipe({ recipeDir }),
+      agentName: "background",
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      credentials: await credentialStore(),
+      agentRun: { id: "host-run-1", depth: 1 },
+      agentToolOptions: delegated.agentToolOptions,
+      // Test seam: fake explorers for the child's own runs.
+      ...({
+        sessionFactory: async (opts: Options) => fakeExplorer(opts, gates),
+      } as object),
+    });
+    try {
+      scriptBackground(child, turns);
+      expect(child.session.getActiveToolNames()).toContain("agent");
+      const settled = delegated.run(child, "plan", async (input) => {
+        await child.session.prompt(input);
+      });
+      await vi.waitFor(() => expect(gates.size).toBe(2));
+      for (const gate of gates.values()) gate.resolve(undefined);
+      await settled;
+      expect(turns).toEqual(["fan-out", "yield", "notice"]);
+      expect(messageText(child.session.messages.at(-1))).toBe("Final: found A + found B");
+    } finally {
+      await child.dispose();
+    }
   });
 
   it("hands a child the new result of a run it resumed", async () => {

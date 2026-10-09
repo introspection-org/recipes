@@ -175,6 +175,14 @@ export interface CreateAgentSessionOptions {
   agentToolOptions?: {
     acknowledgeCompletions?(ids: readonly string[]): void;
   };
+  /**
+   * The delegated run this session serves, for a host that runs children
+   * itself. Root sessions omit it (depth 0). Below `MAX_AGENT_RUN_DEPTH` a
+   * session whose agent declares subagents gets the default controller, which
+   * starts its runs one level deeper, attributed to this run id; at the bound
+   * it never delegates. Settle its runs with `createDelegatedRuns`.
+   */
+  agentRun?: { id: string; depth: number };
   /** Configuration for the default in-process controller. Ignored when injected. */
   inProcessRunController?: { concurrency?: number };
   /** Extra skill roots beyond the recipe's. */
@@ -208,12 +216,6 @@ export interface CreateAgentSessionInternalOptions
   credentialsResolved?: boolean;
   mcpRuntimeDir?: string;
   sessionRole: RecipeExtensionSessionContext["session"]["role"];
-  /**
-   * @internal The delegated run this session serves. Root sessions omit it
-   * (depth 0); the default controller starts this session's own runs one
-   * level deeper, attributed to this run id.
-   */
-  agentRun?: { id: string; depth: number };
   /** @internal Child session factory inherited by this session's own runs. */
   sessionFactory?: (
     options: CreateAgentSessionInternalOptions

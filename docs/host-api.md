@@ -138,6 +138,29 @@ and concurrency, down to `MAX_AGENT_RUN_DEPTH` (2). Injected controllers own
 child selection and execution after the root session is constructed, including
 whether their children delegate in turn.
 
+A host whose own controller constructs children lets them delegate by passing
+the run each one serves, then settling the child's own runs before reading its
+answer:
+
+```ts
+import { createDelegatedRuns } from "@introspection-ai/recipes/agents";
+
+const delegated = createDelegatedRuns();
+const child = await createAgentSession({
+  recipe,
+  agentName: "background",
+  cwd,
+  agentRun: { id: runId, depth: 1 },
+  agentToolOptions: delegated.agentToolOptions,
+});
+// Prompts, waits for the runs the child started, and prompts it again with
+// their results until nothing is outstanding.
+await delegated.run(child, prompt, (input) => child.session.prompt(input));
+```
+
+`delegated.interrupt(child)` ends the loop and interrupts the child's runs;
+disposing the child shuts its controller down.
+
 `onEvent` observes the root Pi session. `onAgentRunEvent` observes each event
 from the default in-process children, at every depth, as an `AgentRunEvent`
 envelope containing the run id, parent id (`root` for the root's children, the

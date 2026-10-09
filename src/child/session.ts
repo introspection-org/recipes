@@ -5,8 +5,8 @@ import type { CredentialStore, Model } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   MAX_AGENT_RUN_DEPTH,
+  createDelegatedRuns,
   type AgentRunEventObserver,
-  type AgentRunSummary,
 } from "../agents.js";
 import { autoResolveInteractions } from "../interactions.js";
 import { promptResultError } from "./agent.js";
@@ -21,11 +21,6 @@ import {
   type RecipeSessionHandle,
   type RecipeSessionOtelOptions,
 } from "../session.js";
-import {
-  OUTPUT_PREVIEW_CHARS,
-  renderCompletionNotice,
-  type ChildCompletionEnvelope,
-} from "./agent-completions.js";
 
 export interface CreateIsolatedChildSessionOptions {
   recipe: ResolvedRecipe;
@@ -64,23 +59,6 @@ export interface IsolatedChildSessionHandle extends RecipeSessionHandle {
   interrupt(): Promise<void>;
 }
 
-function completionEnvelope(run: AgentRunSummary): ChildCompletionEnvelope {
-  const completed = run.completed_at;
-  return {
-    id: run.agent_run_id,
-    agent: run.invocation_name,
-    label: run.label,
-    status: run.status === "failed" ? "failed" : "completed",
-    ...(run.output
-      ? { output_preview: run.output.slice(0, OUTPUT_PREVIEW_CHARS) }
-      : {}),
-    ...(run.error ? { error: run.error } : {}),
-    ...(completed !== undefined && completed >= run.started_at
-      ? { duration_ms: completed - run.started_at }
-      : {}),
-  };
-}
-
 /**
  * Shared child-session primitive used by both the embedded and interactive Pi
  * controllers. It owns the child's private MCP state. A child below
@@ -94,13 +72,7 @@ export async function createIsolatedChildSession(
   const delegates =
     depth < MAX_AGENT_RUN_DEPTH &&
     opts.recipe.selectAgent(opts.agentName).subagents.size > 0;
-  // Results the child model already read through the `agent` tool (wait,
-  // terminal status, close) or was handed in a notice. Keyed by run and
-  // completion time: a run resumed with `message` keeps its id, and its next
-  // result is new.
-  const seen = new Set<string>();
-  const completion = (run: AgentRunSummary) =>
-    `${run.agent_run_id}@${run.completed_at ?? ""}`;
+  const delegated = createDelegatedRuns();
   const mcpRuntimeDir = await mkdtemp(join(tmpdir(), "recipes-child-mcp-"));
   try {
     const handle = await (opts.sessionFactory ?? createAgentSessionInternal)({
@@ -125,14 +97,7 @@ export async function createIsolatedChildSession(
               id: opts.agentRunId ?? "child",
               depth,
             },
-            agentToolOptions: {
-              acknowledgeCompletions(ids: readonly string[]) {
-                for (const id of ids) {
-                  const run = handle.agentRuns?.get(id);
-                  if (run) seen.add(completion(run));
-                }
-              },
-            },
+            agentToolOptions: delegated.agentToolOptions,
             ...(opts.onAgentRunEvent
               ? { onAgentRunEvent: opts.onAgentRunEvent }
               : {}),
@@ -146,83 +111,30 @@ export async function createIsolatedChildSession(
         : { runController: null }),
     });
     let disposed = false;
-    let stopped = false;
-    // Session handles from an injected factory may predate `agentRuns`.
-    const ownRuns = () => handle.agentRuns?.list() ?? [];
-    const interruptOwnRuns = async () => {
-      await Promise.all(
-        ownRuns()
-          .filter((run) => run.status === "running")
-          .map((run) =>
-            handle.agentRuns.interrupt(run.agent_run_id).catch(() => {})
-          )
-      );
-    };
     return {
       ...handle,
       async run(prompt: string): Promise<void> {
-        stopped = false;
-        let next: string | null = prompt;
-        let settled = false;
-        try {
-          while (next !== null) {
-            const input: string = next;
-            next = null;
-            // Children never own the root interaction lifecycle: their asks
-            // resolve internally so a child cannot strand the parent on a
-            // user.
-            await autoResolveInteractions(() => handle.session.prompt(input));
-            if (stopped || disposed) return;
-            if (promptResultError({ messages: handle.session.messages })) {
-              return;
-            }
-            // The turn can end while runs the child started in the
-            // background are still working. The child owns its prompt loop,
-            // so rather than a triggerTurn wake (which pi strands when it is
-            // queued during turn teardown) it waits here, after `prompt` has
-            // fully settled, then prompts again with the results it has not
-            // seen.
-            let running = ownRuns().filter((run) => run.status === "running");
-            while (running.length > 0) {
-              await Promise.all(
-                running.map((run) =>
-                  handle.agentRuns
-                    .wait(run.agent_run_id)
-                    .catch(() => undefined)
-                )
-              );
-              if (stopped || disposed) return;
-              running = ownRuns().filter((run) => run.status === "running");
-            }
-            const unseen = ownRuns().filter(
-              (run) =>
-                (run.status === "completed" || run.status === "failed") &&
-                !seen.has(completion(run))
-            );
-            for (const run of unseen) seen.add(completion(run));
-            if (unseen.length > 0) {
-              next = renderCompletionNotice(unseen.map(completionEnvelope));
-            }
-          }
-          settled = true;
-        } finally {
-          // A child that errors or stops early leaves no run working for it.
-          if (!settled) await interruptOwnRuns();
-        }
+        await delegated.run(handle, prompt, async (input) => {
+          // Children never own the root interaction lifecycle: their asks
+          // resolve internally so a child cannot strand the parent on a user.
+          await autoResolveInteractions(() => handle.session.prompt(input));
+          return (
+            !disposed &&
+            !promptResultError({ messages: handle.session.messages })
+          );
+        });
       },
       async interrupt(): Promise<void> {
-        stopped = true;
         await Promise.all([
           Promise.resolve()
             .then(() => handle.session.abort())
             .catch(() => {}),
-          interruptOwnRuns(),
+          delegated.interrupt(handle),
         ]);
       },
       async dispose(): Promise<void> {
         if (disposed) return;
         disposed = true;
-        stopped = true;
         try {
           await handle.dispose();
         } finally {
