@@ -12,7 +12,12 @@
       "release-type": "node",
       "package-name": "",
       "bump-minor-pre-major": true,
-      "exclude-paths": ["packages/recipe-check", "packages/recipe-check-python"]
+      "exclude-paths": [
+        "packages/recipe-check",
+        "packages/recipe-check-python",
+        "AGENTS.md",
+        "docs"
+      ]
     },
     "packages/channels/slack": {
       "release-type": "node",
