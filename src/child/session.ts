@@ -5,6 +5,7 @@ import type { CredentialStore, Model } from "@earendil-works/pi-ai";
 import type {
   AgentSessionEvent,
   ModelRegistry,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {
   resolveRecipeCredentials,
@@ -36,6 +37,8 @@ export interface CreateIsolatedChildSessionOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   credentials?: CredentialStore;
+  /** Host settings the child layers its own `session` policy over. */
+  settingsManager?: SettingsManager;
   memory?: MemoryContextSource;
   memoryOverride?: MemoryContextOverride;
   credentialsResolved?: boolean;
@@ -119,6 +122,9 @@ export async function createIsolatedChildSession(
       cwd: opts.cwd,
       env: { ...opts.env },
       ...(opts.credentials ? { credentials: opts.credentials } : {}),
+      ...(opts.settingsManager
+        ? { settingsManager: opts.settingsManager }
+        : {}),
       ...(opts.memory ? { memory: opts.memory } : {}),
       ...(opts.memoryOverride
         ? { memoryOverride: opts.memoryOverride }

@@ -89,7 +89,6 @@ function sessionSettingsManager(
   base: SettingsManager,
   sessionSettings: Record<string, unknown> | undefined
 ): SettingsManager {
-  if (!sessionSettings) return base;
   const merge = (
     left: Record<string, unknown>,
     right: Record<string, unknown>
@@ -109,14 +108,18 @@ function sessionSettingsManager(
     }
     return result;
   };
-  return SettingsManager.inMemory(
+  // Pi reloads the manager from storage while it builds the session, which
+  // discards `applyOverrides`, so the effective settings are baked into a
+  // session-local copy. `getSettings` (Pi >=0.99) includes the host's
+  // overrides; older Pi exposes only the file-backed scopes.
+  const effective =
+    (base as { getSettings?: () => object }).getSettings?.() ??
     merge(
-      merge(
-        base.getGlobalSettings() as Record<string, unknown>,
-        base.getProjectSettings() as Record<string, unknown>
-      ),
-      sessionSettings
-    ) as never
+      base.getGlobalSettings() as Record<string, unknown>,
+      base.getProjectSettings() as Record<string, unknown>
+    );
+  return SettingsManager.inMemory(
+    merge(effective as Record<string, unknown>, sessionSettings ?? {}) as never
   );
 }
 
@@ -157,7 +160,11 @@ export interface CreateAgentSessionOptions {
   env?: NodeJS.ProcessEnv;
   /** Default: `SessionManager.inMemory(cwd)`. */
   sessionManager?: SessionManager;
-  /** Host-owned settings (compaction, retry). Default: `SettingsManager.create(cwd, recipe.recipeDir)`. */
+  /**
+   * Host settings, including any `applyOverrides`. The agent's `session`
+   * policy is layered over them on a session-local copy. Default:
+   * `SettingsManager.create(cwd, recipe.recipeDir)`.
+   */
   settingsManager?: SettingsManager;
   /** Host extensions appended after the recipe's own extensions. */
   extensionFactories?: ExtensionFactory[];
@@ -772,6 +779,9 @@ async function createSessionForAgent(
             cwd,
             env,
             ...(opts.credentials ? { credentials: opts.credentials } : {}),
+            ...(opts.settingsManager
+              ? { settingsManager: opts.settingsManager }
+              : {}),
             concurrency: opts.inProcessRunController?.concurrency,
             depth: (opts.agentRun?.depth ?? 0) + 1,
             ...(opts.agentRun ? { parentAgentRunId: opts.agentRun.id } : {}),

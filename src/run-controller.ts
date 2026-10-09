@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CredentialStore } from "@earendil-works/pi-ai";
+import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type {
   AgentRunEventObserver,
   AgentRunController,
@@ -31,6 +32,8 @@ export interface InProcessRunControllerOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   credentials?: CredentialStore;
+  /** The root's host settings; each child layers its own `session` policy over them. */
+  settingsManager?: SettingsManager;
   memory?: MemoryContextSource;
   memoryOverride?: MemoryContextOverride;
   /** Concurrent child runs; excess starts queue. Default 4. */
@@ -139,6 +142,9 @@ export function createInProcessRunController(
           // runtime to the child.
           env,
           ...(opts.credentials ? { credentials: opts.credentials } : {}),
+          ...(opts.settingsManager
+            ? { settingsManager: opts.settingsManager }
+            : {}),
           ...(opts.memory ? { memory: opts.memory } : {}),
           ...(opts.memoryOverride
             ? { memoryOverride: opts.memoryOverride }
