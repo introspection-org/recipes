@@ -752,15 +752,15 @@ describe("release train isolation", () => {
       files.some(
         (file) => !excluded.some((path) => file.startsWith(`${path}/`)),
       );
-    // A checker change with its docs stays on the checker train.
+    // A checker change stays on the checker train.
     expect(
       releasesNpm([
-        "docs/recipe-format.md",
         "packages/recipe-check-python/python/introspection_recipe_check/_api.py",
         "packages/recipe-check/src/lib.rs",
       ]),
     ).toBe(false);
-    // A root feature with its docs releases npm.
+    // The published docs release npm, alone or with code.
+    expect(releasesNpm(["docs/recipe-format.md"])).toBe(true);
     expect(
       releasesNpm([
         "docs/agent-composition.md",
