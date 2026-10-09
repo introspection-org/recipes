@@ -2,7 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialStore, Model } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
+import {
+  resolveRecipeCredentials,
+  resolveRecipeModel,
+} from "../model-binding.js";
+import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import {
   MAX_AGENT_RUN_DEPTH,
   createDelegatedRuns,
@@ -40,6 +48,12 @@ export interface CreateIsolatedChildSessionOptions {
   depth?: number;
   /** Observe events from runs this child starts in turn. */
   onAgentRunEvent?: AgentRunEventObserver;
+  /**
+   * Pi's model registry, when the child was bound through it: the runs this
+   * child starts are bound the same way, each for its own model and provider,
+   * rather than inheriting a credential store resolved for this child's.
+   */
+  modelRegistry?: ModelRegistry;
   /** Concurrency of the controller serving this child's own runs. */
   concurrency?: number;
   sessionFactory?: (
@@ -73,6 +87,30 @@ export async function createIsolatedChildSession(
     depth < MAX_AGENT_RUN_DEPTH &&
     opts.recipe.selectAgent(opts.agentName).subagents.size > 0;
   const delegated = createDelegatedRuns();
+  const registry = opts.modelRegistry;
+  const nestedFactory: CreateIsolatedChildSessionOptions["sessionFactory"] =
+    registry
+      ? async (options) => {
+          const agent = options.recipe.selectAgent(options.agentName);
+          const model = applyRecipeAgentModelConfigToModel(
+            resolveRecipeModel(agent.modelSpec, registry),
+            agent.modelConfig
+          );
+          const env = options.env ?? process.env;
+          const credentials = await resolveRecipeCredentials({
+            provider: model.provider,
+            env,
+            model,
+            modelRegistry: registry,
+          });
+          return (opts.sessionFactory ?? createAgentSessionInternal)({
+            ...options,
+            modelOverride: model,
+            credentials,
+            credentialsResolved: true,
+          });
+        }
+      : opts.sessionFactory;
   const mcpRuntimeDir = await mkdtemp(join(tmpdir(), "recipes-child-mcp-"));
   try {
     const handle = await (opts.sessionFactory ?? createAgentSessionInternal)({
@@ -104,9 +142,7 @@ export async function createIsolatedChildSession(
             ...(opts.concurrency !== undefined
               ? { inProcessRunController: { concurrency: opts.concurrency } }
               : {}),
-            ...(opts.sessionFactory
-              ? { sessionFactory: opts.sessionFactory }
-              : {}),
+            ...(nestedFactory ? { sessionFactory: nestedFactory } : {}),
           }
         : { runController: null }),
     });

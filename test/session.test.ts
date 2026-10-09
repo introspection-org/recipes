@@ -18,6 +18,7 @@ import {
 } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
 import { createDelegatedRuns } from "../src/agents.js";
+import { createIsolatedChildSession } from "../src/child/session.js";
 import {
   createAgentSession,
   createAgentSessionInternal,
@@ -1914,6 +1915,51 @@ describe("nested delegation", () => {
       expect(messageText(child.session.messages.at(-1))).toBe("Final: found A + found B");
     } finally {
       await child.dispose();
+    }
+  });
+
+  it("binds a child's own runs through Pi's model registry, each for its own provider", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    // The explorer runs on another provider than the background that starts it.
+    writeFileSync(
+      join(recipeDir, "agents", "explorer.yaml"),
+      ["name: explorer", "model:", "  name: openai/gpt-5.5", "tools: [read]", ""].join("\n")
+    );
+    const recipe = resolveRecipe({ recipeDir });
+    const registry = {
+      find: (provider: string, id: string) => getModel(provider as never, id as never),
+      getApiKeyAndHeaders: async (model: { provider: string }) => ({
+        ok: true,
+        apiKey: `pi-managed-${model.provider}`,
+      }),
+    };
+    const gates = new Map<string, ReturnType<typeof deferred<void>>>();
+    const bound: Options[] = [];
+    const background = await createIsolatedChildSession({
+      recipe,
+      agentName: "background",
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      // Resolved for the background's provider only.
+      credentials: await credentialStore(),
+      credentialsResolved: true,
+      agentRunId: "run-1",
+      modelRegistry: registry as never,
+      sessionFactory: async (opts) => {
+        if (opts.agentName !== "explorer")
+          return createAgentSessionInternal(opts);
+        bound.push(opts);
+        return fakeExplorer(opts, gates);
+      },
+    });
+    try {
+      await background.agentRuns.start({ name: "explorer", prompt: "find A" });
+      await vi.waitFor(() => expect(bound).toHaveLength(1));
+      expect(bound[0]!.modelOverride?.provider).toBe("openai");
+      expect(await bound[0]!.credentials?.read("openai")).toBeTruthy();
+      gates.get("find A")?.resolve(undefined);
+    } finally {
+      await background.dispose();
     }
   });
 

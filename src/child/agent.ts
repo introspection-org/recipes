@@ -249,6 +249,9 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
       modelOverride: model,
       onEvent: (event) => this.handleSessionEvent(event),
       ...(this.opts.agentRunId ? { agentRunId: this.opts.agentRunId } : {}),
+      ...(this.opts.modelRegistry
+        ? { modelRegistry: this.opts.modelRegistry }
+        : {}),
       ...(this.opts.onAgentRunEvent
         ? { onAgentRunEvent: this.opts.onAgentRunEvent }
         : {}),
