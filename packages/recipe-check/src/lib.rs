@@ -1713,9 +1713,19 @@ fn validate_session_retry(value: &JsonValue, path: &str, ctx: &mut CheckContext)
         value,
         path,
         "retry",
-        &["enabled", "max_retries", "base_delay_ms", "provider"],
+        &[
+            "enabled",
+            "max_retries",
+            "base_delay_ms",
+            "max_agent_delay_ms",
+            "provider",
+        ],
         &["enabled"],
-        &[("max_retries", false), ("base_delay_ms", false)],
+        &[
+            ("max_retries", false),
+            ("base_delay_ms", false),
+            ("max_agent_delay_ms", false),
+        ],
         ctx,
     ) else {
         return;
