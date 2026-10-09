@@ -17,6 +17,8 @@ import {
   resolveRecipe,
 } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
+import { createDelegatedRuns } from "../src/agents.js";
+import { createIsolatedChildSession } from "../src/child/session.js";
 import {
   createAgentSession,
   createAgentSessionInternal,
@@ -1622,5 +1624,456 @@ describe("in-process run controller", () => {
     expect(resumed.error).toBeUndefined();
     await controller.wait(run.agent_run_id);
     await controller.close(run.agent_run_id);
+  });
+});
+
+describe("nested delegation", () => {
+  const cleanups: Array<() => void> = [];
+
+  afterEach(() => {
+    for (const cleanup of cleanups.splice(0)) cleanup();
+  });
+
+  /** agent -> [background, explorer]; background -> [explorer]. */
+  function fixture(delegation: Record<string, string[]> = { background: ["explorer"] }) {
+    const created = writeFixtureRecipe({
+      subagents: [...new Set(["background", "explorer", ...Object.keys(delegation)])],
+    });
+    cleanups.push(created.cleanup);
+    for (const [name, subagents] of Object.entries(delegation)) {
+      writeFileSync(
+        join(created.recipeDir, "agents", `${name}.yaml`),
+        [
+          `name: ${name}`,
+          "model:",
+          "  name: anthropic/claude-sonnet-4-5",
+          "tools: [read]",
+          `subagents: [${subagents.join(", ")}]`,
+          "",
+        ].join("\n")
+      );
+    }
+    return created;
+  }
+
+  type Options = Parameters<typeof createAgentSessionInternal>[0];
+
+  function messageText(message: unknown): string {
+    const content = (message as { content?: unknown }).content;
+    if (typeof content === "string") return content;
+    return Array.isArray(content)
+      ? content.map((part) => (part as { text?: string }).text ?? "").join("")
+      : "";
+  }
+
+  /**
+   * A real background session: it starts two explorers, ends its turn
+   * without waiting, then answers from the completion notice.
+   */
+  function scriptBackground(handle: RecipeSessionHandle, turns: string[]) {
+    handle.session.agent.streamFunction = (_model, context) => {
+      const stream = new MockAssistantStream();
+      const last = context.messages.at(-1)!;
+      let message: AssistantMessage;
+      if (last.role === "user" && !messageText(last).includes("<agent_run_completions>")) {
+        turns.push("fan-out");
+        message = assistantMessage("");
+        message.content = [
+          { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A", label: "a" } },
+          { type: "toolCall", id: "start-b", name: "agent", arguments: { name: "explorer", prompt: "find B", label: "b" } },
+        ];
+        message.stopReason = "toolUse";
+      } else if (last.role === "toolResult") {
+        turns.push("yield");
+        message = assistantMessage("Started two explorers.");
+      } else {
+        turns.push("notice");
+        const notice = messageText(last);
+        const found = ["found A", "found B"].filter((text) => notice.includes(text));
+        message = assistantMessage(`Final: ${found.join(" + ")}`);
+      }
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: assistantMessage("") });
+        stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+      });
+      return stream;
+    };
+  }
+
+  /** A fake explorer whose reply waits for its gate (or its abort). */
+  function fakeExplorer(options: Options, gates: Map<string, ReturnType<typeof deferred<void>>>) {
+    const messages: unknown[] = [];
+    let release: (() => void) | undefined;
+    const handle = {
+      session: {
+        messages,
+        prompt: vi.fn(async (prompt: string) => {
+          options.onEvent?.({ type: "agent_start" } as never);
+          const gate = deferred();
+          gates.set(prompt, gate);
+          release = gate.resolve;
+          await gate.promise;
+          messages.push(assistantMessage(prompt.replace("find", "found")));
+        }),
+        abort: vi.fn(async () => release?.()),
+      },
+      agentRuns: undefined,
+      dispose: vi.fn(async () => {}),
+    };
+    return handle as unknown as RecipeSessionHandle & {
+      session: { abort: ReturnType<typeof vi.fn> };
+      dispose: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  function tree(
+    recipeDir: string,
+    workspaceDir: string,
+    extra: Partial<Parameters<typeof createInProcessRunController>[0]> = {},
+    background: typeof scriptBackground = scriptBackground
+  ) {
+    const options = new Map<string, Options>();
+    const handles = new Map<string, RecipeSessionHandle>();
+    const explorers: Array<ReturnType<typeof fakeExplorer>> = [];
+    const gates = new Map<string, ReturnType<typeof deferred<void>>>();
+    const turns: string[] = [];
+    const controller = createInProcessRunController({
+      recipe: resolveRecipe({ recipeDir }),
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      ...extra,
+      sessionFactory: async (opts) => {
+        options.set(opts.agentName!, opts);
+        if (opts.agentName === "explorer") {
+          const handle = fakeExplorer(opts, gates);
+          explorers.push(handle);
+          return handle;
+        }
+        const handle = await createAgentSessionInternal({
+          ...opts,
+          credentials: await credentialStore(),
+        });
+        handles.set(opts.agentName!, handle);
+        if (opts.agentName === "background") background(handle, turns);
+        else scriptReply(handle, `${opts.agentName} done`);
+        return handle;
+      },
+    });
+    return { controller, options, handles, explorers, gates, turns };
+  }
+
+  it("gives a child with subagents the agent tool and its children none", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    const { controller, options, handles } = tree(recipeDir, workspaceDir);
+    const background = await controller.start({ name: "background", prompt: "plan" });
+    await vi.waitFor(() => expect(handles.get("background")).toBeDefined());
+    const handle = handles.get("background")!;
+    expect(handle.session.getActiveToolNames()).toContain("agent");
+    expect(options.get("background")?.runController).toBeUndefined();
+    expect(options.get("background")?.agentRun).toEqual({
+      id: background.agent_run_id,
+      depth: 1,
+    });
+
+    // A depth-2 session never gets the agent tool, whatever it declares.
+    const grandchild = await createAgentSessionInternal({
+      recipe: resolveRecipe({ recipeDir }),
+      agentName: "background",
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      credentials: await credentialStore(),
+      sessionRole: "subagent",
+      agentRun: { id: "agent-run-x", depth: 2 },
+    });
+    try {
+      expect(grandchild.session.getActiveToolNames()).not.toContain("agent");
+      expect(grandchild.session.getAllTools().map((tool) => tool.name)).not.toContain("agent");
+    } finally {
+      await grandchild.dispose();
+    }
+    await controller.shutdown();
+  });
+
+  it("finishes a child only after its parallel runs settle, with their results", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    const onAgentRunEvent = vi.fn();
+    const { controller, gates, turns, options } = tree(recipeDir, workspaceDir, { onAgentRunEvent });
+    const background = await controller.start({ name: "background", prompt: "plan" });
+
+    await vi.waitFor(() => expect(gates.size).toBe(2));
+    await vi.waitFor(() => expect(turns).toEqual(["fan-out", "yield"]));
+    expect(controller.get(background.agent_run_id)?.status).toBe("running");
+
+    gates.get("find A")!.resolve(undefined);
+    await vi.waitFor(() =>
+      expect(options.get("explorer")?.agentRun).toBeUndefined()
+    );
+    expect(controller.get(background.agent_run_id)?.status).toBe("running");
+    gates.get("find B")!.resolve(undefined);
+
+    const settled = await controller.wait(background.agent_run_id);
+    expect(settled.status).toBe("completed");
+    expect(settled.output).toBe("Final: found A + found B");
+    // One notice carrying both results, then the run ends.
+    expect(turns).toEqual(["fan-out", "yield", "notice"]);
+
+    expect(options.get("explorer")?.runController).toBeNull();
+    expect(onAgentRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent_name: "explorer",
+        parent_agent_run_id: background.agent_run_id,
+        depth: 2,
+      })
+    );
+    expect(onAgentRunEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent_run_id: background.agent_run_id,
+        parent_agent_run_id: "root",
+        depth: 1,
+      })
+    );
+    await controller.shutdown();
+  });
+
+  it("does not notify a child about runs it already waited on", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    // Fan out, then wait on both runs inside the same turn.
+    const waitInTurn = (handle: RecipeSessionHandle, turns: string[]) => {
+      handle.session.agent.streamFunction = (_model, context) => {
+        const stream = new MockAssistantStream();
+        const last = context.messages.at(-1)!;
+        let message = assistantMessage("");
+        const results = context.messages.filter((entry) => entry.role === "toolResult");
+        if (last.role === "user") {
+          turns.push(messageText(last).includes("<agent_run_completions>") ? "notice" : "fan-out");
+          message.content = [
+            { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A" } },
+            { type: "toolCall", id: "start-b", name: "agent", arguments: { name: "explorer", prompt: "find B" } },
+          ];
+          message.stopReason = "toolUse";
+        } else if (results.length === 2) {
+          turns.push("wait");
+          const ids = results.map((entry) => /\((agent-run-[^)]+)\)/.exec(messageText(entry))![1]);
+          message.content = ids.map((id, index) => ({
+            type: "toolCall" as const, id: `wait-${index}`, name: "agent", arguments: { action: "wait", id },
+          }));
+          message.stopReason = "toolUse";
+        } else {
+          turns.push("answer");
+          const found = results.slice(2).map(messageText).join(" ");
+          message = assistantMessage(`Waited: ${["found A", "found B"].filter((text) => found.includes(text)).join(" + ")}`);
+        }
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: assistantMessage("") });
+          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+        });
+        return stream;
+      };
+    };
+    const { controller, gates, turns } = tree(recipeDir, workspaceDir, {}, waitInTurn);
+    const background = await controller.start({ name: "background", prompt: "plan" });
+    await vi.waitFor(() => expect(gates.size).toBe(2));
+    for (const gate of gates.values()) gate.resolve(undefined);
+
+    const settled = await controller.wait(background.agent_run_id);
+    expect(settled.status).toBe("completed");
+    expect(settled.output).toBe("Waited: found A + found B");
+    expect(turns).toEqual(["fan-out", "wait", "answer"]);
+    await controller.shutdown();
+  });
+
+  it("lets a host run a delegating child itself and settle its runs", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    const gates = new Map<string, ReturnType<typeof deferred<void>>>();
+    const turns: string[] = [];
+    const delegated = createDelegatedRuns();
+    // A host's own controller made this child: it passes the run it serves
+    // through the public API, and settles the child's runs with the helper.
+    const child = await createAgentSession({
+      recipe: resolveRecipe({ recipeDir }),
+      agentName: "background",
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      credentials: await credentialStore(),
+      agentRun: { id: "host-run-1", depth: 1 },
+      agentToolOptions: delegated.agentToolOptions,
+      // Test seam: fake explorers for the child's own runs.
+      ...({
+        sessionFactory: async (opts: Options) => fakeExplorer(opts, gates),
+      } as object),
+    });
+    try {
+      scriptBackground(child, turns);
+      expect(child.session.getActiveToolNames()).toContain("agent");
+      const settled = delegated.run(child, "plan", async (input) => {
+        await child.session.prompt(input);
+      });
+      await vi.waitFor(() => expect(gates.size).toBe(2));
+      for (const gate of gates.values()) gate.resolve(undefined);
+      await settled;
+      expect(turns).toEqual(["fan-out", "yield", "notice"]);
+      expect(messageText(child.session.messages.at(-1))).toBe("Final: found A + found B");
+    } finally {
+      await child.dispose();
+    }
+  });
+
+  it("binds a child's own runs through Pi's model registry, each for its own provider", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    // The explorer runs on another provider than the background that starts it.
+    writeFileSync(
+      join(recipeDir, "agents", "explorer.yaml"),
+      ["name: explorer", "model:", "  name: openai/gpt-5.5", "tools: [read]", ""].join("\n")
+    );
+    const recipe = resolveRecipe({ recipeDir });
+    const registry = {
+      find: (provider: string, id: string) => getModel(provider as never, id as never),
+      getApiKeyAndHeaders: async (model: { provider: string }) => ({
+        ok: true,
+        apiKey: `pi-managed-${model.provider}`,
+      }),
+    };
+    const gates = new Map<string, ReturnType<typeof deferred<void>>>();
+    const bound: Options[] = [];
+    const background = await createIsolatedChildSession({
+      recipe,
+      agentName: "background",
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      // Resolved for the background's provider only.
+      credentials: await credentialStore(),
+      credentialsResolved: true,
+      agentRunId: "run-1",
+      modelRegistry: registry as never,
+      sessionFactory: async (opts) => {
+        if (opts.agentName !== "explorer")
+          return createAgentSessionInternal(opts);
+        bound.push(opts);
+        return fakeExplorer(opts, gates);
+      },
+    });
+    try {
+      await background.agentRuns.start({ name: "explorer", prompt: "find A" });
+      await vi.waitFor(() => expect(bound).toHaveLength(1));
+      expect(bound[0]!.modelOverride?.provider).toBe("openai");
+      expect(await bound[0]!.credentials?.read("openai")).toBeTruthy();
+      gates.get("find A")?.resolve(undefined);
+    } finally {
+      await background.dispose();
+    }
+  });
+
+  it("hands a child the new result of a run it resumed", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    // One explorer; on its result, send it back for more; answer from the second result.
+    const resume = (handle: RecipeSessionHandle, turns: string[]) => {
+      handle.session.agent.streamFunction = (_model, context) => {
+        const stream = new MockAssistantStream();
+        const last = context.messages.at(-1)!;
+        let message = assistantMessage("");
+        const text = messageText(last);
+        if (last.role === "user" && !text.includes("<agent_run_completions>")) {
+          turns.push("fan-out");
+          message.content = [
+            { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A" } },
+          ];
+          message.stopReason = "toolUse";
+        } else if (last.role === "toolResult") {
+          turns.push("yield");
+          message = assistantMessage("Waiting on the explorer.");
+        } else if (text.includes("found A")) {
+          turns.push("resume");
+          const id = /\((agent-run-[^)]+)\)/.exec(text)![1];
+          message.content = [
+            { type: "toolCall", id: "more", name: "agent", arguments: { action: "message", id, message: "find C" } },
+          ];
+          message.stopReason = "toolUse";
+        } else {
+          turns.push("answer");
+          message = assistantMessage(text.includes("found C") ? "Final: found C" : "Final: nothing new");
+        }
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: assistantMessage("") });
+          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+        });
+        return stream;
+      };
+    };
+    const { controller, gates, turns } = tree(recipeDir, workspaceDir, {}, resume);
+    const background = await controller.start({ name: "background", prompt: "plan" });
+    await vi.waitFor(() => expect(gates.has("find A")).toBe(true));
+    gates.get("find A")!.resolve(undefined);
+    await vi.waitFor(() => expect(gates.has("find C")).toBe(true));
+    gates.get("find C")!.resolve(undefined);
+
+    const settled = await controller.wait(background.agent_run_id);
+    expect(settled.status).toBe("completed");
+    expect(settled.output).toBe("Final: found C");
+    expect(turns).toEqual(["fan-out", "yield", "resume", "yield", "answer"]);
+    await controller.shutdown();
+  });
+
+  it("interrupts and closes a child's runs with the child", async () => {
+    const { recipeDir, workspaceDir } = fixture();
+    for (const action of ["interrupt", "close"] as const) {
+      const { controller, handles, gates, explorers, turns } = tree(recipeDir, workspaceDir);
+      const background = await controller.start({ name: "background", prompt: "plan" });
+      await vi.waitFor(() => expect(gates.size).toBe(2));
+      await vi.waitFor(() => expect(turns).toEqual(["fan-out", "yield"]));
+      const nested = handles.get("background")!.agentRuns;
+
+      await controller[action](background.agent_run_id);
+
+      expect(nested.list().map((run) => run.status)).toEqual(
+        action === "interrupt"
+          ? ["interrupted", "interrupted"]
+          : ["closed", "closed"]
+      );
+      for (const explorer of explorers) {
+        expect(explorer.session.abort).toHaveBeenCalled();
+        if (action === "close") expect(explorer.dispose).toHaveBeenCalled();
+      }
+      const settled = await controller.wait(background.agent_run_id);
+      expect(settled.status).toBe(action === "interrupt" ? "interrupted" : "closed");
+      expect(turns).toEqual(["fan-out", "yield"]);
+      await controller.shutdown();
+      expect(nested.list().every((run) => run.status === "closed")).toBe(true);
+    }
+  });
+
+  it("bounds a subagent cycle at the maximum depth", async () => {
+    const { recipeDir, workspaceDir } = fixture({ a: ["b"], b: ["a"] });
+    const options: Options[] = [];
+    const handles: RecipeSessionHandle[] = [];
+    const controller = createInProcessRunController({
+      recipe: resolveRecipe({ recipeDir }),
+      cwd: workspaceDir,
+      env: cleanEnv(),
+      sessionFactory: async (opts) => {
+        options.push(opts);
+        const handle = await createAgentSessionInternal({
+          ...opts,
+          credentials: await credentialStore(),
+        });
+        scriptReply(handle, `${opts.agentName} done`);
+        handles.push(handle);
+        return handle;
+      },
+    });
+    const a = await controller.start({ name: "a", prompt: "go" });
+    await controller.wait(a.agent_run_id);
+    expect(handles[0]!.session.getActiveToolNames()).toContain("agent");
+
+    const b = await handles[0]!.agentRuns.start({ name: "b", prompt: "go" });
+    const settled = await handles[0]!.agentRuns.wait(b.agent_run_id);
+    expect(settled.status).toBe("completed");
+    expect(options[1]).toMatchObject({ agentName: "b", runController: null });
+    expect(options[1]?.agentRun).toBeUndefined();
+    expect(handles[1]!.session.getAllTools().map((tool) => tool.name)).not.toContain("agent");
+    expect(handles[1]!.agentRuns.list()).toEqual([]);
+    await expect(
+      handles[1]!.agentRuns.start({ name: "a", prompt: "again" })
+    ).rejects.toThrow();
+    await controller.shutdown();
   });
 });

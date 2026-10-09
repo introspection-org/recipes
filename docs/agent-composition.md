@@ -195,9 +195,9 @@ the selected agent narrows model-visible capability:
 - Prompt templates declared by the package are recipe resources; they are not
   specialized through `from:`.
 
-The `agent` delegation tool is not authored in `tools`. The host adds it only
-to root sessions with visible subagents; delegated children remain one level
-deep.
+The `agent` delegation tool is not authored in `tools`. The host adds it to
+any session whose effective agent has visible subagents, down to the
+delegation depth bound described below.
 
 Skill and subagent selection controls prompt exposure and active capability,
 not filesystem isolation. All agents run in the same Recipe package and current
@@ -216,9 +216,30 @@ A delegated subagent resolves its own complete effective definition:
 3. start from the same recipe `SYSTEM.md` as the root agent; and
 4. append or replace with its effective `system_instructions`.
 
-Delegation is one level deep. A definition may expose subagents when selected
-directly as a root agent, but the same definition does not receive the `agent`
-tool while running as a delegated child.
+Delegation is two levels deep. The root session is depth 0, the agents it
+delegates to are depth 1, and the agents they delegate to are depth 2. A
+depth-1 child whose effective `subagents` list is non-empty receives its own
+`agent` tool exposing only those agents; a depth-2 child never does, whatever
+its definition declares. The bound also stops recursive references
+(`a -> b -> a`): the second `a` would be depth 3, so `b` has no `agent` tool.
+
+```yaml
+# agents/agent.yaml (root)
+subagents: [background, explorer, dreamer]
+
+# agents/background.yaml (depth 1: can fan out explorers)
+subagents: [explorer]
+
+# agents/explorer.yaml (depth 1 or 2: never delegates)
+```
+
+A delegating child reports its result only once its own work has settled.
+When its turn ends while runs it started are still working, the child waits
+for them, then gets one more turn carrying the results it has not already
+read through the `agent` tool, and repeats until nothing it started is
+running. Its output is the final assistant message after that. Interrupting
+or closing a child interrupts or closes every run it started, and children at
+every depth auto-resolve interactions rather than asking the user.
 
 ## Recommended Structure
 

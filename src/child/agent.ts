@@ -4,8 +4,11 @@ import {
   type AgentSessionEvent,
   type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import { autoResolveInteractions } from "../interactions.js";
-import { createIsolatedChildSession } from "./session.js";
+import type { AgentRunEventObserver } from "../agents.js";
+import {
+  createIsolatedChildSession,
+  type IsolatedChildSessionHandle,
+} from "./session.js";
 import {
   resolveRecipeCredentials,
   resolveRecipeModel,
@@ -14,7 +17,6 @@ import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import {
   type ResolvedRecipe,
 } from "../recipe/resolve.js";
-import type { RecipeSessionHandle } from "../session.js";
 
 export interface CreateRecipeChildAgentRunnerOptions {
   /** Immutable Recipe graph shared with the root Pi session. */
@@ -26,6 +28,10 @@ export interface CreateRecipeChildAgentRunnerOptions {
   modelRegistry?: ModelRegistry;
   /** Observe the child's canonical Pi session events. */
   onEvent?: (event: AgentSessionEvent) => void;
+  /** The run this child serves; runs it starts in turn are attributed to it. */
+  agentRunId?: string;
+  /** Observe events from runs this child starts in turn. */
+  onAgentRunEvent?: AgentRunEventObserver;
   onAssistantMessage?: (text: string, stream: "delta" | "final") => void;
   onToolEvent?: (event: RecipeChildToolEvent) => void;
 }
@@ -139,7 +145,7 @@ function messageFromEvent(event: AgentSessionEvent): Record<string, unknown> | n
 
 class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
   private session: AgentSession | null = null;
-  private handle: RecipeSessionHandle | null = null;
+  private handle: IsolatedChildSessionHandle | null = null;
   private assistantStreamedText = false;
 
   constructor(private readonly opts: CreateRecipeChildAgentRunnerOptions) {}
@@ -242,17 +248,26 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
       credentialsResolved: true,
       modelOverride: model,
       onEvent: (event) => this.handleSessionEvent(event),
+      ...(this.opts.agentRunId ? { agentRunId: this.opts.agentRunId } : {}),
+      ...(this.opts.modelRegistry
+        ? { modelRegistry: this.opts.modelRegistry }
+        : {}),
+      ...(this.opts.onAgentRunEvent
+        ? { onAgentRunEvent: this.opts.onAgentRunEvent }
+        : {}),
     });
     this.session = this.handle.session;
   }
 
   async prompt(prompt: string): Promise<string> {
     await this.start();
-    if (!this.session) throw new Error("Background agent did not start");
-    // Child sessions do not own the root session's interaction lifecycle.
-    // Resolve their approval tools internally so they cannot open UI or emit
-    // an interrupt that would strand the child waiting for the root user.
-    await autoResolveInteractions(() => this.session!.prompt(prompt));
+    if (!this.session || !this.handle) {
+      throw new Error("Background agent did not start");
+    }
+    // Resolves once runs the child started have settled and it has processed
+    // them. Its approval tools resolve internally so it cannot open UI or
+    // strand itself waiting for the root user.
+    await this.handle.run(prompt);
     const result = { messages: [...this.session.messages] };
     const error = promptResultError(result);
     if (error) throw new Error(error);
@@ -266,7 +281,7 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
   }
 
   async cancel(): Promise<void> {
-    await this.session?.abort();
+    await this.handle?.interrupt();
   }
 
   async shutdown(): Promise<void> {

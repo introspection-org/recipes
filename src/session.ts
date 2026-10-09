@@ -24,6 +24,7 @@ import {
 } from "@introspection-sdk/introspection-pi";
 import {
   createAgentTool,
+  MAX_AGENT_RUN_DEPTH,
   type AgentRunController,
   type AgentRunEventObserver,
 } from "./agents.js";
@@ -174,6 +175,14 @@ export interface CreateAgentSessionOptions {
   agentToolOptions?: {
     acknowledgeCompletions?(ids: readonly string[]): void;
   };
+  /**
+   * The delegated run this session serves, for a host that runs children
+   * itself. Root sessions omit it (depth 0). Below `MAX_AGENT_RUN_DEPTH` a
+   * session whose agent declares subagents gets the default controller, which
+   * starts its runs one level deeper, attributed to this run id; at the bound
+   * it never delegates. Settle its runs with `createDelegatedRuns`.
+   */
+  agentRun?: { id: string; depth: number };
   /** Configuration for the default in-process controller. Ignored when injected. */
   inProcessRunController?: { concurrency?: number };
   /** Extra skill roots beyond the recipe's. */
@@ -207,6 +216,10 @@ export interface CreateAgentSessionInternalOptions
   credentialsResolved?: boolean;
   mcpRuntimeDir?: string;
   sessionRole: RecipeExtensionSessionContext["session"]["role"];
+  /** @internal Child session factory inherited by this session's own runs. */
+  sessionFactory?: (
+    options: CreateAgentSessionInternalOptions
+  ) => Promise<RecipeSessionHandle>;
 }
 
 export interface RecipeSessionOtelOptions
@@ -536,6 +549,14 @@ async function createSessionForAgent(
         });
   const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null });
 
+  // Subagents: the shared `agent` tool against an injected or in-process
+  // controller. `runController: null` disables delegation outright, and a
+  // session at the maximum run depth never delegates.
+  const wantsSubagents =
+    recipe.subagents.size > 0 &&
+    opts.runController !== null &&
+    (opts.agentRun?.depth ?? 0) < MAX_AGENT_RUN_DEPTH;
+
   let model: Model<any> | undefined;
   let session: AgentSession | undefined;
   let agentRuns: AgentRunController | undefined;
@@ -594,9 +615,7 @@ async function createSessionForAgent(
       "find",
       "ls",
       ...(opts.customTools ?? []).map((tool) => tool.name),
-      ...(recipe.subagents.size > 0 && opts.runController !== null
-        ? ["agent"]
-        : []),
+      ...(wantsSubagents ? ["agent"] : []),
     ]) {
       recipeRegistrations.claim("tool", toolName, "<host>");
     }
@@ -626,7 +645,7 @@ async function createSessionForAgent(
           connector.owner,
           recipeExtensionToolAllowlist(
             recipe.tools,
-            recipe.subagents.size > 0 && opts.runController !== null,
+            wantsSubagents,
             [
               ...connectorLoadout.toolNames,
               ...(mcp.tools?.map((tool) => tool.name) ?? []),
@@ -651,7 +670,7 @@ async function createSessionForAgent(
           extensionPath,
           recipeExtensionToolAllowlist(
             recipe.tools,
-            recipe.subagents.size > 0 && opts.runController !== null,
+            wantsSubagents,
             [
               ...(mcp.tools?.map((tool) => tool.name) ?? []),
               ...((connectorLoadout.deferredToolNames.length > 0 ||
@@ -741,10 +760,6 @@ async function createSessionForAgent(
     model = cloneModelForRecipe(selectedModel);
     applyRecipeAgentModelConfigToModel(model, recipe.modelConfig);
 
-    // Subagents: the shared `agent` tool against an injected or in-process
-    // controller. `runController: null` disables delegation outright.
-    const wantsSubagents =
-      recipe.subagents.size > 0 && opts.runController !== null;
     if (opts.runController) {
       agentRuns = opts.runController;
     } else {
@@ -758,6 +773,11 @@ async function createSessionForAgent(
             env,
             ...(opts.credentials ? { credentials: opts.credentials } : {}),
             concurrency: opts.inProcessRunController?.concurrency,
+            depth: (opts.agentRun?.depth ?? 0) + 1,
+            ...(opts.agentRun ? { parentAgentRunId: opts.agentRun.id } : {}),
+            ...(opts.sessionFactory
+              ? { sessionFactory: opts.sessionFactory }
+              : {}),
             ...(opts.onAgentRunEvent
               ? { onAgentRunEvent: opts.onAgentRunEvent }
               : {}),
