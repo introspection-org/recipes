@@ -343,7 +343,10 @@ MISSION_JUDGE = (
 
 def test_mission_judges_are_parsed_apart_from_online_ones() -> None:
     sources: list[introspection_recipe_check.JudgeSource] = [
-        {"path": "judges/helpful.yaml", "content": "name: helpful\ninstructions: Grade.\nllm:\n  model: gpt-5\n"},
+        {
+            "path": "judges/helpful.yaml",
+            "content": "name: helpful\ninstructions: Grade.\nllm:\n  model: gpt-5\n",
+        },
         {"path": "judges/booking.yaml", "content": MISSION_JUDGE},
     ]
 

@@ -251,6 +251,24 @@ pub struct NoulCriteria {
     pub no: String,
 }
 
+/// Judge names are unique across every type, so each strict parser checks the
+/// whole batch, not only the judges it returns.
+fn reject_duplicate_names(sources: &[JudgeSource]) -> Result<(), JudgeSpecError> {
+    let mut seen = HashSet::new();
+    for source in sources {
+        let Ok(value) = serde_saphyr::from_str::<Value>(&source.content) else {
+            continue;
+        };
+        let name = value.get("name").or_else(|| value.get("judge"));
+        if let Some(name) = name.and_then(Value::as_str) {
+            if !seen.insert(name.to_owned()) {
+                spec_bail!("duplicate judge name {name:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Whether a judge source declares `type: mission`, without validating it.
 pub fn is_mission_judge(content: &str) -> bool {
     serde_saphyr::from_str::<Value>(content)
@@ -271,6 +289,7 @@ pub struct ParsedMissionJudgeDefinition {
 pub fn parse_mission_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedMissionJudgeDefinition>, JudgeSpecError> {
+    reject_duplicate_names(sources)?;
     let mut ordered = sources
         .iter()
         .filter(|source| is_mission_judge(&source.content))
@@ -382,6 +401,7 @@ pub struct ParsedJudgeDefinition {
 pub fn parse_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedJudgeDefinition>, JudgeSpecError> {
+    reject_duplicate_names(sources)?;
     let mut ordered = sources
         .iter()
         .filter(|source| !is_mission_judge(&source.content))
@@ -1074,6 +1094,19 @@ questions:
             "Is this what the traveller asked for?"
         );
         assert_eq!(requested.criteria.as_ref().unwrap().no, "Anything else.");
+    }
+
+    #[test]
+    fn names_are_unique_across_judge_types() {
+        let sources = [
+            source("judges/helpful.yaml", HELPFUL_JUDGE),
+            source(
+                "judges/booking.yaml",
+                &BOOKING_JUDGE.replace("name: booking", "name: helpful"),
+            ),
+        ];
+        assert!(parse_judge_definitions(&sources).is_err());
+        assert!(parse_mission_judge_definitions(&sources).is_err());
     }
 
     #[test]
