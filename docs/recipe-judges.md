@@ -88,7 +88,7 @@ block is rejected.
 `type` says when a judge runs:
 
 - `online`, the default: at the end of every runtime conversation.
-- `eval`: at the end of each eval trial. It has the same shape as `online`.
+- `offline`: at the end of each eval trial. It has the same shape as `online`.
 - `gate`: on a request leaving the sandbox, which a route in the Recipe's
   `policies/routes.yaml` names. Its answers reach the Recipe's Cedar policy
   before the request is allowed.
@@ -119,7 +119,7 @@ questions:
   describes both `true` and `false` in non-empty text.
 - `facts` lists the request attributes the judge sees, and is empty to show
   them all.
-- `on` and `llm` belong to `online` and `eval` judges and are rejected on a
+- `on` and `llm` belong to `online` and `offline` judges and are rejected on a
   gate judge; `questions` and `facts` are rejected on the others.
 
 ### LLM settings
@@ -181,4 +181,4 @@ diagnostics use stable `judge.*` codes, Recipe-relative source paths, useful
 help text, and deterministic ordering. YAML syntax failures use
 `judge.yaml_malformed` and include a 1-based source span when the parser
 provides one. An invalid gate judge reports `judge.gate_invalid`, and a
-`type` outside `online`, `eval` and `gate` reports `judge.type_invalid`.
+`type` outside `online`, `offline` and `gate` reports `judge.type_invalid`.

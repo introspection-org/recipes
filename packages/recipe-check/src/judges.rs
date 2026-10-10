@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 use url::{Host, Url};
 
 use crate::spec::{
-    validate_gate_judge as validate_gate_judge_spec, GateJudgeDefinition, EVAL_JUDGE_TYPE,
-    GATE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+    validate_gate_judge as validate_gate_judge_spec, GateJudgeDefinition, GATE_JUDGE_TYPE,
+    OFFLINE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
 };
 use crate::{span_from_message, CheckContext};
 
@@ -118,14 +118,14 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
 
     match map.get("type") {
         None => {}
-        Some(kind) if kind == ONLINE_JUDGE_TYPE || kind == EVAL_JUDGE_TYPE => {}
+        Some(kind) if kind == ONLINE_JUDGE_TYPE || kind == OFFLINE_JUDGE_TYPE => {}
         Some(kind) if kind == GATE_JUDGE_TYPE => return validate_gate_judge(path, &content, ctx),
         Some(_) => {
             ctx.error(
                 "judge.type_invalid",
                 path,
-                "Judge type must be `online` (the default), `eval` or `gate`",
-                Some("`online` judges every runtime conversation, `eval` each eval trial, `gate` a request a policy route names"),
+                "Judge type must be `online` (the default), `offline` or `gate`",
+                Some("`online` judges every runtime conversation, `offline` each eval trial, `gate` a request a policy route names"),
             );
             return ValidatedJudge {
                 path: path.to_owned(),
@@ -1256,7 +1256,7 @@ questions:
             ("judges/minimal.yaml", Some(MINIMAL)),
             (
                 "judges/explicit.yaml",
-                Some(&MINIMAL.replace("name: helpful", "type: eval\nname: explicit")),
+                Some(&MINIMAL.replace("name: helpful", "type: offline\nname: explicit")),
             ),
             ("judges/booking.yaml", Some(GATE)),
         ]));

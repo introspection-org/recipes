@@ -55,7 +55,7 @@ macro_rules! spec_bail {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JudgeDefinition {
     /// `online` (the default) judges every runtime conversation when it ends;
-    /// `eval` judges each eval trial when it ends.
+    /// `offline` judges each eval trial when it ends.
     #[serde(rename = "type", default, skip_serializing_if = "JudgeType::is_online")]
     pub kind: JudgeType,
     /// Unique judge name within the recipe (at most 255 characters).
@@ -173,7 +173,7 @@ pub struct JudgeLlmLocal {
 pub const GATE_JUDGE_TYPE: &str = "gate";
 /// The `type` values of a [`JudgeDefinition`].
 pub const ONLINE_JUDGE_TYPE: &str = "online";
-pub const EVAL_JUDGE_TYPE: &str = "eval";
+pub const OFFLINE_JUDGE_TYPE: &str = "offline";
 /// The most questions one gate judge asks.
 pub const MAX_GATE_JUDGE_QUESTIONS: usize = 8;
 
@@ -210,7 +210,7 @@ pub struct GateJudgeDefinition {
 pub enum JudgeType {
     #[default]
     Online,
-    Eval,
+    Offline,
 }
 
 impl JudgeType {
@@ -1039,7 +1039,7 @@ questions:
             source("judges/helpful.yaml", HELPFUL_JUDGE),
             source("judges/booking.yaml", BOOKING_JUDGE),
         ];
-        let explicit = HELPFUL_JUDGE.replace("name: helpful", "type: eval\nname: explicit");
+        let explicit = HELPFUL_JUDGE.replace("name: helpful", "type: offline\nname: explicit");
         let online_only = HELPFUL_JUDGE.replace("name: helpful", "type: online\nname: helpful");
         assert_eq!(
             parse_judge_definitions(&[source("judges/helpful.yaml", &online_only)]).unwrap()[0]
@@ -1054,9 +1054,9 @@ questions:
         ];
         let online = parse_judge_definitions(&sources).unwrap();
         assert_eq!(online.len(), 2);
-        assert_eq!(online[0].definition.kind, JudgeType::Eval);
+        assert_eq!(online[0].definition.kind, JudgeType::Offline);
         let serialized = serde_json::to_value(&online[0].definition).unwrap();
-        assert_eq!(serialized["type"], "eval");
+        assert_eq!(serialized["type"], "offline");
         assert!(serde_json::to_value(&online[1].definition)
             .unwrap()
             .get("type")
