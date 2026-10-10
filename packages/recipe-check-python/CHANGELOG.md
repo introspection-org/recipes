@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.8.0...introspection-recipe-check-python-v0.9.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** add a required `severity` to `Diagnostic` (set it in struct literals; add `..` to exhaustive patterns), and warn rather than fail on a missing lockfile
+
+### Features
+
+* **recipe-check:** add a required `severity` to `Diagnostic` (set it in struct literals; add `..` to exhaustive patterns), and warn rather than fail on a missing lockfile ([d0b1b0d](https://github.com/introspection-org/recipes/commit/d0b1b0df0ff4edb21a7b6c385d075551011fb9ca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.8.0 to 0.9.0
+
 ## [0.8.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.7.0...introspection-recipe-check-python-v0.8.0) (2026-09-28)
 
 
