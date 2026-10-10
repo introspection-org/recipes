@@ -198,9 +198,10 @@ pub struct MissionJudgeDefinition {
     pub kind: MissionJudgeKind,
     /// The request attributes Jev sees; empty shows them all.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "attrs_schema"))]
     pub attrs: Vec<String>,
     /// Questions by name; each name is the field its answer is read as.
-    #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 8)))]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "questions_schema"))]
     pub questions: BTreeMap<String, JudgeQuestion>,
 }
 
@@ -251,13 +252,14 @@ pub struct NoulCriteria {
     pub no: String,
 }
 
-/// Judge names are unique across every type, so each strict parser checks the
-/// whole batch, not only the judges it returns.
-fn reject_duplicate_names(sources: &[JudgeSource]) -> Result<(), JudgeSpecError> {
+/// Each strict parser returns one type of judge but answers for the whole
+/// batch: every source must be YAML, and names are unique across types.
+fn check_batch(sources: &[JudgeSource]) -> Result<(), JudgeSpecError> {
     let mut seen = HashSet::new();
     for source in sources {
-        let Ok(value) = serde_saphyr::from_str::<Value>(&source.content) else {
-            continue;
+        let value = match serde_saphyr::from_str::<Value>(&source.content) {
+            Ok(value) => value,
+            Err(err) => spec_bail!("parsing judge YAML {}: {err}", source.path),
         };
         let name = value.get("name").or_else(|| value.get("judge"));
         if let Some(name) = name.and_then(Value::as_str) {
@@ -289,7 +291,7 @@ pub struct ParsedMissionJudgeDefinition {
 pub fn parse_mission_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedMissionJudgeDefinition>, JudgeSpecError> {
-    reject_duplicate_names(sources)?;
+    check_batch(sources)?;
     let mut ordered = sources
         .iter()
         .filter(|source| is_mission_judge(&source.content))
@@ -401,7 +403,7 @@ pub struct ParsedJudgeDefinition {
 pub fn parse_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedJudgeDefinition>, JudgeSpecError> {
-    reject_duplicate_names(sources)?;
+    check_batch(sources)?;
     let mut ordered = sources
         .iter()
         .filter(|source| !is_mission_judge(&source.content))
@@ -684,6 +686,29 @@ pub fn judge_definition_json_schema() -> String {
 pub fn mission_judge_definition_json_schema() -> String {
     let schema = schemars::schema_for!(MissionJudgeDefinition);
     serde_json::to_string_pretty(&schema).expect("mission judge schema serializes")
+}
+
+#[cfg(feature = "schema")]
+fn attrs_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "description": "The request attributes Jev sees; empty shows them all.",
+        "type": "array",
+        "uniqueItems": true,
+        "items": { "type": "string", "minLength": 1, "pattern": r"\S" }
+    })
+}
+
+#[cfg(feature = "schema")]
+fn questions_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let question = generator.subschema_for::<JudgeQuestion>();
+    schemars::json_schema!({
+        "description": "Questions by name; each name is the field its answer is read as.",
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": MAX_MISSION_JUDGE_QUESTIONS,
+        "propertyNames": { "pattern": "^[a-z_][a-z0-9_]*$" },
+        "additionalProperties": question
+    })
 }
 
 #[cfg(feature = "schema")]
@@ -1094,6 +1119,29 @@ questions:
             "Is this what the traveller asked for?"
         );
         assert_eq!(requested.criteria.as_ref().unwrap().no, "Anything else.");
+    }
+
+    #[test]
+    fn a_malformed_source_fails_either_parser() {
+        let sources = [
+            source("judges/helpful.yaml", HELPFUL_JUDGE),
+            source("judges/broken.yaml", "type: mission\nquestions: ["),
+        ];
+        assert!(parse_judge_definitions(&sources).is_err());
+        assert!(parse_mission_judge_definitions(&sources).is_err());
+    }
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn mission_schema_mirrors_the_parser() {
+        let schema: Value = serde_json::from_str(&mission_judge_definition_json_schema()).unwrap();
+        let properties = &schema["properties"];
+        assert_eq!(properties["attrs"]["uniqueItems"], json!(true));
+        assert_eq!(
+            properties["questions"]["propertyNames"]["pattern"],
+            json!("^[a-z_][a-z0-9_]*$")
+        );
+        assert_eq!(properties["questions"]["maxProperties"], json!(8));
     }
 
     #[test]
