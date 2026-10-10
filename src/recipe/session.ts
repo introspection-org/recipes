@@ -131,6 +131,7 @@ function parseRetry(
     "enabled",
     "max_retries",
     "base_delay_ms",
+    "max_agent_delay_ms",
     "provider",
   ]);
   return definedObject({
@@ -140,6 +141,12 @@ function parseRetry(
       context,
       "base_delay_ms",
       data.base_delay_ms,
+      0
+    ),
+    maxAgentDelayMs: optionalInteger(
+      context,
+      "max_agent_delay_ms",
+      data.max_agent_delay_ms,
       0
     ),
     provider:
