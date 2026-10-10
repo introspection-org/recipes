@@ -202,15 +202,22 @@ value; endpoint compatibility must be verified against the provider.
 `session` owns portable Pi session behavior. Queue modes accept `all` or
 `one-at-a-time`; `tool_execution` accepts `parallel` or `sequential`. The
 `retry`, `compaction`, and `images` use the managed runtime's corresponding Pi
-settings with snake_case keys and are applied to a session-local settings
-manager, leaving host settings unmodified. Their nested keys, types, enums, and
-integer ranges are closed and validated. Interactive tree navigation and
+settings with snake_case keys. Each session gets a session-local copy of the
+host's effective settings, including overrides the host applied to the
+settings manager it passes (Pi >=0.99; older Pi exposes only the file-backed
+settings and drops those overrides when it reloads the manager), with the
+agent's `session` values layered on top;
+a key the agent omits keeps the host's value, then Pi's default. Host settings
+are left unmodified, and subagents layer their own `session` over the same host
+settings. Their nested keys, types, enums, and integer ranges are closed and
+validated. Interactive tree navigation and
 branch summaries, UI, shell, resource loading, persistence, networking,
 analytics, telemetry, and model-default settings are
 not portable session policy and remain host-owned or belong under `ai`.
 
 `tools` MUST NOT contain `agent`. The host materializes that session-generated
-tool for a root session whose effective `subagents` list is non-empty.
+tool for a session whose effective `subagents` list is non-empty and whose
+delegation depth allows it (see below).
 
 The default agent is named `agent`. If no `agent` exists, a host MAY select the
 only declared agent. When multiple agents exist without `agent`, the caller
@@ -285,6 +292,13 @@ through this field.
 `subagents` names agents the selected agent may invoke. A host MUST expose only
 those resolved definitions through the shared `agent` tool. How child work is
 scheduled or isolated belongs to the host.
+
+Delegation is two levels deep. A delegated child (depth 1) whose effective
+`subagents` list is non-empty receives its own `agent` tool; a child of a
+child (depth 2) MUST NOT receive one, which also bounds recursive references
+such as `a -> b -> a`. A delegating child's run completes only after the runs
+it started have settled and it has processed their results, and interrupting
+or closing a run interrupts or closes the runs beneath it.
 
 The `pi.mcp` package block declares capability servers and package-level tool
 policy. Agent `mcp` blocks narrow those declarations. Credentials and concrete

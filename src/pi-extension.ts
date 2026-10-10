@@ -1179,15 +1179,30 @@ export function createRecipesExtension(
         // cosmetic and must not stop the child or completion delivery.
       }
     };
+    const recordRunEvent = (envelope: AgentRunEvent) => {
+      notifyAgentRunEvent(opts.onAgentRunEvent, envelope);
+      // Custom entries join Pi's canonical session event stream without
+      // entering model context. JSON mode serializes the resulting single
+      // `entry_appended` event through Pi's guarded output writer.
+      try {
+        extensionApi?.appendEntry(AGENT_RUN_EVENT_ENTRY_TYPE, envelope);
+      } catch {
+        // Event capture is auxiliary. Session persistence failures must not
+        // change the outcome of the child work being observed.
+      }
+    };
     const runner = createChildAgentRunner({
       recipe: launchState.resolvedRecipe,
       workspaceDir: launchState.cwd,
       env,
       agentName,
       modelRegistry: ctx.modelRegistry,
+      agentRunId: id,
+      // Runs the child starts in turn arrive already attributed to it.
+      onAgentRunEvent: recordRunEvent,
       onEvent(event) {
         if (!run) return;
-        const envelope: AgentRunEvent = {
+        recordRunEvent({
           type: "agent_run_event",
           agent_run_id: run.id,
           parent_agent_run_id: "root",
@@ -1195,17 +1210,7 @@ export function createRecipesExtension(
           invocation_name: run.agent,
           depth: 1,
           event,
-        };
-        notifyAgentRunEvent(opts.onAgentRunEvent, envelope);
-        // Custom entries join Pi's canonical session event stream without
-        // entering model context. JSON mode serializes the resulting single
-        // `entry_appended` event through Pi's guarded output writer.
-        try {
-          extensionApi?.appendEntry(AGENT_RUN_EVENT_ENTRY_TYPE, envelope);
-        } catch {
-          // Event capture is auxiliary. Session persistence failures must not
-          // change the outcome of the child work being observed.
-        }
+        });
       },
       onAssistantMessage(text, stream) {
         if (!run) return;
@@ -1251,11 +1256,10 @@ export function createRecipesExtension(
         await run.runner.start();
         const result = await run.runner.prompt(prompt);
         const finalOutput = promptResultText(result);
-        if (finalOutput && finalOutput.length >= (run.output?.length ?? 0)) {
-          run.output = finalOutput;
-        } else if (!run.output?.trim()) {
-          run.output = "(no final response)";
-        }
+        // The streamed buffer spans every turn the child took (a nested
+        // child also takes a turn per batch of its own results), so the
+        // final answer replaces it.
+        run.output = finalOutput || "(no final response)";
         if (run.status === "running") run.status = "completed";
       } catch (err) {
         if (run.status !== "interrupted") {
