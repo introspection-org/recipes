@@ -77,6 +77,19 @@ export interface RecipePackageChannel {
   requireReply?: boolean;
 }
 
+/** `package.json#pi.browser`: the task gets a browser sidecar and the `browser` tool. */
+export interface RecipePackageBrowser {
+  /** Allowlist of `browser` commands; absent means every supported command. */
+  commands?: string[];
+  /** Hosts the browser may load (`*.example.com` includes the apex). */
+  allowedDomains?: string[];
+  /** Whether a task must, may, or must not name a browser profile. */
+  profile?: "none" | "optional" | "required";
+}
+
+const BROWSER_COMMAND_NAMES = ["observe", "act", "press", "scroll", "navigate", "tabs", "screenshot", "run"];
+const BROWSER_PROFILE_MODES = ["none", "optional", "required"];
+
 export function recipeChannelPackageName(provider: string): string {
   return `@introspection-ai/recipe-channel-${provider}`;
 }
@@ -109,6 +122,7 @@ export interface RecipePackageManifest {
   /** Whether each resource key was explicitly authored in package.json#pi. */
   resourceDeclarations?: Record<keyof RecipePackageResources, boolean>;
   channels?: RecipePackageChannel[];
+  browser?: RecipePackageBrowser;
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -145,6 +159,7 @@ const RESOURCE_KEYS: Array<keyof RecipePackageResources> = [
 const PI_KEYS = new Set([
   ...RESOURCE_KEYS,
   "channels",
+  "browser",
   "mcp",
   "runtime",
 ]);
@@ -217,8 +232,44 @@ function sourceShapeFindings(
   findings.push(
     ...channelSourceShapeFindings(pi.channels, packageName, dependencies)
   );
+  findings.push(...browserSourceShapeFindings(pi.browser, packageName));
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
+  return findings;
+}
+
+function browserSourceShapeFindings(value: unknown, packageName: string): RecipeValidationFinding[] {
+  if (value === undefined) return [];
+  const invalid = (message: string) => finding("pi.browser_invalid", message, packageName);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [invalid("package.json#pi.browser must be an object")];
+  }
+  const browser = value as Record<string, unknown>;
+  const findings: RecipeValidationFinding[] = [];
+  const unknown = Object.keys(browser).filter((key) => !["commands", "allowedDomains", "profile"].includes(key));
+  if (unknown.length > 0) {
+    findings.push(invalid(`package.json#pi.browser contains unknown field(s): ${unknown.join(", ")}`));
+  }
+  const uniqueStrings = (list: unknown) =>
+    Array.isArray(list) &&
+    list.every((item) => typeof item === "string" && item.trim()) &&
+    new Set(list).size === list.length;
+  if (browser.commands !== undefined) {
+    if (!uniqueStrings(browser.commands)) {
+      findings.push(invalid("package.json#pi.browser.commands must be an array of unique non-empty strings"));
+    } else {
+      const unknownCommands = (browser.commands as string[]).filter((c) => !BROWSER_COMMAND_NAMES.includes(c));
+      if (unknownCommands.length > 0) {
+        findings.push(invalid(`package.json#pi.browser.commands contains unknown command(s): ${unknownCommands.join(", ")}`));
+      }
+    }
+  }
+  if (browser.allowedDomains !== undefined && !uniqueStrings(browser.allowedDomains)) {
+    findings.push(invalid("package.json#pi.browser.allowedDomains must be an array of unique non-empty strings"));
+  }
+  if (browser.profile !== undefined && !BROWSER_PROFILE_MODES.includes(browser.profile as string)) {
+    findings.push(invalid(`package.json#pi.browser.profile must be one of: ${BROWSER_PROFILE_MODES.join(", ")}`));
+  }
   return findings;
 }
 
@@ -729,6 +780,19 @@ function parseChannels(value: unknown): RecipePackageChannel[] {
   return channels;
 }
 
+function parseBrowser(value: unknown): RecipePackageBrowser | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const browser = asRecord(value);
+  const profile = stringValue(browser.profile);
+  return {
+    ...(Array.isArray(browser.commands) ? { commands: stringArray(browser.commands) } : {}),
+    ...(Array.isArray(browser.allowedDomains) ? { allowedDomains: stringArray(browser.allowedDomains) } : {}),
+    ...(profile && BROWSER_PROFILE_MODES.includes(profile)
+      ? { profile: profile as RecipePackageBrowser["profile"] }
+      : {}),
+  };
+}
+
 function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
   const runtime = asRecord(value);
   const python = asRecord(runtime.python);
@@ -803,6 +867,7 @@ export function readPiPackageManifest(packageDir: string): RecipePackageManifest
     resources,
     resourceDeclarations: resourceDeclarations(pi),
     channels: parseChannels(pi.channels),
+    ...(parseBrowser(pi.browser) ? { browser: parseBrowser(pi.browser) } : {}),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };
