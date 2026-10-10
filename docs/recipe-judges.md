@@ -89,18 +89,18 @@ block is rejected.
 
 - `online`, the default: at the end of every runtime conversation.
 - `offline`: at the end of each eval trial. It has the same shape as `online`.
-- `gate`: on a request leaving the sandbox, which a route in the Recipe's
+- `mission`: on a request leaving the sandbox, which a route in the Recipe's
   `policies/routes.yaml` names. Its answers reach the Recipe's Cedar policy
   before the request is allowed.
 
-A gate judge asks yes-or-no questions instead of grading against a rubric, and
+A mission judge asks yes-or-no questions instead of grading against a rubric, and
 the platform chooses the model:
 
 ```yaml
 name: booking
-type: gate
+type: mission
 description: Is this booking what the traveller asked for?
-facts: [city, check_in, check_out, total_cents]
+attrs: [city, check_in, check_out, total_cents]
 questions:
   requested:
     instructions: >
@@ -117,10 +117,10 @@ questions:
   each name is the field its answer is read as.
 - `instructions` is non-empty text. `criteria` is optional and, when present,
   describes both `true` and `false` in non-empty text.
-- `facts` lists the request attributes the judge sees, and is empty to show
+- `attrs` lists the request attributes the judge sees, and is empty to show
   them all.
 - `on` and `llm` belong to `online` and `offline` judges and are rejected on a
-  gate judge; `questions` and `facts` are rejected on the others.
+  mission judge; `questions` and `attrs` are rejected on the others.
 
 ### LLM settings
 
@@ -180,5 +180,5 @@ Invalid Recipe content is reported through the normal diagnostics model. Judge
 diagnostics use stable `judge.*` codes, Recipe-relative source paths, useful
 help text, and deterministic ordering. YAML syntax failures use
 `judge.yaml_malformed` and include a 1-based source span when the parser
-provides one. An invalid gate judge reports `judge.gate_invalid`, and a
-`type` outside `online`, `offline` and `gate` reports `judge.type_invalid`.
+provides one. An invalid mission judge reports `judge.mission_invalid`, and a
+`type` outside `online`, `offline` and `mission` reports `judge.type_invalid`.

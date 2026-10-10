@@ -170,20 +170,20 @@ pub struct JudgeLlmLocal {
 
 /// The `type` of a judge a recipe's `policies/routes.yaml` names. A judge with
 /// no `type` is an online eval ([`JudgeDefinition`]).
-pub const GATE_JUDGE_TYPE: &str = "gate";
+pub const MISSION_JUDGE_TYPE: &str = "mission";
 /// The `type` values of a [`JudgeDefinition`].
 pub const ONLINE_JUDGE_TYPE: &str = "online";
 pub const OFFLINE_JUDGE_TYPE: &str = "offline";
-/// The most questions one gate judge asks.
-pub const MAX_GATE_JUDGE_QUESTIONS: usize = 8;
+/// The most questions one mission judge asks.
+pub const MAX_MISSION_JUDGE_QUESTIONS: usize = 8;
 
-/// A gate judge: yes-or-no questions the platform asks Jev about a request
+/// A mission judge: yes-or-no questions the platform asks Jev about a request
 /// leaving the sandbox, against the person's own words, before the recipe's
 /// Cedar policy decides. Each answer is the probability of `true`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct GateJudgeDefinition {
+pub struct MissionJudgeDefinition {
     /// Unique judge name within the recipe, which a policy route names.
     #[cfg_attr(
         feature = "schema",
@@ -193,12 +193,12 @@ pub struct GateJudgeDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(length(max = 2000)))]
     pub description: Option<String>,
-    /// Always `gate`.
+    /// Always `mission`.
     #[serde(rename = "type")]
-    pub kind: GateJudgeKind,
+    pub kind: MissionJudgeKind,
     /// The request attributes Jev sees; empty shows them all.
     #[serde(default)]
-    pub facts: Vec<String>,
+    pub attrs: Vec<String>,
     /// Questions by name; each name is the field its answer is read as.
     #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 8)))]
     pub questions: BTreeMap<String, JudgeQuestion>,
@@ -222,8 +222,8 @@ impl JudgeType {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub enum GateJudgeKind {
-    Gate,
+pub enum MissionJudgeKind {
+    Mission,
 }
 
 /// One yes-or-no question.
@@ -251,44 +251,44 @@ pub struct NoulCriteria {
     pub no: String,
 }
 
-/// Whether a judge source declares `type: gate`, without validating it.
-pub fn is_gate_judge(content: &str) -> bool {
+/// Whether a judge source declares `type: mission`, without validating it.
+pub fn is_mission_judge(content: &str) -> bool {
     serde_saphyr::from_str::<Value>(content)
         .ok()
         .and_then(|value| value.get("type").cloned())
-        .is_some_and(|kind| kind == GATE_JUDGE_TYPE)
+        .is_some_and(|kind| kind == MISSION_JUDGE_TYPE)
 }
 
-/// One parsed gate judge source.
+/// One parsed mission judge source.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ParsedGateJudgeDefinition {
+pub struct ParsedMissionJudgeDefinition {
     pub source_path: String,
-    pub definition: GateJudgeDefinition,
+    pub definition: MissionJudgeDefinition,
 }
 
-/// Strictly parse the `type: gate` judges among `sources`; any invalid one
+/// Strictly parse the `type: mission` judges among `sources`; any invalid one
 /// fails the batch. Online judges are skipped.
-pub fn parse_gate_judge_definitions(
+pub fn parse_mission_judge_definitions(
     sources: &[JudgeSource],
-) -> Result<Vec<ParsedGateJudgeDefinition>, JudgeSpecError> {
+) -> Result<Vec<ParsedMissionJudgeDefinition>, JudgeSpecError> {
     let mut ordered = sources
         .iter()
-        .filter(|source| is_gate_judge(&source.content))
+        .filter(|source| is_mission_judge(&source.content))
         .cloned()
         .collect::<Vec<_>>();
     ordered.sort_by(|a, b| a.path.cmp(&b.path));
     let mut seen = HashSet::new();
     let mut parsed = Vec::with_capacity(ordered.len());
     for source in ordered {
-        let definition: GateJudgeDefinition = match serde_saphyr::from_str(&source.content) {
+        let definition: MissionJudgeDefinition = match serde_saphyr::from_str(&source.content) {
             Ok(definition) => definition,
             Err(err) => spec_bail!("parsing judge YAML {}: {err}", source.path),
         };
-        validate_gate_judge(&definition, &format!("judge YAML {}", source.path))?;
+        validate_mission_judge(&definition, &format!("judge YAML {}", source.path))?;
         if !seen.insert(definition.name.clone()) {
             spec_bail!("duplicate judge name {:?}", definition.name);
         }
-        parsed.push(ParsedGateJudgeDefinition {
+        parsed.push(ParsedMissionJudgeDefinition {
             source_path: source.path,
             definition,
         });
@@ -296,9 +296,9 @@ pub fn parse_gate_judge_definitions(
     Ok(parsed)
 }
 
-/// Validate one gate judge against the authored contract.
-pub fn validate_gate_judge(
-    definition: &GateJudgeDefinition,
+/// Validate one mission judge against the authored contract.
+pub fn validate_mission_judge(
+    definition: &MissionJudgeDefinition,
     context: &str,
 ) -> Result<(), JudgeSpecError> {
     if !is_portable_name(&definition.name) || definition.name.chars().count() > 255 {
@@ -311,14 +311,14 @@ pub fn validate_gate_judge(
     {
         spec_bail!("{context} has a description longer than 2000 characters");
     }
-    let mut facts = HashSet::new();
-    for fact in &definition.facts {
-        if fact.trim().is_empty() || !facts.insert(fact) {
-            spec_bail!("{context} facts must be distinct, non-empty attribute names");
+    let mut attrs = HashSet::new();
+    for attr in &definition.attrs {
+        if attr.trim().is_empty() || !attrs.insert(attr) {
+            spec_bail!("{context} attrs must be distinct, non-empty attribute names");
         }
     }
-    if definition.questions.is_empty() || definition.questions.len() > MAX_GATE_JUDGE_QUESTIONS {
-        spec_bail!("{context} must ask between 1 and {MAX_GATE_JUDGE_QUESTIONS} questions");
+    if definition.questions.is_empty() || definition.questions.len() > MAX_MISSION_JUDGE_QUESTIONS {
+        spec_bail!("{context} must ask between 1 and {MAX_MISSION_JUDGE_QUESTIONS} questions");
     }
     for (name, question) in &definition.questions {
         if !is_question_name(name) {
@@ -376,15 +376,15 @@ pub struct ParsedJudgeDefinition {
 ///
 /// Sources are processed in path order. Any invalid definition (malformed
 /// YAML, unknown fields, empty instructions, duplicate names across the
-/// batch, invalid llm config or gate) fails the whole batch. `type: gate`
+/// batch, invalid llm config or gate) fails the whole batch. `type: mission`
 /// judges are not online evals and are skipped; see
-/// [`parse_gate_judge_definitions`].
+/// [`parse_mission_judge_definitions`].
 pub fn parse_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedJudgeDefinition>, JudgeSpecError> {
     let mut ordered = sources
         .iter()
-        .filter(|source| !is_gate_judge(&source.content))
+        .filter(|source| !is_mission_judge(&source.content))
         .cloned()
         .collect::<Vec<_>>();
     ordered.sort_by(|a, b| a.path.cmp(&b.path));
@@ -659,11 +659,11 @@ pub fn judge_definition_json_schema() -> String {
     serde_json::to_string_pretty(&value).expect("judge schema serializes")
 }
 
-/// JSON Schema for a `type: gate` judge.
+/// JSON Schema for a `type: mission` judge.
 #[cfg(feature = "schema")]
-pub fn gate_judge_definition_json_schema() -> String {
-    let schema = schemars::schema_for!(GateJudgeDefinition);
-    serde_json::to_string_pretty(&schema).expect("gate judge schema serializes")
+pub fn mission_judge_definition_json_schema() -> String {
+    let schema = schemars::schema_for!(MissionJudgeDefinition);
+    serde_json::to_string_pretty(&schema).expect("mission judge schema serializes")
 }
 
 #[cfg(feature = "schema")]
@@ -1023,8 +1023,8 @@ llm:
 
     const BOOKING_JUDGE: &str = "\
 name: booking
-type: gate
-facts: [city]
+type: mission
+attrs: [city]
 questions:
   requested:
     instructions: Is this what the traveller asked for?
@@ -1064,10 +1064,10 @@ questions:
         let online = &online[1..];
         assert_eq!(online.len(), 1);
         assert_eq!(online[0].definition.name, "helpful");
-        let gate = parse_gate_judge_definitions(&sources).unwrap();
-        assert_eq!(gate.len(), 1);
-        let booking = &gate[0].definition;
-        assert_eq!(booking.facts, ["city"]);
+        let mission = parse_mission_judge_definitions(&sources).unwrap();
+        assert_eq!(mission.len(), 1);
+        let booking = &mission[0].definition;
+        assert_eq!(booking.attrs, ["city"]);
         let requested = &booking.questions["requested"];
         assert_eq!(
             requested.instructions,
@@ -1077,7 +1077,7 @@ questions:
     }
 
     #[test]
-    fn a_gate_question_is_text_with_true_and_false_criteria() {
+    fn a_mission_question_is_text_with_true_and_false_criteria() {
         for broken in [
             BOOKING_JUDGE.replace(
                 "    criteria:\n      \"true\": The same trip.\n",
@@ -1090,7 +1090,7 @@ questions:
             ),
         ] {
             assert!(
-                parse_gate_judge_definitions(&[source("judges/booking.yaml", &broken)]).is_err(),
+                parse_mission_judge_definitions(&[source("judges/booking.yaml", &broken)]).is_err(),
                 "{broken}"
             );
         }

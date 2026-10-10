@@ -345,14 +345,14 @@ def parse_judge_definitions(
     )
 
 
-def parse_gate_judge_definitions(
+def parse_mission_judge_definitions(
     sources: list[JudgeSource],
 ) -> tuple[ParsedJudgeDefinition, ...]:
-    """The `type: gate` judges among `sources`, which a recipe's policy routes name."""
+    """The `type: mission` judges among `sources`, which a recipe's policy routes name."""
     raw = cast(
         list[dict[str, object]],
         json.loads(
-            _native.parse_gate_judge_definitions_json(
+            _native.parse_mission_judge_definitions_json(
                 json.dumps(sources, separators=(",", ":")),
             )
         ),

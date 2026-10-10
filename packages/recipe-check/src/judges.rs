@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 use url::{Host, Url};
 
 use crate::spec::{
-    validate_gate_judge as validate_gate_judge_spec, GateJudgeDefinition, GATE_JUDGE_TYPE,
-    OFFLINE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+    validate_mission_judge as validate_mission_judge_spec, MissionJudgeDefinition,
+    MISSION_JUDGE_TYPE, OFFLINE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
 };
 use crate::{span_from_message, CheckContext};
 
@@ -119,13 +119,15 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     match map.get("type") {
         None => {}
         Some(kind) if kind == ONLINE_JUDGE_TYPE || kind == OFFLINE_JUDGE_TYPE => {}
-        Some(kind) if kind == GATE_JUDGE_TYPE => return validate_gate_judge(path, &content, ctx),
+        Some(kind) if kind == MISSION_JUDGE_TYPE => {
+            return validate_mission_judge(path, &content, ctx)
+        }
         Some(_) => {
             ctx.error(
                 "judge.type_invalid",
                 path,
-                "Judge type must be `online` (the default), `offline` or `gate`",
-                Some("`online` judges every runtime conversation, `offline` each eval trial, `gate` a request a policy route names"),
+                "Judge type must be `online` (the default), `offline` or `mission`",
+                Some("`online` judges every runtime conversation, `offline` each eval trial, `mission` a request a policy route names"),
             );
             return ValidatedJudge {
                 path: path.to_owned(),
@@ -154,12 +156,12 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     }
 }
 
-/// A `type: gate` judge, checked against the typed spec.
-fn validate_gate_judge(path: &str, content: &str, ctx: &mut CheckContext) -> ValidatedJudge {
-    let checked = serde_saphyr::from_str::<GateJudgeDefinition>(content)
+/// A `type: mission` judge, checked against the typed spec.
+fn validate_mission_judge(path: &str, content: &str, ctx: &mut CheckContext) -> ValidatedJudge {
+    let checked = serde_saphyr::from_str::<MissionJudgeDefinition>(content)
         .map_err(|err| err.to_string())
         .and_then(|definition| {
-            validate_gate_judge_spec(&definition, &format!("judge {path}"))
+            validate_mission_judge_spec(&definition, &format!("judge {path}"))
                 .map(|()| definition)
                 .map_err(|err| err.to_string())
         });
@@ -170,10 +172,10 @@ fn validate_gate_judge(path: &str, content: &str, ctx: &mut CheckContext) -> Val
         },
         Err(message) => {
             ctx.error(
-                "judge.gate_invalid",
+                "judge.mission_invalid",
                 path,
-                format!("Gate judge is invalid: {message}"),
-                Some("a gate judge declares name, type: gate, optional description and facts, and questions of instructions with optional true/false criteria"),
+                format!("Mission judge is invalid: {message}"),
+                Some("a mission judge declares name, type: mission, optional description and attrs, and questions of instructions with optional true/false criteria"),
             );
             ValidatedJudge {
                 path: path.to_owned(),
@@ -1235,10 +1237,10 @@ llm:
         assert!(span.column >= 1);
     }
 
-    const GATE: &str = r#"name: booking
-type: gate
+    const MISSION: &str = r#"name: booking
+type: mission
 description: Is this booking what the traveller asked for?
-facts: [city, check_in]
+attrs: [city, check_in]
 questions:
   requested:
     instructions: >
@@ -1251,34 +1253,34 @@ questions:
 "#;
 
     #[test]
-    fn accepts_a_gate_judge_beside_an_online_one() {
+    fn accepts_a_mission_judge_beside_an_online_one() {
         let report = check_recipe_files(&snapshot(&[
             ("judges/minimal.yaml", Some(MINIMAL)),
             (
                 "judges/explicit.yaml",
                 Some(&MINIMAL.replace("name: helpful", "type: offline\nname: explicit")),
             ),
-            ("judges/booking.yaml", Some(GATE)),
+            ("judges/booking.yaml", Some(MISSION)),
         ]));
         assert!(report.valid, "{:?}", report.diagnostics);
         assert_eq!(report.resources.get("judges"), Some(&3));
     }
 
     #[test]
-    fn rejects_an_invalid_gate_judge_or_an_unknown_type() {
+    fn rejects_an_invalid_mission_judge_or_an_unknown_type() {
         for broken in [
-            GATE.replace(
+            MISSION.replace(
                 "  personal:\n    instructions: Did",
                 "  personal:\n    instructions: \"\"\n    note: Did",
             ),
-            GATE.replace("      \"true\": The same destination and dates.\n", ""),
-            GATE.replace("facts: [city, check_in]", "facts: [city, city]"),
-            GATE.replace(
+            MISSION.replace("      \"true\": The same destination and dates.\n", ""),
+            MISSION.replace("attrs: [city, check_in]", "attrs: [city, city]"),
+            MISSION.replace(
                 "instructions: Did the traveller",
                 "instructions:\n      question: Did the traveller",
             ),
-            GATE.replace("description:", "llm: { model: gpt-5 }\ndescription:"),
-            GATE.replace("  personal:", "  Personal:"),
+            MISSION.replace("description:", "llm: { model: gpt-5 }\ndescription:"),
+            MISSION.replace("  personal:", "  Personal:"),
         ] {
             let diagnostics = judge_diagnostics(&[("judges/booking.yaml", Some(&broken))]);
             assert_eq!(
@@ -1286,24 +1288,24 @@ questions:
                     .iter()
                     .map(|d| d.code.as_str())
                     .collect::<Vec<_>>(),
-                ["judge.gate_invalid"],
+                ["judge.mission_invalid"],
                 "{broken}"
             );
         }
         let diagnostics = judge_diagnostics(&[(
             "judges/booking.yaml",
-            Some(&GATE.replace("type: gate", "type: mission")),
+            Some(&MISSION.replace("type: mission", "type: gate")),
         )]);
         assert_eq!(diagnostics[0].code, "judge.type_invalid");
     }
 
     #[test]
-    fn names_are_unique_across_online_and_gate_judges() {
+    fn names_are_unique_across_online_and_mission_judges() {
         let diagnostics = judge_diagnostics(&[
             ("judges/a.yaml", Some(MINIMAL)),
             (
                 "judges/b.yaml",
-                Some(&GATE.replace("name: booking", "name: helpful")),
+                Some(&MISSION.replace("name: booking", "name: helpful")),
             ),
         ]);
         assert_eq!(diagnostics[0].code, "judge.name_duplicate");
