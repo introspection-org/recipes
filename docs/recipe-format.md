@@ -204,7 +204,9 @@ value; endpoint compatibility must be verified against the provider.
 `retry`, `compaction`, and `images` use the managed runtime's corresponding Pi
 settings with snake_case keys. Each session gets a session-local copy of the
 host's effective settings, including overrides the host applied to the
-settings manager it passes, with the agent's `session` values layered on top;
+settings manager it passes (Pi >=0.99; older Pi exposes only the file-backed
+settings and drops those overrides when it reloads the manager), with the
+agent's `session` values layered on top;
 a key the agent omits keeps the host's value, then Pi's default. Host settings
 are left unmodified, and subagents layer their own `session` over the same host
 settings. Their nested keys, types, enums, and integer ranges are closed and

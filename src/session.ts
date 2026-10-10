@@ -161,7 +161,7 @@ export interface CreateAgentSessionOptions {
   /** Default: `SessionManager.inMemory(cwd)`. */
   sessionManager?: SessionManager;
   /**
-   * Host settings, including any `applyOverrides`. The agent's `session`
+   * Host settings, including any `applyOverrides` on Pi >=0.99. The agent's `session`
    * policy is layered over them on a session-local copy. Default:
    * `SettingsManager.create(cwd, recipe.recipeDir)`.
    */
