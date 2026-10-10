@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0](https://github.com/introspection-org/recipes/compare/v0.29.0...v0.30.0) (2026-10-10)
+
+
+### Features
+
+* **session:** accept session.retry.max_agent_delay_ms and cover every Pi setting ([0df1219](https://github.com/introspection-org/recipes/commit/0df12199351f5b10cbf1bd3208faaab48debc897))
+
+
+### Bug Fixes
+
+* **pi:** write the session failure reason to stderr in print and JSON mode ([#319](https://github.com/introspection-org/recipes/issues/319)) ([a5e6478](https://github.com/introspection-org/recipes/commit/a5e647842e6f6ffd28248488f8c60a3198845233)), closes [#318](https://github.com/introspection-org/recipes/issues/318)
+* **session:** keep host settings under an agent's session policy ([0df1219](https://github.com/introspection-org/recipes/commit/0df12199351f5b10cbf1bd3208faaab48debc897))
+
 ## [0.29.0](https://github.com/introspection-org/recipes/compare/v0.28.0...v0.29.0) (2026-10-09)
 
 
