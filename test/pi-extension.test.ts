@@ -480,6 +480,42 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
+  it.each([
+    ["json", true],
+    ["print", true],
+    ["interactive", false],
+  ])("in %s mode, writing the failure reason to stderr is %s", async (mode, written) => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-failure-reason-"));
+    const previousExitCode = process.exitCode;
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const recipeDir = writeRecipe(root);
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const ctx = { ...extensionContext(projectDir, vi.fn()), abort: vi.fn(), mode };
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      (pi as any).setModel = vi.fn().mockResolvedValue(false);
+
+      createRecipesExtension()(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx
+      );
+
+      // The agent is aborted at start, so in a headless run this line is the
+      // only place the caller can read why.
+      const reason =
+        "Recipe session cannot start: Recipe model has no configured API key: openai/gpt-4.1\n";
+      expect(stderr.mock.calls.some(([chunk]) => chunk === reason)).toBe(written);
+    } finally {
+      stderr.mockRestore();
+      process.exitCode = previousExitCode;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when Pi cannot apply authored request or session configuration", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-unsupported-ai-session-"));
     const previousExitCode = process.exitCode;
