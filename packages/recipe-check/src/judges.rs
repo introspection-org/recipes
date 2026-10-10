@@ -13,10 +13,22 @@ use regex::RegexBuilder;
 use serde_json::{Map, Value};
 use url::{Host, Url};
 
+use crate::spec::{
+    validate_gate_judge as validate_gate_judge_spec, GateJudgeDefinition, EVAL_JUDGE_TYPE,
+    GATE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+};
 use crate::{span_from_message, CheckContext};
 
 const JUDGES_DIR: &str = "judges";
-const TOP_LEVEL_FIELDS: &[&str] = &["description", "instructions", "judge", "llm", "name", "on"];
+const TOP_LEVEL_FIELDS: &[&str] = &[
+    "description",
+    "instructions",
+    "judge",
+    "llm",
+    "name",
+    "on",
+    "type",
+];
 const LLM_FIELDS: &[&str] = &["local", "model", "provider", "request", "transport"];
 const REQUEST_FIELDS: &[&str] = &["max_tokens", "reasoning_effort", "temperature"];
 const TRANSPORT_FIELDS: &[&str] = &["max_retries", "max_retry_delay_ms", "timeout_ms"];
@@ -104,6 +116,24 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
         };
     };
 
+    match map.get("type") {
+        None => {}
+        Some(kind) if kind == ONLINE_JUDGE_TYPE || kind == EVAL_JUDGE_TYPE => {}
+        Some(kind) if kind == GATE_JUDGE_TYPE => return validate_gate_judge(path, &content, ctx),
+        Some(_) => {
+            ctx.error(
+                "judge.type_invalid",
+                path,
+                "Judge type must be `online` (the default), `eval` or `gate`",
+                Some("`online` judges every runtime conversation, `eval` each eval trial, `gate` a request a policy route names"),
+            );
+            return ValidatedJudge {
+                path: path.to_owned(),
+                name: None,
+            };
+        }
+    }
+
     reject_unknown_fields(
         map,
         TOP_LEVEL_FIELDS,
@@ -121,6 +151,35 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     ValidatedJudge {
         path: path.to_owned(),
         name,
+    }
+}
+
+/// A `type: gate` judge, checked against the typed spec.
+fn validate_gate_judge(path: &str, content: &str, ctx: &mut CheckContext) -> ValidatedJudge {
+    let checked = serde_saphyr::from_str::<GateJudgeDefinition>(content)
+        .map_err(|err| err.to_string())
+        .and_then(|definition| {
+            validate_gate_judge_spec(&definition, &format!("judge {path}"))
+                .map(|()| definition)
+                .map_err(|err| err.to_string())
+        });
+    match checked {
+        Ok(definition) => ValidatedJudge {
+            path: path.to_owned(),
+            name: Some(definition.name),
+        },
+        Err(message) => {
+            ctx.error(
+                "judge.gate_invalid",
+                path,
+                format!("Gate judge is invalid: {message}"),
+                Some("a gate judge declares name, type: gate, optional description and facts, and questions of instructions with optional true/false criteria"),
+            );
+            ValidatedJudge {
+                path: path.to_owned(),
+                name: None,
+            }
+        }
     }
 }
 
@@ -837,9 +896,7 @@ llm:
 
         let diagnostics = judge_diagnostics(&[(
             "judges/conflict.yaml",
-            Some(
-                "name: helpful\njudge: legacy\ninstructions: Grade.\nllm:\n  model: gpt-5\n",
-            ),
+            Some("name: helpful\njudge: legacy\ninstructions: Grade.\nllm:\n  model: gpt-5\n"),
         )]);
         assert_eq!(diagnostics[0].code, "judge.name_conflict");
     }
@@ -1176,5 +1233,79 @@ llm:
         let span = diagnostics[0].span.expect("parser source span");
         assert!(span.line >= 1);
         assert!(span.column >= 1);
+    }
+
+    const GATE: &str = r#"name: booking
+type: gate
+description: Is this booking what the traveller asked for?
+facts: [city, check_in]
+questions:
+  requested:
+    instructions: >
+      Is the booking something the traveller asked for, or a natural part of that trip?
+    criteria:
+      "true": The same destination and dates.
+      "false": Another place, other dates, or something they never asked for.
+  personal:
+    instructions: Did the traveller describe this part of the trip as personal?
+"#;
+
+    #[test]
+    fn accepts_a_gate_judge_beside_an_online_one() {
+        let report = check_recipe_files(&snapshot(&[
+            ("judges/minimal.yaml", Some(MINIMAL)),
+            (
+                "judges/explicit.yaml",
+                Some(&MINIMAL.replace("name: helpful", "type: eval\nname: explicit")),
+            ),
+            ("judges/booking.yaml", Some(GATE)),
+        ]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_eq!(report.resources.get("judges"), Some(&3));
+    }
+
+    #[test]
+    fn rejects_an_invalid_gate_judge_or_an_unknown_type() {
+        for broken in [
+            GATE.replace(
+                "  personal:\n    instructions: Did",
+                "  personal:\n    instructions: \"\"\n    note: Did",
+            ),
+            GATE.replace("      \"true\": The same destination and dates.\n", ""),
+            GATE.replace("facts: [city, check_in]", "facts: [city, city]"),
+            GATE.replace(
+                "instructions: Did the traveller",
+                "instructions:\n      question: Did the traveller",
+            ),
+            GATE.replace("description:", "llm: { model: gpt-5 }\ndescription:"),
+            GATE.replace("  personal:", "  Personal:"),
+        ] {
+            let diagnostics = judge_diagnostics(&[("judges/booking.yaml", Some(&broken))]);
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .map(|d| d.code.as_str())
+                    .collect::<Vec<_>>(),
+                ["judge.gate_invalid"],
+                "{broken}"
+            );
+        }
+        let diagnostics = judge_diagnostics(&[(
+            "judges/booking.yaml",
+            Some(&GATE.replace("type: gate", "type: mission")),
+        )]);
+        assert_eq!(diagnostics[0].code, "judge.type_invalid");
+    }
+
+    #[test]
+    fn names_are_unique_across_online_and_gate_judges() {
+        let diagnostics = judge_diagnostics(&[
+            ("judges/a.yaml", Some(MINIMAL)),
+            (
+                "judges/b.yaml",
+                Some(&GATE.replace("name: booking", "name: helpful")),
+            ),
+        ]);
+        assert_eq!(diagnostics[0].code, "judge.name_duplicate");
     }
 }

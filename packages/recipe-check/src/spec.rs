@@ -14,7 +14,7 @@
 //! Unlike recipe checking, parsing is strict: any invalid definition fails
 //! the whole batch with a [`JudgeSpecError`] instead of a diagnostic report.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
 use regex::RegexBuilder;
@@ -54,6 +54,10 @@ macro_rules! spec_bail {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct JudgeDefinition {
+    /// `online` (the default) judges every runtime conversation when it ends;
+    /// `eval` judges each eval trial when it ends.
+    #[serde(rename = "type", default, skip_serializing_if = "JudgeType::is_online")]
+    pub kind: JudgeType,
     /// Unique judge name within the recipe (at most 255 characters).
     #[serde(alias = "judge")]
     #[cfg_attr(feature = "schema", schemars(length(max = 255), pattern(r"\S")))]
@@ -164,6 +168,184 @@ pub struct JudgeLlmLocal {
     pub api_key_env: String,
 }
 
+/// The `type` of a judge a recipe's `policies/routes.yaml` names. A judge with
+/// no `type` is an online eval ([`JudgeDefinition`]).
+pub const GATE_JUDGE_TYPE: &str = "gate";
+/// The `type` values of a [`JudgeDefinition`].
+pub const ONLINE_JUDGE_TYPE: &str = "online";
+pub const EVAL_JUDGE_TYPE: &str = "eval";
+/// The most questions one gate judge asks.
+pub const MAX_GATE_JUDGE_QUESTIONS: usize = 8;
+
+/// A gate judge: yes-or-no questions the platform asks Jev about a request
+/// leaving the sandbox, against the person's own words, before the recipe's
+/// Cedar policy decides. Each answer is the probability of `true`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct GateJudgeDefinition {
+    /// Unique judge name within the recipe, which a policy route names.
+    #[cfg_attr(
+        feature = "schema",
+        schemars(length(max = 255), pattern(r"^[a-z0-9]+(-[a-z0-9]+)*$"))
+    )]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(length(max = 2000)))]
+    pub description: Option<String>,
+    /// Always `gate`.
+    #[serde(rename = "type")]
+    pub kind: GateJudgeKind,
+    /// The request attributes Jev sees; empty shows them all.
+    #[serde(default)]
+    pub facts: Vec<String>,
+    /// Questions by name; each name is the field its answer is read as.
+    #[cfg_attr(feature = "schema", schemars(length(min = 1, max = 8)))]
+    pub questions: BTreeMap<String, JudgeQuestion>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum JudgeType {
+    #[default]
+    Online,
+    Eval,
+}
+
+impl JudgeType {
+    pub fn is_online(&self) -> bool {
+        *self == Self::Online
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum GateJudgeKind {
+    Gate,
+}
+
+/// One yes-or-no question.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct JudgeQuestion {
+    /// What is asked, and how to judge it.
+    #[cfg_attr(feature = "schema", schemars(length(min = 1), pattern(r"\S")))]
+    pub instructions: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria: Option<NoulCriteria>,
+}
+
+/// What a `true` and a `false` answer mean.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct NoulCriteria {
+    #[serde(rename = "true")]
+    #[cfg_attr(feature = "schema", schemars(length(min = 1), pattern(r"\S")))]
+    pub yes: String,
+    #[serde(rename = "false")]
+    #[cfg_attr(feature = "schema", schemars(length(min = 1), pattern(r"\S")))]
+    pub no: String,
+}
+
+/// Whether a judge source declares `type: gate`, without validating it.
+pub fn is_gate_judge(content: &str) -> bool {
+    serde_saphyr::from_str::<Value>(content)
+        .ok()
+        .and_then(|value| value.get("type").cloned())
+        .is_some_and(|kind| kind == GATE_JUDGE_TYPE)
+}
+
+/// One parsed gate judge source.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ParsedGateJudgeDefinition {
+    pub source_path: String,
+    pub definition: GateJudgeDefinition,
+}
+
+/// Strictly parse the `type: gate` judges among `sources`; any invalid one
+/// fails the batch. Online judges are skipped.
+pub fn parse_gate_judge_definitions(
+    sources: &[JudgeSource],
+) -> Result<Vec<ParsedGateJudgeDefinition>, JudgeSpecError> {
+    let mut ordered = sources
+        .iter()
+        .filter(|source| is_gate_judge(&source.content))
+        .cloned()
+        .collect::<Vec<_>>();
+    ordered.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut seen = HashSet::new();
+    let mut parsed = Vec::with_capacity(ordered.len());
+    for source in ordered {
+        let definition: GateJudgeDefinition = match serde_saphyr::from_str(&source.content) {
+            Ok(definition) => definition,
+            Err(err) => spec_bail!("parsing judge YAML {}: {err}", source.path),
+        };
+        validate_gate_judge(&definition, &format!("judge YAML {}", source.path))?;
+        if !seen.insert(definition.name.clone()) {
+            spec_bail!("duplicate judge name {:?}", definition.name);
+        }
+        parsed.push(ParsedGateJudgeDefinition {
+            source_path: source.path,
+            definition,
+        });
+    }
+    Ok(parsed)
+}
+
+/// Validate one gate judge against the authored contract.
+pub fn validate_gate_judge(
+    definition: &GateJudgeDefinition,
+    context: &str,
+) -> Result<(), JudgeSpecError> {
+    if !is_portable_name(&definition.name) || definition.name.chars().count() > 255 {
+        spec_bail!("{context} judge name must use lowercase kebab-case, at most 255 characters");
+    }
+    if definition
+        .description
+        .as_deref()
+        .is_some_and(|description| description.chars().count() > 2_000)
+    {
+        spec_bail!("{context} has a description longer than 2000 characters");
+    }
+    let mut facts = HashSet::new();
+    for fact in &definition.facts {
+        if fact.trim().is_empty() || !facts.insert(fact) {
+            spec_bail!("{context} facts must be distinct, non-empty attribute names");
+        }
+    }
+    if definition.questions.is_empty() || definition.questions.len() > MAX_GATE_JUDGE_QUESTIONS {
+        spec_bail!("{context} must ask between 1 and {MAX_GATE_JUDGE_QUESTIONS} questions");
+    }
+    for (name, question) in &definition.questions {
+        if !is_question_name(name) {
+            spec_bail!("{context} question {name:?} must be a lowercase identifier");
+        }
+        if question.instructions.trim().is_empty() {
+            spec_bail!("{context} question {name:?} has empty instructions");
+        }
+        if let Some(criteria) = &question.criteria {
+            if criteria.yes.trim().is_empty() || criteria.no.trim().is_empty() {
+                spec_bail!(
+                    "{context} question {name:?} criteria `true` and `false` must be non-empty"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_question_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|ch| ch.is_ascii_lowercase() || ch == '_')
+        && chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+}
+
 fn default_provider() -> String {
     "openai".to_string()
 }
@@ -194,11 +376,17 @@ pub struct ParsedJudgeDefinition {
 ///
 /// Sources are processed in path order. Any invalid definition (malformed
 /// YAML, unknown fields, empty instructions, duplicate names across the
-/// batch, invalid llm config or gate) fails the whole batch.
+/// batch, invalid llm config or gate) fails the whole batch. `type: gate`
+/// judges are not online evals and are skipped; see
+/// [`parse_gate_judge_definitions`].
 pub fn parse_judge_definitions(
     sources: &[JudgeSource],
 ) -> Result<Vec<ParsedJudgeDefinition>, JudgeSpecError> {
-    let mut ordered = sources.to_vec();
+    let mut ordered = sources
+        .iter()
+        .filter(|source| !is_gate_judge(&source.content))
+        .cloned()
+        .collect::<Vec<_>>();
     ordered.sort_by(|a, b| a.path.cmp(&b.path));
     let mut seen = HashSet::new();
     let mut parsed = Vec::with_capacity(ordered.len());
@@ -471,6 +659,13 @@ pub fn judge_definition_json_schema() -> String {
     serde_json::to_string_pretty(&value).expect("judge schema serializes")
 }
 
+/// JSON Schema for a `type: gate` judge.
+#[cfg(feature = "schema")]
+pub fn gate_judge_definition_json_schema() -> String {
+    let schema = schemars::schema_for!(GateJudgeDefinition);
+    serde_json::to_string_pretty(&schema).expect("gate judge schema serializes")
+}
+
 #[cfg(feature = "schema")]
 fn instructions_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
@@ -643,9 +838,7 @@ llm:
         for invalid_name in ["DeepWiki", "deep_wiki", "deep--wiki", " deepwiki"] {
             let invalid = [source(
                 "judges/invalid-name.yaml",
-                &format!(
-                    "name: {invalid_name:?}\ninstructions: Grade.\nllm:\n  model: gpt-5\n"
-                ),
+                &format!("name: {invalid_name:?}\ninstructions: Grade.\nllm:\n  model: gpt-5\n"),
             )];
             let error = parse_judge_definitions(&invalid).unwrap_err().to_string();
             assert!(error.contains("lowercase kebab-case"), "{error}");
@@ -826,5 +1019,80 @@ llm:
             constraints[2],
             json!({ "not": { "pattern": "(?:^|\\.)pattern_id$" } })
         );
+    }
+
+    const BOOKING_JUDGE: &str = "\
+name: booking
+type: gate
+facts: [city]
+questions:
+  requested:
+    instructions: Is this what the traveller asked for?
+    criteria:
+      \"true\": The same trip.
+      \"false\": Anything else.
+";
+
+    #[test]
+    fn each_parser_reads_only_its_own_judges() {
+        let sources = [
+            source("judges/helpful.yaml", HELPFUL_JUDGE),
+            source("judges/booking.yaml", BOOKING_JUDGE),
+        ];
+        let explicit = HELPFUL_JUDGE.replace("name: helpful", "type: eval\nname: explicit");
+        let online_only = HELPFUL_JUDGE.replace("name: helpful", "type: online\nname: helpful");
+        assert_eq!(
+            parse_judge_definitions(&[source("judges/helpful.yaml", &online_only)]).unwrap()[0]
+                .definition
+                .kind,
+            JudgeType::Online
+        );
+        let sources = [
+            sources[0].clone(),
+            sources[1].clone(),
+            source("judges/explicit.yaml", &explicit),
+        ];
+        let online = parse_judge_definitions(&sources).unwrap();
+        assert_eq!(online.len(), 2);
+        assert_eq!(online[0].definition.kind, JudgeType::Eval);
+        let serialized = serde_json::to_value(&online[0].definition).unwrap();
+        assert_eq!(serialized["type"], "eval");
+        assert!(serde_json::to_value(&online[1].definition)
+            .unwrap()
+            .get("type")
+            .is_none());
+        let online = &online[1..];
+        assert_eq!(online.len(), 1);
+        assert_eq!(online[0].definition.name, "helpful");
+        let gate = parse_gate_judge_definitions(&sources).unwrap();
+        assert_eq!(gate.len(), 1);
+        let booking = &gate[0].definition;
+        assert_eq!(booking.facts, ["city"]);
+        let requested = &booking.questions["requested"];
+        assert_eq!(
+            requested.instructions,
+            "Is this what the traveller asked for?"
+        );
+        assert_eq!(requested.criteria.as_ref().unwrap().no, "Anything else.");
+    }
+
+    #[test]
+    fn a_gate_question_is_text_with_true_and_false_criteria() {
+        for broken in [
+            BOOKING_JUDGE.replace(
+                "    criteria:\n      \"true\": The same trip.\n",
+                "    criteria:\n",
+            ),
+            BOOKING_JUDGE.replace("\"true\"", "maybe"),
+            BOOKING_JUDGE.replace(
+                "instructions: Is this",
+                "instructions: \"\"\n    rules: Is this",
+            ),
+        ] {
+            assert!(
+                parse_gate_judge_definitions(&[source("judges/booking.yaml", &broken)]).is_err(),
+                "{broken}"
+            );
+        }
     }
 }

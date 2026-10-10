@@ -9,7 +9,7 @@ The checker validates the portable authored contract:
 - each agent's explicit stable `name`, required resolved `model.name`, and any
   declared skill or subagent references;
 - package and agent MCP authorization policy;
-- direct-child `judges/*.yaml` definitions and their typed authored schema;
+- direct-child `judges/*.yaml` definitions (`online`, `eval` and `gate`) and their typed authored schema;
 - dependency lockfile presence and npm lockfile identity;
 - exclusion of local capability configuration from distributable snapshots,
   accepting a committed `.pi/mcp.local.json` only as a loopback evaluation

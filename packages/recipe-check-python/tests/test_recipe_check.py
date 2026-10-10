@@ -326,3 +326,36 @@ def test_a_committed_loopback_evaluation_binding_is_accepted() -> None:
     live = '{"servers":[{"id":"attio","url":"https://mcp.attio.com/mcp"}]}'
     codes = [diagnostic.code for diagnostic in report(live).diagnostics]
     assert codes == ["package.local_config_present"]
+
+
+GATE_JUDGE = (
+    "name: booking\n"
+    "type: gate\n"
+    "facts: [city]\n"
+    "questions:\n"
+    "  requested:\n"
+    "    instructions: Is this what the traveller asked for?\n"
+    "    criteria:\n"
+    '      "true": The same trip.\n'
+    '      "false": Anything else.\n'
+)
+
+
+def test_gate_judges_are_parsed_apart_from_online_ones() -> None:
+    sources: list[introspection_recipe_check.JudgeSource] = [
+        {"path": "judges/helpful.yaml", "content": "name: helpful\ninstructions: Grade.\nllm:\n  model: gpt-5\n"},
+        {"path": "judges/booking.yaml", "content": GATE_JUDGE},
+    ]
+
+    online = introspection_recipe_check.parse_judge_definitions(sources)
+    gate = introspection_recipe_check.parse_gate_judge_definitions(sources)
+
+    assert [item.definition.to_dict()["name"] for item in online] == ["helpful"]
+    booking = gate[0].definition.to_dict()
+    assert booking["type"] == "gate"
+    assert booking["questions"] == {
+        "requested": {
+            "instructions": "Is this what the traveller asked for?",
+            "criteria": {"true": "The same trip.", "false": "Anything else."},
+        }
+    }
