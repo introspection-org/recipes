@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/introspection-org/recipes/compare/v0.30.0...v0.30.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **mcp:** search shows full contracts, list --schema covers a server, retry refused handshakes ([#326](https://github.com/introspection-org/recipes/issues/326)) ([d852d9e](https://github.com/introspection-org/recipes/commit/d852d9ef418ecb511f1ef87fe31b71d8c1943075))
+
 ## [0.30.0](https://github.com/introspection-org/recipes/compare/v0.29.0...v0.30.0) (2026-10-10)
 
 
