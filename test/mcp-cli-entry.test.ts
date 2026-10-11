@@ -68,15 +68,17 @@ describe("mcp CLI entry", () => {
     expect(result.stderr).toBe("");
   });
 
-  it("presents one primary discovery-to-call flow and keeps run as composition", () => {
+  it("presents one search-to-call flow, with run for two or more calls", () => {
     const result = runCli(distCli, ["--help"]);
     const search = result.stdout.indexOf('mcp search "what you need"');
-    const schema = result.stdout.indexOf("mcp list <server.tool> --schema");
-    const call = result.stdout.indexOf("mcp call <server>.<tool> key=value");
+    const call = result.stdout.indexOf("mcp call <server>.<tool> --json");
+    const run = result.stdout.indexOf("Two or more calls");
 
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(schema).toBeGreaterThan(search);
-    expect(call).toBeGreaterThan(schema);
+    expect(call).toBeGreaterThan(search);
+    expect(run).toBeGreaterThan(call);
+    expect(result.stdout).not.toContain("--schema\n");
+    expect(result.stdout).toContain("Promise.allSettled");
     expect(result.stdout).toContain("Batch or compose multiple calls in JavaScript");
     expect(result.stdout).toContain("mcp run <<'JS'");
     expect(result.stdout).not.toContain("mcp run <<'EOF'");
@@ -142,11 +144,11 @@ describe("mcp CLI entry", () => {
     expect(quiet.output).toBe("");
   });
 
-  it("rejects schema mode without an exact tool target", () => {
+  it("rejects schema mode without a target", () => {
     const result = runCli(distCli, ["list", "--schema"]);
     expect(result.status).toBe(2);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("requires one exact tool");
+    expect(result.stderr).toContain("requires a server or one exact tool");
   });
 
   it("rejects unknown compact list options", () => {

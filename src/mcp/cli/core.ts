@@ -459,7 +459,7 @@ export function searchMcpTools(
   }
   return matches
     .sort((a, b) => b.score - a.score || a.ref.localeCompare(b.ref))
-    .slice(0, opts.limit ?? 8);
+    .slice(0, opts.limit ?? 5);
 }
 
 async function readSession(): Promise<McpSessionConfig> {
@@ -751,7 +751,7 @@ export function parseSearchArgs(
     return { error: `Unknown mcp search option '${unknown}'.` };
   }
   const { values, positionals } = parsed;
-  let limit = 8;
+  let limit = 5;
   if (values.limit !== undefined) {
     const value = Number(values.limit);
     if (!Number.isInteger(value) || value <= 0) {
@@ -774,6 +774,7 @@ async function searchCatalog(args: string[]): Promise<number> {
     return 2;
   }
   let matches: ToolSearchMatch[];
+  const catalogs = new Map<string, McpToolCatalogEntry[]>();
   const { runtime, owned } = await acquireRuntime();
   try {
     const session = await readSession();
@@ -798,6 +799,10 @@ async function searchCatalog(args: string[]): Promise<number> {
         `mcp search: ${failed} of ${results.length} server(s) unavailable; searched the remaining catalogs.\n`
       );
     }
+    session.servers.forEach((server, index) => {
+      const result = results[index]!;
+      if ("catalog" in result && result.catalog) catalogs.set(server.id, result.catalog);
+    });
     matches = searchMcpTools(
       {
         ...session,
@@ -823,14 +828,28 @@ async function searchCatalog(args: string[]): Promise<number> {
     stdout.write(`No matching tools found for "${query}".\n`);
     stdout.write("Try broader or alternate terms.\n");
     stdout.write(
-      "Use `mcp list <server>` only to identify exact tool names, then inspect one candidate with `mcp list <server.tool> --schema`.\n"
+      "`mcp list <server> --schema` shows every tool on one server.\n"
     );
     return 0;
   }
-  for (const match of matches) {
-    stdout.write(`${match.ref}${match.description ? ` — ${match.description}` : ""}\n`);
-    if (match.required.length > 0) stdout.write(`  required: ${match.required.join(", ")}\n`);
-  }
+  // Each match carries its whole contract, so the first call needs no separate
+  // schema lookup.
+  stdout.write(
+    matches
+      .map((match) => {
+        const tool = catalogs.get(match.server)?.find((entry) => entry.name === match.tool);
+        return tool
+          ? renderToolContract(match.server, {
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.input_schema,
+              outputSchema: tool.output_schema,
+              annotations: tool.annotations,
+            } as ContractTool)
+          : `${match.ref}${match.description ? ` — ${match.description}` : ""}\n`;
+      })
+      .join("\n")
+  );
   return 0;
 }
 
@@ -993,7 +1012,7 @@ async function compactList(args: string[]): Promise<number> {
     return 2;
   }
   if (schema && !target) {
-    stderr.write("mcp list --schema requires one exact tool: mcp list <server>.<tool> --schema\n");
+    stderr.write("mcp list --schema requires a server or one exact tool: mcp list <server>[.<tool>] --schema\n");
     return 2;
   }
   const session = await readSession();
@@ -1028,10 +1047,6 @@ async function compactList(args: string[]): Promise<number> {
   }
   const exact = exactToolTarget(target);
   const server = exact?.server ?? target;
-  if (schema && !exact) {
-    stderr.write("mcp list --schema requires one exact tool: mcp list <server>.<tool> --schema\n");
-    return 2;
-  }
   const { runtime, owned } = await acquireRuntime();
   try {
     const sessionServer = session.servers.find((entry) => entry.id === server);
@@ -1057,23 +1072,28 @@ async function compactList(args: string[]): Promise<number> {
       stderr.write(`Tool '${exact.tool}' is not available on server '${server}'.\n`);
       return 1;
     }
-    if (schema && exact) {
-      const tool = selected[0];
-      if (!tool) return 1;
-      const outputSchema =
-        tool.outputSchema ?? catalogOutputSchema(catalogTool(
-          { ...session, servers: session.servers.map((entry) =>
-            entry.id === server ? { ...entry, catalog } : entry
-          ) },
-          server,
-          exact.tool
-        ));
+    if (schema) {
+      const withCatalog = {
+        ...session,
+        servers: session.servers.map((entry) =>
+          entry.id === server ? { ...entry, catalog } : entry
+        ),
+      };
       stdout.write(
-        renderToolContract(
-          server,
-          { ...tool, outputSchema },
-          { verboseDescriptions: verbose }
-        )
+        selected
+          .map((tool) =>
+            renderToolContract(
+              server,
+              {
+                ...tool,
+                outputSchema:
+                  tool.outputSchema ??
+                  catalogOutputSchema(catalogTool(withCatalog, server, tool.name)),
+              },
+              { verboseDescriptions: verbose }
+            )
+          )
+          .join("\n")
       );
       return 0;
     }
@@ -1195,6 +1215,44 @@ function improveRunToolError(
   return new Error(describeUnavailableRunTool(server, tool, knownTools), { cause: error });
 }
 
+type McpCallOptions = NonNullable<Parameters<McpRuntime["callTool"]>[2]>;
+
+// A refused version probe means the connection never opened, so the tool did
+// not run and the call can be made again. Any later failure may follow a
+// remote side effect and is left to the caller.
+const HANDSHAKE_RETRY_DELAYS_MS = [500, 1500];
+
+function refusedHandshake(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+    if (/Version negotiation failed: the server answered the probe with HTTP 5\d\d/.test(current.message)) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+export async function callToolWithHandshakeRetry(
+  runtime: McpRuntime,
+  server: string,
+  tool: string,
+  options: () => McpCallOptions,
+  deadlineMs = Number.POSITIVE_INFINITY
+): Promise<unknown> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await runtime.callTool(server, tool, options());
+    } catch (error) {
+      const wait = HANDSHAKE_RETRY_DELAYS_MS[attempt];
+      if (wait === undefined || !refusedHandshake(error) || Date.now() + wait >= deadlineMs) {
+        throw error;
+      }
+      await delay(wait);
+    }
+  }
+}
+
 async function createTools(opts: {
   callTimeoutMs: number;
   maxCalls: number;
@@ -1262,14 +1320,20 @@ async function createTools(opts: {
               }
               const result = checkedCallResult(
                 createCallResult(
-                  await runtime.callTool(server, property, {
-                    args,
-                    // A queued call must never outlive the workflow that owns
-                    // it. mcporter forwards this timeout to the MCP SDK and
-                    // resets the transport when it fires.
-                    timeoutMs: Math.min(opts.callTimeoutMs, remainingMs),
-                    disableOAuth: true,
-                  })
+                  (await callToolWithHandshakeRetry(
+                    runtime,
+                    server,
+                    property,
+                    () => ({
+                      args,
+                      // A queued call must never outlive the workflow that owns
+                      // it. mcporter forwards this timeout to the MCP SDK and
+                      // resets the transport when it fires.
+                      timeoutMs: Math.min(opts.callTimeoutMs, opts.deadlineMs - Date.now()),
+                      disableOAuth: true,
+                    }),
+                    opts.deadlineMs
+                  )) as Parameters<typeof createCallResult>[0]
                 )
               );
               return decodeCallResult(result, format, `${server}.${property}`);
@@ -1889,11 +1953,11 @@ async function callWithSharedRuntime(
       parsed.schemaStringCoercionCandidates,
       timeoutMs
     );
-    const call = runtime.callTool(server, tool, {
+    const call = callToolWithHandshakeRetry(runtime, server, tool, () => ({
       args: values,
       timeoutMs,
       disableOAuth: true,
-    });
+    }));
     const signal = currentMcpCommandContext()?.signal;
     let cancelled: (() => void) | undefined;
     const raw = signal

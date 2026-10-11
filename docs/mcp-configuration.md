@@ -157,13 +157,13 @@ local Pi environment or embedding host supplies them.
 
 In CLI mode, Recipes creates a session-local `mcp` command containing only the
 selected agent's authorized tools. Delegating to another agent does not grant
-the parent direct access to that child's MCP capabilities. Discover narrowly,
-inspect one schema, then call or compose:
+the parent direct access to that child's MCP capabilities. Search shows each
+match's full contract, so the next step is the call: `mcp call` for one, `mcp
+run` for two or more in one script.
 
 ```bash
 mcp search "contact lookup"
-mcp list contacts.search_contacts --schema
-mcp call contacts.search_contacts query="Ada Lovelace"
+mcp call contacts.search_contacts --json '{"query":"Ada Lovelace"}'
 ```
 
 The command is headless and cannot add servers, mutate configuration, or start

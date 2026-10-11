@@ -786,6 +786,17 @@ describe("lazy MCP CLI discovery", () => {
       );
       expect(search).toMatchObject({ code: 0, stderr: "" });
       expect(search.stdout).toContain("stub.search_profiles");
+      // The match carries its contract, so no schema lookup precedes the call.
+      expect(search.stdout).toMatch(/\ninput\n {2}.*query/);
+      expect(search.stdout).toContain("\ncall\n  mcp call stub.search_profiles");
+      const serverSchema = await runMcpShim(
+        shim.shimPath,
+        ["list", "stub", "--schema"],
+        cliEnv
+      );
+      expect(serverSchema).toMatchObject({ code: 0, stderr: "" });
+      expect(serverSchema.stdout).toMatch(/^stub\.search_profiles\n/);
+      expect(serverSchema.stdout).toContain("\ninput\n");
       const list = await runMcpShim(
         shim.shimPath,
         ["list", "stub"],
