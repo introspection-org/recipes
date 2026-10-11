@@ -86,7 +86,7 @@ jobs:
       # Prove the floor the peer range advertises, read from the range itself so
       # a bump cannot leave this job testing a version we no longer support.
       - run: |
-          floor="$(node -p "require('./package.json').peerDependencies['@earendil-works/pi-coding-agent'].replace(/[^0-9.]/g, '')")"
+          floor="$(node -p "require('./package.json').peerDependencies['@earendil-works/pi-coding-agent'].split(' ')[0].replace(/[^0-9.]/g, '')")"
           echo "pi floor: $floor"
           pnpm pkg set \
             devDependencies.@earendil-works/pi-agent-core="$floor" \

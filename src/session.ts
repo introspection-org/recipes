@@ -827,17 +827,19 @@ async function createSessionForAgent(
         `Recipe MCP tool name collision: ${collisions.join(", ")}`
       );
     }
-    const toolSearchTools = createRecipeToolSearchTools({
-      tools: [...recipeExtensionTools, ...(mcp.tools ?? [])],
-      deferredToolNames: [
-        ...connectorLoadout.deferredToolNames,
-        ...(mcp.deferredToolNames ?? []),
-      ],
-      activation: {
-        getActiveTools: () => session?.getActiveToolNames() ?? [],
-        setActiveTools: (names) => session?.setActiveToolsByName(names),
-      },
-    }, (mcp.deferredToolNames?.length ?? 0) > 0);
+    const hasDeferredTools =
+      connectorLoadout.deferredToolNames.length > 0 ||
+      (mcp.deferredToolNames?.length ?? 0) > 0;
+    const toolSearchTools = hasDeferredTools
+      ? createRecipeToolSearchTools(
+          {
+            getAllTools: () => session?.getAllTools() ?? [],
+            getActiveTools: () => session?.getActiveToolNames() ?? [],
+            setActiveTools: (names) => session?.setActiveToolsByName(names),
+          },
+          (mcp.deferredToolNames?.length ?? 0) > 0
+        )
+      : [];
     const occupiedSearchTool = toolSearchTools.find((tool) =>
       occupiedToolNames.has(tool.name)
     );

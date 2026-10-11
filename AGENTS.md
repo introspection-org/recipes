@@ -50,12 +50,11 @@
   claim compatibility with a release nobody has reviewed. Note `workspace:^`
   publishes as `^`, so a published peer must be written out. Keep the caret for
   third-party packages, where an unreviewed relock would take someone else's
-  breaking change. ⚠️ **Pi is the exception, and takes no cap either**: third
-  party, but the host supplies it, so the SDK declares a bare `>=0.86.1` and
-  lets the runtime image resolve the version. `test/pi-floor-parity.test.ts`
-  asserts that exact shape (`/^>=\d+\.\d+\.\d+$/`), so a `<1.0.0` bound fails
-  it just as a caret does — and a caret would also restore the upper bound #280
-  removed.
+  breaking change. Pi takes the same major cap, written out as `>=1.1.0 <2.0.0` because the
+  host supplies it and the runtime image resolves the version. Pi crossing a
+  major is a deliberate migration (fix the SDK, move the floor, and move the
+  host's runtime image with it), never a Dependabot bump.
+  `test/pi-floor-parity.test.ts` asserts that exact shape.
 - **A version written in two places will drift.** Derive it. The supported Pi
   floor is read out of `peerDependencies` by the `pi-minimum` CI job and pinned
   by `test/pi-floor-parity.test.ts`; copying it into a job or a doc is how it

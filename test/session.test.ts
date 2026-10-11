@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  EventStream,
+  createAssistantMessageEventStream,
   getModel,
   type AssistantMessage,
   type AssistantMessageEvent,
@@ -46,22 +46,6 @@ vi.mock("@introspection-sdk/introspection-pi", async (importOriginal) => ({
   instrumentSession,
 }));
 
-class MockAssistantStream extends EventStream<
-  AssistantMessageEvent,
-  AssistantMessage
-> {
-  constructor() {
-    super(
-      (event) => event.type === "done" || event.type === "error",
-      (event) => {
-        if (event.type === "done") return event.message;
-        if (event.type === "error") return event.error;
-        throw new Error("Unexpected event type");
-      }
-    );
-  }
-}
-
 function assistantMessage(
   text: string,
   stopReason: AssistantMessage["stopReason"] = "stop"
@@ -87,7 +71,7 @@ function assistantMessage(
 
 function scriptReply(handle: RecipeSessionHandle, text: string): void {
   handle.session.agent.streamFunction = () => {
-    const stream = new MockAssistantStream();
+    const stream = createAssistantMessageEventStream();
     queueMicrotask(() => {
       stream.push({ type: "start", partial: assistantMessage("") });
       stream.push({ type: "done", reason: "stop", message: assistantMessage(text) });
@@ -148,7 +132,7 @@ async function providerCredentialStore(
     // Pi treats an OpenAI key without `sk-` as a ChatGPT sign-in and drops
     // request options it does not accept.
     key: `sk-test-${provider}-key`,
-    ...(provider === "azure-openai-responses"
+    ...(provider === "azure"
       ? { env: { AZURE_OPENAI_RESOURCE_NAME: "test-resource" } }
       : {}),
   }));
@@ -310,7 +294,7 @@ describe("createAgentSession", () => {
     ] });
     let calls = 0;
     handle.session.agent.streamFunction = () => {
-      const stream = new MockAssistantStream();
+      const stream = createAssistantMessageEventStream();
       const message = assistantMessage("Private answer");
       if (++calls === 2) {
         message.content = [{ type: "toolCall", id: "reply-1", name: "channels", arguments: { command: "reply", text: "Delivered answer", final: true } }];
@@ -669,7 +653,7 @@ describe("createAgentSession", () => {
       maxTokensPath: ["inferenceConfig", "maxTokens"],
     },
     {
-      provider: "azure-openai-responses",
+      provider: "azure",
       model: "gpt-4.1",
       maxTokensPath: ["max_output_tokens"],
     },
@@ -1442,7 +1426,7 @@ describe("in-process run controller", () => {
           credentials: await credentialStore(),
         });
         handle.session.agent.streamFunction = () => {
-          const stream = new MockAssistantStream();
+          const stream = createAssistantMessageEventStream();
           live += 1;
           peak = Math.max(peak, live);
           setTimeout(() => {
@@ -1674,7 +1658,7 @@ describe("nested delegation", () => {
    */
   function scriptBackground(handle: RecipeSessionHandle, turns: string[]) {
     handle.session.agent.streamFunction = (_model, context) => {
-      const stream = new MockAssistantStream();
+      const stream = createAssistantMessageEventStream();
       const last = context.messages.at(-1)!;
       let message: AssistantMessage;
       if (last.role === "user" && !messageText(last).includes("<agent_run_completions>")) {
@@ -1842,7 +1826,7 @@ describe("nested delegation", () => {
     // Fan out, then wait on both runs inside the same turn.
     const waitInTurn = (handle: RecipeSessionHandle, turns: string[]) => {
       handle.session.agent.streamFunction = (_model, context) => {
-        const stream = new MockAssistantStream();
+        const stream = createAssistantMessageEventStream();
         const last = context.messages.at(-1)!;
         let message = assistantMessage("");
         const results = context.messages.filter((entry) => entry.role === "toolResult");
@@ -1970,7 +1954,7 @@ describe("nested delegation", () => {
     // One explorer; on its result, send it back for more; answer from the second result.
     const resume = (handle: RecipeSessionHandle, turns: string[]) => {
       handle.session.agent.streamFunction = (_model, context) => {
-        const stream = new MockAssistantStream();
+        const stream = createAssistantMessageEventStream();
         const last = context.messages.at(-1)!;
         let message = assistantMessage("");
         const text = messageText(last);

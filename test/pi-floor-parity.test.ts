@@ -11,10 +11,12 @@ describe("the Pi floor", () => {
   const root = join(import.meta.dirname, "..");
   const declared: string = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
     .peerDependencies["@earendil-works/pi-coding-agent"];
-  const floor = declared.replace(/[^0-9.]/g, "");
+  const floor = declared.split(" ")[0].replace(/[^0-9.]/g, "");
 
-  it("is a plain lower bound with no upper bound", () => {
-    expect(declared).toMatch(/^>=\d+\.\d+\.\d+$/);
+  it("is a lower bound capped at the next major", () => {
+    const match = declared.match(/^>=(\d+)\.\d+\.\d+ <(\d+)\.0\.0$/);
+    expect(match).not.toBeNull();
+    expect(Number(match?.[2])).toBe(Number(match?.[1]) + 1);
   });
 
   it("is what the install docs advertise", () => {

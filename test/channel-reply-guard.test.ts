@@ -1,7 +1,7 @@
 import type { NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
-// Pi 0.86 requires the collection-complete shape; the guard reads none of it.
+// Pi requires the collection-complete shape; the guard reads none of it.
 const systemPromptOptions: NormalizedBuildSystemPromptOptions = {
   cwd: process.cwd(),
   selectedTools: [],
@@ -12,6 +12,7 @@ const systemPromptOptions: NormalizedBuildSystemPromptOptions = {
   sections: {},
   contextFiles: [],
   skills: [],
+  hiddenTools: [],
 };
 import { createChannelConnectorModule, registerChannelTools, type ChannelAdapter } from "../src/channels/index.js";
 import { channelCommand } from "./helpers/channel-command.js";

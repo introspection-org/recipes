@@ -934,17 +934,10 @@ export function createRecipesExtension(
       ...launchState.mcpDeferredToolNames,
     ];
     if (deferredToolNames.length > 0 && !launchState.toolSearchRegistered) {
-      const toolSearchTools = createRecipeToolSearchTools({
-        tools: pi.getAllTools(),
-        deferredToolNames,
-        activation: {
-          getActiveTools: () => pi.getActiveTools(),
-          setActiveTools: (names) => pi.setActiveTools(names),
-        },
-      }, launchState.mcpDeferredToolNames.length > 0);
-      if (toolSearchTools.length === 0) {
-        throw new Error("Recipe tool search has no deferred tools");
-      }
+      const toolSearchTools = createRecipeToolSearchTools(
+        pi,
+        launchState.mcpDeferredToolNames.length > 0
+      );
       for (const toolSearch of toolSearchTools) {
         launchState.extensionAllowedToolNames.add(toolSearch.name);
         pi.registerTool(toolSearch);

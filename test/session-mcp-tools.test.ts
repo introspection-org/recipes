@@ -121,6 +121,20 @@ describe("canonical Recipe session MCP tools mode", () => {
       piMcpToolName("contacts", "search_contacts")
     );
 
+    const declared = () =>
+      handle.session.agent.state.tools.map((tool) => tool.name);
+    expect(declared()).not.toContain(
+      piMcpToolName("contacts", "search_contacts")
+    );
+    const search = handle.session.agent.state.tools.find(
+      (tool) => tool.name === "tool_search"
+    )!;
+    const result = await search.execute("search-1", { query: "search contacts" });
+    expect((result.details as { loaded: string[] }).loaded).toContain(
+      piMcpToolName("contacts", "search_contacts")
+    );
+    expect(declared()).toContain(piMcpToolName("contacts", "search_contacts"));
+
     // Tools mode owns an isolated MCP runtime instead of mutating the host env.
     expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
     expect(env.MCPORTER_CONFIG).toBeUndefined();
