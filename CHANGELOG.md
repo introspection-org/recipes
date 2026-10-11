@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.31.0](https://github.com/introspection-org/recipes/compare/v0.30.1...v0.31.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** judge types online, offline and mission ([#325](https://github.com/introspection-org/recipes/issues/325))
+
+### Features
+
+* **recipe-check:** judge types online, offline and mission ([#325](https://github.com/introspection-org/recipes/issues/325)) ([fde59ae](https://github.com/introspection-org/recipes/commit/fde59ae480fca71db29707fbee81e725bab13599))
+
+
+### Bug Fixes
+
+* **mcp:** a run call that returns text says what the text was ([#329](https://github.com/introspection-org/recipes/issues/329)) ([8396319](https://github.com/introspection-org/recipes/commit/839631952778db2ade9b8140516517af3f3db64e))
+
 ## [0.30.1](https://github.com/introspection-org/recipes/compare/v0.30.0...v0.30.1) (2026-10-11)
 
 
