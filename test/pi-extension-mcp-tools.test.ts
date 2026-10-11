@@ -164,7 +164,7 @@ describe("Pi extension MCP tools mode", () => {
     const search = pi.tools.get("tool_search")!;
     await (search.execute as any)(
       "search-1",
-      { query: "find a person", limit: 3 },
+      { query: "search people", limit: 3 },
       undefined,
       undefined
     );

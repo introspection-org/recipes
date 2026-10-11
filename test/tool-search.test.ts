@@ -1,198 +1,112 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ToolDefinition,
+  ToolExposure,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 
-import {
-  createRecipeToolSearch,
-  createRecipeToolSearchTools,
-} from "../src/tool-search.js";
+import { createRecipeToolSearchTools, deferTools } from "../src/tool-search.js";
 
 function tool(
   name: string,
-  label: string,
   description: string,
+  exposure: ToolExposure = "deferred",
   parameters = Type.Object({})
 ): ToolDefinition {
   return {
     name,
-    label,
+    label: name,
     description,
     parameters,
+    exposure,
     async execute() {
       return { content: [{ type: "text", text: "ok" }], details: {} };
     },
   };
 }
 
+function session(tools: ToolDefinition[], active: string[]) {
+  const state = { active };
+  return {
+    state,
+    getAllTools: () =>
+      tools.map((entry) => ({ ...entry, exposure: entry.exposure ?? "direct" })),
+    getActiveTools: () => state.active,
+    setActiveTools: (names: string[]) => {
+      state.active = names;
+    },
+  } as unknown as ExtensionAPI & { state: { active: string[] } };
+}
+
+async function search(definition: ToolDefinition, query: string, limit?: number) {
+  return definition.execute(
+    "call",
+    { query, ...(limit ? { limit } : {}) },
+    undefined,
+    undefined,
+    undefined as never
+  );
+}
+
 describe("Recipe tool search", () => {
-  it("searches deferred tools from different integrations and enables matches additively", async () => {
+  it("loads deferred matches additively and skips active and direct tools", async () => {
     const tools = [
-      tool(
-        "channel_react",
-        "React in Slack",
-        "Add an emoji reaction to a Slack message."
-      ),
-      tool(
-        "mcp_contacts_search_candidates",
-        "Search candidates",
-        "Find recruiting candidates by role and experience."
-      ),
+      tool("channel_react", "Add an emoji reaction to a Slack message."),
+      tool("candidate_search", "Find recruiting candidates by role."),
+      tool("emoji_lookup", "Look up an emoji reaction by name.", "direct"),
     ];
-    let active = ["read", "tool_search"];
-    const search = createRecipeToolSearch({
-      tools,
-      deferredToolNames: tools.map((entry) => entry.name),
-      activation: {
-        getActiveTools: () => active,
-        setActiveTools: (names) => {
-          active = names;
-        },
-      },
-    })!;
+    const pi = session(tools, ["read", "tool_search"]);
+    const [toolSearch] = createRecipeToolSearchTools(pi, false);
 
-    const first = await search.execute(
-      "call-1",
-      { query: "add a reaction", limit: 1 },
-      undefined,
-      undefined,
-      undefined as never
-    );
-    expect(first.details).toMatchObject({ added: ["channel_react"] });
-    expect(active).toEqual(["read", "tool_search", "channel_react"]);
+    const first = await search(toolSearch!, "emoji reaction");
+    expect(first.details).toEqual({ loaded: ["channel_react"] });
+    expect(pi.state.active).toEqual(["read", "tool_search", "channel_react"]);
 
-    const second = await search.execute(
-      "call-2",
-      { query: "recruiting candidates", limit: 1 },
-      undefined,
-      undefined,
-      undefined as never
+    const second = await search(toolSearch!, "emoji reaction candidates");
+    expect(second.details).toEqual({ loaded: ["candidate_search"] });
+  });
+
+  it("matches deferred tools by input property names", async () => {
+    const pi = session(
+      [
+        tool(
+          "lookup",
+          "Look something up.",
+          "deferred",
+          Type.Object({ ticker: Type.String({ description: "Stock symbol." }) })
+        ),
+      ],
+      []
     );
-    expect(second.details).toMatchObject({
-      added: ["mcp_contacts_search_candidates"],
+    const [toolSearch] = createRecipeToolSearchTools(pi, false);
+    expect((await search(toolSearch!, "ticker")).details).toEqual({
+      loaded: ["lookup"],
     });
-    expect(active).toEqual([
-      "read",
+  });
+
+  it("adds mcp_search as an alias only when asked", () => {
+    const pi = session([], []);
+    expect(createRecipeToolSearchTools(pi, false).map((t) => t.name)).toEqual([
       "tool_search",
-      "channel_react",
-      "mcp_contacts_search_candidates",
     ]);
+    const tools = createRecipeToolSearchTools(pi, true);
+    expect(tools.map((t) => t.name)).toEqual(["tool_search", "mcp_search"]);
+    expect(tools.every((t) => t.defaultActive === undefined)).toBe(true);
   });
 
-  it("does not return a deferred tool after it is active", async () => {
-    const react = tool(
-      "channel_react",
-      "React in Slack",
-      "Add an emoji reaction to a Slack message."
-    );
-    const search = createRecipeToolSearch({
-      tools: [react],
-      deferredToolNames: [react.name],
-      activation: {
-        getActiveTools: () => ["tool_search", react.name],
-        setActiveTools: () => {},
-      },
-    })!;
-
-    const result = await search.execute(
-      "call-1",
-      { query: "reaction" },
-      undefined,
-      undefined,
-      undefined as never
-    );
-    expect(result.details).toMatchObject({ matches: [], added: [] });
-  });
-
-  it("matches deferred tools by input property names and descriptions", async () => {
-    const lookup = tool(
-      "mcp_directory_lookup",
-      "Directory lookup",
-      "Look up a directory entry.",
-      Type.Object({
-        email: Type.String({ description: "Work address for the person." }),
-      })
-    );
-    let active = ["tool_search", "mcp_search"];
-    const search = createRecipeToolSearch({
-      tools: [lookup],
-      deferredToolNames: [lookup.name],
-      activation: {
-        getActiveTools: () => active,
-        setActiveTools: (names) => {
-          active = names;
-        },
-      },
-    })!;
-
-    const byName = await search.execute(
-      "call-1",
-      { query: "email" },
-      undefined,
-      undefined,
-      undefined as never
-    );
-    expect(byName.details).toMatchObject({ added: [lookup.name] });
-
-    active = ["tool_search", "mcp_search"];
-    const byDescription = await search.execute(
-      "call-2",
-      { query: "work address" },
-      undefined,
-      undefined,
-      undefined as never
-    );
-    expect(byDescription.details).toMatchObject({ added: [lookup.name] });
-  });
-
-  it("keeps mcp_search as an active alias when MCP tools are deferred", async () => {
-    const contacts = tool(
-      "mcp_contacts_search_candidates",
-      "Search candidates",
-      "Find recruiting candidates."
-    );
-    let active = ["tool_search", "mcp_search"];
-    const searches = createRecipeToolSearchTools(
-      {
-        tools: [contacts],
-        deferredToolNames: [contacts.name],
-        activation: {
-          getActiveTools: () => active,
-          setActiveTools: (names) => {
-            active = names;
-          },
-        },
-      },
-      true
-    );
-
-    expect(searches.map((search) => search.name)).toEqual([
-      "tool_search",
-      "mcp_search",
+  it("registers only the named tools as deferred", async () => {
+    const registered: ToolDefinition[] = [];
+    const pi = {
+      registerTool: (definition: ToolDefinition) => registered.push(definition),
+    } as unknown as ExtensionAPI;
+    await deferTools((api) => {
+      api.registerTool(tool("later", "Later.", "direct"));
+      api.registerTool(tool("now", "Now.", "direct"));
+    }, ["later"])(pi);
+    expect(registered.map((t) => [t.name, t.exposure])).toEqual([
+      ["later", "deferred"],
+      ["now", "direct"],
     ]);
-    await searches[1]!.execute(
-      "call-1",
-      { query: "candidates" },
-      undefined,
-      undefined,
-      undefined as never
-    );
-    expect(active).toEqual([
-      "tool_search",
-      "mcp_search",
-      "mcp_contacts_search_candidates",
-    ]);
-  });
-
-  it("rejects deferred names that were not registered", () => {
-    expect(() =>
-      createRecipeToolSearch({
-        tools: [],
-        deferredToolNames: ["missing_tool"],
-        activation: {
-          getActiveTools: () => [],
-          setActiveTools: () => {},
-        },
-      })
-    ).toThrow("was not registered before tool search");
   });
 });

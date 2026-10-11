@@ -1,6 +1,7 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import { loadRecipeModule } from "./recipe/extensions.js";
+import { deferTools } from "./tool-search.js";
 import {
   recipeChannelPackageName,
   type RecipePackageChannel,
@@ -143,13 +144,16 @@ export async function loadRecipeConnectors(
       return {
         extension: {
           owner: `<channel:${channel.provider}>`,
-          factory: module.createExtension({
-            tools: selected.map((tool) => tool.id),
-            ...(channel.commands !== undefined ? { commands: channel.commands } : {}),
-            ...(channel.requireReply !== undefined ? { requireReply: channel.requireReply } : {}),
-            env: options.env,
-            cwd: options.cwd,
-          }),
+          factory: deferTools(
+            module.createExtension({
+              tools: selected.map((tool) => tool.id),
+              ...(channel.commands !== undefined ? { commands: channel.commands } : {}),
+              ...(channel.requireReply !== undefined ? { requireReply: channel.requireReply } : {}),
+              env: options.env,
+              cwd: options.cwd,
+            }),
+            selected.filter((tool) => !tool.defaultActive).map((tool) => tool.name)
+          ),
         },
         selected,
       };
