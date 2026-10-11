@@ -6,7 +6,7 @@ export function mcpCliHelpText(): string {
     "Use this session-local `mcp` command, not `mcporter` or `npx mcporter`; it enforces the materialized recipe capabilities.",
     "",
     "Flow:",
-    "  mcp search \"what you need\"                Matches with their full input and output contracts.",
+    "  mcp search \"what you need\"                Matches with their input and output contracts.",
     "  mcp call <server>.<tool> --json '{...}'  One call.",
     "  mcp run <<'JS' ... JS                     Two or more calls, in one script.",
     "  Metadata is compact text; actual structured tool results are JSON.",
@@ -81,8 +81,8 @@ export function mcpSearchHelpText(): string {
     'Usage: mcp search "what you need" [--limit N] [--regex]',
     "",
     "Searches only MCP tools available in this session.",
-    "Each match shows its full contract: description, input, output, and a call example.",
-    "Call a match directly; no separate schema lookup is needed. Default limit is 5.",
+    "The best matches show their full contract (description, input, output, call example); past about 4,000 characters the rest are one-line signatures.",
+    "Call a match with a contract directly; no separate schema lookup is needed. Default limit is 5.",
     "Try broader or alternate terms when no result matches.",
   ].join("\n");
 }
