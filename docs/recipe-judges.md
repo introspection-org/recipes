@@ -83,6 +83,45 @@ llm:
 Unknown fields are errors at every level. The obsolete top-level `model:`
 block is rejected.
 
+## Judge types
+
+`type` says when a judge runs:
+
+- `online`, the default: at the end of every runtime conversation.
+- `offline`: at the end of each eval trial. It has the same shape as `online`.
+- `mission`: on a request leaving the sandbox, which a route in the Recipe's
+  `policies/routes.yaml` names. Its answers reach the Recipe's Cedar policy
+  before the request is allowed.
+
+A mission judge asks yes-or-no questions instead of grading against a rubric, and
+the platform chooses the model:
+
+```yaml
+name: booking
+type: mission
+description: Is this booking what the traveller asked for?
+attrs: [city, check_in, check_out, total_cents]
+questions:
+  requested:
+    instructions: >
+      Is the booking something the traveller asked for, or a natural part of
+      that trip?
+    criteria:
+      "true": The same destination and dates.
+      "false": Another place, other dates, or something they never asked for.
+  personal:
+    instructions: Did the traveller describe this part of the trip as personal?
+```
+
+- `questions` maps between one and eight lowercase identifiers to questions;
+  each name is the field its answer is read as.
+- `instructions` is non-empty text. `criteria` is optional and, when present,
+  describes both `true` and `false` in non-empty text.
+- `attrs` lists the request attributes the judge sees, and is empty to show
+  them all.
+- `on` and `llm` belong to `online` and `offline` judges and are rejected on a
+  mission judge; `questions` and `attrs` are rejected on the others.
+
 ### LLM settings
 
 - `provider` is a 1-64 byte lowercase slug containing ASCII letters, digits,
@@ -141,4 +180,5 @@ Invalid Recipe content is reported through the normal diagnostics model. Judge
 diagnostics use stable `judge.*` codes, Recipe-relative source paths, useful
 help text, and deterministic ordering. YAML syntax failures use
 `judge.yaml_malformed` and include a 1-based source span when the parser
-provides one.
+provides one. An invalid mission judge reports `judge.mission_invalid`, and a
+`type` outside `online`, `offline` and `mission` reports `judge.type_invalid`.

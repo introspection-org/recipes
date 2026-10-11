@@ -345,6 +345,27 @@ def parse_judge_definitions(
     )
 
 
+def parse_mission_judge_definitions(
+    sources: list[JudgeSource],
+) -> tuple[ParsedJudgeDefinition, ...]:
+    """The `type: mission` judges among `sources`, which a recipe's policy routes name."""
+    raw = cast(
+        list[dict[str, object]],
+        json.loads(
+            _native.parse_mission_judge_definitions_json(
+                json.dumps(sources, separators=(",", ":")),
+            )
+        ),
+    )
+    return tuple(
+        ParsedJudgeDefinition(
+            source_path=cast(str, item["source_path"]),
+            definition=JudgeDefinition(cast(dict[str, object], item["definition"])),
+        )
+        for item in raw
+    )
+
+
 def judge_definition_schema() -> dict[str, object]:
     return cast(
         dict[str, object],
