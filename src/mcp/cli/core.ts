@@ -239,9 +239,13 @@ function decodeCallResult(
     case "json": {
       const decoded = callResult.json();
       if (decoded === null && callResult.structuredContent() == null && callResult.text() != null) {
+        // The text is usually the reason (not connected, an upstream error), so
+        // it travels with the error instead of being hidden behind a format hint.
+        const text = callResult.text()!.trim();
+        const shown = text.length > 500 ? `${text.slice(0, 500)}…` : text;
         throw new McpRunUsageError(
-          `${ref} did not return JSON. Its documentation should name the response type; ` +
-            `for plain text call tools[${JSON.stringify(ref.split(".")[0])}]` +
+          `${ref} returned text, not JSON: ${shown} ` +
+            `If plain text is this tool's documented response, call tools[${JSON.stringify(ref.split(".")[0])}]` +
             `[${JSON.stringify(ref.slice(ref.indexOf(".") + 1))}].text(args).`
         );
       }
