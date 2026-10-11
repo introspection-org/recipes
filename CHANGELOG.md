@@ -6,6 +6,7 @@
 ### ⚠ BREAKING CHANGES
 
 * requires Pi 1.1. Tool search ranks by whole words, so queries that only matched substrings before may find nothing.
+* Pi 1.1 renamed the `azure-openai-responses` provider to `azure` (the API id is unchanged). Recipes with `model: azure-openai-responses/<model>` must use `azure/<model>`.
 
 ### Features
 
