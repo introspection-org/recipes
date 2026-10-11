@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.9.0...introspection-recipe-check-v0.10.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** judge types online, offline and mission ([#325](https://github.com/introspection-org/recipes/issues/325))
+
+### Features
+
+* **recipe-check:** judge types online, offline and mission ([#325](https://github.com/introspection-org/recipes/issues/325)) ([fde59ae](https://github.com/introspection-org/recipes/commit/fde59ae480fca71db29707fbee81e725bab13599))
+
 ## [0.9.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.8.0...introspection-recipe-check-v0.9.0) (2026-10-10)
 
 
