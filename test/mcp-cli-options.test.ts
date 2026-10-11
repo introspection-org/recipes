@@ -16,7 +16,7 @@ describe("mcp search options", () => {
   it("joins positionals into the query and defaults the rest", () => {
     expect(parseSearchArgs(["contact", "lookup"])).toEqual({
       query: "contact lookup",
-      limit: 8,
+      limit: 5,
       regex: false,
     });
   });
