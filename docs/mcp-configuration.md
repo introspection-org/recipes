@@ -91,11 +91,13 @@ to hide all authorized tools for a server, then optionally list exact tools in
 or a sole `"*"` selector. `eager` wins when a tool matches both fields, but
 neither field can authorize a tool excluded by `include`/`exclude`.
 
-Deferred tools remain authorized and discoverable. When at least one connector
-or MCP tool is deferred, Recipes registers `tool_search`. Calling it searches
-the inactive tools already allowed for the agent and adds the best matches to
-Pi's active tool set for the next model request. It never grants access beyond
-the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
+Deferred tools remain authorized and discoverable. Recipes registers them with
+Pi's `deferred` exposure and, when at least one connector or MCP tool is
+deferred, activates Pi's `tool_search`. Calling it ranks the deferred tools by
+the words in their names, descriptions and input schemas (BM25, default limit
+8) and declares the best matches for the next model request. Pi records the
+change in the session, so loaded tools survive resume. It never grants access
+beyond the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
 
 `defer` and `eager` are invalid in CLI mode. An omitted agent `mcp` block

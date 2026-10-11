@@ -1,9 +1,8 @@
 import type { NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
-// Pi requires the collection-complete shape (1.1 adds `hiddenTools`, which the
-// 0.86 floor rejects in a literal); the guard reads none of it.
-const completeOptions = {
+// Pi requires the collection-complete shape; the guard reads none of it.
+const systemPromptOptions: NormalizedBuildSystemPromptOptions = {
   cwd: process.cwd(),
   selectedTools: [],
   toolSnippets: {},
@@ -15,7 +14,6 @@ const completeOptions = {
   skills: [],
   hiddenTools: [],
 };
-const systemPromptOptions: NormalizedBuildSystemPromptOptions = completeOptions;
 import { createChannelConnectorModule, registerChannelTools, type ChannelAdapter } from "../src/channels/index.js";
 import { channelCommand } from "./helpers/channel-command.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";

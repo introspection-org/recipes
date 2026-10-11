@@ -611,6 +611,9 @@ export function createMcpToolSet(options: {
     label: tool.catalog.name,
     description: tool.catalog.description ?? `MCP tool ${tool.canonicalName}`,
     parameters: Type.Unsafe(tool.inputSchema),
+    ...(activeCanonical.has(tool.canonicalName)
+      ? {}
+      : { exposure: "deferred" as const }),
     executionMode:
       tool.catalog.annotations?.readOnlyHint === true &&
       tool.catalog.annotations?.idempotentHint === true

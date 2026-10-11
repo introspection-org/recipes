@@ -30,7 +30,7 @@
     "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.86.1",
+    "@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
     "typebox": "*",
     "@introspection-ai/recipes": "workspace:>=0.26.0 <1.0.0"
   },
