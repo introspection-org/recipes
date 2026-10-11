@@ -103,6 +103,7 @@ const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
   "introspection.installManagedFetch"
 );
 const MANAGED_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL";
+const EGRESS_PROXY_NATIVE_ENV = "INTROSPECTION_EGRESS_PROXY_NATIVE";
 
 /**
  * Recompose the Runtime's managed fetch over the fetch Pi installs during its
@@ -115,10 +116,15 @@ function ensureManagedFetch(): boolean {
   return true;
 }
 
-/** Managed egress with no installer means provider requests bypass credential injection. */
+/**
+ * Managed egress with no installer means provider requests bypass credential
+ * injection. A proxy-native sandbox needs no installer: the env proxy
+ * injects, and Pi's dispatcher already follows it.
+ */
 function managedFetchMissingWarning(
   env: NodeJS.ProcessEnv
 ): string | undefined {
+  if (env[EGRESS_PROXY_NATIVE_ENV]?.trim() === "1") return undefined;
   if (!env[MANAGED_EGRESS_URL_ENV]) return undefined;
   return (
     `${MANAGED_EGRESS_URL_ENV} is set but the Runtime's managed fetch is not ` +
