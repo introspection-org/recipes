@@ -52,6 +52,7 @@ const DEFAULT_LIST_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RUN_TOOL_CALLS = 100;
 const DEFAULT_MAX_CONCURRENT_TOOL_CALLS = 16;
 const MAX_SEARCH_DESCRIPTION_CHARS = 600;
+const MAX_SEARCH_CONTRACT_CHARS = 4_000;
 const CATALOG_LOCK_POLL_MS = 50;
 const CATALOG_LOCK_INCOMPLETE_GRACE_MS = 1_000;
 const MCP_SESSION_ENV = "PI_RECIPES_MCP_SESSION";
@@ -762,6 +763,43 @@ export function parseSearchArgs(
   return { query: positionals.join(" "), limit, regex: values.regex === true };
 }
 
+/**
+ * Matches with their whole contract, best first, so the first call needs no
+ * separate schema lookup. Once the contracts pass the budget, the rest are
+ * one-line signatures; the best match always gets its contract.
+ */
+export function renderSearchResults(
+  matches: readonly ToolSearchMatch[],
+  catalogs: ReadonlyMap<string, readonly McpToolCatalogEntry[]>
+): string {
+  let budget = MAX_SEARCH_CONTRACT_CHARS;
+  let shortened = false;
+  const blocks = matches.map((match, index) => {
+    const entry = catalogs.get(match.server)?.find((tool) => tool.name === match.tool);
+    if (!entry) return `${match.ref}${match.description ? ` — ${match.description}` : ""}\n`;
+    const tool = {
+      name: entry.name,
+      description: entry.description,
+      inputSchema: entry.input_schema,
+      outputSchema: entry.output_schema,
+      annotations: entry.annotations,
+    } as ContractTool;
+    const contract = renderToolContract(match.server, tool);
+    if (!shortened && (index === 0 || contract.length <= budget)) {
+      budget -= contract.length;
+      return contract;
+    }
+    shortened = true;
+    return `${renderToolSignature(match.server, tool)}\n`;
+  });
+  return (
+    blocks.join("\n") +
+    (shortened
+      ? "\nThe rest are signatures: `mcp list <server.tool> --schema` shows one in full.\n"
+      : "")
+  );
+}
+
 async function searchCatalog(args: string[]): Promise<number> {
   const parsed = parseSearchArgs(args);
   if (parsed.error !== undefined) {
@@ -832,24 +870,7 @@ async function searchCatalog(args: string[]): Promise<number> {
     );
     return 0;
   }
-  // Each match carries its whole contract, so the first call needs no separate
-  // schema lookup.
-  stdout.write(
-    matches
-      .map((match) => {
-        const tool = catalogs.get(match.server)?.find((entry) => entry.name === match.tool);
-        return tool
-          ? renderToolContract(match.server, {
-              name: tool.name,
-              description: tool.description,
-              inputSchema: tool.input_schema,
-              outputSchema: tool.output_schema,
-              annotations: tool.annotations,
-            } as ContractTool)
-          : `${match.ref}${match.description ? ` — ${match.description}` : ""}\n`;
-      })
-      .join("\n")
-  );
+  stdout.write(renderSearchResults(matches, catalogs));
   return 0;
 }
 
