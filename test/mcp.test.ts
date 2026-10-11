@@ -624,6 +624,19 @@ describe("lazy MCP CLI discovery", () => {
         content: [{ type: "text", text: "plain output" }],
       });
 
+      // Inside a script the text travels with the error: it is usually the reason.
+      const textInRun = await runMcpShim(
+        shim.shimPath,
+        ["run"],
+        cliEnv,
+        [
+          "const r = await Promise.allSettled([tools.stub.text_only({})]);",
+          "console.log(String(r[0].reason));",
+        ].join("\n")
+      );
+      expect(textInRun.code).toBe(0);
+      expect(textInRun.stdout).toContain("stub.text_only returned text, not JSON: plain output");
+
       const auth = await runMcpShim(
         shim.shimPath,
         ["call", "stub.requires_auth", "--timeout", "1000"],
