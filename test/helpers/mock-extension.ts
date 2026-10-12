@@ -94,12 +94,14 @@ export function createMockExtensionAPI(): MockExtensionAPI {
           name,
           description: `${name} test tool`,
           parameters: {},
+          exposure: "direct",
           sourceInfo: { path: `<builtin:${name}>`, source: "builtin", scope: "temporary", origin: "top-level" },
         }));
       return [...builtins, ...[...tools.values()].map((tool) => ({
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters,
+        exposure: tool.exposure ?? "direct",
         sourceInfo: { path: "<test>", source: "test", scope: "temporary", origin: "top-level" },
       }))];
     },

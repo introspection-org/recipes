@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.4.1...recipe-channel-slack-v0.5.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* requires Pi 1.1. Tool search ranks by whole words, so queries that only matched substrings before may find nothing.
+
+### Features
+
+* move to Pi 1.1 with native deferred tools (peer &gt;=1.1.0 &lt;2.0.0) ([#312](https://github.com/introspection-org/recipes/issues/312)) ([60595e5](https://github.com/introspection-org/recipes/commit/60595e5010becceabd14ea1d1c946eb7e58c2e04))
+
 ## [0.4.1](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.4.0...recipe-channel-slack-v0.4.1) (2026-09-22)
 
 

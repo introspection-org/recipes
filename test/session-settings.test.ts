@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
-  EventStream,
+  createAssistantMessageEventStream,
   type AssistantMessage,
   type AssistantMessageEvent,
 } from "@earendil-works/pi-ai/compat";
@@ -218,22 +218,6 @@ function hostSettings(): SettingsManager {
   return manager;
 }
 
-class MockAssistantStream extends EventStream<
-  AssistantMessageEvent,
-  AssistantMessage
-> {
-  constructor() {
-    super(
-      (event) => event.type === "done" || event.type === "error",
-      (event) => {
-        if (event.type === "done") return event.message;
-        if (event.type === "error") return event.error;
-        throw new Error("Unexpected event type");
-      }
-    );
-  }
-}
-
 function scriptReply(handle: RecipeSessionHandle, text: string): void {
   const message: AssistantMessage = {
     role: "assistant",
@@ -253,7 +237,7 @@ function scriptReply(handle: RecipeSessionHandle, text: string): void {
     timestamp: Date.now(),
   };
   handle.session.agent.streamFunction = () => {
-    const stream = new MockAssistantStream();
+    const stream = createAssistantMessageEventStream();
     queueMicrotask(() => {
       stream.push({ type: "start", partial: { ...message, content: [] } });
       stream.push({ type: "done", reason: "stop", message });
