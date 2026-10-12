@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@introspection-sdk/introspection-pi':
-        specifier: '>=0.31.0 <1.0.0'
+        specifier: ^0.31.0
         version: 0.31.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
       '@opentelemetry/api':
         specifier: ^1.9.1
