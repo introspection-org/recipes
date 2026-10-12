@@ -933,7 +933,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "harbor", extras = ["e2b"], specifier = ">=0.24.0" },
+    { name = "harbor", extras = ["e2b"], specifier = ">=0.24.0,<0.25" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "tenacity", specifier = ">=8" },
