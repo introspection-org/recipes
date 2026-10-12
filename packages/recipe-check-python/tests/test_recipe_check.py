@@ -331,7 +331,7 @@ def test_a_committed_loopback_evaluation_binding_is_accepted() -> None:
 MISSION_JUDGE = (
     "name: booking\n"
     "type: mission\n"
-    "attrs: [city]\n"
+    "attributes: [city]\n"
     "questions:\n"
     "  requested:\n"
     "    instructions: Is this what the traveller asked for?\n"
