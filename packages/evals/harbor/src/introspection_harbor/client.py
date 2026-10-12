@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,9 @@ import httpx
 DP_URL_ENV = "INTROSPECTION_DP_URL"
 TOKEN_ENV = "INTROSPECTION_TOKEN"
 CP_URL_ENV = "INTROSPECTION_CP_URL"
+# Set by `introspection eval run` while it keeps the stored login fresh for the
+# length of the run, so a trial that outlives one access token is expected.
+LOGIN_KEEPALIVE_ENV = "INTROSPECTION_EVAL_LOGIN_KEEPALIVE"
 CREDENTIALS_PATH = Path.home() / ".introspection" / "credentials.json"
 
 # One command read is held open by the Data Plane for at most this long, so a
@@ -48,9 +52,9 @@ class DataPlaneCredentials:
     """Where the Data Plane is and what authenticates to it.
 
     ``expires_at`` is the stored login's own expiry, present only when the
-    token came from the profile. Nothing here refreshes it — that flow belongs
-    to the CLI that wrote it — so it is read to refuse a dead login up front
-    rather than to renew one.
+    token came from the profile. Nothing here renews it: that flow, with its
+    one-time refresh token, belongs to the CLI that wrote it. The client only
+    picks up a token the CLI has since written (see ``DataPlaneClient``).
     """
 
     url: str
@@ -165,8 +169,17 @@ class DataPlaneClient:
         credentials: DataPlaneCredentials,
         *,
         client: httpx.AsyncClient | None = None,
+        reload: Callable[[], DataPlaneCredentials] | None = None,
     ) -> None:
+        """*reload* re-resolves the credentials after a 401.
+
+        `introspection eval run` refreshes the stored login while a run is in
+        progress, and a trial that started on the previous access token learns
+        of the new one only by reading the profile again.
+        """
+
         self._credentials = credentials
+        self._reload = reload
         self._client = client or httpx.AsyncClient(
             base_url=credentials.url,
             headers={"authorization": f"Bearer {credentials.token}"},
@@ -186,12 +199,36 @@ class DataPlaneClient:
         path: str,
         **kwargs: Any,
     ) -> httpx.Response:
+        token = self._credentials.token
         response = await self._client.request(method, path, **kwargs)
+        if response.status_code == 401 and self._adopt_newer_token(token):
+            response = await self._client.request(method, path, **kwargs)
         if response.is_error:
             raise DataPlaneError(
                 f"{method} {path} failed with {response.status_code}: {response.text}"
             )
         return response
+
+    def _adopt_newer_token(self, rejected: str) -> bool:
+        """Switch to a token other than the *rejected* one, if there is one.
+
+        True means the request is worth one more attempt. Another request on
+        this client may already have switched, which counts the same.
+        """
+
+        if self._credentials.token != rejected:
+            return True
+        if self._reload is None:
+            return False
+        try:
+            credentials = self._reload()
+        except DataPlaneError:
+            return False
+        if credentials.token == rejected or credentials.url != self._credentials.url:
+            return False
+        self._credentials = credentials
+        self._client.headers["authorization"] = f"Bearer {credentials.token}"
+        return True
 
     # -- tasks -------------------------------------------------------------
 

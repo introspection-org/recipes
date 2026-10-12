@@ -47,6 +47,41 @@ that continues the conversation it covers every turn so far, so a later step
 can be graded against what an earlier one said. `pi.jsonl` covers the current
 step only, and a step's reported tokens and cost are that step's alone.
 
+### Retrying infrastructure failures
+
+`--retry-errors <n>` reruns, up to `n` times within the same run and the same
+Harbor job, the trials that failed on infrastructure rather than on the agent:
+
+```sh
+introspection eval run --runner harbor --path evals --retry-errors 2
+```
+
+A trial is rerun when every exception Harbor recorded for it, on the trial or
+on one of its steps, is one of these:
+
+- `AgentTimeoutError` with zero tokens used: Pi got no model response.
+- `DataPlaneError` for a rejected or expired login (401, "login has expired"),
+  a 408, 429 or 5xx response, or a sandbox that never accepted commands.
+- A transport error of the adapter's HTTP client, such as `ConnectError` or
+  `ReadTimeout`.
+- `EnvironmentStartTimeoutError`, `AgentSetupTimeoutError`,
+  `VerifierTimeoutError`, `AddTestsDirError`, `DownloadVerifierDirError` and
+  `CancelledError`.
+
+Everything else stays as it is: an agent that timed out after using tokens or
+whose token usage is unknown, a non-zero agent exit, a missing or unreadable
+reward, a request the Data Plane refused (a Recipe that fails validation, a
+missing scope, an unknown Runtime), a sidecar image that fails to build, and
+any trial that completed with a low score.
+
+The rerun is `harbor job resume` on the job directory, after the failed trials'
+directories are removed from it. `run.json` lists each rerun case under
+`result.retries` with its `attempts` and the `kind` and `message` of every
+discarded trial; a case that is not listed took one attempt. `case` is the `id`
+the case has in `result.cases`, which holds the last attempt only. The flag cannot be
+combined with `--from-conversation`. Harbor's own `--max-retries` after `--`
+still works and selects by exception type alone.
+
 ### Local Docker on the Runtime image
 
 With no `--env` and `INTROSPECTION_HARBOR_ENVIRONMENT` unset, Harbor runs its
@@ -266,6 +301,13 @@ Credentials resolve as the CLI's own Data-Plane commands do: `INTROSPECTION_DP_U
 and `INTROSPECTION_TOKEN` first, then the profile `introspection login` wrote.
 Resolving the Runtime selector to a version is a Control-Plane read, so the
 login must have a project selected.
+
+`introspection eval run` renews the stored login for as long as Harbor runs, so
+a run may outlive the access token it started with: the CLI refreshes the
+profile once the token has five minutes left, and a trial whose token is
+rejected reads the profile again and repeats the request once. An
+`INTROSPECTION_TOKEN` is used as given and is never renewed, and neither is the
+login under `harbor run` invoked directly.
 
 **A browser login is not sufficient on its own.** A trial needs `tasks:eval` to
 create the task, `images:write` to build a sidecar and `tasks:exec` to run a

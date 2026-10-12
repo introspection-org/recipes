@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, override
 from uuid import UUID
 
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import (
     BaseInstalledAgent,
     NonZeroAgentExitCodeError,
@@ -321,10 +322,12 @@ class RecipeAgentBase(BaseInstalledAgent):
     launching, capture and ATIF conversion are shared.
     """
 
-    SUPPORTS_ATIF = True
-    # Harbor calls ``resume`` for the later steps of a multi-step task when the
-    # run sets ``--resume-trajectory``; ``run`` then continues the Pi session.
-    SUPPORTS_RESUME = True
+    # ``resume``: Harbor calls it for the later steps of a multi-step task when
+    # the run sets ``--resume-trajectory``; ``run`` then continues the Pi
+    # session. ``mcp_servers``: a task's ``[[environment.mcp_servers]]`` become
+    # the Recipe's local MCP bindings, and Harbor refuses such a task for an
+    # agent that does not declare it.
+    capabilities = AgentCapabilities(atif=True, resume=True, mcp_servers=True)
     _OUTPUT_FILENAME = "pi.jsonl"
     # Where this adapter's Recipe ends up. The Runtime image bakes it; an
     # adapter that has to create the directory itself overrides this.

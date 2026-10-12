@@ -51,6 +51,7 @@ from .base import (
     load_run_spec,
 )
 from .client import (
+    LOGIN_KEEPALIVE_ENV,
     ControlPlaneClient,
     DataPlaneClient,
     DataPlaneError,
@@ -533,7 +534,7 @@ class IntrospectionEnvironment(BaseEnvironment):
     @property
     def client(self) -> DataPlaneClient:
         if self._client is None:
-            self._client = DataPlaneClient(load_credentials())
+            self._client = DataPlaneClient(load_credentials(), reload=load_credentials)
         return self._client
 
     @property
@@ -660,11 +661,12 @@ class IntrospectionEnvironment(BaseEnvironment):
         Refusing would be wrong — a login with an hour left runs most trials
         fine — but a token that dies at minute forty of a sixty-minute trial
         fails whichever command happens to be next, which reads as that
-        command failing.
+        command failing. `introspection eval run` renews the login for as long
+        as the run lasts and says so, which leaves nothing to warn about.
         """
 
         expires_at = self.client.credentials.expires_at
-        if expires_at is None:
+        if expires_at is None or os.environ.get(LOGIN_KEEPALIVE_ENV):
             return
         remaining = expires_at - time.time()
         if remaining < self._trial_timeout:

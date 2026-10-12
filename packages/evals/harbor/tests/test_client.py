@@ -94,6 +94,83 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class RefreshedLoginTest(unittest.TestCase):
+    """`introspection eval run` renews the stored login while a trial is running."""
+
+    def _client(self, handler, reload) -> DataPlaneClient:
+        return DataPlaneClient(
+            DataPlaneCredentials(url="https://dp.test", token="old"),
+            client=httpx.AsyncClient(
+                base_url="https://dp.test",
+                headers={"authorization": "Bearer old"},
+                transport=httpx.MockTransport(handler),
+            ),
+            reload=reload,
+        )
+
+    def _rejecting_all_but(self, accepted: str, seen: list[str]):
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers["authorization"])
+            if request.headers["authorization"] != f"Bearer {accepted}":
+                return httpx.Response(401, json={"detail": "Invalid token"})
+            return httpx.Response(200, json={"id": "task-1"})
+
+        return handler
+
+    def test_a_rejected_token_is_replaced_by_the_one_the_cli_wrote_since(self) -> None:
+        seen: list[str] = []
+        client = self._client(
+            self._rejecting_all_but("new", seen),
+            lambda: DataPlaneCredentials(url="https://dp.test", token="new"),
+        )
+        task = asyncio.run(client.get_task("task-1"))
+        self.assertEqual(task, {"id": "task-1"})
+        self.assertEqual(seen, ["Bearer old", "Bearer new"])
+        self.assertEqual(client.credentials.token, "new")
+        # The next request starts on the new token rather than rediscovering it.
+        asyncio.run(client.get_task("task-1"))
+        self.assertEqual(seen[2:], ["Bearer new"])
+
+    def test_an_unchanged_login_fails_once_with_the_rejection(self) -> None:
+        seen: list[str] = []
+        client = self._client(
+            self._rejecting_all_but("new", seen),
+            lambda: DataPlaneCredentials(url="https://dp.test", token="old"),
+        )
+        with self.assertRaises(DataPlaneError) as refused:
+            asyncio.run(client.get_task("task-1"))
+        self.assertIn("401", str(refused.exception))
+        self.assertEqual(seen, ["Bearer old"])
+
+    def test_a_login_that_can_no_longer_be_read_keeps_the_rejection(self) -> None:
+        def expired() -> DataPlaneCredentials:
+            raise DataPlaneError("The stored Introspection login has expired.")
+
+        seen: list[str] = []
+        client = self._client(self._rejecting_all_but("new", seen), expired)
+        with self.assertRaises(DataPlaneError) as refused:
+            asyncio.run(client.get_task("task-1"))
+        self.assertIn("401", str(refused.exception))
+        self.assertEqual(seen, ["Bearer old"])
+
+    def test_a_token_is_never_sent_to_another_plane(self) -> None:
+        seen: list[str] = []
+        client = self._client(
+            self._rejecting_all_but("new", seen),
+            lambda: DataPlaneCredentials(url="https://other.test", token="new"),
+        )
+        with self.assertRaises(DataPlaneError):
+            asyncio.run(client.get_task("task-1"))
+        self.assertEqual(seen, ["Bearer old"])
+
+    def test_without_a_reload_a_rejection_is_final(self) -> None:
+        seen: list[str] = []
+        client = self._client(self._rejecting_all_but("new", seen), None)
+        with self.assertRaises(DataPlaneError):
+            asyncio.run(client.get_task("task-1"))
+        self.assertEqual(seen, ["Bearer old"])
+
+
 class CredentialExpiryTest(unittest.TestCase):
     """The login the profile holds is not refreshed here, so its expiry is load-bearing."""
 

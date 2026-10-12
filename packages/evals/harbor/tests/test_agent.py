@@ -70,6 +70,14 @@ class RunSpecTest(unittest.TestCase):
 
 
 class LaunchCommandTest(unittest.TestCase):
+    def test_the_agent_declares_what_harbor_checks_before_a_trial(self) -> None:
+        # Harbor refuses a task with ``[[environment.mcp_servers]]`` for an
+        # agent that does not declare them, before the environment starts.
+        capabilities = IntrospectionRecipeAgent.capabilities
+        self.assertTrue(capabilities.mcp_servers)
+        self.assertTrue(capabilities.resume)
+        self.assertTrue(capabilities.atif)
+
     def test_authored_run_launches_the_baked_pi_directly(self) -> None:
         args = pi_args(
             _AUTHORED_SPEC["candidate"],
