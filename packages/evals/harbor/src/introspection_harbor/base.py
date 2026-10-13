@@ -74,6 +74,18 @@ REMOTE_EVAL_PROMPT_PATH = "/tmp/introspection-eval-prompt.md"
 # directory before a step that starts fresh and preserves it for one that
 # resumes, so a session here is exactly as long-lived as the conversation.
 PI_SESSION_DIR = "/logs/agent/pi/sessions"
+# The words Pi takes as a subcommand when they come first on its command line:
+# the commands `pi --help` lists.
+PI_SUBCOMMANDS = (
+    "install",
+    "remove",
+    "uninstall",
+    "update",
+    "list",
+    "config",
+    "auth",
+    "mcp",
+)
 RUNTIME_PROXY_PRELOAD_PATH = "/usr/local/lib/introspection-runtime/proxy-preload.js"
 RUNTIME_TELEMETRY_PRELOAD_PATH = (
     "/usr/local/lib/introspection-runtime/cli-telemetry-preload.js"
@@ -139,12 +151,23 @@ def selected_prompt(spec: dict[str, Any], instruction: str) -> str:
 
 
 def pi_launcher_command() -> str:
-    """Write a ``pi`` launcher for the baked Pi unless the image has one."""
+    """Write a ``pi`` launcher for the baked Pi unless the image has one.
 
+    Pi reads a subcommand only as its first argument. Behind the extension
+    flag ``pi list`` is a prompt: the readiness check ``introspection local``
+    makes before a replay would run the agent on the word "list".
+    """
+
+    pi_cli = (
+        f"{RUNTIME_LINK_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+    )
     launcher = "\n".join(
         [
             "#!/bin/sh",
-            f'exec node "{RUNTIME_LINK_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/cli.js" \\',
+            'case "${1:-}" in',
+            f'  {"|".join(PI_SUBCOMMANDS)}) exec node "{pi_cli}" "$@" ;;',
+            "esac",
+            f'exec node "{pi_cli}" \\',
             f'  --extension "{RUNTIME_LINK_DIR}/node_modules/@introspection-ai/recipes/dist/pi-extension.js" \\',
             '  "$@"',
         ]

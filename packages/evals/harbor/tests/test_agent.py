@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime
@@ -280,6 +281,42 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertIn("recipes/dist/pi-extension.js", command)
         self.assertNotIn("npm", command)
         self.assertNotIn("introspection setup", command)
+
+    def test_pi_launcher_keeps_a_subcommand_first(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            bin_dir = Path(home) / "bin"
+            bin_dir.mkdir()
+            # Stands in for Node: prints the arguments Pi would be started with.
+            node = bin_dir / "node"
+            node.write_text('#!/bin/sh\nshift\necho "$@"\n')
+            node.chmod(0o755)
+            env = {"HOME": home, "PATH": f"{bin_dir}:/usr/bin:/bin"}
+            subprocess.run(["sh", "-c", pi_launcher_command()], env=env, check=True)
+
+            def launched(*args: str) -> str:
+                return subprocess.run(
+                    [f"{home}/.local/bin/pi", *args],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+
+            # `introspection local` checks its toolchain with `pi list`.
+            self.assertEqual(launched("list"), "list")
+            for subcommand in (
+                "install",
+                "remove",
+                "uninstall",
+                "update",
+                "config",
+                "auth",
+                "mcp",
+            ):
+                self.assertEqual(launched(subcommand, "x"), f"{subcommand} x")
+            self.assertTrue(launched("--print", "list").startswith("--extension "))
+            self.assertTrue(launched("--print", "list").endswith(" --print list"))
+            self.assertTrue(launched().startswith("--extension "))
 
 
 class ManagedModelEnvironmentTest(unittest.TestCase):
