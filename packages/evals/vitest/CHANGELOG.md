@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.1.0...vitest-evals-v0.2.0) (2026-10-13)
+
+
+### Features
+
+* **vitest-evals:** continue a Pi session across runs and bind per-run fixtures ([#466](https://github.com/introspection-org/introspection-cli/issues/466)) ([e49280b](https://github.com/introspection-org/introspection-cli/commit/e49280b9e87c8f78743e270cfcdbb8de91577e9d))
+
+
+### Bug Fixes
+
+* **eval:** accept vitest-evals 0.17 in the Vitest runner and adapter ([#460](https://github.com/introspection-org/introspection-cli/issues/460)) ([d205aa9](https://github.com/introspection-org/introspection-cli/commit/d205aa9223ab8ccc521686e82b79039120a3a3ab)), closes [#459](https://github.com/introspection-org/introspection-cli/issues/459)
+
 ## 0.1.0 (2026-09-02)
 
 
