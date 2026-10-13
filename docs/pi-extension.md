@@ -46,6 +46,15 @@ package managers, and ordinary paths own distribution.
 The selected path and agent are exposed to Recipe-owned tools as
 `PI_RECIPE_DIR` and `PI_AGENT_NAME`.
 
+## GenAI spans
+
+Set `PI_RECIPE_GENAI_SPANS_FILE` to a path and the extension writes the
+session's GenAI spans there as JSON: one `chat` span per model call and one
+`execute_tool` span per tool result.
+
+The file is replaced when the session starts and after every turn, so a run
+that is killed still leaves the turns it finished.
+
 ## What is loaded
 
 For the selected agent, the extension:

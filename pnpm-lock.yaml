@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@introspection-sdk/introspection-pi':
-        specifier: ^0.23.0
-        version: 0.23.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
+        specifier: ^0.31.0
+        version: 0.31.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -44,7 +44,7 @@ importers:
         version: 0.28.2
       typebox:
         specifier: ^1.0.56
-        version: 1.3.34
+        version: 1.3.36
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -386,9 +386,10 @@ packages:
   '@iarna/toml@2.2.5':
     resolution: {integrity: sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg==}
 
-  '@introspection-sdk/introspection-pi@0.23.0':
-    resolution: {integrity: sha512-GTx7boYy42AvKBGjdDPLU4IGaqqJ/PPEQQ87DxqzLLavsyadu9DCGUy5UPyK8KzNxD6p0dEbn5d9QNjJvhkLrg==}
+  '@introspection-sdk/introspection-pi@0.31.0':
+    resolution: {integrity: sha512-RCizrYq8t4Vb36z1G2mt5DH9zG9WVzGFD/Jfw9SbS7MLu55HpFwXrWkD190A4nYlFTTGRLLv1m8ogcs8+7bv6Q==}
     engines: {node: '>=22'}
+    hasBin: true
     peerDependencies:
       '@earendil-works/pi-agent-core': '>=0.75.0'
       '@earendil-works/pi-ai': '>=0.75.0'
@@ -396,8 +397,8 @@ packages:
       '@earendil-works/pi-agent-core':
         optional: true
 
-  '@introspection-sdk/types@0.23.0':
-    resolution: {integrity: sha512-S86iBeCDi9alqOW9vbGybNS10QRDM2r9GaJAGuSrOPPhURnntB4zBMqPFTudganq1hWdeBFUn9Wj6fcq6T8aQg==}
+  '@introspection-sdk/types@0.31.0':
+    resolution: {integrity: sha512-XuxS6pKBLlytfuYF/2+VOGG1plvz3v0KVgBu5so2bEuc61R3IOeDxB24qeSigXn0U5kWGjuqv7jLBPXnB8ZTgg==}
     engines: {node: '>=22'}
     peerDependencies:
       '@opentelemetry/sdk-logs': '>=0.200.0'
@@ -976,8 +977,8 @@ packages:
     resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
     engines: {node: '>=22.12.0'}
 
-  content-disposition@1.1.0:
-    resolution: {integrity: sha512-5jRCH9Z/+DRP7rkvY83B+yGIGX96OYdJmzngqnw2SBSxqCFPd0w2km3s5iawpGX8krnwSGmF0FW5Nhr0Hfai3g==}
+  content-disposition@2.0.1:
+    resolution: {integrity: sha512-e+H0ZXHSWYrENhQzw1LPuP4oF5MzVKmDU6d3hxlvaPEYLLg62MxtQNPRx4SYSuYJSBUgnQIG4HIN2tEtNv7Dog==}
     engines: {node: '>=18'}
 
   content-type@1.0.5:
@@ -1094,8 +1095,8 @@ packages:
     peerDependencies:
       express: '>= 4.11'
 
-  express@5.2.1:
-    resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
+  express@5.3.0:
+    resolution: {integrity: sha512-qCqy1xSoaugxOD4IVHb1ZWdkvCF2W3aE2okKouWj8VwJ+ztskSiXoBnCSJqfKT+cVPJhuJqe9YLbY425+Zh00g==}
     engines: {node: '>= 18'}
 
   extend@3.0.2:
@@ -1696,8 +1697,8 @@ packages:
   typebox@1.3.27:
     resolution: {integrity: sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA==}
 
-  typebox@1.3.34:
-    resolution: {integrity: sha512-wbnzrXXDW8xEFHDZZs2jo1MkhaYlKAY4FRhpBc1+2LF1fZVBGCXGdLEhA/Z/NBbgzJMFfeM8m7elKPa/+KxaUQ==}
+  typebox@1.3.36:
+    resolution: {integrity: sha512-bu2Ec2Ti9B4IFSFj1FcZbtLNB/W7igQwxocMGJLAG2NTv1nI+ImtIA34YgHW4CVyGVlJqNXR1GJyLmdWgV3DuA==}
 
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
@@ -2266,10 +2267,10 @@ snapshots:
 
   '@iarna/toml@2.2.5': {}
 
-  '@introspection-sdk/introspection-pi@0.23.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
+  '@introspection-sdk/introspection-pi@0.31.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@earendil-works/pi-ai': 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
-      '@introspection-sdk/types': 0.23.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
+      '@introspection-sdk/types': 0.31.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
       '@opentelemetry/api': 1.9.1
     optionalDependencies:
       '@earendil-works/pi-agent-core': 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
@@ -2277,7 +2278,7 @@ snapshots:
       - '@opentelemetry/sdk-logs'
       - '@opentelemetry/sdk-trace-base'
 
-  '@introspection-sdk/types@0.23.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
+  '@introspection-sdk/types@0.31.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@ag-ui/core': 0.0.59
       '@opentelemetry/sdk-logs': 0.221.0(@opentelemetry/api@1.9.1)
@@ -2305,8 +2306,8 @@ snapshots:
       cross-spawn: 7.0.6
       eventsource: 3.0.7
       eventsource-parser: 3.1.1
-      express: 5.2.1
-      express-rate-limit: 8.7.1(express@5.2.1)
+      express: 5.3.0
+      express-rate-limit: 8.7.1(express@5.3.0)
       hono: 4.13.13
       jose: 6.2.12
       json-schema-typed: 8.0.2
@@ -2691,7 +2692,7 @@ snapshots:
 
   commander@15.0.0: {}
 
-  content-disposition@1.1.0:
+  content-disposition@2.0.1:
     optional: true
 
   content-type@1.0.5:
@@ -2812,21 +2813,21 @@ snapshots:
 
   expect-type@1.4.0: {}
 
-  express-rate-limit@8.7.1(express@5.2.1):
+  express-rate-limit@8.7.1(express@5.3.0):
     dependencies:
       debug: 4.4.3
-      express: 5.2.1
+      express: 5.3.0
       ip-address: 10.7.3
     transitivePeerDependencies:
       - supports-color
     optional: true
 
-  express@5.2.1:
+  express@5.3.0:
     dependencies:
       accepts: 2.0.0
       body-parser: 2.3.0
-      content-disposition: 1.1.0
-      content-type: 1.0.5
+      content-disposition: 2.0.1
+      content-type: 2.1.0
       cookie: 0.7.2
       cookie-signature: 1.2.2
       debug: 4.4.3
@@ -3493,7 +3494,7 @@ snapshots:
 
   typebox@1.3.27: {}
 
-  typebox@1.3.34: {}
+  typebox@1.3.36: {}
 
   typescript@7.0.2:
     optionalDependencies:
