@@ -528,6 +528,18 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def _gnu_tar() -> bool:
+    """Whether this host's `tar` is GNU tar, as a sandbox's is."""
+
+    try:
+        version = subprocess.run(
+            ["tar", "--version"], capture_output=True, text=True, check=False
+        ).stdout
+    except OSError:
+        return False
+    return "GNU tar" in version
+
+
 class HarborDirectoryTest(unittest.TestCase):
     """Harbor prepares `/logs` and `/tests` before a trial; the sandbox is uid 1000."""
 
@@ -538,6 +550,9 @@ class HarborDirectoryTest(unittest.TestCase):
         # to the setup. Asking for the user we actually are makes that honest.
         self.assertIsNone(IntrospectionEnvironment._reset_dirs_user(None))  # ty: ignore[invalid-argument-type]
 
+    # The unpack command runs in a Linux sandbox and names a GNU-only flag
+    # (`--no-overwrite-dir`), which macOS's bsdtar rejects.
+    @unittest.skipUnless(_gnu_tar(), "the unpack command needs GNU tar")
     def test_upload_preserves_the_mounted_directory_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch)
