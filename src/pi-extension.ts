@@ -1343,11 +1343,8 @@ export function createRecipesExtension(
       completions.poke();
     });
 
-    // Rendered from the session's entries, because an extension cannot reach
-    // the agent's stream function. Once Pi lets one wrap it
-    // (https://github.com/earendil-works/pi/issues/10832), write this file from
-    // `instrumentSession` spans instead: they carry real durations and cover
-    // subagent runs.
+    // Rendered from the session's entries for now; these should become
+    // `instrumentSession` spans: https://github.com/introspection-org/recipes/issues/340
     registerGenAiSpansFile(pi, env);
 
     pi.on("before_provider_request", (event, ctx) => {
