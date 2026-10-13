@@ -17,6 +17,7 @@ import {
   type RecipeChildAgentRunner,
   type RecipeChildToolEvent,
 } from "./child/agent.js";
+import { registerGenAiSpansFile } from "./genai-spans-file.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
@@ -1341,6 +1342,10 @@ export function createRecipesExtension(
       sessionCtx = ctx;
       completions.poke();
     });
+
+    // Rendered from the session's entries for now; these should become
+    // `instrumentSession` spans: https://github.com/introspection-org/recipes/issues/340
+    registerGenAiSpansFile(pi, env);
 
     pi.on("before_provider_request", (event, ctx) => {
       ensureManagedFetch();
