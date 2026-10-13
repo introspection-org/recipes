@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/introspection-org/recipes/compare/v0.32.0...v0.33.0) (2026-10-13)
+
+
+### Features
+
+* install pi-session-spans with the Recipes extension ([#335](https://github.com/introspection-org/recipes/issues/335)) ([1fec03e](https://github.com/introspection-org/recipes/commit/1fec03e95bc527d371138ea445dcc603df11bd97))
+* keep a Pi run's GenAI spans in PI_RECIPE_GENAI_SPANS_FILE ([#339](https://github.com/introspection-org/recipes/issues/339)) ([3ddc225](https://github.com/introspection-org/recipes/commit/3ddc2259a77ab5812f1523f824bf085cbd922277))
+
 ## [0.32.0](https://github.com/introspection-org/recipes/compare/v0.31.0...v0.32.0) (2026-10-11)
 
 
