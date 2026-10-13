@@ -47,11 +47,7 @@ def replies(trajectory: dict[str, Any]) -> list[str]:
     return [
         text(step.get("message"))
         for step in trajectory.get("steps") or []
-        if step.get("source") == "agent"
-        # A step without a model call is the adapter's placeholder for a run
-        # that recorded nothing, not something the agent said.
-        and step.get("llm_call_count") != 0
-        and text(step.get("message")).strip()
+        if step.get("source") == "agent" and text(step.get("message")).strip()
     ]
 
 

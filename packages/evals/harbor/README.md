@@ -47,6 +47,22 @@ that continues the conversation it covers every turn so far, so a later step
 can be graded against what an earlier one said. `pi.jsonl` covers the current
 step only, and a step's reported tokens and cost are that step's alone.
 
+The trajectory is the platform's own ATIF projection. During each Pi run the
+Recipes extension writes the session as the GenAI spans the platform stores
+(`genai-spans.json`), and `introspection-sdk` projects those onto ATIF with the
+code behind the platform's ATIF conversation export. A trial and a production
+conversation therefore produce the same trajectory for the same turns. A step's
+usage comes from the spans that start after its Pi run was launched, and its
+input tokens include cached tokens, as ATIF defines `prompt_tokens`.
+
+The spans are the trajectory's only source. The adapter names the file in
+`PI_RECIPE_GENAI_SPANS_FILE` and the extension replaces it after every turn, so
+a run that Harbor stops on its timeout still has the trajectory of the turns it
+finished. A trial whose Recipes extension predates the variable (an older
+Runtime image, or a CLI whose `introspection setup` installs an older Recipes
+release) fails after the agent run with an error that names the missing
+`genai-spans.json`. A run that made no model call has no trajectory.
+
 ### Retrying infrastructure failures
 
 `--retry-errors <n>` reruns, up to `n` times within the same run and the same
@@ -114,7 +130,9 @@ from introspection_harbor.verifier import final_reply, load_trajectory, tool_cal
 
 trajectory = load_trajectory()
 final_reply(trajectory)  # the agent's last non-empty message
-tool_calls(trajectory)   # [{"name", "arguments", "result", "is_error"}], answered calls only
+tool_calls(
+    trajectory
+)  # [{"name", "arguments", "result", "is_error"}], answered calls only
 ```
 
 Add the package to the verifier's environment, for example

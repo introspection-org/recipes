@@ -13,7 +13,8 @@ import os
 import shlex
 import tempfile
 from collections.abc import Sequence
-from pathlib import Path, PurePosixPath
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, override
 from uuid import UUID
 
@@ -26,16 +27,15 @@ from harbor.agents.installed.base import (
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.task.config import MCPServerConfig
-from harbor.models.trajectories import Trajectory
-from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.trajectory_utils import compute_model_usage
+from introspection_sdk.schemas.genai_span import GenAiSpan
 
 from .trajectory import (
     ADAPTER_VERSION,
-    pi_events_to_atif,
-    pi_messages_to_atif,
-    pi_session_messages,
+    pi_messages,
     pi_terminal_provider_error,
+    read_spans,
+    spans_to_trajectory,
 )
 
 RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
@@ -81,6 +81,15 @@ RUNTIME_TELEMETRY_PRELOAD_PATH = (
 RUNTIME_PROVIDER_HTTP_EXTENSION_PATH = (
     "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js"
 )
+# The conversation as the platform's GenAI spans, beside Pi's own files in the
+# agent log directory. The Recipes extension writes it during the run, to the
+# path this variable names.
+SPANS_FILENAME = "genai-spans.json"
+SPANS_FILE_ENV = "PI_RECIPE_GENAI_SPANS_FILE"
+# When the step's Pi run started, in milliseconds on the trial's own clock: the
+# clock Pi stamps its messages with, so it separates this step's spans from
+# those of the steps a continued session also holds.
+STEP_START_FILENAME = "step-start-ms"
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 PROXY_KEY_ENV = "INTROSPECTION_PROXY_KEY"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
@@ -184,7 +193,10 @@ def pi_args(
         if candidate.get("agent"):
             args.extend(["--agent", candidate["agent"]])
         args.extend(["--replay-context", REMOTE_REPLAY_CONTEXT_PATH])
+        # After `--`: the CLI hydrates the replay into the session directory Pi
+        # is given, and leaves it there for the span rendering.
         args.extend(["--yes", "--non-interactive", "--"])
+        args.extend(["--session-dir", PI_SESSION_DIR])
     else:
         args = [
             "pi",
@@ -258,15 +270,25 @@ def recipe_run_command(
     prelude: str = "",
     recipe_dir: str = BAKED_RECIPE_DIR,
 ) -> str:
-    """Run Pi from the Recipe root, capturing its event stream for the trajectory.
+    """Run Pi from the Recipe root, capturing its event stream and GenAI spans.
+
+    The Recipes extension writes the spans itself, after every turn, so a run
+    Harbor cancels on a timeout still leaves the turns it finished: Harbor
+    reads the agent's output and runs the verifier after a timeout too.
 
     ``prelude`` is shell an adapter needs before the launch (a bootstrapped
     trial sources nvm so the Node it installed is the one that runs Pi).
     """
 
     output_path = f"/logs/agent/{shlex.quote(output_filename)}"
+    spans_path = f"/logs/agent/{SPANS_FILENAME}"
     return (
         f"{prelude}"
+        "node -e 'process.stdout.write(String(Date.now()))' "
+        f">/logs/agent/{STEP_START_FILENAME}; "
+        # Removed first, so the file is this run's or absent: never the one an
+        # earlier step left for a run that did not get as far as its session.
+        f"rm -f {spans_path}; export {SPANS_FILE_ENV}={spans_path}; "
         f"cd {recipe_dir} && "
         f"{managed_runtime_preloads_command()} "
         f"{shlex.join(args)} >{output_path} 2>&1 </dev/null; "
@@ -398,35 +420,47 @@ class RecipeAgentBase(BaseInstalledAgent):
         output_path = self.logs_dir / self._OUTPUT_FILENAME
         if not output_path.is_file():
             return
-        # This run alone: what the step cost.
-        trajectory = pi_events_to_atif(output_path)
+        spans_path = self.logs_dir / SPANS_FILENAME
+        if not spans_path.is_file() and not pi_messages(output_path.read_text()):
+            # Pi stopped before its session started, so there is no
+            # conversation and the run's own error is the one to report.
+            return
+        spans = read_spans(spans_path)
         # A continued step's verifier grades the conversation, so the file it
         # reads covers the earlier turns too, as Harbor's own resumable agents
         # write it. Harbor uploads this directory to the sandbox afterwards.
-        conversation = self._session_trajectory(len(trajectory.steps)) or trajectory
+        conversation = spans_to_trajectory(spans)
+        if conversation is None:
+            return
         (self.logs_dir / "trajectory.json").write_text(
             json.dumps(conversation.to_json_dict(), indent=2)
         )
-        if conversation is not trajectory:
+        # This run alone: what the step cost.
+        step_spans = self._step_spans(spans)
+        step = conversation
+        if len(step_spans) < len(spans):
+            step = spans_to_trajectory(step_spans)
             # Harbor fills a step's per-model usage from the file unless the
             # agent reports it, which would count the earlier steps again.
-            context.model_usage = compute_model_usage(trajectory)
-        if trajectory.final_metrics:
-            context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
-            context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
-            context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens
-            context.cost_usd = trajectory.final_metrics.total_cost_usd
+            context.model_usage = compute_model_usage(step) if step else {}
+        if step and step.final_metrics:
+            context.n_input_tokens = step.final_metrics.total_prompt_tokens
+            context.n_output_tokens = step.final_metrics.total_completion_tokens
+            context.n_cache_tokens = step.final_metrics.total_cached_tokens
+            context.cost_usd = step.final_metrics.total_cost_usd
         context.metadata = {
             "pi_events": self._OUTPUT_FILENAME,
             "atif": "trajectory.json",
             "introspection": (self._spec.get("input") or {}).get("metadata"),
         }
 
-    def _session_trajectory(self, step_count: int) -> Trajectory | None:
-        """The whole conversation, when the session holds more than this run."""
+    def _step_spans(self, spans: list[GenAiSpan]) -> list[GenAiSpan]:
+        """The spans of this step's Pi run; all of them without a start mark."""
 
-        sessions_dir = self.logs_dir / PurePosixPath(PI_SESSION_DIR).relative_to(
-            EnvironmentPaths().agent_dir
-        )
-        conversation = pi_messages_to_atif(pi_session_messages(sessions_dir))
-        return conversation if len(conversation.steps) > step_count else None
+        try:
+            started = datetime.fromtimestamp(
+                int((self.logs_dir / STEP_START_FILENAME).read_text()) / 1000, UTC
+            )
+        except (OSError, ValueError):
+            return spans
+        return [span for span in spans if span.start_time >= started]

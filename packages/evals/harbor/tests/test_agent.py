@@ -4,6 +4,7 @@ import json
 import shlex
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -13,6 +14,7 @@ from harbor.models.task.config import MCPServerConfig
 
 from introspection_harbor.base import (
     RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
+    STEP_START_FILENAME,
     managed_model_environment,
     managed_runtime_preloads_command,
     pi_args,
@@ -24,9 +26,9 @@ from introspection_harbor.base import (
 )
 from introspection_harbor.runtime_agent import IntrospectionRecipeAgent
 from introspection_harbor.trajectory import (
-    pi_events_to_atif,
-    pi_messages_to_atif,
     pi_terminal_provider_error,
+    read_spans,
+    spans_to_trajectory,
 )
 
 _AUTHORED_SPEC = {
@@ -42,6 +44,43 @@ def _agent(spec: dict) -> IntrospectionRecipeAgent:
     instance.mcp_servers = []
     instance._OUTPUT_FILENAME = "pi.jsonl"
     return instance
+
+
+def _spans(*turns: tuple[str, str, int]) -> str:
+    """Whole-prompt chat spans, as a Pi session renders: (prompt, reply, tokens).
+
+    Turn ``n`` starts ``n`` seconds into 2026-10-08T04:49.
+    """
+
+    history: list[dict] = []
+    data = []
+    for second, (prompt, reply, tokens) in enumerate(turns, start=1):
+        history.append({"role": "user", "parts": [{"type": "text", "content": prompt}]})
+        answer = {"role": "assistant", "parts": [{"type": "text", "content": reply}]}
+        data.append(
+            {
+                "trace_id": "session-1",
+                "span_id": f"span-{second}",
+                "start_time": f"2026-10-08T04:49:{second:02d}Z",
+                "attributes": {
+                    "gen_ai": {
+                        "conversation": {"id": "session-1"},
+                        "provider": {"name": "anthropic"},
+                        "response": {"model": "claude-sonnet-4-6"},
+                        "usage": {
+                            "input_tokens": tokens,
+                            "output_tokens": 2,
+                            "cache_read": {"input_tokens": 1},
+                        },
+                        "cost": {"usd": 0.5},
+                        "input": {"messages": list(history)},
+                        "output": {"messages": [answer]},
+                    }
+                },
+            }
+        )
+        history.append(answer)
+    return json.dumps({"object": "list", "data": data})
 
 
 class RunSpecTest(unittest.TestCase):
@@ -137,8 +176,11 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertIn("/tmp/introspection-replay-context.json", args)
         self.assertEqual(args[-1], "@/tmp/introspection-eval-prompt.md")
         self.assertNotIn("production prompt", args)
+        # The CLI owns the session file; the adapter only says where it lives,
+        # so the hydrated session is still there to render after Pi exits.
         self.assertNotIn("--session", args)
-        self.assertNotIn("--session-dir", args)
+        passthrough = args[args.index("--") + 1 :]
+        self.assertEqual(passthrough[:2], ["--session-dir", "/logs/agent/pi/sessions"])
         self.assertNotIn("provider-http-pi-extension.js", args)
 
     def test_resumed_step_continues_the_previous_pi_session(self) -> None:
@@ -187,7 +229,17 @@ class LaunchCommandTest(unittest.TestCase):
 
     def test_run_command_captures_events_and_preserves_exit_status(self) -> None:
         command = recipe_run_command(["pi", "--recipe", "x"], "pi.jsonl")
-        self.assertTrue(command.startswith("cd /opt/introspection/recipe && "))
+        # The step's start is marked first, on the trial's clock, and the run
+        # is told where to keep its spans, with an earlier step's file gone.
+        self.assertTrue(
+            command.startswith(
+                "node -e 'process.stdout.write(String(Date.now()))' "
+                ">/logs/agent/step-start-ms; "
+                "rm -f /logs/agent/genai-spans.json; "
+                "export PI_RECIPE_GENAI_SPANS_FILE=/logs/agent/genai-spans.json; "
+                "cd /opt/introspection/recipe && "
+            )
+        )
         self.assertIn(
             "if [ -f /usr/local/lib/introspection-runtime/proxy-preload.js ]; then",
             command,
@@ -344,15 +396,23 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         instance = _agent(_AUTHORED_SPEC)
         environment = Mock()
         environment.upload_file = AsyncMock()
-        captured: dict = {}
+
+        calls: list[dict] = []
 
         async def capture_exec(*args, **kwargs):
-            captured.update(kwargs)
+            calls.append(kwargs)
             return SimpleNamespace(stdout="")
 
         instance.exec_as_agent = capture_exec
         await instance.run.__wrapped__(
             instance, "large inline instruction", environment, Mock()
+        )
+        # One exec: the run writes its own spans, nothing renders them after.
+        (captured,) = calls
+        self.assertIn(
+            "rm -f /logs/agent/genai-spans.json; "
+            "export PI_RECIPE_GENAI_SPANS_FILE=/logs/agent/genai-spans.json; ",
+            captured["command"],
         )
 
         environment.upload_file.assert_awaited_once()
@@ -413,226 +473,136 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
 
 class TrajectoryTest(unittest.TestCase):
-    def test_trajectory_records_the_observed_model(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            events = Path(temp_dir) / "pi.jsonl"
-            events.write_text(
-                '{"type":"message_end","message":{"role":"assistant",'
-                '"provider":"openrouter","model":"deepseek/deepseek-v4-flash",'
-                '"content":[{"type":"text","text":"done"}],"usage":{}}}\n'
-            )
-            trajectory = pi_events_to_atif(events)
-            self.assertEqual(
-                trajectory.agent.model_name,
-                "openrouter/deepseek/deepseek-v4-flash",
-            )
-
-    def test_trajectory_links_tool_results_and_sums_usage(self) -> None:
-        events = [
-            {"type": "message_start"},
-            {
-                "type": "message_end",
-                "message": {"role": "user", "content": "write the greeting"},
-            },
-            {
-                "type": "message_end",
-                "message": {
-                    "role": "assistant",
-                    "provider": "anthropic",
-                    "model": "claude-sonnet-4-6",
-                    "content": [
-                        {"type": "thinking", "thinking": "call the tool"},
-                        {
-                            "type": "toolCall",
-                            "id": "call-1",
-                            "name": "write",
-                            "arguments": {"path": "/app/greeting.txt"},
-                        },
-                    ],
-                    "usage": {
-                        "input": 10,
-                        "output": 5,
-                        "cacheRead": 3,
-                        "cost": {"total": 0.25},
-                    },
-                },
-            },
-            {
-                "type": "message_end",
-                "message": {
-                    "role": "toolResult",
-                    "toolCallId": "call-1",
-                    "content": [{"type": "text", "text": "ok"}],
-                },
-            },
-        ]
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "pi.jsonl"
-            path.write_text("".join(json.dumps(event) + "\n" for event in events))
-            trajectory = pi_events_to_atif(path)
-
-        self.assertEqual([step.source for step in trajectory.steps], ["user", "agent"])
-        agent_step = trajectory.steps[1]
-        self.assertEqual(agent_step.reasoning_content, "call the tool")
-        self.assertEqual(agent_step.tool_calls[0].function_name, "write")
-        self.assertEqual(agent_step.observation.results[0].content, "ok")
-        metrics = trajectory.final_metrics
-        self.assertEqual(metrics.total_prompt_tokens, 10)
-        self.assertEqual(metrics.total_completion_tokens, 5)
-        self.assertEqual(metrics.total_cached_tokens, 3)
-        self.assertEqual(metrics.total_cost_usd, 0.25)
-
-    def test_pi_events_mark_a_failed_tool_result(self) -> None:
-        def call(call_id: str) -> dict:
-            return {
-                "role": "assistant",
-                "content": [{"type": "toolCall", "id": call_id, "name": "read"}],
-            }
-
-        def result(call_id: str, **fields: bool) -> dict:
-            return {
-                "role": "toolResult",
-                "toolCallId": call_id,
-                "content": [{"type": "text", "text": call_id}],
-                **fields,
-            }
-
-        trajectory = pi_messages_to_atif(
-            [
-                call("failed"),
-                result("failed", isError=True),
-                call("passed"),
-                result("passed", isError=False),
-                call("unmarked"),
-                result("unmarked"),
-            ]
-        )
-
-        extras = [step.observation.results[0].extra for step in trajectory.steps]
-        self.assertEqual(extras, [{"is_error": True}, None, None])
-
-    def test_post_run_writes_the_atif_trajectory_and_context_metrics(self) -> None:
+    def test_post_run_projects_the_spans_the_trial_rendered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             logs_dir = Path(temp_dir)
+            # Pi's own output disagrees on purpose: the spans are what is read.
             (logs_dir / "pi.jsonl").write_text(
                 '{"type":"message_end","message":{"role":"assistant",'
-                '"provider":"anthropic","model":"claude-sonnet-4-6",'
-                '"content":[{"type":"text","text":"done"}],'
-                '"usage":{"input":4,"output":2,"cacheRead":1,"cost":{"total":0.5}}}}\n'
+                '"content":[{"type":"text","text":"from pi"}],"usage":{}}}\n'
             )
+            (logs_dir / "genai-spans.json").write_text(_spans(("go", "done", 5)))
             spec = {**_AUTHORED_SPEC, "input": {"metadata": {"kind": "authored"}}}
             instance = _agent(spec)
-            instance.logs_dir = logs_dir
-            context = Mock()
-
-            instance.populate_context_post_run(context)
-
-            written = json.loads((logs_dir / "trajectory.json").read_text())
-            self.assertEqual(written["agent"]["name"], "introspection-recipe")
-            self.assertEqual(context.n_input_tokens, 4)
-            self.assertEqual(context.n_output_tokens, 2)
-            self.assertEqual(context.n_cache_tokens, 1)
-            self.assertEqual(context.cost_usd, 0.5)
-            self.assertEqual(context.metadata["introspection"], {"kind": "authored"})
-
-    def _continued_step(self, logs_dir: Path) -> None:
-        """A second step: Pi printed the approval turn; the session has both."""
-
-        def assistant(text: str, tokens: int) -> dict:
-            return {
-                "role": "assistant",
-                "provider": "anthropic",
-                "model": "claude-sonnet-4-6",
-                "content": [{"type": "text", "text": text}],
-                "usage": {"input": tokens, "output": 1, "cost": {"total": 0.25}},
-            }
-
-        def user(text: str) -> dict:
-            return {"role": "user", "content": [{"type": "text", "text": text}]}
-
-        review = [user("Send the email."), assistant("Please review.", 10)]
-        approval = [user("Approved."), assistant("Sent.", 4)]
-        (logs_dir / "pi.jsonl").write_text(
-            "".join(
-                json.dumps({"type": "message_end", "message": message}) + "\n"
-                for message in approval
-            )
-        )
-        sessions = logs_dir / "pi" / "sessions" / "--opt-introspection-recipe--"
-        sessions.mkdir(parents=True)
-        (sessions / "2026-10-08T04-49-00-000Z_session.jsonl").write_text(
-            json.dumps({"type": "session", "id": "session"})
-            + "\n"
-            + json.dumps({"type": "message", "message": {"role": "system"}})
-            + "\n"
-            + "".join(
-                json.dumps({"type": "message", "message": message}) + "\n"
-                for message in [*review, *approval]
-            )
-        )
-
-    def test_a_continued_step_reports_the_whole_conversation(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            logs_dir = Path(temp_dir)
-            self._continued_step(logs_dir)
-            instance = _agent(_AUTHORED_SPEC)
-            instance.logs_dir = logs_dir
-            context = Mock()
-
-            instance.populate_context_post_run(context)
-
-            written = json.loads((logs_dir / "trajectory.json").read_text())
-            self.assertEqual(
-                [(step["source"], step["message"]) for step in written["steps"]],
-                [
-                    ("user", "Send the email."),
-                    ("agent", "Please review."),
-                    ("user", "Approved."),
-                    ("agent", "Sent."),
-                ],
-            )
-            # Usage is this step's alone, so a trial does not count a turn twice.
-            self.assertEqual(context.n_input_tokens, 4)
-            self.assertEqual(context.cost_usd, 0.25)
-
-    def test_a_continued_step_reports_its_own_model_usage(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            logs_dir = Path(temp_dir)
-            self._continued_step(logs_dir)
-            instance = _agent(_AUTHORED_SPEC)
-            instance.logs_dir = logs_dir
-            context = Mock()
-
-            instance.populate_context_post_run(context)
-
-            usage = context.model_usage["anthropic/claude-sonnet-4-6"]
-            self.assertEqual(usage.n_input_tokens, 4)
-
-    def test_a_first_step_keeps_the_trajectory_of_its_own_run(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            logs_dir = Path(temp_dir)
-            message = {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "done"}],
-                "usage": {},
-            }
-            (logs_dir / "pi.jsonl").write_text(
-                json.dumps({"type": "message_end", "message": message}) + "\n"
-            )
-            sessions = logs_dir / "pi" / "sessions"
-            sessions.mkdir(parents=True)
-            (sessions / "session.jsonl").write_text(
-                json.dumps({"type": "message", "message": message}) + "\n"
-            )
-            instance = _agent(_AUTHORED_SPEC)
             instance.logs_dir = logs_dir
             context = Mock(spec=["metadata"])
 
             instance.populate_context_post_run(context)
 
             written = json.loads((logs_dir / "trajectory.json").read_text())
-            self.assertEqual(len(written["steps"]), 1)
+            self.assertEqual(context.metadata["introspection"], {"kind": "authored"})
+            self.assertEqual(written["schema_version"], "ATIF-v1.7")
+            self.assertEqual(written["session_id"], "session-1")
+            self.assertEqual(written["agent"]["name"], "introspection-recipe")
+            self.assertEqual(
+                [(step["source"], step["message"]) for step in written["steps"]],
+                [("user", "go"), ("agent", "done")],
+            )
+            self.assertEqual(context.n_input_tokens, 5)
+            self.assertEqual(context.n_output_tokens, 2)
+            self.assertEqual(context.n_cache_tokens, 1)
+            self.assertEqual(context.cost_usd, 0.5)
+            # The whole session is this step, so Harbor reads usage from the file.
             self.assertFalse(hasattr(context, "model_usage"))
+
+    def _continued_step(self, logs_dir: Path, started: str) -> None:
+        """A second step: the session holds the request turn and the approval."""
+
+        (logs_dir / "pi.jsonl").write_text("{}\n")
+        (logs_dir / "genai-spans.json").write_text(
+            _spans(("request", "drafted", 5), ("approve", "ok", 7))
+        )
+        milliseconds = int(datetime.fromisoformat(started).timestamp() * 1000)
+        (logs_dir / STEP_START_FILENAME).write_text(str(milliseconds))
+
+    def test_a_continued_step_reports_the_conversation_and_its_own_usage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            # The step's Pi run started between the two turns.
+            self._continued_step(logs_dir, "2026-10-08T04:49:01.500+00:00")
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+            context = Mock()
+
+            instance.populate_context_post_run(context)
+
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(
+                [step["message"] for step in written["steps"]],
+                ["request", "drafted", "approve", "ok"],
+            )
+            # Usage is this step's alone, so a trial does not count a turn twice.
+            self.assertEqual(context.n_input_tokens, 7)
+            self.assertEqual(context.cost_usd, 0.5)
+            usage = context.model_usage["anthropic/claude-sonnet-4-6"]
+            self.assertEqual(usage.n_input_tokens, 7)
+
+    def test_a_continued_step_without_a_model_call_reports_no_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            self._continued_step(logs_dir, "2026-10-08T04:50:00+00:00")
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+            context = Mock(spec=["metadata", "model_usage"])
+
+            instance.populate_context_post_run(context)
+
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(len(written["steps"]), 4)
+            self.assertEqual(context.model_usage, {})
+            self.assertFalse(hasattr(context, "n_input_tokens"))
+
+    def test_a_run_that_reached_the_model_without_spans_is_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            (logs_dir / "pi.jsonl").write_text(
+                json.dumps({"type": "message_end", "message": {"role": "assistant"}})
+            )
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+
+            with self.assertRaisesRegex(
+                FileNotFoundError, "PI_RECIPE_GENAI_SPANS_FILE"
+            ):
+                instance.populate_context_post_run(Mock())
+            self.assertFalse((logs_dir / "trajectory.json").exists())
+
+    def test_a_run_that_stopped_before_its_session_has_no_trajectory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            (logs_dir / "pi.jsonl").write_text("Error: Recipe not found\n")
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+
+            instance.populate_context_post_run(Mock())
+
+            self.assertFalse((logs_dir / "trajectory.json").exists())
+
+    def test_spans_that_cannot_be_read_are_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "genai-spans.json"
+            path.write_text("not json")
+            with self.assertRaises(ValueError):
+                read_spans(path)
+
+    def test_a_run_without_a_model_call_has_no_trajectory(self) -> None:
+        self.assertIsNone(spans_to_trajectory([]))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            (logs_dir / "pi.jsonl").write_text("{}\n")
+            # The canonical envelope the extension writes for an empty session.
+            (logs_dir / "genai-spans.json").write_text(
+                '{"object":"list","data":[],"first_id":null,"last_id":null,'
+                '"has_more":false,"next":null}'
+            )
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+
+            instance.populate_context_post_run(Mock())
+
+            self.assertFalse((logs_dir / "trajectory.json").exists())
 
     def test_completion_accepts_a_retry_that_ends_successfully(self) -> None:
         events = [
