@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.8.0...introspection-harbor-v0.9.0) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **harbor:** a Harbor trial needs Recipes 0.33.0 or later in its image, the first release that writes a run's GenAI spans to the file named by PI_RECIPE_GENAI_SPANS_FILE. A runtime whose image was baked on an older base fails after the agent run until a new version is baked. A bootstrapped image gets a current Recipes from `introspection setup`.
+
+### Features
+
+* **eval:** continue the Pi session across Harbor steps ([#458](https://github.com/introspection-org/introspection-cli/issues/458)) ([b746181](https://github.com/introspection-org/introspection-cli/commit/b746181d7715bbbc01eb22e357ec7c359b594d3c))
+* **eval:** retry Harbor trials that failed on infrastructure ([#489](https://github.com/introspection-org/introspection-cli/issues/489)) ([ff11ce1](https://github.com/introspection-org/introspection-cli/commit/ff11ce1e2d287154fe0441e47cddcae2ffcdf2b6))
+* **harbor:** add verifier helpers for reading the trajectory ([#482](https://github.com/introspection-org/introspection-cli/issues/482)) ([bda80d3](https://github.com/introspection-org/introspection-cli/commit/bda80d3d550e3a29f51c6d35ce248b32de8d75b7))
+* **harbor:** bind the MCP servers a task declares ([#480](https://github.com/introspection-org/introspection-cli/issues/480)) ([7bb00c0](https://github.com/introspection-org/introspection-cli/commit/7bb00c0b5c5b8fc6391088d4a425f3fba519a701))
+* **harbor:** build the trajectory from the platform's ATIF projection ([fef6c2e](https://github.com/introspection-org/introspection-cli/commit/fef6c2e9538571ed3efc16e717cb087d90f25d3f))
+* **harbor:** record a failed tool call in the ATIF trajectory ([#478](https://github.com/introspection-org/introspection-cli/issues/478)) ([fb8a2b3](https://github.com/introspection-org/introspection-cli/commit/fb8a2b3e321ac38646b6a509aa45a2badfee6a41))
+* **harbor:** write the whole conversation to a continued step's trajectory ([#476](https://github.com/introspection-org/introspection-cli/issues/476)) ([9510c48](https://github.com/introspection-org/introspection-cli/commit/9510c48746baf028b1a4bed4ea9763bd36e3179f))
+* **local:** keep a replayed session in the --session-dir passed to Pi ([fef6c2e](https://github.com/introspection-org/introspection-cli/commit/fef6c2e9538571ed3efc16e717cb087d90f25d3f))
+
+
+### Bug Fixes
+
+* **harbor:** keep Pi's subcommands first in the trial's pi launcher ([#502](https://github.com/introspection-org/introspection-cli/issues/502)) ([13744ab](https://github.com/introspection-org/introspection-cli/commit/13744ab33cc19949a9198a673a259eb935977956))
+* **harbor:** route a verifier's model calls through managed egress ([#464](https://github.com/introspection-org/introspection-cli/issues/464)) ([63e24dd](https://github.com/introspection-org/introspection-cli/commit/63e24dd4f783f8b9c10ed6ed080ce2799ef587b4))
+* **local:** resolve a relative replay --session-dir where Pi starts ([fef6c2e](https://github.com/introspection-org/introspection-cli/commit/fef6c2e9538571ed3efc16e717cb087d90f25d3f))
+
 ## [0.8.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.7.2...introspection-harbor-v0.8.0) (2026-09-28)
 
 
