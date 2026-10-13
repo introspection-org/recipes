@@ -48,17 +48,12 @@ The selected path and agent are exposed to Recipe-owned tools as
 
 ## GenAI spans
 
-Set `PI_RECIPE_GENAI_SPANS_FILE` to a path and the extension keeps the
-session there as the GenAI span list the platform's conversation export
-returns: one `chat` span per model call and one `execute_tool` span per tool
-result. It is what `pi-session-spans` prints for the session file, written by
-the run itself.
+Set `PI_RECIPE_GENAI_SPANS_FILE` to a path and the extension writes the
+session's GenAI spans there as JSON: one `chat` span per model call and one
+`execute_tool` span per tool result.
 
 The file is replaced when the session starts and after every turn, so a run
-that is killed still leaves the turns it finished. It covers the root session
-only, and its spans have no duration, because a session records one instant
-per message. A host that needs live spans passes `otel` to
-`createAgentSession` instead.
+that is killed still leaves the turns it finished.
 
 ## What is loaded
 
