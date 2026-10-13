@@ -73,7 +73,7 @@ export function renderCompletionNotice(
   });
   return [
     "<agent_run_completions>",
-    'The following background agent run(s) finished. This is a runtime notification, not a user message. Review the results, continue the task, and reply to the user with anything they need to know. Use the agent tool with action "status" and the run id for full output.',
+    'The following background agent run(s) finished. This is a runtime notification, not a user message. Review the results, continue the task, and reply to the user with anything they need to know. Use the agent tool with action "status" and the run id to read a result again.',
     "",
     blocks.join("\n\n"),
     "</agent_run_completions>",

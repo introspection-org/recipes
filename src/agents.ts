@@ -40,6 +40,8 @@ export interface AgentRunSummary {
   output_preview?: string;
   output?: string;
   error?: string;
+  /** Where the full output is kept, when the controller writes it to a file. */
+  output_artifact_path?: string;
 }
 
 /**
@@ -85,6 +87,11 @@ export function notifyAgentRunEvent(
 export interface AgentRunController {
   list(): AgentRunSummary[];
   get(id: string): AgentRunSummary | null;
+  /**
+   * Like `get`, for a controller that may have to load a run first, such as
+   * one a previous process persisted. `status` with an id prefers it.
+   */
+  read?(id: string): Promise<AgentRunSummary | null>;
   start(input: {
     name: string;
     prompt: string;
@@ -127,13 +134,39 @@ function runLine(run: AgentRunSummary): string {
   return `${run.invocation_name} (${run.agent_run_id}) — ${run.label} [${run.status}]`;
 }
 
-function statusBlock(run: AgentRunSummary): string {
+/** The least output `status` without an id shows per settled run. */
+const MIN_LISTED_OUTPUT_CHARS = 400;
+
+/**
+ * A run's line and, once it settled, its output capped at `limit` characters:
+ * a long result read through `status` or `wait` must not land whole in the
+ * caller's context. The full output stays where the controller keeps it.
+ */
+function statusBlock(
+  run: AgentRunSummary,
+  limit: number = OUTPUT_PREVIEW_CHARS
+): string {
   if (!terminal(run)) return runLine(run);
   const output =
     run.output?.trim() ||
     (run.error ? `Agent failed: ${run.error}` : `Agent ${run.status}.`);
-  return `${runLine(run)}\n${output}`;
+  if (output.length <= limit) return `${runLine(run)}\n${output}`;
+  const where = run.output_artifact_path
+    ? ` Full output: ${run.output_artifact_path}`
+    : "";
+  return `${runLine(run)}\n${output.slice(0, limit)}\n[Output truncated: showing ${limit} of ${output.length} characters.${where}]`;
 }
+
+/** Every run's status, with the output cap shared across the settled ones. */
+function statusList(runs: readonly AgentRunSummary[]): string {
+  const settled = runs.filter(terminal).length;
+  const limit = Math.max(
+    MIN_LISTED_OUTPUT_CHARS,
+    Math.floor(OUTPUT_PREVIEW_CHARS / Math.max(1, settled))
+  );
+  return runs.map((run) => statusBlock(run, limit)).join("\n\n");
+}
+
 
 function subtask(run: AgentRunSummary) {
   const nestedTools = [...(run.nested_tools ?? [])];
@@ -224,9 +257,7 @@ export function createAgentTool(
             content: [
               {
                 type: "text" as const,
-                text: runs.length
-                  ? runs.map(statusBlock).join("\n\n")
-                  : "No agent runs.",
+                text: runs.length ? statusList(runs) : "No agent runs.",
               },
             ],
             details: { agents: runs, subtasks: runs.map(subtask) },
@@ -238,7 +269,9 @@ export function createAgentTool(
         }
 
         if (params.action === "status") {
-          const run = controller.get(params.id);
+          const run = controller.read
+            ? await controller.read(params.id)
+            : controller.get(params.id);
           if (!run) return errorResult(`Unknown agent run: ${params.id}`, controller);
           acknowledge(run);
           return result(run, statusBlock(run));

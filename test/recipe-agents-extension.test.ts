@@ -137,3 +137,94 @@ describe("agent completion acknowledgement", () => {
     expect(runs.close).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("agent status output cap", () => {
+  const settled = (id: string, output: string, extra = {}) => ({
+    agent_run_id: id,
+    invocation_name: `verifier:${id}`,
+    agent_name: "explorer",
+    label: "Verify",
+    prompt: "Check",
+    status: "completed" as const,
+    started_at: 1,
+    completed_at: 2,
+    last_activity_at: 2,
+    output,
+    ...extra,
+  });
+  const text = (result: { content?: Array<{ type: string; text?: string }> }) => {
+    const content = result.content?.[0];
+    return content?.type === "text" ? (content.text ?? "") : "";
+  };
+
+  it("caps one run's output at 4,000 characters and names the full output file", async () => {
+    const runs = controller();
+    vi.mocked(runs.get).mockReturnValue(
+      settled("1", "x".repeat(10_501), {
+        output_artifact_path: ".pi/agents/1/output.md",
+      })
+    );
+    const tool = createAgentTool(runs, agents());
+
+    const out = text(
+      await tool.execute("c", { action: "status", id: "1" }, undefined, undefined, undefined as never)
+    );
+
+    expect(out).toContain("x".repeat(4_000));
+    expect(out).not.toContain("x".repeat(4_001));
+    expect(out).toContain(
+      "[Output truncated: showing 4000 of 10501 characters. Full output: .pi/agents/1/output.md]"
+    );
+  });
+
+  it("caps wait the same way and leaves short output whole", async () => {
+    const runs = controller();
+    vi.mocked(runs.wait).mockResolvedValue(settled("1", "y".repeat(5_000)));
+    vi.mocked(runs.get).mockReturnValue(settled("2", "short answer"));
+    const tool = createAgentTool(runs, agents());
+
+    const waited = text(
+      await tool.execute("c", { action: "wait", id: "1" }, undefined, undefined, undefined as never)
+    );
+    const short = text(
+      await tool.execute("c", { action: "status", id: "2" }, undefined, undefined, undefined as never)
+    );
+
+    expect(waited).toContain("[Output truncated: showing 4000 of 5000 characters.]");
+    expect(short).toBe("verifier:2 (2) — Verify [completed]\nshort answer");
+  });
+
+  it("shares the cap across every settled run when status has no id", async () => {
+    const runs = controller();
+    vi.mocked(runs.list).mockReturnValue([
+      settled("1", "a".repeat(10_000)),
+      settled("2", "b".repeat(10_000)),
+      { ...settled("3", ""), status: "running", output: undefined },
+    ]);
+    const tool = createAgentTool(runs, agents());
+
+    const out = text(
+      await tool.execute("c", { action: "status" }, undefined, undefined, undefined as never)
+    );
+
+    expect(out).toContain("a".repeat(2_000));
+    expect(out).not.toContain("a".repeat(2_001));
+    expect(out).not.toContain("b".repeat(2_001));
+    expect(out).toContain("verifier:3 (3) — Verify [running]");
+    expect(out.length).toBeLessThan(4_500);
+  });
+
+  it("reads a run through the controller's read when it has one", async () => {
+    const runs = controller();
+    runs.read = vi.fn(async () => settled("9", "loaded from disk"));
+    const tool = createAgentTool(runs, agents());
+
+    const out = text(
+      await tool.execute("c", { action: "status", id: "9" }, undefined, undefined, undefined as never)
+    );
+
+    expect(runs.read).toHaveBeenCalledWith("9");
+    expect(runs.get).not.toHaveBeenCalled();
+    expect(out).toContain("loaded from disk");
+  });
+});
