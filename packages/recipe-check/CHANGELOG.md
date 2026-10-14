@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.10.0...introspection-recipe-check-v0.11.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a mission judge's `attrs` key is now `attributes`; a judge still using `attrs` fails validation as an unknown field.
+
+### Features
+
+* **recipe-check:** name a mission judge's request attributes `attributes` ([#342](https://github.com/introspection-org/recipes/issues/342)) ([fa78f2f](https://github.com/introspection-org/recipes/commit/fa78f2ff8f52d8868ba58db7ba768735e9869426))
+
 ## [0.10.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.9.0...introspection-recipe-check-v0.10.0) (2026-10-11)
 
 
