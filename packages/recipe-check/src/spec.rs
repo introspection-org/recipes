@@ -198,8 +198,8 @@ pub struct MissionJudgeDefinition {
     pub kind: MissionJudgeKind,
     /// The request attributes Jev sees; empty shows them all.
     #[serde(default)]
-    #[cfg_attr(feature = "schema", schemars(schema_with = "attrs_schema"))]
-    pub attrs: Vec<String>,
+    #[cfg_attr(feature = "schema", schemars(schema_with = "attributes_schema"))]
+    pub attributes: Vec<String>,
     /// Questions by name; each name is the field its answer is read as.
     #[cfg_attr(feature = "schema", schemars(schema_with = "questions_schema"))]
     pub questions: BTreeMap<String, JudgeQuestion>,
@@ -332,10 +332,10 @@ pub fn validate_mission_judge(
     {
         spec_bail!("{context} has a description longer than 2000 characters");
     }
-    let mut attrs = HashSet::new();
-    for attr in &definition.attrs {
-        if attr.trim().is_empty() || !attrs.insert(attr) {
-            spec_bail!("{context} attrs must be distinct, non-empty attribute names");
+    let mut attributes = HashSet::new();
+    for attribute in &definition.attributes {
+        if attribute.trim().is_empty() || !attributes.insert(attribute) {
+            spec_bail!("{context} attributes must be distinct, non-empty attribute names");
         }
     }
     if definition.questions.is_empty() || definition.questions.len() > MAX_MISSION_JUDGE_QUESTIONS {
@@ -689,7 +689,7 @@ pub fn mission_judge_definition_json_schema() -> String {
 }
 
 #[cfg(feature = "schema")]
-fn attrs_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+fn attributes_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
         "description": "The request attributes Jev sees; empty shows them all.",
         "type": "array",
@@ -1069,7 +1069,7 @@ llm:
     const BOOKING_JUDGE: &str = "\
 name: booking
 type: mission
-attrs: [city]
+attributes: [city]
 questions:
   requested:
     instructions: Is this what the traveller asked for?
@@ -1112,7 +1112,7 @@ questions:
         let mission = parse_mission_judge_definitions(&sources).unwrap();
         assert_eq!(mission.len(), 1);
         let booking = &mission[0].definition;
-        assert_eq!(booking.attrs, ["city"]);
+        assert_eq!(booking.attributes, ["city"]);
         let requested = &booking.questions["requested"];
         assert_eq!(
             requested.instructions,
@@ -1136,7 +1136,7 @@ questions:
     fn mission_schema_mirrors_the_parser() {
         let schema: Value = serde_json::from_str(&mission_judge_definition_json_schema()).unwrap();
         let properties = &schema["properties"];
-        assert_eq!(properties["attrs"]["uniqueItems"], json!(true));
+        assert_eq!(properties["attributes"]["uniqueItems"], json!(true));
         assert_eq!(
             properties["questions"]["propertyNames"]["pattern"],
             json!("^[a-z_][a-z0-9_]*$")
