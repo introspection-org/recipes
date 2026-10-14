@@ -395,6 +395,25 @@ class VerifierEgressTest(unittest.TestCase):
 
         self.assertEqual(result["OPENAI_BASE_URL"], "http://gateway.example.test/v1")
 
+    def test_a_proxy_native_child_is_never_rewritten(self) -> None:
+        """Its HTTPS_PROXY already reaches every host; the egress URL is stale."""
+
+        proxy = "http://session:locator@egress:8080"
+        result = self._run(
+            {
+                "INTROSPECTION_EGRESS_PROXY_NATIVE": "1",
+                "INTROSPECTION_EGRESS_URL": "http://egress:8081",
+                "HTTP_PROXY": proxy,
+                "HTTPS_PROXY": proxy,
+            }
+        )
+
+        self.assertEqual(result["HTTP_PROXY"], proxy)
+        self.assertEqual(result["HTTPS_PROXY"], proxy)
+        self.assertNotIn("http_proxy", result)
+        self.assertNotIn("OPENAI_BASE_URL", result)
+        self.assertNotIn("ANTHROPIC_BASE_URL", result)
+
     def test_nothing_changes_without_child_egress(self) -> None:
         """A plain-HTTP base URL without the proxy would expose the key."""
 

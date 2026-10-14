@@ -159,6 +159,9 @@ VERIFIER_PROVIDER_BASE_URLS: dict[str, str] = {
     "ANTHROPIC_API_BASE": "http://api.anthropic.com",
 }
 CHILD_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL"
+# A proxy-native runtime reaches every host through `HTTPS_PROXY`, and the
+# egress swaps a credential placeholder inside the tunnel, so nothing is rewritten.
+CHILD_EGRESS_PROXY_NATIVE_ENV = "INTROSPECTION_EGRESS_PROXY_NATIVE"
 
 
 def is_verifier_command(command: str) -> bool:
@@ -180,7 +183,8 @@ def verifier_egress_command(command: str) -> str:
     The egress URL exists only in the child sandbox, so the shell resolves it
     there. The base URLs and the proxy are set together or not at all: a
     plain-HTTP base URL without the proxy would put the locator on the wire.
-    A base URL the task set itself in `[verifier.env]` is left alone.
+    A base URL the task set itself in `[verifier.env]` is left alone. A
+    proxy-native child is left alone entirely.
     """
 
     egress = f"${CHILD_EGRESS_URL_ENV}"
@@ -188,8 +192,10 @@ def verifier_egress_command(command: str) -> str:
         f'{name}="${{{name}:-{url}}}"'
         for name, url in VERIFIER_PROVIDER_BASE_URLS.items()
     )
+    native = f"${{{CHILD_EGRESS_PROXY_NATIVE_ENV}:-}}"
     return (
-        f'if [ -n "${{{CHILD_EGRESS_URL_ENV}:-}}" ]; then '
+        f'if [ -n "${{{CHILD_EGRESS_URL_ENV}:-}}" ] && '
+        f'[ "{native}" != 1 ] && [ "{native}" != true ]; then '
         f'export HTTP_PROXY="{egress}" http_proxy="{egress}" {exports}; '
         f"fi; {command}"
     )
