@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/mcp-fakes",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Serve a Recipe's MCP fakes from their captured contracts",
   "license": "Apache-2.0",
   "type": "module",
