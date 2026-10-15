@@ -1,0 +1,6 @@
+{
+  "server": { "name": "mail", "version": "0.1.0" },
+  "entities": ["emails"],
+  "settings": ["now"],
+  "tools": { "send-email": { "kind": "stateful", "reads": [], "writes": ["emails"] } }
+}

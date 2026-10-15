@@ -1,0 +1,20 @@
+{
+  "name": "notes-recipe",
+  "private": true,
+  "pi": {
+    "mcp": {
+      "servers": [
+        {
+          "id": "notes",
+          "transport": "streamable_http",
+          "tools": { "include": ["list-notes", "create-note", "get-note"] }
+        },
+        {
+          "id": "mail",
+          "transport": "streamable_http",
+          "tools": { "include": ["send-email"] }
+        }
+      ]
+    }
+  }
+}

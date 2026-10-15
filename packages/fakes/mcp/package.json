@@ -1,0 +1,46 @@
+{
+  "name": "@introspection-ai/mcp-fakes",
+  "version": "0.0.0",
+  "description": "Serve a Recipe's MCP fakes from their captured contracts",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./checks": {
+      "types": "./dist/checks.d.ts",
+      "import": "./dist/checks.js"
+    }
+  },
+  "bin": {
+    "mcp-fakes": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "esbuild": "0.28.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=22.18 <25"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

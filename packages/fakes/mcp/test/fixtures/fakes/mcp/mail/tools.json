@@ -1,0 +1,18 @@
+{
+  "tools": [
+    {
+      "name": "send-email",
+      "description": "Send an email.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "to": { "type": "array", "items": { "type": "string", "format": "email" }, "minItems": 1 },
+          "subject": { "type": "string" }
+        },
+        "required": ["to", "subject"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
