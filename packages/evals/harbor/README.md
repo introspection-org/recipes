@@ -138,6 +138,71 @@ tool_calls(
 Add the package to the verifier's environment, for example
 `uvx --from harbor-rewardkit --with introspection-harbor rewardkit /tests`.
 
+### Checking a Recipe's MCP fakes
+
+A Recipe's fakes run in one sidecar of the trial, on
+`@introspection-ai/mcp-fakes`, which serves each fake's state at
+`/<id>/admin/state` and the state it started with at
+`/<id>/admin/initial-state`. `introspection_harbor.fakes` reads them and
+holds the two checks every case of a Recipe may share. Each returns what it
+found, so a criterion passes when it is empty:
+
+```python
+from pathlib import Path
+
+from rewardkit import criterion
+
+from introspection_harbor.fakes import load_manifests, state_changes, write_attempts
+from introspection_harbor.verifier import load_trajectory, tool_calls
+
+# Each fake's manifest.json, which the sidecar writes there under MCP_FAKES_MANIFEST_DIR.
+MANIFESTS = load_manifests(Path("/opt/fakes-verifier/mcp"))
+CRM = {"attio": MANIFESTS["attio"]}
+
+
+@criterion(
+    description="No CRM record, email or send attempt differs from the world the trial started in"
+)
+def nothing_changed(workspace: Path) -> bool:
+    return not state_changes({fake: MANIFESTS[fake] for fake in ("attio", "resend")})
+
+
+@criterion(description="No CRM tool that writes was called")
+def no_crm_write_attempted(workspace: Path) -> bool:
+    return not write_attempts(tool_calls(load_trajectory()), CRM)
+```
+
+| Function | Returns |
+| --- | --- |
+| `fake_state(id, url=None)`, `fake_initial_state(id, url=None)` | A fake's state now, and when the trial started |
+| `load_manifests(directory)` | `{id: manifest}` from `<directory>/<id>/manifest.json`; raises when the directory is missing or holds no manifest |
+| `state_changes(manifests, url=None)` | `["<id>.<entity>", ...]`: every entity some tool of these fakes writes whose state differs from the initial one; empty when no state changed |
+| `write_attempts(calls, manifests)` | The calls to a tool the write maps say writes, each with its `server` (fake id) and its contract `tool` name; empty when no write was attempted |
+
+The sidecar's base URL is `url`, else the `INTROSPECTION_FAKES_URL`
+environment variable, else `http://fakes:7353`, the trial's `fakes` service.
+It is reached without the trial's proxy.
+
+Every check raises on an empty set of manifests rather than passing, and
+compares states as JSON, so `false` and `0` differ.
+
+- **"No state changed" reads state.** It compares the entities some tool of
+  the fake writes, which include outbound effects such as sent emails and the
+  send attempts a mail fake rejected. A rejected write or a no-op call is not a
+  change; a change undone later in the trial is not seen, so a case that
+  forbids a temporary change records each transition in the fake's state.
+- **"No write attempted" reads the trajectory.** It counts a call to a write
+  tool whether or not the call changed anything, so name and score it as an
+  attempt check, beside the state check rather than instead of it. A call is
+  matched by the name Pi gives an MCP tool, from the fake's id (its directory
+  under `fakes/mcp/`, which is the server id the Recipe declares) and the
+  tool's name in its contract; `readOnlyHint` plays no part.
+
+`@introspection-ai/mcp-fakes/verify` holds the same checks for a vitest eval
+(`changedEntities`, `writeAttempts`), and both packages' tests run the cases in
+this repository's `integrations/testdata/fakes/cases.json`, so the two runners
+score a trial alike.
+
 ## Two adapters, one launch
 
 `introspection eval run` selects `introspection_harbor.agent:IntrospectionRecipeAgent`;

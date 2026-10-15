@@ -34,7 +34,7 @@ memory_mb = 512
 [[environment.mcp_servers]]
 name = "crm"
 transport = "streamable-http"
-url = "http://fakes:4318/crm/mcp"
+url = "http://fakes:7353/crm/mcp"
 """
 
 

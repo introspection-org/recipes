@@ -381,7 +381,7 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         instance = _agent(_AUTHORED_SPEC)
         instance.mcp_servers = [
             MCPServerConfig(
-                name="attio", transport="http", url="http://fakes:4318/attio/mcp"
+                name="attio", transport="http", url="http://fakes:7353/attio/mcp"
             )
         ]
         instance.exec_as_agent = AsyncMock()
@@ -398,7 +398,7 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
                     {
                         "id": "attio",
                         "transport": "streamable_http",
-                        "url": "http://fakes:4318/attio/mcp",
+                        "url": "http://fakes:7353/attio/mcp",
                     }
                 ]
             },
