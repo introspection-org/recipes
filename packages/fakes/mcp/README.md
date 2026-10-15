@@ -113,6 +113,7 @@ import { world } from './scenarios/index.ts';
 
 const services = await startServices(fakes, { world, scenario: 'blocked', port: 0 });
 services.url('attio'); // http://127.0.0.1:<port>/attio/mcp
+services.mcpServers(); // [{ id: 'attio', transport: 'streamable_http', url: services.url('attio') }, …]
 services.states.attio; // the current state, changed in place by the handlers
 services.initial.attio; // the state it started with
 await services.close();
@@ -164,6 +165,95 @@ made to:
 is recorded with `result` holding it: `{"error":{"code":-32602,"message":"…"}}`.
 Recording is off unless asked; the fake keeps no call log otherwise.
 
+## In a vitest eval
+
+A Recipe's vitest eval starts its fakes itself, through the hooks of
+`@introspection-ai/vitest-evals`' `createRecipeHarness`: `beforeRun` starts a
+fresh world for each Pi session and binds it, and `collectArtifacts`, which
+runs after every turn, including a failed one, records each fake's state:
+
+```ts
+// evals/vitest/lib/harness.ts
+import { type Services, startServices } from '@introspection-ai/mcp-fakes';
+import { createRecipeHarness, type RecipeEvalInput } from '@introspection-ai/vitest-evals';
+import { fakes } from '../../../fakes/mcp/index.ts';
+import { type World, world } from '../../../fakes/scenarios/index.ts';
+
+export const harness = (scenario: string) =>
+  createRecipeHarness<RecipeEvalInput, Services<World>>({
+    beforeRun: async () => {
+      const services = await startServices(fakes, { world, scenario });
+      return { mcpServers: services.mcpServers(), fixture: services, teardown: services.close };
+    },
+    collectArtifacts: ({ fixture }) => ({
+      fakeStates: { initial: fixture.initial, final: structuredClone(fixture.states) },
+    }),
+  });
+```
+
+- `mcpServers()` binds every fake it serves, as
+  `{ id, transport: 'streamable_http', url }` on loopback. To bind only some,
+  pass only those to `startServices`.
+- The handlers change `states` in place, so a turn's artifact takes a copy; a
+  continued run shares the session's fakes, and its final state holds every
+  turn so far.
+- `teardown` runs once when the test finishes, so a continued run still
+  reaches the fakes.
+- The artifacts are JSON: a `World` declared as an `interface` is not
+  assignable to `JsonValue`, so declare it as a `type`, or cast it.
+
+What the agent called is in the run itself (vitest-evals'
+`toolCalls(run.session)`), not in the fakes, which keep only their state.
+
+## Checking a run
+
+`@introspection-ai/mcp-fakes/verify` holds the two checks a Recipe's cases
+share. It imports only Node built-ins, not the MCP SDK, esbuild or a test
+runner, so a judge or a `node --test` file can import it:
+
+```ts
+import { fileURLToPath } from 'node:url';
+import { changedEntities, type FakeStates, loadManifests, writeAttempts } from '@introspection-ai/mcp-fakes/verify';
+import { toolCalls } from 'vitest-evals';
+
+const manifests = loadManifests(fileURLToPath(new URL('../../../fakes/mcp', import.meta.url)));
+const crm = { attio: manifests.attio };
+
+const states = run.artifacts.fakeStates as FakeStates<World>;
+changedEntities(states, { attio: manifests.attio, resend: manifests.resend });
+// ['resend.sendAttempts']: no state changed when empty
+writeAttempts(toolCalls(run.session), crm);
+// the calls to a CRM write tool, each with `server` and `tool`: no write attempted when empty
+```
+
+| Export | Returns |
+| --- | --- |
+| `loadManifests(directory)` | `{ id: manifest }` from `<directory>/<id>/manifest.json`; throws when the directory is missing or holds no manifest |
+| `changedEntities(states, manifests)` | `['<id>.<entity>', …]`: every entity some tool of these fakes writes whose final state differs from the initial one |
+| `writeAttempts(calls, manifests)` | The calls to a tool the write maps say writes, each with its `server` (fake id) and its contract `tool` name |
+| `piToolNames(server, tool)` | The names Pi gives an MCP tool: hashed, and the readable form |
+| `FakeStates<T>`, `WriteMap`, `WriteAttempt<T>` | `{ initial, final }` keyed by fake id; the manifest fields the checks read; a call with its `server` and `tool` |
+
+`changedEntities` and `writeAttempts` throw on an empty set of manifests
+rather than report nothing, so a missing manifest never scores a pass. States
+compare as JSON values, so `false` and `0` differ.
+
+- **"No state changed" reads state.** The written entities include outbound
+  effects such as sent emails and the send attempts a mail fake rejected. A
+  rejected write or a no-op call is no change; a change undone within the run
+  is not seen, so a case that forbids a temporary change records each
+  transition in the fake's state.
+- **"No write attempted" is an attempt check.** It counts a call to a write
+  tool whether or not the call changed anything, so name and score it as an
+  attempt, beside the state check rather than instead of it. A call is matched
+  by the name Pi gives the tool, from the fake's id (its directory under
+  `fakes/mcp/`, which is the server id the Recipe declares) and the tool's
+  contract name; `readOnlyHint` plays no part.
+
+This package's tests run the checks on the cases in this repository's
+`integrations/testdata/fakes/cases.json`, which a Harbor verifier's port of
+them runs too, so the two runners score a run alike.
+
 ## The Harbor sidecar
 
 A plane builds the Harbor sidecar's image with no route to a package registry,
@@ -203,7 +293,7 @@ environment:
 
 `serveSidecar(fakes, world)` is that entrypoint, for a Recipe that writes its
 own. Under vitest the fakes start with `startServices` on an ephemeral port
-instead.
+instead ([In a vitest eval](#in-a-vitest-eval)).
 
 ## The tests a Recipe keeps
 

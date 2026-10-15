@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^@introspection-ai\/mcp-fakes\/checks$/, replacement: src("checks.ts") },
+      { find: /^@introspection-ai\/mcp-fakes\/verify$/, replacement: src("verify.ts") },
       { find: /^@introspection-ai\/mcp-fakes$/, replacement: src("index.ts") },
     ],
   },

@@ -11,7 +11,8 @@
     "skipLibCheck": true,
     "paths": {
       "@introspection-ai/mcp-fakes": ["./src/index.ts"],
-      "@introspection-ai/mcp-fakes/checks": ["./src/checks.ts"]
+      "@introspection-ai/mcp-fakes/checks": ["./src/checks.ts"],
+      "@introspection-ai/mcp-fakes/verify": ["./src/verify.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

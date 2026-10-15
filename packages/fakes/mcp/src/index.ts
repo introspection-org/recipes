@@ -14,6 +14,7 @@ export {
   type Fake,
   type Fakes,
   type Manifest,
+  type McpServerBinding,
   type RecordedCall,
   type ServiceOptions,
   type Services,

@@ -44,11 +44,16 @@ export interface ServiceOptions<W extends object> {
   record?: string;
 }
 
+/** A fake's MCP binding, in the shape a Recipe's `.pi/mcp.local.json` lists its servers. */
+export type McpServerBinding = { id: string; transport: "streamable_http"; url: string };
+
 export interface Services<W> {
   server: http.Server;
   port: number;
   /** A fake's MCP endpoint. */
   url: (id: string) => string;
+  /** Every fake's MCP binding, in the order of `fakes`. */
+  mcpServers: () => McpServerBinding[];
   /** Every fake's current state, which the handlers change in place. */
   states: W;
   /** Every fake's state when the services started. */
@@ -217,10 +222,13 @@ export async function startServices<W extends object>(
   await new Promise<void>((resolve) => server.listen(port, host, resolve));
   const actual = (server.address() as { port: number }).port;
   const reach = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+  const url = (id: string) => `http://${reach}:${actual}/${id}/mcp`;
   return {
     server,
     port: actual,
-    url: (id) => `http://${reach}:${actual}/${id}/mcp`,
+    url,
+    mcpServers: () =>
+      served.map(({ id }) => ({ id, transport: "streamable_http" as const, url: url(id) })),
     states,
     initial,
     async close() {

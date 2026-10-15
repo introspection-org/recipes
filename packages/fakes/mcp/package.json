@@ -12,6 +12,10 @@
     "./checks": {
       "types": "./dist/checks.d.ts",
       "import": "./dist/checks.js"
+    },
+    "./verify": {
+      "types": "./dist/verify.d.ts",
+      "import": "./dist/verify.js"
     }
   },
   "bin": {

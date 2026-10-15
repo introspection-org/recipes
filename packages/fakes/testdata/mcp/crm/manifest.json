@@ -1,0 +1,9 @@
+{
+  "server": { "name": "crm", "version": "0.1.0" },
+  "entities": ["deals"],
+  "settings": ["now"],
+  "tools": {
+    "list-deals": { "kind": "stateful", "reads": ["deals"], "writes": [] },
+    "update-deal": { "kind": "stateful", "reads": ["deals"], "writes": ["deals"] }
+  }
+}

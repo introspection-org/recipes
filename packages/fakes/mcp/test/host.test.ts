@@ -140,6 +140,32 @@ describe("the contract", () => {
   });
 });
 
+describe("mcpServers", () => {
+  test("binds every fake, in the order of fakes, to its own endpoint", async () => {
+    const { port, mcpServers } = await start();
+    expect(mcpServers()).toEqual([
+      { id: "mail", transport: "streamable_http", url: `http://127.0.0.1:${port}/mail/mcp` },
+      { id: "notes", transport: "streamable_http", url: `http://127.0.0.1:${port}/notes/mcp` },
+    ]);
+    for (const { id, url } of mcpServers()) {
+      const init = await rpc(url, "initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "0" },
+      });
+      expect(init.result.serverInfo.name).toBe(id);
+    }
+  });
+
+  test("reaches a host listening on every address through loopback", async () => {
+    const { port, mcpServers } = await start({ host: "0.0.0.0" });
+    expect(mcpServers().map((server) => server.url)).toEqual([
+      `http://127.0.0.1:${port}/mail/mcp`,
+      `http://127.0.0.1:${port}/notes/mcp`,
+    ]);
+  });
+});
+
 describe("state", () => {
   test("each fake keeps its own state, served beside the state it started with", async () => {
     const { url, port, states, initial } = await start({ clock: "2026-09-28T10:00:00Z" });

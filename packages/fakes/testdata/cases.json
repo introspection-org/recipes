@@ -1,0 +1,190 @@
+{
+  "comment": "Shared by @introspection-ai/mcp-fakes' test/verify.test.ts and introspection-harbor's tests/test_fakes.py, so both runners score the fakes' checks alike. The manifests are mcp/<id>/manifest.json beside this file unless a case gives its own; a case with an error expects the check to refuse with it, and a loadManifests directory is relative to this file.",
+  "stateChanges": [
+    {
+      "name": "a read changes nothing",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": "Proposal" }] },
+        "mail": { "blocked": ["ops@example.test"], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "deals": [{ "stage": "Proposal", "name": "Acme" }], "now": "2026-10-01T09:00:00Z" },
+        "mail": { "blocked": ["ops@example.test"], "emails": [], "sendAttempts": [] }
+      },
+      "changed": []
+    },
+    {
+      "name": "a write changes its entity",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": "Proposal" }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": "Won" }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "changed": ["crm.deals"]
+    },
+    {
+      "name": "a rejected send is an outbound effect the state keeps",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": ["ops@example.test"], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": ["ops@example.test"], "emails": [], "sendAttempts": [{ "to": "ops@example.test" }] }
+      },
+      "changed": ["mail.sendAttempts"]
+    },
+    {
+      "name": "a sent email changes both outbound entities",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": [], "emails": [{ "to": "alex@example.test" }], "sendAttempts": [{ "to": "alex@example.test" }] }
+      },
+      "changed": ["mail.emails", "mail.sendAttempts"]
+    },
+    {
+      "name": "a setting outside the write map is no change",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-02T09:00:00Z", "deals": [] },
+        "mail": { "blocked": ["ops@example.test"], "emails": [], "sendAttempts": [] }
+      },
+      "changed": []
+    },
+    {
+      "name": "a check scoped to one fake ignores the others",
+      "fakes": ["mail"],
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": "Proposal" }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "changed": []
+    },
+    {
+      "name": "a boolean that becomes a number is a change",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "won": false }] },
+        "mail": { "blocked": [], "emails": [{ "to": "alex@example.test", "read": true }], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "won": 0 }] },
+        "mail": { "blocked": [], "emails": [{ "to": "alex@example.test", "read": 1 }], "sendAttempts": [] }
+      },
+      "changed": ["crm.deals", "mail.emails"]
+    },
+    {
+      "name": "a number that becomes a boolean is a change",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": 1 }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [0] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "stage": true }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [false] }
+      },
+      "changed": ["crm.deals", "mail.sendAttempts"]
+    },
+    {
+      "name": "the same number written as a float is no change",
+      "initial": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "value": 1 }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "final": {
+        "crm": { "now": "2026-10-01T09:00:00Z", "deals": [{ "name": "Acme", "value": 1.0 }] },
+        "mail": { "blocked": [], "emails": [], "sendAttempts": [] }
+      },
+      "changed": []
+    },
+    {
+      "name": "no manifests is refused, never a pass",
+      "manifests": {},
+      "initial": {},
+      "final": {},
+      "error": "No fakes' manifests to check"
+    }
+  ],
+  "writeAttempts": [
+    {
+      "name": "every call to a write tool counts, whatever it did",
+      "calls": [
+        { "name": "mcp_crm_list-deals_606174a09a", "is_error": false },
+        { "name": "mcp_crm_update-deal_6372e5bd2c", "is_error": true },
+        { "name": "bash", "is_error": false },
+        { "name": "mcp_mail_send-email_e8aef5805a", "is_error": false }
+      ],
+      "attempts": [["crm", "update-deal"], ["mail", "send-email"]]
+    },
+    {
+      "name": "reads and built-in tools are no attempt",
+      "calls": [
+        { "name": "mcp_crm_list-deals_606174a09a", "is_error": false },
+        { "name": "bash", "is_error": false }
+      ],
+      "attempts": []
+    },
+    {
+      "name": "the readable name without the hash counts too",
+      "calls": [{ "name": "mcp_crm_update-deal", "is_error": false }],
+      "attempts": [["crm", "update-deal"]]
+    },
+    {
+      "name": "a check scoped to one fake ignores the others' writes",
+      "fakes": ["mail"],
+      "calls": [
+        { "name": "mcp_crm_update-deal_6372e5bd2c", "is_error": false },
+        { "name": "mcp_mail_send-email_e8aef5805a", "is_error": false }
+      ],
+      "attempts": [["mail", "send-email"]]
+    },
+    {
+      "name": "a server is matched by its fake id, the id the Recipe declares",
+      "manifests": {
+        "lightfield-app": {
+          "tools": { "update-deal": { "reads": [], "writes": ["deals"] } }
+        }
+      },
+      "calls": [
+        { "name": "mcp_lightfield-app_update-deal", "is_error": false },
+        { "name": "mcp_lightfield_update-deal", "is_error": false }
+      ],
+      "attempts": [["lightfield-app", "update-deal"]]
+    },
+    {
+      "name": "no manifests is refused, never a pass",
+      "manifests": {},
+      "calls": [{ "name": "mcp_crm_update-deal_6372e5bd2c", "is_error": false }],
+      "error": "No fakes' manifests to check"
+    }
+  ],
+  "loadManifests": [
+    { "name": "loads each fake's manifest by its id", "directory": "mcp", "fakes": ["crm", "mail"] },
+    { "name": "a missing directory is refused", "directory": "missing", "error": "No fakes' manifest directory at" },
+    { "name": "a directory without a fake's manifest is refused", "directory": "mcp/crm", "error": "No fake's manifest.json under" }
+  ],
+  "piToolNames": [
+    ["crm", "update-deal", "mcp_crm_update-deal_6372e5bd2c"],
+    ["crm", "list-deals", "mcp_crm_list-deals_606174a09a"],
+    ["mail", "send-email", "mcp_mail_send-email_e8aef5805a"],
+    ["lightfield-app", "write_to_lightfield", "mcp_lightfield-app_write_to_lightfield_53b800fa51"],
+    [
+      "a-very-long-server-identifier-for-testing",
+      "an.even.longer/tool name that overflows",
+      "mcp_a-very-long-server-identifier-for-testing_an_even_d4efdb5bc0"
+    ]
+  ]
+}
