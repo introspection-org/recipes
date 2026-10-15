@@ -23,6 +23,7 @@ import {
   type McpCatalogServer,
   type McpDaemonEnvelope,
   type McpDaemonRequest,
+  type McpServerIdentity,
   serializeMcpDaemonEnvelope,
 } from "./protocol.js";
 import { mcpDaemonRequestContext } from "../trace-context.js";
@@ -297,6 +298,21 @@ async function executeRequest(
   }
 }
 
+// The call just used this connection, so `connect` returns it from mcporter's
+// cache rather than dialling again.
+async function serverIdentity(
+  rt: McpRuntime,
+  server: string
+): Promise<McpServerIdentity | undefined> {
+  try {
+    const { client } = await rt.connect(server, { disableOAuth: true });
+    const info = client.getServerVersion();
+    return info ? { name: info.name, version: info.version } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function callTool(
   request: Extract<McpDaemonRequest, { type: "call" }>,
   socket: Socket
@@ -338,22 +354,22 @@ async function callToolRequest(
         `MCP tool call '${request.server}.${request.tool}' was cancelled before execution.`
       );
     }
-    const result = await runtime().then((value) => {
-      dispatched = true;
-      return value.callTool(request.server, request.tool, {
-        args: request.arguments,
-        timeoutMs: request.timeoutMs,
-        disableOAuth: true,
-      });
+    const rt = await runtime();
+    dispatched = true;
+    const result = await rt.callTool(request.server, request.tool, {
+      args: request.arguments,
+      timeoutMs: request.timeoutMs,
+      disableOAuth: true,
     });
     if (controller.signal.aborted) {
       throw new Error(
         `MCP tool call '${request.server}.${request.tool}' was cancelled; remote outcome is unknown.`
       );
     }
+    const server = await serverIdentity(rt, request.server);
     send(
       socket,
-      { id: request.id, result },
+      { id: request.id, result, ...(server ? { server } : {}) },
       `MCP tool call '${request.server}.${request.tool}' completed but its response could not be returned; remote outcome is unknown; do not retry automatically.`
     );
   } catch (error) {

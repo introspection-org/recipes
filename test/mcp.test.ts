@@ -415,6 +415,7 @@ describe("static MCP session materialization", () => {
 
       expect(session.servers).toHaveLength(1);
       expect(session.servers[0]?.catalog).toBeUndefined();
+      expect(session.servers[0]?.binding).toBeUndefined();
       expect(mcpSessionAllowsTool(session.servers[0]!, "search_profiles")).toBe(
         true
       );
@@ -430,6 +431,53 @@ describe("static MCP session materialization", () => {
       expect(JSON.parse(serializedTransport).mcpServers.nextplay.httpFetch).toBe(
         "default"
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records where the host bound each server from", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-binding-"));
+    try {
+      const cwd = join(root, "workspace");
+      const recipeDir = join(root, "recipe");
+      mkdirSync(recipeDir, { recursive: true });
+      const local = writeLocalConfig(cwd, [
+        {
+          id: "attio",
+          transport: "streamable_http",
+          url: "http://127.0.0.1:9/attio/mcp",
+        },
+        {
+          id: "notion",
+          transport: "streamable_http",
+          url: "http://127.0.0.1:9/notion/mcp",
+        },
+      ]);
+      const session = await materializeMcpSession({
+        cwd,
+        env: { PI_RECIPES_MCP_LOCAL_CONFIG: local },
+        manifest: recipeManifest(recipeDir, [
+          { id: "attio", include: ["*"] },
+          { id: "notion", include: ["*"] },
+        ]),
+        agentMcp: [
+          { serverId: "attio", tools: { include: ["*"] } },
+          { serverId: "notion", tools: { include: ["*"] } },
+        ],
+        bindingOrigins: { Attio: "recipe" },
+      });
+
+      expect(
+        session.servers.map((server) => [server.id, server.binding])
+      ).toEqual([
+        ["attio", "recipe"],
+        ["notion", undefined],
+      ]);
+      expect(
+        JSON.parse(readFileSync(defaultMcpSessionPath(cwd), "utf8")).servers[0]
+          .binding
+      ).toBe("recipe");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1097,12 +1145,18 @@ describe("lazy MCP CLI discovery", () => {
       expect(catalogs.find((server) => server.id === "stub")?.error).toBeFalsy();
       expect(catalogs.find((server) => server.id === "offline")?.error).toBeTruthy();
       const listAttempts = stub.stats.list;
+      const initializeAttempts = stub.stats.initialize;
 
+      const identities: unknown[] = [];
       const result = await callMcpDaemonTool(
         "stub",
         "search_profiles",
         { query: "Ada" },
-        { env, timeoutMs: 1_000 }
+        {
+          env,
+          timeoutMs: 1_000,
+          onServer: (server) => identities.push(server),
+        }
       );
 
       expect(result).toEqual(
@@ -1114,6 +1168,9 @@ describe("lazy MCP CLI discovery", () => {
         })
       );
       expect(stub.stats.list).toBe(listAttempts);
+      expect(identities).toEqual([{ name: "stub", version: "1.0.0" }]);
+      // Reading the identity reuses the call's connection.
+      expect(stub.stats.initialize).toBe(initializeAttempts);
     } finally {
       await stopMcpDaemon(env).catch(() => {});
       stub.server.close();
