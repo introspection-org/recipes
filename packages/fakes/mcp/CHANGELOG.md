@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.1.0...mcp-fakes-v0.2.0) (2026-10-15)
+
+
+### Features
+
+* **mcp-fakes:** the fakes' checks on a /verify subpath, and mcpServers() for a harness's beforeRun ([#526](https://github.com/introspection-org/introspection-cli/issues/526)) ([f5a3744](https://github.com/introspection-org/introspection-cli/commit/f5a37444f72b80812a2be235d5f5089a1f75f68a))
+
 ## 0.1.0 (2026-10-15)
 
 
