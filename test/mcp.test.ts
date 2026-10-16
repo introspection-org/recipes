@@ -1145,18 +1145,12 @@ describe("lazy MCP CLI discovery", () => {
       expect(catalogs.find((server) => server.id === "stub")?.error).toBeFalsy();
       expect(catalogs.find((server) => server.id === "offline")?.error).toBeTruthy();
       const listAttempts = stub.stats.list;
-      const initializeAttempts = stub.stats.initialize;
 
-      const identities: unknown[] = [];
       const result = await callMcpDaemonTool(
         "stub",
         "search_profiles",
         { query: "Ada" },
-        {
-          env,
-          timeoutMs: 1_000,
-          onServer: (server) => identities.push(server),
-        }
+        { env, timeoutMs: 1_000 }
       );
 
       expect(result).toEqual(
@@ -1168,9 +1162,6 @@ describe("lazy MCP CLI discovery", () => {
         })
       );
       expect(stub.stats.list).toBe(listAttempts);
-      expect(identities).toEqual([{ name: "stub", version: "1.0.0" }]);
-      // Reading the identity reuses the call's connection.
-      expect(stub.stats.initialize).toBe(initializeAttempts);
     } finally {
       await stopMcpDaemon(env).catch(() => {});
       stub.server.close();

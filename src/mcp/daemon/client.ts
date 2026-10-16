@@ -12,7 +12,6 @@ import {
   MCP_SESSION_ROOT_ENV,
   type McpDaemonEnvelope,
   type McpDaemonRequest,
-  type McpServerIdentity,
 } from "./protocol.js";
 import { mcpTraceContextFromEnv } from "../trace-context.js";
 
@@ -163,8 +162,6 @@ export async function callMcpDaemonTool(
     env?: NodeJS.ProcessEnv;
     signal?: AbortSignal;
     timeoutMs?: number;
-    /** Receives the server's `initialize` identity with a returned result. */
-    onServer?: (server: McpServerIdentity) => void;
   } = {}
 ): Promise<unknown> {
   const env = options.env ?? process.env;
@@ -241,7 +238,6 @@ export async function callMcpDaemonTool(
       if ("result" in envelope) {
         result = envelope.result;
         hasResult = true;
-        if (envelope.server) options.onServer?.(envelope.server);
         socket.end();
       } else if ("error" in envelope) {
         daemonError = envelope.error;

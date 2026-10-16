@@ -7,10 +7,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { callMcpDaemonTool } from "./daemon/client.js";
-import type {
-  McpCatalogServer,
-  McpServerIdentity,
-} from "./daemon/protocol.js";
+import type { McpCatalogServer } from "./daemon/protocol.js";
 import { mcpSelectionAllowsTool } from "./policy.js";
 import type {
   McpServerBinding,
@@ -48,8 +45,6 @@ export interface McpToolOrigin {
   /** The tool's name in the server's contract. */
   toolName: string;
   binding?: McpServerBinding;
-  serverName?: string;
-  serverVersion?: string;
 }
 
 export interface McpToolSet {
@@ -59,10 +54,7 @@ export interface McpToolSet {
   deferredToolNames: string[];
   diagnostics: string[];
   canonicalToPiName: ReadonlyMap<string, string>;
-  /**
-   * The server serving a tool, by Pi tool name. The server's identity is
-   * known once a call has returned from it.
-   */
+  /** The server serving a tool, by Pi tool name. */
   mcpToolOrigin: (piName: string) => McpToolOrigin | undefined;
 }
 
@@ -627,19 +619,14 @@ export function createMcpToolSet(options: {
     piNames.add(tool.piName);
   }
 
-  const serverIdentities = new Map<string, McpServerIdentity>();
   const usableByPiName = new Map(usable.map((tool) => [tool.piName, tool]));
   const mcpToolOrigin = (piName: string): McpToolOrigin | undefined => {
     const tool = usableByPiName.get(piName);
     if (!tool) return undefined;
-    const identity = serverIdentities.get(tool.serverId);
     return {
       serverId: tool.serverId,
       toolName: tool.catalog.name,
       ...(tool.binding ? { binding: tool.binding } : {}),
-      ...(identity
-        ? { serverName: identity.name, serverVersion: identity.version }
-        : {}),
     };
   };
 
@@ -676,8 +663,6 @@ export function createMcpToolSet(options: {
             options.env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
             DEFAULT_CALL_TIMEOUT_MS
           ),
-          onServer: (identity) =>
-            serverIdentities.set(tool.serverId, identity),
         }
       );
       return validateResult(tool, raw, options.env);

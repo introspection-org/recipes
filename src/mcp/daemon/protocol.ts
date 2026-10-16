@@ -64,12 +64,6 @@ export interface McpDaemonCallRequest {
   trace?: McpDaemonTraceContext;
 }
 
-/** What an MCP server answered in `initialize` as its `serverInfo`. */
-export interface McpServerIdentity {
-  name: string;
-  version: string;
-}
-
 export interface McpCatalogServer {
   id: string;
   name: string;
@@ -89,7 +83,7 @@ export type McpDaemonEnvelope =
   | { id: string; stream: "stdout" | "stderr"; data: string }
   | { id: string; ready: true; fingerprint: string }
   | { id: string; catalogs: McpCatalogServer[] }
-  | { id: string; result: unknown; server?: McpServerIdentity }
+  | { id: string; result: unknown }
   | { id: string; exitCode: number }
   | { id: string; error: string };
 

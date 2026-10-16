@@ -114,13 +114,7 @@ describe("MCP tools mode", () => {
     );
   });
 
-  it("names the MCP origin of each tool for its span, from the server's identity once a call returns", async () => {
-    mocks.callMcpDaemonTool.mockImplementation(
-      async (_server, _tool, _args, options) => {
-        options.onServer?.({ name: "nextplay-mcp", version: "3.1.0" });
-        return { content: [{ type: "text", text: "ok" }] };
-      }
-    );
+  it("names the MCP origin of each tool for its span", () => {
     const { materialized } = createTools({
       mode: "tools",
       servers: { nextplay: { include: ["*"] } },
@@ -133,22 +127,6 @@ describe("MCP tools mode", () => {
       binding: "live",
     });
     expect(materialized.mcpToolOrigin("bash")).toBeUndefined();
-
-    const tool = materialized.tools.find((entry) => entry.name === piName)!;
-    await (tool.execute as any)("call-1", {}, undefined, undefined);
-
-    expect(materialized.mcpToolOrigin(piName)).toEqual({
-      serverId: "nextplay",
-      toolName: "get_profiles",
-      binding: "live",
-      serverName: "nextplay-mcp",
-      serverVersion: "3.1.0",
-    });
-    expect(
-      materialized.mcpToolOrigin(
-        materialized.canonicalToPiName.get("nextplay.search_talent")!
-      )
-    ).toMatchObject({ serverName: "nextplay-mcp", serverVersion: "3.1.0" });
   });
 
   it("returns deferred tools for Recipe tool search", () => {
