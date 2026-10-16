@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.9.0...introspection-harbor-v0.10.0) (2026-10-15)
+
+
+### Features
+
+* **harbor:** verifier helpers for a Recipe's MCP fakes ([#520](https://github.com/introspection-org/introspection-cli/issues/520)) ([2389374](https://github.com/introspection-org/introspection-cli/commit/2389374a4024bc44554fb8cd20aa153e8feedb4e))
+* **proxy:** send proxy-native sessions through the env proxy ([#499](https://github.com/introspection-org/introspection-cli/issues/499)) ([7ffc16d](https://github.com/introspection-org/introspection-cli/commit/7ffc16d8918a79873422023d71ed898e1947174b))
+
 ## [0.9.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.8.0...introspection-harbor-v0.9.0) (2026-10-13)
 
 
