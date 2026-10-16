@@ -1,5 +1,9 @@
 {
-  "server": { "name": "mail", "version": "0.1.0" },
+  "server": {
+    "name": "mail",
+    "version": "0.1.0",
+    "icons": [{ "src": "https://mail.example.test/icon.svg", "theme": "dark" }]
+  },
   "entities": ["emails"],
   "settings": ["now"],
   "tools": { "send-email": { "kind": "stateful", "reads": [], "writes": ["emails"] } }

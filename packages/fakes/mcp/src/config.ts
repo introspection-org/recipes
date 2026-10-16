@@ -111,6 +111,16 @@ export function unfilledDefaults(schema: unknown, path = "", filled = false): st
 }
 
 /**
+ * Whether a captured `execution` is the protocol's default, `taskSupport: "forbidden"`, which a
+ * tool served without `execution` declares too.
+ */
+export function isDefaultExecution(execution: object | undefined): boolean {
+  if (execution === undefined) return true;
+  const { taskSupport = "forbidden", ...rest } = execution as { taskSupport?: unknown };
+  return taskSupport === "forbidden" && !Object.keys(rest).length;
+}
+
+/**
  * Binds a fake's captured `tools.json` and its generated `Contract`, and returns its `config`:
  * `server.registerTool(name, config(name), callback)`.
  */
@@ -119,9 +129,12 @@ export function toolConfig<C extends { [N in keyof C]: ContractEntry }>(listed: 
     const index = listed.tools.findIndex((item) => item.name === name);
     if (index < 0) throw new Error(`${name} is not in tools.json`);
     const tool = listed.tools[index];
-    // registerTool in the SDK 2.3.1 drops `execution`; serving the tool without it would change
-    // the contract.
-    if (tool.execution) throw new Error(`${name} declares execution, which the SDK cannot serve`);
+    // registerTool in the SDK 2.3.1 drops `execution`, which is the same contract only for the
+    // default.
+    if (!isDefaultExecution(tool.execution))
+      throw new Error(
+        `${name} declares execution ${JSON.stringify(tool.execution)}, which the SDK cannot serve`,
+      );
     const unfilled = unfilledDefaults(tool.inputSchema);
     if (unfilled.length)
       throw new Error(

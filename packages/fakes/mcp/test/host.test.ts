@@ -6,6 +6,7 @@ import { type ServiceOptions, type Services, startServices } from "../src/index.
 import { callTool, rpc, VALIDATION } from "./client.js";
 import { fakes } from "./fixtures/fakes/mcp/index.js";
 import { type World, world } from "./fixtures/fakes/scenarios/index.js";
+import mailTools from "./fixtures/fakes/mcp/mail/tools.json" with { type: "json" };
 import notesTools from "./fixtures/fakes/mcp/notes/tools.json" with { type: "json" };
 
 const running: Services<World>[] = [];
@@ -41,6 +42,21 @@ describe("the contract", () => {
       clientInfo: { name: "test", version: "0" },
     });
     expect(init.result.serverInfo).toEqual({ name: "notes", version: "1.2.3" });
+    const mail = await rpc(url("mail"), "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "test", version: "0" },
+    });
+    expect(mail.result.serverInfo.icons).toEqual([
+      { src: "https://mail.example.test/icon.svg", theme: "dark" },
+    ]);
+  });
+
+  test("serves a tool captured with the default task support without execution", async () => {
+    const { url } = await start();
+    const { execution, ...served } = mailTools.tools[0];
+    expect(execution).toEqual({ taskSupport: "forbidden" });
+    expect((await rpc(url("mail"), "tools/list")).result.tools).toEqual([served]);
   });
 
   test("validates arguments against the captured schema before a handler runs", async () => {

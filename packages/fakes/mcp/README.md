@@ -38,7 +38,10 @@ fakes/
 ```
 
 `mcp/index.ts` exports `fakes`, an object keyed by server id whose values are
-the fakes' modules: each exports its `manifest` and `register`. A fake's id is
+the fakes' modules: each exports its `manifest` and `register`. A fake's
+`index.ts` re-exports `manifest.json` as imported, with no cast: `Manifest`
+takes the strings a JSON import widens, and the host refuses a value the
+protocol does not allow, such as an icon `theme` other than `light` or `dark`. A fake's id is
 its directory under `mcp/` and the server id the Recipe declares in its
 `package.json`. `scenarios/index.ts` exports `world(scenario, clock)` and the
 scenarios by name.
@@ -73,8 +76,11 @@ export function register(server: McpServer, state: State) {
 - **`config(name)`** carries the tool's title, description, annotations, icons
   and `_meta` as captured, and its input and output schemas wrapped with
   `fromJsonSchema`. It refuses a tool that is not in `tools.json`, a tool that
-  declares `execution` (the SDK cannot serve it), and an input schema that
-  states a default below the top level (the host would not fill it).
+  declares `execution` with `taskSupport` `optional` or `required` (the SDK
+  cannot serve it), and an input schema that states a default below the top
+  level (the host would not fill it). A tool declaring `"taskSupport":
+  "forbidden"`, the protocol's default and what servers such as Attio declare
+  on every tool, is served without `execution`, which means the same.
 - **Register in the order `tools.json` gives.** The SDK lists tools in the
   order they are registered, so the served list then matches the capture.
 - **`text(value, isError?)`** builds a text result.
@@ -267,7 +273,13 @@ npx mcp-fakes bundle --check    # exits 1 when dist/sidecar.js is stale
 ```
 
 `--fakes` (default `mcp/index.ts`), `--scenarios` (`scenarios/index.ts`) and
-`--out` (`dist/sidecar.js`) name other paths. Rebuild after any change under
+`--out` (`dist/sidecar.js`) name other paths. The bundle does not depend on
+how the packages were installed: it is minified, since an unminified bundle
+names each module, in a comment and as a CommonJS module's key, by where npm
+(`node_modules/zod/…`) or pnpm (`node_modules/.pnpm/zod@…/node_modules/zod/…`)
+put it. Function names are kept, so a stack trace still names its functions.
+The bundler refuses a bundle naming `node_modules/.pnpm/` or the directory it
+ran in or bundled from. Rebuild after any change under
 `fakes/` or a version bump of this package. The Recipe needs no entrypoint
 file; the image copies `fakes/` and runs the bundle:
 
@@ -319,7 +331,7 @@ checkRecipeFakes({
 
 | Test | Fails when |
 | --- | --- |
-| `<id> serves the Recipe's allowed tools from tools.json, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools.include` names, in `tools.json`'s order |
+| `<id> serves the Recipe's allowed tools from tools.json, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools.include` names, in `tools.json`'s order; a captured `"taskSupport": "forbidden"` equals a tool served without `execution` |
 | `<id> maps every allowed tool to its entities` | The manifest's `tools` are not the allow-list, a tool's kind is not `stateful` or `static`, it names an entity outside `entities`, or its writes contradict `readOnlyHint` |
 | `<id> has no static tool over an entity a tool writes or a world fills` | A static tool writes, or reads an entity some tool writes or some scenario's world fills |
 | `the <scenario> world is consistent` | The world lacks a fake's state, or `consistent` throws |
@@ -343,8 +355,47 @@ tools served in order, arguments validated against the captured schema
 (formats included), defaults filled, an unread argument ignored, an
 unimplemented value refused as a tool error, an unknown tool, the output
 schema enforced, the state routes and file, recording, the start-up check,
-configs from a second loaded copy of the package, and the bundle, the sidecar
-and `--check`. A Recipe does not repeat them.
+configs from a second loaded copy of the package, and the bundle, its
+independence from the install layout, the sidecar and `--check`. A Recipe
+does not repeat them.
+
+### The fake's contract tests
+
+What only the Recipe knows, its fake's semantics, it tests itself: a schema
+rejection, an empty and a missing result, pagination, a read after a write, an
+injected failure, isolation. Call the fake with the official MCP client,
+`@modelcontextprotocol/client` 2.3.1 (the version of the
+`@modelcontextprotocol/server` this host is built on), a dev dependency of the
+Recipe's `fakes/`:
+
+```js
+// fakes/tests/notes.test.js
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { startServices } from '@introspection-ai/mcp-fakes';
+import { fakes } from '../mcp/index.ts';
+import { world } from '../scenarios/index.ts';
+
+test('a note written is read back', async () => {
+  const services = await startServices(fakes, { world, scenario: 'quiet' });
+  const client = new Client({ name: 'notes-contract', version: '0' });
+  await client.connect(new StreamableHTTPClientTransport(new URL(services.url('notes'))));
+  try {
+    await client.callTool({ name: 'create-note', arguments: { title: 'Renewal' } });
+    const read = await client.callTool({ name: 'get-note', arguments: { id: 'note-4' } });
+    assert.deepEqual(read.structuredContent, { id: 'note-4', title: 'Renewal' });
+    const rejected = await client.callTool({ name: 'create-note', arguments: {} });
+    assert.equal(rejected.isError, true);
+  } finally {
+    await client.close();
+    await services.close();
+  }
+});
+```
+
+A tool error, such as a schema rejection, is a result with `isError: true`; a
+call to a tool the fake does not serve rejects with the JSON-RPC error.
 
 ## Development
 

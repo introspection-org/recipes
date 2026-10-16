@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DEFAULTS, type BundleOptions, isCurrent } from "./bundle.js";
-import type { ListedTools } from "./config.js";
+import { isDefaultExecution, type ListedTool, type ListedTools } from "./config.js";
 import { type Fakes, startServices } from "./server.js";
 
 /** `test` of `node:test` or of vitest: both take a name, options and the test. */
@@ -49,7 +49,14 @@ interface MappedTool {
 
 const KINDS = ["stateful", "static"];
 
-const toPath = (value: string | URL) => (value instanceof URL ? fileURLToPath(value) : value);
+// A tool served without `execution` declares the default task support, so the two compare equal.
+function withoutDefaultExecution(tool: ListedTool): ListedTool {
+  if (!("execution" in tool) || !isDefaultExecution(tool.execution)) return tool;
+  const { execution: _, ...rest } = tool;
+  return rest;
+}
+
+const toPath =(value: string | URL) => (value instanceof URL ? fileURLToPath(value) : value);
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
 
 /**
@@ -115,7 +122,7 @@ export function checkRecipeFakes<W extends object>(options: RecipeFakesOptions<W
         const body = await response.text();
         const served = JSON.parse(body.match(/^data: (.*)$/m)?.[1] ?? body).result.tools;
         const expected = captured(id).tools.filter((tool) => include.includes(tool.name));
-        assert.deepEqual(served, expected);
+        assert.deepEqual(served.map(withoutDefaultExecution), expected.map(withoutDefaultExecution));
       } finally {
         await services.close();
       }

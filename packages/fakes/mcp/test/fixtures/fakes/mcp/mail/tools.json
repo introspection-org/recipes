@@ -12,7 +12,8 @@
         },
         "required": ["to", "subject"],
         "additionalProperties": false
-      }
+      },
+      "execution": { "taskSupport": "forbidden" }
     }
   ]
 }

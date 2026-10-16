@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
+import { bundle } from "../src/bundle.js";
 import { SIDECAR_PORT } from "../src/index.js";
 import { callTool } from "./client.js";
 
@@ -111,6 +112,67 @@ test(
     }
   },
 );
+
+// A Recipe's fakes/ whose packages, an ES module and a CommonJS one, are installed flat, as npm
+// does, or each under node_modules/.pnpm/<name>@<version>/ and linked from node_modules/, as pnpm
+// does.
+function installed(
+  layout: "npm" | "pnpm",
+  world = (_dir: string) => "export const world = () => ({});\n",
+) {
+  const dir = fs.realpathSync(scratch(`mcp-fakes-${layout}-`));
+  const write = (file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+  };
+  const packages: Record<string, { type?: string; source: string }> = {
+    "@introspection-ai/mcp-fakes": {
+      type: "module",
+      source: "export async function serveSidecar(fakes, world) { return [fakes, world]; }",
+    },
+    greeting: { type: "module", source: 'export const greeting = "hello";' },
+    farewell: { source: 'module.exports = { farewell: "goodbye" };' },
+  };
+  for (const [name, { type, source }] of Object.entries(packages)) {
+    const manifest = JSON.stringify({ name, version: "1.0.0", type, main: "index.js" });
+    const at =
+      layout === "npm"
+        ? `node_modules/${name}`
+        : `node_modules/.pnpm/${name.replace("/", "+")}@1.0.0/node_modules/${name}`;
+    write(`${at}/package.json`, manifest);
+    write(`${at}/index.js`, source);
+    if (layout === "pnpm") {
+      fs.mkdirSync(path.dirname(path.join(dir, "node_modules", name)), { recursive: true });
+      fs.symlinkSync(path.join(dir, at), path.join(dir, "node_modules", name), "dir");
+    }
+  }
+  write(
+    "mcp/index.ts",
+    'import { greeting } from "greeting";\nimport legacy from "farewell";\nexport const fakes = { greeting, farewell: legacy.farewell };\n',
+  );
+  write("scenarios/index.ts", world(dir));
+  const sources = {
+    fakes: path.join(dir, "mcp/index.ts"),
+    scenarios: path.join(dir, "scenarios/index.ts"),
+  };
+  return { dir, sources };
+}
+
+test("the bundle is the same whichever package manager installed the fakes' packages", async () => {
+  const npm = await bundle(installed("npm").sources);
+  expect(npm).toContain('"goodbye"');
+  expect(npm).not.toContain("node_modules");
+  expect(await bundle(installed("pnpm").sources)).toBe(npm);
+});
+
+test("the bundler refuses a bundle that names the install or the fakes' directory", async () => {
+  const store = installed("npm", () => 'export const world = () => ({ at: "node_modules/.pnpm/x" });\n');
+  await expect(bundle(store.sources)).rejects.toThrow(
+    "The bundle names node_modules/.pnpm/, so it would depend on where or how the fakes were installed",
+  );
+  const here = installed("npm", (dir) => `export const world = () => ({ at: ${JSON.stringify(dir)} });\n`);
+  await expect(bundle(here.sources)).rejects.toThrow(`The bundle names ${here.dir}`);
+});
 
 test("the bundler refuses an unknown command", async () => {
   const usage = await cli("pack");

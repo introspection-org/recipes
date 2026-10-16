@@ -10,10 +10,24 @@ import {
 } from "@modelcontextprotocol/server";
 import { type Configured, configuredBy } from "./config.js";
 
+/**
+ * `T` as a JSON import types it: every string literal widened to `string`, so a manifest
+ * imported from JSON is assignable without a cast. The host checks the values that matter.
+ */
+export type Widened<T> = T extends string
+  ? string
+  : T extends readonly (infer U)[]
+    ? Widened<U>[]
+    : T extends object
+      ? { [K in keyof T]: Widened<T[K]> }
+      : T;
+
+const THEMES = ["light", "dark"];
+
 /** The fields of a fake's `manifest.json` the host reads. */
 export interface Manifest {
   /** The name and version the fake answers in `initialize`. */
-  server: Implementation;
+  server: Widened<Implementation>;
   /** The tools the Recipe allows, each with its kind and the entities it reads and writes. */
   tools: Record<string, unknown>;
 }
@@ -119,10 +133,19 @@ function recording(handler: McpHttpHandler, id: string, file: string) {
   };
 }
 
+// The manifest's server as the SDK types it, once the one field `Widened` loosens is a value it allows.
+function manifestServer(id: string, fake: Fake): Implementation {
+  const { server } = fake.manifest;
+  for (const icon of server.icons ?? [])
+    if (icon.theme !== undefined && !THEMES.includes(icon.theme))
+      throw new Error(`The ${id} manifest's server icon theme ${icon.theme} is not light or dark`);
+  return server as Implementation;
+}
+
 // The host refuses to start unless a fake's handlers register exactly the tools its manifest
 // allows, each from `config(name)`, in the order `tools.json` gives them.
-function checkRegistrations(id: string, fake: Fake, state: unknown) {
-  const server = new McpServer(fake.manifest.server);
+function checkRegistrations(id: string, fake: Fake, info: Implementation, state: unknown) {
+  const server = new McpServer(info);
   const registered: { name: string; from?: Configured }[] = [];
   const register = server.registerTool.bind(server) as (...args: unknown[]) => unknown;
   Object.assign(server, {
@@ -172,9 +195,10 @@ export async function startServices<W extends object>(
     if (!Object.hasOwn(seeded, id)) throw new Error(`The world has no state for the fake ${id}`);
     const initial = structuredClone(seeded[id]);
     const state = structuredClone(initial);
-    checkRegistrations(id, fake, state);
+    const info = manifestServer(id, fake);
+    checkRegistrations(id, fake, info, state);
     const handler = createMcpHandler(() => {
-      const server = new McpServer(fake.manifest.server);
+      const server = new McpServer(info);
       fake.register(server, state as never);
       return server;
     });
