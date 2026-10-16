@@ -10,6 +10,7 @@ import { callMcpDaemonTool } from "./daemon/client.js";
 import type { McpCatalogServer } from "./daemon/protocol.js";
 import { mcpSelectionAllowsTool } from "./policy.js";
 import type {
+  McpServerBinding,
   McpSessionConfig,
   McpToolCatalogEntry,
 } from "./index.js";
@@ -38,6 +39,14 @@ export interface McpToolDetails {
   };
 }
 
+/** The MCP server serving a Pi tool, for its `execute_tool` span. */
+export interface McpToolOrigin {
+  serverId: string;
+  /** The tool's name in the server's contract. */
+  toolName: string;
+  binding?: McpServerBinding;
+}
+
 export interface McpToolSet {
   tools: ToolDefinition[];
   toolNames: string[];
@@ -45,11 +54,14 @@ export interface McpToolSet {
   deferredToolNames: string[];
   diagnostics: string[];
   canonicalToPiName: ReadonlyMap<string, string>;
+  /** The server serving a tool, by Pi tool name. */
+  mcpToolOrigin: (piName: string) => McpToolOrigin | undefined;
 }
 
 interface UsableMcpTool {
   serverId: string;
   serverName: string;
+  binding?: McpServerBinding;
   catalog: McpToolCatalogEntry;
   canonicalName: string;
   piName: string;
@@ -481,6 +493,7 @@ function compileUsableTools(
         usable.push({
           serverId: server.id,
           serverName: server.name,
+          ...(server.binding ? { binding: server.binding } : {}),
           catalog,
           canonicalName,
           piName: piMcpToolName(server.id, catalog.name),
@@ -606,6 +619,17 @@ export function createMcpToolSet(options: {
     piNames.add(tool.piName);
   }
 
+  const usableByPiName = new Map(usable.map((tool) => [tool.piName, tool]));
+  const mcpToolOrigin = (piName: string): McpToolOrigin | undefined => {
+    const tool = usableByPiName.get(piName);
+    if (!tool) return undefined;
+    return {
+      serverId: tool.serverId,
+      toolName: tool.catalog.name,
+      ...(tool.binding ? { binding: tool.binding } : {}),
+    };
+  };
+
   const tools: ToolDefinition[] = usable.map((tool) => ({
     name: tool.piName,
     label: tool.catalog.name,
@@ -665,5 +689,6 @@ export function createMcpToolSet(options: {
       ),
     ],
     canonicalToPiName,
+    mcpToolOrigin,
   };
 }

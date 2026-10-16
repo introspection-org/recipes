@@ -22,6 +22,7 @@ const session: McpSessionConfig = {
       id: "nextplay",
       name: "NextPlay",
       base_url: "https://example.test/mcp",
+      binding: "live",
       package_tools: { include: ["*"] },
       agent_tools: [{ include: ["*"] }],
     },
@@ -111,6 +112,21 @@ describe("MCP tools mode", () => {
     expect(materialized.canonicalToPiName.has("nextplay.search_talent")).toBe(
       false
     );
+  });
+
+  it("names the MCP origin of each tool for its span", () => {
+    const { materialized } = createTools({
+      mode: "tools",
+      servers: { nextplay: { include: ["*"] } },
+    });
+    const piName = materialized.canonicalToPiName.get("nextplay.get_profiles")!;
+
+    expect(materialized.mcpToolOrigin(piName)).toEqual({
+      serverId: "nextplay",
+      toolName: "get_profiles",
+      binding: "live",
+    });
+    expect(materialized.mcpToolOrigin("bash")).toBeUndefined();
   });
 
   it("returns deferred tools for Recipe tool search", () => {

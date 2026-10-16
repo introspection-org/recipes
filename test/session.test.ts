@@ -1267,6 +1267,10 @@ describe("createAgentSession", () => {
     });
 
     expect(instrumentSession).toHaveBeenCalledOnce();
+    // Without MCP tools there is no origin lookup to pass.
+    expect(
+      (instrumentSession.mock.calls[0] as unknown[] | undefined)?.[1]
+    ).not.toHaveProperty("mcpTool");
     expect(instrumentSession).toHaveBeenCalledWith(
       handle.session,
       expect.objectContaining({

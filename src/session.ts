@@ -47,7 +47,7 @@ import {
   type McpLocalConfig,
   type ScopedMcpToolSelection,
 } from "./mcp/index.js";
-import { createMcpToolSet } from "./mcp/tools.js";
+import { createMcpToolSet, type McpToolSet } from "./mcp/tools.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
@@ -230,7 +230,7 @@ export interface CreateAgentSessionInternalOptions
 }
 
 export interface RecipeSessionOtelOptions
-  extends Omit<InstrumentSessionOptions, "meta"> {
+  extends Omit<InstrumentSessionOptions, "meta" | "mcpTool"> {
   /**
    * Span identity. Missing fields derive from the resolved Recipe; a fresh
    * conversation id is generated per session by default.
@@ -339,6 +339,7 @@ interface MaterializedSessionMcp {
   tools?: ToolDefinition[];
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
+  mcpToolOrigin?: McpToolSet["mcpToolOrigin"];
   release?: () => Promise<void>;
 }
 
@@ -486,6 +487,7 @@ async function configureSessionMcp(
         tools: materialized.tools,
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
+        mcpToolOrigin: materialized.mcpToolOrigin,
         release,
       };
     }
@@ -948,7 +950,10 @@ async function createSessionForAgent(
 
     unsubscribe = opts.onEvent ? session.subscribe(opts.onEvent) : undefined;
     detachInstrumentation = otel
-      ? instrumentSession(session, otel).detach
+      ? instrumentSession(session, {
+          ...otel,
+          ...(mcp.mcpToolOrigin ? { mcpTool: mcp.mcpToolOrigin } : {}),
+        }).detach
       : undefined;
 
     const liveSession = session;

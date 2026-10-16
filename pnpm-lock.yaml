@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@introspection-sdk/introspection-pi':
-        specifier: ^0.31.0
-        version: 0.31.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
+        specifier: ^0.35.0
+        version: 0.35.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -386,8 +386,8 @@ packages:
   '@iarna/toml@2.2.5':
     resolution: {integrity: sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg==}
 
-  '@introspection-sdk/introspection-pi@0.31.0':
-    resolution: {integrity: sha512-RCizrYq8t4Vb36z1G2mt5DH9zG9WVzGFD/Jfw9SbS7MLu55HpFwXrWkD190A4nYlFTTGRLLv1m8ogcs8+7bv6Q==}
+  '@introspection-sdk/introspection-pi@0.35.0':
+    resolution: {integrity: sha512-skqvbpC3sXdXHtmxSJ/wZg3e/PUurIC1mlCze8iHFgWsbJIeb6T5a2orMzRp0wqgpehjA9eCpNqnJw6huMtlbw==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -397,8 +397,8 @@ packages:
       '@earendil-works/pi-agent-core':
         optional: true
 
-  '@introspection-sdk/types@0.31.0':
-    resolution: {integrity: sha512-XuxS6pKBLlytfuYF/2+VOGG1plvz3v0KVgBu5so2bEuc61R3IOeDxB24qeSigXn0U5kWGjuqv7jLBPXnB8ZTgg==}
+  '@introspection-sdk/types@0.35.0':
+    resolution: {integrity: sha512-NRwxLgEAfdTwpxnYHsyEPzXa3jgHaCCqzCrXQTuZT0XpmgQ7xbOeTb7LAJ5XtWlSZBKwt6uJQ3FQpeqgCT2dMg==}
     engines: {node: '>=22'}
     peerDependencies:
       '@opentelemetry/sdk-logs': '>=0.200.0'
@@ -2267,10 +2267,10 @@ snapshots:
 
   '@iarna/toml@2.2.5': {}
 
-  '@introspection-sdk/introspection-pi@0.31.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
+  '@introspection-sdk/introspection-pi@0.35.0(@earendil-works/pi-agent-core@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@earendil-works/pi-ai@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@earendil-works/pi-ai': 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
-      '@introspection-sdk/types': 0.31.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
+      '@introspection-sdk/types': 0.35.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))
       '@opentelemetry/api': 1.9.1
     optionalDependencies:
       '@earendil-works/pi-agent-core': 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.5))(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
@@ -2278,7 +2278,7 @@ snapshots:
       - '@opentelemetry/sdk-logs'
       - '@opentelemetry/sdk-trace-base'
 
-  '@introspection-sdk/types@0.31.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
+  '@introspection-sdk/types@0.35.0(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@ag-ui/core': 0.0.59
       '@opentelemetry/sdk-logs': 0.221.0(@opentelemetry/api@1.9.1)

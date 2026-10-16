@@ -232,6 +232,13 @@ the same session instrumentation works with any OTLP-compatible backend. A
 host that needs structure-only traces can wrap its exporter with
 `GenAiContentScrubbingExporter` from `@introspection-sdk/introspection-pi`.
 
+In tools mode the `execute_tool` span of an MCP tool carries `mcp.server.id`
+and `mcp.tool.name`, and `mcp.server.binding` when the host says where it bound
+the server from:
+`materializeMcpSession({ bindingOrigins: { attio: "live" } })`, with `live`
+for a project endpoint, `recipe` for an eval task's committed binding to a fake
+and `local` for an `introspection dev` local binding.
+
 Hosts must flush and shut down their provider with the host lifecycle.
 
 ## Host conformance

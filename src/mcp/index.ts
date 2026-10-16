@@ -43,10 +43,19 @@ export interface McpToolCatalogEntry {
   annotations?: Record<string, unknown>;
 }
 
+/**
+ * Where a host bound an MCP server from: `live` is a project `kind: mcp`
+ * endpoint, `recipe` an eval task's committed binding to a fake, `local` an
+ * `introspection dev` session's local binding.
+ */
+export type McpServerBinding = "live" | "recipe" | "local";
+
 export interface McpSessionServer {
   id: string;
   name: string;
   base_url: string;
+  /** Set only by a host that knows where it bound the server from. */
+  binding?: McpServerBinding;
   required?: boolean;
   package_tools: RecipeMcpToolSelection;
   agent_tools: RecipeMcpToolSelection[];
@@ -131,6 +140,8 @@ export interface MaterializeMcpSessionOptions {
   localConfig?: McpLocalConfig;
   /** Explicit generated mcporter target for a private tools-mode runtime. */
   mcporterConfigPath?: string;
+  /** Where the host bound each server from, by server id. */
+  bindingOrigins?: Readonly<Record<string, McpServerBinding>>;
 }
 
 /**
@@ -867,6 +878,12 @@ export async function materializeMcpSession(
     );
   }
 
+  const bindingOrigins = new Map(
+    Object.entries(opts.bindingOrigins ?? {}).map(([id, origin]) => [
+      safeServerId(id),
+      origin,
+    ])
+  );
   const diagnostics: McpConfigurationDiagnostic[] = [];
   const servers: McpSessionServer[] = [];
   for (const packageServer of opts.manifest.mcp.servers) {
@@ -899,10 +916,12 @@ export async function materializeMcpSession(
       });
       continue;
     }
+    const origin = bindingOrigins.get(id);
     servers.push({
       id,
       name: binding?.name ?? declared?.name ?? id,
       base_url: baseUrl,
+      ...(origin ? { binding: origin } : {}),
       ...(packageServer.required ? { required: true } : {}),
       package_tools: packageServer.tools,
       agent_tools: selected,
