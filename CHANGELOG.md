@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/introspection-org/recipes/compare/v0.33.0...v0.34.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a mission judge's `attrs` key is now `attributes`; a judge still using `attrs` fails validation as an unknown field.
+
+### Features
+
+* **mcp:** tell the session instrumentation which MCP server serves each tool ([#345](https://github.com/introspection-org/recipes/issues/345)) ([5543b34](https://github.com/introspection-org/recipes/commit/5543b34af328889cfa1f8ab94fdf785531e61186))
+* **recipe-check:** name a mission judge's request attributes `attributes` ([#342](https://github.com/introspection-org/recipes/issues/342)) ([fa78f2f](https://github.com/introspection-org/recipes/commit/fa78f2ff8f52d8868ba58db7ba768735e9869426))
+
 ## [0.33.0](https://github.com/introspection-org/recipes/compare/v0.32.0...v0.33.0) (2026-10-13)
 
 
