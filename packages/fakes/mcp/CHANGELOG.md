@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.0...mcp-fakes-v0.2.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **mcp-fakes:** serve Attio's tools, a manifest imported from JSON, and a layout-independent sidecar bundle ([#536](https://github.com/introspection-org/introspection-cli/issues/536)) ([6e387df](https://github.com/introspection-org/introspection-cli/commit/6e387dfbd41cfdbc9f3c37ee555e829b9595dfaf))
+
 ## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.1.0...mcp-fakes-v0.2.0) (2026-10-15)
 
 
