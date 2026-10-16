@@ -110,6 +110,46 @@ describe("Recipes managed fetch integration", () => {
     );
   });
 
+  it("does not warn in a proxy-native sandbox, whose env proxy injects", async () => {
+    for (const env of [
+      { INTROSPECTION_EGRESS_PROXY_NATIVE: "1", INTROSPECTION_TASK_ID: "task-1" },
+      {
+        INTROSPECTION_EGRESS_PROXY_NATIVE: "1",
+        [MANAGED_EGRESS_URL_ENV]: "http://egress.internal:8081",
+      },
+    ]) {
+      const pi = createMockExtensionAPI();
+      createRecipesExtension({ env })(pi);
+      const ctx = context();
+
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx
+      );
+
+      expect(ctx.ui.notify).not.toHaveBeenCalledWith(
+        expect.stringContaining("managed fetch"),
+        expect.anything()
+      );
+    }
+  });
+
+  it("still composes the managed fetch in a proxy-native sandbox", async () => {
+    const install = vi.fn();
+    Reflect.set(globalThis, MANAGED_FETCH_INSTALLER_SYMBOL, install);
+    const pi = createMockExtensionAPI();
+    createRecipesExtension({
+      env: { INTROSPECTION_EGRESS_PROXY_NATIVE: "1" },
+    })(pi);
+
+    await pi.emitExtensionEvent(
+      { type: "before_provider_request", payload: {} } as any,
+      context()
+    );
+
+    expect(install).toHaveBeenCalledOnce();
+  });
+
   it("reads the configured env, not the ambient process", async () => {
     const previous = process.env[MANAGED_EGRESS_URL_ENV];
     process.env[MANAGED_EGRESS_URL_ENV] = "http://egress.internal:8081";
