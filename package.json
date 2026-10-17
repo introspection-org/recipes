@@ -63,6 +63,10 @@
 			"types": "./dist/api/memory.d.ts",
 			"import": "./dist/api/memory.js"
 		},
+		"./browser": {
+			"types": "./dist/browser/index.d.ts",
+			"import": "./dist/browser/index.js"
+		},
 		"./channels": {
 			"types": "./dist/channels/index.d.ts",
 			"import": "./dist/channels/index.js"
