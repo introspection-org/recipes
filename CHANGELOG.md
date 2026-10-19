@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/introspection-org/recipes/compare/v0.34.0...v0.35.0) (2026-10-19)
+
+
+### Features
+
+* **mcp:** let a Recipe mark a required server that only working sessions must discover ([#346](https://github.com/introspection-org/recipes/issues/346)) ([244f207](https://github.com/introspection-org/recipes/commit/244f207030fa7cc81d70709d44e01243fd0253a2))
+
+
+### Bug Fixes
+
+* **mcp:** say how to bind a missing server, not that env vars alone do it ([#347](https://github.com/introspection-org/recipes/issues/347)) ([ddac352](https://github.com/introspection-org/recipes/commit/ddac3526ec33d6a06f9a7e09a38a1272837f8ec6))
+* **mcp:** stop reusing a cached MCP catalog that has a failed server ([#355](https://github.com/introspection-org/recipes/issues/355)) ([c057d9b](https://github.com/introspection-org/recipes/commit/c057d9b00ccdd6f5ea98ccf38a6ca12bd391b13f))
+
 ## [0.34.0](https://github.com/introspection-org/recipes/compare/v0.33.0...v0.34.0) (2026-10-16)
 
 
