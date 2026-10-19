@@ -69,11 +69,9 @@ export function preloadMcpCatalogs(options: {
   const forget = () => {
     if (catalogPreloads.get(key) === preload) catalogPreloads.delete(key);
   };
-  // Concurrent callers share one request. Once it settles, only a fully
-  // discovered result is reused: a partial one would hand a later session a
-  // server's failure after the server has recovered, so the next caller asks
-  // the daemon again. The cost is one more discovery attempt, bounded by
-  // `timeoutMs`, for each later session while a server stays down.
+  // Only a fully discovered result outlives its request: a partial one would
+  // hand a later session a server's failure after it recovered. The cost is
+  // one more discovery, bounded by `timeoutMs`, per session while it is down.
   void preload.then(
     (catalogs) => {
       if (catalogs.some((server) => server.error)) forget();

@@ -559,40 +559,38 @@ export function createMcpToolSet(options: {
         mcpSelectionAllowsTool(options.mcp.servers[catalog.id], tool.name)
       ),
     }));
-  const deferred = options.discovery === "defer";
   const requiredFailures = catalogs.filter((catalog) => {
     const server = session.servers.find((entry) => entry.id === catalog.id);
     return server?.required === true && Boolean(catalog.error);
   });
-  // Under `defer`, a required server whose catalog was not discovered is left
-  // out of the eager checks below, since none of its tools can be named yet.
-  // An optional server is not deferred, so its eager checks still apply.
-  const undiscovered = new Set(
-    deferred ? requiredFailures.map((catalog) => catalog.id) : []
-  );
-  if (!deferred && requiredFailures.length > 0) {
+  if (options.discovery !== "defer" && requiredFailures.length > 0) {
     throw new Error(
       `Required MCP catalog discovery failed: ${requiredFailures
         .map((catalog) => `${catalog.id}: ${catalog.error}`)
         .join("; ")}`
     );
   }
+  // Past the throw, any required failure was deferred. Its server is left out
+  // of the eager checks, since none of its tools can be named yet; an optional
+  // server is not deferred, so its eager checks still apply.
+  const undiscovered = new Set(requiredFailures.map((catalog) => catalog.id));
+  const eagerServers = Object.entries(options.mcp.servers).filter(
+    ([serverId]) => !undiscovered.has(serverId)
+  );
   const { usable, unusable } = compileUsableTools(session, catalogs);
   const activeCanonical = activeCanonicalNames(options.mcp, usable);
   const requestedEager = new Set(
-    Object.entries(options.mcp.servers)
-      .filter(([serverId]) => !undiscovered.has(serverId))
-      .flatMap(([serverId, policy]) =>
-        (policy.eager ?? []).includes("*")
-          ? usable
-              .filter((tool) => tool.serverId === serverId)
-              .map((tool) => tool.canonicalName)
-          : (policy.eager ?? []).map((tool) => `${serverId}.${tool}`)
-      )
+    eagerServers.flatMap(([serverId, policy]) =>
+      (policy.eager ?? []).includes("*")
+        ? usable
+            .filter((tool) => tool.serverId === serverId)
+            .map((tool) => tool.canonicalName)
+        : (policy.eager ?? []).map((tool) => `${serverId}.${tool}`)
+    )
   );
-  for (const [serverId, policy] of Object.entries(options.mcp.servers)) {
+  for (const [serverId, policy] of eagerServers) {
     const selectors = policy.eager ?? [];
-    if (!selectors.includes("*") || undiscovered.has(serverId)) continue;
+    if (!selectors.includes("*")) continue;
     const catalog = catalogs.find((entry) => entry.id === serverId);
     if (!catalog || catalog.error) {
       throw new Error(
@@ -714,12 +712,10 @@ export function createMcpToolSet(options: {
         ([name, error]) => `${name}: ${error}`
       ),
     ],
-    deferredRequired: deferred
-      ? requiredFailures.map((catalog) => ({
-          serverId: catalog.id,
-          error: catalog.error ?? "",
-        }))
-      : [],
+    deferredRequired: requiredFailures.map((catalog) => ({
+      serverId: catalog.id,
+      error: catalog.error ?? "",
+    })),
     canonicalToPiName,
     mcpToolOrigin,
   };
