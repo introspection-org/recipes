@@ -193,7 +193,10 @@ the handle is disposed and restores its prior MCP/PATH state afterward.
 Concurrent CLI sessions must receive separate environment objects. Tools mode
 uses an isolated session environment and does not expose its MCP runtime to
 shell tools. A host that provisions MCP separately passes
-`mcpProvisioning: "host"` to each session.
+`mcpProvisioning: "host"` to each session. `mcpDiscovery: "defer"` composes
+with it: a host that prepares one session and later starts working sessions in
+the same environment gets fresh discovery for each working session, because a
+catalog result in which a server failed is never reused.
 
 ## Inspection
 

@@ -72,7 +72,8 @@ export function preloadMcpCatalogs(options: {
   // Concurrent callers share one request. Once it settles, only a fully
   // discovered result is reused: a partial one would hand a later session a
   // server's failure after the server has recovered, so the next caller asks
-  // the daemon again.
+  // the daemon again. The cost is one more discovery attempt, bounded by
+  // `timeoutMs`, for each later session while a server stays down.
   void preload.then(
     (catalogs) => {
       if (catalogs.some((server) => server.error)) forget();

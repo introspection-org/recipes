@@ -560,17 +560,16 @@ export function createMcpToolSet(options: {
       ),
     }));
   const deferred = options.discovery === "defer";
-  // Under `defer`, a server whose catalog was not discovered is left out of
-  // the eager checks below, since none of its tools can be named yet.
-  const undiscovered = new Set(
-    deferred
-      ? catalogs.filter((catalog) => catalog.error).map((catalog) => catalog.id)
-      : []
-  );
   const requiredFailures = catalogs.filter((catalog) => {
     const server = session.servers.find((entry) => entry.id === catalog.id);
     return server?.required === true && Boolean(catalog.error);
   });
+  // Under `defer`, a required server whose catalog was not discovered is left
+  // out of the eager checks below, since none of its tools can be named yet.
+  // An optional server is not deferred, so its eager checks still apply.
+  const undiscovered = new Set(
+    deferred ? requiredFailures.map((catalog) => catalog.id) : []
+  );
   if (!deferred && requiredFailures.length > 0) {
     throw new Error(
       `Required MCP catalog discovery failed: ${requiredFailures
