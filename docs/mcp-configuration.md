@@ -68,7 +68,9 @@ session, and its discovery failure reaches the host as a `warning` diagnostic
 through `onDiagnostics`. A session started to do work, without `defer`, runs
 discovery again and fails closed, so deferring never lets working sessions start
 without the capability. A prepared session therefore proves a Recipe's bindings
-and code, never that its servers answer at that moment.
+and code, never that its servers answer at that moment. A session that checks a
+Recipe by calling its tools does work, so it runs without `defer` and fails when
+a required server cannot be discovered.
 
 ## 2. Choose an agent mode and narrow access
 

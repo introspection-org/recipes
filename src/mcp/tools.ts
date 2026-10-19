@@ -55,9 +55,10 @@ export interface McpToolOrigin {
  * - `require` (default): a required server whose discovery failed fails the
  *   session, so a session never starts without a capability its Recipe needs.
  * - `defer`: the server contributes no tools and its failure stays in
- *   `diagnostics`, so a host that boots a session only to prepare it (a bake,
- *   a build check) does not depend on the server answering at that moment.
- *   The session that does the work runs discovery again under `require`.
+ *   `diagnostics`, so a host that boots a session only to prepare it, such
+ *   as a bake, does not depend on the server answering at that moment. A
+ *   session that checks a Recipe by calling its tools does work, so it never
+ *   defers, and the session that works runs discovery again under `require`.
  */
 export type McpDiscoveryRequirement = "require" | "defer";
 
