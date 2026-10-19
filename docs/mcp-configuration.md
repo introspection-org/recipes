@@ -47,36 +47,15 @@ including tools a server may add later; patterns such as `search_*` are invalid.
 `manifest` and string shorthand are invalid. A server marked
 `"required": true` must resolve to a bound endpoint at session materialization
 or the session fails closed rather than starting without the capability.
-`"discovery"` takes `"require"` or `"defer"` and is described with `required`
-below.
 
-`required` makes two checks, at two points:
-
-- **Bound**, at materialization, before any server is reached: every required
-  server resolves to an endpoint binding, or the session fails with
-  `McpBindingError`. This check never depends on a server answering, and no
-  host option lifts it.
-- **Discovered**, at session start in `mode: tools`, where tools are registered
-  from each server's catalog: a required server whose catalog discovery fails
-  (it did not answer, refused the credential, or returned an error) fails the
-  session. In `mode: cli` discovery waits for the first `mcp` command, so a
-  session starts on the binding check alone and a server that does not answer
-  surfaces when a command reaches it.
-
-A required server's declaration may set `"discovery": "defer"` (default
-`"require"`) to let the second check wait for a session that does work. It
-applies only when the host boots a session to prepare it, such as building and
-caching its workspace, and says so with `mcpDiscovery: "defer"`
-(`createAgentSession`). Both are needed: without the declaration a preparing
-session fails on the server as any session does, so a Recipe that sets nothing
-keeps both checks everywhere. A deferred server contributes no tools to the
-preparing session, and its discovery failure reaches the host as a `warning`
-diagnostic through `onDiagnostics`. A session started to do work, without
-`mcpDiscovery: "defer"`, runs discovery again and fails closed, so deferring
-never lets working sessions start without the capability. Set it for a server
-that is not expected to answer wherever a Recipe is prepared, such as a stand-in
-reachable only from where tasks run. A session that checks a Recipe by calling
-its tools does work, so it never defers.
+In `mode: tools`, a required server must also be discovered when the session
+starts. `"discovery": "defer"` (default `"require"`) relaxes that for one server
+only while a host prepares a session that does no work, such as building and
+caching its workspace, and passes `mcpDiscovery: "defer"`. Use it for a
+server that cannot answer where the Recipe is prepared, such as a stand-in
+reachable only from where tasks run. A session that does work, including one
+that checks the Recipe by calling its tools, still fails when the server cannot
+be discovered.
 
 ## 2. Choose an agent mode and narrow access
 

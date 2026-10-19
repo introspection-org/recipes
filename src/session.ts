@@ -161,11 +161,8 @@ export interface CreateAgentSessionOptions {
    */
   mcpProvisioning?: "session" | "host";
   /**
-   * Whether a required MCP server's catalog must be discovered for the session
-   * to start, in `mcp.mode: tools` (see `McpDiscoveryRequirement`). Default
-   * `"require"`. A host booting a session only to prepare it, such as a bake,
-   * passes `"defer"`, which skips only required servers whose declaration sets
-   * `"discovery": "defer"`.
+   * `"defer"` when the host boots this session only to prepare it, such as a
+   * bake (see `McpDiscoveryRequirement`). Default `"require"`.
    */
   mcpDiscovery?: McpDiscoveryRequirement;
   /** `${VAR}` resolution source and MCP runtime environment. Default: `process.env`. */
@@ -352,7 +349,6 @@ interface MaterializedSessionMcp {
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
   mcpToolOrigin?: McpToolSet["mcpToolOrigin"];
-  deferredRequired?: McpToolSet["deferredRequired"];
   release?: () => Promise<void>;
 }
 
@@ -502,7 +498,6 @@ async function configureSessionMcp(
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
         mcpToolOrigin: materialized.mcpToolOrigin,
-        deferredRequired: materialized.deferredRequired,
         release,
       };
     }
@@ -751,19 +746,7 @@ async function createSessionForAgent(
         ? `${diagnostic.message} (${diagnostic.path})`
         : diagnostic.message,
     }));
-    // A deferred required server is a warning: the session prepared without
-    // it, and the session that works fails closed if it still cannot be found.
-    const mcpDiagnostics = (mcp.deferredRequired ?? []).map(
-      ({ serverId, error }) => ({
-        type: "warning" as const,
-        message: `Required MCP server '${serverId}' was not discovered; its tools are left to the working session: ${error}`,
-      })
-    );
-    const diagnostics = [
-      ...memoryDiagnostics,
-      ...mcpDiagnostics,
-      ...services.diagnostics,
-    ];
+    const diagnostics = [...memoryDiagnostics, ...services.diagnostics];
     opts.onDiagnostics?.(diagnostics);
     const extensionLoadErrors =
       services.resourceLoader.getExtensions().errors;

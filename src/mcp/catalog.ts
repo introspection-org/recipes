@@ -66,18 +66,9 @@ export function preloadMcpCatalogs(options: {
   };
   const preload = requestCatalogs();
   catalogPreloads.set(key, preload);
-  const forget = () => {
+  void preload.catch(() => {
     if (catalogPreloads.get(key) === preload) catalogPreloads.delete(key);
-  };
-  // Only a fully discovered result outlives its request: a partial one would
-  // hand a later session a server's failure after it recovered. The cost is
-  // one more discovery, bounded by `timeoutMs`, per session while it is down.
-  void preload.then(
-    (catalogs) => {
-      if (catalogs.some((server) => server.error)) forget();
-    },
-    forget
-  );
+  });
   return preload;
 }
 

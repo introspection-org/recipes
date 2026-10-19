@@ -93,10 +93,9 @@ It:
 - selects the agent from the supplied immutable Recipe;
 - resolves model credentials fail-closed;
 - materializes required MCP bindings fail-closed, and in `mcp.mode: tools`
-  fails closed on a required server whose catalog was not discovered, unless
-  the host passes `mcpDiscovery: "defer"` to prepare a session that does no
-  work and the server's declaration sets `"discovery": "defer"` (see
-  [MCP configuration](mcp-configuration.md));
+  fails on a required server whose catalog was not discovered, except one
+  declared `"discovery": "defer"` when the host passes `mcpDiscovery: "defer"`
+  to prepare a session that does no work;
 - loads the complete ordered Recipe extension closure, selected skills, and
   package prompts;
 - registers the shared subagent tool;
@@ -194,10 +193,7 @@ the handle is disposed and restores its prior MCP/PATH state afterward.
 Concurrent CLI sessions must receive separate environment objects. Tools mode
 uses an isolated session environment and does not expose its MCP runtime to
 shell tools. A host that provisions MCP separately passes
-`mcpProvisioning: "host"` to each session. `mcpDiscovery: "defer"` composes
-with it: a host that prepares one session and later starts working sessions in
-the same environment gets fresh discovery for each working session, because a
-catalog result in which a server failed is never reused.
+`mcpProvisioning: "host"` to each session.
 
 ## Inspection
 

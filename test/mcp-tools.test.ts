@@ -558,10 +558,6 @@ describe("MCP tools mode", () => {
     });
     expect(prepared.toolNames).toHaveLength(2);
     expect(prepared.diagnostics).toContain("optional: connection refused");
-    expect(prepared.deferredRequired).toEqual([
-      { serverId: "optional", error: "connection refused" },
-    ]);
-    expect(optional.deferredRequired).toEqual([]);
     expect(() =>
       createMcpToolSet({
         session: requiredOffline,

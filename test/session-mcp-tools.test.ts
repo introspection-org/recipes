@@ -207,22 +207,14 @@ describe("canonical Recipe session MCP tools mode", () => {
       open({ mcpBindings: bound, mcpDiscovery: "defer" }, strict)
     ).rejects.toThrow("Required MCP catalog discovery failed: contacts");
 
-    const reported: { type: string; message: string }[] = [];
     const prepared = await open({
       mcpBindings: bound,
       mcpDiscovery: "defer",
-      onDiagnostics: (diagnostics) => reported.push(...diagnostics),
     });
     handles.push(prepared);
     expect(
       prepared.session.getAllTools().map((tool) => tool.name)
     ).not.toContain(piMcpToolName("contacts", "search_contacts"));
-    expect(reported).toContainEqual(
-      expect.objectContaining({
-        type: "warning",
-        message: expect.stringContaining("'contacts'"),
-      })
-    );
 
     // Deferring discovery never lifts the binding requirement.
     await expect(
