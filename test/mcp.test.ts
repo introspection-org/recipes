@@ -505,6 +505,40 @@ describe("static MCP session materialization", () => {
     }
   });
 
+  it("names a missing binding's fix that actually binds it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-required-fix-"));
+    try {
+      const cwd = join(root, "workspace");
+      const recipeDir = join(root, "recipe");
+      mkdirSync(recipeDir, { recursive: true });
+      const manifest = recipeManifest(recipeDir, [
+        { id: "linear", required: true, include: ["*"] },
+      ]);
+      const agentMcp = [{ serverId: "linear", tools: { include: ["*"] } }];
+      const env = {
+        LINEAR_MCP_URL: "http://127.0.0.1:9/linear/mcp",
+        LINEAR_MCP_TOKEN: "token",
+      };
+
+      // The variables alone bind nothing, so the message must not say they do.
+      const message = await materializeMcpSession({ cwd, env, manifest, agentMcp })
+        .then(() => "")
+        .catch((error: unknown) => (error as Error).message);
+      expect(message).toContain("Setting the variables alone does not bind");
+
+      // The entry the message prints, written to .pi/mcp.local.json with the
+      // same variables exported, binds the server.
+      const entry = JSON.parse(
+        message.split("\n").find((line) => line.trim().startsWith("{"))!
+      ) as { servers: Array<Record<string, unknown>> };
+      writeLocalConfig(cwd, entry.servers);
+      const session = await materializeMcpSession({ cwd, env, manifest, agentMcp });
+      expect(session.servers.map((server) => server.id)).toEqual(["linear"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes stale policy and writes a closed transport config", async () => {
     const root = mkdtempSync(join(tmpdir(), "recipes-mcp-clear-"));
     try {

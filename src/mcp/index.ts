@@ -154,16 +154,51 @@ export class McpBindingError extends Error {
   constructor(
     /** Missing required server ids, in manifest order. */
     readonly servers: readonly string[],
-    /** The `${VAR}` names a generated binding for those servers would use. */
+    /**
+     * The `${VAR}` names a generated binding for those servers would use: a
+     * `_MCP_URL` and `_MCP_TOKEN` pair per server, in `servers` order. They
+     * are only read through a local config entry's `url` and `headers`;
+     * setting them alone binds nothing.
+     */
     readonly expectedEnvVars: readonly string[]
   ) {
-    super(
-      `Required MCP server binding(s) missing: ${servers.join(", ")}` +
-        (expectedEnvVars.length > 0
-          ? ` (bind via .pi/mcp.local.json or env: ${expectedEnvVars.join(", ")})`
-          : "")
+    super(mcpBindingErrorMessage(servers, expectedEnvVars));
+  }
+}
+
+/**
+ * Say how to bind the missing servers. A binding comes only from a local
+ * config entry (`.pi/mcp.local.json`, the file `PI_RECIPES_MCP_LOCAL_CONFIG`
+ * names, or the `localConfig` option); the env vars are interpolated into an
+ * entry's `url` and headers, so the message shows the entry that reads them.
+ */
+function mcpBindingErrorMessage(
+  servers: readonly string[],
+  expectedEnvVars: readonly string[]
+): string {
+  const missing = `Required MCP server binding(s) missing: ${servers.join(", ")}`;
+  if (expectedEnvVars.length === 0) return missing;
+  const where = `.pi/mcp.local.json (or the file ${MCP_LOCAL_CONFIG_ENV} names)`;
+  const variables = expectedEnvVars.join(", ");
+  // One URL/token pair per server, as `generatedBindingEnvVars` produces.
+  if (expectedEnvVars.length !== servers.length * 2) {
+    return (
+      `${missing}. Add an entry for each to ${where} whose url and ` +
+      `Authorization header read ${variables}, then export them; ` +
+      "setting the variables alone does not bind a server."
     );
   }
+  const entries = servers.map((id, index) => ({
+    id,
+    transport: "streamable_http",
+    url: `\${${expectedEnvVars[index * 2]}}`,
+    headers: { Authorization: `Bearer \${${expectedEnvVars[index * 2 + 1]}}` },
+  }));
+  return (
+    `${missing}. Add an entry for each to ${where}:\n` +
+    `  ${JSON.stringify({ servers: entries })}\n` +
+    `then export ${variables}. Setting the variables alone does not bind a server.`
+  );
 }
 
 export interface MaterializedMcpSession extends McpSessionConfig {

@@ -44,6 +44,13 @@ export interface RecipeInspection {
   providers: string[];
   credentialEnv: string[];
   mcp: { required: string[]; optional: string[] };
+  /**
+   * The `<ID>_MCP_URL` / `<ID>_MCP_TOKEN` names a generated binding for each
+   * declared server reads. They take effect only through a local config entry
+   * (`.pi/mcp.local.json` or the file `PI_RECIPES_MCP_LOCAL_CONFIG` names)
+   * whose `url` is `${<ID>_MCP_URL}` and whose `Authorization` header is
+   * `Bearer ${<ID>_MCP_TOKEN}`; exporting them alone binds no server.
+   */
   mcpEnv: string[];
   resources: {
     agents: number;
