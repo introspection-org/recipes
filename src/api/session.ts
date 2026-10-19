@@ -14,3 +14,4 @@ export type {
   MemoryContextOverride,
   MemoryContextSource,
 } from "../memory.js";
+export type { McpDiscoveryRequirement } from "../mcp/tools.js";

@@ -140,6 +140,84 @@ describe("canonical Recipe session MCP tools mode", () => {
     expect(env.MCPORTER_CONFIG).toBeUndefined();
   });
 
+  it("defers required discovery to the working session when a host prepares one", async () => {
+    const fixture = writeFixtureRecipe({
+      manifestPi: {
+        mcp: {
+          servers: [
+            {
+              id: "contacts",
+              required: true,
+              tools: { include: ["search_contacts"] },
+            },
+          ],
+        },
+      },
+      agentExtras: [
+        "mcp:",
+        "  mode: tools",
+        "  servers:",
+        "    contacts:",
+        '      include: ["search_contacts"]',
+      ],
+    });
+    cleanups.push(fixture.cleanup);
+    mocks.preloadMcpCatalogs.mockResolvedValue([
+      {
+        id: "contacts",
+        name: "Contacts",
+        tools: [],
+        error:
+          "Version negotiation failed: the server answered the probe with HTTP 530",
+      },
+    ]);
+    const bound = {
+      servers: [
+        {
+          id: "contacts",
+          transport: "streamable_http" as const,
+          url: "http://127.0.0.1:9/mcp",
+        },
+      ],
+    };
+    const open = async (
+      opts: Partial<Parameters<typeof createAgentSession>[0]>
+    ) =>
+      createAgentSession({
+        recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
+        cwd: fixture.workspaceDir,
+        env: cleanEnv(),
+        credentials: await credentials(),
+        ...opts,
+      });
+
+    await expect(open({ mcpBindings: bound })).rejects.toThrow(
+      "Required MCP catalog discovery failed: contacts"
+    );
+
+    const reported: { type: string; message: string }[] = [];
+    const prepared = await open({
+      mcpBindings: bound,
+      mcpDiscovery: "defer",
+      onDiagnostics: (diagnostics) => reported.push(...diagnostics),
+    });
+    handles.push(prepared);
+    expect(
+      prepared.session.getAllTools().map((tool) => tool.name)
+    ).not.toContain(piMcpToolName("contacts", "search_contacts"));
+    expect(reported).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        message: expect.stringContaining("'contacts'"),
+      })
+    );
+
+    // Deferring discovery never lifts the binding requirement.
+    await expect(
+      open({ mcpBindings: { servers: [] }, mcpDiscovery: "defer" })
+    ).rejects.toThrow("Required MCP server binding(s) missing: contacts");
+  });
+
   it("applies a private CLI MCP environment to the session bash tool", async () => {
     const fixture = writeFixtureRecipe({
       tools: ["read", "bash"],

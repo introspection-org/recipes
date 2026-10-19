@@ -48,6 +48,28 @@ including tools a server may add later; patterns such as `search_*` are invalid.
 `"required": true` must resolve to a bound endpoint at session materialization
 or the session fails closed rather than starting without the capability.
 
+`required` makes two checks, at two points:
+
+- **Bound**, at materialization, before any server is reached: every required
+  server resolves to an endpoint binding, or the session fails with
+  `McpBindingError`. This check never depends on a server answering, and no
+  host option lifts it.
+- **Discovered**, at session start in `mode: tools`, where tools are registered
+  from each server's catalog: a required server whose catalog discovery fails
+  (it did not answer, refused the credential, or returned an error) fails the
+  session. In `mode: cli` discovery waits for the first `mcp` command, so a
+  session starts on the binding check alone and a server that does not answer
+  surfaces when a command reaches it.
+
+A host booting a session only to prepare it, such as building and caching its
+workspace, may defer the second check with `mcpDiscovery: "defer"`
+(`createAgentSession`). The required server then contributes no tools to that
+session, and its discovery failure reaches the host as a `warning` diagnostic
+through `onDiagnostics`. A session started to do work, without `defer`, runs
+discovery again and fails closed, so deferring never lets working sessions start
+without the capability. A prepared session therefore proves a Recipe's bindings
+and code, never that its servers answer at that moment.
+
 ## 2. Choose an agent mode and narrow access
 
 An agent selects a subset of the package-permitted servers and tools. It cannot

@@ -303,7 +303,10 @@ or closing a run interrupts or closes the runs beneath it.
 The `pi.mcp` package block declares capability servers and package-level tool
 policy. Agent `mcp` blocks narrow those declarations. Credentials and concrete
 endpoint bindings MUST NOT be required in distributable Recipe source. A host
-MUST reject an unbound required server before the session begins.
+MUST reject an unbound required server before the session begins. A host
+starting a session to do work MUST NOT start it in `mcp.mode: tools` without a
+required server's discovered catalog; a host preparing a session that does no
+work MAY defer that check (see [MCP configuration](mcp-configuration.md)).
 
 See [MCP configuration](mcp-configuration.md) for the complete authored and
 binding grammar.

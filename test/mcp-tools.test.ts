@@ -508,5 +508,66 @@ describe("MCP tools mode", () => {
         env: {},
       })
     ).toThrow("Required MCP catalog discovery failed");
+
+    // A host booting only to prepare the session defers discovery: the
+    // required server that did not answer contributes no tools and stays in
+    // diagnostics, and an eager selector naming it is not checked yet.
+    const requiredOffline = {
+      ...mixedSession,
+      servers: mixedSession.servers.map((server) =>
+        server.id === "optional" ? { ...server, required: true } : server
+      ),
+    };
+    const prepared = createMcpToolSet({
+      session: requiredOffline,
+      catalogs: mixedCatalogs,
+      mcp: {
+        mode: "tools",
+        servers: {
+          nextplay: { include: ["*"] },
+          optional: { include: ["*"], defer: ["*"], eager: ["*"] },
+        },
+      },
+      env: {},
+      discovery: "defer",
+    });
+    expect(prepared.toolNames).toHaveLength(2);
+    expect(prepared.diagnostics).toContain("optional: connection refused");
+    expect(prepared.deferredRequired).toEqual([
+      { serverId: "optional", error: "connection refused" },
+    ]);
+    expect(optional.deferredRequired).toEqual([]);
+    expect(() =>
+      createMcpToolSet({
+        session: requiredOffline,
+        catalogs: mixedCatalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"] },
+            optional: { include: ["*"] },
+          },
+        },
+        env: {},
+        discovery: "require",
+      })
+    ).toThrow("Required MCP catalog discovery failed");
+  });
+
+  it("still checks eager selectors on discovered servers when discovery is deferred", () => {
+    expect(() =>
+      createMcpToolSet({
+        session,
+        catalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"], defer: ["*"], eager: ["missing_tool"] },
+          },
+        },
+        env: {},
+        discovery: "defer",
+      })
+    ).toThrow("Eager MCP tool 'nextplay.missing_tool' is not authorized");
   });
 });
