@@ -555,6 +555,8 @@ export function createMcpToolSet(options: {
   const requiredFailures = catalogs.filter((catalog) => {
     const server = session.servers.find((entry) => entry.id === catalog.id);
     if (server?.required !== true || !catalog.error) return false;
+    // Both are needed: the mark alone would skip the server in a working
+    // session, and the host option alone would skip an unmarked server.
     if (options.discovery === "defer" && server.discovery === "defer") {
       deferred.add(catalog.id);
       return false;
