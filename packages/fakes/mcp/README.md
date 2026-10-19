@@ -331,7 +331,7 @@ checkRecipeFakes({
 
 | Test | Fails when |
 | --- | --- |
-| `<id> serves the Recipe's allowed tools from tools.json, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools.include` names, in `tools.json`'s order; a captured `"taskSupport": "forbidden"` equals a tool served without `execution` |
+| `<id> serves the Recipe's allowed tools from tools.json, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools` allows (an `include` of `"*"` or a tool's name, less its `exclude`), in `tools.json`'s order; a captured `"taskSupport": "forbidden"` equals a tool served without `execution` |
 | `<id> maps every allowed tool to its entities` | The manifest's `tools` are not the allow-list, a tool's kind is not `stateful` or `static`, it names an entity outside `entities`, or its writes contradict `readOnlyHint` |
 | `<id> has no static tool over an entity a tool writes or a world fills` | A static tool writes, or reads an entity some tool writes or some scenario's world fills |
 | `the <scenario> world is consistent` | The world lacks a fake's state, or `consistent` throws |

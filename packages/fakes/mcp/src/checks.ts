@@ -38,7 +38,7 @@ export interface RecipeFakesOptions<W extends object> {
 
 interface DeclaredServer {
   id: string;
-  tools?: { include?: string[] };
+  tools?: { include?: string[]; exclude?: string[] };
 }
 
 interface MappedTool {
@@ -92,15 +92,21 @@ export function checkRecipeFakes<W extends object>(options: RecipeFakesOptions<W
     scenarios.map((scenario) => world(scenario, clock) as Record<string, unknown>);
   const run = (name: string, fn: () => Promise<void> | void) => test(name, { timeout }, fn);
 
-  // The Recipe's allow-list for a fake, or every captured tool where the Recipe declares none.
+  // The captured tools the Recipe's policy allows, in captured order, or every captured tool
+  // where the Recipe declares no include. A selector is trimmed; an include of "*" allows every
+  // tool, and an exclude names a tool to drop (recipes' `mcpSelectionAllowsTool`).
   const allowed = (id: string) => {
     const server = declared().find((item) => item.id === id);
     assert.ok(server, `the Recipe declares no MCP server ${id}, the id of the fake mcp/${id}`);
-    const { tools } = captured(id);
-    const include = server.tools?.include ?? tools.map((tool) => tool.name);
-    const missing = include.filter((name) => !tools.some((tool) => tool.name === name));
+    const names = captured(id).tools.map((tool) => tool.name);
+    const include = server.tools?.include?.map((selector) => selector.trim());
+    if (!include) return names;
+    const missing = include.filter((name) => name !== "*" && !names.includes(name));
     assert.deepEqual(missing, [], `the Recipe allows tools ${id}/tools.json does not hold`);
-    return include;
+    const exclude = (server.tools?.exclude ?? []).map((selector) => selector.trim());
+    return names.filter(
+      (name) => (include.includes("*") || include.includes(name)) && !exclude.includes(name),
+    );
   };
 
   for (const [id, fake] of Object.entries(fakes)) {

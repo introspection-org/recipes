@@ -65,7 +65,9 @@ async function failing(options: Omit<RecipeFakesOptions<World>, "test">) {
   return { names: registered.map((item) => item.name), failed };
 }
 
-function recipe(change: (servers: { id: string; tools: { include: string[] } }[]) => void) {
+function recipe(
+  change: (servers: { id: string; tools: { include?: string[]; exclude?: string[] } }[]) => void,
+) {
   const parsed = JSON.parse(fs.readFileSync(RECIPE, "utf8"));
   change(parsed.pi.mcp.servers);
   const file = path.join(
@@ -106,7 +108,7 @@ describe("checkRecipeFakes", () => {
   test("fails a fake that does not serve a tool the Recipe allows", async () => {
     const { failed } = await failing({
       ...base,
-      recipe: recipe((servers) => servers[0].tools.include.push("search-everything")),
+      recipe: recipe((servers) => servers[0].tools.include?.push("search-everything")),
       fakesDir: FAKES,
     });
     expect(Object.keys(failed)).toEqual([
@@ -118,12 +120,84 @@ describe("checkRecipeFakes", () => {
   test("fails a Recipe allowing a tool its capture does not hold", async () => {
     const { failed } = await failing({
       ...base,
-      recipe: recipe((servers) => servers[1].tools.include.push("send-later")),
+      recipe: recipe((servers) => servers[1].tools.include?.push("send-later")),
       fakesDir: FAKES,
     });
     expect(failed["mail maps every allowed tool to its entities"]).toMatch(
       /the Recipe allows tools mail\/tools.json does not hold/,
     );
+  });
+
+  test("allows every captured tool for an include of \"*\", less what the Recipe excludes", async () => {
+    const mail = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        servers[1].tools.include = [" * "];
+      }),
+      fakesDir: FAKES,
+    });
+    expect(mail.failed).toEqual({});
+    const notes = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        servers[0].tools = { include: ["*"], exclude: [" search-everything "] };
+      }),
+      fakesDir: FAKES,
+    });
+    expect(notes.failed).toEqual({});
+    const unexcluded = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        servers[0].tools.include = ["*"];
+      }),
+      fakesDir: FAKES,
+    });
+    expect(Object.keys(unexcluded.failed)).toEqual([
+      "notes serves the Recipe's allowed tools from tools.json, in captured order",
+      "notes maps every allowed tool to its entities",
+    ]);
+  });
+
+  test("allows only the listed tools, less what the Recipe excludes", async () => {
+    const { failed } = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        servers[0].tools = {
+          include: ["list-notes", "create-note", "get-note", "search-everything"],
+          exclude: ["search-everything"],
+        };
+      }),
+      fakesDir: FAKES,
+    });
+    expect(failed).toEqual({});
+  });
+
+  test("fails a Recipe allowing \"*\" and a tool its capture does not hold", async () => {
+    const { failed } = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        servers[1].tools.include = ["*", "send-later"];
+      }),
+      fakesDir: FAKES,
+    });
+    expect(failed["mail maps every allowed tool to its entities"]).toMatch(
+      /the Recipe allows tools mail\/tools.json does not hold/,
+    );
+  });
+
+  test("allows every captured tool where the Recipe declares no include", async () => {
+    const { failed } = await failing({
+      ...base,
+      recipe: recipe((servers) => {
+        delete servers[1].tools.include;
+        delete servers[0].tools.include;
+      }),
+      fakesDir: FAKES,
+    });
+    expect(Object.keys(failed)).toEqual([
+      "notes serves the Recipe's allowed tools from tools.json, in captured order",
+      "notes maps every allowed tool to its entities",
+    ]);
   });
 
   test("fails a fake whose id the Recipe does not declare", async () => {
