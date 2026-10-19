@@ -508,5 +508,122 @@ describe("MCP tools mode", () => {
         env: {},
       })
     ).toThrow("Required MCP catalog discovery failed");
+
+    // A host preparing the session does not lift `required` on its own: a
+    // server whose package declaration does not defer still fails it.
+    expect(() =>
+      createMcpToolSet({
+        session: {
+          ...mixedSession,
+          servers: mixedSession.servers.map((server) =>
+            server.id === "optional" ? { ...server, required: true } : server
+          ),
+        },
+        catalogs: mixedCatalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"] },
+            optional: { include: ["*"] },
+          },
+        },
+        env: {},
+        discovery: "defer",
+      })
+    ).toThrow("Required MCP catalog discovery failed: optional");
+
+    // When the package also defers that server, the preparing session starts:
+    // the server contributes no tools and stays in diagnostics, and an eager
+    // selector naming it is not checked yet.
+    const requiredOffline = {
+      ...mixedSession,
+      servers: mixedSession.servers.map((server) =>
+        server.id === "optional"
+          ? { ...server, required: true, discovery: "defer" as const }
+          : server
+      ),
+    };
+    const prepared = createMcpToolSet({
+      session: requiredOffline,
+      catalogs: mixedCatalogs,
+      mcp: {
+        mode: "tools",
+        servers: {
+          nextplay: { include: ["*"] },
+          optional: { include: ["*"], defer: ["*"], eager: ["*"] },
+        },
+      },
+      env: {},
+      discovery: "defer",
+    });
+    expect(prepared.toolNames).toHaveLength(2);
+    expect(prepared.diagnostics).toContain("optional: connection refused");
+    expect(() =>
+      createMcpToolSet({
+        session: requiredOffline,
+        catalogs: mixedCatalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"] },
+            optional: { include: ["*"] },
+          },
+        },
+        env: {},
+        discovery: "require",
+      })
+    ).toThrow("Required MCP catalog discovery failed");
+  });
+
+  it("still checks eager selectors on a failed optional server when discovery is deferred", () => {
+    // `defer` covers required servers only: an optional server is not
+    // deferred, so an eager wildcard on its failed catalog still throws.
+    expect(() =>
+      createMcpToolSet({
+        session: {
+          version: 1,
+          servers: [
+            ...session.servers,
+            {
+              id: "optional",
+              name: "Optional",
+              base_url: "https://optional.test/mcp",
+              package_tools: { include: ["*"] },
+              agent_tools: [{ include: ["*"] }],
+            },
+          ],
+        },
+        catalogs: [
+          ...catalogs,
+          { id: "optional", name: "Optional", tools: [], error: "connection refused" },
+        ],
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"] },
+            optional: { include: ["*"], defer: ["*"], eager: ["*"] },
+          },
+        },
+        env: {},
+        discovery: "defer",
+      })
+    ).toThrow("requires a healthy catalog");
+  });
+
+  it("still checks eager selectors on discovered servers when discovery is deferred", () => {
+    expect(() =>
+      createMcpToolSet({
+        session,
+        catalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"], defer: ["*"], eager: ["missing_tool"] },
+          },
+        },
+        env: {},
+        discovery: "defer",
+      })
+    ).toThrow("Eager MCP tool 'nextplay.missing_tool' is not authorized");
   });
 });

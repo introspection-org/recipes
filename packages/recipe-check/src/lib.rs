@@ -2746,13 +2746,13 @@ fn validate_mcp_servers(value: Option<&JsonValue>, ctx: &mut CheckContext) {
         };
         for key in server
             .keys()
-            .filter(|key| !matches!(key.as_str(), "id" | "required" | "tools"))
+            .filter(|key| !matches!(key.as_str(), "id" | "required" | "discovery" | "tools"))
         {
             ctx.error(
                 "pi.mcp_invalid",
                 PACKAGE_JSON,
                 format!("package.json#pi.mcp.servers[{index}] contains unknown field '{key}'"),
-                Some("use only id, required, and tools"),
+                Some("use only id, required, discovery, and tools"),
             );
         }
         let server_id = string_value(server.get("id"));
@@ -2791,6 +2791,18 @@ fn validate_mcp_servers(value: Option<&JsonValue>, ctx: &mut CheckContext) {
                     PACKAGE_JSON,
                     format!("package.json#pi.mcp.servers[{index}].required must be boolean"),
                     Some("remove required or set it to a boolean value"),
+                );
+            }
+        }
+        if let Some(discovery) = server.get("discovery") {
+            if !matches!(discovery.as_str(), Some("require" | "defer")) {
+                ctx.error(
+                    "pi.mcp_invalid",
+                    PACKAGE_JSON,
+                    format!(
+                        "package.json#pi.mcp.servers[{index}].discovery must be \"require\" or \"defer\""
+                    ),
+                    Some("remove discovery or set it to \"require\" or \"defer\""),
                 );
             }
         }
@@ -3735,6 +3747,36 @@ mod tests {
             diagnostic.code == "pi.mcp_invalid"
                 && diagnostic.message.contains("duplicate entry 'mcp.json'")
         }));
+    }
+
+    #[test]
+    fn checks_mcp_server_discovery() {
+        let check = |discovery: &str| {
+            let package = json!({
+                "name": "discovery",
+                "pi": {
+                    "mcp": {
+                        "servers": [
+                            { "id": "contacts", "required": true, "discovery": discovery }
+                        ]
+                    }
+                }
+            });
+            let input = recipe_files(&[(
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            )]);
+            check_recipe_files(&input)
+                .diagnostics
+                .into_iter()
+                .any(|diagnostic| {
+                    diagnostic.code == "pi.mcp_invalid" && diagnostic.message.contains("discovery")
+                })
+        };
+
+        assert!(!check("defer"));
+        assert!(!check("require"));
+        assert!(check("later"));
     }
 
     #[test]

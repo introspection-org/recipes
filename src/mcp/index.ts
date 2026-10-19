@@ -57,6 +57,8 @@ export interface McpSessionServer {
   /** Set only by a host that knows where it bound the server from. */
   binding?: McpServerBinding;
   required?: boolean;
+  /** The package's `discovery` for this server; absent means `"require"`. */
+  discovery?: "defer";
   package_tools: RecipeMcpToolSelection;
   agent_tools: RecipeMcpToolSelection[];
   /** Optional package-pinned catalog. Dynamic bindings leave this absent. */
@@ -958,6 +960,7 @@ export async function materializeMcpSession(
       base_url: baseUrl,
       ...(origin ? { binding: origin } : {}),
       ...(packageServer.required ? { required: true } : {}),
+      ...(packageServer.discovery === "defer" ? { discovery: "defer" as const } : {}),
       package_tools: packageServer.tools,
       agent_tools: selected,
       ...(declared?.tools ? { catalog } : {}),

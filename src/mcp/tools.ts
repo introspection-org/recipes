@@ -47,6 +47,14 @@ export interface McpToolOrigin {
   binding?: McpServerBinding;
 }
 
+/**
+ * `defer` says the host boots the session only to prepare it, such as a bake.
+ * A required server whose declaration sets `discovery: "defer"` may then start
+ * the session without its catalog; every other required server still must be
+ * discovered. Default `require`.
+ */
+export type McpDiscoveryRequirement = "require" | "defer";
+
 export interface McpToolSet {
   tools: ToolDefinition[];
   toolNames: string[];
@@ -525,6 +533,7 @@ export function createMcpToolSet(options: {
   catalogs: readonly McpCatalogServer[];
   mcp: RecipeAgentMcp;
   env: NodeJS.ProcessEnv;
+  discovery?: McpDiscoveryRequirement;
 }): McpToolSet {
   // A host-provisioned daemon may serve more than one agent. Re-apply this
   // resolved agent's policy before any catalog entry becomes a Pi tool.
@@ -542,9 +551,17 @@ export function createMcpToolSet(options: {
         mcpSelectionAllowsTool(options.mcp.servers[catalog.id], tool.name)
       ),
     }));
+  const deferred = new Set<string>();
   const requiredFailures = catalogs.filter((catalog) => {
     const server = session.servers.find((entry) => entry.id === catalog.id);
-    return server?.required === true && Boolean(catalog.error);
+    if (server?.required !== true || !catalog.error) return false;
+    // Both are needed: the mark alone would skip the server in a working
+    // session, and the host option alone would skip an unmarked server.
+    if (options.discovery === "defer" && server.discovery === "defer") {
+      deferred.add(catalog.id);
+      return false;
+    }
+    return true;
   });
   if (requiredFailures.length > 0) {
     throw new Error(
@@ -555,8 +572,13 @@ export function createMcpToolSet(options: {
   }
   const { usable, unusable } = compileUsableTools(session, catalogs);
   const activeCanonical = activeCanonicalNames(options.mcp, usable);
+  // A deferred server's tools cannot be named yet, so its eager selectors wait
+  // for the session that discovers it.
+  const eagerServers = Object.entries(options.mcp.servers).filter(
+    ([serverId]) => !deferred.has(serverId)
+  );
   const requestedEager = new Set(
-    Object.entries(options.mcp.servers).flatMap(([serverId, policy]) =>
+    eagerServers.flatMap(([serverId, policy]) =>
       (policy.eager ?? []).includes("*")
         ? usable
             .filter((tool) => tool.serverId === serverId)
@@ -564,7 +586,7 @@ export function createMcpToolSet(options: {
         : (policy.eager ?? []).map((tool) => `${serverId}.${tool}`)
     )
   );
-  for (const [serverId, policy] of Object.entries(options.mcp.servers)) {
+  for (const [serverId, policy] of eagerServers) {
     const selectors = policy.eager ?? [];
     if (!selectors.includes("*")) continue;
     const catalog = catalogs.find((entry) => entry.id === serverId);

@@ -48,6 +48,21 @@ including tools a server may add later; patterns such as `search_*` are invalid.
 `"required": true` must resolve to a bound endpoint at session materialization
 or the session fails closed rather than starting without the capability.
 
+In `mode: tools`, a required server must also be discovered when the session
+starts. A session skips that check for a server only when both of these hold:
+
+- the server's declaration sets `"discovery": "defer"` (default `"require"`),
+  so the Recipe chooses which servers may be skipped and an unmarked one is
+  always checked;
+- the host passes `mcpDiscovery: "defer"` because it boots the session only to
+  prepare it, such as building and caching its workspace. The declaration is
+  part of the Recipe, so every session sees it; this condition keeps a session
+  that does work, including one that checks the Recipe by calling its tools,
+  from skipping the server.
+
+Mark a server that cannot answer where the Recipe is prepared, such as a
+stand-in reachable only from where tasks run.
+
 ## 2. Choose an agent mode and narrow access
 
 An agent selects a subset of the package-permitted servers and tools. It cannot

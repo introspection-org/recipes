@@ -92,7 +92,10 @@ It:
 
 - selects the agent from the supplied immutable Recipe;
 - resolves model credentials fail-closed;
-- materializes required MCP bindings fail-closed;
+- materializes required MCP bindings fail-closed, and in `mcp.mode: tools`
+  fails on a required server whose catalog was not discovered, except one
+  declared `"discovery": "defer"` when the host passes `mcpDiscovery: "defer"`
+  to prepare a session that does no work;
 - loads the complete ordered Recipe extension closure, selected skills, and
   package prompts;
 - registers the shared subagent tool;
