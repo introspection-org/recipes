@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.2.0...vitest-evals-v0.2.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **eval:** eval create writes the Vitest config its suites need ([#548](https://github.com/introspection-org/introspection-cli/issues/548)) ([7b8dfa7](https://github.com/introspection-org/introspection-cli/commit/7b8dfa7853ebac94f682d15965c0dbc40dce3c0c))
+
 ## [0.2.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.1.0...vitest-evals-v0.2.0) (2026-10-13)
 
 

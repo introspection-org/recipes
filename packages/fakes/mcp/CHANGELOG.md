@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.1...mcp-fakes-v0.2.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* **mcp-fakes:** accept "*" in a Recipe's tools.include ([#555](https://github.com/introspection-org/introspection-cli/issues/555)) ([ecf38e4](https://github.com/introspection-org/introspection-cli/commit/ecf38e4120099ef352177066cf9a0e687a0ac04f))
+
 ## [0.2.1](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.0...mcp-fakes-v0.2.1) (2026-10-16)
 
 
