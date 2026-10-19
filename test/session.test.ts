@@ -1030,7 +1030,25 @@ describe("createAgentSession", () => {
     ).rejects.toSatisfy((err: unknown) => {
       expect(err).toBeInstanceOf(McpBindingError);
       expect((err as McpBindingError).servers).toEqual(["linear"]);
-      expect((err as Error).message).toContain("LINEAR_MCP_URL");
+      const message = (err as Error).message;
+      // The variables are only read through a local config entry, so the
+      // message shows that entry rather than offering the variables alone.
+      expect(message).toContain(".pi/mcp.local.json");
+      expect(message).toContain("PI_RECIPES_MCP_LOCAL_CONFIG");
+      expect(message).toContain(
+        JSON.stringify({
+          servers: [
+            {
+              id: "linear",
+              transport: "streamable_http",
+              url: "${LINEAR_MCP_URL}",
+              headers: { Authorization: "Bearer ${LINEAR_MCP_TOKEN}" },
+            },
+          ],
+        })
+      );
+      expect(message).toContain("export LINEAR_MCP_URL, LINEAR_MCP_TOKEN");
+      expect(message).not.toContain("or env:");
       return true;
     });
   });
