@@ -66,9 +66,19 @@ export function preloadMcpCatalogs(options: {
   };
   const preload = requestCatalogs();
   catalogPreloads.set(key, preload);
-  void preload.catch(() => {
+  const forget = () => {
     if (catalogPreloads.get(key) === preload) catalogPreloads.delete(key);
-  });
+  };
+  // Concurrent callers share one request. Once it settles, only a fully
+  // discovered result is reused: a partial one would hand a later session a
+  // server's failure after the server has recovered, so the next caller asks
+  // the daemon again.
+  void preload.then(
+    (catalogs) => {
+      if (catalogs.some((server) => server.error)) forget();
+    },
+    forget
+  );
   return preload;
 }
 
