@@ -141,27 +141,33 @@ describe("canonical Recipe session MCP tools mode", () => {
   });
 
   it("defers required discovery to the working session when a host prepares one", async () => {
-    const fixture = writeFixtureRecipe({
-      manifestPi: {
-        mcp: {
-          servers: [
-            {
-              id: "contacts",
-              required: true,
-              tools: { include: ["search_contacts"] },
-            },
-          ],
+    const fixtureFor = (discovery?: "defer") => {
+      const fixture = writeFixtureRecipe({
+        manifestPi: {
+          mcp: {
+            servers: [
+              {
+                id: "contacts",
+                required: true,
+                ...(discovery ? { discovery } : {}),
+                tools: { include: ["search_contacts"] },
+              },
+            ],
+          },
         },
-      },
-      agentExtras: [
-        "mcp:",
-        "  mode: tools",
-        "  servers:",
-        "    contacts:",
-        '      include: ["search_contacts"]',
-      ],
-    });
-    cleanups.push(fixture.cleanup);
+        agentExtras: [
+          "mcp:",
+          "  mode: tools",
+          "  servers:",
+          "    contacts:",
+          '      include: ["search_contacts"]',
+        ],
+      });
+      cleanups.push(fixture.cleanup);
+      return fixture;
+    };
+    const strict = fixtureFor();
+    const fixture = fixtureFor("defer");
     mocks.preloadMcpCatalogs.mockResolvedValue([
       {
         id: "contacts",
@@ -181,19 +187,25 @@ describe("canonical Recipe session MCP tools mode", () => {
       ],
     };
     const open = async (
-      opts: Partial<Parameters<typeof createAgentSession>[0]>
+      opts: Partial<Parameters<typeof createAgentSession>[0]>,
+      recipe = fixture
     ) =>
       createAgentSession({
-        recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
-        cwd: fixture.workspaceDir,
+        recipe: resolveRecipe({ recipeDir: recipe.recipeDir }),
+        cwd: recipe.workspaceDir,
         env: cleanEnv(),
         credentials: await credentials(),
         ...opts,
       });
 
+    // A working session never defers, whatever the package says.
     await expect(open({ mcpBindings: bound })).rejects.toThrow(
       "Required MCP catalog discovery failed: contacts"
     );
+    // A preparing host does not defer a server its package does not defer.
+    await expect(
+      open({ mcpBindings: bound, mcpDiscovery: "defer" }, strict)
+    ).rejects.toThrow("Required MCP catalog discovery failed: contacts");
 
     const reported: { type: string; message: string }[] = [];
     const prepared = await open({

@@ -164,7 +164,8 @@ export interface CreateAgentSessionOptions {
    * Whether a required MCP server's catalog must be discovered for the session
    * to start, in `mcp.mode: tools` (see `McpDiscoveryRequirement`). Default
    * `"require"`. A host booting a session only to prepare it, such as a bake,
-   * passes `"defer"` so the boot depends on bindings alone.
+   * passes `"defer"`, which skips only required servers whose declaration sets
+   * `"discovery": "defer"`.
    */
   mcpDiscovery?: McpDiscoveryRequirement;
   /** `${VAR}` resolution source and MCP runtime environment. Default: `process.env`. */

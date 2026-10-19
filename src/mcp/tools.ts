@@ -54,11 +54,13 @@ export interface McpToolOrigin {
  *
  * - `require` (default): a required server whose discovery failed fails the
  *   session, so a session never starts without a capability its Recipe needs.
- * - `defer`: the server contributes no tools and its failure stays in
- *   `diagnostics`, so a host that boots a session only to prepare it, such
- *   as a bake, does not depend on the server answering at that moment. A
- *   session that checks a Recipe by calling its tools does work, so it never
- *   defers, and the session that works runs discovery again under `require`.
+ * - `defer`: a host boots the session only to prepare it, such as a bake. A
+ *   required server whose package declaration also says `discovery: "defer"`
+ *   then contributes no tools and its failure stays in `diagnostics`, so the
+ *   preparation does not depend on that server answering at that moment.
+ *   Every other required server still fails the session. A session that
+ *   checks a Recipe by calling its tools does work, so it never defers, and
+ *   the session that works runs discovery again under `require`.
  */
 export type McpDiscoveryRequirement = "require" | "defer";
 
@@ -68,7 +70,7 @@ export interface McpToolSet {
   initialActiveToolNames: string[];
   deferredToolNames: string[];
   diagnostics: string[];
-  /** Required servers left out under `discovery: "defer"`, with why. */
+  /** Required servers whose discovery was deferred, with why. */
   deferredRequired: { serverId: string; error: string }[];
   canonicalToPiName: ReadonlyMap<string, string>;
   /** The server serving a tool, by Pi tool name. */
@@ -564,17 +566,27 @@ export function createMcpToolSet(options: {
     const server = session.servers.find((entry) => entry.id === catalog.id);
     return server?.required === true && Boolean(catalog.error);
   });
-  if (options.discovery !== "defer" && requiredFailures.length > 0) {
+  // A failure is deferred only when the host is preparing the session and the
+  // package lets this server's discovery wait for the session that works.
+  const deferredFailures = requiredFailures.filter(
+    (catalog) =>
+      options.discovery === "defer" &&
+      session.servers.find((entry) => entry.id === catalog.id)?.discovery ===
+        "defer"
+  );
+  const blockingFailures = requiredFailures.filter(
+    (catalog) => !deferredFailures.includes(catalog)
+  );
+  if (blockingFailures.length > 0) {
     throw new Error(
-      `Required MCP catalog discovery failed: ${requiredFailures
+      `Required MCP catalog discovery failed: ${blockingFailures
         .map((catalog) => `${catalog.id}: ${catalog.error}`)
         .join("; ")}`
     );
   }
-  // Past the throw, any required failure was deferred. Its server is left out
-  // of the eager checks, since none of its tools can be named yet; an optional
-  // server is not deferred, so its eager checks still apply.
-  const undiscovered = new Set(requiredFailures.map((catalog) => catalog.id));
+  // A deferred server is left out of the eager checks, since none of its tools
+  // can be named yet; every other server's eager checks still apply.
+  const undiscovered = new Set(deferredFailures.map((catalog) => catalog.id));
   const eagerServers = Object.entries(options.mcp.servers).filter(
     ([serverId]) => !undiscovered.has(serverId)
   );
@@ -713,7 +725,7 @@ export function createMcpToolSet(options: {
         ([name, error]) => `${name}: ${error}`
       ),
     ],
-    deferredRequired: requiredFailures.map((catalog) => ({
+    deferredRequired: deferredFailures.map((catalog) => ({
       serverId: catalog.id,
       error: catalog.error ?? "",
     })),

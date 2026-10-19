@@ -148,6 +148,38 @@ describe("Recipe Format", () => {
     );
   });
 
+  it.each([
+    ["defer", true],
+    ["require", true],
+    ["later", false],
+  ])("reads an MCP server's discovery %s (valid: %s)", (discovery, valid) => {
+    const recipeDir = fixture();
+    const pkg = JSON.parse(
+      readFileSync(join(recipeDir, "package.json"), "utf8"),
+    );
+    pkg.pi.mcp = {
+      servers: [
+        { id: "contacts", required: true, discovery, tools: { include: ["*"] } },
+      ],
+    };
+    writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+
+    const manifest = readPiPackageManifest(recipeDir);
+    const findings = validatePiPackageManifest(manifest).findings.map(
+      (finding) => finding.message,
+    );
+    if (valid) {
+      expect(findings).not.toContainEqual(expect.stringContaining("discovery"));
+    } else {
+      expect(findings).toContain(
+        'package.json#pi.mcp.servers[0].discovery must be "require" or "defer"',
+      );
+    }
+    expect(manifest.mcp?.servers[0]?.discovery).toBe(
+      discovery === "defer" ? "defer" : undefined,
+    );
+  });
+
   it("derives the connector package from the provider", () => {
     const recipeDir = fixture();
     const pkg = JSON.parse(

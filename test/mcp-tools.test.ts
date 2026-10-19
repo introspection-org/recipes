@@ -509,13 +509,38 @@ describe("MCP tools mode", () => {
       })
     ).toThrow("Required MCP catalog discovery failed");
 
-    // A host booting only to prepare the session defers discovery: the
-    // required server that did not answer contributes no tools and stays in
-    // diagnostics, and an eager selector naming it is not checked yet.
+    // A host preparing the session does not lift `required` on its own: a
+    // server whose package declaration does not defer still fails it.
+    expect(() =>
+      createMcpToolSet({
+        session: {
+          ...mixedSession,
+          servers: mixedSession.servers.map((server) =>
+            server.id === "optional" ? { ...server, required: true } : server
+          ),
+        },
+        catalogs: mixedCatalogs,
+        mcp: {
+          mode: "tools",
+          servers: {
+            nextplay: { include: ["*"] },
+            optional: { include: ["*"] },
+          },
+        },
+        env: {},
+        discovery: "defer",
+      })
+    ).toThrow("Required MCP catalog discovery failed: optional");
+
+    // When the package also defers that server, the preparing session starts:
+    // the server contributes no tools and stays in diagnostics, and an eager
+    // selector naming it is not checked yet.
     const requiredOffline = {
       ...mixedSession,
       servers: mixedSession.servers.map((server) =>
-        server.id === "optional" ? { ...server, required: true } : server
+        server.id === "optional"
+          ? { ...server, required: true, discovery: "defer" as const }
+          : server
       ),
     };
     const prepared = createMcpToolSet({
