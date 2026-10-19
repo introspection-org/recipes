@@ -46,11 +46,32 @@ Run the suite through the Recipe-aware CLI boundary:
 introspection eval run -p evals/support.eval.ts
 ```
 
-For the shortest native Vitest loop, the same zero-config harness also works
-directly from the Recipe directory:
+Vitest's default `include` only collects `*.test.*` and `*.spec.*` files, so
+a `*.eval.ts` suite needs a Vitest config that includes it. Agent turns also
+outlast Vitest's 5 second default test timeout. Vitest resolves `include`
+against its `root`, which is the current directory unless set, so the config
+sets `root` to its own directory and works wherever Vitest is started:
+
+```ts
+// vitest.config.ts
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    root: fileURLToPath(new URL(".", import.meta.url)),
+    include: ["evals/vitest/**/*.eval.ts"],
+    testTimeout: 300_000,
+  },
+});
+```
+
+`introspection eval create` writes this file when the Recipe has no
+`vitest.config.*` or `vite.config.*`. With it in place, the shortest native
+Vitest loop also works directly from the Recipe directory:
 
 ```bash
-npx vitest run evals/support.eval.ts
+npx vitest run evals/vitest/support.eval.ts
 ```
 
 `introspection eval run` owns candidate selection, repeated trials, production
@@ -67,6 +88,12 @@ Scaffold a named Vitest suite and a judge with the same behavioral name:
 ```bash
 introspection eval create useful-support-resolution --with-judge
 ```
+
+`eval create` also writes the `vitest.config.ts` above when the Recipe has no
+Vitest or Vite config. An existing config is left unchanged, and `eval create`
+prints the `root`, `include` and `testTimeout` settings it needs on stderr.
+When the config sits in a package above the Recipe, its `include` is written
+relative to that package, such as `apps/support/evals/vitest/**/*.eval.ts`.
 
 If the judge already exists under `judges/`, reference it instead:
 
