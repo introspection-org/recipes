@@ -47,7 +47,11 @@ import {
   type McpLocalConfig,
   type ScopedMcpToolSelection,
 } from "./mcp/index.js";
-import { createMcpToolSet, type McpToolSet } from "./mcp/tools.js";
+import {
+  createMcpToolSet,
+  type McpDiscoveryRequirement,
+  type McpToolSet,
+} from "./mcp/tools.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
@@ -156,6 +160,11 @@ export interface CreateAgentSessionOptions {
    * already materialized a runtime covering exactly this agent's policy.
    */
   mcpProvisioning?: "session" | "host";
+  /**
+   * `"defer"` when the host boots this session only to prepare it, such as a
+   * bake (see `McpDiscoveryRequirement`). Default `"require"`.
+   */
+  mcpDiscovery?: McpDiscoveryRequirement;
   /** `${VAR}` resolution source and MCP runtime environment. Default: `process.env`. */
   env?: NodeJS.ProcessEnv;
   /** Default: `SessionManager.inMemory(cwd)`. */
@@ -480,6 +489,7 @@ async function configureSessionMcp(
         catalogs,
         mcp: recipe.mcp!,
         env: runtimeEnv,
+        discovery: opts.mcpDiscovery,
       });
       return {
         available: true,

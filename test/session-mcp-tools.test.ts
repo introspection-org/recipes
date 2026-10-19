@@ -140,6 +140,88 @@ describe("canonical Recipe session MCP tools mode", () => {
     expect(env.MCPORTER_CONFIG).toBeUndefined();
   });
 
+  it("defers required discovery to the working session when a host prepares one", async () => {
+    const fixtureFor = (discovery?: "defer") => {
+      const fixture = writeFixtureRecipe({
+        manifestPi: {
+          mcp: {
+            servers: [
+              {
+                id: "contacts",
+                required: true,
+                ...(discovery ? { discovery } : {}),
+                tools: { include: ["search_contacts"] },
+              },
+            ],
+          },
+        },
+        agentExtras: [
+          "mcp:",
+          "  mode: tools",
+          "  servers:",
+          "    contacts:",
+          '      include: ["search_contacts"]',
+        ],
+      });
+      cleanups.push(fixture.cleanup);
+      return fixture;
+    };
+    const strict = fixtureFor();
+    const fixture = fixtureFor("defer");
+    mocks.preloadMcpCatalogs.mockResolvedValue([
+      {
+        id: "contacts",
+        name: "Contacts",
+        tools: [],
+        error:
+          "Version negotiation failed: the server answered the probe with HTTP 530",
+      },
+    ]);
+    const bound = {
+      servers: [
+        {
+          id: "contacts",
+          transport: "streamable_http" as const,
+          url: "http://127.0.0.1:9/mcp",
+        },
+      ],
+    };
+    const open = async (
+      opts: Partial<Parameters<typeof createAgentSession>[0]>,
+      recipe = fixture
+    ) =>
+      createAgentSession({
+        recipe: resolveRecipe({ recipeDir: recipe.recipeDir }),
+        cwd: recipe.workspaceDir,
+        env: cleanEnv(),
+        credentials: await credentials(),
+        ...opts,
+      });
+
+    // A working session never defers, whatever the package says.
+    await expect(open({ mcpBindings: bound })).rejects.toThrow(
+      "Required MCP catalog discovery failed: contacts"
+    );
+    // A preparing host does not defer a server its package does not defer.
+    await expect(
+      open({ mcpBindings: bound, mcpDiscovery: "defer" }, strict)
+    ).rejects.toThrow("Required MCP catalog discovery failed: contacts");
+
+    const prepared = await open({
+      mcpBindings: bound,
+      mcpDiscovery: "defer",
+    });
+    handles.push(prepared);
+    expect(
+      prepared.session.getAllTools().map((tool) => tool.name)
+    ).not.toContain(piMcpToolName("contacts", "search_contacts"));
+
+    // Deferring discovery never lifts the binding requirement.
+    await expect(
+      open({ mcpBindings: { servers: [] }, mcpDiscovery: "defer" })
+    ).rejects.toThrow("Required MCP server binding(s) missing: contacts");
+  });
+
   it("applies a private CLI MCP environment to the session bash tool", async () => {
     const fixture = writeFixtureRecipe({
       tools: ["read", "bash"],

@@ -11,6 +11,11 @@ export interface RecipePackageResources {
 export interface RecipePackageMcpServer {
   id: string;
   required: boolean;
+  /**
+   * `"defer"` lets a host that boots a session only to prepare it start
+   * without this required server's catalog. Absent means `"require"`.
+   */
+  discovery?: "defer";
   tools: RecipeMcpToolSelection;
 }
 
@@ -436,7 +441,7 @@ function mcpSourceShapeFindings(value: unknown, packageName: string): RecipeVali
     }
     const server = raw as Record<string, unknown>;
     const serverUnknown = Object.keys(server).filter(
-      (key) => !["id", "required", "tools"].includes(key)
+      (key) => !["id", "required", "discovery", "tools"].includes(key)
     );
     if (serverUnknown.length > 0) {
       findings.push(
@@ -467,6 +472,15 @@ function mcpSourceShapeFindings(value: unknown, packageName: string): RecipeVali
     }
     if (Object.hasOwn(server, "required") && typeof server.required !== "boolean") {
       findings.push(invalid(`package.json#pi.mcp.servers[${index}].required must be boolean`));
+    }
+    if (
+      Object.hasOwn(server, "discovery") &&
+      server.discovery !== "require" &&
+      server.discovery !== "defer"
+    ) {
+      findings.push(
+        invalid(`package.json#pi.mcp.servers[${index}].discovery must be "require" or "defer"`)
+      );
     }
     if (Object.hasOwn(server, "tools")) {
       if (!server.tools || typeof server.tools !== "object" || Array.isArray(server.tools)) {
@@ -709,6 +723,7 @@ function parseMcpConfig(value: unknown): RecipePackageMcpConfig {
     servers.push({
       id,
       required: server.required === true,
+      ...(server.discovery === "defer" ? { discovery: "defer" as const } : {}),
       tools,
     });
   }
