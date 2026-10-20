@@ -85,14 +85,17 @@ jobs:
 
       # Prove the floor the peer range advertises, read from the range itself so
       # a bump cannot leave this job testing a version we no longer support.
+      # Overrides, not devDependencies, so every workspace package (examples/docs
+      # declares Pi too) resolves the same single Pi the root source compiles
+      # against.
       - run: |
           floor="$(node -p "require('./package.json').peerDependencies['@earendil-works/pi-coding-agent'].split(' ')[0].replace(/[^0-9.]/g, '')")"
           echo "pi floor: $floor"
           pnpm pkg set \
-            devDependencies.@earendil-works/pi-agent-core="$floor" \
-            devDependencies.@earendil-works/pi-ai="$floor" \
-            devDependencies.@earendil-works/pi-coding-agent="$floor" \
-            devDependencies.@earendil-works/pi-tui="$floor" \
+            pnpm.overrides.@earendil-works/pi-agent-core="$floor" \
+            pnpm.overrides.@earendil-works/pi-ai="$floor" \
+            pnpm.overrides.@earendil-works/pi-coding-agent="$floor" \
+            pnpm.overrides.@earendil-works/pi-tui="$floor" \
             pnpm.overrides.@earendil-works/pi-codemode="$floor"
           pnpm install --no-frozen-lockfile
 

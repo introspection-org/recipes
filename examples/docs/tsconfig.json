@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    // CI typechecks before it builds, so the public specifiers resolve to the
+    // source their package.json "exports" are built from, as tsconfig.test.json
+    // does at the root. test/exports-paths.test.ts keeps this map equal to
+    // "exports".
+    "paths": {
+      "@introspection-ai/recipes": ["../../src/index.ts"],
+      "@introspection-ai/recipes/interactions": ["../../src/interactions.ts"],
+      "@introspection-ai/recipes/extensions": ["../../src/api/extensions.ts"],
+      "@introspection-ai/recipes/mcp": ["../../src/api/mcp.ts"],
+      "@introspection-ai/recipes/pi-extension": ["../../src/pi-extension.ts"],
+      "@introspection-ai/recipes/agents": ["../../src/agents.ts"],
+      "@introspection-ai/recipes/recipe": ["../../src/recipe/resolve.ts"],
+      "@introspection-ai/recipes/session": ["../../src/api/session.ts"],
+      "@introspection-ai/recipes/memory": ["../../src/api/memory.ts"],
+      "@introspection-ai/recipes/channels": ["../../src/channels/index.ts"],
+      "@introspection-ai/recipes/test-utils": ["../../src/test-utils.ts"],
+      "@introspection-ai/recipes/inspect": ["../../src/inspect.ts"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

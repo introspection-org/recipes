@@ -1,0 +1,10 @@
+{
+  "server": { "name": "attio", "version": "0.1.0" },
+  "capture": { "at": "2026-10-15T09:00:00Z", "endpoint": "https://mcp.attio.com/mcp", "hash": "sha256:4f1c…" },
+  "entities": ["companies", "deals"],
+  "tools": {
+    "get-records-by-ids": { "kind": "stateful", "reads": ["companies", "deals"], "writes": [] },
+    "list-records": { "kind": "stateful", "reads": ["companies", "deals"], "writes": [] },
+    "update-record": { "kind": "stateful", "reads": ["deals"], "writes": ["deals"] }
+  }
+}
