@@ -92,7 +92,8 @@ jobs:
             devDependencies.@earendil-works/pi-agent-core="$floor" \
             devDependencies.@earendil-works/pi-ai="$floor" \
             devDependencies.@earendil-works/pi-coding-agent="$floor" \
-            devDependencies.@earendil-works/pi-tui="$floor"
+            devDependencies.@earendil-works/pi-tui="$floor" \
+            pnpm.overrides.@earendil-works/pi-codemode="$floor"
           pnpm install --no-frozen-lockfile
 
       - run: |
