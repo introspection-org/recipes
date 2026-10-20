@@ -80,6 +80,7 @@ const HOST_OWNED = new Set([
   // Trust, persistence, packaging and analytics.
   "defaultProjectTrust",
   "sessionDir",
+  "sessionShareDestination",
   "npmCommand",
   "themes",
   "enableSkillCommands",
