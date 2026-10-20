@@ -171,6 +171,25 @@ made to:
 is recorded with `result` holding it: `{"error":{"code":-32602,"message":"…"}}`.
 Recording is off unless asked; the fake keeps no call log otherwise.
 
+## Talking to the agent against the fakes
+
+`introspection local` runs a Recipe against its committed sidecar, so a Recipe
+needs no launcher of its own:
+
+```bash
+introspection local --agent agent --scenario quiet                       # every fake
+introspection local --agent agent --scenario quiet --fakes attio,resend  # only these
+introspection local --agent agent --fakes attio,resend                   # world's default scenario
+```
+
+The CLI starts `node fakes/dist/sidecar.js` on a free loopback port, waits for
+`/health`, and binds only the selected fakes; a server the Recipe declares
+`required: true` that is not among them stops the run. Pi runs in
+`.introspection/local/<scenario>/workspace`, which holds the binding, so the
+Recipe checkout is not written to, and every fake's state is written to
+`.introspection/local/<scenario>/state.json` (`_default` without
+`--scenario`). The sidecar stops when Pi exits.
+
 ## In a vitest eval
 
 A Recipe's vitest eval starts its fakes itself, through the hooks of
