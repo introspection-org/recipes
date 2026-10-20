@@ -1,0 +1,13 @@
+{
+  "pi": {
+    "mcp": {
+      "servers": [
+        {
+          "id": "attio",
+          "required": true,
+          "tools": { "include": ["list-records", "get-records-by-ids", "update-record"] }
+        }
+      ]
+    }
+  }
+}

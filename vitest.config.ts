@@ -1,8 +1,12 @@
 import { fileURLToPath } from "node:url";
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
+  test: {
+    // examples/docs runs its own tests on the vitest its eval packages support.
+    exclude: [...configDefaults.exclude, "examples/**"],
+  },
   resolve: {
     alias: {
       // The workspace connector packages import the channel contract the way a
