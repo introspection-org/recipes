@@ -34,7 +34,9 @@ function setup(requireReply?: boolean, origin = true) {
       return { provider: "test", conversation: "C1", thread: "T1" };
     },
   });
-  const start = () => pi.emitExtensionEvent({ type: "before_agent_start", prompt: "hello", systemPrompt: "base", systemPromptOptions }, {});
+  // Not a fresh literal, so it also type-checks against the Pi floor, whose event has no messageType.
+  const startEvent = { type: "before_agent_start" as const, messageType: "user" as const, prompt: "hello", systemPrompt: "base", systemPromptOptions };
+  const start = () => pi.emitExtensionEvent(startEvent, {});
   const end = (stopReason = "stop", signal?: AbortSignal) => pi.emitExtensionEvent({
     type: "agent_end", messages: [{ role: "assistant", stopReason } as never],
   }, { signal });
