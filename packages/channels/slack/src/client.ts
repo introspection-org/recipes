@@ -72,6 +72,22 @@ function configured(value: string | undefined): value is string {
   return Boolean(value && value !== "undefined" && value !== "null");
 }
 
+/** Sent where Slack expects a token; the egress replaces it with the bot token. */
+const EGRESS_INJECTED_TOKEN = "introspection-egress";
+
+/**
+ * Whether the sandbox reaches Slack through the standard env proxy, which
+ * injects the bot token, rather than the provider listener named by
+ * INTROSPECTION_EGRESS_URL.
+ */
+function egressProxyNative(env: ChannelEnvironment): boolean {
+  if (env.INTROSPECTION_EGRESS_PROXY_NATIVE?.trim() === "1") return true;
+  return (
+    !configured(env.INTROSPECTION_EGRESS_URL?.trim()) &&
+    configured(env.INTROSPECTION_TASK_ID?.trim())
+  );
+}
+
 function bodyFor(
   params: Record<string, unknown>,
   encoding: SlackEncoding,
@@ -108,6 +124,17 @@ export class SlackBotSession {
       headers?: Record<string, string>;
     },
   ): Promise<SlackHttpResponse> {
+    if (egressProxyNative(this.env)) {
+      // The egress terminates TLS for Slack and injects the bot token whatever
+      // the request carries, so the locator never rides along.
+      return this.fetchImpl(url.toString(), {
+        ...init,
+        headers: {
+          ...init.headers,
+          Authorization: `Bearer ${EGRESS_INJECTED_TOKEN}`,
+        },
+      });
+    }
     const locator = this.env.INTROSPECTION_TOKEN?.trim();
     const egressUrl = this.env.INTROSPECTION_EGRESS_URL?.trim();
     if (!locator || !egressUrl) {
