@@ -12,6 +12,7 @@ export function register(server: McpServer, state: State) {
     if (object !== "deals") return notImplemented(`updating ${object}`);
     const deal = state.deals.find((item) => item.id === record_id);
     if (!deal) return text(`The record with ID "${record_id}" was not found.`, true);
+    if (deal.id === state.failUpdate) return text("The CRM rejected the update.", true);
     deal.stage = String(values.stage);
     return text(encode({ record_id: deal.id })); // Attio answers in TOON
   });

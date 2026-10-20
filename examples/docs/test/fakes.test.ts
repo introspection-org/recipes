@@ -54,6 +54,23 @@ test("the update-record handler writes the deal and answers in TOON", async () =
   }
 });
 
+test("the blocked scenario makes the Acme deal's update fail", async () => {
+  const services = await startServices(fakes, { world, scenario: "blocked" });
+  const client = new Client({ name: "docs-examples", version: "0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(services.url("attio"))));
+  try {
+    const rejected = await client.callTool({
+      name: "update-record",
+      arguments: { object: "deals", record_id: ACME_DEAL, values: { stage: "Won" } },
+    });
+    expect(rejected.isError).toBe(true);
+    expect(services.states.attio.deals[0]?.stage).toBe("Proposal");
+  } finally {
+    await client.close();
+    await services.close();
+  }
+});
+
 test("the blocked scenario marks the Acme deal's update as failing", () => {
   expect(world(undefined, new Date()).attio.failUpdate).toBeUndefined();
   expect(world("blocked", new Date()).attio.failUpdate).toBe(ACME_DEAL);
