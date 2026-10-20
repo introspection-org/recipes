@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.5.0...recipe-channel-slack-v0.6.0) (2026-10-20)
+
+
+### Features
+
+* **channels:** reach Slack through the env proxy on proxy-native runtimes ([#332](https://github.com/introspection-org/recipes/issues/332)) ([7cf0cce](https://github.com/introspection-org/recipes/commit/7cf0cceb15a3f6379eb7f1c66e9915adff7f6b39))
+
 ## [0.5.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.4.1...recipe-channel-slack-v0.5.0) (2026-10-11)
 
 
