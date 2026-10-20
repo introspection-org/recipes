@@ -84,6 +84,12 @@ allowed path, and adds the bot token before the request leaves for Slack.
 The adapter refuses to send a task locator when the provider proxy URL is
 missing. It never falls back to sending the locator to Slack.
 
+A proxy-native runtime (`INTROSPECTION_EGRESS_PROXY_NATIVE=1`, or a cloud task
+with no `INTROSPECTION_EGRESS_URL`) calls `https://slack.com/api` directly
+through `HTTPS_PROXY`. The egress terminates TLS for Slack and replaces the
+request's `Authorization` with the bot token, so the adapter sends a fixed
+stand-in token and never the locator.
+
 After `channels reply` or `channels send` succeeds in cloud, the adapter posts
 the `connector_posted` task event to the Data Plane. Cloud checks the agent
 session, current run, and destination before recording follow-up routing.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.11.0...introspection-recipe-check-v0.12.0) (2026-10-19)
+
+
+### Features
+
+* **mcp:** let a Recipe mark a required server that only working sessions must discover ([#346](https://github.com/introspection-org/recipes/issues/346)) ([244f207](https://github.com/introspection-org/recipes/commit/244f207030fa7cc81d70709d44e01243fd0253a2))
+
 ## [0.11.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.10.0...introspection-recipe-check-v0.11.0) (2026-10-14)
 
 
