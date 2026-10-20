@@ -62,6 +62,10 @@ function fakeFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function authorization(call: { init: Record<string, unknown> }): string | undefined {
+  return (call.init.headers as Record<string, string> | undefined)?.Authorization;
+}
+
 function fakeFetch(options: FakeFetchOptions = {}) {
   const calls: Array<{ url: string; init: Record<string, unknown> }> = [];
   const file = options.file ?? fakeFile();
@@ -260,6 +264,74 @@ describe("SlackBotSession transport", () => {
       Authorization: "Bearer session-locator",
     });
     expect(fetchImpl.calls[0]!.init.headers).not.toHaveProperty("Host");
+  });
+
+  it("calls Slack through the env proxy without the locator when proxy-native", async () => {
+    const fetchImpl = fakeFetch();
+    const session = new SlackBotSession({
+      env: {
+        INTROSPECTION_EGRESS_PROXY_NATIVE: "1",
+        INTROSPECTION_TOKEN: "session-locator",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
+      fetchImpl,
+    });
+    await session.call("conversations.history", { channel: "C1" });
+    expect(fetchImpl.calls[0]!.url).toBe(
+      "https://slack.com/api/conversations.history",
+    );
+    const auth = authorization(fetchImpl.calls[0]!);
+    expect(auth).toMatch(/^Bearer \S+$/);
+    expect(auth).not.toContain("session-locator");
+  });
+
+  it("prefers the env proxy when the runtime is proxy-native and an egress URL remains", async () => {
+    const fetchImpl = fakeFetch();
+    const session = new SlackBotSession({
+      env: { ...cloudEnv, INTROSPECTION_EGRESS_PROXY_NATIVE: "1" },
+      fetchImpl,
+    });
+    await session.call("conversations.history", { channel: "C1" });
+    expect(authorization(fetchImpl.calls[0]!)).not.toContain(
+      "session-locator",
+    );
+  });
+
+  it("treats a cloud task with no provider egress URL as proxy-native", async () => {
+    const fetchImpl = fakeFetch();
+    const session = new SlackBotSession({
+      env: { INTROSPECTION_TOKEN: "session-locator", INTROSPECTION_TASK_ID: "task-1" },
+      fetchImpl,
+    });
+    await session.call("conversations.history", { channel: "C1" });
+    expect(fetchImpl.calls[0]!.url).toBe(
+      "https://slack.com/api/conversations.history",
+    );
+    expect(authorization(fetchImpl.calls[0]!)).not.toContain(
+      "session-locator",
+    );
+  });
+
+  it("records the reply bridge with the locator when proxy-native", async () => {
+    const fetchImpl = fakeFetch();
+    const session = new SlackBotSession({
+      env: {
+        INTROSPECTION_EGRESS_PROXY_NATIVE: "1",
+        INTROSPECTION_TOKEN: "session-locator",
+        INTROSPECTION_BASE_API_URL: "https://dp.example",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
+      fetchImpl,
+    });
+    const result = await session.sendMessage({
+      text: "hello",
+      to: { channel: "C1", thread_ts: "100.1" },
+    });
+    expect(result.bridge_recorded).toBe(true);
+    const slackCall = fetchImpl.calls.find((call) => call.url.startsWith("https://slack.com/"));
+    const bridgeCall = fetchImpl.calls.find((call) => call.url.startsWith("https://dp.example/"));
+    expect(authorization(slackCall!)).not.toContain("session-locator");
+    expect(authorization(bridgeCall!)).toBe("Bearer session-locator");
   });
 
   it("does not send a cloud locator without the provider egress URL", async () => {
