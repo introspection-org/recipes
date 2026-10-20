@@ -100,6 +100,76 @@ describe("MCP catalog preload", () => {
     clearMcpCatalogPreload(env);
   });
 
+  it("asks the daemon again after a partial result, once the server has recovered", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "recipes-catalog-partial-"));
+    directories.push(directory);
+    const socketPath = join(directory, "mcp.sock");
+    const token = "test-token";
+    const fingerprint = "test-fingerprint";
+    let catalogAttempts = 0;
+    const server = createServer((socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", (chunk) => {
+        const request = JSON.parse(String(chunk).split("\n")[0]!);
+        if (request.type === "ping") {
+          socket.end(
+            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`
+          );
+          return;
+        }
+        catalogAttempts += 1;
+        const recovered = catalogAttempts > 1;
+        socket.end(
+          `${JSON.stringify({
+            id: request.id,
+            catalogs: [
+              {
+                id: "crm",
+                name: "CRM",
+                tools: recovered
+                  ? [{ name: "search_contacts", input_schema: { type: "object" } }]
+                  : [],
+                ...(recovered ? {} : { error: "connection refused" }),
+              },
+            ],
+          })}\n`
+        );
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      [MCP_DAEMON_SOCKET_ENV]: socketPath,
+      [MCP_DAEMON_TOKEN_ENV]: token,
+      [MCP_DAEMON_FINGERPRINT_ENV]: fingerprint,
+    };
+
+    const [first, concurrent] = await Promise.all([
+      preloadMcpCatalogs({ env, timeoutMs: 100, allowPartial: true }),
+      preloadMcpCatalogs({ env, timeoutMs: 100, allowPartial: true }),
+    ]);
+    expect(catalogAttempts).toBe(1);
+    expect(first[0]?.error).toBe("connection refused");
+    expect(concurrent).toBe(first);
+
+    const later = await preloadMcpCatalogs({
+      env,
+      timeoutMs: 100,
+      allowPartial: true,
+    });
+    expect(catalogAttempts).toBe(2);
+    expect(later[0]?.error).toBeUndefined();
+    expect(later[0]?.tools.map((tool) => tool.name)).toEqual(["search_contacts"]);
+
+    await preloadMcpCatalogs({ env, timeoutMs: 100, allowPartial: true });
+    expect(catalogAttempts).toBe(2);
+    clearMcpCatalogPreload(env);
+  });
+
   it("returns promptly on cancellation and sends a daemon cancel request", async () => {
     const directory = mkdtempSync(join(tmpdir(), "recipes-call-cancel-"));
     directories.push(directory);

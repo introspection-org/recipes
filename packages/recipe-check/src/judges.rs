@@ -175,7 +175,7 @@ fn validate_mission_judge(path: &str, content: &str, ctx: &mut CheckContext) -> 
                 "judge.mission_invalid",
                 path,
                 format!("Mission judge is invalid: {message}"),
-                Some("a mission judge declares name, type: mission, optional description and attrs, and questions of instructions with optional true/false criteria"),
+                Some("a mission judge declares name, type: mission, optional description and attributes, and questions of instructions with optional true/false criteria"),
             );
             ValidatedJudge {
                 path: path.to_owned(),
@@ -1240,7 +1240,7 @@ llm:
     const MISSION: &str = r#"name: booking
 type: mission
 description: Is this booking what the traveller asked for?
-attrs: [city, check_in]
+attributes: [city, check_in]
 questions:
   requested:
     instructions: >
@@ -1274,7 +1274,7 @@ questions:
                 "  personal:\n    instructions: \"\"\n    note: Did",
             ),
             MISSION.replace("      \"true\": The same destination and dates.\n", ""),
-            MISSION.replace("attrs: [city, check_in]", "attrs: [city, city]"),
+            MISSION.replace("attributes: [city, check_in]", "attributes: [city, city]"),
             MISSION.replace(
                 "instructions: Did the traveller",
                 "instructions:\n      question: Did the traveller",

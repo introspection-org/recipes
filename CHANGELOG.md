@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.35.0](https://github.com/introspection-org/recipes/compare/v0.34.0...v0.35.0) (2026-10-19)
+
+
+### Features
+
+* **mcp:** let a Recipe mark a required server that only working sessions must discover ([#346](https://github.com/introspection-org/recipes/issues/346)) ([244f207](https://github.com/introspection-org/recipes/commit/244f207030fa7cc81d70709d44e01243fd0253a2))
+
+
+### Bug Fixes
+
+* **mcp:** say how to bind a missing server, not that env vars alone do it ([#347](https://github.com/introspection-org/recipes/issues/347)) ([ddac352](https://github.com/introspection-org/recipes/commit/ddac3526ec33d6a06f9a7e09a38a1272837f8ec6))
+* **mcp:** stop reusing a cached MCP catalog that has a failed server ([#355](https://github.com/introspection-org/recipes/issues/355)) ([c057d9b](https://github.com/introspection-org/recipes/commit/c057d9b00ccdd6f5ea98ccf38a6ca12bd391b13f))
+
+## [0.34.0](https://github.com/introspection-org/recipes/compare/v0.33.0...v0.34.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a mission judge's `attrs` key is now `attributes`; a judge still using `attrs` fails validation as an unknown field.
+
+### Features
+
+* **mcp:** tell the session instrumentation which MCP server serves each tool ([#345](https://github.com/introspection-org/recipes/issues/345)) ([5543b34](https://github.com/introspection-org/recipes/commit/5543b34af328889cfa1f8ab94fdf785531e61186))
+* **recipe-check:** name a mission judge's request attributes `attributes` ([#342](https://github.com/introspection-org/recipes/issues/342)) ([fa78f2f](https://github.com/introspection-org/recipes/commit/fa78f2ff8f52d8868ba58db7ba768735e9869426))
+
 ## [0.33.0](https://github.com/introspection-org/recipes/compare/v0.32.0...v0.33.0) (2026-10-13)
 
 

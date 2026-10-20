@@ -415,6 +415,7 @@ describe("static MCP session materialization", () => {
 
       expect(session.servers).toHaveLength(1);
       expect(session.servers[0]?.catalog).toBeUndefined();
+      expect(session.servers[0]?.binding).toBeUndefined();
       expect(mcpSessionAllowsTool(session.servers[0]!, "search_profiles")).toBe(
         true
       );
@@ -430,6 +431,53 @@ describe("static MCP session materialization", () => {
       expect(JSON.parse(serializedTransport).mcpServers.nextplay.httpFetch).toBe(
         "default"
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("records where the host bound each server from", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-binding-"));
+    try {
+      const cwd = join(root, "workspace");
+      const recipeDir = join(root, "recipe");
+      mkdirSync(recipeDir, { recursive: true });
+      const local = writeLocalConfig(cwd, [
+        {
+          id: "attio",
+          transport: "streamable_http",
+          url: "http://127.0.0.1:9/attio/mcp",
+        },
+        {
+          id: "notion",
+          transport: "streamable_http",
+          url: "http://127.0.0.1:9/notion/mcp",
+        },
+      ]);
+      const session = await materializeMcpSession({
+        cwd,
+        env: { PI_RECIPES_MCP_LOCAL_CONFIG: local },
+        manifest: recipeManifest(recipeDir, [
+          { id: "attio", include: ["*"] },
+          { id: "notion", include: ["*"] },
+        ]),
+        agentMcp: [
+          { serverId: "attio", tools: { include: ["*"] } },
+          { serverId: "notion", tools: { include: ["*"] } },
+        ],
+        bindingOrigins: { Attio: "recipe" },
+      });
+
+      expect(
+        session.servers.map((server) => [server.id, server.binding])
+      ).toEqual([
+        ["attio", "recipe"],
+        ["notion", undefined],
+      ]);
+      expect(
+        JSON.parse(readFileSync(defaultMcpSessionPath(cwd), "utf8")).servers[0]
+          .binding
+      ).toBe("recipe");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -452,6 +500,40 @@ describe("static MCP session materialization", () => {
           ],
         })
       ).rejects.toThrow("Required MCP server binding(s) missing: required");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("names a missing binding's fix that actually binds it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-required-fix-"));
+    try {
+      const cwd = join(root, "workspace");
+      const recipeDir = join(root, "recipe");
+      mkdirSync(recipeDir, { recursive: true });
+      const manifest = recipeManifest(recipeDir, [
+        { id: "linear", required: true, include: ["*"] },
+      ]);
+      const agentMcp = [{ serverId: "linear", tools: { include: ["*"] } }];
+      const env = {
+        LINEAR_MCP_URL: "http://127.0.0.1:9/linear/mcp",
+        LINEAR_MCP_TOKEN: "token",
+      };
+
+      // The variables alone bind nothing, so the message must not say they do.
+      const message = await materializeMcpSession({ cwd, env, manifest, agentMcp })
+        .then(() => "")
+        .catch((error: unknown) => (error as Error).message);
+      expect(message).toContain("Setting the variables alone does not bind");
+
+      // The entry the message prints, written to .pi/mcp.local.json with the
+      // same variables exported, binds the server.
+      const entry = JSON.parse(
+        message.split("\n").find((line) => line.trim().startsWith("{"))!
+      ) as { servers: Array<Record<string, unknown>> };
+      writeLocalConfig(cwd, entry.servers);
+      const session = await materializeMcpSession({ cwd, env, manifest, agentMcp });
+      expect(session.servers.map((server) => server.id)).toEqual(["linear"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

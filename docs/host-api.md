@@ -92,7 +92,10 @@ It:
 
 - selects the agent from the supplied immutable Recipe;
 - resolves model credentials fail-closed;
-- materializes required MCP bindings fail-closed;
+- materializes required MCP bindings fail-closed, and in `mcp.mode: tools`
+  fails on a required server whose catalog was not discovered, except one
+  declared `"discovery": "defer"` when the host passes `mcpDiscovery: "defer"`
+  to prepare a session that does no work;
 - loads the complete ordered Recipe extension closure, selected skills, and
   package prompts;
 - registers the shared subagent tool;
@@ -231,6 +234,13 @@ global context manager. The host owns that pipeline and its content policy, so
 the same session instrumentation works with any OTLP-compatible backend. A
 host that needs structure-only traces can wrap its exporter with
 `GenAiContentScrubbingExporter` from `@introspection-sdk/introspection-pi`.
+
+In tools mode the `execute_tool` span of an MCP tool carries `mcp.server.id`
+and `mcp.tool.name`, and `mcp.server.binding` when the host says where it bound
+the server from:
+`materializeMcpSession({ bindingOrigins: { attio: "live" } })`, with `live`
+for a project endpoint, `recipe` for an eval task's committed binding to a fake
+and `local` for an `introspection dev` local binding.
 
 Hosts must flush and shut down their provider with the host lifecycle.
 

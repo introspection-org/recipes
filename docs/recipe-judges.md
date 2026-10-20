@@ -100,7 +100,7 @@ the platform chooses the model:
 name: booking
 type: mission
 description: Is this booking what the traveller asked for?
-attrs: [city, check_in, check_out, total_cents]
+attributes: [city, check_in, check_out, total_cents]
 questions:
   requested:
     instructions: >
@@ -117,10 +117,10 @@ questions:
   each name is the field its answer is read as.
 - `instructions` is non-empty text. `criteria` is optional and, when present,
   describes both `true` and `false` in non-empty text.
-- `attrs` lists the request attributes the judge sees, and is empty to show
+- `attributes` lists the request attributes the judge sees, and is empty to show
   them all.
 - `on` and `llm` belong to `online` and `offline` judges and are rejected on a
-  mission judge; `questions` and `attrs` are rejected on the others.
+  mission judge; `questions` and `attributes` are rejected on the others.
 
 ### LLM settings
 

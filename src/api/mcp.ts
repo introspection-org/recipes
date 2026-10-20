@@ -14,6 +14,7 @@ export type {
   MaterializeMcpSessionOptions,
   McpConfigurationDiagnostic,
   McpLocalConfig,
+  McpServerBinding,
   McpSessionConfig,
   McpSessionServer,
   McpToolCatalogEntry,

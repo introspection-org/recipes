@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.11.0...introspection-recipe-check-v0.12.0) (2026-10-19)
+
+
+### Features
+
+* **mcp:** let a Recipe mark a required server that only working sessions must discover ([#346](https://github.com/introspection-org/recipes/issues/346)) ([244f207](https://github.com/introspection-org/recipes/commit/244f207030fa7cc81d70709d44e01243fd0253a2))
+
+## [0.11.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.10.0...introspection-recipe-check-v0.11.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a mission judge's `attrs` key is now `attributes`; a judge still using `attrs` fails validation as an unknown field.
+
+### Features
+
+* **recipe-check:** name a mission judge's request attributes `attributes` ([#342](https://github.com/introspection-org/recipes/issues/342)) ([fa78f2f](https://github.com/introspection-org/recipes/commit/fa78f2ff8f52d8868ba58db7ba768735e9869426))
+
 ## [0.10.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.9.0...introspection-recipe-check-v0.10.0) (2026-10-11)
 
 
