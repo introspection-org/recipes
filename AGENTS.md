@@ -16,6 +16,10 @@
   - `fix:` for patch changes.
   - `feat:` for minor changes.
   - `feat!:` or a `BREAKING CHANGE:` footer for breaking changes — which release-please publishes as a **minor** bump while the package is `0.x`, not a major one.
+- **Only `feat`, `fix`, `perf`, `deps` and `revert` cut a release.** The other
+  prefixes (`docs:`, `chore:`, ...) ride along into the next release unless a
+  `Release-As:` footer forces a version. Precedent: #358, a `docs:` commit with
+  `Release-As: 0.36.1`.
 - Do not manually bump `package.json` for routine releases unless the task is explicitly setting up or correcting release metadata. Let release-please update versions through its release PRs.
 - Keep npm dist-tags aligned with release stability: beta prereleases use `beta`, stable releases use `latest`.
 
@@ -59,6 +63,10 @@
   floor is read out of `peerDependencies` by the `pi-minimum` CI job and pinned
   by `test/pi-floor-parity.test.ts`; copying it into a job or a doc is how it
   went stale twice in one change.
+- **`pi-minimum` pins Pi through `pnpm.overrides`, not devDependencies.**
+  `examples/docs` declares Pi too, and devDependencies alone left it on a
+  different Pi than the root source compiles against (#358). Overrides force
+  one Pi across every workspace package.
 - **Where the packages come from.** `@introspection-ai/recipes`,
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/mcp-client-*` and
   `introspection-recipe-check` are all published from THIS repository, but on
@@ -77,3 +85,16 @@
   general — a Recipe declaring `pi.runtime.python` MUST also commit the
   `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
   that file is missing.
+
+## Checks
+
+- **Root `pnpm typecheck` covers `src`, `test`, `./packages/**` and
+  `./examples/**`.** The workspace globs (`./examples/**` since #358) only
+  reach packages with their own `typecheck` script; TypeScript anywhere else
+  must be wired into `package.json` explicitly or nothing checks it.
+- **A local full `pnpm test` is not a clean signal on its own.** Under heavy
+  machine load it flakes with timeouts in `test/mcp.test.ts` and
+  `test/mcp-cli-entry.test.ts`; rerun before suspecting your change. ⚠️ Provider
+  API keys exported in your shell (`ANTHROPIC_API_KEY`, ...) fail the
+  "fails closed when the provider has no credential" tests in
+  `test/session.test.ts` and `test/host-conformance.test.ts`; unset them first.
