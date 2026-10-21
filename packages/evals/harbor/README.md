@@ -436,14 +436,15 @@ trials inside `start`. Match the two.
 ### Directories, and which ones exist
 
 Harbor's blessed set is `EnvironmentPaths`, a frozen dataclass — there is no
-task field for declaring extra directories, and Harbor creates these itself with
-`mkdir` inside the environment. That `mkdir` fails as uid 1000 against a
-root-owned `/`, so the adapter mounts them as compose named volumes, which the
-platform renders as `emptyDir` under the pod's `fsGroup: 1000`.
+task field for declaring extra directories. Harbor writes into these and
+`start` creates the `/logs` children, but none can be created directly under a
+root-owned `/` as uid 1000, so the adapter mounts them as compose named
+volumes, which the platform renders as `emptyDir` under the pod's
+`fsGroup: 1000`.
 
 | Path | Mounted | What writes it |
 | --- | --- | --- |
-| `/logs` | yes | Harbor; `agent/`, `verifier/`, `artifacts/` and `user-agent/` are created inside it, so one mount covers all four |
+| `/logs` | yes | Harbor. Its children are the directories Harbor bind-mounts on a mounted provider (`agent/`, `verifier/`, `artifacts/`, and `user-agent/` for a simulated user), and Harbor creates only `verifier/` itself, before verifying, so `start` creates each one inside the mount once the sandbox accepts commands |
 | `/logs/verifier/reward.{txt,json}` | — | the verifier's result, read back as the trial's reward |
 | `/tests` | yes | the Verifier, after the agent runs |
 | `/solution` | yes | the OracleAgent only |

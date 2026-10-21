@@ -130,8 +130,9 @@ CHILD_OWNED_CREDENTIAL_ENV = frozenset(
     }
 )
 
-# Harbor prepares these before a trial and writes evidence into them
-# (`EnvironmentPaths`: /logs and its agent/verifier/artifacts children, /tests).
+# Harbor writes evidence into these (`EnvironmentPaths`: /logs and its
+# agent/verifier/artifacts children, /tests), and `start` creates the /logs
+# children Harbor would mount on a mounted provider.
 # They sit directly under `/`, which is root-owned in any image, and the
 # sandbox runs as uid 1000 with no way to become root — so they are mounted as
 # compose named volumes, which the platform renders as emptyDir under the pod's
@@ -695,6 +696,7 @@ class IntrospectionEnvironment(BaseEnvironment):
         task = await self.client.create_task(self.create_task_body(runtime_id, compose))
         self._task_id = task["id"]
         await self._await_ready(task)
+        await self.ensure_dirs(self._mount_targets(writable_only=True))
 
     async def _await_ready(self, task: dict[str, Any]) -> None:
         deadline = asyncio.get_running_loop().time() + self._start_timeout

@@ -15,11 +15,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from harbor.environments.base import BaseEnvironment
 from harbor.environments.tar_transfer import pack_dir_to_file
 from harbor.models.task.config import TaskOS
+from harbor.models.trial.config import ServiceVolumeConfig
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.scripts import build_execution_command
 
@@ -626,8 +628,8 @@ class HarborDirectoryTest(unittest.TestCase):
 
         `/harbor/skills` is excluded on purpose — an agent reads it and guards
         on `is_dir` first, so an empty mount would answer "yes, skills" where
-        the truth is "no skills". `/logs`'s children need no mount of their own;
-        Harbor creates them inside a writable `/logs`.
+        the truth is "no skills". `/logs`'s children need no mount of their own:
+        `start` creates the ones Harbor would mount, inside a writable `/logs`.
         """
         paths = EnvironmentPaths()
         writable = {str(paths.logs_dir), str(paths.tests_dir), str(paths.solution_dir)}
@@ -645,3 +647,58 @@ class HarborDirectoryTest(unittest.TestCase):
             "/logs",
             {e.rsplit(":", 1)[-1] for e in compose["services"]["main"]["volumes"]},
         )
+
+
+class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
+    """Harbor writes into `/logs/agent` and never creates it on this environment.
+
+    Harbor hands an environment the directories it bind-mounts on a mounted
+    provider; one that mounts nothing creates them itself, as
+    `IntrospectionE2BEnvironment.start` does. Without that, the agent's first
+    redirect into `/logs/agent` fails and no trial reaches its verifier.
+    """
+
+    async def test_start_creates_the_directories_harbor_mounts_once_commands_run(
+        self,
+    ) -> None:
+        paths = EnvironmentPaths()
+        harbor_mounts = [paths.verifier_dir, paths.agent_dir, paths.artifacts_dir]
+        environment = object.__new__(IntrospectionEnvironment)
+        environment.environment_dir = Path("/task/environment")
+        environment.task_env_config = SimpleNamespace(os=TaskOS.LINUX)
+        environment._spec = {
+            "candidate": {"runtime": "01990000-0000-7000-8000-000000000001"}
+        }
+        environment._task_environment = "production"
+        environment._task_id = None
+        environment._control_plane = AsyncMock()
+        environment._mounts = [
+            ServiceVolumeConfig(type="bind", source=f"/host{path}", target=str(path))
+            for path in harbor_mounts
+        ]
+        environment._client = AsyncMock()
+        environment._client.create_task.return_value = {
+            "id": "task-id",
+            "status": "pending",
+        }
+        order: list[str] = []
+        environment._await_ready = AsyncMock(
+            side_effect=lambda task: order.append("ready")
+        )
+        environment.exec = AsyncMock(
+            side_effect=lambda command, **_: order.append(command)
+        )
+        environment.resolve_images = AsyncMock(return_value={})
+        environment.create_task_body = lambda runtime_id, compose: {}
+        environment._warn_if_the_login_expires_mid_trial = lambda: None
+
+        with patch(
+            "introspection_harbor.task_environment.read_compose", return_value={}
+        ):
+            await environment.start(force_build=False)
+
+        self.assertEqual(order[0], "ready")
+        self.assertEqual(len(order), 2)
+        created = shlex.split(order[1].split("&&")[0])
+        self.assertEqual(created[:2], ["mkdir", "-p"])
+        self.assertEqual(set(created[2:]), {str(path) for path in harbor_mounts})
