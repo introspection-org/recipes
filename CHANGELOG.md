@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/introspection-org/recipes/compare/v0.36.0...v0.36.1) (2026-10-20)
+
+
+### Documentation
+
+* typecheck the snippets the docs site shows ([#358](https://github.com/introspection-org/recipes/issues/358)) ([35020dc](https://github.com/introspection-org/recipes/commit/35020dcc178b2a677bf26f6aecaef6c206b88697))
+
 ## [0.36.0](https://github.com/introspection-org/recipes/compare/v0.35.0...v0.36.0) (2026-10-20)
 
 
