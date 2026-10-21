@@ -21,6 +21,7 @@ _OPERATOR_ENV = {
     "INTROSPECTION_ENDPOINT_HOSTS": "api.e2b.app,api.openai.com",
     "INTROSPECTION_RELAY_TARGET": "local-developer",
 }
+_LOCAL_ENV = {"E2B_API_KEY": "local-key"}
 
 
 class IntrospectionE2BEnvironmentTest(unittest.TestCase):
@@ -28,20 +29,29 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
         with patch.dict(os.environ, _OPERATOR_ENV, clear=True):
             IntrospectionE2BEnvironment.preflight()
 
+    def _construct(
+        self, environment: dict[str, str], **kwargs: object
+    ) -> tuple[IntrospectionE2BEnvironment, dict[str, object]]:
+        """Build the environment under ``environment`` with E2B's own setup stubbed.
+
+        Returns the environment and the keyword arguments it forwarded to E2B.
+        """
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
+        ):
+            built = IntrospectionE2BEnvironment("environment", **kwargs)
+        return built, init.call_args.kwargs
+
     def test_constructor_merges_binding_contract_into_persistent_env(
         self,
     ) -> None:
-        with (
-            patch.dict(os.environ, _OPERATOR_ENV, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            IntrospectionE2BEnvironment(
-                "environment",
-                persistent_env={"TASK_SETTING": "value"},
-            )
+        _, forwarded = self._construct(
+            _OPERATOR_ENV, persistent_env={"TASK_SETTING": "value"}
+        )
 
         self.assertEqual(
-            init.call_args.kwargs["persistent_env"],
+            forwarded["persistent_env"],
             {
                 "TASK_SETTING": "value",
                 "INTROSPECTION_TOKEN": "scoped-session-locator",
@@ -53,8 +63,8 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
                 "INTROSPECTION_RELAY_TARGET": "local-developer",
             },
         )
-        self.assertNotIn("E2B_API_KEY", init.call_args.kwargs["persistent_env"])
-        self.assertNotIn("OPENAI_API_KEY", init.call_args.kwargs["persistent_env"])
+        self.assertNotIn("E2B_API_KEY", forwarded["persistent_env"])
+        self.assertNotIn("OPENAI_API_KEY", forwarded["persistent_env"])
 
     def test_binding_environment_requires_public_egress_contract(self) -> None:
         environment = {
@@ -62,45 +72,29 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
             for key, value in _OPERATOR_ENV.items()
             if key != "INTROSPECTION_PUBLIC_EGRESS_URL"
         }
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None),
-            self.assertRaisesRegex(ValueError, "INTROSPECTION_PUBLIC_EGRESS_URL"),
-        ):
-            environment = IntrospectionE2BEnvironment("environment")
+        with self.assertRaisesRegex(ValueError, "INTROSPECTION_PUBLIC_EGRESS_URL"):
+            self._construct(environment)
 
     def test_constructor_falls_back_to_native_e2b_without_egress(self) -> None:
-        with (
-            patch.dict(os.environ, {"E2B_API_KEY": "local-key"}, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            IntrospectionE2BEnvironment(
-                "environment",
-                persistent_env={"TASK_SETTING": "value"},
-            )
-
-        self.assertEqual(
-            init.call_args.kwargs["persistent_env"],
-            {"TASK_SETTING": "value"},
+        _, forwarded = self._construct(
+            _LOCAL_ENV, persistent_env={"TASK_SETTING": "value"}
         )
+
+        self.assertEqual(forwarded["persistent_env"], {"TASK_SETTING": "value"})
 
     def test_constructor_forwards_only_explicitly_allowlisted_environment(self) -> None:
         direct = {
-            "E2B_API_KEY": "local-key",
+            **_LOCAL_ENV,
             "ANTHROPIC_API_KEY": "model-key",
             "HELLO_MCP_TOKEN": "mcp-token",
             "INTROSPECTION_HARBOR_PASSTHROUGH_ENV": (
                 "ANTHROPIC_API_KEY,HELLO_MCP_TOKEN"
             ),
         }
-        with (
-            patch.dict(os.environ, direct, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            IntrospectionE2BEnvironment("environment")
+        _, forwarded = self._construct(direct)
 
         self.assertEqual(
-            init.call_args.kwargs["persistent_env"],
+            forwarded["persistent_env"],
             {
                 "ANTHROPIC_API_KEY": "model-key",
                 "HELLO_MCP_TOKEN": "mcp-token",
@@ -108,50 +102,41 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
         )
 
     def test_constructor_preserves_harbor_sandbox_timeout_default(self) -> None:
-        with (
-            patch.dict(os.environ, {"E2B_API_KEY": "local-key"}, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            environment = IntrospectionE2BEnvironment("environment")
+        environment, forwarded = self._construct(_LOCAL_ENV)
 
         self.assertEqual(environment.sandbox_timeout_seconds, 86_400)
-        self.assertNotIn("sandbox_timeout_seconds", init.call_args.kwargs)
+        self.assertNotIn("sandbox_timeout_seconds", forwarded)
 
     def test_constructor_stores_explicit_sandbox_timeout(self) -> None:
-        with (
-            patch.dict(os.environ, {"E2B_API_KEY": "local-key"}, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            environment = IntrospectionE2BEnvironment(
-                "environment", sandbox_timeout_seconds=3_600
-            )
+        environment, forwarded = self._construct(
+            _LOCAL_ENV, sandbox_timeout_seconds=3_600
+        )
 
         self.assertEqual(environment.sandbox_timeout_seconds, 3_600)
-        self.assertNotIn("sandbox_timeout_seconds", init.call_args.kwargs)
+        self.assertNotIn("sandbox_timeout_seconds", forwarded)
 
     def test_constructor_selects_external_template_without_forwarding_it(self) -> None:
-        with (
-            patch.dict(os.environ, {"E2B_API_KEY": "local-key"}, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None) as init,
-        ):
-            environment = IntrospectionE2BEnvironment(
-                "environment", template_name="published-template"
-            )
+        environment, forwarded = self._construct(
+            _LOCAL_ENV, template_name="published-template"
+        )
 
         self.assertEqual(environment._template_name, "published-template")
-        self.assertNotIn("template_name", init.call_args.kwargs)
+        self.assertNotIn("template_name", forwarded)
 
     def test_constructor_rejects_nonpositive_timeout(self) -> None:
         with (
-            patch.dict(os.environ, {"E2B_API_KEY": "local-key"}, clear=True),
+            patch.dict(os.environ, _LOCAL_ENV, clear=True),
             self.assertRaisesRegex(ValueError, "must be positive"),
         ):
             IntrospectionE2BEnvironment("environment", sandbox_timeout_seconds=0)
 
-    def test_external_template_start_skips_harbor_template_build(self) -> None:
+    def _started_external_template(
+        self, workdir: str | None
+    ) -> IntrospectionE2BEnvironment:
+        """Start an external-template environment with the sandbox calls mocked."""
         environment = object.__new__(IntrospectionE2BEnvironment)
         environment.external_template_name = "published-template"
-        environment.task_env_config = SimpleNamespace(workdir=None)
+        environment.task_env_config = SimpleNamespace(workdir=workdir)
         environment._sandbox = Mock()
         environment._create_sandbox = AsyncMock()
         environment.ensure_dirs = AsyncMock()
@@ -159,6 +144,10 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
         environment._upload_environment_dir_after_start = AsyncMock()
 
         asyncio.run(environment.start(force_build=True))
+        return environment
+
+    def test_external_template_start_skips_harbor_template_build(self) -> None:
+        environment = self._started_external_template(workdir=None)
 
         environment._create_sandbox.assert_awaited_once_with()
         environment.ensure_dirs.assert_awaited_once_with(["/logs"])
@@ -169,16 +158,7 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
         )
 
     def test_external_template_preserves_explicit_task_workdir(self) -> None:
-        environment = object.__new__(IntrospectionE2BEnvironment)
-        environment.external_template_name = "published-template"
-        environment.task_env_config = SimpleNamespace(workdir="/custom/workdir")
-        environment._sandbox = Mock()
-        environment._create_sandbox = AsyncMock()
-        environment.ensure_dirs = AsyncMock()
-        environment._mount_targets = Mock(return_value=["/logs"])
-        environment._upload_environment_dir_after_start = AsyncMock()
-
-        asyncio.run(environment.start(force_build=True))
+        environment = self._started_external_template(workdir="/custom/workdir")
 
         self.assertEqual(environment.task_env_config.workdir, "/custom/workdir")
 
@@ -204,15 +184,11 @@ class IntrospectionE2BEnvironmentTest(unittest.TestCase):
 
     def test_constructor_rejects_unset_passthrough_environment(self) -> None:
         direct = {
-            "E2B_API_KEY": "local-key",
+            **_LOCAL_ENV,
             "INTROSPECTION_HARBOR_PASSTHROUGH_ENV": "MISSING_TOKEN",
         }
-        with (
-            patch.dict(os.environ, direct, clear=True),
-            patch.object(E2BEnvironment, "__init__", return_value=None),
-            self.assertRaisesRegex(ValueError, "MISSING_TOKEN"),
-        ):
-            IntrospectionE2BEnvironment("environment")
+        with self.assertRaisesRegex(ValueError, "MISSING_TOKEN"):
+            self._construct(direct)
 
     def test_e2b_lifecycle_methods_are_not_overridden(self) -> None:
         for method in (

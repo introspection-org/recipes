@@ -425,6 +425,11 @@ def download_command(path: str, *, service: str | None = None) -> dict[str, Any]
     return spec
 
 
+def _env_number[N: (int, float)](name: str, default: N) -> N:
+    """The number ``name`` sets in the environment, parsed as ``default``'s type."""
+    return type(default)(os.environ.get(name, default))
+
+
 class IntrospectionEnvironment(BaseEnvironment):
     """A Harbor environment whose sandbox is an Introspection evaluation task."""
 
@@ -437,17 +442,15 @@ class IntrospectionEnvironment(BaseEnvironment):
         self._task_environment = os.environ.get(
             TASK_ENVIRONMENT_ENV, DEFAULT_TASK_ENVIRONMENT
         )
-        self._start_timeout = float(
-            os.environ.get(START_TIMEOUT_ENV, DEFAULT_START_TIMEOUT_SECONDS)
+        self._start_timeout = _env_number(
+            START_TIMEOUT_ENV, DEFAULT_START_TIMEOUT_SECONDS
         )
-        self._image_timeout = float(
-            os.environ.get(IMAGE_TIMEOUT_ENV, DEFAULT_IMAGE_TIMEOUT_SECONDS)
+        self._image_timeout = _env_number(
+            IMAGE_TIMEOUT_ENV, DEFAULT_IMAGE_TIMEOUT_SECONDS
         )
-        self._exec_timeout = int(
-            os.environ.get(EXEC_TIMEOUT_ENV, DEFAULT_EXEC_TIMEOUT_SECONDS)
-        )
-        self._trial_timeout = int(
-            os.environ.get(TRIAL_TIMEOUT_ENV, DEFAULT_TRIAL_TIMEOUT_SECONDS)
+        self._exec_timeout = _env_number(EXEC_TIMEOUT_ENV, DEFAULT_EXEC_TIMEOUT_SECONDS)
+        self._trial_timeout = _env_number(
+            TRIAL_TIMEOUT_ENV, DEFAULT_TRIAL_TIMEOUT_SECONDS
         )
         if self._trial_timeout > PLANE_TASK_TIMEOUT_SECONDS:
             raise ComposeUnsupportedError(

@@ -117,6 +117,13 @@ class RefreshedLoginTest(unittest.TestCase):
 
         return handler
 
+    def _assert_rejected_once(self, client: DataPlaneClient, seen: list[str]) -> None:
+        """The request fails with the 401, after one try on the original token."""
+        with self.assertRaises(DataPlaneError) as refused:
+            asyncio.run(client.get_task("task-1"))
+        self.assertIn("401", str(refused.exception))
+        self.assertEqual(seen, ["Bearer old"])
+
     def test_a_rejected_token_is_replaced_by_the_one_the_cli_wrote_since(self) -> None:
         seen: list[str] = []
         client = self._client(
@@ -137,10 +144,7 @@ class RefreshedLoginTest(unittest.TestCase):
             self._rejecting_all_but("new", seen),
             lambda: DataPlaneCredentials(url="https://dp.test", token="old"),
         )
-        with self.assertRaises(DataPlaneError) as refused:
-            asyncio.run(client.get_task("task-1"))
-        self.assertIn("401", str(refused.exception))
-        self.assertEqual(seen, ["Bearer old"])
+        self._assert_rejected_once(client, seen)
 
     def test_a_login_that_can_no_longer_be_read_keeps_the_rejection(self) -> None:
         def expired() -> DataPlaneCredentials:
@@ -148,10 +152,7 @@ class RefreshedLoginTest(unittest.TestCase):
 
         seen: list[str] = []
         client = self._client(self._rejecting_all_but("new", seen), expired)
-        with self.assertRaises(DataPlaneError) as refused:
-            asyncio.run(client.get_task("task-1"))
-        self.assertIn("401", str(refused.exception))
-        self.assertEqual(seen, ["Bearer old"])
+        self._assert_rejected_once(client, seen)
 
     def test_a_token_is_never_sent_to_another_plane(self) -> None:
         seen: list[str] = []

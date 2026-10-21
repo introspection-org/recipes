@@ -47,6 +47,24 @@ def _agent(spec: dict) -> IntrospectionRecipeAgent:
     return instance
 
 
+def _capturing_agent() -> tuple[IntrospectionRecipeAgent, Mock, list[dict]]:
+    """An agent whose commands are recorded, not run, and the environment it uses.
+
+    Returns the agent, the environment and the keyword arguments of each exec.
+    """
+    instance = _agent(_AUTHORED_SPEC)
+    environment = Mock()
+    environment.upload_file = AsyncMock()
+    calls: list[dict] = []
+
+    async def capture_exec(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(stdout="")
+
+    instance.exec_as_agent = capture_exec
+    return instance, environment, calls
+
+
 def _spans(*turns: tuple[str, str, int]) -> str:
     """Whole-prompt chat spans, as a Pi session renders: (prompt, reply, tokens).
 
@@ -430,17 +448,7 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_run_uploads_the_prompt_file_and_passes_no_host_env(self) -> None:
-        instance = _agent(_AUTHORED_SPEC)
-        environment = Mock()
-        environment.upload_file = AsyncMock()
-
-        calls: list[dict] = []
-
-        async def capture_exec(*args, **kwargs):
-            calls.append(kwargs)
-            return SimpleNamespace(stdout="")
-
-        instance.exec_as_agent = capture_exec
+        instance, environment, calls = _capturing_agent()
         await instance.run.__wrapped__(
             instance, "large inline instruction", environment, Mock()
         )
@@ -468,16 +476,7 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("cwd", captured)
 
     async def test_resume_continues_the_session_for_that_step_only(self) -> None:
-        instance = _agent(_AUTHORED_SPEC)
-        environment = Mock()
-        environment.upload_file = AsyncMock()
-        commands: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            commands.append(kwargs["command"])
-            return SimpleNamespace(stdout="")
-
-        instance.exec_as_agent = capture_exec
+        instance, environment, calls = _capturing_agent()
         self.assertTrue(instance.SUPPORTS_RESUME)
         # What Harbor's ``resume`` does around ``run`` for a later step.
         instance._resume = True
@@ -485,8 +484,8 @@ class AgentLifecycleTest(unittest.IsolatedAsyncioTestCase):
         instance._resume = False
         await instance.run.__wrapped__(instance, "request", environment, Mock())
 
-        self.assertIn("--continue --print", commands[0])
-        self.assertNotIn("--continue", commands[1])
+        self.assertIn("--continue --print", calls[0]["command"])
+        self.assertNotIn("--continue", calls[1]["command"])
 
     async def test_run_rejects_a_terminal_provider_error(self) -> None:
         instance = _agent(_AUTHORED_SPEC)
