@@ -77,3 +77,11 @@
   general — a Recipe declaring `pi.runtime.python` MUST also commit the
   `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
   that file is missing.
+
+## Docs regions
+
+- **A docs region (`#region docs:…` under `examples/docs/`) shows every helper
+  it calls that the example file defines** — functions, consts, methods and
+  closures alike — inside the region, before the code that uses them; a helper
+  standing in for the reader's own code (`render`, `sendEventToBrowser`, ...)
+  appears as a minimal stub with a one-line comment saying it is your app's code.
