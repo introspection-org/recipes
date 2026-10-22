@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createAgentTool,
   createDelegatedRuns,
   type AgentRunController,
   type AgentRunSummary,
@@ -64,5 +65,47 @@ describe("createDelegatedRuns", () => {
     expect(prompts).toHaveLength(3);
     expect(prompts[1]).toContain("found A");
     expect(prompts[2]).toContain("found C");
+  });
+});
+
+describe("results are pushed into the parent run's loop", () => {
+  function tool(host: ReturnType<typeof hostRuns>, delegated: ReturnType<typeof createDelegatedRuns>) {
+    return createAgentTool(
+      host.controller,
+      new Map([["explorer", {}]]),
+      delegated.agentToolOptions
+    );
+  }
+  const call = (t: ReturnType<typeof tool>, params: Record<string, unknown>) =>
+    t.execute("call", params as never, undefined, undefined, undefined as never);
+
+  it("hands a parent mid-turn the result at its next settle, leading with the run id", async () => {
+    const host = hostRuns();
+    const delegated = createDelegatedRuns();
+    const prompts: string[] = [];
+    await delegated.run({ agentRuns: host.controller }, "plan", async (input) => {
+      prompts.push(input);
+      if (prompts.length > 1) return;
+      // The parent starts a verifier and keeps working; it finishes before
+      // the parent's turn ends, and the parent never asks about it.
+      host.set("r1", "running");
+      host.set("r1", "completed", "verified");
+    });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("<agent_run_completions>");
+    expect(prompts[1]).toContain("run r1 (explorer: x) [completed]\nverified");
+  });
+
+  it("does not hand a parent a result it already read with status", async () => {
+    const host = hostRuns();
+    const delegated = createDelegatedRuns();
+    const agent = tool(host, delegated);
+    const prompts: string[] = [];
+    await delegated.run({ agentRuns: host.controller }, "plan", async (input) => {
+      prompts.push(input);
+      host.set("r1", "completed", "verified");
+      await call(agent, { action: "status", id: "r1" });
+    });
+    expect(prompts).toEqual(["plan"]);
   });
 });

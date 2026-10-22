@@ -1861,7 +1861,7 @@ describe("nested delegation", () => {
           message.stopReason = "toolUse";
         } else if (results.length === 2) {
           turns.push("wait");
-          const ids = results.map((entry) => /\((agent-run-[^)]+)\)/.exec(messageText(entry))![1]);
+          const ids = results.map((entry) => /\brun (agent-run-\S+)/.exec(messageText(entry))![1]);
           message.content = ids.map((id, index) => ({
             type: "toolCall" as const, id: `wait-${index}`, name: "agent", arguments: { action: "wait", id },
           }));
@@ -1991,7 +1991,7 @@ describe("nested delegation", () => {
           message = assistantMessage("Waiting on the explorer.");
         } else if (text.includes("found A")) {
           turns.push("resume");
-          const id = /\((agent-run-[^)]+)\)/.exec(text)![1];
+          const id = /\brun (agent-run-\S+)/.exec(text)![1];
           message.content = [
             { type: "toolCall", id: "more", name: "agent", arguments: { action: "message", id, message: "find C" } },
           ];

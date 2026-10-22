@@ -219,7 +219,7 @@ describe("renderCompletionNotice", () => {
     ]);
     expect(notice).toContain("<agent_run_completions>");
     expect(notice).toContain("</agent_run_completions>");
-    expect(notice).toContain("[explorer] (recipe-agent-1) — scan [completed]");
+    expect(notice).toContain("run recipe-agent-1 (explorer: scan) [completed]");
     expect(notice).toContain("child output");
     expect(notice).toContain("Agent failed: boom");
     expect(notice).toContain('action "status"');

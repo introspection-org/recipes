@@ -113,8 +113,15 @@ const AgentToolParams = Type.Object({
   name: Type.Optional(Type.String()),
   prompt: Type.Optional(Type.String()),
   label: Type.Optional(Type.String()),
-  id: Type.Optional(Type.String()),
+  id: Type.Optional(
+    Type.String({ description: "The run id `start` returned." })
+  ),
   message: Type.Optional(Type.String()),
+  wait: Type.Optional(
+    Type.Boolean({
+      description: "With start: return the child's result in this call.",
+    })
+  ),
 });
 
 type AgentToolInput = Static<typeof AgentToolParams>;
@@ -123,8 +130,9 @@ function terminal(run: AgentRunSummary): boolean {
   return run.status !== "running";
 }
 
+/** The run id leads; the agent and label only describe it. */
 function runLine(run: AgentRunSummary): string {
-  return `${run.invocation_name} (${run.agent_run_id}) — ${run.label} [${run.status}]`;
+  return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}]`;
 }
 
 function statusBlock(run: AgentRunSummary): string {
@@ -170,6 +178,15 @@ function errorResult(text: string, controller: AgentRunController) {
   };
 }
 
+function unknownRun(id: string, controller: AgentRunController) {
+  return errorResult(
+    `Unknown agent run ${id}: use the run id \`start\` returned.`,
+    controller
+  );
+}
+
+const UNKNOWN_RUN = /unknown agent run|agent run not found/i;
+
 export function createAgentTool(
   controller: AgentRunController,
   agents: ReadonlyMap<string, unknown>,
@@ -183,10 +200,11 @@ export function createAgentTool(
     name: "agent",
     label: "Agent",
     description: [
-      "Start or manage background child agents.",
-      "Omit action to start one child with name and prompt; it returns a run id immediately.",
+      "Start or manage child agents.",
+      "Omit action to start one child with name and prompt; it returns a run id at once. Its result reaches you when it finishes: carry on or end your turn.",
+      "For a short check whose answer you need now, pass wait: true to get the result in the same call, or use wait with the run id.",
       `Available agent roles: ${[...agents.keys()].join(", ")}. Pass a role as name; use label to distinguish concurrent runs.`,
-      "Use status, wait, message, interrupt, or close with that id.",
+      "Use status, message, interrupt, or close with the run id `start` returned.",
       "Message steers a running child at the next message boundary; on a settled child it resumes the same session.",
     ].join(" "),
     parameters: AgentToolParams,
@@ -214,6 +232,7 @@ export function createAgentTool(
               });
             },
           });
+          if (params.wait) return await waitFor(run, signal);
           return result(run, `Started ${runLine(run)}`);
         }
 
@@ -239,14 +258,12 @@ export function createAgentTool(
 
         if (params.action === "status") {
           const run = controller.get(params.id);
-          if (!run) return errorResult(`Unknown agent run: ${params.id}`, controller);
+          if (!run) return unknownRun(params.id, controller);
           acknowledge(run);
           return result(run, statusBlock(run));
         }
         if (params.action === "wait") {
-          const run = await controller.wait(params.id, signal);
-          acknowledge(run);
-          return result(run, statusBlock(run));
+          return await waitFor(params.id, signal);
         }
         if (params.action === "message") {
           if (!params.message) return errorResult("message requires message", controller);
@@ -268,15 +285,45 @@ export function createAgentTool(
         opts.acknowledgeCompletions?.([params.id]);
         return result(run, `Closed ${runLine(run)}`);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (params.id && UNKNOWN_RUN.test(message) && !controller.get(params.id)) {
+          return unknownRun(params.id, controller);
+        }
         return errorResult(
-          `Agent ${params.action ?? "start"} failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Agent ${params.action ?? "start"} failed: ${message}`,
           controller
         );
       }
     },
   });
+
+  /**
+   * Block until the run settles. An abort stops the wait, never the run: it
+   * keeps working and its result is pushed when it finishes.
+   */
+  async function waitFor(
+    target: string | AgentRunSummary,
+    signal: AbortSignal | undefined
+  ) {
+    const id = typeof target === "string" ? target : target.agent_run_id;
+    let run: AgentRunSummary;
+    try {
+      run = await controller.wait(id, signal);
+    } catch (error) {
+      const fallback =
+        controller.get(id) ?? (typeof target === "string" ? null : target);
+      if (!signal?.aborted || !fallback) throw error;
+      run = fallback;
+    }
+    if (!terminal(run)) {
+      return result(
+        run,
+        `Stopped waiting: ${runLine(run)} keeps working; its result reaches you when it finishes.`
+      );
+    }
+    acknowledge(run);
+    return result(run, statusBlock(run));
+  }
 }
 
 /**
@@ -380,7 +427,7 @@ function completionEnvelope(run: AgentRunSummary): ChildCompletionEnvelope {
   const completed = run.completed_at;
   return {
     id: run.agent_run_id,
-    agent: run.invocation_name,
+    agent: run.agent_name,
     label: run.label,
     status: run.status === "failed" ? "failed" : "completed",
     ...(run.output

@@ -164,7 +164,7 @@ describe("recipe child agent completion delivery", () => {
       );
       expect(message.display).toBe(true);
       expect(message.content).toContain("<agent_run_completions>");
-      expect(message.content).toContain(`(${id})`);
+      expect(message.content).toContain(`run ${id} (explorer`);
       expect(message.content).toContain("background result");
       expect(message.details?.completions?.[0]).toEqual(
         expect.objectContaining({ id, agent: "explorer", status: "completed" })

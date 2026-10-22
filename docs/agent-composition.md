@@ -199,6 +199,14 @@ The `agent` delegation tool is not authored in `tools`. The host adds it to
 any session whose effective agent has visible subagents, down to the
 delegation depth bound described below.
 
+`start` returns at once with one handle, the run id, which leads every reply
+(`Started run <id> (explorer: <label>) [running]`); `status`, `message`,
+`interrupt` and `close` take that id. A finished run's result is pushed to
+its parent as an `<agent_run_completions>` notice, so the parent carries on or
+ends its turn. For a short check whose answer it needs now, `start` with
+`wait: true` returns the result in the same call, and `wait` blocks on a
+run by id; an abort stops the wait, not the run.
+
 Skill and subagent selection controls prompt exposure and active capability,
 not filesystem isolation. All agents run in the same Recipe package and current
 workspace. Use sandboxing and external authorization for security boundaries.
