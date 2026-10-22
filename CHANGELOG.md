@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.2](https://github.com/introspection-org/recipes/compare/v0.36.1...v0.36.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **agents:** one run id, and start can wait ([#362](https://github.com/introspection-org/recipes/issues/362)) ([86514f3](https://github.com/introspection-org/recipes/commit/86514f3b4d5066ea4570a4f5b5ab618082974244))
+
 ## [0.36.1](https://github.com/introspection-org/recipes/compare/v0.36.0...v0.36.1) (2026-10-20)
 
 
