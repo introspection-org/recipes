@@ -170,7 +170,7 @@ describe("child completion ordering vs persistence", () => {
       await vi.waitFor(() => {
         expect(completionMessages(pi)).toHaveLength(1);
       });
-      expect(completionMessages(pi)[0]!.message.content).toContain(`(${id})`);
+      expect(completionMessages(pi)[0]!.message.content).toContain(`run ${id} (explorer`);
       expect(completionMessages(pi)[0]!.message.content).toContain("background result");
     } finally {
       persistGate.release();

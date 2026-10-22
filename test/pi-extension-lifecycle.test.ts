@@ -275,7 +275,7 @@ describe("background agent run lifecycle", () => {
       );
       expect(runner.cancel).toHaveBeenCalled();
       expect(String(closed?.content[0]?.type === "text" ? closed.content[0].text : "")).toContain(
-        `Closed explorer (${id})`
+        `Closed run ${id} (explorer: `
       );
       const status = await agentTool(pi).execute(
         "call-3",

@@ -11,7 +11,8 @@
  *
  * Successes batch briefly so N parallel children produce one notice;
  * failures flush immediately. Runs whose terminal output the model already
- * saw synchronously (`action:"wait"` or a terminal `status` read) are
+ * saw synchronously (a waiting `start`, `action:"wait"` or a terminal
+ * `status` read) are
  * acknowledged out of the queue so nothing is delivered
  * twice.
  */
@@ -63,8 +64,8 @@ export function renderCompletionNotice(
   batch: readonly ChildCompletionEnvelope[]
 ): string {
   const blocks = batch.map((envelope) => {
-    const label = envelope.label ? ` — ${envelope.label}` : "";
-    const header = `[${envelope.agent}] (${envelope.id})${label} [${envelope.status}]`;
+    const label = envelope.label ? `: ${envelope.label}` : "";
+    const header = `run ${envelope.id} (${envelope.agent}${label}) [${envelope.status}]`;
     const body =
       envelope.status === "failed"
         ? `Agent failed: ${envelope.error ?? "unknown error"}`
