@@ -15,6 +15,9 @@ The checker validates the portable authored contract:
   accepting a committed `.pi/mcp.local.json` only as a loopback evaluation
   binding.
 
+It also warns, without failing the check, about vitest-evals judges that grade
+the final message by text matching (see below).
+
 It deliberately does not validate host manifests, credentials, deployment
 resources, licenses, or local endpoint bindings. The exported `resources`
 module separately provides the shared, pure Kubernetes-style quantity checker
@@ -54,6 +57,36 @@ source span, message, and optional help text.
 
 `introspection_recipe_check::spec` exports the normalized judge types and, with the optional
 `schema` feature, their JSON Schema. Judge execution remains host-owned.
+
+## Judges that match the final message's text
+
+In `evals/vitest/**/*.ts`, each `createJudge(...)` imported from `vitest-evals`
+is inspected. When its callback text matches the judged `output` — destructured
+as `({ output })`, aliased as `({ output: text })`, or read as `args.output` —
+the checker reports the warning `eval.judge_output_text_match`. Text matching
+means `/re/.test(output)`, `new RegExp(...).test(output)`, `re.exec(output)`, or
+`output.match`, `.matchAll`, `.search`, `.includes`, `.startsWith` or
+`.endsWith`, also after `.toLowerCase()`, `.trim()` and similar. Matching on
+tool calls or fake state is not reported.
+
+Such a judge scores the wording of the final message, which is almost always a
+proxy for a semantic outcome. Score only objective contracts (tool calls, fake
+state), and leave semantic outcomes unscored, listed under `## Uncovered` in
+`evals/vitest/README.md`, until a judge validated on production traces exists.
+
+When the literal text is an approved requirement, opt out with a comment
+directly above the `createJudge` statement, giving the reason:
+
+```ts
+// recipe-check: literal-output the refund policy requires the exact ticket ID
+const QuotesTicket = createJudge<Input, string>('quotes the ticket ID', ({ output }) => ({
+  score: /RF-\d+/.test(output) ? 1 : 0,
+}));
+```
+
+An opt-out without a reason does not suppress the warning and is itself
+reported as `eval.judge_literal_output_reason_missing`. Files whose content the
+host did not supply are skipped.
 
 ## License
 

@@ -4,6 +4,7 @@
 //! [`RecipeFiles`] snapshot of a recipe directory and returns a [`Report`].
 //! Hosts own filesystem discovery and any environment-specific policy.
 
+mod eval_judges;
 mod judges;
 pub mod resources;
 pub mod spec;
@@ -317,6 +318,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
     if judge_count > 0 {
         resource_counts.insert("judges".to_owned(), judge_count);
     }
+    eval_judges::check_eval_judges(&mut ctx);
 
     let valid = !ctx
         .diagnostics
