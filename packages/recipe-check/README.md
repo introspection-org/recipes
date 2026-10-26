@@ -67,7 +67,9 @@ the checker reports the warning `eval.judge_output_text_match`. Text matching
 means `/re/.test(output)`, `new RegExp(...).test(output)`, `re.exec(output)`, or
 `output.match`, `.matchAll`, `.search`, `.includes`, `.startsWith` or
 `.endsWith`, also after `.toLowerCase()`, `.trim()` and similar. Matching on
-tool calls or fake state is not reported.
+tool calls or fake state is not reported, nor is a match written directly in
+the value of a `metadata` property, which only annotates the score. A match
+stored in a variable is still reported, even when only `metadata` reads it.
 
 Such a judge scores the wording of the final message, which is almost always a
 proxy for a semantic outcome. Score only objective contracts (tool calls, fake

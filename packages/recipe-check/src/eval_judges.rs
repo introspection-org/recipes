@@ -755,11 +755,50 @@ fn is_method_call(tokens: &[Token], i: usize, methods: &[&str]) -> bool {
         && is_punct(tokens, i + 2, "(")
 }
 
+/// The values of `metadata` properties in object literals of `body`. A match
+/// written there only annotates the score, so it is not grading; a match
+/// stored in a variable that the score also reads still is.
+fn metadata_values(tokens: &[Token], body: &Range<usize>) -> Vec<Range<usize>> {
+    let mut values = Vec::new();
+    for i in body.clone() {
+        let key = match &tokens[i].kind {
+            Kind::Ident(word) | Kind::Str(word) => word == "metadata",
+            _ => false,
+        };
+        if !key
+            || i == 0
+            || !(is_punct(tokens, i - 1, "{") || is_punct(tokens, i - 1, ","))
+            || !is_punct(tokens, i + 1, ":")
+        {
+            continue;
+        }
+        let mut depth = 0usize;
+        let end = (i + 2..body.end)
+            .find(|&j| match tokens[j].kind {
+                Kind::Punct("(" | "[" | "{") => {
+                    depth += 1;
+                    false
+                }
+                Kind::Punct(")" | "]" | "}") if depth == 0 => true,
+                Kind::Punct(")" | "]" | "}") => {
+                    depth -= 1;
+                    false
+                }
+                Kind::Punct(",") => depth == 0,
+                _ => false,
+            })
+            .unwrap_or(body.end);
+        values.push(i + 2..end);
+    }
+    values
+}
+
 /// The first token in `body` where the output is text matched.
 fn first_text_match(tokens: &[Token], body: Range<usize>, target: &Target) -> Option<usize> {
-    let shadowed = shadowed(tokens, &body, target.binding());
+    let mut ignored = shadowed(tokens, &body, target.binding());
+    ignored.extend(metadata_values(tokens, &body));
     body.clone().find(|&i| {
-        if shadowed.iter().any(|scope| scope.contains(&i)) {
+        if ignored.iter().any(|scope| scope.contains(&i)) {
             return false;
         }
         let Some(mut end) = target_end(tokens, i, target) else {
@@ -1059,6 +1098,32 @@ const SaysListMissing = createJudge<Input, string>(
             "createJudge('j', ({ output }) => {\n  // /done/.test(output)\n  const note = '/done/.test(output)';\n  return { score: 1, metadata: { rationale: `${output.length}` } };\n});",
         ] {
             assert_eq!(codes(&check(source)), Vec::<&str>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn ignores_text_matching_only_in_metadata() {
+        for source in [
+            "createJudge('j', ({ output, toolCalls }) => ({ score: toolCalls.some(c => c.name === 'save') ? 1 : 0, metadata: { rationale: output.includes('saved') ? 'Claims success' : 'No success claim' } }));",
+            "createJudge('j', ({ output }) => {\n  return { metadata: { claims: /saved/.test(output) }, score: 1 };\n});",
+            "createJudge('j', (args) => ({ 'metadata': args.output.startsWith('x') ? { a: 1 } : {}, score: 0 }));",
+        ] {
+            assert_eq!(codes(&check(source)), Vec::<&str>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn warns_on_text_matching_in_the_score_next_to_metadata() {
+        for source in [
+            "createJudge('j', ({ output }) => ({ metadata: { rationale: 'x' }, score: output.includes('saved') ? 1 : 0 }));",
+            "createJudge('j', ({ output }) => ({ score: /saved/.test(output) ? 1 : 0, metadata: { rationale: output.includes('saved') } }));",
+            "createJudge('j', ({ output }) => {\n  const saved = output.includes('saved');\n  return { score: saved ? 1 : 0, metadata: { rationale: `${saved}` } };\n});",
+        ] {
+            assert_eq!(
+                codes(&check(source)),
+                ["eval.judge_output_text_match"],
+                "{source}"
+            );
         }
     }
 
