@@ -602,6 +602,139 @@ fn output_target(tokens: &[Token], params: Range<usize>) -> Option<Target> {
         })
 }
 
+impl Target {
+    /// The callback binding a nested scope must rebind to hide the output.
+    fn binding(&self) -> &str {
+        match self {
+            Target::Name(name) | Target::Member(name) => name,
+        }
+    }
+}
+
+/// Whether the binding element `part` (a parameter or declarator) binds
+/// `name`. Inside an object pattern a key before `:` names a property, not a
+/// binding; elsewhere a `:` starts a type annotation.
+fn binds(tokens: &[Token], part: Range<usize>, name: &str, in_object: bool) -> bool {
+    let mut i = part.start;
+    if is_punct(tokens, i, "...") {
+        i += 1;
+    }
+    if in_object && ident(tokens, i).is_some() && is_punct(tokens, i + 1, ":") {
+        return binds(tokens, i + 2..part.end, name, false);
+    }
+    if ident(tokens, i) == Some(name) {
+        return true;
+    }
+    let in_object = is_punct(tokens, i, "{");
+    if !in_object && !is_punct(tokens, i, "[") {
+        return false;
+    }
+    find_close(tokens, i).is_some_and(|close| {
+        split_top_level(tokens, i + 1..close)
+            .into_iter()
+            .any(|element| binds(tokens, element, name, in_object))
+    })
+}
+
+/// Whether any parameter in `params` binds `name`.
+fn params_bind(tokens: &[Token], params: Range<usize>, name: &str) -> bool {
+    split_top_level(tokens, params)
+        .into_iter()
+        .any(|param| binds(tokens, param, name, false))
+}
+
+/// The index just past the body of the arrow function whose `=>` is at
+/// `arrow`: a block, or an expression ending at a top-level `,` or `;` or at
+/// the bracket enclosing it.
+fn arrow_end(tokens: &[Token], arrow: usize, limit: usize) -> usize {
+    if is_punct(tokens, arrow + 1, "{") {
+        return find_close(tokens, arrow + 1).map_or(limit, |close| close + 1);
+    }
+    let mut depth = 0usize;
+    for (j, token) in tokens.iter().enumerate().take(limit).skip(arrow + 1) {
+        match token.kind {
+            Kind::Punct("(" | "[" | "{") => depth += 1,
+            Kind::Punct(")" | "]" | "}") if depth == 0 => return j,
+            Kind::Punct(")" | "]" | "}") => depth -= 1,
+            Kind::Punct("," | ";") if depth == 0 => return j,
+            _ => {}
+        }
+    }
+    limit
+}
+
+/// The scope a `const`, `let` or `var` at `decl` declares into: its enclosing
+/// block, or a `for (...)` head together with the loop body.
+fn declaration_scope(tokens: &[Token], decl: usize, body: &Range<usize>) -> Option<Range<usize>> {
+    let mut depth = 0usize;
+    let open = (body.start..decl).rev().find(|&j| {
+        match tokens[j].kind {
+            Kind::Punct(")" | "]" | "}") => depth += 1,
+            Kind::Punct("(" | "[" | "{") if depth == 0 => return true,
+            Kind::Punct("(" | "[" | "{") => depth -= 1,
+            _ => {}
+        }
+        false
+    })?;
+    let close = find_close(tokens, open)?;
+    if is_punct(tokens, open, "{") {
+        return Some(open..close + 1);
+    }
+    if !is_punct(tokens, open, "(") || open == 0 || ident(tokens, open - 1) != Some("for") {
+        return None;
+    }
+    let end = if is_punct(tokens, close + 1, "{") {
+        find_close(tokens, close + 1)? + 1
+    } else {
+        (close + 1..body.end)
+            .find(|&j| is_punct(tokens, j, ";"))
+            .unwrap_or(body.end)
+    };
+    Some(open..end)
+}
+
+/// The ranges of `body` where a nested function parameter or declaration
+/// rebinds `name`, so a reference there is not the judged output.
+fn shadowed(tokens: &[Token], body: &Range<usize>, name: &str) -> Vec<Range<usize>> {
+    let mut scopes = Vec::new();
+    for i in body.clone() {
+        if is_member(tokens, i) {
+            continue;
+        }
+        // `output => ...`
+        if ident(tokens, i) == Some(name) && is_punct(tokens, i + 1, "=>") {
+            scopes.push(i..arrow_end(tokens, i + 1, body.end));
+        }
+        // `(output) => ...`, `({ output }) => ...`
+        if is_punct(tokens, i, "(") {
+            if let Some(close) = find_close(tokens, i) {
+                if is_punct(tokens, close + 1, "=>") && params_bind(tokens, i + 1..close, name) {
+                    scopes.push(i..arrow_end(tokens, close + 1, body.end));
+                }
+            }
+        }
+        // `function (output) { ... }`
+        if ident(tokens, i) == Some("function") {
+            let scope = (i + 1..body.end)
+                .find(|&j| is_punct(tokens, j, "("))
+                .and_then(|open| Some((open, find_close(tokens, open)?)))
+                .filter(|&(open, close)| params_bind(tokens, open + 1..close, name))
+                .and_then(|(_, close)| {
+                    let block = (close + 1..body.end).find(|&j| is_punct(tokens, j, "{"))?;
+                    Some(i..find_close(tokens, block)? + 1)
+                });
+            scopes.extend(scope);
+        }
+        // `const output = ...`, `let { output } = ...`
+        if matches!(ident(tokens, i), Some("const" | "let" | "var"))
+            && binds(tokens, i + 1..body.end, name, false)
+        {
+            scopes.extend(declaration_scope(tokens, i, body));
+        }
+    }
+    scopes
+}
+
 /// When the output is referenced at `i`, the index just past the reference.
 fn target_end(tokens: &[Token], i: usize, target: &Target) -> Option<usize> {
     if is_member(tokens, i) {
@@ -624,7 +757,11 @@ fn is_method_call(tokens: &[Token], i: usize, methods: &[&str]) -> bool {
 
 /// The first token in `body` where the output is text matched.
 fn first_text_match(tokens: &[Token], body: Range<usize>, target: &Target) -> Option<usize> {
+    let shadowed = shadowed(tokens, &body, target.binding());
     body.clone().find(|&i| {
+        if shadowed.iter().any(|scope| scope.contains(&i)) {
+            return false;
+        }
         let Some(mut end) = target_end(tokens, i, target) else {
             return false;
         };
@@ -922,6 +1059,39 @@ const SaysListMissing = createJudge<Input, string>(
             "createJudge('j', ({ output }) => {\n  // /done/.test(output)\n  const note = '/done/.test(output)';\n  return { score: 1, metadata: { rationale: `${output.length}` } };\n});",
         ] {
             assert_eq!(codes(&check(source)), Vec::<&str>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn ignores_nested_bindings_that_shadow_the_output() {
+        for source in [
+            "createJudge('j', ({ output, run }) => ({ score: fakeStates(run).final.messages.some(output => output.includes('saved')) ? 1 : 0 }));",
+            "createJudge('j', ({ output, run }) => run.messages.some((output) => /saved/.test(output)) && output.length > 0);",
+            "createJudge('j', ({ output, run }) => run.messages.some(({ text: output }) => output.includes('saved')));",
+            "createJudge('j', ({ output, run }) => run.messages.some(([output]: string[]) => output.endsWith('.')));",
+            "createJudge('j', ({ output, run }) => run.messages.filter(function (output: string) { return output.startsWith('x'); }).length);",
+            "createJudge('j', ({ output: text, run }) => run.messages.some((text) => text.includes('saved')));",
+            "createJudge('j', (args) => args.run.messages.some((args) => args.output.includes('saved')));",
+            "createJudge('j', ({ output, run }) => {\n  for (const output of run.messages) {\n    if (output.includes('saved')) return 1;\n  }\n  return 0;\n});",
+            "createJudge('j', ({ output, run }) => {\n  if (run) {\n    const { output } = fakeStates(run).final;\n    return output.includes('saved') ? 1 : 0;\n  }\n  return 0;\n});",
+        ] {
+            assert_eq!(codes(&check(source)), Vec::<&str>::new(), "{source}");
+        }
+    }
+
+    #[test]
+    fn warns_on_the_output_next_to_a_shadowing_callback() {
+        for source in [
+            "createJudge('j', ({ output, run }) => run.messages.some((output) => output.includes('x')) && output.includes('saved'));",
+            "createJudge('j', ({ output, run }) => output.includes('saved') && run.messages.some(output => output.includes('x')));",
+            "createJudge('j', ({ output, run }) => run.messages.some(({ output: text }) => text.length) && /saved/.test(output));",
+            "createJudge('j', ({ output, run }) => {\n  if (run) {\n    const output = 'x';\n  }\n  return output.includes('saved') ? 1 : 0;\n});",
+        ] {
+            assert_eq!(
+                codes(&check(source)),
+                ["eval.judge_output_text_match"],
+                "{source}"
+            );
         }
     }
 
