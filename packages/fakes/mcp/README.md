@@ -20,8 +20,8 @@ server id the Recipe declares:
 ```text
 fakes/
   package.json            # depends on @introspection-ai/mcp-fakes
+  package-lock.json       # what the sidecar image installs with npm ci
   Dockerfile              # the Harbor sidecar's image (below)
-  dist/sidecar.js         # the sidecar, bundled by `mcp-fakes bundle`, committed
   mcp/
     index.ts              # every fake, imported statically
     attio/
@@ -173,8 +173,8 @@ Recording is off unless asked; the fake keeps no call log otherwise.
 
 ## Talking to the agent against the fakes
 
-`introspection local` runs a Recipe against its committed sidecar, so a Recipe
-needs no launcher of its own:
+`introspection local` runs a Recipe against its fakes with `mcp-fakes serve`, so a
+Recipe needs no launcher of its own:
 
 ```bash
 introspection local --agent agent --scenario quiet                       # every fake
@@ -182,7 +182,8 @@ introspection local --agent agent --scenario quiet --fakes attio,resend  # only 
 introspection local --agent agent --fakes attio,resend                   # world's default scenario
 ```
 
-The CLI starts `node fakes/dist/sidecar.js` on a free loopback port, waits for
+The CLI starts `mcp-fakes serve` in `fakes/`, from the copy of this package the
+fakes resolve (install the fakes' dependencies first), on a free loopback port, waits for
 `/health`, and binds only the selected fakes; a server the Recipe declares
 `required: true` that is not among them stops the run. Pi runs in
 `.introspection/local/<scenario>/workspace`, which holds the binding, so the
@@ -233,7 +234,7 @@ What the agent called is in the run itself (vitest-evals'
 ## Checking a run
 
 `@introspection-ai/mcp-fakes/verify` holds the two checks a Recipe's cases
-share. It imports only Node built-ins, not the MCP SDK, esbuild or a test
+share. It imports only Node built-ins, not the MCP SDK or a test
 runner, so a judge or a `node --test` file can import it:
 
 ```ts
@@ -281,34 +282,27 @@ them runs too, so the two runners score a run alike.
 
 ## The Harbor sidecar
 
-A plane builds the Harbor sidecar's image with no route to a package registry,
-so the image installs nothing. The package carries the sidecar's entrypoint;
-the bundler compiles it over the Recipe's fakes and world, with the host and
-every dependency, into one file the Recipe commits. Run it in `fakes/`:
-
-```sh
-npx mcp-fakes bundle            # writes dist/sidecar.js
-npx mcp-fakes bundle --check    # exits 1 when dist/sidecar.js is stale
-```
-
-`--fakes` (default `mcp/index.ts`), `--scenarios` (`scenarios/index.ts`) and
-`--out` (`dist/sidecar.js`) name other paths. The bundle does not depend on
-how the packages were installed: it is minified, since an unminified bundle
-names each module, in a comment and as a CommonJS module's key, by where npm
-(`node_modules/zod/…`) or pnpm (`node_modules/.pnpm/zod@…/node_modules/zod/…`)
-put it. Function names are kept, so a stack trace still names its functions.
-The bundler refuses a bundle naming `node_modules/.pnpm/` or the directory it
-ran in or bundled from. Rebuild after any change under
-`fakes/` or a version bump of this package. The Recipe needs no entrypoint
-file; the image copies `fakes/` and runs the bundle:
+`mcp-fakes serve` serves the Recipe's fakes: it imports `fakes` from
+`mcp/index.ts` and `world` from `scenarios/index.ts` (`--fakes` and
+`--scenarios` name other paths) and calls `serveSidecar`. Node runs the fakes'
+TypeScript with type stripping, so nothing is built; the fakes import each
+other with `.ts` specifiers. Run it in `fakes/`, from the copy of this package
+the fakes import, as the image does:
 
 ```dockerfile
-FROM node:24-slim
+FROM docker.io/library/node:22-slim
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY . .
 EXPOSE 7353
-CMD ["node", "/app/dist/sidecar.js"]
+CMD ["node_modules/.bin/mcp-fakes", "serve"]
 ```
+
+The image installs from the npm registry while it builds, so the plane's build
+egress must allow `registry.npmjs.org`. Pinned by the committed
+`package-lock.json`, two builds of one commit serve the same code. An unpinned
+`node:22-slim` resolves onto the plane's vetted base where it has one.
 
 The sidecar serves every fake on `0.0.0.0:7353` (`SIDECAR_PORT`), so a trial
 binds a fake at `http://fakes:7353/<id>/mcp`. It reads its settings from the
@@ -355,7 +349,6 @@ checkRecipeFakes({
 | `<id> has no static tool over an entity a tool writes or a world fills` | A static tool writes, or reads an entity some tool writes or some scenario's world fills |
 | `the <scenario> world is consistent` | The world lacks a fake's state, or `consistent` throws |
 | `an unknown scenario is refused` | `world` builds a world for a name it does not know |
-| `the committed sidecar bundle is current` | `dist/sidecar.js` differs from what the sources bundle to now |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -365,7 +358,6 @@ checkRecipeFakes({
 | `consistent` | none | The Recipe's own invariants of a world; throws when one fails |
 | `clock` | now | The clock the worlds are built at |
 | `fakesDir` | `fakes/` beside `recipe` | The fakes' directory |
-| `bundle` | `{}` | `{ fakes, scenarios, out }` relative to `fakesDir`, as the bundler takes them; `false` skips the check |
 | `timeout` | `60000` | Each test's timeout in milliseconds |
 
 `contract.ts` matching `tools.json` is `introspection bindings mcp types
@@ -374,9 +366,8 @@ tools served in order, arguments validated against the captured schema
 (formats included), defaults filled, an unread argument ignored, an
 unimplemented value refused as a tool error, an unknown tool, the output
 schema enforced, the state routes and file, recording, the start-up check,
-configs from a second loaded copy of the package, and the bundle, its
-independence from the install layout, the sidecar and `--check`. A Recipe
-does not repeat them.
+configs from a second loaded copy of the package, and `mcp-fakes serve` over
+the TypeScript fakes as they are. A Recipe does not repeat them.
 
 ### The fake's contract tests
 

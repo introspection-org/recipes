@@ -1,5 +1,5 @@
-import type { State as Mail } from "../mcp/mail/handlers.js";
-import type { State as Notes } from "../mcp/notes/handlers.js";
+import type { State as Mail } from "../mcp/mail/handlers.ts";
+import type { State as Notes } from "../mcp/notes/handlers.ts";
 
 export interface World {
   notes: Notes;

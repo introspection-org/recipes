@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 // Imports only Node built-ins, so a Recipe's eval harness and judges can use it without the
-// host's MCP SDK, esbuild or a test runner. A test holds it to that.
+// host's MCP SDK or a test runner. A test holds it to that.
 
 /** Each fake's state, keyed by fake id, when the services started and after the run. */
 export type FakeStates<TStates = Record<string, unknown>> = {

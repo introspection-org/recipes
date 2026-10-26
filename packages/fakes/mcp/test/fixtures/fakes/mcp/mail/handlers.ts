@@ -1,5 +1,5 @@
 import { type McpServer, text, toolConfig } from "@introspection-ai/mcp-fakes";
-import type { Contract } from "./contract.js";
+import type { Contract } from "./contract.ts";
 import tools from "./tools.json" with { type: "json" };
 
 export interface State {

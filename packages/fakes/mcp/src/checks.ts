@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BUNDLE_DEFAULTS, type BundleOptions, isCurrent } from "./bundle.js";
 import { isDefaultExecution, type ListedTool, type ListedTools } from "./config.js";
 import { type Fakes, startServices } from "./server.js";
 
@@ -30,8 +29,6 @@ export interface RecipeFakesOptions<W extends object> {
   clock?: Date | string;
   /** The fakes' directory; `fakes/` beside the Recipe's `package.json` when omitted. */
   fakesDir?: string | URL;
-  /** The bundle's sources and output, relative to the fakes' directory; `false` skips the check. */
-  bundle?: (BundleOptions & { out?: string }) | false;
   /** Each test's timeout in milliseconds. */
   timeout?: number;
 }
@@ -68,8 +65,7 @@ const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
  *   not contradict `readOnlyHint`;
  * - no static tool reads an entity a tool writes or a world fills;
  * - every scenario builds a world holding every fake's state, which `consistent` accepts, and
- *   an unknown scenario is refused;
- * - the committed sidecar bundle is current.
+ *   an unknown scenario is refused.
  *
  * A fake's id is its directory under `mcp/` and the server id the Recipe declares.
  */
@@ -184,17 +180,4 @@ export function checkRecipeFakes<W extends object>(options: RecipeFakesOptions<W
   run("an unknown scenario is refused", () => {
     assert.throws(() => world("no-such-scenario", clock));
   });
-
-  if (options.bundle !== false) {
-    const sources = options.bundle || {};
-    const at = (file: string) => path.resolve(fakesDir, file);
-    run("the committed sidecar bundle is current", async () => {
-      const out = at(sources.out ?? BUNDLE_DEFAULTS.out);
-      const current = await isCurrent(out, {
-        fakes: at(sources.fakes ?? BUNDLE_DEFAULTS.fakes),
-        scenarios: at(sources.scenarios ?? BUNDLE_DEFAULTS.scenarios),
-      });
-      assert.ok(current, `${out} is stale: run npx mcp-fakes bundle in ${fakesDir}`);
-    });
-  }
 }

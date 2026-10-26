@@ -1,4 +1,4 @@
-import * as mail from "./mail/index.js";
-import * as notes from "./notes/index.js";
+import * as mail from "./mail/index.ts";
+import * as notes from "./notes/index.ts";
 
 export const fakes = { mail, notes };

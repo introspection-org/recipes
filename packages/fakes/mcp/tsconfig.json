@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
     "declaration": true,
     "outDir": "dist",
     "strict": true,

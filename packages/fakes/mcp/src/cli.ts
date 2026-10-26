@@ -1,27 +1,37 @@
 #!/usr/bin/env node
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { BUNDLE_DEFAULTS, isCurrent, writeBundle } from "./bundle.js";
+import { serveSidecar } from "./sidecar.js";
 
-const USAGE = `Usage: mcp-fakes bundle [--fakes <file>] [--scenarios <file>] [--out <file>] [--check]
+export const SERVE_DEFAULTS = {
+  fakes: "mcp/index.ts",
+  scenarios: "scenarios/index.ts",
+};
 
-  bundle       Bundle the Harbor sidecar: the package's entrypoint over the Recipe's
-               fakes and world, with every dependency, into one file the sidecar
-               image runs with no install. Run it in the Recipe's fakes/.
-  --fakes      The module exporting \`fakes\` (${BUNDLE_DEFAULTS.fakes})
-  --scenarios  The module exporting \`world\` (${BUNDLE_DEFAULTS.scenarios})
-  --out        The bundle (${BUNDLE_DEFAULTS.out})
-  --check      Write nothing; fail when the bundle differs from what the sources
-               bundle to now.`;
+const USAGE = `Usage: mcp-fakes serve [--fakes <file>] [--scenarios <file>]
+
+  serve        Serve the Recipe's fakes, configured from the MCP_FAKES_* environment:
+               every fake on 0.0.0.0:7353 unless MCP_FAKES_HOST and MCP_FAKES_PORT say
+               otherwise. Run it in the Recipe's fakes/, from the copy of this package
+               the fakes import; Node runs their TypeScript as it is.
+  --fakes      The module exporting \`fakes\` (${SERVE_DEFAULTS.fakes})
+  --scenarios  The module exporting \`world\` (${SERVE_DEFAULTS.scenarios})`;
+
+// The export `name` of the module at `file`, resolved from the working directory.
+async function load(file: string, name: string) {
+  const module = await import(pathToFileURL(path.resolve(file)).href);
+  if (!(name in module)) throw new Error(`${file} exports no \`${name}\``);
+  return module[name];
+}
 
 async function main(argv: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args: argv,
     allowPositionals: true,
     options: {
-      fakes: { type: "string" },
-      scenarios: { type: "string" },
-      out: { type: "string", default: BUNDLE_DEFAULTS.out },
-      check: { type: "boolean", default: false },
+      fakes: { type: "string", default: SERVE_DEFAULTS.fakes },
+      scenarios: { type: "string", default: SERVE_DEFAULTS.scenarios },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -29,24 +39,18 @@ async function main(argv: string[]): Promise<number> {
     console.log(USAGE);
     return 0;
   }
-  if (positionals.length !== 1 || positionals[0] !== "bundle") {
+  if (positionals.length !== 1 || positionals[0] !== "serve") {
     console.error(USAGE);
     return 2;
   }
-  const options = { fakes: values.fakes, scenarios: values.scenarios };
-  if (values.check) {
-    if (await isCurrent(values.out, options)) return 0;
-    const again = argv.filter((arg) => arg !== "--check").join(" ");
-    console.error(`${values.out} is stale: run mcp-fakes ${again}`);
-    return 1;
-  }
-  await writeBundle(values.out, options);
+  await serveSidecar(await load(values.fakes, "fakes"), await load(values.scenarios, "world"));
   return 0;
 }
 
 try {
   process.exitCode = await main(process.argv.slice(2));
 } catch (error) {
-  console.error((error as Error).message);
+  // As Node prints an uncaught error, so `introspection local` reads its message from the log.
+  console.error(error);
   process.exitCode = 1;
 }

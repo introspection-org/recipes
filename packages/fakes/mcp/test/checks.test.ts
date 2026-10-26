@@ -3,8 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkRecipeFakes, type RecipeFakesOptions } from "@introspection-ai/mcp-fakes/checks";
-import { beforeAll, describe, expect, test } from "vitest";
-import { writeBundle } from "../src/bundle.js";
+import { describe, expect, test } from "vitest";
 import type { Fake, Fakes } from "../src/index.js";
 import { fakes } from "./fixtures/fakes/mcp/index.js";
 import { SCENARIOS, type World, world } from "./fixtures/fakes/scenarios/index.js";
@@ -12,22 +11,12 @@ import { SCENARIOS, type World, world } from "./fixtures/fakes/scenarios/index.j
 const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const FAKES = path.join(FIXTURES, "fakes");
 const RECIPE = path.join(FIXTURES, "recipe-package.json");
-const OUT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mcp-fakes-checks-")), "sidecar.js");
 
 const noteIds = (state: World) => new Set(state.notes.notes.map((note) => note.id));
 const consistent = (state: World) => {
   if (state.notes.brokenId && !noteIds(state).has(state.notes.brokenId))
     throw new Error("brokenId names a missing note");
 };
-
-beforeAll(
-  () =>
-    writeBundle(OUT, {
-      fakes: path.join(FAKES, "mcp/index.ts"),
-      scenarios: path.join(FAKES, "scenarios/index.ts"),
-    }),
-  60_000,
-);
 
 // The fixture Recipe as a Recipe's own test file uses it, under vitest.
 describe("a Recipe's checks under vitest", () => {
@@ -38,7 +27,6 @@ describe("a Recipe's checks under vitest", () => {
     world,
     scenarios: SCENARIOS,
     consistent,
-    bundle: { out: OUT },
   });
 });
 
@@ -48,7 +36,6 @@ const base: Omit<RecipeFakesOptions<World>, "test"> = {
   world,
   scenarios: SCENARIOS,
   consistent,
-  bundle: { out: OUT },
 };
 
 // Runs the checks a call registers and names the ones that fail, with their message.
@@ -88,7 +75,7 @@ function notes(
 }
 
 describe("checkRecipeFakes", () => {
-  test("registers one test per fake and rule, per scenario, and for the bundle", async () => {
+  test("registers one test per fake and rule, and per scenario", async () => {
     const { names, failed } = await failing({ ...base, fakesDir: FAKES });
     expect(names).toEqual([
       "mail serves the Recipe's allowed tools from tools.json, in captured order",
@@ -100,7 +87,6 @@ describe("checkRecipeFakes", () => {
       "the quiet world is consistent",
       "the broken world is consistent",
       "an unknown scenario is refused",
-      "the committed sidecar bundle is current",
     ]);
     expect(failed).toEqual({});
   });
@@ -267,20 +253,5 @@ describe("checkRecipeFakes", () => {
       "the broken world is consistent": "brokenId names a missing note",
       "an unknown scenario is refused": expect.stringMatching(/Missing expected exception/),
     });
-  });
-
-  test("fails a stale bundle", async () => {
-    const stale = path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), "mcp-fakes-stale-")),
-      "sidecar.js",
-    );
-    fs.writeFileSync(stale, "// stale\n");
-    const { failed } = await failing({ ...base, bundle: { out: stale } });
-    expect(failed["the committed sidecar bundle is current"]).toMatch(
-      /is stale: run npx mcp-fakes bundle/,
-    );
-    expect((await failing({ ...base, bundle: false })).names).not.toContain(
-      "the committed sidecar bundle is current",
-    );
   });
 });

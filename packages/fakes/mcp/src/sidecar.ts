@@ -6,8 +6,8 @@ import { type Fakes, type Services, startServices } from "./server.js";
 export const SIDECAR_PORT = 7353;
 
 /**
- * The Harbor sidecar: every fake on `0.0.0.0:7353`, configured from the environment. The
- * bundler's built-in entrypoint calls it with the Recipe's fakes and world.
+ * The Harbor sidecar: every fake on `0.0.0.0:7353`, configured from the environment. `mcp-fakes
+ * serve` calls it with the Recipe's fakes and world.
  *
  * | Variable | Meaning |
  * | --- | --- |

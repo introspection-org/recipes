@@ -120,7 +120,7 @@ describe("the checks on running fakes", () => {
 });
 
 describe("the verify entry point", () => {
-  it("imports only Node built-ins, so a judge needs neither esbuild nor a test runner", () => {
+  it("imports only Node built-ins, so a judge needs neither the MCP SDK nor a test runner", () => {
     const source = fs.readFileSync(path.join(import.meta.dirname, "../src/verify.ts"), "utf8");
     const imported = [...source.matchAll(/^\s*(?:import|export)\b[^;]*?from\s+"([^"]+)"/gm)].map(
       (match) => match[1],
