@@ -16,6 +16,14 @@
     "./verify": {
       "types": "./dist/verify.d.ts",
       "import": "./dist/verify.js"
+    },
+    "./answers": {
+      "types": "./dist/answers.d.ts",
+      "import": "./dist/answers.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
   "bin": {
@@ -33,10 +41,22 @@
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.1.1",
-    "@modelcontextprotocol/server": "2.3.1"
+    "@modelcontextprotocol/server": "2.3.1",
+    "@toon-format/toon": "2.2.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "typebox": "^1"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/client": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "^24.0.0",
+    "typebox": "1.4.3",
     "typescript": "^5.9.0",
     "vitest": "4.1.12"
   },

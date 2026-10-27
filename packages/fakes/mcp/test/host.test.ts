@@ -6,8 +6,8 @@ import { type ServiceOptions, type Services, startServices } from "../src/index.
 import { callTool, rpc, VALIDATION } from "./client.js";
 import { fakes } from "./fixtures/fakes/mcp/index.js";
 import { type World, world } from "./fixtures/fakes/scenarios/index.js";
-import mailTools from "./fixtures/fakes/mcp/mail/tools.json" with { type: "json" };
-import notesTools from "./fixtures/fakes/mcp/notes/tools.json" with { type: "json" };
+import mailTools from "./fixtures/fakes/mcp/mail/tools.ts";
+import notesTools from "./fixtures/fakes/mcp/notes/tools.ts";
 
 const running: Services<World>[] = [];
 afterEach(async () => {

@@ -2,7 +2,7 @@
 
 The host for a Recipe's MCP fakes. A fake stands in for an MCP server the
 Recipe declares, during an eval run: it serves the tools the server's captured
-`tools.json` describes, validates every call against those schemas, and keeps
+`tools.ts` describes, validates every call against those schemas, and keeps
 its state where the eval's checks can read it. One process serves every fake
 of a Recipe, so a task needs one sidecar and one port however many servers the
 Recipe declares.
@@ -25,9 +25,11 @@ fakes/
   mcp/
     index.ts              # every fake, imported statically
     attio/
-      index.ts            # exports the fake's manifest and register
-      tools.json          # the captured tools/list (written by the CLI)
-      contract.ts         # the tools' TypeScript types (written by the CLI)
+      index.ts            # exports the fake's manifest, contract, register and observed
+      tools.ts            # the captured tools/list (written by `introspection bindings mcp capture`)
+      answers.ts          # each tool's successful answer, declared by hand
+      contract.ts         # contractOf(tools, answers)
+      observed.ts         # what the real server answered (written by `introspection bindings mcp observe`)
       entities.ts         # the fake's state type
       handlers.ts         # one SDK tool callback per allowed tool
       manifest.json       # server identity, capture, entity map
@@ -35,10 +37,13 @@ fakes/
     index.ts              # SCENARIOS and world(name, clock): every fake's starting state
   tests/
     fakes.test.js         # checkRecipeFakes (below)
+    setup.js              # the recording's global setup and teardown
+    responses.jsonl       # every answer the contract tests received
 ```
 
 `mcp/index.ts` exports `fakes`, an object keyed by server id whose values are
-the fakes' modules: each exports its `manifest` and `register`. A fake's
+the fakes' modules: each exports its `manifest`, its `contract`, its `register`
+and, where it has an `observed.ts`, its `observed`. A fake's
 `index.ts` re-exports `manifest.json` as imported, with no cast: `Manifest`
 takes the strings a JSON import widens, and the host refuses a value the
 protocol does not allow, such as an icon `theme` other than `light` or `dark`. A fake's id is
@@ -46,52 +51,137 @@ its directory under `mcp/` and the server id the Recipe declares in its
 `package.json`. `scenarios/index.ts` exports `world(scenario, clock)` and the
 scenarios by name.
 
-## Writing a handler
+## The contract
 
-`handlers.ts` registers its tools with the SDK directly. `toolConfig` binds the
-fake's `tools.json` and its generated `Contract`, and returns `config(name)`,
-which builds a tool's registration from its captured entry:
+The CLI writes `tools.ts` and `observed.ts` as TypeScript modules whose default
+export is the JSON `as const`, so TypeScript keeps every literal and TypeBox's
+`Static` infers each schema's type:
 
 ```ts
-import { type McpServer, notImplemented, structured, text, toolConfig } from '@introspection-ai/mcp-fakes';
-import type { Contract } from './contract.ts';
-import type { State } from './entities.ts';
-import tools from './tools.json' with { type: 'json' };
+// Written by `introspection bindings mcp capture`. Do not edit.
+// biome-ignore-all format: the CLI writes this file and reads it back
+// prettier-ignore
+export default { "tools": [ … ] } as const;
+```
 
-const config = toolConfig<Contract>(tools);
+A formatter may rewrite the object: the CLI reads it back as JSON5 and
+compares values, not text.
+
+A fake declares each tool's successful answer in `answers.ts`, an `Answer`: the
+format the server answers in, `json`, `toon`, `prefixed_json` (JSON after the
+fixed `prefix`) or `text`, and the TypeBox schema of the decoded value; a
+`text` answer has none. `contract.ts` binds the two:
+
+```ts
+// answers.ts
+import { Type } from 'typebox';
+
+export const answers = {
+  'send-email': {
+    format: 'prefixed_json',
+    prefix: 'Email sent successfully! ',
+    schema: Type.Object({ id: Type.String() }, { additionalProperties: false }),
+  },
+  'get-email': { format: 'text' },
+};
+
+// contract.ts
+import { contractOf } from '@introspection-ai/mcp-fakes';
+import { answers } from './answers.ts';
+import tools from './tools.ts';
+
+export const contract = contractOf(tools, answers);
+export type Contract = typeof contract;
+```
+
+`contractOf` gives each tool, by name and in captured order, its entry: the
+captured `tool` as it is served, its input schema (`args`), the `defaults` it
+states, and its `answer`. A tool that states an `outputSchema` has that as its
+answer, `{ format: 'json', schema: outputSchema }`, and declares none. The type
+check fails when `answers` misses a tool or declares one for a tool with an
+`outputSchema`; `contractOf` throws for those and for an answer of a tool not
+captured. `typebox` 1 is a peer dependency.
+
+| Type | Is |
+| --- | --- |
+| `Args<C, N>` | A tool's arguments as its handler receives them, the defaults the host fills required |
+| `SentArgs<C, N>` | A tool's arguments as a caller sends them |
+| `Result<C, N>` | A tool's decoded answer: its schema's `Static`, or the text of a `text` answer |
+| `Answered<C>` | A call a fake answered, `{ name, args, result }`, narrowed by `name` |
+| `Entry`, `Contract`, `Answer` | One tool's entry; every entry by name; a declared answer |
+
+`observedOf(observed)` gives each tool of a fake's `observed.ts` its `sampled`
+count and the `answer` the real server gave, in the same `Answer` shape, and a
+code-mode tool each API operation's own under `operations`; a fake's `index.ts`
+exports it as `observed` for `checkRecipeFakes`. That check holds a code-mode
+tool's recorded call to the operation the arguments its manifest's `codeMode`
+names select, and to the tool's own answer when they select no observed one.
+
+## Writing a handler
+
+`handlers.ts` registers its tools with the SDK directly. `toolsOf(contract)`
+gives `config(name)`, which builds a tool's registration from its captured
+entry and types the callback's arguments, and `answer(name, value)`, which
+answers in the tool's declared format, its value typed by the answer's schema:
+
+```ts
+import { type McpServer, notImplemented, text, toolsOf } from '@introspection-ai/mcp-fakes';
+import { contract } from './contract.ts';
+import type { State } from './entities.ts';
+
+const { config, answer } = toolsOf(contract);
 
 export function register(server: McpServer, state: State) {
   server.registerTool('list-deals', config('list-deals'), async ({ limit, filter }) => {
     // `limit` is filled from the schema's default when the caller omits it.
     if (filter && filter.op !== 'eq') return notImplemented(`the filter op ${filter.op}`);
-    return text(state.deals.slice(0, limit).map((deal) => deal.name).join('\n'));
+    return answer('list-deals', { deals: state.deals.slice(0, limit) }); // encoded as declared, TOON say
   });
 
   server.registerTool('get-deal', config('get-deal'), async ({ id }) =>
-    structured<Contract['get-deal']['result']>({ id, stage: 'Proposal' }),
+    answer('get-deal', { id, stage: 'Proposal' }), // states an outputSchema: structuredContent
   );
 }
 ```
 
 - **`config(name)`** carries the tool's title, description, annotations, icons
   and `_meta` as captured, and its input and output schemas wrapped with
-  `fromJsonSchema`. It refuses a tool that is not in `tools.json`, a tool that
+  `fromJsonSchema`. It refuses a tool that is not captured, a tool that
   declares `execution` with `taskSupport` `optional` or `required` (the SDK
   cannot serve it), and an input schema that states a default below the top
   level (the host would not fill it). A tool declaring `"taskSupport":
   "forbidden"`, the protocol's default and what servers such as Attio declare
   on every tool, is served without `execution`, which means the same.
-- **Register in the order `tools.json` gives.** The SDK lists tools in the
-  order they are registered, so the served list then matches the capture.
-- **`text(value, isError?)`** builds a text result.
+- **Register in captured order.** The SDK lists tools in the order they are
+  registered, so the served list then matches the capture.
+- **`answer(name, value)`** encodes the value in the tool's format
+  (`encode`), putting a `prefixed_json` answer's prefix before its JSON; a tool
+  that states an `outputSchema` answers with `structured(value)`. TOON is
+  written by `@toon-format/toon` 2.2.0, pinned exactly: it is the last version
+  that writes TOON spec 3.0.
+- **`text(value, isError?)`** builds a text result, for a tool error.
 - **`structured<T>(value)`** builds the result of a tool that declares an
-  output schema: the structured content, and its JSON as the text item. Type it
-  with the result `contract.ts` generated.
+  output schema: the structured content, and its JSON as the text item.
 - **`notImplemented(what)`** is the tool error for an argument value that
   selects a behaviour the handler does not implement, such as a filter
   operator: `This fake does not implement <what>.`
 - **`labelId(label)`** derives a stable UUID from a readable label, so a
   world's ids are the same from run to run.
+- **`toolConfig(tools)`** is the `config` under `toolsOf`, for a fake without
+  a contract.
+
+## Reading answers
+
+`@introspection-ai/mcp-fakes/answers` reads a successful answer back: decoded
+by its format and validated against its schema with TypeBox's compiled
+validator. A Recipe's contract tests check every answer with it, and its eval
+checks read the agent's tool results with it.
+
+| Export | Returns |
+| --- | --- |
+| `readAnswer(answer, text)` | `{ ok: true, value }`, or `{ ok: false, error, issues }` for text not in the answer's format or a value outside its schema |
+| `readResult(entry, { text, structured })` | The same for one tool of a contract, read where its answer is: the `structuredContent` of a tool that states an `outputSchema`, whose text is ignored, as the Recipes MCP wrapper and `observe` read it; the text of any other |
+| `answered(fake, calls)` | The calls the fake answered, typed by its contract as `Answered`; a refused call is left out, and a successful answer outside the contract throws, since it makes the measurement invalid |
 
 ## What every call goes through
 
@@ -151,7 +241,7 @@ running fake, and a state file is never read back.
 
 `startServices` refuses to start unless, for each fake, the handlers register
 exactly the tools in its manifest's `tools`, each with `config(name)` for that
-same name, in the order of `tools.json`. The sidecar image is built from
+same name, in captured order. The sidecar image is built from
 `fakes/` alone and cannot read the Recipe's manifest, so the fake's manifest
 is the list the host compares against; a test of the Recipe pins that list to
 its allow-list. It also refuses a fake the world holds no state for.
@@ -344,9 +434,12 @@ checkRecipeFakes({
 
 | Test | Fails when |
 | --- | --- |
-| `<id> serves the Recipe's allowed tools from tools.json, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools` allows (an `include` of `"*"` or a tool's name, less its `exclude`), in `tools.json`'s order; a captured `"taskSupport": "forbidden"` equals a tool served without `execution` |
+| `<id> serves the Recipe's allowed tools from its contract, in captured order` | `tools/list` differs from the captured tools the Recipe's `pi.mcp.servers[].tools` allows (an `include` of `"*"` or a tool's name, less its `exclude`), in captured order; a captured `"taskSupport": "forbidden"` equals a tool served without `execution` |
 | `<id> maps every allowed tool to its entities` | The manifest's `tools` are not the allow-list, a tool's kind is not `stateful` or `static`, it names an entity outside `entities`, or its writes contradict `readOnlyHint` |
 | `<id> has no static tool over an entity a tool writes or a world fills` | A static tool writes, or reads an entity some tool writes or some scenario's world fills |
+| `<id> refuses a call outside a tool's input schema and changes no state` | A call the captured input schema refuses (its required arguments left out, an undeclared argument, or one of the wrong type) is answered, or changes the fake's state |
+| `<id> shares no state between two started instances` | Two instances' states share an object; with `recording`, its calls to the fake replayed on one instance change the other's state, or leave the two in different states once replayed on both |
+| `<id> answers every observed tool as the real server did` | With `recording`, for a fake that exports `observed`: an observed tool has no recorded successful answer, or one reads unlike the observed answer (below) |
 | `the <scenario> world is consistent` | The world lacks a fake's state, or `consistent` throws |
 | `an unknown scenario is refused` | `world` builds a world for a name it does not know |
 
@@ -357,11 +450,25 @@ checkRecipeFakes({
 | `fakes`, `world`, `scenarios` | required | `mcp/index.ts`'s `fakes`, `scenarios/index.ts`'s `world`, and the scenario names or the object keyed by them |
 | `consistent` | none | The Recipe's own invariants of a world; throws when one fails |
 | `clock` | now | The clock the worlds are built at |
-| `fakesDir` | `fakes/` beside `recipe` | The fakes' directory |
+| `recording` | none | The JSONL file the contract tests record every answer to |
 | `timeout` | `60000` | Each test's timeout in milliseconds |
 
-`contract.ts` matching `tools.json` is `introspection bindings mcp types
---check`'s. This package's own tests cover what every host does: the captured
+The captured tools come from each fake's `contract`. An observed answer is
+read as `introspection bindings mcp observe` read the real server: a tool that
+states an `outputSchema` from its `structuredContent`, any other from its text
+in the observed format; a wrong type, string format or result format fails; a
+key every sample held fails when missing only once the tool was sampled
+`REQUIRED_MIN_SAMPLES` (3) times; an extra key is allowed; and the value of a
+key the observed schema masked is held to its `x-masked-values`. TOON must
+also be written exactly as the TOON encoder writes it wherever every observed
+result was (`canonical`); prefixed JSON is held to the observed text before
+and after the JSON (`prefix`, `suffix`, or one of `prefixes`, `suffixes`); and
+a `text` answer to its observed first line (`prefix` or one of `prefixes`). A
+`mixed` answer is only counted. An allowed tool `observed` holds no
+observation of is named in a warning on stderr, not failed, since nothing
+checks its answers.
+
+This package's own tests cover what every host does: the captured
 tools served in order, arguments validated against the captured schema
 (formats included), defaults filled, an unread argument ignored, an
 unimplemented value refused as a tool error, an unknown tool, the output
@@ -371,41 +478,53 @@ the TypeScript fakes as they are. A Recipe does not repeat them.
 
 ### The fake's contract tests
 
-What only the Recipe knows, its fake's semantics, it tests itself: a schema
-rejection, an empty and a missing result, pagination, a read after a write, an
-injected failure, isolation. Call the fake with the official MCP client,
-`@modelcontextprotocol/client` 2.3.1 (the version of the
-`@modelcontextprotocol/server` this host is built on), a dev dependency of the
-Recipe's `fakes/`:
+What only the Recipe knows, its fake's semantics, it tests itself: an empty
+and a missing result, pagination, a read after a write, an injected failure.
+`@introspection-ai/mcp-fakes/testing` calls the fakes with the official MCP
+client, `@modelcontextprotocol/client` 2.3.1 (the version of the
+`@modelcontextprotocol/server` this host is built on), an optional peer
+dependency the Recipe's `fakes/` adds as a dev dependency; the host's own
+import path never loads it.
 
 ```js
+// fakes/tests/client.js
+export const RECORD = new URL('./responses.jsonl', import.meta.url).pathname;
+export const options = { clock: '2026-10-01T09:00:00.000Z', record: RECORD };
+
+// fakes/tests/setup.js: node --test --test-global-setup=tests/setup.js tests/*.test.js
+import { recording } from '@introspection-ai/mcp-fakes/testing';
+import { RECORD } from './client.js';
+
+export const { globalSetup, globalTeardown } = recording(RECORD);
+
 // fakes/tests/notes.test.js
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { startServices } from '@introspection-ai/mcp-fakes';
+import { call, callTool, withFakes } from '@introspection-ai/mcp-fakes/testing';
 import { fakes } from '../mcp/index.ts';
 import { world } from '../scenarios/index.ts';
+import { options } from './client.js';
 
-test('a note written is read back', async () => {
-  const services = await startServices(fakes, { world, scenario: 'quiet' });
-  const client = new Client({ name: 'notes-contract', version: '0' });
-  await client.connect(new StreamableHTTPClientTransport(new URL(services.url('notes'))));
-  try {
-    await client.callTool({ name: 'create-note', arguments: { title: 'Renewal' } });
-    const read = await client.callTool({ name: 'get-note', arguments: { id: 'note-4' } });
-    assert.deepEqual(read.structuredContent, { id: 'note-4', title: 'Renewal' });
-    const rejected = await client.callTool({ name: 'create-note', arguments: {} });
-    assert.equal(rejected.isError, true);
-  } finally {
-    await client.close();
-    await services.close();
-  }
-});
+test('a note written is read back', () =>
+  withFakes(fakes, world, 'quiet', async ({ notes, states }) => {
+    await call(notes, 'create-note', { title: 'Renewal' });
+    const read = await callTool(notes, 'get-note', { id: 'note-4' });
+    assert.deepEqual(read.structured, { id: 'note-4', title: 'Renewal' });
+    assert.equal(states.notes.notes.length, 4);
+  }, options));
 ```
 
+| Export | Does |
+| --- | --- |
+| `withFakes(fakes, world, scenario, fn, { clock, record })` | Starts fresh fakes for the scenario, connects a client to each, and calls `fn` with the clients by fake id, `states` and `services`; closes them all after |
+| `connect(services, id)` | An official MCP client connected to one fake |
+| `callTool(client, name, args)` | `{ text, isError, structured? }`; a successful answer must be the tool's contract answer (`readResult`), or it throws |
+| `call(client, name, args)` | The text of a successful call; a tool error throws with its text |
+| `recording(file)` | `{ globalSetup, globalTeardown }`: empties the recording before the run and sorts its lines after, so the committed file does not change with the order the test files ran in |
+
 A tool error, such as a schema rejection, is a result with `isError: true`; a
-call to a tool the fake does not serve rejects with the JSON-RPC error.
+call to a tool the fake does not serve rejects with the JSON-RPC error. Pass the
+recording to `checkRecipeFakes` as `recording`.
 
 ## Development
 

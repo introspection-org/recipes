@@ -1,12 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { type Fake, type McpServer, startServices, text, toolConfig } from "../src/index.js";
+import { type Fake, type McpServer, startServices, text, toolConfig, toolsOf } from "../src/index.js";
 import { world } from "./fixtures/fakes/scenarios/index.js";
 import * as mail from "./fixtures/fakes/mcp/mail/index.js";
-import type { Contract } from "./fixtures/fakes/mcp/notes/contract.js";
 import manifest from "./fixtures/fakes/mcp/notes/manifest.json" with { type: "json" };
-import tools from "./fixtures/fakes/mcp/notes/tools.json" with { type: "json" };
+import { contract } from "./fixtures/fakes/mcp/notes/contract.js";
 
-const config = toolConfig<Contract>(tools);
+const { config } = toolsOf(contract);
 
 // Type-checks only while a manifest imported from JSON, whose icon theme the import widens to
 // string, is a Fake's manifest without a cast.
@@ -18,7 +17,7 @@ const notes = (
   register: (server: McpServer) => void,
   from: Fake["manifest"] = manifest,
 ): Record<string, Fake> => ({
-  notes: { manifest: from, register },
+  notes: { manifest: from, contract, register },
 });
 
 const refused = (fakes: Record<string, Fake>) =>
@@ -57,7 +56,7 @@ describe("the start-up check", () => {
     );
   });
 
-  test("refuses a tool registered with a config not read from tools.json", async () => {
+  test("refuses a tool registered with a config not read from its contract", async () => {
     expect(
       await refused(
         notes((server) => {
@@ -71,7 +70,7 @@ describe("the start-up check", () => {
     );
   });
 
-  test("refuses tools registered out of the order tools.json gives", async () => {
+  test("refuses tools registered out of captured order", async () => {
     expect(
       await refused(
         notes((server) => {
@@ -80,7 +79,7 @@ describe("the start-up check", () => {
           server.registerTool("get-note", config("get-note"), answer);
         }),
       ),
-    ).toMatch(/registered as create-note, list-notes, get-note, not in the order of tools.json$/);
+    ).toMatch(/registered as create-note, list-notes, get-note, not in captured order$/);
   });
 
   test("refuses a manifest whose server icon theme is neither light nor dark", async () => {
@@ -98,9 +97,9 @@ describe("the start-up check", () => {
 });
 
 describe("config", () => {
-  test("refuses a tool that is not in tools.json", () => {
+  test("refuses a tool that is not captured", () => {
     expect(() => (config as (name: string) => unknown)("delete-note")).toThrow(
-      "delete-note is not in tools.json",
+      "delete-note is not captured",
     );
   });
 

@@ -13,7 +13,9 @@
     "paths": {
       "@introspection-ai/mcp-fakes": ["./src/index.ts"],
       "@introspection-ai/mcp-fakes/checks": ["./src/checks.ts"],
-      "@introspection-ai/mcp-fakes/verify": ["./src/verify.ts"]
+      "@introspection-ai/mcp-fakes/verify": ["./src/verify.ts"],
+      "@introspection-ai/mcp-fakes/answers": ["./src/answers.ts"],
+      "@introspection-ai/mcp-fakes/testing": ["./src/testing.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

@@ -11,7 +11,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 
-/** One tool of a captured `tools/list` payload, as `tools.json` holds it. */
+/** One tool of a captured `tools/list` payload, as a fake's `tools.ts` holds it. */
 export interface ListedTool {
   name: string;
   title?: string;
@@ -24,7 +24,7 @@ export interface ListedTool {
   _meta?: object;
 }
 
-/** A captured `tools.json`: the `tools/list` result. */
+/** A captured `tools.ts`: the `tools/list` result. */
 export interface ListedTools {
   tools: ListedTool[];
 }
@@ -49,7 +49,7 @@ export type ToolConfig<Args> = Omit<RegisterConfig, "inputSchema"> & {
   inputSchema: StandardSchemaWithJSON<Args, Args>;
 };
 
-/** Where a config came from, so the host can tell a tool registered from `tools.json`. */
+/** Where a config came from, so the host can tell a tool registered as captured. */
 export interface Configured {
   name: string;
   index: number;
@@ -121,13 +121,14 @@ export function isDefaultExecution(execution: object | undefined): boolean {
 }
 
 /**
- * Binds a fake's captured `tools.json` and its generated `Contract`, and returns its `config`:
+ * Binds a fake's captured tools and the arguments of each, and returns its `config`, which
+ * `toolsOf` wraps:
  * `server.registerTool(name, config(name), callback)`.
  */
 export function toolConfig<C extends { [N in keyof C]: ContractEntry }>(listed: ListedTools) {
   return function config<N extends keyof C & string>(name: N): ToolConfig<C[N]["args"]> {
     const index = listed.tools.findIndex((item) => item.name === name);
-    if (index < 0) throw new Error(`${name} is not in tools.json`);
+    if (index < 0) throw new Error(`${name} is not captured`);
     const tool = listed.tools[index];
     // registerTool in the SDK 2.3.1 drops `execution`, which is the same contract only for the
     // default.

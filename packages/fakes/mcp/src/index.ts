@@ -11,6 +11,21 @@ export {
   toolConfig,
 } from "./config.js";
 export {
+  type Answer,
+  type Answered,
+  type Args,
+  type Contract,
+  contractOf,
+  type Entry,
+  type Observed,
+  type ObservedAnswer,
+  observedOf,
+  type Result,
+  type SentArgs,
+  toolsOf,
+} from "./contract.js";
+export { decode, encode, FORMATS } from "./formats.js";
+export {
   type Fake,
   type Fakes,
   type Manifest,

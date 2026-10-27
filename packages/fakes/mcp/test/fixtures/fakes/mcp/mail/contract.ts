@@ -1,4 +1,6 @@
-// Written by hand for the tests, in the shape `introspection bindings mcp types` generates.
-export interface Contract {
-  "send-email": { args: { to: string[]; subject: string } };
-}
+import { contractOf } from "@introspection-ai/mcp-fakes";
+import { answers } from "./answers.ts";
+import tools from "./tools.ts";
+
+export const contract = contractOf(tools, answers);
+export type Contract = typeof contract;

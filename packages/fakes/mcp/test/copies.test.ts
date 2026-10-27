@@ -5,9 +5,8 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { type Fake, type McpServer, startServices, text } from "../src/index.js";
 import { callTool } from "./client.js";
 import { world } from "./fixtures/fakes/scenarios/index.js";
-import type { Contract } from "./fixtures/fakes/mcp/notes/contract.js";
+import { contract } from "./fixtures/fakes/mcp/notes/contract.js";
 import manifest from "./fixtures/fakes/mcp/notes/manifest.json" with { type: "json" };
-import tools from "./fixtures/fakes/mcp/notes/tools.json" with { type: "json" };
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 let copy: string;
@@ -28,10 +27,11 @@ test("the start-up check accepts configs built by another loaded copy of the pac
   const other = (await import(
     pathToFileURL(path.join(copy, "dist", "index.js")).href
   )) as typeof import("../src/index.js");
-  expect(other.toolConfig).not.toBe((await import("../src/index.js")).toolConfig);
-  const config = other.toolConfig<Contract>(tools);
+  expect(other.toolsOf).not.toBe((await import("../src/index.js")).toolsOf);
+  const { config } = other.toolsOf(contract);
   const fake: Fake = {
     manifest,
+    contract,
     register: (server: McpServer) => {
       server.registerTool("list-notes", config("list-notes"), async () => text("listed"));
       server.registerTool("create-note", config("create-note"), async () => text("created"));

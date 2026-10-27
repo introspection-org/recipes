@@ -1,12 +1,5 @@
-import {
-  type McpServer,
-  notImplemented,
-  structured,
-  text,
-  toolConfig,
-} from "@introspection-ai/mcp-fakes";
-import type { Contract } from "./contract.ts";
-import tools from "./tools.json" with { type: "json" };
+import { type McpServer, notImplemented, text, toolsOf } from "@introspection-ai/mcp-fakes";
+import { contract } from "./contract.ts";
 
 export interface Note {
   id: string;
@@ -20,7 +13,7 @@ export interface State {
   brokenId: string | null;
 }
 
-const config = toolConfig<Contract>(tools);
+const { config, answer } = toolsOf(contract);
 
 export function register(server: McpServer, state: State) {
   server.registerTool("list-notes", config("list-notes"), async ({ limit, order, filter }) => {
@@ -31,19 +24,19 @@ export function register(server: McpServer, state: State) {
       notes = notes.filter((note) => note.title.includes(filter.value));
     if (order === "desc") notes.reverse();
     const lines = notes.slice(0, limit).map((note) => `${note.id}: ${note.title}`);
-    return text([`limit: ${limit}`, `order: ${order}`, ...lines].join("\n"));
+    return answer("list-notes", [`limit: ${limit}`, `order: ${order}`, ...lines].join("\n"));
   });
 
   server.registerTool("create-note", config("create-note"), async ({ title }) => {
     const note = { id: `note-${state.notes.length + 1}`, title };
     state.notes.push(note);
-    return text(`Created ${note.id}`);
+    return answer("create-note", `Created ${note.id}`);
   });
 
   server.registerTool("get-note", config("get-note"), async ({ id }) => {
     const note = state.notes.find((item) => item.id === id);
     if (!note) return text(`Note ${id} not found.`, true);
     if (id === state.brokenId) return text(note.title);
-    return structured<Contract["get-note"]["result"]>({ id: note.id, title: note.title });
+    return answer("get-note", { id: note.id, title: note.title });
   });
 }

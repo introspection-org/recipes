@@ -9,6 +9,7 @@ import {
   McpServer,
 } from "@modelcontextprotocol/server";
 import { type Configured, configuredBy } from "./config.js";
+import type { Contract, Observed } from "./contract.js";
 
 /**
  * `T` as a JSON import types it: every string literal widened to `string`, so a manifest
@@ -30,11 +31,17 @@ export interface Manifest {
   server: Widened<Implementation>;
   /** The tools the Recipe allows, each with its kind and the entities it reads and writes. */
   tools: Record<string, unknown>;
+  /** Each code-mode tool's arguments that carry its HTTP method and path, which `observe` read. */
+  codeMode?: Record<string, { method: string; path: string }>;
 }
 
 /** One fake, as its `index.ts` exports it. */
 export interface Fake {
   manifest: Manifest;
+  /** `contractOf(tools, answers)`: every captured tool and its answer, in captured order. */
+  contract: Contract;
+  /** `observedOf(observed)`, where the fake has an `observed.ts`: what the real server answered. */
+  observed?: Record<string, Observed>;
   register: (server: McpServer, state: never) => void;
 }
 
@@ -63,6 +70,8 @@ export type McpServerBinding = { id: string; transport: "streamable_http"; url: 
 
 export interface Services<W> {
   server: http.Server;
+  /** The fakes served, as `startServices` was given them. */
+  fakes: Fakes;
   port: number;
   /** A fake's MCP endpoint. */
   url: (id: string) => string;
@@ -143,7 +152,7 @@ function manifestServer(id: string, fake: Fake): Implementation {
 }
 
 // The host refuses to start unless a fake's handlers register exactly the tools its manifest
-// allows, each from `config(name)`, in the order `tools.json` gives them.
+// allows, each from `config(name)`, in captured order.
 function checkRegistrations(id: string, fake: Fake, info: Implementation, state: unknown) {
   const server = new McpServer(info);
   const registered: { name: string; from?: Configured }[] = [];
@@ -167,7 +176,7 @@ function checkRegistrations(id: string, fake: Fake, info: Implementation, state:
   );
   const order = registered.flatMap(({ from }) => (from ? [from.index] : []));
   if (order.some((index, i) => i > 0 && index < order[i - 1]))
-    problems.push(`registered as ${names.join(", ")}, not in the order of tools.json`);
+    problems.push(`registered as ${names.join(", ")}, not in captured order`);
   if (problems.length)
     throw new Error(
       `The ${id} handlers do not register the tools its manifest allows: ${problems.join(", ")}`,
@@ -249,6 +258,7 @@ export async function startServices<W extends object>(
   const url = (id: string) => `http://${reach}:${actual}/${id}/mcp`;
   return {
     server,
+    fakes,
     port: actual,
     url,
     mcpServers: () =>

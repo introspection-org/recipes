@@ -1,17 +1,16 @@
-import { type McpServer, text, toolConfig } from "@introspection-ai/mcp-fakes";
-import type { Contract } from "./contract.ts";
-import tools from "./tools.json" with { type: "json" };
+import { type McpServer, toolsOf } from "@introspection-ai/mcp-fakes";
+import { contract } from "./contract.ts";
 
 export interface State {
   now: string;
   emails: { to: string[]; subject: string }[];
 }
 
-const config = toolConfig<Contract>(tools);
+const { config, answer } = toolsOf(contract);
 
 export function register(server: McpServer, state: State) {
   server.registerTool("send-email", config("send-email"), async ({ to, subject }) => {
     state.emails.push({ to, subject });
-    return text(`Sent email-${state.emails.length}`);
+    return answer("send-email", `Sent email-${state.emails.length}`);
   });
 }
