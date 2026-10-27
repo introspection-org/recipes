@@ -1015,8 +1015,11 @@ dependencies = [
     { name = "harbor", extra = ["e2b"] },
     { name = "httpx" },
     { name = "introspection-sdk" },
+    { name = "jsonschema" },
     { name = "pyyaml" },
+    { name = "rfc3339-validator" },
     { name = "tenacity" },
+    { name = "toon-format" },
 ]
 
 [package.dev-dependencies]
@@ -1030,8 +1033,11 @@ requires-dist = [
     { name = "harbor", extras = ["e2b"], specifier = ">=0.24.0,<0.25" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "introspection-sdk", specifier = ">=0.26.0" },
+    { name = "jsonschema", specifier = ">=4" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "rfc3339-validator", specifier = ">=0.1.4" },
     { name = "tenacity", specifier = ">=8" },
+    { name = "toon-format", specifier = "==1.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2034,6 +2040,18 @@ wheels = [
 ]
 
 [[package]]
+name = "rfc3339-validator"
+version = "0.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/ea/a9387748e2d111c3c2b275ba970b735e04e15cdb1eb30693b6b5708c4dbd/rfc3339_validator-0.1.4.tar.gz", hash = "sha256:138a2abdf93304ad60530167e51d2dfb9549521a836871b88d7f4695d0022f6b", size = 5513, upload-time = "2021-05-12T16:37:54.178Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/44/4e421b96b67b2daff264473f7465db72fbdf36a07e05494f50300cc7b0c6/rfc3339_validator-0.1.4-py2.py3-none-any.whl", hash = "sha256:24f6ec1eda14ef823da9e36ec7113124b39c04d50a4d3d3a3c2859577e7791fa", size = 3490, upload-time = "2021-05-12T16:37:52.536Z" },
+]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2417,6 +2435,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f", size = 22253, upload-time = "2020-11-01T01:40:22.204Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b", size = 16588, upload-time = "2020-11-01T01:40:20.672Z" },
+]
+
+[[package]]
+name = "toon-format"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/6a/897e8591e772e65f723015ed725b0428e02bedf07063e5b65c067747fcb2/toon_format-1.0.0.tar.gz", hash = "sha256:fb0e7340ae5b35c8fa8d03c620f183f5335e896a2e2cfcc226797aa702d62525", size = 19661, upload-time = "2026-10-03T05:36:28.991Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/dd/72b86bc427ec0725c469d71d7be3b2dc73619bd7ffce607de62476a66a4d/toon_format-1.0.0-py3-none-any.whl", hash = "sha256:4bdbf903284ccc57ef0f99ab603e0efa39d848cbdd54bc1bf5d1959adcd73d0b", size = 22457, upload-time = "2026-10-03T05:36:27.924Z" },
 ]
 
 [[package]]

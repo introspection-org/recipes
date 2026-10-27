@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,7 +18,13 @@ from introspection_harbor.verifier import (
     final_reply,
     load_trajectory,
     replies,
+    server_calls,
     tool_calls,
+)
+
+# The cases @introspection-ai/mcp-fakes' tests share, Pi's tool names among them.
+CASES = json.loads(
+    (Path(__file__).parents[2] / "testdata" / "fakes" / "cases.json").read_text()
 )
 
 
@@ -118,3 +125,78 @@ class VerifierTest(unittest.TestCase):
                 },
             ],
         )
+
+
+class ServerCallsTest(unittest.TestCase):
+    def test_a_servers_calls_under_its_own_tool_names(self) -> None:
+        trajectory = _written(
+            [
+                _agent_step(
+                    tool_calls=[
+                        _call(
+                            "call-1",
+                            "mcp_attio_list-records_0123456789",
+                            object="deals",
+                        ),
+                        _call("call-2", "mcp_attio_get-record"),
+                        _call("call-3", "mcp_resend_send-email"),
+                        _call("call-4", "bash"),
+                    ],
+                    observation=_results(
+                        ObservationResult(source_call_id="call-1", content="deals[0]:"),
+                        ObservationResult(
+                            source_call_id="call-2",
+                            content="Found it.",
+                            extra={"structured_content": {"id": "d1"}},
+                        ),
+                        ObservationResult(source_call_id="call-3", content="Sent"),
+                        ObservationResult(
+                            source_call_id="call-4",
+                            content="",
+                            extra={"is_error": True},
+                        ),
+                    ),
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            server_calls(tool_calls(trajectory), "attio"),
+            [
+                {
+                    "name": "list-records",
+                    "args": {"object": "deals"},
+                    "isError": False,
+                    "response": "deals[0]:",
+                },
+                {
+                    "name": "get-record",
+                    "args": {},
+                    "isError": False,
+                    "response": "Found it.",
+                    "structured": {"id": "d1"},
+                },
+            ],
+        )
+        self.assertEqual(
+            [call["name"] for call in server_calls(tool_calls(trajectory), "resend")],
+            ["send-email"],
+        )
+
+    def test_names_a_call_by_the_servers_tools(self) -> None:
+        # A cut-short or replaced name only the server's tools recover.
+        for server, tool, name in CASES["piToolNames"]:
+            with self.subTest(f"{server}.{tool}"):
+                calls = [
+                    {"name": name, "arguments": {}, "result": "ok", "is_error": False},
+                    {
+                        "name": f"mcp_{server}_unlisted",
+                        "arguments": {},
+                        "result": "",
+                        "is_error": False,
+                    },
+                ]
+                self.assertEqual(
+                    server_calls(calls, server, [tool, "other"]),
+                    [{"name": tool, "args": {}, "isError": False, "response": "ok"}],
+                )

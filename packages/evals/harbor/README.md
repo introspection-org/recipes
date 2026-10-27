@@ -126,14 +126,35 @@ A task's verifier finds the conversation at `/logs/agent/trajectory.json`.
 layout:
 
 ```python
-from introspection_harbor.verifier import final_reply, load_trajectory, tool_calls
+from introspection_harbor.verifier import (
+    final_reply,
+    load_trajectory,
+    server_calls,
+    tool_calls,
+)
 
 trajectory = load_trajectory()
 final_reply(trajectory)  # the agent's last non-empty message
 tool_calls(
     trajectory
 )  # [{"name", "arguments", "result", "is_error"}], answered calls only
+server_calls(tool_calls(trajectory), "attio")  # one MCP server's calls
 ```
+
+`server_calls(calls, server, tools=None)` keeps one MCP server's calls under
+the server's own tool names. Pi names an MCP tool `mcp_<server>_<tool>`, with
+characters outside `[A-Za-z0-9_-]` replaced, and may cut it short and append
+`_<10 hex>`, a hash of the name. Given the server's `tools`, such as its
+answers from `load_answers` below, each call is named by the tool whose Pi name
+it carries, and a call to no listed tool is left out; without them, the hash
+is stripped, which recovers only a short name Pi did not have to replace
+characters of. Each is `{"name", "args", "isError",
+"response"}`, the keys of `serverCalls` in `@introspection-ai/vitest-evals`,
+so a check ports between the two runners unchanged, plus `structured`, the
+result's `structuredContent`, when the call has it. A trajectory carries
+`structuredContent` only where the result's ATIF `extra` holds it as
+`structured_content`, and the GenAI spans it is projected from do not record
+it yet, so for now no call has it.
 
 Add the package to the verifier's environment, for example
 `uvx --from harbor-rewardkit --with introspection-harbor rewardkit /tests`.
@@ -197,6 +218,44 @@ compares states as JSON, so `false` and `0` differ.
   matched by the name Pi gives an MCP tool, from the fake's id (its directory
   under `fakes/mcp/`, which is the server id the Recipe declares) and the
   tool's name in its contract; `readOnlyHint` plays no part.
+
+### Reading the fakes' answers
+
+`introspection_harbor.answers` reads a tool's successful answer as
+`@introspection-ai/mcp-fakes/answers` does: decoded by its format (`json`,
+`toon`, `prefixed_json`, or `text`) and validated against its JSON Schema.
+`mcp-fakes serve` writes each fake's answers beside its manifest, as
+`mcp/<id>/answers.json` under `MCP_FAKES_MANIFEST_DIR`. TOON is read with
+`toon-format`, a dependency of this package, so a task's `test.sh` needs no
+`--with toon-format`.
+
+```python
+from introspection_harbor.answers import load_answers, read_result
+
+ANSWERS = load_answers(Path("/opt/fakes-verifier/mcp"))
+
+for call in server_calls(tool_calls(load_trajectory()), "attio", ANSWERS["attio"]):
+    if call["isError"]:
+        continue
+    read = read_result(
+        ANSWERS["attio"][call["name"]], call["response"], call.get("structured")
+    )
+    if not read["ok"]:
+        raise ValueError(f"attio answered {call['name']} outside its contract: {read['error']}")
+    rows = read["value"]
+```
+
+| Function | Returns |
+| --- | --- |
+| `load_answers(directory)` | `{id: {tool: answer}}` from `<directory>/<id>/answers.json`; raises when the directory is missing or holds no answers |
+| `read_answer(answer, text)` | `{"ok": True, "value"}`, or `{"ok": False, "error", "issues"}` for text not in the answer's format or a value outside its schema; each issue is `{"path", "keyword", "message"}` |
+| `read_result(answer, text, structured=None)` | The same, read where the answer is: the `structured` content of a tool that states an `outputSchema` (`"structured": true` in its answer), whose text is ignored; the text of any other. Without `structured` content such a tool's read fails |
+| `decode(answer, text)` | The decoded value, unchecked; raises `ValueError` for text not in the format |
+
+An answer that fails to read is the fake's fault, not the agent's, so treat it
+as an invalid measurement rather than a failed criterion. Both packages' tests
+run the cases in `integrations/testdata/fakes/answers.json`, so the two read an
+answer alike.
 
 `@introspection-ai/mcp-fakes/verify` holds the same checks for a vitest eval
 (`changedEntities`, `writeAttempts`), and both packages' tests run the cases in

@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { SIDECAR_PORT } from "../src/index.js";
+import { contractOf, decode, encode, SIDECAR_PORT } from "../src/index.js";
+import { answersOf } from "../src/sidecar.js";
 import { callTool } from "./client.js";
 
 const run = promisify(execFile);
@@ -67,9 +68,27 @@ test("serve runs the Recipe's TypeScript fakes as they are", { timeout: 60_000 }
       fs.readFileSync(path.join(manifests, "mcp", "notes", "manifest.json"), "utf8"),
     );
     expect(written.server).toEqual({ name: "notes", version: "1.2.3" });
+    const answers = JSON.parse(
+      fs.readFileSync(path.join(manifests, "mcp", "notes", "answers.json"), "utf8"),
+    );
+    expect(answers["list-notes"]).toEqual({ format: "text" });
+    expect(answers["get-note"]).toMatchObject({
+      format: "json",
+      structured: true,
+      schema: { type: "object", properties: { id: { type: "string" } } },
+    });
   } finally {
     child.kill("SIGTERM");
   }
+});
+
+test("serve writes a prefixed_json answer's prefix and suffix, so a verifier reads it back", () => {
+  const tools = { tools: [{ name: "find", inputSchema: { type: "object" } }] } as const;
+  const answer = { format: "prefixed_json", prefix: "Found: ", suffix: " Done." };
+  const written = JSON.parse(JSON.stringify(answersOf(contractOf(tools, { find: answer }))));
+  expect(written.find).toEqual(answer);
+  expect(decode(written.find, encode(answer, { n: 2 }))).toEqual({ n: 2 });
+  expect(() => decode(written.find, 'Found: {"n":2}')).toThrow('does not end with " Done."');
 });
 
 test("serve listens on the sidecar port unless told otherwise", { timeout: 60_000 }, async () => {

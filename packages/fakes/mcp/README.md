@@ -69,7 +69,7 @@ compares values, not text.
 
 A fake declares each tool's successful answer in `answers.ts`, an `Answer`: the
 format the server answers in, `json`, `toon`, `prefixed_json` (JSON after the
-fixed `prefix`) or `text`, and the TypeBox schema of the decoded value; a
+fixed `prefix` and before the optional `suffix`) or `text`, and the TypeBox schema of the decoded value; a
 `text` answer has none. `contract.ts` binds the two:
 
 ```ts
@@ -404,7 +404,14 @@ environment:
 | `MCP_FAKES_PORT`, `MCP_FAKES_HOST` | Where to listen; `7353` on `0.0.0.0` |
 | `MCP_FAKES_STATE_FILE` | `stateFile` |
 | `MCP_FAKES_RECORD` | `record` |
-| `MCP_FAKES_MANIFEST_DIR` | A directory each fake's manifest is written to at start, as `mcp/<id>/manifest.json`, for the verifier's write-map checks |
+| `MCP_FAKES_MANIFEST_DIR` | A directory each fake's manifest and answers are written to at start, as `mcp/<id>/manifest.json` for the verifier's write-map checks and `mcp/<id>/answers.json` for reading the agent's tool results |
+
+`answers.json` holds each tool's answer from the fake's contract, by tool
+name: its `format`, the `prefix` of a `prefixed_json` answer, its `schema` (a
+TypeBox schema is JSON Schema, so it is written as it is) and `structured:
+true` for a tool that states an `outputSchema`, whose answer is its
+`structuredContent`. `introspection_harbor.answers` in the Harbor adapter reads
+it to check an answer as `readResult` does, without TypeScript.
 
 `serveSidecar(fakes, world)` is that entrypoint, for a Recipe that writes its
 own. Under vitest the fakes start with `startServices` on an ephemeral port

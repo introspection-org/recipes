@@ -9,8 +9,12 @@ does not depend on how the adapter lays out ATIF.
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+from .fakes import _pi_tool_names
 
 TRAJECTORY_PATH = Path("/logs/agent/trajectory.json")
 
@@ -61,7 +65,10 @@ def tool_calls(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
     """Every tool call that has a result, in order.
 
     Each is ``name``, ``arguments``, ``result`` (the result as text) and
-    ``is_error`` (whether the tool reported a failure).
+    ``is_error`` (whether the tool reported a failure), and ``structured``,
+    the result's structuredContent, when the result's ``extra`` holds it as
+    ``structured_content``. The GenAI spans the trajectory is projected from
+    do not record it yet, so no call has it until they do.
     """
 
     calls = []
@@ -74,12 +81,68 @@ def tool_calls(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
             result = results.get(call.get("tool_call_id"))
             if result is not None:
                 arguments = call.get("arguments")
+                extra = result.get("extra") or {}
+                structured = extra.get("structured_content")
                 calls.append(
                     {
                         "name": call.get("function_name") or "",
                         "arguments": arguments if isinstance(arguments, dict) else {},
                         "result": text(result.get("content")),
-                        "is_error": (result.get("extra") or {}).get("is_error") is True,
+                        "is_error": extra.get("is_error") is True,
+                        **(
+                            {"structured": structured}
+                            if isinstance(structured, dict)
+                            else {}
+                        ),
                     }
                 )
     return calls
+
+
+_PI_HASH = re.compile(r"_[0-9a-f]{10}$")
+
+
+def server_calls(
+    calls: list[dict[str, Any]], server: str, tools: Iterable[str] | None = None
+) -> list[dict[str, Any]]:
+    """One MCP server's calls among ``tool_calls``, under the server's own tool names.
+
+    Pi names an MCP tool ``mcp_<server>_<tool>``, with characters outside
+    ``[A-Za-z0-9_-]`` replaced, and may cut it short and append ``_<10 hex>``,
+    a hash of the name. Given the server's ``tools``, such as its answers from
+    ``introspection_harbor.answers.load_answers``, each call is named by the
+    tool whose Pi name it carries, and a call to no listed tool is left out;
+    without them, the hash is stripped, which recovers only a short name Pi
+    did not have to replace characters of.
+
+    Each is ``name``, ``args``, ``isError``, ``response`` (the result as
+    text) and, when the call has it, ``structured``: the keys of
+    ``serverCalls`` in ``@introspection-ai/vitest-evals``, which
+    ``introspection_harbor.answers.read_result`` reads.
+    """
+
+    prefix = f"mcp_{server}_"
+    named = (
+        None
+        if tools is None
+        else {name: tool for tool in tools for name in _pi_tool_names(server, tool)}
+    )
+
+    def tool_name(call: dict[str, Any]) -> str | None:
+        if named is not None:
+            return named.get(call["name"])
+        if call["name"].startswith(prefix):
+            return _PI_HASH.sub("", call["name"][len(prefix) :])
+        return None
+
+    return [
+        {
+            "name": name,
+            "args": call["arguments"],
+            "isError": call["is_error"],
+            "response": call["result"],
+            **({"structured": call["structured"]} if "structured" in call else {}),
+        }
+        for call in calls
+        if (name := tool_name(call)) is not None
+    ]

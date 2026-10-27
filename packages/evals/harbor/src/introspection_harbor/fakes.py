@@ -72,16 +72,22 @@ def load_manifests(directory: Path) -> dict[str, dict[str, Any]]:
     manifest raises, so a verifier whose mount is missing cannot pass.
     """
 
+    return load_each(directory, "manifest")
+
+
+def load_each(directory: Path, name: str) -> dict[str, Any]:
+    """Each fake's ``<name>.json`` under ``directory``, keyed by fake id; raises for none."""
+
     directory = Path(directory)
     if not directory.is_dir():
-        raise FileNotFoundError(f"No fakes' manifest directory at {directory}")
-    manifests = {
+        raise FileNotFoundError(f"No fakes' {name} directory at {directory}")
+    files = {
         path.parent.name: json.loads(path.read_text())
-        for path in sorted(directory.glob("*/manifest.json"))
+        for path in sorted(directory.glob(f"*/{name}.json"))
     }
-    if not manifests:
-        raise ValueError(f"No fake's manifest.json under {directory}")
-    return manifests
+    if not files:
+        raise ValueError(f"No fake's {name}.json under {directory}")
+    return files
 
 
 def _write_tools(manifest: Mapping[str, Any]) -> list[str]:

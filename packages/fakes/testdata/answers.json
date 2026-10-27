@@ -1,0 +1,91 @@
+{
+  "comment": "Shared by @introspection-ai/mcp-fakes' test/answers.test.ts and introspection-harbor's tests/test_answers.py, so both read a fake's answers alike. A case without a value expects the read to fail; paths are the paths of its issues. A readResult answer with structured: true is of a tool that states an outputSchema, as mcp-fakes serve writes answers.json.",
+  "readAnswer": [
+    { "name": "a text answer is its text", "answer": { "format": "text" }, "text": "Sent email-1", "value": "Sent email-1" },
+    {
+      "name": "a json answer is decoded and checked",
+      "answer": { "format": "json", "schema": { "type": "object", "required": ["ids"], "properties": { "ids": { "type": "array", "items": { "type": "string" } } } } },
+      "text": "{\"ids\":[\"a\"]}",
+      "value": { "ids": ["a"] }
+    },
+    {
+      "name": "a json answer outside its schema fails at the value's path",
+      "answer": { "format": "json", "schema": { "type": "object", "required": ["ids"], "properties": { "ids": { "type": "array", "items": { "type": "string" } } } } },
+      "text": "{\"ids\":[1]}",
+      "paths": ["/ids/0"]
+    },
+    {
+      "name": "a missing property fails at the object",
+      "answer": { "format": "json", "schema": { "type": "object", "required": ["ids"], "properties": { "ids": { "type": "array" } } } },
+      "text": "{}",
+      "paths": ["/"]
+    },
+    { "name": "a boolean is not an integer", "answer": { "format": "json", "schema": { "type": "integer" } }, "text": "true", "paths": ["/"] },
+    { "name": "a string in its format passes", "answer": { "format": "json", "schema": { "type": "string", "format": "uuid" } }, "text": "\"123e4567-e89b-12d3-a456-426614174000\"", "value": "123e4567-e89b-12d3-a456-426614174000" },
+    { "name": "a string outside its uuid format fails", "answer": { "format": "json", "schema": { "type": "string", "format": "uuid" } }, "text": "\"not-a-uuid\"", "paths": ["/"] },
+    { "name": "a string outside its date-time format fails", "answer": { "format": "json", "schema": { "type": "object", "properties": { "at": { "type": "string", "format": "date-time" } } } }, "text": "{\"at\":\"yesterday\"}", "paths": ["/at"] },
+    { "name": "a json answer without a schema is any JSON", "answer": { "format": "json" }, "text": "[1,null]", "value": [1, null] },
+    { "name": "text that is not JSON fails", "answer": { "format": "json" }, "text": "{ids: []}", "paths": [] },
+    { "name": "NaN is not JSON", "answer": { "format": "json" }, "text": "NaN", "paths": [] },
+    {
+      "name": "a prefixed_json answer is the JSON after its prefix",
+      "answer": { "format": "prefixed_json", "prefix": "Found: ", "schema": { "type": "object", "properties": { "n": { "type": "integer" } } } },
+      "text": "Found: {\"n\":2}",
+      "value": { "n": 2 }
+    },
+    { "name": "a prefixed_json answer without its prefix fails", "answer": { "format": "prefixed_json", "prefix": "Found: " }, "text": "{\"n\":2}", "paths": [] },
+    {
+      "name": "a prefixed_json answer is the JSON between its prefix and suffix",
+      "answer": { "format": "prefixed_json", "prefix": "Found: ", "suffix": " Done.", "schema": { "type": "object", "properties": { "n": { "type": "integer" } } } },
+      "text": "Found: {\"n\":2} Done.",
+      "value": { "n": 2 }
+    },
+    { "name": "a prefixed_json answer without its suffix fails", "answer": { "format": "prefixed_json", "prefix": "Found: ", "suffix": " Done." }, "text": "Found: {\"n\":2}", "paths": [] },
+    {
+      "name": "a toon answer is decoded and checked",
+      "answer": {
+        "format": "toon",
+        "schema": {
+          "type": "object",
+          "required": ["deals", "has_more"],
+          "properties": {
+            "deals": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" } } } },
+            "has_more": { "type": "boolean" }
+          }
+        }
+      },
+      "text": "deals[2]{id,name}:\n  d1,Acme\n  d2,Beta\nhas_more: false",
+      "value": { "deals": [{ "id": "d1", "name": "Acme" }, { "id": "d2", "name": "Beta" }], "has_more": false }
+    },
+    { "name": "toon whose rows miss their declared length fails", "answer": { "format": "toon" }, "text": "deals[3]{id}:\n  d1", "paths": [] }
+  ],
+  "readResult": [
+    {
+      "name": "an outputSchema tool is read from its structuredContent and its text ignored",
+      "answer": { "format": "json", "structured": true, "schema": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } } },
+      "text": "Sent! On its way.",
+      "structured": { "id": "e1" },
+      "value": { "id": "e1" }
+    },
+    {
+      "name": "an outputSchema tool without structuredContent fails, whatever its text",
+      "answer": { "format": "json", "structured": true, "schema": { "type": "object" } },
+      "text": "{\"id\":\"e1\"}",
+      "paths": []
+    },
+    {
+      "name": "structuredContent outside the outputSchema fails",
+      "answer": { "format": "json", "structured": true, "schema": { "type": "object", "properties": { "id": { "type": "string" } } } },
+      "text": "",
+      "structured": { "id": 1 },
+      "paths": ["/id"]
+    },
+    {
+      "name": "any other tool is read from its text",
+      "answer": { "format": "prefixed_json", "prefix": "Note: " },
+      "text": "Note: {\"title\":\"a\"}",
+      "structured": { "ignored": true },
+      "value": { "title": "a" }
+    }
+  ]
+}

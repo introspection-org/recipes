@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Contract } from "./contract.js";
 import { type Fakes, type Services, startServices } from "./server.js";
 
 /** The port the Harbor sidecar serves on unless `MCP_FAKES_PORT` says otherwise. */
@@ -15,7 +16,7 @@ export const SIDECAR_PORT = 7353;
  * | `MCP_FAKES_PORT`, `MCP_FAKES_HOST` | Where to listen; `7353` on `0.0.0.0` |
  * | `MCP_FAKES_STATE_FILE` | A file every fake's state is written to after each request |
  * | `MCP_FAKES_RECORD` | A file each tool call is appended to |
- * | `MCP_FAKES_MANIFEST_DIR` | A directory each fake's manifest is written to, as `mcp/<id>/manifest.json`, for the verifier |
+ * | `MCP_FAKES_MANIFEST_DIR` | A directory each fake's manifest and answers are written to, as `mcp/<id>/manifest.json` and `mcp/<id>/answers.json`, for the verifier |
  */
 export async function serveSidecar<W extends object>(
   fakes: Fakes,
@@ -38,9 +39,27 @@ export async function serveSidecar<W extends object>(
         path.join(dir, "manifest.json"),
         `${JSON.stringify(fake.manifest, null, 2)}\n`,
       );
+      fs.writeFileSync(
+        path.join(dir, "answers.json"),
+        `${JSON.stringify(answersOf(fake.contract), null, 2)}\n`,
+      );
     }
   // Node runs as PID 1 in the sidecar, which ignores SIGTERM without a handler.
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => process.exit(0));
   console.log(`Fake MCP services ready on port ${services.port}`);
   return services;
+}
+
+/**
+ * Each tool's answer by name, as JSON for a verifier in another language: its format, prefix,
+ * suffix and schema (a TypeBox schema is JSON Schema), and `structured: true` for a tool that states an
+ * outputSchema, whose answer is its structuredContent rather than its text.
+ */
+export function answersOf(contract: Contract) {
+  return Object.fromEntries(
+    Object.entries(contract).map(([name, { tool, answer }]) => [
+      name,
+      { ...answer, ...(tool.outputSchema && { structured: true }) },
+    ]),
+  );
 }
