@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { toolCalls, type JsonValue } from "vitest-evals";
 import { getHarnessRunFromError } from "vitest-evals/harness";
 
-import { createRecipeHarness, recipeCases, recipeJudge } from "./index.js";
+import { createRecipeHarness, fakesHarness, recipeCases, recipeJudge } from "./index.js";
 
 const originalEnvironment = { ...process.env };
 const temporaryDirectories: string[] = [];
@@ -825,3 +825,63 @@ describe("session teardown", () => {
   });
 });
 
+
+describe("fakesHarness", () => {
+  type World = { crm: { deals: string[] } };
+  // A fake with no tools that hands the test the state it serves.
+  const served: World["crm"][] = [];
+  const fakes = {
+    crm: {
+      manifest: { server: { name: "crm", version: "1.0.0" }, tools: {} },
+      register: (_server: unknown, state: World["crm"]) => void served.push(state),
+    },
+  };
+  const world = (scenario: string | undefined): World => ({
+    crm: { deals: scenario === "empty" ? [] : ["acme"] },
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "binds fresh fakes to every session and records their states",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "introspection-vitest-evals-test-"));
+      temporaryDirectories.push(directory);
+      const log = recordingCli(directory);
+      const harness = fakesHarness({
+        fakes,
+        world,
+        scenario: (input) => input.scenario as string | undefined,
+        collectArtifacts: ({ fixture }) => ({ deals: fixture.states.crm.deals.length }),
+      });
+
+      const first = await harness.run({ prompt: "one" }, harnessContext());
+      served.at(-1)?.deals.push("beacon");
+      const continued = await harness.run({ prompt: "two", continue: first }, harnessContext());
+      await harness.run({ prompt: "three", scenario: "empty" }, harnessContext());
+
+      expect(first.artifacts).toMatchObject({
+        fakeStates: { initial: { crm: { deals: ["acme"] } }, final: { crm: { deals: ["acme"] } } },
+        deals: 1,
+      });
+      expect(continued.artifacts).toMatchObject({
+        fakeStates: {
+          initial: { crm: { deals: ["acme"] } },
+          final: { crm: { deals: ["acme", "beacon"] } },
+        },
+        deals: 2,
+      });
+      const [one, two, three] = recordedCalls(log);
+      const url = (call: RecordedCall) =>
+        (call.bindings as { servers: { id: string; url: string }[] }).servers[0];
+      expect(url(one)).toEqual({
+        id: "crm",
+        transport: "streamable_http",
+        url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/crm\/mcp$/),
+      });
+      // A continued turn keeps its session's fakes; a new session starts its own.
+      expect(url(two)).toEqual(url(one));
+      expect(url(three).url).not.toBe(url(one).url);
+      const health = new URL("/health", url(three).url);
+      expect(await fetch(health).then((response) => response.json())).toEqual({ ok: true });
+    },
+  );
+});

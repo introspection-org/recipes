@@ -211,6 +211,58 @@ const harness = createRecipeHarness<Input, Fakes>({
 
 `beforeRun` runs for the first turn of a session, not for a continued run.
 
+## MCP fakes
+
+A Recipe whose MCP servers have fakes served by
+[`@introspection-ai/mcp-fakes`](../mcp-fakes) (an optional peer dependency,
+installed by the Recipe) gets that `beforeRun` from `fakesHarness`:
+
+```ts
+import {
+  fakesHarness,
+  piToolCalls,
+  type RecipeFakeStates,
+  serverCalls,
+} from "@introspection-ai/vitest-evals";
+import { fakes } from "../../fakes/mcp/index.ts";
+import { type World, world } from "../../fakes/scenarios/index.ts";
+
+const harness = fakesHarness({ fakes, world, scenario: "quiet" });
+
+it("reads the deals without writing", async ({ run }) => {
+  const result = await run({ prompt: "Which deals went quiet?" });
+  const { initial, final } = result.artifacts?.fakeStates as RecipeFakeStates<World>;
+  expect(final.attio).toEqual(initial.attio);
+
+  const attio = serverCalls(piToolCalls(result.artifacts?.piEvents), "attio");
+  expect(attio.map((call) => call.name)).toContain("list-records");
+});
+```
+
+- Every Pi session starts its own fakes on a loopback port, seeded by
+  `world(scenario, clock)`, and is bound to them alone. A continued run keeps
+  its session's fakes; they close when the test finishes.
+- `scenario` may also be a function of the case input. `clock` fixes the time
+  `world` computes its dates from.
+- Each run's `fakeStates` artifact holds every fake's state when the session
+  started (`initial`) and after the turn (`final`). The fixture handed to
+  `collectArtifacts` is the running services, so a suite can add artifacts of
+  its own.
+
+`piToolCalls(piEvents)` pairs Pi's `tool_execution_start` and
+`tool_execution_end` events into `{ name, args, isError, content, structured }`,
+where `structured` is the `structuredContent` the Recipes MCP wrapper keeps in
+the result's details, when it is an object. A call that never ended is left
+out.
+
+`serverCalls(calls, server, tools?)` keeps one MCP server's calls under the
+server's own tool names: Pi names them `mcp_<server>_<tool>`, sometimes cut
+short and with a hash suffix. Pass the server's tool names as `tools` to name a
+long or renamed tool correctly (a call to no listed tool is then left out);
+without them the hash is stripped, which recovers short names only. Each is `{ name, args, isError, response, structured? }`, `response`
+being the text parts of the result joined, which is what mcp-fakes'
+`answered(fake, calls)` reads to type each successful call by its contract.
+
 ## Application context and system instructions
 
 The harness runs the Recipe through `introspection local`. `SYSTEM.md`, the

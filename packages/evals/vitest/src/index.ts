@@ -15,6 +15,8 @@ import {
 } from "vitest-evals";
 import { attachHarnessRunToError, normalizeHarnessRun } from "vitest-evals/harness";
 
+export { piToolCalls, type ServerCall, serverCalls, type ToolCall } from "./tools.js";
+
 const RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC";
 
 export type RecipeCase<TExpected = unknown, TInput extends RecipeEvalInput = RecipeEvalInput> = {
@@ -523,6 +525,66 @@ export function createRecipeHarness<
         if (active.closeAfterTurn) await active.close?.();
       }
     },
+  });
+}
+
+/** One fake as its `index.ts` exports it, the part `@introspection-ai/mcp-fakes` serves. */
+export type RecipeFake = {
+  manifest: { server: { name: string; version: string }; tools: Record<string, unknown> };
+  register: (server: never, state: never) => void;
+};
+
+/** A Pi session's running fakes: `Services` of `@introspection-ai/mcp-fakes`. */
+export type RecipeFakeServices<TWorld> = {
+  mcpServers: () => RecipeMcpServer[];
+  /** Every fake's current state, which its handlers change in place. */
+  states: TWorld;
+  /** Every fake's state when the services started. */
+  initial: TWorld;
+  close: () => Promise<void>;
+};
+
+/** The `fakeStates` artifact of a fakes harness run. */
+export type RecipeFakeStates<TWorld> = { initial: TWorld; final: TWorld };
+
+export type FakesHarnessOptions<
+  TWorld extends object,
+  TInput extends RecipeEvalInput = RecipeEvalInput,
+> = Omit<CreateRecipeHarnessOptions<TInput, RecipeFakeServices<TWorld>>, "beforeRun"> & {
+  /** Every fake of the Recipe, keyed by the server id the Recipe declares. */
+  fakes: Record<string, RecipeFake>;
+  /** The Recipe's `world(scenario, clock)`: every fake's starting state, keyed by fake id. */
+  world: (scenario: string | undefined, clock: Date) => TWorld;
+  /** The scenario `world` builds, or a function of the case input that picks it. */
+  scenario?: string | ((input: TInput) => string | undefined);
+  /** The clock `world` computes its dates from; now when omitted. */
+  clock?: Date | string;
+};
+
+/**
+ * A Recipe harness bound to fresh loopback fakes for every Pi session, served by
+ * `@introspection-ai/mcp-fakes`. Each run records the fakes' state when the session started and
+ * after the turn as its `fakeStates` artifact, beside what `collectArtifacts` adds.
+ */
+export function fakesHarness<TWorld extends object, TInput extends RecipeEvalInput = RecipeEvalInput>(
+  options: FakesHarnessOptions<TWorld, TInput>,
+) {
+  const { fakes, world, scenario, clock, collectArtifacts, ...harness } = options;
+  return createRecipeHarness<TInput, RecipeFakeServices<TWorld>>({
+    ...harness,
+    beforeRun: async ({ input }) => {
+      const { startServices } = await import("@introspection-ai/mcp-fakes");
+      const services = await startServices(fakes as Parameters<typeof startServices>[0], {
+        world,
+        scenario: typeof scenario === "function" ? scenario(input) : scenario,
+        clock,
+      });
+      return { mcpServers: services.mcpServers(), fixture: services, teardown: services.close };
+    },
+    collectArtifacts: async (context) => ({
+      fakeStates: jsonValue({ initial: context.fixture.initial, final: context.fixture.states }),
+      ...(await collectArtifacts?.(context)),
+    }),
   });
 }
 

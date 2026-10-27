@@ -21,10 +21,17 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
+    "@introspection-ai/mcp-fakes": ">=0.2.2",
     "vitest": ">=4.0.0 <5.0.0",
     "vitest-evals": ">=0.16.1 <0.18.0"
   },
+  "peerDependenciesMeta": {
+    "@introspection-ai/mcp-fakes": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@introspection-ai/mcp-fakes": "0.2.2",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0",
     "vitest": "4.1.12",
