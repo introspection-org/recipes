@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.10.0...introspection-harbor-v0.11.0) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **harbor:** `introspection_harbor.client` (`DataPlaneClient`, `ControlPlaneClient`, `pull_reference`) is removed: the Introspection environment calls the platform through `introspection-sdk` 0.33.0 or later, on the member's CLI login.
+
+### Features
+
+* **harbor:** read MCP fakes' answers and one server's calls in a verifier ([#620](https://github.com/introspection-org/introspection-cli/issues/620)) ([0088438](https://github.com/introspection-org/introspection-cli/commit/0088438b5a908db3e961d1f0c81b4c10e4420cd6))
+* **harbor:** run a Pi Recipe on the host as a Harbor user agent ([#626](https://github.com/introspection-org/introspection-cli/issues/626)) ([47a02d0](https://github.com/introspection-org/introspection-cli/commit/47a02d0f758a4ae67a226f59a4c59a0498815a07))
+* **harbor:** run each step as a task run with the introspection-native agent ([#635](https://github.com/introspection-org/introspection-cli/issues/635)) ([3e65d09](https://github.com/introspection-org/introspection-cli/commit/3e65d097be10178f7b0fb3db8bb42718d84f9c22))
+
+
+### Bug Fixes
+
+* **harbor:** create /logs/agent and /logs/verifier before an in-cluster trial's agent runs ([#568](https://github.com/introspection-org/introspection-cli/issues/568)) ([5a48b63](https://github.com/introspection-org/introspection-cli/commit/5a48b6363209933d07e87140ab335a7970210678))
+
 ## [0.10.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.9.0...introspection-harbor-v0.10.0) (2026-10-15)
 
 
