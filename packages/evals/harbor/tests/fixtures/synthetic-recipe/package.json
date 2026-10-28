@@ -1,0 +1,8 @@
+{
+  "name": "synthetic-user-agent",
+  "private": true,
+  "pi": {
+    "agents": ["agents/*.yaml"],
+    "extensions": ["extensions/*.ts"]
+  }
+}

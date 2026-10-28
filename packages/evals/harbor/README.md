@@ -645,6 +645,155 @@ adds no egress configuration and Harbor uses E2B's normal environment and
 credentials. A partial egress contract is rejected rather than silently mixing
 direct and routed traffic.
 
+## A Pi Recipe as Harbor's user agent
+
+`introspection_harbor.pi_user_agent:PiRecipeUserAgent` runs a Pi Recipe on the
+host as Harbor's user agent: the Recipe talks to the target coding agent
+(Claude Code first) through Harbor's ACP bridge. What the user agent says,
+when it stops, what it may share and what it records all belong to the Recipe
+(for example the owner Recipe in `introspection-operator-evals`). This adapter
+only runs Pi and serves the Recipe a few environment primitives. It is a plain
+Harbor agent in the Harbor process, named by `user_agent.import_path` in a job
+config:
+
+```yaml
+agents:
+  - name: claude-code
+user_agent:
+  import_path: introspection_harbor.pi_user_agent:PiRecipeUserAgent
+  model_name: openai/gpt-6-luna          # Pi's model
+  kwargs:
+    recipe_dir: recipes/owner            # the Recipe folder on the host
+    tools: [say, share_media, done]      # the model-callable tools: Pi's --tools
+    agent: owner                         # optional: the Recipe agent
+    inputs:                              # optional: JSON data for the Recipe
+      task_dir: use-cases/outbound-desk/tasks/create-1
+  bridge:
+    kind: acp
+```
+
+Other `kwargs`: `prompt` (Pi's first message; default: the trial's
+instruction), `target_capabilities` (default `image`, `embeddedContext`, what
+Claude Code's ACP adapter advertises), `workspace_dir` (where relative
+`upload_file` targets go; default: the container's working directory),
+`exec_timeout_sec` (default 900) and `pi_command`.
+
+`tools` is required: it lists the Recipe's own tools the model may call, and
+goes to Pi as `--tools`. An entry is a name or a pattern with `*`. An entry
+that names or matches `codemode`, `tool_search` or an MCP tool (`mcp__...`),
+a `+name`/`-name` entry, or one with a comma or whitespace (Pi splits `--tools`
+on commas, so `say,codemode` would enable `codemode`) is refused, since through
+any of them the model could call the primitives itself (see below).
+
+Its `setup` is empty: Harbor sets up the user agent before the target and the
+bridge, so `acpx` is only there once `run` starts. `run` starts
+`pi --print --mode json --no-context-files --recipe <recipe_dir> --tools <tools>`
+once, for the whole conversation, in a fresh host temp directory. Pi's exit
+ends the run, and a non-zero exit fails it.
+
+### The primitives
+
+The primitives are MCP tools on a streamable-HTTP server inside the Harbor
+process, on 127.0.0.1 with a per-run bearer token. Pi gets both in its
+environment:
+
+| Variable | Value |
+| --- | --- |
+| `INTROSPECTION_USER_AGENT_URL` | The endpoint, `http://127.0.0.1:<port>/mcp` |
+| `INTROSPECTION_USER_AGENT_TOKEN` | Send it as `Authorization: Bearer <token>` |
+
+A Recipe extension registers the server with Pi's own MCP client and calls a
+primitive from its tools with `ctx.executeTool`:
+
+```ts
+export default function (pi) {
+  pi.registerMcpServer("harbor", {
+    url: process.env.INTROSPECTION_USER_AGENT_URL, // Pi refuses `${...}` in `url`
+    headers: { Authorization: "Bearer ${INTROSPECTION_USER_AGENT_TOKEN}" },
+    exposure: "codemode",
+  });
+  pi.registerTool({
+    name: "say",
+    // label, description, parameters ...
+    async execute(id, params, signal, onUpdate, ctx) {
+      const outcome = await ctx.executeTool(
+        "mcp__harbor__prompt_target",
+        { prompt: [{ type: "text", text: params.text }] },
+        { signal, onUpdate },
+      );
+      const { reply, exit_code } = JSON.parse(outcome.result.content[0].text);
+      // ... the Recipe's own rules and log ...
+    },
+  });
+}
+```
+
+Pi expands `${NAME}` in `headers`, so the token stays out of the extension's
+code; `url` must already be a URL when it is registered, so it is read from
+`process.env`. `tests/fixtures/synthetic-recipe` is a complete Recipe in this
+pattern.
+
+`exposure: "codemode"` keeps the primitives out of the model's tool list, but
+Pi turns its `codemode` tool on as soon as such a server connects, and a
+codemode script can call them. That is why `tools` is a `--tools` allowlist
+without `codemode`: the model reaches the target only through the Recipe's own
+tools, and the Recipe's limits (a message cap, media rules) can't be bypassed.
+`executeTool` doesn't depend on the model's tools, so the extension still
+reaches every primitive.
+
+A prompt can wait minutes for the target's turn, longer than Pi's 60-second
+MCP request timeout. Pi sends a `progressToken` with each call, and the server
+answers with a progress notification every 15 s while the call runs. Each one
+resets the timeout and reaches the extension's `onUpdate`. Any other MCP
+client works too: one JSON-RPC request per POST, answered as a server-sent
+event stream, with a comment every 15 s when the request has no
+`progressToken`.
+
+A result is the tool's JSON object, in `structuredContent` and as the text
+content (through `executeTool`, `outcome.result.content[0].text`). `isError: true`, with the message as text, means the primitive could
+not run: bad arguments, or the environment raised. A non-zero exit of `acpx`
+or of a command is data, in `exit_code`.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `prompt_target` | `prompt`: ACP's own prompt array of content blocks (`ContentBlock[]`), sent as-is. Each block needs a `type`; at least one block is needed. | `{reply, exit_code}`. One ACP prompt through `acpx prompt --file`; the blocks are written as JSON on the host (kept as `prompts/NNN.json`), uploaded and sent. Prompts run one at a time. acpx prints an error on stdout too, so only `exit_code` tells a reply from an error. |
+| `upload_file` | `source`: a host path; `target`: a container path, relative to the workspace or absolute | `{path}`, the container path written. Parent directories are created. |
+| `exec` | `command`: a shell command; `cwd?`; `timeout_sec?` (default `exec_timeout_sec`) | `{exit_code, stdout, stderr}` |
+| `context` | none | `{logs_dir, target_capabilities, workspace_dir, instruction, inputs}`: see below |
+
+`context` fields:
+
+- `logs_dir`: the run's host directory. Whatever the Recipe writes there ends
+  up in `<trial>/user-agent/`.
+- `target_capabilities`: the target's ACP prompt capabilities, for the Recipe's
+  own gating. acpx refuses an `audio` or `resource` block the target didn't
+  advertise.
+- `workspace_dir`: the container directory relative `upload_file` targets
+  resolve against.
+- `instruction`: the trial's instruction.
+- `inputs`: the job's `inputs`, as given.
+
+A call lasts no longer than its connection. When Pi exits or is killed, or
+Harbor cancels the trial, every call still running is cancelled and awaited
+before anything is copied.
+
+### What the target can see
+
+Harbor bind-mounts the trial's log directory into a Docker container, so the
+target could read `<trial>/user-agent/` while it runs. So `logs_dir` in
+`context` is a host temp directory, not that one. The temp directory (Pi's
+`pi.jsonl` and `pi-stderr.log`, `sessions/`, `prompts/`, and what the Recipe
+wrote) is copied into `<trial>/user-agent/` only once Pi has exited and every
+primitive call has ended. The token is never written to a file. Only what the
+Recipe sends with `prompt_target`, `upload_file` or `exec` reaches the
+container. Claude Code's ACP shell tool (`mcp__acp__Bash`) does see the
+target's credential: in a trial, `CLAUDE_CODE_OAUTH_TOKEN` was set in its
+environment, so a command the agent runs there has it.
+
+The trial result's agent metadata carries `user_agent: {exit_code, prompts}`,
+plus `metadata` with the contents of `metadata.json`, when the Recipe wrote one
+to `logs_dir`.
+
 ## Where this is heading
 
 The adapter has two seams: how the Recipe is launched (`run`) and how the
