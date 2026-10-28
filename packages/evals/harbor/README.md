@@ -843,3 +843,14 @@ file-based verifier from the path, and a Recipe judge becomes the reward.
 runs a Harbor trial in E2B against a published Runtime whose Recipe calls an
 authenticated MCP server. See that repository's README for the setup and the
 `scripts/run-e2b.sh` helper.
+
+### Explicit offline judgement subjects
+
+A verifier that calls `introspection judges evaluate` can publish its completed
+judgement through the standard OTLP judgement event by passing both
+`--runtime-slug <slug>` and `--conversation-id <evaluated-conversation-id>`.
+Use the evaluated trial's conversation ID, not the parent command's ambient
+conversation. The YAML `name` supplies the judge slug; each grading attempt
+mints a UUIDv7 result ID. The existing session token and collector must be
+available to the verifier. Production `judges run` keeps its registry identity
+and deterministic deduplication IDs.

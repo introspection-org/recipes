@@ -208,7 +208,13 @@ type JudgeInput = {
  */
 export function recipeJudge<
   TInput extends RecipeEvalInput = RecipeEvalInput,
->(reference: string) {
+>(
+  reference: string,
+  subject?: (run: RecipeContinuableRun) => {
+    runtimeSlug: string;
+    conversationId: string;
+  } | undefined,
+) {
   const normalizedReference = reference.trim();
   if (!normalizedReference) {
     throw new Error("recipeJudge requires a judge name or YAML path");
@@ -217,6 +223,7 @@ export function recipeJudge<
     judgeLabel(normalizedReference),
     async ({ session, run: harnessRun }) => {
       const input = judgeInput(session, harnessRun.usage?.model);
+      const identity = subject?.(harnessRun);
       const { stdout, stderr, code } = await run(
         process.env.INTROSPECTION_CLI ?? "introspection",
         [
@@ -224,6 +231,9 @@ export function recipeJudge<
           "evaluate",
           "--judge",
           normalizedReference,
+          ...(identity
+            ? ["--runtime-slug", identity.runtimeSlug, "--conversation-id", identity.conversationId]
+            : []),
           "--input",
           "-",
           "--output",

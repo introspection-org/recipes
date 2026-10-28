@@ -529,7 +529,10 @@ describe("recipeJudge", () => {
       process.env.ARGS_PATH = argumentsPath;
       process.env.INPUT_PATH = inputPath;
 
-      const judge = recipeJudge("deepwiki-used-correctly");
+      const judge = recipeJudge("deepwiki-used-correctly", (run) => ({
+        runtimeSlug: "recruitment-pipeline",
+        conversationId: String(run.artifacts?.conversationId),
+      }));
       const session = {
         events: [
           {
@@ -569,7 +572,7 @@ describe("recipeJudge", () => {
           session,
           usage: { model: "gpt-5" },
           timings: {},
-          artifacts: {},
+          artifacts: { conversationId: "evaluated-conversation" },
           errors: [],
         },
         session,
@@ -587,6 +590,10 @@ describe("recipeJudge", () => {
         "evaluate",
         "--judge",
         "deepwiki-used-correctly",
+        "--runtime-slug",
+        "recruitment-pipeline",
+        "--conversation-id",
+        "evaluated-conversation",
         "--input",
         "-",
         "--output",

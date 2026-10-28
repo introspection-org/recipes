@@ -321,3 +321,22 @@ Timestamps are optional and are never fabricated. Feedback is separate
 operational context: a production `on:` gate can match the event's raw
 `name` (for example `thumbs_down`), but feedback is not stored in cases or
 sent to the judge model.
+
+### Associate offline judgements with a conversation
+
+`recipeJudge` accepts an optional subject callback evaluated for each harness
+run. Supply the runtime slug and the conversation actually evaluated, from
+your harness artifacts; the conversation launching the eval is not a fallback.
+
+```ts
+recipeJudge('helpful', (run) => {
+  const conversationId = run.artifacts?.conversationId;
+  return typeof conversationId === 'string'
+    ? { runtimeSlug: 'recruitment-pipeline', conversationId }
+    : undefined;
+});
+```
+
+The CLI publishes a standard judgement after grading when the session token and
+collector are configured. Its identity is the runtime slug plus the judge YAML
+name, with a fresh UUIDv7 result ID. Without a subject, scoring remains local.
