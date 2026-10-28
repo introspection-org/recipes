@@ -469,7 +469,10 @@ in the observed format; a wrong type, string format or result format fails; a
 key every sample held fails when missing only once the tool was sampled
 `REQUIRED_MIN_SAMPLES` (3) times; an extra key is allowed; and the value of a
 key the observed schema masked is held to its `x-masked-values`, again only
-after `REQUIRED_MIN_SAMPLES` samples. TOON must
+after `REQUIRED_MIN_SAMPLES` samples. Since `observe` keeps a key that is a
+plain lowercase-first word by name, a key the schema does not list is held to
+`x-masked-values` only when it is not such a word: a sample that lacked it says
+nothing about its value. TOON must
 also be written exactly as the TOON encoder writes it wherever every observed
 result was (`canonical`); prefixed JSON is held to the observed text before
 and after the JSON (`prefix`, `suffix`, or one of `prefixes`, `suffixes`); and

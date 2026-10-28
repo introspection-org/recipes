@@ -1,7 +1,8 @@
 // A fake's recorded answers against what the real server answered, as `observed.ts` records it:
 // a wrong type, format or result format fails; a key every sample held fails when missing only
 // once the tool was sampled REQUIRED_MIN_SAMPLES times; an extra key is allowed; a key the
-// observed schema masked is held to its `x-masked-values` only once sampled as often. TOON is also held to how the TOON
+// observed schema masked is held to its `x-masked-values` only once sampled as often, and only
+// when `observe` would have masked it, as it keeps a key that is a plain word by name. TOON is also held to how the TOON
 // encoder writes it wherever every observed result was, prefixed JSON to its observed text
 // before and after the JSON, and other text to its observed first line only.
 import { decode as decodeToon } from "@toon-format/toon";
@@ -28,6 +29,16 @@ function stringFormat(value: string): string | undefined {
   let text = value.trim();
   if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
   return STRING_FORMATS.find(([, pattern]) => pattern.test(text))?.[0];
+}
+
+// A key `observe` keeps by name: one word that starts lowercase and is not
+// a uuid, an email, a date, a URL, a boolean or null.
+function isPlainKey(key: string): boolean {
+  return (
+    /^[\p{Ll}_$][\p{L}\p{N}_$-]*$/u.test(key) &&
+    !["true", "false", "null"].includes(key) &&
+    stringFormat(key) === undefined
+  );
 }
 
 function typeOf(value: unknown): string {
@@ -68,7 +79,7 @@ function validate(value: unknown, schema: ObservedSchema, path: string, firm: bo
     for (const [key, child] of Object.entries(map)) {
       const property = schema.properties?.[key];
       if (property) fails.push(...validate(child, property, `${path}.${key}`, firm));
-      else if (firm && schema["x-masked-values"])
+      else if (firm && schema["x-masked-values"] && !isPlainKey(key))
         fails.push(...validate(child, schema["x-masked-values"], `${path}.<masked>`, firm));
     }
   }

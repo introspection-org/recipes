@@ -396,7 +396,7 @@ describe("checkRecipeFakes' observed answers", () => {
     expect(loose.failed[OBSERVED]).toBeUndefined();
   });
 
-  test("fails a wrong type, and holds masked keys to x-masked-values", async () => {
+  test("fails a wrong type", async () => {
     const recording = await recordingOf([
       ["list-notes", {}],
       ["get-note", { id: "note-1" }],
@@ -404,22 +404,46 @@ describe("checkRecipeFakes' observed answers", () => {
     const typed = { type: "object", properties: { id: { type: "integer" } } };
     const wrong = await failing({ ...base, fakes: observing(1, typed), recording });
     expect(wrong.failed[OBSERVED]).toMatch(/get-note \$\.id: type string, observed integer/);
-    const masked = { type: "object", "x-masked-values": { type: "string", format: "uuid" } };
-    const { failed } = await failing({ ...base, fakes: observing(3, masked), recording });
-    expect(failed[OBSERVED]).toMatch(/get-note \$\.<masked>: format none, observed uuid/);
   });
 
-  test("holds masked keys to x-masked-values only once the tool was sampled three times", async () => {
+  // A json answer `observe` sampled `sampled` times, its keys masked into `x-masked-values`.
+  const maskedAs = (sampled: number, values: object) => ({
+    sampled,
+    answer: { format: "json", schema: { type: "object", "x-masked-values": values } },
+  });
+  const UUID_KEY = "0f8e2b9c-1d3a-4c5e-9f7a-2b4c6d8e0f1a";
+
+  test("holds a key observe would have masked to x-masked-values", () => {
+    const text = JSON.stringify({ [UUID_KEY]: "note" });
+    const uuid = maskedAs(3, { type: "string", format: "uuid" });
+    expect(differences(uuid, undefined, { text })).toEqual([
+      "$.<masked>: format none, observed uuid",
+    ]);
+  });
+
+  test("holds masked keys to x-masked-values only once the tool was sampled three times", () => {
+    // One sampled row can mask keys whose values differ in type.
+    const text = JSON.stringify({ [UUID_KEY]: "note" });
+    expect(differences(maskedAs(1, { type: "array" }), undefined, { text })).toEqual([]);
+    expect(differences(maskedAs(3, { type: "array" }), undefined, { text })).toEqual([
+      "$.<masked>: type string, observed array",
+    ]);
+  });
+
+  test("allows a plain word key the samples lacked, as observe keeps such a key by name", async () => {
+    // `email_addresses` was in no sample; `observe` would have kept it by name, not masked it.
+    const text = JSON.stringify({ email_addresses: "a", Zebracorp: "b", [UUID_KEY]: "c" });
+    expect(differences(maskedAs(3, { type: "array" }), undefined, { text })).toEqual([
+      "$.<masked>: type string, observed array",
+      "$.<masked>: type string, observed array",
+    ]);
     const recording = await recordingOf([
       ["list-notes", {}],
       ["get-note", { id: "note-1" }],
     ]);
-    // One sampled row can mask keys whose values differ in type, as Attio's attributes do.
     const masked = { type: "object", "x-masked-values": { type: "array" } };
-    const loose = await failing({ ...base, fakes: observing(1, masked), recording });
-    expect(loose.failed[OBSERVED]).toBeUndefined();
-    const firm = await failing({ ...base, fakes: observing(3, masked), recording });
-    expect(firm.failed[OBSERVED]).toMatch(/get-note \$\.<masked>: type string, observed array/);
+    const { failed } = await failing({ ...base, fakes: observing(3, masked), recording });
+    expect(failed[OBSERVED]).toBeUndefined();
   });
 
   test("holds a text answer to its observed first line", async () => {
