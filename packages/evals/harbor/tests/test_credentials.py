@@ -13,6 +13,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import httpx2 as httpx
 from introspection_sdk import AsyncIntrospectionClient, AuthenticationError
@@ -23,6 +24,7 @@ from introspection_harbor.credentials import (
     ProfileCredentials,
     load_credentials,
 )
+from introspection_harbor.task_environment import IntrospectionEnvironment
 
 TASK = {
     "id": "01990000-0000-7000-8000-0000000000a0",
@@ -111,23 +113,51 @@ class RefreshedLoginTest(unittest.TestCase):
         self._assert_rejected_once(self._credentials(None), seen)
 
 
-class TaskTeardownTest(unittest.TestCase):
-    def test_teardown_uses_a_route_that_exists(self) -> None:
-        """`DELETE /v1/tasks/{id}` cancels active work and soft-deletes in one."""
-        seen: list[httpx.Request] = []
+class TaskTeardownTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.seen: list[tuple[str, str]] = []
+        self.response_status = 204
 
         def handler(request: httpx.Request) -> httpx.Response:
-            seen.append(request)
-            return httpx.Response(204)
+            self.seen.append((request.method, request.url.path))
+            return httpx.Response(self.response_status)
 
-        client = _client(
+        self.client = _client(
             handler,
             ProfileCredentials(DataPlaneCredentials(url="https://dp.test", token="t")),
         )
-        asyncio.run(client.tasks.delete("task-1"))
-        self.assertEqual(
-            (seen[0].method, seen[0].url.path), ("DELETE", "/v1/tasks/task-1")
-        )
+        self.environment = object.__new__(IntrospectionEnvironment)
+        self.environment._task_id = "task-1"
+        self.environment._client = self.client
+        self.environment._control_plane = Mock()
+        self.environment.logger = Mock()
+
+    async def asyncTearDown(self) -> None:
+        await self.client.shutdown()
+
+    async def test_cleanup_archives_the_remote_task(self) -> None:
+        with patch.object(self.client, "shutdown", wraps=self.client.shutdown) as close:
+            await self.environment.stop(delete=True)
+        self.assertEqual(self.seen, [("POST", "/v1/tasks/task-1/archive")])
+        close.assert_awaited_once()
+        self.assertIsNone(self.environment._task_id)
+        self.assertIsNone(self.environment._client)
+        self.assertIsNone(self.environment._control_plane)
+
+    async def test_no_delete_leaves_the_remote_task_alone(self) -> None:
+        with patch.object(self.client, "shutdown", wraps=self.client.shutdown) as close:
+            await self.environment.stop(delete=False)
+        self.assertEqual(self.seen, [])
+        close.assert_awaited_once()
+
+    async def test_archive_rejection_is_best_effort(self) -> None:
+        self.response_status = 403
+        with patch.object(self.client, "shutdown", wraps=self.client.shutdown) as close:
+            await self.environment.stop(delete=True)
+        self.assertEqual(self.seen, [("POST", "/v1/tasks/task-1/archive")])
+        self.environment.logger.debug.assert_called_once()
+        close.assert_awaited_once()
+        self.assertIsNone(self.environment._client)
 
 
 class CredentialExpiryTest(unittest.TestCase):

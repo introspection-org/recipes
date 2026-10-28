@@ -583,11 +583,16 @@ the same retention limitation. This applies to Harbor's remaining test-input,
 prompt, replay, sidecar and result transfers; candidate Git checkout and setup
 do not create transfer Files.
 
-Trial Task teardown follows the same best-effort rule. A caller holding
-`tasks:delete` releases the sandbox immediately. The Operator deliberately has
-no destructive scope, so its refused delete is suppressed and the Task's
-configured wall-clock ceiling releases the sandbox instead; that expected
-cleanup path does not turn a valid verifier score into `completed_with_errors`.
+Trial Task cleanup archives the remote task through the SDK's `tasks.archive`
+operation (`tasks:write`), retaining its record for inspection and platform
+teardown judging. Harbor's `--no-delete` skips this call and leaves the remote
+task available for debugging, subject to its configured wall-clock ceiling.
+Archive requests asynchronous teardown of the sandbox and sidecars; acceptance
+does not confirm that resources have stopped. Harbor does not poll for teardown.
+Cleanup remains best effort: an API error is logged at debug level and suppressed
+so it does not turn a valid verifier score into `completed_with_errors` or mask
+an agent or verifier failure. The task's configured wall-clock ceiling remains
+the fallback. This does not change platform judge eligibility.
 
 Known gaps, all of them in the command contract rather than this adapter:
 `exec`'s `user` cannot be honoured (the sandbox runs every command as its own

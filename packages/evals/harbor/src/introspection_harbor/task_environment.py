@@ -781,13 +781,13 @@ class IntrospectionEnvironment(BaseEnvironment):
     async def stop(self, delete: bool) -> None:
         try:
             if delete and self._task_id is not None:
-                # Best effort: without `tasks:delete` (Operator holds no
-                # destructive scope) the task's own ceiling releases the
-                # sandbox, and cleanup must not fail an otherwise valid score.
+                # Archive requests asynchronous teardown while retaining the
+                # task for inspection. Best effort: cleanup must not fail an
+                # otherwise valid score; the task's ceiling is the fallback.
                 try:
-                    await self.client.tasks.delete(self._task_id)
+                    await self.client.tasks.archive(self._task_id)
                 except IntrospectionAPIError as exc:
-                    self.logger.debug("task %s not deleted: %s", self._task_id, exc)
+                    self.logger.debug("task %s not archived: %s", self._task_id, exc)
         finally:
             self._task_id = None
             self._control_plane = None
