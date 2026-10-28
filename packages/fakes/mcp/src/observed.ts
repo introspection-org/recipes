@@ -1,14 +1,17 @@
 // A fake's recorded answers against what the real server answered, as `observed.ts` records it:
 // a wrong type, format or result format fails; a key every sample held fails when missing only
 // once the tool was sampled REQUIRED_MIN_SAMPLES times; an extra key is allowed; a key the
-// observed schema masked is held to its `x-masked-values`. TOON is also held to how the TOON
+// observed schema masked is held to its `x-masked-values` only once sampled as often. TOON is also held to how the TOON
 // encoder writes it wherever every observed result was, prefixed JSON to its observed text
 // before and after the JSON, and other text to its observed first line only.
 import { decode as decodeToon, encode as encodeToon } from "@toon-format/toon";
 import type { Entry, Observed, ObservedAnswer } from "./contract.js";
 import type { RecordedCall } from "./server.js";
 
-/** A key present in every sample is required of a fake only when the tool was sampled this often. */
+/**
+ * A key present in every sample is required of a fake, and a masked key's value held to its
+ * `x-masked-values`, only when the tool was sampled this often.
+ */
 export const REQUIRED_MIN_SAMPLES = 3;
 
 // The string formats `observe` names, tried in its order.
@@ -64,7 +67,7 @@ function validate(value: unknown, schema: ObservedSchema, path: string, firm: bo
     for (const [key, child] of Object.entries(map)) {
       const property = schema.properties?.[key];
       if (property) fails.push(...validate(child, property, `${path}.${key}`, firm));
-      else if (schema["x-masked-values"])
+      else if (firm && schema["x-masked-values"])
         fails.push(...validate(child, schema["x-masked-values"], `${path}.<masked>`, firm));
     }
   }

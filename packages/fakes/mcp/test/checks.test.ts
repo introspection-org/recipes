@@ -405,8 +405,21 @@ describe("checkRecipeFakes' observed answers", () => {
     const wrong = await failing({ ...base, fakes: observing(1, typed), recording });
     expect(wrong.failed[OBSERVED]).toMatch(/get-note \$\.id: type string, observed integer/);
     const masked = { type: "object", "x-masked-values": { type: "string", format: "uuid" } };
-    const { failed } = await failing({ ...base, fakes: observing(1, masked), recording });
+    const { failed } = await failing({ ...base, fakes: observing(3, masked), recording });
     expect(failed[OBSERVED]).toMatch(/get-note \$\.<masked>: format none, observed uuid/);
+  });
+
+  test("holds masked keys to x-masked-values only once the tool was sampled three times", async () => {
+    const recording = await recordingOf([
+      ["list-notes", {}],
+      ["get-note", { id: "note-1" }],
+    ]);
+    // One sampled row can mask keys whose values differ in type, as Attio's attributes do.
+    const masked = { type: "object", "x-masked-values": { type: "array" } };
+    const loose = await failing({ ...base, fakes: observing(1, masked), recording });
+    expect(loose.failed[OBSERVED]).toBeUndefined();
+    const firm = await failing({ ...base, fakes: observing(3, masked), recording });
+    expect(firm.failed[OBSERVED]).toMatch(/get-note \$\.<masked>: type string, observed array/);
   });
 
   test("holds a text answer to its observed first line", async () => {

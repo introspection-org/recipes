@@ -466,7 +466,8 @@ states an `outputSchema` from its `structuredContent`, any other from its text
 in the observed format; a wrong type, string format or result format fails; a
 key every sample held fails when missing only once the tool was sampled
 `REQUIRED_MIN_SAMPLES` (3) times; an extra key is allowed; and the value of a
-key the observed schema masked is held to its `x-masked-values`. TOON must
+key the observed schema masked is held to its `x-masked-values`, again only
+after `REQUIRED_MIN_SAMPLES` samples. TOON must
 also be written exactly as the TOON encoder writes it wherever every observed
 result was (`canonical`); prefixed JSON is held to the observed text before
 and after the JSON (`prefix`, `suffix`, or one of `prefixes`, `suffixes`); and
