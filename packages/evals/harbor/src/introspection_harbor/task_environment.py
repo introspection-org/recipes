@@ -26,7 +26,7 @@ import os
 import shlex
 import tempfile
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, override
@@ -334,19 +334,20 @@ class RuntimeResolver:
 
 async def trial_runtime_id(
     spec: dict[str, Any],
-    control_plane: RuntimeResolver,
+    control_plane: Callable[[], RuntimeResolver],
     environment: str,
 ) -> str:
     """Return the immutable Runtime version this trial records and starts.
 
-    UUID selectors pin an exact production-selected version. Slugs retain
-    environment-lane resolution.
+    UUID selectors pin an exact version and touch no Control Plane, so a trial
+    pinned that way needs no login. Slugs retain environment-lane resolution,
+    which builds the Control Plane client and so reads the login.
     """
 
     runtime = str(spec["candidate"]["runtime"])
     if is_runtime_id(runtime):
         return runtime
-    return await control_plane.resolve_runtime(runtime, environment)
+    return await control_plane().resolve_runtime(runtime, environment)
 
 
 def sidecar_services(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -739,7 +740,7 @@ class IntrospectionEnvironment(BaseEnvironment):
         self._warn_if_the_login_expires_mid_trial()
         document = read_compose(self.environment_dir)
         runtime_id = await trial_runtime_id(
-            self._spec, self.control_plane, self._task_environment
+            self._spec, lambda: self.control_plane, self._task_environment
         )
         references = await self.resolve_images(document)
         compose = translate_compose(document, references)

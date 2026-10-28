@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 from harbor.environments.base import BaseEnvironment
@@ -246,19 +246,20 @@ class RuntimeSelectionTest(unittest.IsolatedAsyncioTestCase):
     async def test_production_runtime_id_bypasses_environment_lane_resolution(
         self,
     ) -> None:
-        control_plane = AsyncMock()
+        # A pinned version needs no Control Plane, so no client, and no login, is built.
+        control_plane_factory = MagicMock()
         selected = await trial_runtime_id(
             {
                 "candidate": {
                     "runtime": "01990000-0000-7000-8000-000000000001",
                 }
             },
-            control_plane,
+            control_plane_factory,
             "development",
         )
 
         self.assertEqual(selected, "01990000-0000-7000-8000-000000000001")
-        control_plane.resolve_runtime.assert_not_awaited()
+        control_plane_factory.assert_not_called()
 
     async def test_legacy_run_resolves_slug_in_requested_lane(self) -> None:
         control_plane = AsyncMock()
@@ -266,7 +267,7 @@ class RuntimeSelectionTest(unittest.IsolatedAsyncioTestCase):
 
         selected = await trial_runtime_id(
             {"candidate": {"runtime": "traffic-violations-agent"}},
-            control_plane,
+            lambda: control_plane,
             "production",
         )
 
@@ -671,6 +672,29 @@ class HarborDirectoryTest(unittest.TestCase):
         )
 
 
+def unstarted_environment(runtime: str) -> IntrospectionEnvironment:
+    """An environment ready for `start`, its Data Plane calls stubbed."""
+
+    environment = object.__new__(IntrospectionEnvironment)
+    environment.environment_dir = Path("/task/environment")
+    environment.task_env_config = SimpleNamespace(os=TaskOS.LINUX)
+    environment._spec = {"candidate": {"runtime": runtime}}
+    environment._task_environment = "production"
+    environment._task_id = None
+    environment._control_plane = None
+    environment._mounts = []
+    environment._client = AsyncMock()
+    environment._client.tasks.create.return_value = SimpleNamespace(
+        task=SimpleNamespace(id="task-id", status="pending")
+    )
+    environment._await_ready = AsyncMock()
+    environment.exec = AsyncMock()
+    environment.resolve_images = AsyncMock(return_value={})
+    environment.create_task_body = lambda runtime_id, compose: {}
+    environment._warn_if_the_login_expires_mid_trial = lambda: None
+    return environment
+
+
 class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
     """Harbor writes into `/logs/agent` and never creates it on this environment.
 
@@ -685,23 +709,11 @@ class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         paths = EnvironmentPaths()
         harbor_mounts = [paths.verifier_dir, paths.agent_dir, paths.artifacts_dir]
-        environment = object.__new__(IntrospectionEnvironment)
-        environment.environment_dir = Path("/task/environment")
-        environment.task_env_config = SimpleNamespace(os=TaskOS.LINUX)
-        environment._spec = {
-            "candidate": {"runtime": "01990000-0000-7000-8000-000000000001"}
-        }
-        environment._task_environment = "production"
-        environment._task_id = None
-        environment._control_plane = AsyncMock()
+        environment = unstarted_environment("01990000-0000-7000-8000-000000000001")
         environment._mounts = [
             ServiceVolumeConfig(type="bind", source=f"/host{path}", target=str(path))
             for path in harbor_mounts
         ]
-        environment._client = AsyncMock()
-        environment._client.tasks.create.return_value = SimpleNamespace(
-            task=SimpleNamespace(id="task-id", status="pending")
-        )
         order: list[str] = []
         environment._await_ready = AsyncMock(
             side_effect=lambda task: order.append("ready")
@@ -709,9 +721,6 @@ class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
         environment.exec = AsyncMock(
             side_effect=lambda command, **_: order.append(command)
         )
-        environment.resolve_images = AsyncMock(return_value={})
-        environment.create_task_body = lambda runtime_id, compose: {}
-        environment._warn_if_the_login_expires_mid_trial = lambda: None
 
         with patch(
             "introspection_harbor.task_environment.read_compose", return_value={}
@@ -723,3 +732,27 @@ class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
         created = shlex.split(order[1].split("&&")[0])
         self.assertEqual(created[:2], ["mkdir", "-p"])
         self.assertEqual(set(created[2:]), {str(path) for path in harbor_mounts})
+
+    async def test_a_pinned_runtime_starts_with_no_control_plane_login(self) -> None:
+        environment = unstarted_environment("01990000-0000-7000-8000-000000000001")
+        runtimes: list[str] = []
+
+        def create_task_body(runtime_id: str, compose: object) -> dict[str, str]:
+            runtimes.append(runtime_id)
+            return {}
+
+        environment.create_task_body = create_task_body
+
+        with (
+            patch(
+                "introspection_harbor.task_environment.read_compose", return_value={}
+            ),
+            patch(
+                "introspection_harbor.task_environment.load_control_plane_credentials",
+                side_effect=AssertionError("a pinned trial read the login"),
+            ),
+        ):
+            await environment.start(force_build=False)
+
+        self.assertEqual(runtimes, ["01990000-0000-7000-8000-000000000001"])
+        self.assertIsNone(environment._control_plane)

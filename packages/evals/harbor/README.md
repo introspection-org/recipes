@@ -243,7 +243,9 @@ for call in server_calls(tool_calls(load_trajectory()), "attio", ANSWERS["attio"
         ANSWERS["attio"][call["name"]], call["response"], call.get("structured")
     )
     if not read["ok"]:
-        raise ValueError(f"attio answered {call['name']} outside its contract: {read['error']}")
+        raise ValueError(
+            f"attio answered {call['name']} outside its contract: {read['error']}"
+        )
     rows = read["value"]
 ```
 
@@ -446,8 +448,9 @@ sandbox silently ignored and a `mkdir` that failed as if the trial had.
 
 Credentials resolve as the CLI's own Data-Plane commands do: `INTROSPECTION_DP_URL`
 and `INTROSPECTION_TOKEN` first, then the profile `introspection login` wrote.
-Resolving the Runtime selector to a version is a Control-Plane read, so the
-login must have a project selected.
+Resolving a Runtime slug to its active version is a Control-Plane read, so a run
+that selects the Runtime by slug, or with `--commit-sha`, needs a login with a
+project selected. A run pinned to a Runtime version does not (below).
 
 `introspection eval run` renews the stored login for as long as Harbor runs, so
 a run may outlive the access token it started with: the CLI refreshes the
@@ -464,6 +467,27 @@ minted with **both** `evals` and `runtimes`: the second is not redundant, since
 uploading a sidecar's build context goes through the Files API and `files:write`
 is in the `runtimes` bundle rather than `evals`. With a login alone the
 Control-Plane resolution succeeds and the task create then 403s.
+
+### Under a service credential
+
+A trial pinned to a Runtime version makes no Control-Plane request, so a service
+credential alone runs it, with no person's login: a service account's Data-Plane
+token (an Application's `client_credentials` token for the project, its
+`allowed_scopes` naming `evals` and `runtimes`) or a project API key with those
+capabilities. A CI job holding either runs it:
+
+```sh
+INTROSPECTION_DP_URL=https://api.<plane> \
+INTROSPECTION_TOKEN=<service account token or project API key, with evals and runtimes> \
+INTROSPECTION_HARBOR_ENVIRONMENT=introspection_harbor.task_environment:IntrospectionEnvironment \
+introspection eval run --runner harbor --path evals/refund-task \
+  --runtime support-agent --runtime-version <runtime version UUID>
+```
+
+`--runtime` names the Recipe's local Runtime manifest by slug and
+`--runtime-version` pins the platform Runtime version the trial starts on. The
+trial materializes the checkout's `HEAD`, which must be committed and pushed.
+Redeploying the Runtime makes a new version, which the caller then pins.
 
 | Variable | What it changes |
 | --- | --- |
