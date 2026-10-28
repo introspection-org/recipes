@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.3.0...mcp-fakes-v0.4.0) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp-fakes:** `checkRecipeFakes` holds a key the observed schema doesn't list to `x-masked-values` only when it isn't a plain word, as `introspection bindings mcp observe` from CLI 0.59.0 keeps plain-word keys by name in observed.ts format 5. Observe a fake again with that CLI so its plain keys are checked by name.
+
+### Features
+
+* **bindings:** keep plain object keys by name in mcp observe ([#640](https://github.com/introspection-org/introspection-cli/issues/640)) ([4980a4d](https://github.com/introspection-org/introspection-cli/commit/4980a4de8ee11632854aa3e72ab7568e7103fc3b))
+
 ## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.2...mcp-fakes-v0.3.0) (2026-10-28)
 
 
