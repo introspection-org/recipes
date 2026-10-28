@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.11.0...introspection-harbor-v0.12.0) (2026-10-28)
+
+
+### Features
+
+* **cli:** share CI reports and publish offline judgement results ([#646](https://github.com/introspection-org/introspection-cli/issues/646)) ([28ffa32](https://github.com/introspection-org/introspection-cli/commit/28ffa327b9f73300fb38ac8de8358814a7300433))
+* **eval:** run a plane Harbor trial on a service credential alone by pinning --runtime-version ([#636](https://github.com/introspection-org/introspection-cli/issues/636)) ([3b1cee1](https://github.com/introspection-org/introspection-cli/commit/3b1cee196dc22a1bca2cb95aa1545a561212127e))
+
+
+### Bug Fixes
+
+* **harbor:** accept declared candidate models in native mode ([#648](https://github.com/introspection-org/introspection-cli/issues/648)) ([ced1e8b](https://github.com/introspection-org/introspection-cli/commit/ced1e8b84fceb5d1e11f35483724a2fe060aefa0))
+* **harbor:** retain eval tasks by archiving on cleanup ([#645](https://github.com/introspection-org/introspection-cli/issues/645)) ([3642614](https://github.com/introspection-org/introspection-cli/commit/3642614132e9795981c829e05350a4afef573c2e))
+
 ## [0.11.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.10.0...introspection-harbor-v0.11.0) (2026-10-28)
 
 
