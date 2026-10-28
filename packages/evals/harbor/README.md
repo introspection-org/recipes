@@ -37,6 +37,8 @@ The steps of a multi-step task are turns of one conversation: a later step
 sees everything the earlier steps said and did.
 
 - `--fresh-steps` starts a new conversation at every step instead.
+  The `native` adapter refuses it: its steps are runs on the trial's one
+  task, which holds one conversation.
 - Harbor's own agents (`harbor:oracle`, `harbor:nop`) and production replays
   always start fresh.
 - With `harbor run` directly, steps are fresh unless you pass
@@ -262,18 +264,21 @@ answer alike.
 this repository's `integrations/testdata/fakes/cases.json`, so the two runners
 score a trial alike.
 
-## Two adapters, one launch
+## Adapters, one launch
 
 `introspection eval run` selects `introspection_harbor.agent:IntrospectionRecipeAgent`;
-`INTROSPECTION_HARBOR_ADAPTER` decides which adapter that resolves to. They
-share `base.py`: the run spec, the Pi invocation with the egress-proxy
-extension, the captured `pi.jsonl`, and the ATIF trajectory. They differ only
-in how the Recipe and Pi reach the trial, and where the evidence comes from.
+`INTROSPECTION_HARBOR_ADAPTER` decides which adapter that resolves to. `runtime`
+and `bootstrap` share `base.py`: the run spec, the Pi invocation with the
+egress-proxy extension, the captured `pi.jsonl`, and the ATIF trajectory. They
+differ only in how the Recipe and Pi reach the trial. `native` launches no Pi:
+each step is a run on the trial's evaluation task, so the task carries the
+prompt and the platform stores the conversation a judge reads.
 
 | `INTROSPECTION_HARBOR_ADAPTER` | Trial image | What `install` does | Evidence |
 | --- | --- | --- | --- |
 | `runtime` (default) | the Runtime image | exposes the image's own Pi; downloads nothing | `pi.jsonl` in the trial |
 | `bootstrap` | any image (a pinned SWE world, a customer base) | uploads the Recipe workspace from the host, installs Node and the CLI, lets `introspection setup` install Pi and the Recipes extension, lays it out as the Runtime image does, under `/tmp/introspection` (`recipe` + `runtime` link, with the proxy module) | `pi.jsonl` in the trial |
+| `native` | the Runtime image, on the `introspection` environment | nothing; each step is `POST /v1/tasks/{id}/runs` | the task's conversation, read back once ingest settles |
 
 ```sh
 # a foreign image: bootstrap the Recipe into it

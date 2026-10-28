@@ -9,25 +9,30 @@ resolves to is chosen by ``INTROSPECTION_HARBOR_ADAPTER``:
   (``runtime_agent``).
 - ``bootstrap``: a foreign trial image; the Recipe, Pi and the CLI are
   installed into it, then the run is the same (``bootstrap_agent``).
+- ``native``: each step is a run on the trial's evaluation task, so the
+  Runtime runs the Recipe and the platform stores the conversation
+  (``native_agent``). Needs the Introspection environment.
 """
 
 from __future__ import annotations
 
 import os
 
-from harbor.agents.installed.base import BaseInstalledAgent
+from harbor.agents.base import BaseAgent
 
 from .bootstrap_agent import IntrospectionBootstrapAgent
+from .native_agent import IntrospectionNativeAgent
 from .runtime_agent import IntrospectionRecipeAgent as _RuntimeAgent
 
 ADAPTER_ENV = "INTROSPECTION_HARBOR_ADAPTER"
-ADAPTERS: dict[str, type[BaseInstalledAgent]] = {
+ADAPTERS: dict[str, type[BaseAgent]] = {
     "runtime": _RuntimeAgent,
     "bootstrap": IntrospectionBootstrapAgent,
+    "native": IntrospectionNativeAgent,
 }
 
 
-def adapter_class(selected: str | None = None) -> type[BaseInstalledAgent]:
+def adapter_class(selected: str | None = None) -> type[BaseAgent]:
     """The adapter ``INTROSPECTION_HARBOR_ADAPTER`` (or ``selected``) names."""
 
     name = (

@@ -10,8 +10,7 @@ requires-python = ">=3.12"
 # the cap together with the lock, so tests/test_harbor_pretrial.py runs on it.
 dependencies = [
     "harbor[e2b]>=0.24.0,<0.25",
-    "httpx>=0.27",
-    "introspection-sdk>=0.26.0",
+    "introspection-sdk>=0.33.0",
     "jsonschema>=4",
     "pyyaml>=6",
     "rfc3339-validator>=0.1.4",

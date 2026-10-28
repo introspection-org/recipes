@@ -1013,7 +1013,6 @@ version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "harbor", extra = ["e2b"] },
-    { name = "httpx" },
     { name = "introspection-sdk" },
     { name = "jsonschema" },
     { name = "pyyaml" },
@@ -1031,8 +1030,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", extras = ["e2b"], specifier = ">=0.24.0,<0.25" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "introspection-sdk", specifier = ">=0.26.0" },
+    { name = "introspection-sdk", specifier = ">=0.33.0" },
     { name = "jsonschema", specifier = ">=4" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "rfc3339-validator", specifier = ">=0.1.4" },
@@ -1048,16 +1046,16 @@ dev = [
 
 [[package]]
 name = "introspection-sdk"
-version = "0.26.0"
+version = "0.33.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "httpx2" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/c5/360378385df9314af0cfeda1639df839e698c6a0b227a456060750bd1ba5/introspection_sdk-0.26.0.tar.gz", hash = "sha256:fa35008a58796f9a7dcaa4303efee33aba8a368ee19249fc212baae49b30a573", size = 143708, upload-time = "2026-10-12T04:31:33.667Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/78/acd24f7a7ab9d87fa09a0a69e1ae064b60efe7a79e727e78357a71ea116b/introspection_sdk-0.33.0.tar.gz", hash = "sha256:816336ceb93f49cdb9ea6582e5904918f2da2d2d4113c204a02217ee43e92a27", size = 222451, upload-time = "2026-10-27T23:52:58.684Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/2c/70642ee5e653b2aaf37afa0477a65da3192b6dd727030775f59184ebb6c6/introspection_sdk-0.26.0-py3-none-any.whl", hash = "sha256:f3e4514b719b68e0bc36724f29175c67acc0d8528f7689329ab2054fb9240e7b", size = 184923, upload-time = "2026-10-12T04:31:32.265Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/b4/3c2be751379fdbb612a862acece3b8d05b8c50cd0202f4d07b85672d98ba/introspection_sdk-0.33.0-py3-none-any.whl", hash = "sha256:4420558927f74075069b5cbd2412a2d62543e5ea846a82fb13f778da96b0f7ff", size = 312366, upload-time = "2026-10-27T23:52:56.876Z" },
 ]
 
 [[package]]

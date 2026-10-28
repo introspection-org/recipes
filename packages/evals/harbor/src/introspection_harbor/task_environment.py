@@ -4,7 +4,8 @@ Harbor keeps ownership of the trial. This adapter only supplies the sandbox:
 ``start`` creates a ``kind: eval`` task whose ``compose`` is the task's own
 ``docker-compose.yaml``, and every ``exec`` / ``upload`` / ``download`` Harbor
 asks for afterwards becomes a row on ``POST /v1/tasks/{id}/commands`` that the
-task workflow runs inside that sandbox.
+task workflow runs inside that sandbox. Every call goes through
+``introspection-sdk``.
 
 The consequence worth stating: because the verifier runs through the same
 channel, in the same sandbox the agent worked in, a Harbor task's own
@@ -29,7 +30,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, override
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import yaml
 from harbor.constants import MAIN_SERVICE_NAME
@@ -42,6 +43,20 @@ from harbor.environments.tar_transfer import (
     remote_pack_command,
 )
 from harbor.models.trial.paths import EnvironmentPaths
+from introspection_sdk import AsyncIntrospectionClient, IntrospectionAPIError
+from introspection_sdk.schemas.images import (
+    ContextImageSource,
+    Image,
+    ImageProvenance,
+    MirrorImageSource,
+)
+from introspection_sdk.schemas.task_commands import (
+    DownloadCommand,
+    ExecCommand,
+    TaskCommand,
+    UploadCommand,
+)
+from introspection_sdk.schemas.tasks import Task
 
 from .base import (
     MANAGED_PROVIDER_KEYS,
@@ -50,14 +65,16 @@ from .base import (
     is_runtime_id,
     load_run_spec,
 )
-from .client import (
+from .credentials import (
     LOGIN_KEEPALIVE_ENV,
-    ControlPlaneClient,
-    DataPlaneClient,
+    TRANSFER_PURPOSE,
+    ControlPlaneCredentials,
     DataPlaneError,
+    ProfileCredentials,
+    client_from_profile,
     load_control_plane_credentials,
     load_credentials,
-    pull_reference,
+    platform_call,
 )
 
 ENVIRONMENT_TYPE = "introspection"
@@ -70,8 +87,6 @@ HARBOR_AGENT_PREFIX = "harbor:"
 # The keys a `main` service may carry: it names the agent slot, which the
 # Runtime image fills, so anything describing an image is not ours to honour.
 MAIN_SERVICE_KEYS = frozenset({"volumes", "depends_on"})
-# Command rows the executor may still act on.
-COMMAND_TERMINAL_STATUSES = frozenset({"completed", "failed"})
 # Task statuses that accept commands. A trial that has not reached one of
 # these is not ready for Harbor to drive.
 TASK_COMMAND_READY_STATUSES = frozenset({"running", "awaiting_user", "idle"})
@@ -294,9 +309,32 @@ def unused_dockerfile(document: dict[str, Any], environment_dir: Path) -> Path |
     return path
 
 
+class RuntimeResolver:
+    """Resolves a Runtime selector to a version, through the Control Plane."""
+
+    def __init__(
+        self, client: AsyncIntrospectionClient, control_plane: ControlPlaneCredentials
+    ) -> None:
+        self._client = client
+        self._project = control_plane.project
+
+    async def resolve_runtime(self, runtime: str, environment: str) -> str:
+        """The deployed Runtime version active for *runtime* in *environment*."""
+
+        with platform_call(f"resolving runtime {runtime!r}"):
+            page = await self._client.runtimes.list(
+                project=self._project, runtime=runtime, environment=environment, limit=1
+            )
+        if not page.records:
+            raise DataPlaneError(
+                f"Runtime {runtime!r} has no active version in {environment}"
+            )
+        return str(page.records[0].id)
+
+
 async def trial_runtime_id(
     spec: dict[str, Any],
-    control_plane: ControlPlaneClient,
+    control_plane: RuntimeResolver,
     environment: str,
 ) -> str:
     """Return the immutable Runtime version this trial records and starts.
@@ -384,7 +422,7 @@ def exec_command(
     env: dict[str, str] | None,
     timeout_seconds: int,
     service: str | None = None,
-) -> dict[str, Any]:
+) -> ExecCommand:
     """The exec spec for a Harbor shell command.
 
     Harbor hands over a shell string. The Runtime-backed main slot uses Bash:
@@ -404,25 +442,22 @@ def exec_command(
     argv = [shell, "-c", command]
     if env:
         argv = ["env", *(f"{key}={value}" for key, value in env.items()), *argv]
-    spec: dict[str, Any] = {
-        "kind": "exec",
-        "command": argv,
-        "timeout_seconds": timeout_seconds,
-    }
-    if cwd:
-        spec["cwd"] = cwd
-    if service is not None and service != MAIN_SERVICE_NAME:
-        spec["service"] = service
-    return spec
+    return ExecCommand(
+        command=argv,
+        timeout_seconds=timeout_seconds,
+        cwd=cwd or None,
+        service=_sidecar(service),
+    )
 
 
-def download_command(path: str, *, service: str | None = None) -> dict[str, Any]:
+def download_command(path: str, *, service: str | None = None) -> DownloadCommand:
     """The download spec for one file, optionally out of a compose sidecar."""
 
-    spec: dict[str, Any] = {"kind": "download", "path": path}
-    if service is not None and service != MAIN_SERVICE_NAME:
-        spec["service"] = service
-    return spec
+    return DownloadCommand(path=path, service=_sidecar(service))
+
+
+def _sidecar(service: str | None) -> str | None:
+    return None if service == MAIN_SERVICE_NAME else service
 
 
 def _env_number[N: (int, float)](name: str, default: N) -> N:
@@ -436,8 +471,9 @@ class IntrospectionEnvironment(BaseEnvironment):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._spec = load_run_spec()
-        self._client: DataPlaneClient | None = None
-        self._control_plane: ControlPlaneClient | None = None
+        self._credentials: ProfileCredentials | None = None
+        self._client: AsyncIntrospectionClient | None = None
+        self._control_plane: RuntimeResolver | None = None
         self._task_id: str | None = None
         self._task_environment = os.environ.get(
             TASK_ENVIRONMENT_ENV, DEFAULT_TASK_ENVIRONMENT
@@ -542,15 +578,32 @@ class IntrospectionEnvironment(BaseEnvironment):
         return self._task_id
 
     @property
-    def client(self) -> DataPlaneClient:
+    def credentials(self) -> ProfileCredentials:
+        if self._credentials is None:
+            self._credentials = ProfileCredentials(
+                load_credentials(), reload=load_credentials
+            )
+        return self._credentials
+
+    @property
+    def client(self) -> AsyncIntrospectionClient:
+        """The SDK client every platform call in the trial goes through."""
+
         if self._client is None:
-            self._client = DataPlaneClient(load_credentials(), reload=load_credentials)
+            try:
+                control_plane = load_control_plane_credentials()
+            except DataPlaneError:
+                # Only a Runtime slug needs it; `control_plane` says so if one does.
+                control_plane = None
+            self._client = client_from_profile(self.credentials, control_plane)
         return self._client
 
     @property
-    def control_plane(self) -> ControlPlaneClient:
+    def control_plane(self) -> RuntimeResolver:
         if self._control_plane is None:
-            self._control_plane = ControlPlaneClient(load_control_plane_credentials())
+            self._control_plane = RuntimeResolver(
+                self.client, load_control_plane_credentials()
+            )
         return self._control_plane
 
     # -- lifecycle ---------------------------------------------------------
@@ -579,24 +632,19 @@ class IntrospectionEnvironment(BaseEnvironment):
         with tempfile.TemporaryDirectory() as scratch:
             archive = Path(scratch) / f"{name}-context.tar.gz"
             pack_dir_to_file(context, archive, compress=True)
-            uploaded = await self.client.upload_file(archive, name=archive.name)
+            uploaded = await self._upload_transfer(archive)
         try:
-            image = await self.client.create_image(
-                {
-                    "name": f"{self.environment_name}/{name}",
-                    "source": {
-                        "kind": "context",
-                        "file_id": uploaded["id"],
-                        "dockerfile": dockerfile,
-                    },
-                    "provenance": {"service": name},
-                }
-            )
+            with platform_call(f"building the {name!r} image"):
+                image = await self.client.images.create(
+                    name=f"{self.environment_name}/{name}",
+                    source=ContextImageSource(file_id=uploaded, dockerfile=dockerfile),
+                    provenance=ImageProvenance(service=name),
+                )
             return await self._await_image(image)
         finally:
             # Only once the build has read it. A later create with the same
             # content dedupes on the catalog row rather than re-reading this.
-            await self.client.delete_file(uploaded["id"])
+            await self._delete_transfer(uploaded)
 
     async def _mirror_sidecar(self, name: str, reference: str) -> str:
         if "@sha256:" not in reference:
@@ -604,35 +652,34 @@ class IntrospectionEnvironment(BaseEnvironment):
                 f"compose service {name!r} names {reference!r}; a mirrored image "
                 "must be digest-pinned so the trial is reproducible"
             )
-        image = await self.client.create_image(
-            {
-                "name": f"{self.environment_name}/{name}",
-                "source": {"kind": "mirror", "reference": reference},
-                "provenance": {"service": name},
-            }
-        )
+        with platform_call(f"mirroring the {name!r} image"):
+            image = await self.client.images.create(
+                name=f"{self.environment_name}/{name}",
+                source=MirrorImageSource(reference=reference),
+                provenance=ImageProvenance(service=name),
+            )
         return await self._await_image(image)
 
-    async def _await_image(self, image: dict[str, Any]) -> str:
+    async def _await_image(self, image: Image) -> str:
         deadline = asyncio.get_running_loop().time() + self._image_timeout
-        while image.get("status") not in IMAGE_TERMINAL_STATUSES:
+        while image.status not in IMAGE_TERMINAL_STATUSES:
             if asyncio.get_running_loop().time() >= deadline:
                 raise DataPlaneError(
-                    f"image {image['id']} did not build within "
-                    f"{self._image_timeout:.0f}s (status {image.get('status')!r})"
+                    f"image {image.id} did not build within "
+                    f"{self._image_timeout:.0f}s (status {image.status!r})"
                 )
             await asyncio.sleep(POLL_SECONDS)
-            image = await self.client.get_image(image["id"])
+            with platform_call(f"reading image {image.id}"):
+                image = await self.client.images.get(image.id)
 
-        if image.get("status") != IMAGE_READY_STATUS:
+        if image.status != IMAGE_READY_STATUS:
             raise DataPlaneError(
-                f"image {image['id']} is {image.get('status')!r}: "
-                f"{image.get('error') or 'no error recorded'}"
+                f"image {image.id} is {image.status!r}: "
+                f"{image.error or 'no error recorded'}"
             )
-        reference = pull_reference(image)
-        if not reference:
-            raise DataPlaneError(f"image {image['id']} is ready but has no reference")
-        return reference
+        if not image.pull_reference:
+            raise DataPlaneError(f"image {image.id} is ready but has no reference")
+        return image.pull_reference
 
     def create_task_body(
         self,
@@ -675,7 +722,7 @@ class IntrospectionEnvironment(BaseEnvironment):
         as the run lasts and says so, which leaves nothing to warn about.
         """
 
-        expires_at = self.client.credentials.expires_at
+        expires_at = self.credentials.credentials.expires_at
         if expires_at is None or os.environ.get(LOGIN_KEEPALIVE_ENV):
             return
         remaining = expires_at - time.time()
@@ -696,24 +743,27 @@ class IntrospectionEnvironment(BaseEnvironment):
         )
         references = await self.resolve_images(document)
         compose = translate_compose(document, references)
-        task = await self.client.create_task(self.create_task_body(runtime_id, compose))
-        self._task_id = task["id"]
-        await self._await_ready(task)
+        with platform_call("creating the trial task"):
+            created = await self.client.tasks.create(
+                **self.create_task_body(runtime_id, compose)
+            )
+        self._task_id = str(created.task.id)
+        await self._await_ready(created.task)
         await self.ensure_dirs(self._mount_targets(writable_only=True))
 
-    async def _await_ready(self, task: dict[str, Any]) -> None:
+    async def _await_ready(self, task: Task) -> None:
         deadline = asyncio.get_running_loop().time() + self._start_timeout
-        while task.get("status") not in TASK_COMMAND_READY_STATUSES:
-            if task.get("status") in TASK_TERMINAL_STATUSES:
+        while task.status not in TASK_COMMAND_READY_STATUSES:
+            if task.status in TASK_TERMINAL_STATUSES:
                 raise DataPlaneError(
-                    f"task {self.task_id} reached {task.get('status')!r} before it "
+                    f"task {self.task_id} reached {task.status!r} before it "
                     "was ready to accept commands"
                 )
             if asyncio.get_running_loop().time() >= deadline:
-                waiting = task.get("status") in ADMISSION_STATUSES
+                waiting = task.status in ADMISSION_STATUSES
                 raise DataPlaneError(
                     f"task {self.task_id} was not ready within "
-                    f"{self._start_timeout:.0f}s (status {task.get('status')!r})"
+                    f"{self._start_timeout:.0f}s (status {task.status!r})"
                     + (
                         "; it is still waiting for admission on the org's `eval` "
                         "lane. Lower Harbor's --n-concurrent-trials to the org's "
@@ -723,43 +773,54 @@ class IntrospectionEnvironment(BaseEnvironment):
                     )
                 )
             await asyncio.sleep(POLL_SECONDS)
-            task = await self.client.get_task(self.task_id)
+            with platform_call(f"reading task {self.task_id}"):
+                task = await self.client.tasks.get(self.task_id)
 
     @override
     async def stop(self, delete: bool) -> None:
         try:
             if delete and self._task_id is not None:
-                await self.client.delete_task(self._task_id)
+                # Best effort: without `tasks:delete` (Operator holds no
+                # destructive scope) the task's own ceiling releases the
+                # sandbox, and cleanup must not fail an otherwise valid score.
+                try:
+                    await self.client.tasks.delete(self._task_id)
+                except IntrospectionAPIError as exc:
+                    self.logger.debug("task %s not deleted: %s", self._task_id, exc)
         finally:
             self._task_id = None
+            self._control_plane = None
             if self._client is not None:
-                await self._client.aclose()
+                await self._client.shutdown()
                 self._client = None
-            if self._control_plane is not None:
-                await self._control_plane.aclose()
-                self._control_plane = None
 
     # -- commands ----------------------------------------------------------
 
     async def run_command(
-        self, spec: dict[str, Any], *, budget: float
-    ) -> dict[str, Any]:
+        self,
+        spec: ExecCommand | UploadCommand | DownloadCommand,
+        *,
+        budget: float,
+    ) -> TaskCommand:
         """Create a command and wait for it, in server-held slices."""
 
-        command = await self.client.create_command(self.task_id, spec)
+        commands = self.client.tasks.commands
+        with platform_call(f"sending a {spec.kind} command"):
+            command = await commands.create(self.task_id, spec)
         deadline = asyncio.get_running_loop().time() + budget
-        while command.get("status") not in COMMAND_TERMINAL_STATUSES:
+        while not command.status.is_terminal:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 raise DataPlaneError(
-                    f"command {command['id']} did not finish within {budget:.0f}s "
-                    f"(status {command.get('status')!r})"
+                    f"command {command.id} did not finish within {budget:.0f}s "
+                    f"(status {command.status!r})"
                 )
-            command = await self.client.get_command(
-                self.task_id,
-                command["id"],
-                wait_seconds=int(min(remaining, COMMAND_WAIT_SLICE_SECONDS)),
-            )
+            with platform_call(f"reading command {command.id}"):
+                command = await commands.get(
+                    self.task_id,
+                    command.id,
+                    wait_seconds=int(min(remaining, COMMAND_WAIT_SLICE_SECONDS)),
+                )
         return command
 
     async def _run_exec(
@@ -778,14 +839,14 @@ class IntrospectionEnvironment(BaseEnvironment):
         # The grace lets the server's own bound fire first, so a command that
         # overruns comes back as a recorded timeout rather than a lost row.
         row = await self.run_command(spec, budget=timeout + POLL_SECONDS * 2)
-        if row.get("status") == "failed" and row.get("exit_code") is None:
+        if row.status == "failed" and row.exit_code is None:
             raise DataPlaneError(
-                f"command {row['id']} failed: {row.get('error') or 'no error recorded'}"
+                f"command {row.id} failed: {row.error or 'no error recorded'}"
             )
-        exit_code = row.get("exit_code")
+        exit_code = row.exit_code
         return ExecResult(
-            stdout=row.get("stdout"),
-            stderr=row.get("stderr"),
+            stdout=row.stdout,
+            stderr=row.stderr,
             # A row that reached a terminal state without an exit code did not
             # run at all; a non-zero stand-in keeps that a failure to Harbor.
             return_code=1 if exit_code is None else int(exit_code),
@@ -848,37 +909,63 @@ class IntrospectionEnvironment(BaseEnvironment):
 
     @override
     async def upload_file(self, source_path: Path | str, target_path: str) -> None:
-        source = Path(source_path)
-        uploaded = await self.client.upload_file(source, name=source.name)
+        uploaded = await self._upload_transfer(Path(source_path))
         try:
-            spec = {"kind": "upload", "file_id": uploaded["id"], "path": target_path}
+            spec = UploadCommand(file_id=uploaded, path=target_path)
             row = await self.run_command(spec, budget=self._exec_timeout)
-            if row.get("status") != "completed":
+            if row.status != "completed":
                 raise DataPlaneError(
                     f"upload to {target_path} failed: "
-                    f"{row.get('error') or 'no error recorded'}"
+                    f"{row.error or 'no error recorded'}"
                 )
         finally:
             # The sandbox has the bytes now; the staged copy is scratch.
-            await self.client.delete_file(uploaded["id"])
+            await self._delete_transfer(uploaded)
 
     async def _download(
         self, source_path: str, target_path: Path | str, *, service: str | None
     ) -> None:
         spec = download_command(source_path, service=service)
         row = await self.run_command(spec, budget=self._exec_timeout)
-        file_id = row.get("output_file_id")
-        if row.get("status") != "completed" or not file_id:
+        file_id = row.output_file_id
+        if row.status != "completed" or file_id is None:
             raise DataPlaneError(
-                f"download of {source_path} failed: "
-                f"{row.get('error') or 'no error recorded'}"
+                f"download of {source_path} failed: {row.error or 'no error recorded'}"
             )
         try:
-            await self.client.download_file(file_id, Path(target_path))
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with platform_call(f"downloading file {file_id}"):
+                content = await self.client.files.download(str(file_id))
+            target.write_bytes(content)
         finally:
             # `download` writes its output through the encrypted store, so this
             # one is not raw — deleting it promptly is all the adapter can do.
-            await self.client.delete_file(file_id)
+            await self._delete_transfer(file_id)
+
+    async def _upload_transfer(self, source: Path) -> UUID:
+        """Stage *source* as a transient transfer file and return its id.
+
+        Unencrypted, in the raw blob store the build-context and upload-command
+        paths read: machine-generated tars intended for one transfer.
+        """
+
+        with platform_call(f"uploading {source.name}"):
+            uploaded = await self.client.files.upload(
+                file=source,
+                name=source.name,
+                metadata={"encryption": False, "purpose": TRANSFER_PURPOSE},
+            )
+        return uploaded.id
+
+    async def _delete_transfer(self, file_id: UUID) -> None:
+        """Best effort: Operator lacks `files:delete`, and a trial that failed
+        mid-transfer should surface that, not a cleanup error on top."""
+
+        try:
+            await self.client.files.delete(str(file_id))
+        except IntrospectionAPIError as exc:
+            self.logger.debug("transfer file %s not deleted: %s", file_id, exc)
 
     @override
     async def download_file(self, source_path: str, target_path: Path | str) -> None:

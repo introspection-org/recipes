@@ -17,6 +17,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from harbor.environments.base import BaseEnvironment
 from harbor.environments.tar_transfer import pack_dir_to_file
@@ -24,13 +25,14 @@ from harbor.models.task.config import TaskOS
 from harbor.models.trial.config import ServiceVolumeConfig
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.scripts import build_execution_command
+from introspection_sdk.schemas.task_commands import TaskCommand
+from pydantic import BaseModel
 
-from introspection_harbor.client import (
+from introspection_harbor.credentials import (
     CREDENTIALS_PATH,
     DataPlaneError,
     load_control_plane_credentials,
     load_credentials,
-    pull_reference,
 )
 from introspection_harbor.task_environment import (
     COMMAND_WAIT_SLICE_SECONDS,
@@ -51,6 +53,12 @@ from introspection_harbor.task_environment import (
     unused_dockerfile,
     verifier_egress_command,
 )
+
+
+def _wire(spec: BaseModel) -> dict:
+    """What the SDK puts on the wire for a command spec."""
+    return spec.model_dump(mode="json", exclude_none=True)
+
 
 COMPOSE = {
     "services": {
@@ -119,26 +127,40 @@ class ComposeTranslationTest(unittest.TestCase):
                 self.assertEqual(set(compose["volumes"]), set(HARBOR_VOLUME_MOUNTS))
 
 
+COMMAND_ID = "01990000-0000-7000-8000-0000000000c0"
+
+
+def _command(status: str) -> TaskCommand:
+    return TaskCommand.model_validate(
+        {
+            "id": COMMAND_ID,
+            "task_id": "01990000-0000-7000-8000-0000000000a0",
+            "kind": "exec",
+            "spec": {},
+            "status": status,
+            "created_at": "2026-10-27T00:00:00Z",
+            "updated_at": "2026-10-27T00:00:00Z",
+        }
+    )
+
+
 class CommandWaitTest(unittest.IsolatedAsyncioTestCase):
     async def test_held_reads_stay_below_the_proxy_timeout(self) -> None:
         environment = object.__new__(IntrospectionEnvironment)
         environment._task_id = "task-id"
         environment._client = AsyncMock()
-        environment._client.create_command.return_value = {
-            "id": "command-id",
-            "status": "running",
-        }
-        environment._client.get_command.return_value = {
-            "id": "command-id",
-            "status": "completed",
-        }
+        commands = environment._client.tasks.commands
+        commands.create.return_value = _command("running")
+        commands.get.return_value = _command("completed")
 
-        result = await environment.run_command({"kind": "exec"}, budget=90)
+        result = await environment.run_command(
+            exec_command("true", cwd=None, env=None, timeout_seconds=30), budget=90
+        )
 
-        self.assertEqual(result["status"], "completed")
-        environment._client.get_command.assert_awaited_once_with(
+        self.assertEqual(result.status, "completed")
+        commands.get.assert_awaited_once_with(
             "task-id",
-            "command-id",
+            UUID(COMMAND_ID),
             wait_seconds=COMMAND_WAIT_SLICE_SECONDS,
         )
         self.assertLess(COMMAND_WAIT_SLICE_SECONDS, 30)
@@ -295,7 +317,7 @@ class ExecSpecTest(unittest.TestCase):
         # There is no per-command environment field on the row, so variables
         # ride an `env` prefix into the same process.
         self.assertEqual(
-            exec_command("pytest -q", cwd=None, env=None, timeout_seconds=30),
+            _wire(exec_command("pytest -q", cwd=None, env=None, timeout_seconds=30)),
             {
                 "kind": "exec",
                 "command": ["/bin/bash", "-c", "pytest -q"],
@@ -303,8 +325,10 @@ class ExecSpecTest(unittest.TestCase):
             },
         )
         self.assertEqual(
-            exec_command(
-                "pytest -q", cwd="/workspace", env={"CI": "1"}, timeout_seconds=30
+            _wire(
+                exec_command(
+                    "pytest -q", cwd="/workspace", env={"CI": "1"}, timeout_seconds=30
+                )
             ),
             {
                 "kind": "exec",
@@ -434,15 +458,25 @@ class ServiceScopedSpecTest(unittest.TestCase):
             with self.subTest(service=service):
                 self.assertNotIn(
                     "service",
-                    exec_command(
-                        "true", cwd=None, env=None, timeout_seconds=30, service=service
+                    _wire(
+                        exec_command(
+                            "true",
+                            cwd=None,
+                            env=None,
+                            timeout_seconds=30,
+                            service=service,
+                        )
                     ),
                 )
-                self.assertNotIn("service", download_command("/out", service=service))
+                self.assertNotIn(
+                    "service", _wire(download_command("/out", service=service))
+                )
 
         self.assertEqual(
-            exec_command(
-                "grade.sh", cwd=None, env=None, timeout_seconds=30, service="grader"
+            _wire(
+                exec_command(
+                    "grade.sh", cwd=None, env=None, timeout_seconds=30, service="grader"
+                )
             ),
             {
                 "kind": "exec",
@@ -452,7 +486,7 @@ class ServiceScopedSpecTest(unittest.TestCase):
             },
         )
         self.assertEqual(
-            download_command("/out/reward.txt", service="grader"),
+            _wire(download_command("/out/reward.txt", service="grader")),
             {"kind": "download", "path": "/out/reward.txt", "service": "grader"},
         )
 
@@ -467,18 +501,6 @@ class ServiceScopedSpecTest(unittest.TestCase):
         ):
             with self.subTest(method=name):
                 self.assertIn(name, vars(IntrospectionEnvironment))
-
-
-class ImageReferenceTest(unittest.TestCase):
-    def test_a_reference_needs_both_halves_to_be_pullable(self) -> None:
-        self.assertEqual(
-            pull_reference({"image_ref": "r/i", "image_digest": "sha256:a"}),
-            "r/i@sha256:a",
-        )
-        # A row that is not ready yet has one half or neither, and naming it
-        # in a compose service would resolve to nothing.
-        self.assertIsNone(pull_reference({"image_ref": "r/i"}))
-        self.assertIsNone(pull_reference({}))
 
 
 class TrialTimeoutTest(unittest.TestCase):
@@ -677,10 +699,9 @@ class StartPreparesHarborDirectoriesTest(unittest.IsolatedAsyncioTestCase):
             for path in harbor_mounts
         ]
         environment._client = AsyncMock()
-        environment._client.create_task.return_value = {
-            "id": "task-id",
-            "status": "pending",
-        }
+        environment._client.tasks.create.return_value = SimpleNamespace(
+            task=SimpleNamespace(id="task-id", status="pending")
+        )
         order: list[str] = []
         environment._await_ready = AsyncMock(
             side_effect=lambda task: order.append("ready")
