@@ -534,6 +534,13 @@ describe("differences of a toon answer", () => {
     expect(read('id: 1\ntitle: "A"')).toEqual([]);
     expect(read('id: "1"', true)).toEqual(["$.id: type string, observed integer"]);
   });
+
+  test("holds an empty array to the length form the real server writes", () => {
+    expect(read("id: 1\ntags[0]:", true)).toEqual([]);
+    expect(read("id: 1\ntags: []", true)).toEqual([
+      "line 2: not written as the TOON encoder writes it (quoting or layout), which every observed result was",
+    ]);
+  });
 });
 
 describe("differences of a prefixed_json answer", () => {

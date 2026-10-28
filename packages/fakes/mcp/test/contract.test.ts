@@ -125,6 +125,22 @@ describe("formats", () => {
     expect(decode(answer, encode(answer, value))).toEqual(value);
   });
 
+  // The real server's encoder gives an empty array its length (`key[0]:`, which TOON spec 3.3
+  // allows), as @toon-format/toon did up to 2.2.0; from 2.3 the library writes `key: []`. Each
+  // expected text is what 2.2.0 wrote.
+  test.each([
+    ["under a key", { records: [], has_more: false }, "records[0]:\nhas_more: false"],
+    ["at the root", [], "[0]:"],
+    ["nested in an object", { a: { b: [], c: 1 } }, "a:\n  b[0]:\n  c: 1"],
+    ["as a list item", { items: [[], [1]] }, "items[2]:\n  - [0]:\n  - [1]: 1"],
+    ["under quoted keys", { "a b": [], "x:y": [] }, '"a b"[0]:\n"x:y"[0]:'],
+    ['not for the string "[]"', { s: "[]" }, 's: "[]"'],
+    ['not for the string ": []"', { s: ": []" }, 's: ": []"'],
+  ])("writes an empty array in toon as the real server's encoder does, %s", (_, value, text) => {
+    expect(encode({ format: "toon" }, value)).toBe(text);
+    expect(decode({ format: "toon" }, text)).toEqual(value);
+  });
+
   test("refuses a prefixed answer without its prefix or suffix, and an unknown format", () => {
     expect(() => decode({ format: "prefixed_json", prefix: "Sent! " }, '{"id":1}')).toThrow(
       'the answer does not start with "Sent! "',

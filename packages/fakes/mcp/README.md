@@ -157,8 +157,10 @@ export function register(server: McpServer, state: State) {
 - **`answer(name, value)`** encodes the value in the tool's format
   (`encode`), putting a `prefixed_json` answer's prefix before its JSON; a tool
   that states an `outputSchema` answers with `structured(value)`. TOON is
-  written by `@toon-format/toon` 2.2.0, pinned exactly: it is the last version
-  that writes TOON spec 3.0.
+  written by `@toon-format/toon`, with an empty array under a key or at the
+  root rewritten from the library's `key: []` to the length form `key[0]:`,
+  as the real server's encoder writes it (TOON spec 3.3 allows both). The
+  canonical-TOON check in `observed.ts` uses the same encoder.
 - **`text(value, isError?)`** builds a text result, for a tool error.
 - **`structured<T>(value)`** builds the result of a tool that declares an
   output schema: the structured content, and its JSON as the text item.

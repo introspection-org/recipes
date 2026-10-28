@@ -4,8 +4,9 @@
 // observed schema masked is held to its `x-masked-values` only once sampled as often. TOON is also held to how the TOON
 // encoder writes it wherever every observed result was, prefixed JSON to its observed text
 // before and after the JSON, and other text to its observed first line only.
-import { decode as decodeToon, encode as encodeToon } from "@toon-format/toon";
+import { decode as decodeToon } from "@toon-format/toon";
 import type { Entry, Observed, ObservedAnswer } from "./contract.js";
+import { encodeToon } from "./formats.js";
 import type { RecordedCall } from "./server.js";
 
 /**

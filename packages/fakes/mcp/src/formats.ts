@@ -1,20 +1,30 @@
 // The formats a tool answers in, as `introspection bindings mcp observe` names them: `json`,
 // `toon`, `prefixed_json` (JSON between fixed text) and `text`. A fake writes its answers with
 // `encode` and the readers decode them back, so no fake brings its own codec.
-import { decode as decodeToon, encode as encodeToon } from "@toon-format/toon";
+import { decode as decodeToon, encode as encodeToonLibrary } from "@toon-format/toon";
 import type { Answer } from "./contract.js";
 
 /** The formats `encode` and `decode` know. */
 export const FORMATS = ["json", "toon", "prefixed_json", "text"] as const;
 
-// An answer's value as the text the server sends. TOON is spec 3.0, which @toon-format/toon
-// writes up to 2.2.0; hence the exact pin in package.json.
+// A value as TOON the way the real server's encoder writes it. From 2.3, @toon-format/toon writes
+// an empty array under a key or at the root as `key: []` / `[]`, the form TOON spec 3.3 prefers;
+// the spec still allows the length form `key[0]:` / `[0]:` (section 9.1), which the real server
+// writes and toon-python reads (it decodes `[]` as a string), so it is rewritten to that. A string
+// "[]" is always quoted, and an empty array as a list item is already written `- [0]:`.
+export function encodeToon(value: unknown): string {
+  return encodeToonLibrary(value as never)
+    .replace(/^(\s*(?:- )?)((?:"(?:[^"\\]|\\.)*"|[^\s:"][^:]*?)?): \[\]$/gm, "$1$2[0]:")
+    .replace(/^\[\]$/, "[0]:");
+}
+
+// An answer's value as the text the server sends.
 export function encode(answer: Answer, value: unknown): string {
   if (answer.format === "text") return String(value);
   if (answer.format === "json") return JSON.stringify(value);
   if (answer.format === "prefixed_json")
     return `${answer.prefix ?? ""}${JSON.stringify(value)}${answer.suffix ?? ""}`;
-  if (answer.format === "toon") return encodeToon(value as never);
+  if (answer.format === "toon") return encodeToon(value);
   throw new Error(`no format ${answer.format}`);
 }
 
