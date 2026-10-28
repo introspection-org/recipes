@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.2.1...vitest-evals-v0.3.0) (2026-10-28)
+
+
+### Features
+
+* **vitest-evals:** add fakesHarness, piToolCalls and serverCalls ([#618](https://github.com/introspection-org/introspection-cli/issues/618)) ([b528e88](https://github.com/introspection-org/introspection-cli/commit/b528e88670aaf0e9a2e80f22e6f486c70cd16a9f))
+
 ## [0.2.1](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.2.0...vitest-evals-v0.2.1) (2026-10-19)
 
 

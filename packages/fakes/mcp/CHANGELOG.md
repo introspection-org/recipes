@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.2...mcp-fakes-v0.3.0) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp-fakes:** a Fake must export `contract`; `checkRecipeFakes` no longer reads `fakes/mcp/<id>/tools.json` and its `fakesDir` option is gone; `typebox` 1 is a peer dependency.
+* **mcp-fakes:** `mcp-fakes bundle` and `checkRecipeFakes`' `bundle` option are removed, and `introspection local` no longer runs `fakes/dist/sidecar.js`. A Recipe installs its fakes' dependencies and runs `mcp-fakes serve`; its fakes import each other with `.ts` specifiers.
+
+### Features
+
+* **bindings:** write tools.ts and observed.ts, type mcp-fakes fakes by their contract, and drop observe --verify ([#619](https://github.com/introspection-org/introspection-cli/issues/619)) ([47b6e9a](https://github.com/introspection-org/introspection-cli/commit/47b6e9a938cfbfa0e6b0999c108d8f7d2d098fe7))
+* **harbor:** read MCP fakes' answers and one server's calls in a verifier ([#620](https://github.com/introspection-org/introspection-cli/issues/620)) ([0088438](https://github.com/introspection-org/introspection-cli/commit/0088438b5a908db3e961d1f0c81b4c10e4420cd6))
+* **local:** run a Recipe against its MCP fakes with --scenario and --fakes ([#563](https://github.com/introspection-org/introspection-cli/issues/563)) ([591f702](https://github.com/introspection-org/introspection-cli/commit/591f70283a6734ed7a4eb4ba1fdc439ec147ea6f))
+* **mcp-fakes:** serve a Recipe's fakes with `mcp-fakes serve`, and drop the sidecar bundle ([#616](https://github.com/introspection-org/introspection-cli/issues/616)) ([5847edf](https://github.com/introspection-org/introspection-cli/commit/5847edfa4afa020630ef38b6ec41041f21987414))
+
+
+### Bug Fixes
+
+* **mcp-fakes:** check masked values only after enough samples ([#631](https://github.com/introspection-org/introspection-cli/issues/631)) ([1f26372](https://github.com/introspection-org/introspection-cli/commit/1f26372cbe163a9d5ee797e2894db2a92402b01e))
+* **mcp-fakes:** write TOON empty arrays in the length form the real server writes ([#630](https://github.com/introspection-org/introspection-cli/issues/630)) ([b68cea3](https://github.com/introspection-org/introspection-cli/commit/b68cea3964fbec7e0ba0b925d5af0102c7f09b74))
+
 ## [0.2.2](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.2.1...mcp-fakes-v0.2.2) (2026-10-19)
 
 
