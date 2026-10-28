@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.3.0...vitest-evals-v0.4.0) (2026-10-28)
+
+
+### Features
+
+* **cli:** share CI reports and publish offline judgement results ([#646](https://github.com/introspection-org/introspection-cli/issues/646)) ([28ffa32](https://github.com/introspection-org/introspection-cli/commit/28ffa327b9f73300fb38ac8de8358814a7300433))
+
 ## [0.3.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.2.1...vitest-evals-v0.3.0) (2026-10-28)
 
 
