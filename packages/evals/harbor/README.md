@@ -16,6 +16,13 @@ introspection eval run --runner harbor --path evals/refund-task --agent agent2
 The selected agent YAML is the only source of the evaluated model; the CLI and
 adapter do not apply a separate model override.
 
+The CLI records that declared model as `candidate.model` in the run spec and
+`run.json`. The `native` adapter accepts it as candidate metadata and submits
+only the prompt to the task. The Runtime loads the selected agent from the
+candidate Recipe commit and uses its declared model. The CLI checks the model
+observed in the returned trajectory against `candidate.model` and records it as
+`result.observed_model` in `run.json`.
+
 ### Harbor's own agents
 
 A prefixed agent names one of Harbor's agents instead of a Recipe agent:

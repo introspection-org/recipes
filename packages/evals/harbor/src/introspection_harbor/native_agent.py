@@ -85,12 +85,6 @@ class IntrospectionNativeAgent(BaseAgent):
     async def setup(self, environment: BaseEnvironment) -> None:
         # The Runtime image runs the Recipe itself; there is nothing to install.
         task_environment = _task_environment(environment)
-        if model := self._spec["candidate"].get("model"):
-            raise ValueError(
-                f"the introspection-native agent cannot run the candidate on "
-                f"{model!r}: a task run takes the Runtime's own model, with no "
-                "per-run override. Drop the model, or use the runtime adapter."
-            )
         if (self._spec.get("input") or {}).get("replay_context_path"):
             raise ValueError(
                 "the introspection-native agent cannot replay a production "

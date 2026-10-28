@@ -25,7 +25,11 @@ from introspection_harbor.task_environment import IntrospectionEnvironment
 
 SPEC = {
     "schema_version": 2,
-    "candidate": {"runtime": "refunds", "agent": None, "model": None},
+    "candidate": {
+        "runtime": "refunds",
+        "agent": "agent",
+        "model": "anthropic/claude-sonnet-4-6",
+    },
     "input": {},
 }
 
@@ -134,6 +138,7 @@ class NativeRunTest(unittest.IsolatedAsyncioTestCase):
         agent, environment = _fixture(_handle(), items)
         context = AgentContext()
 
+        await agent.setup(environment)
         await agent.run("Refund order 7", environment, context)
 
         environment._client.tasks.runs.create.assert_awaited_once_with(
@@ -244,12 +249,6 @@ class NativeRunTest(unittest.IsolatedAsyncioTestCase):
 
 
 class NativeSetupTest(unittest.IsolatedAsyncioTestCase):
-    async def test_a_candidate_model_is_refused_rather_than_ignored(self) -> None:
-        agent, environment = _fixture(_handle(), _Items([]))
-        agent._spec = {**SPEC, "candidate": {**SPEC["candidate"], "model": "gpt-5"}}
-        with self.assertRaisesRegex(ValueError, "no per-run override"):
-            await agent.setup(environment)
-
     async def test_a_replay_is_refused_rather_than_run_fresh(self) -> None:
         agent, environment = _fixture(_handle(), _Items([]))
         agent._spec = {**SPEC, "input": {"replay_context_path": "/tmp/replay.json"}}
