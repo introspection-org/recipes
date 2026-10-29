@@ -412,7 +412,7 @@ async function configureSessionMcp(
   if (selections.length === 0) {
     return { available: false, materialized: false };
   }
-  const mode = recipe.mcp?.mode ?? "tools";
+  const mode = recipe.mcp?.mode ?? "cli";
   const hostProvisioned = opts.mcpProvisioning === "host";
   const mcpCwd = opts.mcpRuntimeDir ?? cwd;
   const snapshot =
@@ -899,7 +899,7 @@ async function createSessionForAgent(
       ...codemodeToolNames,
     ];
     const environmentBash: ToolDefinition | undefined =
-      recipe.mcp?.mode === "cli" &&
+      (recipe.mcp?.mode ?? "cli") === "cli" &&
       mcp.available &&
       env !== process.env &&
       tools.includes("bash") &&

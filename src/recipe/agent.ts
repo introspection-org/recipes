@@ -46,12 +46,11 @@ export interface RecipeAgentMcpServer {
 export type RecipeAgentMcpMode = "cli" | "tools";
 
 export interface RecipeAgentMcp {
-  /** Omission defaults to `tools`; `cli` is deprecated. */
+  /** Omission inherits the parent mode or defaults the resolved root to CLI. */
   mode?: RecipeAgentMcpMode;
   /**
    * Add Pi's `codemode` tool, so the model can compose and batch MCP calls in a
-   * script; the tools stay callable directly. Defaults to true in `tools` mode
-   * and is invalid in `cli` mode.
+   * script; the tools stay callable directly. Requires `mode: tools`.
    */
   codemode?: boolean;
   /** Authorization selection, still upper-bounded by package.json#pi.mcp. */
@@ -386,7 +385,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     Array.isArray(raw.servers) ||
     (Object.hasOwn(raw, "codemode") &&
       (typeof raw.codemode !== "boolean" ||
-        (raw.codemode && raw.mode === "cli"))) ||
+        (raw.codemode && raw.mode !== "tools"))) ||
     Object.keys(raw).some(
       (key) => !["mode", "codemode", "servers"].includes(key)
     );

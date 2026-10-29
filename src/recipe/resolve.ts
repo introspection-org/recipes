@@ -361,8 +361,8 @@ function buildResolvedRecipeAgent(
       ? {
           mcp: {
             ...agent.mcp,
-            mode: agent.mcp.mode ?? "tools",
-            codemode: agent.mcp.codemode ?? agent.mcp.mode !== "cli",
+            mode: agent.mcp.mode ?? "cli",
+            codemode: agent.mcp.codemode ?? false,
           },
         }
       : {}),

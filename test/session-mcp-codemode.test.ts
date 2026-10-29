@@ -107,15 +107,8 @@ describe("Recipe session MCP codemode", () => {
     ).toContain(piMcpToolName("contacts", "search_contacts"));
   });
 
-  it("brings codemode by default in tools mode", async () => {
+  it("leaves codemode out unless the agent asks for it", async () => {
     const { fixture, handle } = await session(undefined);
-    cleanups.push(fixture.cleanup);
-    handles.push(handle);
-    expect(handle.session.getActiveToolNames()).toContain("codemode");
-  });
-
-  it("leaves codemode out when the agent refuses it", async () => {
-    const { fixture, handle } = await session(false);
     cleanups.push(fixture.cleanup);
     handles.push(handle);
     expect(
