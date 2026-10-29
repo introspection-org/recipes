@@ -76,6 +76,13 @@ describe("MCP tools mode", () => {
     mocks.callMcpDaemonTool.mockReset();
   });
 
+  it("exports the Pi tool name so an extension can recognise an MCP tool's calls", async () => {
+    const api = await import("../src/api/mcp.js");
+    expect(api.piMcpToolName("gmail", "gmail-find-email")).toBe(
+      piMcpToolName("gmail", "gmail-find-email")
+    );
+  });
+
   it("uses stable provider-safe names no longer than 64 characters", () => {
     const first = piMcpToolName(
       "server with spaces",

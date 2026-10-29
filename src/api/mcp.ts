@@ -20,3 +20,4 @@ export type {
   McpToolCatalogEntry,
 } from "../mcp/index.js";
 export type { ScopedMcpToolSelection } from "../mcp/policy.js";
+export { piMcpToolName } from "../mcp/tools.js";
