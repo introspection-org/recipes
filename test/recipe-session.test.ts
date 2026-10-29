@@ -275,7 +275,7 @@ describe("resolved Recipe agents", () => {
 
     expect(resolved.mcp).toEqual({
       mode: "tools",
-      codemode: false,
+      codemode: true,
       servers: {
         contacts: {
           include: ["*"],
@@ -286,7 +286,7 @@ describe("resolved Recipe agents", () => {
     });
   });
 
-  it("resolves codemode only alongside tools mode", () => {
+  it("defaults to tools mode with codemode, and refuses codemode in cli mode", () => {
     const agent = (mcp: string[]) => {
       const recipeDir = makeRecipe();
       writeFileSync(
@@ -325,6 +325,12 @@ describe("resolved Recipe agents", () => {
       true
     );
     expect(agent(["  mode: cli"])().mcp?.codemode).toBe(false);
+    // An omitted mode is tools, and tools mode brings codemode unless refused.
+    expect(agent([])().mcp).toMatchObject({ mode: "tools", codemode: true });
+    expect(
+      agent(["  mode: tools", "  codemode: false"])().mcp?.codemode
+    ).toBe(false);
+    expect(agent(["  codemode: true"])().mcp?.codemode).toBe(true);
     expect(agent(["  mode: cli", "  codemode: true"])).toThrow(
       "has an invalid MCP policy"
     );

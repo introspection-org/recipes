@@ -2090,7 +2090,15 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
         return Some(AgentMcpConfig::default());
     };
     let mode = match mcp.get("mode") {
-        Some(JsonValue::String(value)) if value == "cli" => Some(AgentMcpMode::Cli),
+        Some(JsonValue::String(value)) if value == "cli" => {
+            ctx.warning(
+                "agent.mcp_mode_cli_deprecated",
+                path,
+                "Agent mcp.mode: cli is deprecated: the mcp command it provides is going away",
+                Some("use mcp.mode: tools (the default), with codemode for scripts that call several tools"),
+            );
+            Some(AgentMcpMode::Cli)
+        }
         Some(JsonValue::String(value)) if value == "tools" => Some(AgentMcpMode::Tools),
         Some(_) => {
             ctx.error(
@@ -2130,7 +2138,7 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
     };
     match mcp.get("codemode") {
         None | Some(JsonValue::Bool(false)) => {}
-        Some(JsonValue::Bool(true)) if mode == Some(AgentMcpMode::Tools) => {}
+        Some(JsonValue::Bool(true)) if mode != Some(AgentMcpMode::Cli) => {}
         Some(JsonValue::Bool(true)) => ctx.error(
             "agent.mcp_codemode_invalid",
             path,
@@ -2601,7 +2609,7 @@ fn validate_resolved_agent_mcp(
         .map(|agent| agent.path.clone())
         .unwrap_or_default();
 
-    if mcp.mode != Some(AgentMcpMode::Tools)
+    if mcp.mode == Some(AgentMcpMode::Cli)
         && mcp
             .servers
             .values()
@@ -3587,13 +3595,42 @@ mod tests {
     }
 
     #[test]
+    fn warns_that_cli_mode_is_deprecated() {
+        let cli = selector_recipe(
+            json!({ "include": ["search_profiles"] }),
+            "  mode: cli\n  servers:\n    salesforce:\n      include:\n        - search_profiles\n",
+            true,
+        );
+        let report = check_recipe_files(&cli);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let warning = report
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "agent.mcp_mode_cli_deprecated")
+            .expect("cli mode warns");
+        assert_eq!(warning.severity, Severity::Warning);
+
+        let default = selector_recipe(
+            json!({ "include": ["search_profiles"] }),
+            "  servers:\n    salesforce:\n      include:\n        - search_profiles\n      defer:\n        - '*'\n",
+            true,
+        );
+        let report = check_recipe_files(&default);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(!report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "agent.mcp_mode_cli_deprecated"));
+    }
+
+    #[test]
     fn accepts_codemode_only_in_tools_mode() {
         for (mcp, accepted) in [
             ("  mode: tools\n  codemode: true\n", true),
             ("  mode: tools\n  codemode: false\n", true),
             ("  mode: cli\n  codemode: false\n", true),
             ("  mode: cli\n  codemode: true\n", false),
-            ("  codemode: true\n", false),
+            ("  codemode: true\n", true),
             ("  mode: tools\n  codemode: yes please\n", false),
         ] {
             let input = selector_recipe(

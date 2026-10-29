@@ -65,7 +65,7 @@ instructions.
 
 ## Agent-facing command boundary
 
-Recipe sessions expose only `mcp search`, `mcp list`, `mcp call`, and `mcp run`.
+Recipe sessions in the deprecated CLI mode expose only `mcp search`, `mcp list`, `mcp call`, and `mcp run`.
 Interactive authentication and administrative and
 developer commands (`config`, `vault`, `generate-cli`, `emit-ts`, `record`,
 `replay`, `daemon`, and `serve`) are intentionally unavailable. URL selectors,

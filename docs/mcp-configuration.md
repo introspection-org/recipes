@@ -69,10 +69,7 @@ An agent selects a subset of the package-permitted servers and tools. It cannot
 add capability that the package did not declare.
 
 ```yaml
-tools:
-  - bash
 mcp:
-  mode: cli
   servers:
     contacts:
       include:
@@ -83,9 +80,7 @@ Omitting a server—or the entire agent `mcp` block—means no access. `exclude`
 removes exact names after inclusion and always wins. MCP tools are selected here,
 not in the agent's ordinary `tools` list.
 
-`mode: cli` creates the session-local `mcp` command.
-
-`mode: tools` registers every authorized MCP tool with Pi. Server-local
+`mode: tools`, the default, registers every authorized MCP tool with Pi. Server-local
 `defer` selectors control which authorized tools start hidden from the model;
 `eager` subtracts exceptions from that deferred set:
 
@@ -115,7 +110,8 @@ change in the session, so loaded tools survive resume. It never grants access
 beyond the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
 
-`codemode: true` adds Pi's `codemode` tool beside the MCP tools. The model
+Tools mode also adds Pi's `codemode` tool beside the MCP tools, unless the
+agent sets `codemode: false`. The model
 writes a JavaScript script that calls them as `tools.<name>(args)`, batching
 independent calls or chaining dependent ones in one step, and only the script's
 output enters the context. Scripts reach every authorized MCP tool, deferred
@@ -125,14 +121,9 @@ call. The tools stay callable directly; a single call needs no script. Scripts
 get tools only: Recipes leaves out codemode's `models` namespace, which would
 call models the Recipe never declared.
 
-```yaml
-mcp:
-  mode: tools
-  codemode: true
-  servers:
-    contacts:
-      include: ["*"]
-```
+`mode: cli` is deprecated: it gives the shell a session-local `mcp` command
+instead, and `recipes check` warns on it. A script that called `mcp run`
+becomes a codemode script, and `mcp call` a direct tool call.
 
 `defer`, `eager` and `codemode` are invalid in CLI mode. An omitted agent `mcp` block
 inherits its base policy. Once a child declares `mcp`, the complete block
@@ -191,7 +182,7 @@ local Pi environment or embedding host supplies them.
 
 ## Use capabilities from an agent
 
-In CLI mode, Recipes creates a session-local `mcp` command containing only the
+In the deprecated CLI mode, Recipes creates a session-local `mcp` command containing only the
 selected agent's authorized tools. Delegating to another agent does not grant
 the parent direct access to that child's MCP capabilities. Search shows each
 match's full contract, so the next step is the call: `mcp call` for one, `mcp

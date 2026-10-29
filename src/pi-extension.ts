@@ -216,7 +216,7 @@ function mcpSelectionsForAgent(agent: RecipeAgentDefinition) {
 }
 
 function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentMcpMode {
-  return state.resolved.mcp?.mode ?? "cli";
+  return state.resolved.mcp?.mode ?? "tools";
 }
 
 function textResult<TDetails>(text: string, details: TDetails) {
@@ -735,7 +735,7 @@ export function createRecipesExtension(
       extensionsLoaded: false,
       configured: false,
       mcpConfigured: false,
-      agentMcpMode: "cli",
+      agentMcpMode: "tools",
       initialMcpToolNames: [],
       mcpDeferredToolNames: [],
       mcpCodemodeToolNames: [],
