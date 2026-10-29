@@ -33,6 +33,13 @@ target could read ``logs_dir`` while it runs. Everything the run writes (Pi's
 events and session, each prompt sent, what the Recipe writes to
 ``context.logs_dir``) is therefore kept in a host temp directory and copied
 into ``logs_dir`` only when Pi has exited and every primitive call has ended.
+
+In a trial with a user agent Harbor calls only the user agent's
+``populate_context_post_run``, so ``populate_context_post_run`` here also runs
+the target's own: that is what writes the target's ATIF to its ``logs_dir``
+(``/logs/agent/trajectory.json``), the file a verifier reads. Harbor calls the
+hook only on an empty context, so ``run`` leaves the context to it. Harbor
+calling both hooks itself is harbor-framework/harbor#3971.
 """
 
 from __future__ import annotations
@@ -51,6 +58,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, override
 
 from harbor.agents.base import BaseAgent
+from harbor.agents.factory import AgentFactory
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
@@ -409,6 +417,7 @@ class PiRecipeUserAgent(BaseAgent):
             if os.sep in pi_command or "/" in pi_command
             else pi_command
         )
+        self._run_metadata: dict[str, Any] | None = None
 
     @staticmethod
     @override
@@ -482,18 +491,60 @@ class PiRecipeUserAgent(BaseAgent):
             # Every primitive call has ended before anything is copied.
             await server.close()
             metadata = self._keep_logs(work_dir)
-            context.metadata = {
-                **(context.metadata or {}),
-                "user_agent": {
-                    "exit_code": exit_code,
-                    "prompts": primitives.prompts,
-                    **({"metadata": metadata} if metadata is not None else {}),
-                },
+            self._run_metadata = {
+                "exit_code": exit_code,
+                "prompts": primitives.prompts,
+                **({"metadata": metadata} if metadata is not None else {}),
             }
         if exit_code != 0:
             raise RuntimeError(
                 f"Pi exited {exit_code}; see {self.logs_dir / PI_STDERR_FILENAME}"
             )
+
+    @override
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        """Record the run, and run the target's own hook on the target's logs.
+
+        Harbor has copied both roles' logs to the host by now and uploads them
+        back to the environment before the verifier runs, so the trajectory
+        the target writes covers every prompt of the conversation. What the
+        target puts in its context (its usage) is kept under ``target``: the
+        trial's context is the user agent's.
+        """
+
+        metadata: dict[str, Any] = {}
+        if self._run_metadata is not None:
+            metadata["user_agent"] = self._run_metadata
+        target = self._target_agent()
+        if target is not None:
+            target_context = AgentContext()
+            target.populate_context_post_run(target_context)
+            if not target_context.is_empty():
+                metadata["target"] = target_context.model_dump(
+                    mode="json", exclude_none=True
+                )
+        if metadata:
+            context.metadata = {**(context.metadata or {}), **metadata}
+
+    def _target_agent(self) -> BaseAgent | None:
+        """The trial's target agent, made again from the trial's config.
+
+        Harbor hands the user agent no reference to the target, but writes the
+        trial's config next to both roles' log directories before any agent
+        runs. A user agent run outside such a trial has no target.
+        """
+
+        # Only this hook reads a trial's layout.
+        from harbor.models.trial.config import TrialConfig
+        from harbor.models.trial.paths import TrialPaths
+
+        paths = TrialPaths(trial_dir=self.logs_dir.parent)
+        if self.logs_dir != paths.user_agent_dir or not paths.config_path.is_file():
+            return None
+        config = TrialConfig.model_validate_json(paths.config_path.read_text())
+        return AgentFactory.create_agent_from_config(
+            config.agent, logs_dir=paths.agent_dir, logger=self.logger
+        )
 
     def _keep_logs(self, work_dir: Path) -> Any:
         """Copy the run's directory into ``logs_dir`` and drop it.

@@ -584,10 +584,11 @@ class RecipeAgentBase(BaseInstalledAgent, ACPAgentMixin):
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:
         output_path = self.logs_dir / self._OUTPUT_FILENAME
-        if not output_path.is_file():
-            return
         spans_path = self.logs_dir / SPANS_FILENAME
-        if not spans_path.is_file() and not pi_messages(output_path.read_text()):
+        # As an ACP target Pi writes the spans but no event stream.
+        if not spans_path.is_file() and (
+            not output_path.is_file() or not pi_messages(output_path.read_text())
+        ):
             # Pi stopped before its session started, so there is no
             # conversation and the run's own error is the one to report.
             return
@@ -615,7 +616,7 @@ class RecipeAgentBase(BaseInstalledAgent, ACPAgentMixin):
             context.n_cache_tokens = step.final_metrics.total_cached_tokens
             context.cost_usd = step.final_metrics.total_cost_usd
         context.metadata = {
-            "pi_events": self._OUTPUT_FILENAME,
+            **({"pi_events": self._OUTPUT_FILENAME} if output_path.is_file() else {}),
             "atif": "trajectory.json",
             "introspection": (self._spec.get("input") or {}).get("metadata"),
         }

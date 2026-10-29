@@ -732,6 +732,16 @@ bridge, so `acpx` is only there once `run` starts. `run` starts
 once, for the whole conversation, in a fresh host temp directory. Pi's exit
 ends the run, and a non-zero exit fails it.
 
+Harbor 0.24 calls only the user agent's `populate_context_post_run` in such a
+trial, so the target would write no `/logs/agent/trajectory.json` and a
+verifier would read an empty conversation
+([harbor#3971](https://github.com/harbor-framework/harbor/issues/3971)). The
+user agent's hook therefore also runs the target's own hook on the target's
+logs (Claude Code's session JSONL, a Recipe's GenAI spans), with the target
+made again from the trial's `config.json`. The target's trajectory covers every
+prompt the owner sent; its usage is kept under `metadata.target` in the trial's
+agent result.
+
 ### The primitives
 
 The primitives are MCP tools on a streamable-HTTP server inside the Harbor

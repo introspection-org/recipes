@@ -15,7 +15,9 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
+from harbor.agents.base import BaseAgent
 from harbor.models.agent.context import AgentContext
+from harbor.models.trial.config import AgentConfig, TaskConfig, TrialConfig
 
 from introspection_harbor.pi_user_agent import (
     REMOTE_PROMPT_PATH,
@@ -536,6 +538,9 @@ class PiRecipeUserAgentTest(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch("secrets.token_urlsafe", return_value="synthetic-token"):
             await agent.run("rendered instruction", env, context)  # ty: ignore[invalid-argument-type]
+        # Harbor calls the hook only on a context the run left empty.
+        self.assertTrue(context.is_empty())
+        agent.populate_context_post_run(context)
 
         # The target can read logs_dir while it runs: nothing is there yet.
         self.assertEqual(during, [])
@@ -606,6 +611,7 @@ class PiRecipeUserAgentTest(unittest.IsolatedAsyncioTestCase):
         run.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await run
+        agent.populate_context_post_run(context)
 
         # The cut-off prompt was recorded, and nothing of the run is left
         # running: releasing the target now changes nothing in logs_dir.
@@ -616,6 +622,79 @@ class PiRecipeUserAgentTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(str(path) for path in self.logs.rglob("*")), before)
         self.assertEqual(env.replies, [(0, "never sent")])
         self.assertIsNone(context.metadata["user_agent"]["exit_code"])
+
+    def write_trial_config(self, agent: AgentConfig) -> None:
+        """The config Harbor writes into the trial directory before any agent runs."""
+
+        config = TrialConfig(
+            task=TaskConfig(path=self.root / "task"),
+            trial_name="synthetic-trial",
+            agent=agent,
+        )
+        (self.root / "config.json").write_text(
+            config.model_dump_json(exclude_defaults=True)
+        )
+
+    async def test_the_post_run_hook_runs_the_targets_own_hook_on_its_logs(
+        self,
+    ) -> None:
+        self.write_trial_config(
+            AgentConfig(
+                import_path=f"{__name__}:FakeTarget",
+                kwargs={"reply": "synthetic reply"},
+            )
+        )
+        agent = self.agent()
+        context = AgentContext()
+        await agent.run("x", FakeEnvironment([(0, "Hi.")]), context)  # ty: ignore[invalid-argument-type]
+
+        agent.populate_context_post_run(context)
+
+        # The target wrote its trajectory where a verifier reads it, and its
+        # usage is kept apart from the user agent's context.
+        self.assertEqual(
+            json.loads((self.root / "agent" / "trajectory.json").read_text()),
+            {"steps": [{"message": "synthetic reply"}]},
+        )
+        self.assertEqual(context.metadata["target"], {"n_input_tokens": 3})
+        self.assertEqual(context.metadata["user_agent"]["prompts"], 1)
+        self.assertIsNone(context.n_input_tokens)
+
+    def test_without_a_trial_config_there_is_no_target(self) -> None:
+        context = AgentContext()
+
+        self.agent().populate_context_post_run(context)
+
+        self.assertTrue(context.is_empty())
+        self.assertFalse((self.root / "agent").exists())
+
+
+class FakeTarget(BaseAgent):
+    """A target whose post-run hook writes a trajectory, as Harbor's agents do."""
+
+    def __init__(self, logs_dir: Path, *args: Any, reply: str, **kwargs: Any) -> None:
+        super().__init__(logs_dir, *args, **kwargs)
+        self.reply = reply
+
+    @staticmethod
+    def name() -> str:
+        return "fake-target"
+
+    def version(self) -> str:
+        return "0"
+
+    async def setup(self, environment: Any) -> None:
+        pass
+
+    async def run(self, instruction: str, environment: Any, context: Any) -> None:
+        raise AssertionError("a bridged target is never run")
+
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        (self.logs_dir / "trajectory.json").write_text(
+            json.dumps({"steps": [{"message": self.reply}]})
+        )
+        context.n_input_tokens = 3
 
 
 if __name__ == "__main__":

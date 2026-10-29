@@ -691,6 +691,26 @@ class TrajectoryTest(unittest.TestCase):
             # The whole session is this step, so Harbor reads usage from the file.
             self.assertFalse(hasattr(context, "model_usage"))
 
+    def test_an_acp_target_projects_its_spans_without_an_event_stream(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logs_dir = Path(temp_dir)
+            # pi-acp runs Pi in RPC mode: spans for every prompt, no pi.jsonl.
+            (logs_dir / "genai-spans.json").write_text(
+                _spans(("first", "one", 5), ("second", "two", 7))
+            )
+            instance = _agent(_AUTHORED_SPEC)
+            instance.logs_dir = logs_dir
+
+            instance.populate_context_post_run(Mock())
+
+            written = json.loads((logs_dir / "trajectory.json").read_text())
+            self.assertEqual(
+                [step["message"] for step in written["steps"]],
+                ["first", "one", "second", "two"],
+            )
+
     def _continued_step(self, logs_dir: Path, started: str) -> None:
         """A second step: the session holds the request turn and the approval."""
 
