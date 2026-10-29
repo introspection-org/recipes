@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.4.0...mcp-fakes-v0.5.0) (2026-10-29)
+
+
+### Features
+
+* **local:** continue the MCP fakes' state with --keep-state ([#651](https://github.com/introspection-org/introspection-cli/issues/651)) ([95d431f](https://github.com/introspection-org/introspection-cli/commit/95d431f65a9827dd77e42959805851bae4996e52))
+
 ## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.3.0...mcp-fakes-v0.4.0) (2026-10-28)
 
 
