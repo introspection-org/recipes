@@ -48,6 +48,11 @@ export type RecipeAgentMcpMode = "cli" | "tools";
 export interface RecipeAgentMcp {
   /** Omission inherits the parent mode or defaults the resolved root to CLI. */
   mode?: RecipeAgentMcpMode;
+  /**
+   * Add Pi's `codemode` tool, so the model can compose and batch MCP calls in a
+   * script; the tools stay callable directly. Requires `mode: tools`.
+   */
+  codemode?: boolean;
   /** Authorization selection, still upper-bounded by package.json#pi.mcp. */
   servers: Record<string, RecipeAgentMcpServer>;
 }
@@ -326,6 +331,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
       : undefined;
   const mcp: ParsedRecipeAgentMcp = {
     ...(mode ? { mode } : {}),
+    ...(typeof raw.codemode === "boolean" ? { codemode: raw.codemode } : {}),
     servers,
   };
   const malformedServers = Object.entries(rawServers).some(
@@ -377,7 +383,12 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     !raw.servers ||
     typeof raw.servers !== "object" ||
     Array.isArray(raw.servers) ||
-    Object.keys(raw).some((key) => !["mode", "servers"].includes(key));
+    (Object.hasOwn(raw, "codemode") &&
+      (typeof raw.codemode !== "boolean" ||
+        (raw.codemode && raw.mode !== "tools"))) ||
+    Object.keys(raw).some(
+      (key) => !["mode", "codemode", "servers"].includes(key)
+    );
   if (!validObject || malformedStructured) {
     Object.defineProperty(mcp, INVALID_AGENT_MCP, {
       value: true,

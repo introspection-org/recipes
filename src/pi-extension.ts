@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  createCodemodeExtension,
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
@@ -99,6 +100,7 @@ interface AgentCallParams {
 
 /** Mid-turn completion delivery retries on this cadence until the session idles. */
 const COMPLETION_DELIVERY_RETRY_MS = 100;
+const CODEMODE_TOOL_NAME = "codemode";
 /** Published by the Runtime's proxy-preload.js (introspection-cloud managed-fetch.ts). */
 const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
   "introspection.installManagedFetch"
@@ -152,6 +154,7 @@ interface RecipeLaunchState {
   agentMcpMode: RecipeAgentMcpMode;
   initialMcpToolNames: string[];
   mcpDeferredToolNames: string[];
+  mcpCodemodeToolNames: string[];
   initialConnectorToolNames: string[];
   connectorToolNames: string[];
   connectorDeferredToolNames: string[];
@@ -735,6 +738,7 @@ export function createRecipesExtension(
       agentMcpMode: "cli",
       initialMcpToolNames: [],
       mcpDeferredToolNames: [],
+      mcpCodemodeToolNames: [],
       initialConnectorToolNames: [],
       connectorToolNames: [],
       connectorDeferredToolNames: [],
@@ -962,6 +966,7 @@ export function createRecipesExtension(
       ...(launchState.mcpDeferredToolNames.length > 0
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
+      ...launchState.mcpCodemodeToolNames,
     ]);
     const registeredTools = new Set(
       pi.getAllTools().map((tool) => tool.name)
@@ -988,6 +993,7 @@ export function createRecipesExtension(
     launchState.agentMcpMode = resolvedMcpMode(launchState);
     launchState.initialMcpToolNames = [];
     launchState.mcpDeferredToolNames = [];
+    launchState.mcpCodemodeToolNames = [];
     configureMcpLocalConfigPath({
       cwd: launchState.cwd,
       recipeDir: launchState.resolved.recipeDir,
@@ -1122,6 +1128,14 @@ export function createRecipesExtension(
       launchState.initialMcpToolNames =
         materialized.initialActiveToolNames;
       launchState.mcpDeferredToolNames = materialized.deferredToolNames;
+      if (rootMcp.codemode && materialized.toolNames.length > 0) {
+        // The Pi CLI loads codemode as a built-in extension; another host may not.
+        if (!registered.has(CODEMODE_TOOL_NAME)) {
+          await createCodemodeExtension({ models: false })(pi);
+        }
+        launchState.mcpCodemodeToolNames = [CODEMODE_TOOL_NAME];
+        launchState.extensionAllowedToolNames.add(CODEMODE_TOOL_NAME);
+      }
       for (const toolName of materialized.toolNames) {
         launchState.extensionAllowedToolNames.add(toolName);
       }

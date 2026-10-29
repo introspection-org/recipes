@@ -275,6 +275,7 @@ describe("resolved Recipe agents", () => {
 
     expect(resolved.mcp).toEqual({
       mode: "tools",
+      codemode: false,
       servers: {
         contacts: {
           include: ["*"],
@@ -283,6 +284,53 @@ describe("resolved Recipe agents", () => {
         },
       },
     });
+  });
+
+  it("resolves codemode only alongside tools mode", () => {
+    const agent = (mcp: string[]) => {
+      const recipeDir = makeRecipe();
+      writeFileSync(
+        join(recipeDir, "package.json"),
+        JSON.stringify({
+          name: "fixture-recipe",
+          version: "1.0.0",
+          pi: {
+            agents: ["agents"],
+            mcp: {
+              servers: [{ id: "contacts", tools: { include: ["*"] } }],
+            },
+          },
+        })
+      );
+      writeFileSync(
+        join(recipeDir, "agents", "agent.yaml"),
+        [
+          "name: agent",
+          "model:",
+          "  name: openai/gpt-5",
+          "tools: []",
+          "mcp:",
+          ...mcp,
+          "  servers:",
+          "    contacts:",
+          '      include: ["*"]',
+          "system_instructions:",
+          "  content: Test",
+        ].join("\n")
+      );
+      return () => resolveRecipe({ recipeDir }).selectAgent();
+    };
+
+    expect(agent(["  mode: tools", "  codemode: true"])().mcp?.codemode).toBe(
+      true
+    );
+    expect(agent(["  mode: cli"])().mcp?.codemode).toBe(false);
+    expect(agent(["  mode: cli", "  codemode: true"])).toThrow(
+      "has an invalid MCP policy"
+    );
+    expect(agent(["  mode: tools", "  codemode: sometimes"])).toThrow(
+      "has an invalid MCP policy"
+    );
   });
 
   it("rejects defer and eager selectors outside tools mode", () => {

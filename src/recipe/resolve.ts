@@ -31,8 +31,9 @@ export type { RecipePackageManifest } from "./package.js";
 export type { RecipeAgentMcp } from "./agent.js";
 
 export interface ResolvedRecipeAgentMcp
-  extends Omit<RecipeAgentMcp, "mode"> {
+  extends Omit<RecipeAgentMcp, "mode" | "codemode"> {
   mode: RecipeAgentMcpMode;
+  codemode: boolean;
 }
 
 export interface ResolvedRecipeAgent {
@@ -357,7 +358,13 @@ function buildResolvedRecipeAgent(
       ...new Set(executableRecipeToolNames(agent.tools)),
     ],
     ...(agent.mcp
-      ? { mcp: { ...agent.mcp, mode: agent.mcp.mode ?? "cli" } }
+      ? {
+          mcp: {
+            ...agent.mcp,
+            mode: agent.mcp.mode ?? "cli",
+            codemode: agent.mcp.codemode ?? false,
+          },
+        }
       : {}),
     skillPaths,
     promptPaths,

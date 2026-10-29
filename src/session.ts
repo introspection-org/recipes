@@ -4,6 +4,7 @@ import type { CredentialStore } from "@earendil-works/pi-ai";
 import { getModel, type Model } from "@earendil-works/pi-ai/compat";
 import {
   createBashToolDefinition,
+  createCodemodeExtension,
   createAgentSessionFromServices,
   createAgentSessionServices,
   ModelRuntime,
@@ -353,6 +354,7 @@ interface MaterializedSessionMcp {
 }
 
 const leasedMcpEnvironments = new WeakSet<NodeJS.ProcessEnv>();
+const CODEMODE_TOOL_NAME = "codemode";
 
 export class RecipeMcpEnvironmentInUseError extends Error {
   override readonly name = "RecipeMcpEnvironmentInUseError";
@@ -582,6 +584,12 @@ async function createSessionForAgent(
   let unsubscribe: (() => void) | undefined;
   let detachInstrumentation: (() => void) | undefined;
   const mcp = await configureSessionMcp(recipe, cwd, env, opts);
+  // Pi's codemode tool reaches active and deferred tools alike, so it covers
+  // every MCP tool the agent may call.
+  const codemodeToolNames =
+    recipe.mcp?.codemode === true && (mcp.tools?.length ?? 0) > 0
+      ? [CODEMODE_TOOL_NAME]
+      : [];
 
   const cleanup = async (): Promise<void> => {
     try {
@@ -652,6 +660,7 @@ async function createSessionForAgent(
       ...((mcp.deferredToolNames?.length ?? 0) > 0
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
+      ...codemodeToolNames,
     ]) {
       recipeRegistrations.claim("tool", toolName, "<host>");
     }
@@ -703,6 +712,11 @@ async function createSessionForAgent(
           )
         )
       );
+    }
+    if (codemodeToolNames.length > 0) {
+      // A script's `models.*` calls would spend on models the Recipe never
+      // declared, so scripts get tools only.
+      inlineExtensions.push(createCodemodeExtension({ models: false }));
     }
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 
@@ -865,6 +879,7 @@ async function createSessionForAgent(
       ...connectorLoadout.toolNames,
       ...mcpToolNames,
       ...toolSearchTools.map((tool) => tool.name),
+      ...codemodeToolNames,
     ];
     const environmentBash: ToolDefinition | undefined =
       (recipe.mcp?.mode ?? "cli") === "cli" &&
@@ -947,6 +962,7 @@ async function createSessionForAgent(
         ...connectorLoadout.initialActiveToolNames,
         ...(mcp.initialActiveToolNames ?? []),
         ...toolSearchTools.map((tool) => tool.name),
+        ...codemodeToolNames,
       ];
       session.setActiveToolsByName(activeTools);
       const applied = new Set(session.getActiveToolNames());

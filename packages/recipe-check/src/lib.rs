@@ -2128,15 +2128,31 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             &empty_servers
         }
     };
+    match mcp.get("codemode") {
+        None | Some(JsonValue::Bool(false)) => {}
+        Some(JsonValue::Bool(true)) if mode == Some(AgentMcpMode::Tools) => {}
+        Some(JsonValue::Bool(true)) => ctx.error(
+            "agent.mcp_codemode_invalid",
+            path,
+            "Agent mcp.codemode requires mcp.mode: tools",
+            Some("set mcp.mode to tools, or remove codemode"),
+        ),
+        Some(_) => ctx.error(
+            "agent.mcp_codemode_invalid",
+            path,
+            "Agent mcp.codemode must be a boolean",
+            Some("set mcp.codemode to true or false"),
+        ),
+    }
     for key in mcp
         .keys()
-        .filter(|key| !matches!(key.as_str(), "mode" | "servers"))
+        .filter(|key| !matches!(key.as_str(), "mode" | "codemode" | "servers"))
     {
         ctx.error(
             "agent.mcp_key_unknown",
             path,
             format!("Unknown Agent mcp field '{key}'"),
-            Some("use only mode and servers"),
+            Some("use only mode, codemode and servers"),
         );
     }
     let mut parsed = BTreeMap::new();
@@ -3568,6 +3584,33 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn accepts_codemode_only_in_tools_mode() {
+        for (mcp, accepted) in [
+            ("  mode: tools\n  codemode: true\n", true),
+            ("  mode: tools\n  codemode: false\n", true),
+            ("  mode: cli\n  codemode: false\n", true),
+            ("  mode: cli\n  codemode: true\n", false),
+            ("  codemode: true\n", false),
+            ("  mode: tools\n  codemode: yes please\n", false),
+        ] {
+            let input = selector_recipe(
+                json!({ "include": ["search_profiles"] }),
+                &format!(
+                    "{mcp}  servers:\n    salesforce:\n      include:\n        - search_profiles\n"
+                ),
+                true,
+            );
+            let report = check_recipe_files(&input);
+            let rejected = report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "agent.mcp_codemode_invalid");
+            assert_eq!(!rejected, accepted, "{mcp}: {:?}", report.diagnostics);
+            assert_eq!(report.valid, accepted, "{mcp}: {:?}", report.diagnostics);
+        }
     }
 
     #[test]

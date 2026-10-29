@@ -115,10 +115,29 @@ change in the session, so loaded tools survive resume. It never grants access
 beyond the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
 
-`defer` and `eager` are invalid in CLI mode. An omitted agent `mcp` block
+`codemode: true` adds Pi's `codemode` tool beside the MCP tools. The model
+writes a JavaScript script that calls them as `tools.<name>(args)`, batching
+independent calls or chaining dependent ones in one step, and only the script's
+output enters the context. Scripts reach every authorized MCP tool, deferred
+ones included, and Pi runs each nested call through the session's tool
+pipeline, so `tool_call` and `tool_result` hooks apply as they do to a direct
+call. The tools stay callable directly; a single call needs no script. Scripts
+get tools only: Recipes leaves out codemode's `models` namespace, which would
+call models the Recipe never declared.
+
+```yaml
+mcp:
+  mode: tools
+  codemode: true
+  servers:
+    contacts:
+      include: ["*"]
+```
+
+`defer`, `eager` and `codemode` are invalid in CLI mode. An omitted agent `mcp` block
 inherits its base policy. Once a child declares `mcp`, the complete block
-replaces the inherited policy; restate its mode, servers, authorization, and
-activation selectors. This makes external capability changes reviewable at the
+replaces the inherited policy; restate its mode, codemode, servers,
+authorization, and activation selectors. This makes external capability changes reviewable at the
 derived agent. Every resolved agent owns its mode independently.
 
 ## 3. Supply endpoint configuration

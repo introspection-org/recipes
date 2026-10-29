@@ -88,6 +88,7 @@ describe("Pi extension MCP tools mode", () => {
         "subagents: []",
         "mcp:",
         "  mode: tools",
+        "  codemode: true",
         "  servers:",
         "    contacts:",
         "      include: [\"*\"]",
@@ -154,6 +155,8 @@ describe("Pi extension MCP tools mode", () => {
       expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"])
     );
     expect(pi.activeTools).not.toContain(searchContacts);
+    expect(pi.tools.has("codemode")).toBe(true);
+    expect(pi.activeTools).toContain("codemode");
     expect(env.PATH).toBe(initialPath);
     expect(env.PI_RECIPES_MCP_BIN_DIR).toBeUndefined();
     expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
