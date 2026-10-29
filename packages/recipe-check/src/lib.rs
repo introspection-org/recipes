@@ -295,7 +295,14 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
         validate_package_identity(&package, &mut ctx);
         validate_dependency_package(&package, &mut ctx);
         let resources = validate_pi_config(&package, &mut ctx);
-        validate_mcp_local_config(&mut ctx);
+        let declared_mcp_servers: BTreeSet<String> = package
+            .pi
+            .as_ref()
+            .and_then(JsonValue::as_object)
+            .and_then(|pi| mcp_tool_policy(pi.get("mcp")))
+            .map(|policy| policy.into_keys().collect())
+            .unwrap_or_default();
+        validate_mcp_local_config(&declared_mcp_servers, &mut ctx);
         validate_mcp_local_example(&mut ctx);
 
         let mcp_tool_policy = package
@@ -536,13 +543,14 @@ const FOREIGN_LOCKFILES: [&str; 3] = ["package-lock.json", "npm-shrinkwrap.json"
 const MCP_LOCAL_CONFIG: &str = ".pi/mcp.local.json";
 const MCP_LOCAL_EXAMPLE: &str = ".pi/mcp.local.example.json";
 const LOCAL_CONFIG_PRESENT: &str = "package.local_config_present";
-const LOCAL_CONFIG_HELP: &str = "commit only evaluation bindings: every server streamable_http to a loopback URL such as http://localhost:<port>/mcp, with no auth flow; keep any other local configuration out of the Recipe";
+const LOCAL_CONFIG_HELP: &str = "commit only evaluation bindings: every server a declared id, once, streamable_http to a loopback or single-label host such as http://localhost:<port>/mcp or a compose service's http://fakes:<port>/<id>/mcp, with no auth flow; keep any other local configuration out of the Recipe";
 
 /// A committed `.pi/mcp.local.json` is accepted only as an evaluation binding:
-/// every server reaches a loopback address over streamable HTTP, so the file
-/// can stand a fake in for a declared server and nothing else. An evaluation
-/// runs the fake beside the Recipe; a real endpoint or credential stays local.
-fn validate_mcp_local_config(ctx: &mut CheckContext) {
+/// every server is a declared id reaching a loopback address or a compose
+/// service over streamable HTTP, so the file can stand a fake in for a declared
+/// server and nothing else. An evaluation runs the fake beside the Recipe; a
+/// real endpoint or credential stays local.
+fn validate_mcp_local_config(declared: &BTreeSet<String>, ctx: &mut CheckContext) {
     if !ctx.has_file(MCP_LOCAL_CONFIG) {
         return;
     }
@@ -555,7 +563,7 @@ fn validate_mcp_local_config(ctx: &mut CheckContext) {
         );
         return;
     };
-    for reason in non_evaluation_binding_reasons(&content) {
+    for reason in non_evaluation_binding_reasons(&content, declared) {
         ctx.error(
             LOCAL_CONFIG_PRESENT,
             MCP_LOCAL_CONFIG,
@@ -568,8 +576,9 @@ fn validate_mcp_local_config(ctx: &mut CheckContext) {
 }
 
 /// Everything in a `.pi/mcp.local.json` that makes it more than an evaluation
-/// binding. Empty means every server is a loopback streamable HTTP endpoint.
-fn non_evaluation_binding_reasons(content: &str) -> Vec<String> {
+/// binding. Empty means every server is a declared id, named once, at a
+/// loopback or single-label streamable HTTP endpoint.
+fn non_evaluation_binding_reasons(content: &str, declared: &BTreeSet<String>) -> Vec<String> {
     let parsed: JsonValue = match serde_json::from_str(content) {
         Ok(value) => value,
         Err(err) => return vec![format!(".pi/mcp.local.json is not valid JSON: {err}")],
@@ -584,11 +593,30 @@ fn non_evaluation_binding_reasons(content: &str) -> Vec<String> {
         return vec!["servers must be an array".to_owned()];
     };
     let mut reasons = Vec::new();
+    let mut seen = BTreeSet::new();
     for (index, server) in servers.iter().enumerate() {
         let JsonValue::Object(server) = server else {
             reasons.push(format!("servers[{index}] must be an object"));
             continue;
         };
+        // An id the package does not declare is ignored at run time, so a
+        // misspelling would silently fall through to the live endpoint.
+        match string_value(server.get("id")).filter(|id| !id.trim().is_empty()) {
+            None => reasons.push(format!("servers[{index}].id must be a non-empty string")),
+            Some(id) => {
+                let normalized = safe_mcp_server_id(&id);
+                if !declared.contains(&normalized) {
+                    reasons.push(format!(
+                        "servers[{index}].id \"{id}\" is not declared in package.json#pi.mcp.servers"
+                    ));
+                }
+                if !seen.insert(normalized) {
+                    reasons.push(format!(
+                        "servers[{index}].id \"{id}\" is bound more than once"
+                    ));
+                }
+            }
+        }
         if let Some(transport) = server.get("transport") {
             if string_value(Some(transport)).as_deref() != Some("streamable_http") {
                 reasons.push(format!(
@@ -604,9 +632,9 @@ fn non_evaluation_binding_reasons(content: &str) -> Vec<String> {
             }
         }
         match string_value(server.get("url")) {
-            Some(url) if is_loopback_http_url(&url) => {}
+            Some(url) if is_evaluation_http_url(&url) => {}
             _ => reasons.push(format!(
-                "servers[{index}].url must be an absolute HTTP(S) URL to a loopback host (localhost, 127.0.0.0/8 or ::1); an environment reference is not expanded in a committed binding"
+                "servers[{index}].url must be an absolute HTTP(S) URL to a loopback host (localhost, 127.0.0.0/8 or ::1) or a single-label compose service name; an environment reference is not expanded in a committed binding"
             )),
         }
         match server.get("headers") {
@@ -624,7 +652,10 @@ fn non_evaluation_binding_reasons(content: &str) -> Vec<String> {
     reasons
 }
 
-fn is_loopback_http_url(raw: &str) -> bool {
+/// A loopback address, or a single DNS label such as a compose service name: a
+/// name without a dot is never a public domain, and resolves only on the
+/// evaluation's own network.
+fn is_evaluation_http_url(raw: &str) -> bool {
     let Ok(url) = url::Url::parse(raw) else {
         return false;
     };
@@ -632,11 +663,19 @@ fn is_loopback_http_url(raw: &str) -> bool {
         return false;
     }
     match url.host() {
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Domain(domain)) => is_dns_label(domain),
         Some(url::Host::Ipv4(address)) => address.is_loopback(),
         Some(url::Host::Ipv6(address)) => address.is_loopback(),
         None => false,
     }
+}
+
+fn is_dns_label(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 63
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 fn validate_mcp_local_example(ctx: &mut CheckContext) {
@@ -4595,7 +4634,7 @@ mod tests {
     }
 
     #[test]
-    fn a_committed_local_binding_is_accepted_only_as_a_loopback_evaluation_binding() {
+    fn a_committed_local_binding_is_accepted_only_as_an_evaluation_binding() {
         for (content, accepted) in [
             (r#"{"servers":[]}"#, true),
             (r#"{}"#, true),
@@ -4616,7 +4655,28 @@ mod tests {
                 false,
             ),
             (
-                r#"{"servers":[{"id":"a","url":"http://fake-attio:4318/mcp"}]}"#,
+                r#"{"servers":[{"id":"attio","url":"http://fakes:7353/attio/mcp"},{"id":"resend","url":"http://fakes:7353/resend/mcp"}]}"#,
+                true,
+            ),
+            (
+                r#"{"servers":[{"id":"google_calendar","url":"http://google-calendar:8000/mcp"}]}"#,
+                true,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://fake-attio.internal:4318/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"a","url":"http://-fakes:4318/mcp"}]}"#,
+                false,
+            ),
+            (
+                r#"{"servers":[{"id":"undeclared","url":"http://localhost/mcp"}]}"#,
+                false,
+            ),
+            (r#"{"servers":[{"url":"http://localhost/mcp"}]}"#, false),
+            (
+                r#"{"servers":[{"id":"a","url":"http://localhost/mcp"},{"id":"A","url":"http://fakes/mcp"}]}"#,
                 false,
             ),
             (
@@ -4653,7 +4713,15 @@ mod tests {
             (r#"[]"#, false),
             (r#"{"#, false),
         ] {
-            let package = json!({ "name": "local-config-recipe", "pi": {} });
+            let package = json!({
+                "name": "local-config-recipe",
+                "pi": { "mcp": { "servers": [
+                    { "id": "a" },
+                    { "id": "attio" },
+                    { "id": "resend" },
+                    { "id": "google_calendar" },
+                ] } },
+            });
             let input = recipe_files(&[
                 (
                     "package.json",

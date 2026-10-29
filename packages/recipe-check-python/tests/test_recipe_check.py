@@ -299,14 +299,17 @@ def test_local_file_url_with_spaces(tmp_path: Path) -> None:
     }
 
 
-def test_a_committed_loopback_evaluation_binding_is_accepted() -> None:
+def test_a_committed_evaluation_binding_is_accepted() -> None:
     def report(binding: str) -> introspection_recipe_check.Report:
         return introspection_recipe_check.check_recipe_files(
             {
                 "files": [
                     {
                         "path": "package.json",
-                        "content": '{"name":"demo","pi":{"agents":["agents/*.yaml"]}}',
+                        "content": (
+                            '{"name":"demo","pi":{"agents":["agents/*.yaml"],'
+                            '"mcp":{"servers":[{"id":"attio"}]}}}'
+                        ),
                     },
                     {
                         "path": "agents/agent.yaml",
@@ -322,6 +325,9 @@ def test_a_committed_loopback_evaluation_binding_is_accepted() -> None:
         '"url":"http://localhost:4318/attio/mcp"}]}'
     )
     assert report(fake).valid
+
+    compose = '{"servers":[{"id":"attio","url":"http://fakes:7353/attio/mcp"}]}'
+    assert report(compose).valid
 
     live = '{"servers":[{"id":"attio","url":"https://mcp.attio.com/mcp"}]}'
     codes = [diagnostic.code for diagnostic in report(live).diagnostics]

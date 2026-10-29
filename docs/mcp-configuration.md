@@ -155,11 +155,16 @@ endpoint or credential; Recipe validation rejects local configuration. Commit
 `.pi/mcp.local.example.json` when a binding template is helpful.
 
 The one committed form validation accepts is an evaluation binding: every
-server is `streamable_http` to a loopback URL (`http://localhost:<port>/...`,
-`127.0.0.0/8` or `::1`) with no `auth` flow and no `command`. Such a file can
-only stand a fake that runs beside the Recipe in for a declared server, so it
-distributes nothing reachable elsewhere; a host that runs evaluations reads it
-in place of its own bindings for the ids it names. An environment reference in
+server is an id `package.json` declares, named once, `streamable_http` to a
+loopback URL (`http://localhost:<port>/...`, `127.0.0.0/8` or `::1`) or a
+single-label host such as a compose service (`http://fakes:7353/<id>/mcp`),
+with no `auth` flow and no `command`. Such a file can only stand a fake that
+runs beside the Recipe in for a declared server, so it distributes nothing
+reachable elsewhere: a name without a dot resolves only on the evaluation's own
+network. A host that runs evaluations reads it in place of its own bindings for
+the ids it names. An id the package does not declare would be ignored at run
+time, so validation rejects it rather than let a misspelling fall through to the
+live endpoint. An environment reference in
 the URL is not expanded in a committed binding, so write the literal loopback
 address. A host binds its own endpoint and credential system to the same
 shape. A binding overrides a package-manifest endpoint with the same id,
