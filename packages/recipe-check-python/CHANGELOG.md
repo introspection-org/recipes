@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.13.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.12.0...introspection-recipe-check-python-v0.13.0) (2026-10-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a committed evaluation binding naming an id that package.json#pi.mcp.servers does not declare, naming one twice, or omitting the id is now rejected.
+
+### Features
+
+* **recipe-check:** accept compose-service hosts in a committed evaluation binding ([#369](https://github.com/introspection-org/recipes/issues/369)) ([9a0105f](https://github.com/introspection-org/recipes/commit/9a0105f55246da8c0e3cb224aa38c9047654bc60))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.12.0 to 0.13.0
+
 ## [0.12.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.11.0...introspection-recipe-check-python-v0.12.0) (2026-10-19)
 
 
