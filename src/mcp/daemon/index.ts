@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { context } from "@opentelemetry/api";
 
-import { createRuntime } from "mcporter";
+import { createMcpRuntime } from "../pi-runtime.js";
 import {
   installMcpCommandIoRouting,
   type McpRuntime,
@@ -49,7 +49,7 @@ const SHUTDOWN_GRACE_MS = 1_000;
 const CATALOG_PRELOAD_BACKOFF_MS = [100, 250, 500, 1_000, 2_000] as const;
 
 function runtime(): Promise<McpRuntime> {
-  runtimePromise ??= createRuntime({ configPath: process.env.MCPORTER_CONFIG }).catch(
+  runtimePromise ??= createMcpRuntime(process.env.MCPORTER_CONFIG).catch(
     (error) => {
       runtimePromise = undefined;
       throw error;
@@ -344,6 +344,7 @@ async function callToolRequest(
         args: request.arguments,
         timeoutMs: request.timeoutMs,
         disableOAuth: true,
+        signal: controller.signal,
       });
     });
     if (controller.signal.aborted) {

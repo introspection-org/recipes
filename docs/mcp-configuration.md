@@ -189,7 +189,17 @@ mcp call contacts.search_contacts --json '{"query":"Ada Lovelace"}'
 ```
 
 The command is headless and cannot add servers, mutate configuration, or start
-browser authentication. See [MCP authentication](mcp-auth.md) for OAuth and
+browser authentication.
+
+`PI_RECIPES_MCP_CLIENT=pi-mcp` runs the command's connections on
+`@earendil-works/pi-mcp` instead of mcporter's runtime. The command, its
+arguments, output and exit codes, and `mcp run` scripts stay the same; only the
+client holding the connections changes. It keeps one connection per server for
+the daemon's life, sends a request again only when the server never ran it (a
+refused connect answered with a transient status, or an expired MCP session),
+retries reads after a transient failure, never sends a `tools/call` twice, and
+cancels a call on the server when the command is interrupted. A binding that
+authenticates with an OAuth flow is refused on it. See [MCP authentication](mcp-auth.md) for OAuth and
 hosted binding details, and [Recipes extension](pi-extension.md) for the
 full session contract.
 
