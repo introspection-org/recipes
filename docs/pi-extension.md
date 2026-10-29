@@ -101,7 +101,7 @@ the model may call.
 
 Recipe extensions can import `forAgent`, `forRecipeSession`, and
 `getRecipeSessionContext` from `@introspection-ai/recipes/extensions` for
-session-local conditional behavior:
+session-local conditional behavior (and `getRecipeMcpTools`, below):
 
 ```ts
 import { forAgent } from "@introspection-ai/recipes/extensions";
@@ -118,6 +118,36 @@ not code isolation: the extension module still executes with the Pi process's
 authority. `forAgent` matches the final resolved `agent.name` exactly; `from`
 is configuration inheritance and does not make a derived agent match its
 ancestor's hooks.
+
+### MCP tools in extension code
+
+An extension's own code calls the agent's MCP tools through
+`getRecipeMcpTools`, in the shape `mcp run` scripts use:
+
+```ts
+import { getRecipeMcpTools } from "@introspection-ai/recipes/extensions";
+
+export default function mail(pi) {
+  pi.registerTool({
+    name: "mail_search",
+    // ...
+    async execute(_id, params) {
+      const tools = await getRecipeMcpTools(pi);
+      if (!("gmail" in tools)) throw new Error("Gmail is not connected");
+      const found = await tools.gmail["gmail-find-email"]({ q: params.query });
+      return { content: [{ type: "text", text: JSON.stringify(found) }], details: {} };
+    },
+  });
+}
+```
+
+A call returns the decoded JSON result; `.text(args)`, `.markdown(args)`,
+`.images(args)`, `.content(args)`, `.structuredContent(args)` and `.raw(args)`
+return another form. A tool error rejects the call. The agent's MCP policy
+applies, deferred tools included, and only servers bound in this session are
+present, so `Object.keys(tools)` lists what is connected. The promise settles
+once the session's MCP tools are ready; it rejects when the agent has no MCP
+servers or is not in `mcp.mode: tools`.
 
 The closure contains every extension declared by the Recipe. It does not claim
 exclusive ownership of the surrounding Pi process: trusted global or project

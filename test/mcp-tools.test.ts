@@ -437,6 +437,74 @@ describe("MCP tools mode", () => {
     expect(result.details.truncated.originalLines).toBeGreaterThan(2);
   });
 
+  it("gives extensions the same tools in the mcp run shape", async () => {
+    const env = { PI_RECIPES_MCP_CALL_TIMEOUT_MS: "5000" };
+    const { materialized } = createTools(
+      {
+        mode: "tools",
+        servers: { nextplay: { include: ["*"], defer: ["get_profiles"] } },
+      },
+      env
+    );
+    const tools = materialized.runTools;
+    expect(Object.keys(tools)).toEqual(["nextplay"]);
+    expect(Object.keys(tools.nextplay).sort()).toEqual([
+      "get_profiles",
+      "search_talent",
+    ]);
+    expect("search_talent" in tools.nextplay).toBe(true);
+
+    mocks.callMcpDaemonTool.mockResolvedValueOnce({
+      content: [{ type: "text", text: '{"count":2}' }],
+    });
+    await expect(
+      tools.nextplay.search_talent({ query: "staff engineer" })
+    ).resolves.toEqual({ count: 2 });
+    expect(mocks.callMcpDaemonTool).toHaveBeenLastCalledWith(
+      "nextplay",
+      "search_talent",
+      { query: "staff engineer" },
+      { env, timeoutMs: 5000 }
+    );
+
+    // A deferred tool is hidden from the model, not from the extension.
+    mocks.callMcpDaemonTool.mockResolvedValueOnce({
+      content: [{ type: "text", text: "two profiles" }],
+    });
+    await expect(tools.nextplay.get_profiles.text({})).resolves.toBe(
+      "two profiles"
+    );
+
+    mocks.callMcpDaemonTool.mockResolvedValueOnce({
+      isError: true,
+      content: [{ type: "text", text: "upstream denied access" }],
+    });
+    await expect(tools.nextplay.get_profiles.text()).rejects.toThrow(
+      "upstream denied access"
+    );
+
+    await expect(tools.nextplay.search_talent({})).rejects.toThrow(
+      "do not match inputSchema"
+    );
+    expect(() => tools.nextplay.delete_everything).toThrow(
+      "Available: search_talent, get_profiles"
+    );
+    expect(await Promise.resolve(tools.nextplay)).toBe(tools.nextplay);
+  });
+
+  it("leaves tools the agent's policy excludes off the extension surface", () => {
+    const { materialized } = createTools({
+      mode: "tools",
+      servers: { nextplay: { include: ["search_talent"] } },
+    });
+    expect(Object.keys(materialized.runTools.nextplay)).toEqual([
+      "search_talent",
+    ]);
+    expect(() => materialized.runTools.nextplay.get_profiles).toThrow(
+      "is not available to this agent"
+    );
+  });
+
   it("omits failed optional catalogs but blocks failed required catalogs", () => {
     const mixedSession: McpSessionConfig = {
       version: 1,

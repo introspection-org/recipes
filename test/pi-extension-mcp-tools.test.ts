@@ -19,6 +19,7 @@ vi.mock("../src/mcp/catalog.js", () => ({
   clearMcpCatalogPreload: vi.fn(),
 }));
 
+import { getRecipeMcpTools } from "../src/extensions.js";
 import { createRecipesExtension } from "../src/pi-extension.js";
 import { piMcpToolName } from "../src/mcp/tools.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
@@ -39,7 +40,12 @@ describe("Pi extension MCP tools mode", () => {
     const recipeDir = join(root, "recipe");
     const workspaceDir = join(root, "workspace");
     mkdirSync(join(recipeDir, "agents"), { recursive: true });
+    mkdirSync(join(recipeDir, "extensions"), { recursive: true });
     mkdirSync(workspaceDir, { recursive: true });
+    writeFileSync(
+      join(recipeDir, "extensions", "probe.ts"),
+      "export default (pi) => { (globalThis as any).__recipeMcpProbe = pi; };\n"
+    );
     writeFileSync(
       join(recipeDir, "package.json"),
       JSON.stringify({
@@ -47,6 +53,7 @@ describe("Pi extension MCP tools mode", () => {
         version: "0.1.0",
         pi: {
           agents: ["agents/*.yaml"],
+          extensions: ["extensions/*.ts"],
           mcp: {
             manifests: ["mcp.json"],
             servers: [
@@ -154,6 +161,14 @@ describe("Pi extension MCP tools mode", () => {
       expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"])
     );
     expect(pi.activeTools).not.toContain(searchContacts);
+    const extensionTools = await getRecipeMcpTools(
+      (globalThis as any).__recipeMcpProbe
+    );
+    expect(Object.keys(extensionTools)).toEqual(["contacts"]);
+    expect(Object.keys(extensionTools.contacts).sort()).toEqual([
+      "get_contact",
+      "search_contacts",
+    ]);
     expect(env.PATH).toBe(initialPath);
     expect(env.PI_RECIPES_MCP_BIN_DIR).toBeUndefined();
     expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
