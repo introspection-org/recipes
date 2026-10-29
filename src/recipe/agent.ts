@@ -43,7 +43,7 @@ export interface RecipeAgentMcpServer {
   eager?: string[];
 }
 
-export type RecipeAgentMcpMode = "cli" | "tools";
+export type RecipeAgentMcpMode = "cli" | "tools" | "codemode";
 
 export interface RecipeAgentMcp {
   /** Omission inherits the parent mode or defaults the resolved root to CLI. */
@@ -321,7 +321,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     };
   }
   const mode =
-    raw.mode === "cli" || raw.mode === "tools"
+    raw.mode === "cli" || raw.mode === "tools" || raw.mode === "codemode"
       ? raw.mode as RecipeAgentMcpMode
       : undefined;
   const mcp: ParsedRecipeAgentMcp = {
@@ -362,7 +362,8 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
             : undefined
         ) ||
         (mode === "cli" &&
-          (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager")))
+          (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager"))) ||
+        (mode === "codemode" && Object.hasOwn(server, "defer"))
       );
     }
   );
@@ -371,7 +372,8 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     !Object.hasOwn(raw, "servers") ||
     (Object.hasOwn(raw, "mode") &&
         raw.mode !== "cli" &&
-        raw.mode !== "tools") ||
+        raw.mode !== "tools" &&
+        raw.mode !== "codemode") ||
     Object.keys(rawServers).some((serverId) => !serverId.trim()) ||
     hasNormalizedMcpServerCollision(Object.keys(rawServers)) ||
     !raw.servers ||
@@ -746,8 +748,10 @@ function validateResolvedRecipeAgentSource(
     }) ||
     Object.values(mcp?.servers ?? {}).some(
       (selection) =>
+        (mcp?.mode !== "tools" && selection.defer !== undefined) ||
         (mcp?.mode !== "tools" &&
-          (selection.defer !== undefined || selection.eager !== undefined)) ||
+          mcp?.mode !== "codemode" &&
+          selection.eager !== undefined) ||
         !validActivationSelectors(selection.defer) ||
         !validActivationSelectors(selection.eager) ||
         [...(selection.defer ?? []), ...(selection.eager ?? [])].some(

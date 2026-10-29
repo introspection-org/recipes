@@ -19,4 +19,5 @@ export type {
   McpSessionServer,
   McpToolCatalogEntry,
 } from "../mcp/index.js";
+export { mcpToolName } from "../mcp/pi-client.js";
 export type { ScopedMcpToolSelection } from "../mcp/policy.js";

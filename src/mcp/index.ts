@@ -106,7 +106,7 @@ interface LocalMcpOAuthSettings {
   oauthScope?: string;
 }
 
-interface McpEndpointBinding {
+export interface McpEndpointBinding {
   id: string;
   name: string;
   baseUrl: string;
@@ -508,7 +508,7 @@ function hostForUrl(value: string): string {
   }
 }
 
-function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
+export function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
   return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, name: string) => env[name] ?? "");
 }
 
@@ -575,7 +575,7 @@ function localBindings(
   });
 }
 
-function endpointBindings(
+export function endpointBindings(
   env: NodeJS.ProcessEnv,
   cwd: string,
   localConfig?: McpLocalConfig
@@ -692,7 +692,7 @@ function readConfiguredManifests(
   return servers;
 }
 
-function explicitAllowedTools(server: McpSessionServer): string[] | undefined {
+export function explicitAllowedTools(server: McpSessionServer): string[] | undefined {
   const packageIncludes = server.package_tools.include ?? [];
   const agentIncludes = server.agent_tools.flatMap(
     (selection) => selection.include ?? []

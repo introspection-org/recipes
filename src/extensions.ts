@@ -1,6 +1,7 @@
 import type {
   ExtensionAPI,
   ExtensionFactory,
+  ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 export interface RecipeExtensionSessionContext {
@@ -128,15 +129,46 @@ export function forRecipeSession(
   if (predicate(context)) register(context);
 }
 
+/**
+ * Gives a tool that does not say which tools it reaches `reachesTools: "all"`,
+ * so Pi's MCP support holds a call until every server still connecting has
+ * connected. Without it, a tool calling an MCP tool through `ctx.executeTool`
+ * at the start of a session finds no such tool.
+ */
+function reachingMcpServers(pi: ExtensionAPI): ExtensionAPI {
+  return new Proxy(pi, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property !== "registerTool" || typeof value !== "function") {
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      // `reachesTools` is typed from Pi 1.3.0; the peer floor is older.
+      return (
+        definition: ToolDefinition & { reachesTools?: unknown },
+        ...rest: unknown[]
+      ) =>
+        value.call(
+          target,
+          definition && definition.reachesTools === undefined
+            ? { ...definition, reachesTools: () => "all" as const }
+            : definition,
+          ...rest
+        );
+    },
+  });
+}
+
 /** @internal Bind context before Pi invokes a package extension factory. */
 export function bindRecipeExtensionFactory(
   factory: ExtensionFactory,
   context: RecipeExtensionSessionContext,
   registrationRegistry?: RecipeExtensionRegistrationRegistry,
   owner = "<recipe-extension>",
-  allowedToolNames?: ReadonlySet<string>
+  allowedToolNames?: ReadonlySet<string>,
+  reachesMcp = false
 ): ExtensionFactory {
-  return async (pi) => {
+  return async (outer) => {
+    const pi = reachesMcp ? reachingMcpServers(outer) : outer;
     const registrationKinds: Record<string, string> = {
       registerTool: "tool",
       registerCommand: "command",

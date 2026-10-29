@@ -138,6 +138,7 @@ type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
 enum AgentMcpMode {
     Cli,
     Tools,
+    Codemode,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2131,12 +2132,13 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
     let mode = match mcp.get("mode") {
         Some(JsonValue::String(value)) if value == "cli" => Some(AgentMcpMode::Cli),
         Some(JsonValue::String(value)) if value == "tools" => Some(AgentMcpMode::Tools),
+        Some(JsonValue::String(value)) if value == "codemode" => Some(AgentMcpMode::Codemode),
         Some(_) => {
             ctx.error(
                 "agent.mcp_mode_invalid",
                 path,
-                "Agent mcp.mode must be 'cli' or 'tools'",
-                Some("set mcp.mode to cli or tools"),
+                "Agent mcp.mode must be 'cli', 'tools' or 'codemode'",
+                Some("set mcp.mode to cli, tools or codemode"),
             );
             None
         }
@@ -2215,14 +2217,16 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             let Some(value) = server.get(key) else {
                 continue;
             };
-            if matches!(key, "defer" | "eager") && mode == Some(AgentMcpMode::Cli) {
+            if matches!(key, "defer" | "eager") && mode.is_some() && !activation_allowed(key, mode)
+            {
                 ctx.error(
                     "agent.mcp_activation_invalid",
                     path,
                     format!(
-                        "Agent mcp server '{server_id}' {key} is only valid when mcp.mode is tools"
+                        "Agent mcp server '{server_id}' {key} is not valid when mcp.mode is {}",
+                        mode_name(mode)
                     ),
-                    Some("remove the activation selector or set mcp.mode to tools"),
+                    Some(activation_help(key)),
                 );
             }
             if let Err(message) = string_array(value) {
@@ -2590,13 +2594,42 @@ fn resolved_agent_mcp(
         return (!inherited.servers.is_empty() || inherited.mode.is_some()).then_some(inherited);
     };
     let mut merged = child.clone();
-    if merged.mode == Some(AgentMcpMode::Cli) {
+    if merged.mode.is_some() {
         for selection in merged.servers.values_mut() {
-            selection.defer = None;
-            selection.eager = None;
+            if !activation_allowed("defer", merged.mode) {
+                selection.defer = None;
+            }
+            if !activation_allowed("eager", merged.mode) {
+                selection.eager = None;
+            }
         }
     }
     Some(merged)
+}
+
+/// `defer` hides a declared tool behind tool search, so it needs `tools`; `eager` declares a tool
+/// directly, which `tools` and `codemode` both do. A resolved mode is never absent: it defaults to cli.
+fn activation_allowed(key: &str, mode: Option<AgentMcpMode>) -> bool {
+    match key {
+        "defer" => mode == Some(AgentMcpMode::Tools),
+        _ => matches!(mode, Some(AgentMcpMode::Tools | AgentMcpMode::Codemode)),
+    }
+}
+
+fn mode_name(mode: Option<AgentMcpMode>) -> &'static str {
+    match mode {
+        Some(AgentMcpMode::Tools) => "tools",
+        Some(AgentMcpMode::Codemode) => "codemode",
+        Some(AgentMcpMode::Cli) | None => "cli",
+    }
+}
+
+fn activation_help(key: &str) -> &'static str {
+    if key == "defer" {
+        "defer needs mcp.mode tools; in codemode every tool is already off the model's declarations"
+    } else {
+        "eager needs mcp.mode tools or codemode"
+    }
 }
 
 fn portable_agent_name(value: &str) -> bool {
@@ -2624,20 +2657,31 @@ fn validate_resolved_agent_mcp(
         .map(|agent| agent.path.clone())
         .unwrap_or_default();
 
-    if mcp.mode != Some(AgentMcpMode::Tools)
-        && mcp
-            .servers
-            .values()
-            .any(|selection| selection.defer.is_some() || selection.eager.is_some())
-    {
-        ctx.error(
-            "agent.mcp_activation_invalid",
-            path.clone(),
-            format!(
-                "Recipe agent '{name}' may use defer and eager only when its resolved mcp.mode is tools"
-            ),
-            Some("set mcp.mode to tools or remove defer and eager"),
-        );
+    for (key, used) in [
+        (
+            "defer",
+            mcp.servers
+                .values()
+                .any(|selection| selection.defer.is_some()),
+        ),
+        (
+            "eager",
+            mcp.servers
+                .values()
+                .any(|selection| selection.eager.is_some()),
+        ),
+    ] {
+        if used && !activation_allowed(key, mcp.mode) {
+            ctx.error(
+                "agent.mcp_activation_invalid",
+                path.clone(),
+                format!(
+                    "Recipe agent '{name}' may not use {key} when its resolved mcp.mode is {}",
+                    mode_name(mcp.mode)
+                ),
+                Some(activation_help(key)),
+            );
+        }
     }
 
     for (server_id, selection) in &mcp.servers {
@@ -3723,6 +3767,61 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    fn codemode_agent(servers: &str) -> String {
+        format!(
+            "name: root\nmodel:\n  name: test/provider-model\ntools: []\nmcp:\n  mode: codemode\n  servers:\n{servers}subagents: []\nsystem_instructions:\n  content: Root instructions\n"
+        )
+    }
+
+    fn codemode_report(servers: &str) -> Report {
+        let package = json!({
+            "name": "mcp-codemode",
+            "version": "0.1.0",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "mcp": {
+                    "servers": [{
+                        "id": "salesforce",
+                        "tools": { "include": ["search_profiles", "get_profile"] }
+                    }]
+                }
+            }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("agents/root.yaml", &codemode_agent(servers)),
+        ]);
+        check_recipe_files(&input)
+    }
+
+    #[test]
+    fn accepts_codemode_with_eager_tools() {
+        let report = codemode_report(concat!(
+            "    salesforce:\n",
+            "      include: [\"*\"]\n",
+            "      eager: [search_profiles]\n",
+        ));
+
+        assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn rejects_defer_in_codemode() {
+        let report = codemode_report(concat!(
+            "    salesforce:\n",
+            "      include: [\"*\"]\n",
+            "      defer: [\"*\"]\n",
+        ));
+
+        assert!(!report.valid);
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
+            == "agent.mcp_activation_invalid"
+            && diagnostic.message.contains("codemode")));
     }
 
     #[test]
