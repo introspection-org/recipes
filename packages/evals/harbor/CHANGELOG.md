@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.12.0...introspection-harbor-v0.13.0) (2026-10-29)
+
+
+### Features
+
+* **harbor:** serve a Recipe as an ACP target for simulated-user chains ([#656](https://github.com/introspection-org/introspection-cli/issues/656)) ([f4a9bcb](https://github.com/introspection-org/introspection-cli/commit/f4a9bcb885d00552edf9084091a387c186d16df0))
+
+
+### Bug Fixes
+
+* **harbor:** write the target's trajectory in simulated-user trials ([#657](https://github.com/introspection-org/introspection-cli/issues/657)) ([720fb4b](https://github.com/introspection-org/introspection-cli/commit/720fb4bb34f9e4ec08b17250be01f94616cc4564))
+
 ## [0.12.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.11.0...introspection-harbor-v0.12.0) (2026-10-28)
 
 
