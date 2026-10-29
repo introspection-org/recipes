@@ -225,10 +225,21 @@ await services.close();
 | `port` | `0` (ephemeral) | The port to listen on |
 | `host` | `127.0.0.1` | The address to listen on; a sidecar sets `0.0.0.0` |
 | `stateFile` | none | A file every fake's state is written to, keyed by fake id, after each MCP request |
+| `initialStateFile` | none | A file the state `/<id>/admin/initial-state` reports is written to, keyed by fake id, at start |
+| `resume` | none | `{ states, initial }`: continue an earlier run instead of building the world (see below) |
 | `record` | none | A file each tool call is appended to as one JSON line |
 
 The world is fixed when the services start; nothing loads a world into a
-running fake, and a state file is never read back.
+running fake, and a state file is never read back unless `resume` asks for it.
+
+### Continuing an earlier run
+
+With `resume`, every fake starts from `states`, an earlier run's state keyed by
+fake id, and `world` is not called. `/<id>/admin/initial-state` reports
+`initial`, the state that earlier run started from, rather than `states`: a
+conversation that spans runs is judged against the world it began in, so a
+verifier's state changes cover every run of it, as they would had it been one.
+The host refuses to start when either lacks a fake it serves.
 
 ### Routes
 
@@ -282,6 +293,16 @@ fakes resolve (install the fakes' dependencies first), on a free loopback port, 
 Recipe checkout is not written to, and every fake's state is written to
 `.introspection/local/<scenario>/state.json` (`_default` without
 `--scenario`). The sidecar stops when Pi exits.
+
+`--keep-state` continues the previous run of the scenario instead of starting a
+fresh world: the CLI passes its `state.json` as `MCP_FAKES_RESUME_STATE_FILE`
+and its `initial-state.json` as `MCP_FAKES_INITIAL_STATE_FILE`, so with Pi's
+`--continue` the conversation and the world it changed go on together:
+
+```bash
+introspection local --agent agent --scenario quiet -p 'Log a follow-up note'
+introspection local --agent agent --scenario quiet --keep-state -p 'What did you log?' -- --continue
+```
 
 ## In a vitest eval
 
@@ -405,6 +426,8 @@ environment:
 | `MCP_FAKES_SCENARIO` | The scenario `world` builds; `world`'s default when unset |
 | `MCP_FAKES_PORT`, `MCP_FAKES_HOST` | Where to listen; `7353` on `0.0.0.0` |
 | `MCP_FAKES_STATE_FILE` | `stateFile` |
+| `MCP_FAKES_INITIAL_STATE_FILE` | `initialStateFile` |
+| `MCP_FAKES_RESUME_STATE_FILE` | `resume`: the state file of an earlier run to start from. `initial` is read from `MCP_FAKES_INITIAL_STATE_FILE` as that run left it, or is this state when that is unset |
 | `MCP_FAKES_RECORD` | `record` |
 | `MCP_FAKES_MANIFEST_DIR` | A directory each fake's manifest and answers are written to at start, as `mcp/<id>/manifest.json` for the verifier's write-map checks and `mcp/<id>/answers.json` for reading the agent's tool results |
 

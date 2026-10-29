@@ -82,6 +82,47 @@ test("serve runs the Recipe's TypeScript fakes as they are", { timeout: 60_000 }
   }
 });
 
+test("serve resumes from the state files an earlier serve left", { timeout: 60_000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-fakes-resume-"));
+  const files = {
+    MCP_FAKES_PORT: "0",
+    MCP_FAKES_STATE_FILE: path.join(dir, "state.json"),
+    MCP_FAKES_INITIAL_STATE_FILE: path.join(dir, "initial-state.json"),
+  };
+  const first = serve(files);
+  try {
+    await callTool(`http://127.0.0.1:${await first.port}/notes/mcp`, "create-note", {
+      title: "Kept",
+    });
+  } finally {
+    first.child.kill("SIGTERM");
+  }
+  const { child, port } = serve({
+    ...files,
+    MCP_FAKES_RESUME_STATE_FILE: files.MCP_FAKES_STATE_FILE,
+  });
+  try {
+    const url = `http://127.0.0.1:${await port}/notes/admin`;
+    const titles = (await (await fetch(`${url}/state`)).json()).notes.map(
+      (note: { title: string }) => note.title,
+    );
+    expect(titles).toContain("Kept");
+    expect((await (await fetch(`${url}/initial-state`)).json()).notes).toHaveLength(3);
+  } finally {
+    child.kill("SIGTERM");
+  }
+});
+
+test("serve refuses a missing saved state", { timeout: 60_000 }, async () => {
+  const missing = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mcp-fakes-resume-")), "none");
+  const failed: { code?: number; stderr: string } = await run(process.execPath, [CLI, "serve"], {
+    cwd: FAKES,
+    env: { PATH: process.env.PATH, MCP_FAKES_PORT: "0", MCP_FAKES_RESUME_STATE_FILE: missing },
+  }).catch((error) => error);
+  expect(failed.code).toBe(1);
+  expect(failed.stderr).toMatch(/^Error: Cannot read the saved state .*none/m);
+});
+
 test("serve writes a prefixed_json answer's prefix and suffix, so a verifier reads it back", () => {
   const tools = { tools: [{ name: "find", inputSchema: { type: "object" } }] } as const;
   const answer = { format: "prefixed_json", prefix: "Found: ", suffix: " Done." };

@@ -61,6 +61,14 @@ export interface ServiceOptions<W extends object> {
   host?: string;
   /** A file every fake's state is written to, keyed by fake id, after each MCP request. */
   stateFile?: string;
+  /** A file the state `/<id>/admin/initial-state` reports is written to, keyed by fake id, at start. */
+  initialStateFile?: string;
+  /**
+   * Continue an earlier run instead of building the world: every fake starts from `states`, and
+   * `/<id>/admin/initial-state` reports `initial`, the state the earlier run started from, so a
+   * conversation that spans runs is judged against the world it began in.
+   */
+  resume?: { states: W; initial: W };
   /** A file each tool call is appended to as one JSON line. */
   record?: string;
 }
@@ -79,7 +87,7 @@ export interface Services<W> {
   mcpServers: () => McpServerBinding[];
   /** Every fake's current state, which the handlers change in place. */
   states: W;
-  /** Every fake's state when the services started. */
+  /** Every fake's state when the services started, or the resumed run's `initial`. */
   initial: W;
   close: () => Promise<void>;
 }
@@ -192,18 +200,26 @@ function writeAtomically(file: string, value: unknown) {
 
 /**
  * Serves every fake on one HTTP server: its MCP endpoint at `/<id>/mcp`, its current state at
- * `/<id>/admin/state` and the state it started with at `/<id>/admin/initial-state`.
+ * `/<id>/admin/state` and the state it started with, or the resumed run's, at
+ * `/<id>/admin/initial-state`.
  */
 export async function startServices<W extends object>(
   fakes: Fakes,
   options: ServiceOptions<W>,
 ): Promise<Services<W>> {
   const { world, scenario, clock, port = 0, host = "127.0.0.1", stateFile, record } = options;
-  const seeded = world(scenario, new Date(clock ?? Date.now())) as Record<string, unknown>;
+  const { resume } = options;
+  const seeded = resume
+    ? (resume.states as Record<string, unknown>)
+    : (world(scenario, new Date(clock ?? Date.now())) as Record<string, unknown>);
+  const started = (resume?.initial ?? seeded) as Record<string, unknown>;
+  const source = resume ? "The resumed state" : "The world";
   const served = Object.entries(fakes).map(([id, fake]) => {
-    if (!Object.hasOwn(seeded, id)) throw new Error(`The world has no state for the fake ${id}`);
-    const initial = structuredClone(seeded[id]);
-    const state = structuredClone(initial);
+    if (!Object.hasOwn(seeded, id)) throw new Error(`${source} has no state for the fake ${id}`);
+    if (!Object.hasOwn(started, id))
+      throw new Error(`The resumed initial state has no state for the fake ${id}`);
+    const initial = structuredClone(started[id]);
+    const state = structuredClone(seeded[id]);
     const info = manifestServer(id, fake);
     checkRegistrations(id, fake, info, state);
     const handler = createMcpHandler(() => {
@@ -221,6 +237,7 @@ export async function startServices<W extends object>(
   });
   const states = Object.fromEntries(served.map((fake) => [fake.id, fake.state])) as W;
   const initial = Object.fromEntries(served.map((fake) => [fake.id, fake.initial])) as W;
+  if (options.initialStateFile) writeAtomically(options.initialStateFile, initial);
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");

@@ -227,6 +227,36 @@ describe("state", () => {
     const { states } = await start({ stateFile });
     expect(states.notes.notes).toHaveLength(3);
   });
+
+  test("writes the state it started with to the initial state file at start", async () => {
+    const initialStateFile = path.join(scratch(), "initial-state.json");
+    const { url, initial } = await start({ initialStateFile });
+    await callTool(url("notes"), "create-note", { title: "Renewal" });
+    expect(JSON.parse(fs.readFileSync(initialStateFile, "utf8"))).toEqual(initial);
+    expect(fs.statSync(initialStateFile).mode & 0o777).toBe(0o600);
+  });
+
+  test("resumes an earlier run, reporting the state that run started from", async () => {
+    const first = await start();
+    await callTool(first.url("notes"), "create-note", { title: "Renewal" });
+    const resume = structuredClone({ states: first.states, initial: first.initial });
+    const { url, states } = await start({ scenario: "nope", resume });
+    expect(states.notes.notes.map((note) => note.title)).toContain("Renewal");
+    const read = async (route: string) =>
+      (await fetch(`${url("notes").slice(0, -4)}${route}`)).json();
+    expect((await read("/admin/state")).notes).toHaveLength(4);
+    expect((await read("/admin/initial-state")).notes).toHaveLength(3);
+  });
+
+  test("refuses a resumed state without every fake", async () => {
+    const { mail } = world();
+    await expect(
+      start({ resume: { states: { mail } as World, initial: world() } }),
+    ).rejects.toThrow("The resumed state has no state for the fake notes");
+    await expect(
+      start({ resume: { states: world(), initial: { mail } as World } }),
+    ).rejects.toThrow("The resumed initial state has no state for the fake notes");
+  });
 });
 
 describe("record", () => {
