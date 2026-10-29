@@ -12,8 +12,8 @@ The checker validates the portable authored contract:
 - direct-child `judges/*.yaml` definitions (`online`, `offline` and `mission`) and their typed authored schema;
 - dependency lockfile presence and npm lockfile identity;
 - exclusion of local capability configuration from distributable snapshots,
-  accepting a committed `.pi/mcp.local.json` only as a loopback evaluation
-  binding.
+  accepting a committed `.pi/mcp.local.json` only as an evaluation binding
+  (declared ids, each once, at a loopback or single-label compose host).
 
 It deliberately does not validate host manifests, credentials, deployment
 resources, licenses, or local endpoint bindings. The exported `resources`
