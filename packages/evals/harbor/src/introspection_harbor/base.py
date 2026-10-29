@@ -4,6 +4,11 @@ An adapter differs only in how the Recipe and Pi reach the trial (``install``).
 What is common lives here: the run spec ``introspection eval run`` hands over,
 the Pi invocation with the runtime proxy and telemetry preloads, the captured
 event stream, and the ATIF conversion Harbor needs for model, usage and cost.
+
+The same adapter is also an ACP target. In a trial with a simulated user
+(``bridge: {kind: acp}``) Harbor never calls ``run``: the user agent reaches
+the Recipe through ``acpx``, which starts ``acp_command()`` in the container.
+That is pi-acp driving the same Pi invocation in RPC mode.
 """
 
 from __future__ import annotations
@@ -24,8 +29,10 @@ from harbor.agents.installed.base import (
     NonZeroAgentExitCodeError,
     with_prompt_template,
 )
+from harbor.agents.protocols.acp import ACPAgentMixin
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+from harbor.models.bridge import BridgeKind
 from harbor.models.task.config import MCPServerConfig
 from harbor.utils.trajectory_utils import compute_model_usage
 from introspection_sdk.schemas.genai_span import GenAiSpan
@@ -105,6 +112,20 @@ STEP_START_FILENAME = "step-start-ms"
 SESSION_TOKEN_ENV = "INTROSPECTION_TOKEN"
 PROXY_KEY_ENV = "INTROSPECTION_PROXY_KEY"
 PUBLIC_EGRESS_URL_ENV = "INTROSPECTION_PUBLIC_EGRESS_URL"
+# The ACP server that puts Pi behind Harbor's ACP bridge, pinned like Harbor
+# pins claude-code-acp for Claude Code.
+PI_ACP_VERSION = "0.0.34"
+# pi-acp and the two launchers below. /tmp because every image grants it to an
+# arbitrary uid (see the bootstrap adapter), and not under the bootstrap's own
+# base, which its install empties.
+ACP_DIR = "/tmp/introspection-acp"
+# pi-acp takes Pi's command as one executable (PI_ACP_PI_COMMAND) and appends
+# ``--mode rpc --no-themes [--session <file>]`` itself, so the Recipe's Pi
+# invocation lives in a launcher.
+ACP_PI_LAUNCHER = f"{ACP_DIR}/pi"
+ACP_SERVER_LAUNCHER = f"{ACP_DIR}/pi-acp"
+# pi-acp drops Pi's stderr.
+ACP_PI_STDERR = "/logs/agent/pi-stderr.log"
 # Under managed egress the provider key Pi presents is the session locator;
 # the egress proxy swaps it for the real credential. Nothing else from the
 # host environment reaches the trial.
@@ -180,12 +201,37 @@ def pi_launcher_command() -> str:
     )
 
 
+def pi_launch_args(
+    candidate: dict[str, Any],
+    recipe_dir: str = BAKED_RECIPE_DIR,
+    provider_http_extension_path: str | None = None,
+    skills_dir: str | None = None,
+) -> list[str]:
+    """Pi with the Recipe, its agent and the task's skills.
+
+    What an authored run and the ACP target share.
+    """
+
+    args = ["pi"]
+    if provider_http_extension_path:
+        args.extend(["--extension", provider_http_extension_path])
+    args.extend(["--recipe", recipe_dir])
+    if candidate.get("agent"):
+        args.extend(["--agent", candidate["agent"]])
+    if candidate.get("model"):
+        args.extend(["--model", candidate["model"]])
+    if skills_dir:
+        args.extend(["--skill", skills_dir])
+    return args
+
+
 def pi_args(
     candidate: dict[str, Any],
     spec: dict[str, Any],
     recipe_dir: str = BAKED_RECIPE_DIR,
     provider_http_extension_path: str | None = None,
     resume: bool = False,
+    skills_dir: str | None = None,
 ) -> list[str]:
     """Build the Pi invocation, via ``introspection local`` only for a replay.
 
@@ -221,16 +267,9 @@ def pi_args(
         args.extend(["--yes", "--non-interactive", "--"])
         args.extend(["--session-dir", PI_SESSION_DIR])
     else:
-        args = [
-            "pi",
-        ]
-        if provider_http_extension_path:
-            args.extend(["--extension", provider_http_extension_path])
-        args.extend(["--recipe", recipe_dir])
-        if candidate.get("agent"):
-            args.extend(["--agent", candidate["agent"]])
-        if candidate.get("model"):
-            args.extend(["--model", candidate["model"]])
+        args = pi_launch_args(
+            candidate, recipe_dir, provider_http_extension_path, skills_dir
+        )
         args.extend(["--session-dir", PI_SESSION_DIR])
         if resume:
             args.append("--continue")
@@ -338,6 +377,51 @@ def managed_runtime_preloads_command() -> str:
     return "export INTROSPECTION_LOG_LEVEL=WARN; " + " ".join(commands)
 
 
+def acp_pi_launcher(
+    launch_args: list[str], prelude: str = "", stderr_path: str = ACP_PI_STDERR
+) -> str:
+    """The script pi-acp starts as Pi, with its own arguments appended.
+
+    Pi runs in the ACP session's directory, the task's workspace, as it does
+    under the Runtime; the Recipe's ``.pi/mcp.local.json`` is read from the
+    Recipe directory either way.
+    """
+
+    return "\n".join(
+        [
+            "#!/bin/sh",
+            prelude + managed_runtime_preloads_command(),
+            f'exec {shlex.join(launch_args)} "$@" 2>>{shlex.quote(stderr_path)}',
+        ]
+    )
+
+
+def acp_install_command(launch_args: list[str], prelude: str = "") -> str:
+    """Install pi-acp and write the launchers ``acp_command`` starts.
+
+    pi-acp goes into a prefix of its own rather than npm's global one, which
+    is root-owned on a system Node.
+    """
+
+    pi_launcher = acp_pi_launcher(launch_args, prelude)
+    server_launcher = "\n".join(
+        [
+            "#!/bin/sh",
+            prelude,
+            f'exec {ACP_DIR}/node_modules/.bin/pi-acp "$@"',
+        ]
+    )
+    return (
+        f"{prelude}"
+        f"mkdir -p {ACP_DIR} && cd {ACP_DIR} && "
+        "{ test -f package.json || npm init -y >/dev/null; } && "
+        f"npm install --no-audit --no-fund pi-acp@{PI_ACP_VERSION} && "
+        f"printf '%s\\n' {shlex.quote(pi_launcher)} >{ACP_PI_LAUNCHER} && "
+        f"printf '%s\\n' {shlex.quote(server_launcher)} >{ACP_SERVER_LAUNCHER} && "
+        f"chmod 0755 {ACP_PI_LAUNCHER} {ACP_SERVER_LAUNCHER}"
+    )
+
+
 def managed_model_environment(
     model_name: str | None, host_env: dict[str, str] | None = None
 ) -> dict[str, str]:
@@ -360,19 +444,28 @@ def managed_model_environment(
     return {managed_key: session_token} if managed_key else {}
 
 
-class RecipeAgentBase(BaseInstalledAgent):
+class RecipeAgentBase(BaseInstalledAgent, ACPAgentMixin):
     """Run a Recipe with Pi inside a Harbor trial and report the trajectory.
 
     Subclasses decide how the Recipe and Pi get into the trial (``install``);
-    launching, capture and ATIF conversion are shared.
+    launching, capture and ATIF conversion are shared, and so is serving the
+    Recipe over ACP (``acp_install``, ``acp_command``).
     """
 
     # ``resume``: Harbor calls it for the later steps of a multi-step task when
     # the run sets ``--resume-trajectory``; ``run`` then continues the Pi
     # session. ``mcp_servers``: a task's ``[[environment.mcp_servers]]`` become
     # the Recipe's local MCP bindings, and Harbor refuses such a task for an
-    # agent that does not declare it.
-    capabilities = AgentCapabilities(atif=True, resume=True, mcp_servers=True)
+    # agent that does not declare it. ``bridges``: Harbor's ACP bridge refuses
+    # a target that does not declare it. ``skills``: a task's ``skills_dir`` is
+    # handed to Pi as ``--skill``.
+    capabilities = AgentCapabilities(
+        atif=True,
+        resume=True,
+        mcp_servers=True,
+        skills=True,
+        bridges=frozenset({BridgeKind.ACP}),
+    )
     _OUTPUT_FILENAME = "pi.jsonl"
     # Where this adapter's Recipe ends up. The Runtime image bakes it; an
     # adapter that has to create the directory itself overrides this.
@@ -391,6 +484,55 @@ class RecipeAgentBase(BaseInstalledAgent):
         """Shell prepended to the launch; empty when the image's Pi is on ``PATH``."""
 
         return ""
+
+    def launch_args(self) -> list[str]:
+        """Pi with this trial's Recipe, agent and the task's skills."""
+
+        return pi_launch_args(
+            self._spec["candidate"],
+            self.recipe_dir,
+            self.provider_http_extension_path,
+            self.skills_dir,
+        )
+
+    @override
+    async def acp_install(self, environment: BaseEnvironment) -> None:
+        """Install pi-acp and the launchers on top of what ``install`` laid out.
+
+        Harbor's ACP bridge calls this after ``install``, and only in a trial
+        it drives, so a trial without a simulated user fetches nothing more.
+        A production-conversation replay hydrates its session through
+        ``introspection local``, which pi-acp cannot start.
+        """
+
+        if (self._spec.get("input") or {}).get("replay_context_path"):
+            raise ValueError(
+                "a production-conversation replay cannot be driven over ACP"
+            )
+        await self.exec_as_agent(
+            environment,
+            command=acp_install_command(self.launch_args(), self.run_prelude()),
+        )
+
+    @override
+    def acp_command(self) -> list[str]:
+        return [
+            "env",
+            f"PI_ACP_PI_COMMAND={ACP_PI_LAUNCHER}",
+            # Lets the user agent send ``resource`` blocks, as it can to
+            # Claude Code; acpx refuses a block the target did not advertise.
+            "PI_ACP_ENABLE_EMBEDDED_CONTEXT=true",
+            f"PI_CODING_AGENT_SESSION_DIR={PI_SESSION_DIR}",
+            f"{SPANS_FILE_ENV}=/logs/agent/{SPANS_FILENAME}",
+            ACP_SERVER_LAUNCHER,
+        ]
+
+    @override
+    def acp_env(self) -> dict[str, str]:
+        # Harbor merges this into every exec of the user agent, so acpx, then
+        # pi-acp, then Pi inherit it; it is never written into the container.
+        # The target's own ``--ae`` variables are merged in by Harbor itself.
+        return managed_model_environment(self._spec["candidate"].get("model"))
 
     async def upload_replay_context(self, environment: BaseEnvironment) -> None:
         """Ship the canonical replay context when the CLI selected one."""
@@ -428,6 +570,7 @@ class RecipeAgentBase(BaseInstalledAgent):
                     self.recipe_dir,
                     self.provider_http_extension_path,
                     resume=self._resume,
+                    skills_dir=self.skills_dir,
                 ),
                 self._OUTPUT_FILENAME,
                 prelude=self.run_prelude(),

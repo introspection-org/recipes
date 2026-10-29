@@ -5,17 +5,26 @@ import shlex
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
+from harbor.bridges.acp import build_acpx_config
+from harbor.bridges.base import BaseBridge
+from harbor.models.bridge import BridgeConfig, BridgeKind
 from harbor.models.task.config import MCPServerConfig
 
 from introspection_harbor.base import (
+    ACP_PI_LAUNCHER,
+    ACP_SERVER_LAUNCHER,
+    PI_ACP_VERSION,
     RUNTIME_PROVIDER_HTTP_EXTENSION_PATH,
     STEP_START_FILENAME,
+    acp_install_command,
+    acp_pi_launcher,
     managed_model_environment,
     managed_runtime_preloads_command,
     pi_args,
@@ -25,6 +34,11 @@ from introspection_harbor.base import (
     require_run_spec_v2,
     selected_prompt,
 )
+from introspection_harbor.bootstrap_agent import (
+    TOOLCHAIN_PRELUDE,
+    IntrospectionBootstrapAgent,
+)
+from introspection_harbor.native_agent import IntrospectionNativeAgent
 from introspection_harbor.runtime_agent import IntrospectionRecipeAgent
 from introspection_harbor.trajectory import (
     pi_terminal_provider_error,
@@ -39,10 +53,12 @@ _AUTHORED_SPEC = {
 }
 
 
-def _agent(spec: dict) -> IntrospectionRecipeAgent:
-    instance = object.__new__(IntrospectionRecipeAgent)
+def _agent(spec: dict, cls: type = IntrospectionRecipeAgent):
+    instance = object.__new__(cls)
     instance._spec = spec
     instance.mcp_servers = []
+    instance.skills_dir = None
+    instance._extra_env = {}
     instance._OUTPUT_FILENAME = "pi.jsonl"
     return instance
 
@@ -125,6 +141,140 @@ class RunSpecTest(unittest.TestCase):
     def test_empty_prompt_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "non-empty"):
             selected_prompt({"input": {"prompt": "  "}}, "instruction")
+
+
+_RECIPE_SPEC = {
+    "schema_version": 2,
+    "candidate": {
+        "runtime": "refunds",
+        "agent": "operator-eval",
+        "model": "openai/gpt-6.1-sol",
+    },
+    "input": {},
+}
+
+
+class AcpTargetTest(unittest.IsolatedAsyncioTestCase):
+    def test_the_recipe_adapters_declare_the_acp_bridge_and_skills(self) -> None:
+        for cls in (IntrospectionRecipeAgent, IntrospectionBootstrapAgent):
+            self.assertIn(BridgeKind.ACP, cls.capabilities.bridges)
+            self.assertTrue(cls.capabilities.skills)
+
+    async def test_harbor_bridges_a_recipe_adapter(self) -> None:
+        bridge = await BaseBridge.create(
+            BridgeConfig(kind=BridgeKind.ACP), _agent(_RECIPE_SPEC)
+        )
+        self.assertEqual(bridge.env(), {})
+
+    async def test_the_native_adapter_is_no_acp_target(self) -> None:
+        native = object.__new__(IntrospectionNativeAgent)
+        with self.assertRaisesRegex(ValueError, "does not support the 'acp' bridge"):
+            await BaseBridge.create(BridgeConfig(kind=BridgeKind.ACP), native)
+
+    def test_acp_command_starts_pi_acp_with_the_launcher(self) -> None:
+        command = _agent(_RECIPE_SPEC).acp_command()
+
+        self.assertEqual(command[0], "env")
+        self.assertEqual(command[-1], ACP_SERVER_LAUNCHER)
+        self.assertEqual(
+            command[1:-1],
+            [
+                f"PI_ACP_PI_COMMAND={ACP_PI_LAUNCHER}",
+                "PI_ACP_ENABLE_EMBEDDED_CONTEXT=true",
+                "PI_CODING_AGENT_SESSION_DIR=/logs/agent/pi/sessions",
+                "PI_RECIPE_GENAI_SPANS_FILE=/logs/agent/genai-spans.json",
+            ],
+        )
+        # What Harbor writes into .acpxrc.json as the target agent.
+        target = build_acpx_config(command)["agents"]["target"]
+        self.assertEqual(target["command"], "env")
+
+    def test_acp_env_carries_keys_only_from_the_environment(self) -> None:
+        agent = _agent(_RECIPE_SPEC)
+        self.assertEqual(agent.acp_env(), {})
+        with unittest.mock.patch.dict(
+            "os.environ",
+            {
+                "INTROSPECTION_TOKEN": "synthetic-locator",
+                "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress.example.test",
+            },
+        ):
+            env = agent.acp_env()
+        # Under managed egress the session locator is the provider key.
+        self.assertEqual(env, {"OPENAI_API_KEY": "synthetic-locator"})
+        self.assertNotIn("synthetic", " ".join(agent.acp_command()))
+
+    async def test_acp_install_writes_the_launchers_for_each_adapter(self) -> None:
+        for cls, recipe_dir, prelude in (
+            (IntrospectionRecipeAgent, "/opt/introspection/recipe", ""),
+            (
+                IntrospectionBootstrapAgent,
+                "/tmp/introspection/recipe",
+                TOOLCHAIN_PRELUDE,
+            ),
+        ):
+            agent = _agent(_RECIPE_SPEC, cls)
+            agent.skills_dir = "/skills"
+            agent.exec_as_agent = AsyncMock()
+            await agent.acp_install(Mock())
+
+            agent.exec_as_agent.assert_awaited_once()
+            commands = [agent.exec_as_agent.call_args.kwargs["command"]]
+            self.assertTrue(commands[0].startswith(prelude))
+            self.assertIn(
+                f"npm install --no-audit --no-fund pi-acp@{PI_ACP_VERSION}", commands[0]
+            )
+            self.assertIn(f">{ACP_PI_LAUNCHER}", commands[0])
+            self.assertIn(f">{ACP_SERVER_LAUNCHER}", commands[0])
+            self.assertIn(f"--recipe {recipe_dir}", commands[0])
+            self.assertIn("--skill /skills", commands[0])
+
+    async def test_a_replay_is_not_served_over_acp(self) -> None:
+        spec = {**_RECIPE_SPEC, "input": {"replay_context_path": "/tmp/context.json"}}
+        agent = _agent(spec)
+        agent.exec_as_agent = AsyncMock()
+        with self.assertRaisesRegex(ValueError, "cannot be driven over ACP"):
+            await agent.acp_install(Mock())
+        agent.exec_as_agent.assert_not_called()
+
+    def test_pi_launcher_runs_the_recipe_with_pi_acp_arguments(self) -> None:
+        agent = _agent(_RECIPE_SPEC)
+        with tempfile.TemporaryDirectory() as root:
+            bin_dir = Path(root) / "bin"
+            bin_dir.mkdir()
+            # Stands in for Pi: prints its arguments and NODE_OPTIONS.
+            pi = bin_dir / "pi"
+            pi.write_text('#!/bin/sh\necho "$@"\necho "${NODE_OPTIONS:-}" >&2\n')
+            pi.chmod(0o755)
+            launcher = Path(root) / "launcher"
+            stderr = Path(root) / "pi-stderr.log"
+            launcher.write_text(
+                acp_pi_launcher(agent.launch_args(), stderr_path=str(stderr)) + "\n"
+            )
+            launcher.chmod(0o755)
+
+            launched = subprocess.run(
+                [str(launcher), "--mode", "rpc", "--no-themes"],
+                env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+            self.assertEqual(
+                launched,
+                "--extension "
+                f"{RUNTIME_PROVIDER_HTTP_EXTENSION_PATH} "
+                "--recipe /opt/introspection/recipe --agent operator-eval "
+                "--model openai/gpt-6.1-sol --mode rpc --no-themes",
+            )
+            # Pi's stderr is kept; the preloads are skipped where they are absent.
+            self.assertEqual(stderr.read_text(), "\n")
+
+    def test_install_command_quotes_both_launchers(self) -> None:
+        command = acp_install_command(["pi", "--recipe", "/r w"], prelude="P=1; ")
+        self.assertTrue(command.startswith("P=1; mkdir -p /tmp/introspection-acp"))
+        self.assertIn("'/r w'", acp_pi_launcher(["pi", "--recipe", "/r w"]))
 
 
 class LaunchCommandTest(unittest.TestCase):

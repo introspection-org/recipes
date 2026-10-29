@@ -12,8 +12,9 @@ server on 127.0.0.1 (``user_agent_mcp``):
 - ``prompt_target``: one ACP prompt to the target, through ``acpx``;
 - ``upload_file``: a host file into the container;
 - ``exec``: a command in the container;
-- ``context``: the logs directory, the target's ACP prompt capabilities, the
-  workspace, the instruction and the job's ``inputs``.
+- ``context``: the logs directory, the target's ACP prompt capabilities (what
+  it advertised when the bridge started its session), the workspace, the
+  instruction and the job's ``inputs``.
 
 What the user agent says, when it stops and what it records is the Recipe's:
 this module adds no conversation rules of its own.
@@ -61,10 +62,11 @@ USER_AGENT_TOKEN_ENV = "INTROSPECTION_USER_AGENT_TOKEN"
 METADATA_FILENAME = "metadata.json"
 PI_EVENTS_FILENAME = "pi.jsonl"
 PI_STDERR_FILENAME = "pi-stderr.log"
-# What @zed-industries/claude-code-acp 0.16.2, the adapter Harbor pins,
-# advertises in its promptCapabilities. acpx refuses an audio or resource
-# block the target didn't advertise.
-DEFAULT_TARGET_CAPABILITIES = ("image", "embeddedContext")
+# acpx refuses an audio or resource block the target didn't advertise, so the
+# Recipe is told what the target's ACP session reported (``acpx sessions
+# show``): claude-code-acp advertises ``image`` and ``embeddedContext``,
+# pi-acp ``image`` and, with PI_ACP_ENABLE_EMBEDDED_CONTEXT, ``embeddedContext``.
+SESSION_SHOW_COMMAND = "acpx --format json sessions show"
 REMOTE_PROMPT_PATH = "/tmp/introspection-user-agent-prompt.json"
 # Tools that reach the primitives of a codemode-exposed MCP server. None may be
 # declared to the model: an MCP tool is named ``mcp__<server>__<tool>``.
@@ -149,7 +151,7 @@ class Primitives:
         *,
         instruction: str = "",
         inputs: Mapping[str, Any] | None = None,
-        target_capabilities: Sequence[str] = DEFAULT_TARGET_CAPABILITIES,
+        target_capabilities: Sequence[str] | None = None,
         workspace_dir: str | None = None,
         exec_timeout_sec: int | None = None,
     ) -> None:
@@ -157,7 +159,9 @@ class Primitives:
         self.logs_dir = logs_dir
         self.instruction = instruction
         self.inputs = dict(inputs or {})
-        self.target_capabilities = tuple(target_capabilities)
+        self.target_capabilities = (
+            None if target_capabilities is None else tuple(target_capabilities)
+        )
         self.workspace_dir = workspace_dir
         self.exec_timeout_sec = exec_timeout_sec
         self.prompts = 0
@@ -285,11 +289,28 @@ class Primitives:
 
         return {
             "logs_dir": str(self.logs_dir),
-            "target_capabilities": list(self.target_capabilities),
+            "target_capabilities": list(await self._target_capabilities()),
             "workspace_dir": await self._workspace(),
             "instruction": self.instruction,
             "inputs": self.inputs,
         }
+
+    async def _target_capabilities(self) -> tuple[str, ...]:
+        """The prompt capabilities the target's ACP session advertised.
+
+        The bridge started the session before the user agent runs, so acpx
+        has the target's ``initialize`` answer on record.
+        """
+
+        if self.target_capabilities is None:
+            result = await self.environment.exec(SESSION_SHOW_COMMAND)
+            if result.return_code != 0:
+                raise RuntimeError(
+                    "Could not read the target's ACP session: "
+                    f"{result.stderr or result.stdout or ''}".strip()
+                )
+            self.target_capabilities = prompt_capabilities(result.stdout or "")
+        return self.target_capabilities
 
     async def _workspace(self) -> str:
         if self.workspace_dir is None:
@@ -298,6 +319,19 @@ class Primitives:
                 raise RuntimeError(f"pwd failed: {result.stdout or result.stderr}")
             self.workspace_dir = (result.stdout or "").strip()
         return self.workspace_dir
+
+
+def prompt_capabilities(session: str) -> tuple[str, ...]:
+    """The prompt capabilities an ``acpx sessions show`` record advertises."""
+
+    try:
+        record = json.loads(session)
+        advertised = record["agentCapabilities"].get("promptCapabilities") or {}
+    except (ValueError, TypeError, KeyError, AttributeError) as error:
+        raise RuntimeError(
+            "The target's ACP session records no agent capabilities"
+        ) from error
+    return tuple(sorted(name for name, enabled in advertised.items() if enabled))
 
 
 def _schema(
@@ -329,8 +363,8 @@ class PiRecipeUserAgent(BaseAgent):
     - ``agent``: the Recipe agent to run (Pi's ``--agent``).
     - ``inputs``: JSON data for the Recipe, served as ``context.inputs``.
     - ``prompt``: Pi's first message; defaults to the trial's instruction.
-    - ``target_capabilities``: the target's ACP prompt capabilities (default
-      Claude Code's ``image`` and ``embeddedContext``).
+    - ``target_capabilities``: the target's ACP prompt capabilities; by
+      default the ones its ACP session advertised.
     - ``workspace_dir``: the container directory relative ``upload_file``
       targets resolve against; defaults to the container's working directory,
       which is the ACP session's.
@@ -351,7 +385,7 @@ class PiRecipeUserAgent(BaseAgent):
         agent: str | None = None,
         inputs: Mapping[str, Any] | None = None,
         prompt: str | None = None,
-        target_capabilities: Sequence[str] = DEFAULT_TARGET_CAPABILITIES,
+        target_capabilities: Sequence[str] | None = None,
         workspace_dir: str | None = None,
         exec_timeout_sec: int | None = 900,
         pi_command: str = "pi",
@@ -365,7 +399,9 @@ class PiRecipeUserAgent(BaseAgent):
         self.agent = agent
         self.inputs = dict(inputs or {})
         self.prompt = prompt
-        self.target_capabilities = tuple(target_capabilities)
+        self.target_capabilities = (
+            None if target_capabilities is None else tuple(target_capabilities)
+        )
         self.workspace_dir = workspace_dir
         self.exec_timeout_sec = exec_timeout_sec
         self.pi_command = (

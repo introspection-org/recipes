@@ -714,8 +714,8 @@ user_agent:
 ```
 
 Other `kwargs`: `prompt` (Pi's first message; default: the trial's
-instruction), `target_capabilities` (default `image`, `embeddedContext`, what
-Claude Code's ACP adapter advertises), `workspace_dir` (where relative
+instruction), `target_capabilities` (default: what the target's ACP session
+advertised, read with `acpx sessions show`), `workspace_dir` (where relative
 `upload_file` targets go; default: the container's working directory),
 `exec_timeout_sec` (default 900) and `pi_command`.
 
@@ -834,6 +834,32 @@ environment, so a command the agent runs there has it.
 The trial result's agent metadata carries `user_agent: {exit_code, prompts}`,
 plus `metadata` with the contents of `metadata.json`, when the Recipe wrote one
 to `logs_dir`.
+
+### A Recipe as the target
+
+The runtime and bootstrap adapters are ACP targets too, so the user agent can
+talk to a Recipe instead of Claude Code:
+
+```sh
+introspection eval run --chain use-cases/<case>/chain.yaml --agent <recipe agent> \
+  --user-agent introspection_harbor.pi_user_agent:PiRecipeUserAgent --bridge acp ...
+```
+
+Harbor's bridge then calls the adapter's `acp_install` after `install`: it
+installs `pi-acp@0.0.34` into `/tmp/introspection-acp` and writes two
+launchers there. `pi` runs Pi with the same Recipe, agent, provider extension,
+skills and runtime preloads as an authored run; pi-acp adds `--mode rpc` and
+the session itself. `acp_command` starts pi-acp with that launcher as
+`PI_ACP_PI_COMMAND`, `PI_ACP_ENABLE_EMBEDDED_CONTEXT=true` (so the Recipe may
+send `resource` blocks), Pi's sessions under `/logs/agent/pi/sessions` and the
+spans in `/logs/agent/genai-spans.json`. Pi runs in the session's directory,
+the task's workspace, and its stderr goes to `/logs/agent/pi-stderr.log`.
+Under managed egress `acp_env` hands the provider key on to acpx, pi-acp and
+Pi, as Harbor does with the target's `--ae` variables; nothing is written into
+the container.
+A trial that is not driven over ACP installs nothing more. The native adapter
+is no ACP target: the platform runs its Recipe, so there is no process to
+attach to.
 
 ## Where this is heading
 

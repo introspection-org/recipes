@@ -19,12 +19,14 @@ from harbor.models.agent.context import AgentContext
 
 from introspection_harbor.pi_user_agent import (
     REMOTE_PROMPT_PATH,
+    SESSION_SHOW_COMMAND,
     USER_AGENT_TOKEN_ENV,
     USER_AGENT_URL_ENV,
     PiRecipeUserAgent,
     Primitives,
     model_tools,
     pi_argv,
+    prompt_capabilities,
 )
 from introspection_harbor.user_agent_mcp import Tool, ToolServer
 
@@ -37,7 +39,8 @@ class FakeEnvironment:
 
     A reply is ``(exit code, stdout)``. Each upload keeps the file's content,
     since every prompt reuses one remote path. ``acpx_gate``, when set, is
-    awaited before acpx answers.
+    awaited before acpx answers. ``acpx sessions show`` answers ``session``,
+    the target's session record.
     """
 
     def __init__(self, replies: list[tuple[int, str]] | None = None) -> None:
@@ -47,6 +50,21 @@ class FakeEnvironment:
         self.exec_kwargs: list[dict[str, Any]] = []
         self.on_acpx = lambda: None
         self.acpx_gate: asyncio.Event | None = None
+        # What claude-code-acp 0.16.2 advertises.
+        self.session: tuple[int, str] = (
+            0,
+            json.dumps(
+                {
+                    "agentCapabilities": {
+                        "promptCapabilities": {
+                            "image": True,
+                            "audio": False,
+                            "embeddedContext": True,
+                        }
+                    }
+                }
+            ),
+        )
 
     async def upload_file(self, source_path: Path | str, target_path: str) -> None:
         self.uploads.append((target_path, Path(source_path).read_bytes()))
@@ -56,6 +74,9 @@ class FakeEnvironment:
         self.exec_kwargs.append(kwargs)
         if command == "pwd":
             return SimpleNamespace(return_code=0, stdout="/app\n", stderr=None)
+        if command == SESSION_SHOW_COMMAND:
+            code, stdout = self.session
+            return SimpleNamespace(return_code=code, stdout=stdout, stderr=None)
         if command.startswith("acpx "):
             self.on_acpx()
             if self.acpx_gate is not None:
@@ -311,6 +332,52 @@ class PrimitivesTest(unittest.IsolatedAsyncioTestCase):
                 "inputs": {"task_dir": "/tasks/create-1"},
             },
         )
+
+    async def test_context_reads_the_capabilities_the_target_advertised(
+        self,
+    ) -> None:
+        # pi-acp 0.0.34's answer, as `acpx --format json sessions show` prints it.
+        session = {
+            "acpSessionId": "synthetic-session",
+            "agentCapabilities": {
+                "loadSession": True,
+                "promptCapabilities": {
+                    "image": True,
+                    "audio": False,
+                    "embeddedContext": True,
+                },
+            },
+        }
+        env = FakeEnvironment()
+        env.session = (0, json.dumps(session))
+        primitives = self.primitives(env)
+
+        for _ in range(2):
+            context = await primitives.context({})
+            self.assertEqual(
+                context["target_capabilities"], ["embeddedContext", "image"]
+            )
+        # Read once, from the session the bridge started.
+        self.assertEqual(env.commands.count(SESSION_SHOW_COMMAND), 1)
+
+    async def test_context_fails_without_a_target_session(self) -> None:
+        env = FakeEnvironment()
+        env.session = (1, "no session")
+        primitives = self.primitives(env)
+
+        with self.assertRaisesRegex(RuntimeError, "no session"):
+            await primitives.context({})
+
+    def test_prompt_capabilities_need_the_agent_capabilities(self) -> None:
+        self.assertEqual(
+            prompt_capabilities(
+                json.dumps({"agentCapabilities": {"promptCapabilities": {}}})
+            ),
+            (),
+        )
+        for broken in ("not json", "{}", '{"agentCapabilities": null}'):
+            with self.assertRaisesRegex(RuntimeError, "no agent capabilities"):
+                prompt_capabilities(broken)
 
 
 class ToolServerTest(unittest.IsolatedAsyncioTestCase):
