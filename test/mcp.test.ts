@@ -25,6 +25,7 @@ import {
 } from "../src/mcp/cli/index.js";
 import { preloadMcpCatalogs } from "../src/mcp/catalog.js";
 import { callMcpDaemonTool } from "../src/mcp/daemon/client.js";
+import { usesPiMcpClient } from "../src/mcp/pi-runtime.js";
 import {
   buildMcporterConfig,
   clearMcpSession,
@@ -764,6 +765,9 @@ describe("lazy MCP CLI discovery", () => {
   it("reuses one daemon runtime across concurrent calls and later commands", async () => {
     const root = mkdtempSync(join(tmpdir(), "recipes-mcp-daemon-"));
     const stub = await startStubMcpServer({ failListAttempts: 1 });
+    // The stub fails the first catalog read with a 503. mcporter reconnects to
+    // read it again; pi-mcp reads it again on the same session.
+    const initializes = usesPiMcpClient() ? 1 : 2;
     const cwd = join(root, "workspace");
     const recipeDir = join(root, "recipe");
     mkdirSync(recipeDir, { recursive: true });
@@ -837,7 +841,7 @@ describe("lazy MCP CLI discovery", () => {
       await preload;
       expect(racedList).toMatchObject({ code: 0, stderr: "" });
       expect(racedList.stdout).toContain("stub.search_profiles");
-      expect(stub.stats.initialize).toBe(2);
+      expect(stub.stats.initialize).toBe(initializes);
       expect(stub.stats.list).toBe(2);
       expect(stub.stats.call).toBe(0);
 
@@ -861,7 +865,7 @@ describe("lazy MCP CLI discovery", () => {
       expect(JSON.parse(right.stdout)).toMatchObject({
         arguments: { query: "architect" },
       });
-      expect(stub.stats.initialize).toBe(2);
+      expect(stub.stats.initialize).toBe(initializes);
       expect(stub.stats.call).toBe(2);
 
       const later = await runMcpShim(
@@ -870,7 +874,7 @@ describe("lazy MCP CLI discovery", () => {
         cliEnv,
       );
       expect(later).toMatchObject({ code: 0, stderr: "" });
-      expect(stub.stats.initialize).toBe(2);
+      expect(stub.stats.initialize).toBe(initializes);
       expect(stub.stats.call).toBe(3);
 
       if (nativeClient) {
@@ -934,7 +938,7 @@ describe("lazy MCP CLI discovery", () => {
       const list = await runMcpShim(shim.shimPath, ["list", "stub"], cliEnv);
       expect(list).toMatchObject({ code: 0, stderr: "" });
       expect(list.stdout).toContain("stub.search_profiles(query: string)");
-      expect(stub.stats.initialize).toBe(nativeClient ? 3 : 2);
+      expect(stub.stats.initialize).toBe(initializes + (nativeClient ? 1 : 0));
       expect(stub.stats.list).toBe(2);
 
       const run = await runMcpShim(
@@ -950,7 +954,7 @@ describe("lazy MCP CLI discovery", () => {
       expect(JSON.parse(run.stdout)).toMatchObject({
         arguments: { query: "principal" },
       });
-      expect(stub.stats.initialize).toBe(nativeClient ? 3 : 2);
+      expect(stub.stats.initialize).toBe(initializes + (nativeClient ? 1 : 0));
       expect(stub.stats.call).toBe(nativeClient ? 6 : 5);
 
       if (nativeClient) {
@@ -980,7 +984,7 @@ describe("lazy MCP CLI discovery", () => {
       expect(JSON.parse(afterBusyLoop.stdout)).toMatchObject({
         arguments: { query: "survivor" },
       });
-      expect(stub.stats.initialize).toBe(nativeClient ? 3 : 2);
+      expect(stub.stats.initialize).toBe(initializes + (nativeClient ? 1 : 0));
       expect(stub.stats.call).toBe(nativeClient ? 7 : 6);
     } finally {
       await clearMcpSession(env, cwd);
