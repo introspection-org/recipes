@@ -3,6 +3,8 @@ import type {
   ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
+import type { McpRunTools } from "./mcp/call-result.js";
+
 export interface RecipeExtensionSessionContext {
   readonly recipe: {
     readonly name: string;
@@ -48,6 +50,54 @@ function sharedRecipeExtensionContexts(): WeakMap<
 }
 
 const contexts = sharedRecipeExtensionContexts();
+
+/**
+ * The session's MCP tools for its extensions. A host settles it once the
+ * agent's MCP session is ready, which may be after the extension has loaded.
+ */
+export interface RecipeMcpToolsSlot {
+  readonly tools: Promise<McpRunTools>;
+  resolve(tools: McpRunTools): void;
+  reject(reason: Error): void;
+}
+
+/** @internal One slot per Recipe session, shared by its extensions. */
+export function createRecipeMcpToolsSlot(): RecipeMcpToolsSlot {
+  let resolve!: (tools: McpRunTools) => void;
+  let reject!: (reason: Error) => void;
+  const tools = new Promise<McpRunTools>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  // An extension that never asks must not see an unhandled rejection.
+  tools.catch(() => {});
+  return { tools, resolve, reject };
+}
+
+const recipeMcpToolsSlotsKey = Symbol.for(
+  "@introspection-ai/recipes.extension-mcp-tools.v1"
+);
+
+function sharedRecipeMcpToolsSlots(): WeakMap<ExtensionAPI, RecipeMcpToolsSlot> {
+  const shared = globalThis as typeof globalThis & Record<symbol, unknown>;
+  const existing = shared[recipeMcpToolsSlotsKey];
+  if (existing !== undefined) {
+    if (!(existing instanceof WeakMap)) {
+      throw new Error("The shared Recipe extension MCP registry is invalid");
+    }
+    return existing as WeakMap<ExtensionAPI, RecipeMcpToolsSlot>;
+  }
+  const slots = new WeakMap<ExtensionAPI, RecipeMcpToolsSlot>();
+  Object.defineProperty(shared, recipeMcpToolsSlotsKey, {
+    configurable: false,
+    enumerable: false,
+    value: slots,
+    writable: false,
+  });
+  return slots;
+}
+
+const mcpToolsSlots = sharedRecipeMcpToolsSlots();
 
 export interface RecipeExtensionRegistrationRegistry {
   claim(kind: string, name: string, owner: string): void;
@@ -108,6 +158,24 @@ export function getRecipeSessionContext(
   return context;
 }
 
+/**
+ * The agent's MCP tools, for an extension's own code, in the shape `mcp run`
+ * scripts use: `tools["server"]["tool"](args)` returns the decoded JSON, and
+ * `.text(args)`, `.markdown(args)`, `.images(args)`, `.content(args)`,
+ * `.structuredContent(args)` and `.raw(args)` pick another form. The agent's
+ * MCP policy applies, and only servers bound in this session are present.
+ * Requires `mcp.mode: tools`.
+ */
+export function getRecipeMcpTools(pi: ExtensionAPI): Promise<McpRunTools> {
+  const slot = mcpToolsSlots.get(pi);
+  if (!slot) {
+    return Promise.reject(
+      new Error("This extension is not running inside a Recipe-owned session")
+    );
+  }
+  return slot.tools;
+}
+
 /** Register behavior only when this session is running the named agent. */
 export function forAgent(
   pi: ExtensionAPI,
@@ -134,7 +202,8 @@ export function bindRecipeExtensionFactory(
   context: RecipeExtensionSessionContext,
   registrationRegistry?: RecipeExtensionRegistrationRegistry,
   owner = "<recipe-extension>",
-  allowedToolNames?: ReadonlySet<string>
+  allowedToolNames?: ReadonlySet<string>,
+  mcpTools?: RecipeMcpToolsSlot
 ): ExtensionFactory {
   return async (pi) => {
     const registrationKinds: Record<string, string> = {
@@ -215,6 +284,7 @@ export function bindRecipeExtensionFactory(
         })
       : pi;
     contexts.set(guarded, context);
+    if (mcpTools) mcpToolsSlots.set(guarded, mcpTools);
     await factory(guarded);
   };
 }

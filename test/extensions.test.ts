@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
+  createRecipeMcpToolsSlot,
   forAgent,
   forRecipeSession,
+  getRecipeMcpTools,
   getRecipeSessionContext,
   recipeExtensionToolAllowlist,
   type RecipeExtensionSessionContext,
@@ -189,6 +191,49 @@ describe("Recipe extension context", () => {
     );
     expect(recipeExtensionToolAllowlist(["read"], false)).toEqual(
       new Set(["read"])
+    );
+  });
+});
+
+describe("Recipe extension MCP tools", () => {
+  it("hands each bound extension the session's tools once they are ready", async () => {
+    const slot = createRecipeMcpToolsSlot();
+    let received: Promise<unknown> | undefined;
+    await bindRecipeExtensionFactory(
+      (extensionApi) => {
+        received = getRecipeMcpTools(extensionApi);
+      },
+      context(),
+      undefined,
+      undefined,
+      undefined,
+      slot
+    )(api());
+    const tools = Object.freeze({ crm: Object.freeze({}) });
+    slot.resolve(tools);
+    await expect(received).resolves.toBe(tools);
+  });
+
+  it("passes on why a session has no tools for its extensions", async () => {
+    const slot = createRecipeMcpToolsSlot();
+    let received: Promise<unknown> | undefined;
+    await bindRecipeExtensionFactory(
+      (extensionApi) => {
+        received = getRecipeMcpTools(extensionApi);
+      },
+      context(),
+      undefined,
+      undefined,
+      undefined,
+      slot
+    )(api());
+    slot.reject(new Error("must set mcp.mode: tools"));
+    await expect(received).rejects.toThrow("must set mcp.mode: tools");
+  });
+
+  it("refuses an extension outside a Recipe session", async () => {
+    await expect(getRecipeMcpTools(api())).rejects.toThrow(
+      "not running inside a Recipe-owned session"
     );
   });
 });

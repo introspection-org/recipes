@@ -23,6 +23,8 @@ import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
+  createRecipeMcpToolsSlot,
+  type RecipeMcpToolsSlot,
   recipeExtensionToolAllowlist,
   type RecipeExtensionRegistrationRegistry,
 } from "./extensions.js";
@@ -147,6 +149,7 @@ interface RecipeLaunchState {
   resolvedRecipe: ResolvedRecipe;
   resolved: ResolvedRecipeAgent;
   extensionRegistrations: RecipeExtensionRegistrationRegistry;
+  mcpTools: RecipeMcpToolsSlot;
   extensionsLoaded: boolean;
   extensionFailure?: string;
   configured: boolean;
@@ -732,6 +735,7 @@ export function createRecipesExtension(
       resolvedRecipe,
       resolved,
       extensionRegistrations: createRecipeExtensionRegistrationRegistry(),
+      mcpTools: createRecipeMcpToolsSlot(),
       extensionsLoaded: false,
       configured: false,
       mcpConfigured: false,
@@ -852,7 +856,8 @@ export function createRecipesExtension(
           }),
           launchState.extensionRegistrations,
           connector.owner,
-          launchState.extensionAllowedToolNames
+          launchState.extensionAllowedToolNames,
+          launchState.mcpTools
         );
         await factory(pi);
       }
@@ -871,7 +876,8 @@ export function createRecipesExtension(
           }),
           launchState.extensionRegistrations,
           extensionPath,
-          launchState.extensionAllowedToolNames
+          launchState.extensionAllowedToolNames,
+          launchState.mcpTools
         );
         await factory(pi);
         loadedCount += 1;
@@ -1006,6 +1012,9 @@ export function createRecipesExtension(
       );
       if (mcpSelections.length === 0) {
         await clearMcpSession(env, launchState.cwd);
+        launchState.mcpTools.reject(
+          new Error(`Recipe agent "${launchState.resolved.name}" has no MCP servers`)
+        );
         launchState.mcpConfigured = true;
         return;
       }
@@ -1056,6 +1065,11 @@ export function createRecipesExtension(
           "warning"
         );
       }
+      launchState.mcpTools.reject(
+        new Error(
+          `Recipe agent "${launchState.resolved.name}" must set mcp.mode: tools for its extensions to call MCP tools`
+        )
+      );
       launchState.mcpConfigured = true;
       return;
     }
@@ -1068,6 +1082,9 @@ export function createRecipesExtension(
       launchState.resolved.definition
     );
     if (!rootMcp || rootSelections.length === 0) {
+      launchState.mcpTools.reject(
+        new Error(`Recipe agent "${launchState.resolved.name}" has no MCP servers`)
+      );
       launchState.mcpConfigured = true;
       return;
     }
@@ -1094,6 +1111,7 @@ export function createRecipesExtension(
           ].join("\n"),
           "warning"
         );
+        launchState.mcpTools.resolve(Object.freeze({}));
         launchState.mcpConfigured = true;
         return;
       }
@@ -1136,6 +1154,7 @@ export function createRecipesExtension(
         launchState.mcpCodemodeToolNames = [CODEMODE_TOOL_NAME];
         launchState.extensionAllowedToolNames.add(CODEMODE_TOOL_NAME);
       }
+      launchState.mcpTools.resolve(materialized.runTools);
       for (const toolName of materialized.toolNames) {
         launchState.extensionAllowedToolNames.add(toolName);
       }
@@ -1165,6 +1184,9 @@ export function createRecipesExtension(
       }
       launchState.mcpConfigured = true;
     } catch (error) {
+      launchState.mcpTools.reject(
+        error instanceof Error ? error : new Error(String(error))
+      );
       clearMcpCatalogPreload(privateRuntime.env);
       await stopMcpDaemon(privateRuntime.env);
       await rm(privateRuntime.directory, { recursive: true, force: true });
@@ -1467,6 +1489,7 @@ export function createRecipesExtension(
         await loadRecipeExtensions(pi, ctx, launchState);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        launchState.mcpTools.reject(new Error(`Recipe extension startup failed: ${message}`));
         failRecipeSession(pi, `extension startup failed\n${message}`, ctx);
         return;
       }
@@ -1474,6 +1497,7 @@ export function createRecipesExtension(
         await configureMcp(pi, launchState, ctx);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        launchState.mcpTools.reject(new Error(`Recipe MCP failed to configure: ${message}`));
         sessionConfigurationError = message;
         pi.setActiveTools([]);
         reportSessionFailure(`Recipe MCP failed to configure: ${message}`, ctx);

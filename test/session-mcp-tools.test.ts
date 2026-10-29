@@ -11,6 +11,10 @@ vi.mock("../src/mcp/catalog.js", () => ({
   preloadMcpCatalogs: mocks.preloadMcpCatalogs,
 }));
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { getRecipeMcpTools } from "../src/extensions.js";
 import { piMcpToolName } from "../src/mcp/tools.js";
 import {
   resolveRecipe,
@@ -46,6 +50,7 @@ describe("canonical Recipe session MCP tools mode", () => {
   it("registers deferred MCP tools through createAgentSession", async () => {
     const fixture = writeFixtureRecipe({
       manifestPi: {
+        extensions: ["extensions/*.ts"],
         mcp: {
           servers: [
             {
@@ -66,6 +71,11 @@ describe("canonical Recipe session MCP tools mode", () => {
       ],
     });
     cleanups.push(fixture.cleanup);
+    mkdirSync(join(fixture.recipeDir, "extensions"));
+    writeFileSync(
+      join(fixture.recipeDir, "extensions", "probe.ts"),
+      "export default (pi) => { (globalThis as any).__sessionMcpProbe = pi; };\n"
+    );
     mocks.preloadMcpCatalogs.mockResolvedValue([
       {
         id: "contacts",
@@ -134,6 +144,14 @@ describe("canonical Recipe session MCP tools mode", () => {
       piMcpToolName("contacts", "search_contacts")
     );
     expect(declared()).toContain(piMcpToolName("contacts", "search_contacts"));
+
+    const extensionTools = await getRecipeMcpTools(
+      (globalThis as any).__sessionMcpProbe
+    );
+    expect(Object.keys(extensionTools.contacts).sort()).toEqual([
+      "get_contact",
+      "search_contacts",
+    ]);
 
     // Tools mode owns an isolated MCP runtime instead of mutating the host env.
     expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();

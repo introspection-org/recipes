@@ -69,6 +69,7 @@ import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
+  createRecipeMcpToolsSlot,
   recipeExtensionToolAllowlist,
   type RecipeExtensionSessionContext,
 } from "./extensions.js";
@@ -350,6 +351,7 @@ interface MaterializedSessionMcp {
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
   mcpToolOrigin?: McpToolSet["mcpToolOrigin"];
+  runTools?: McpToolSet["runTools"];
   release?: () => Promise<void>;
 }
 
@@ -500,6 +502,7 @@ async function configureSessionMcp(
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
         mcpToolOrigin: materialized.mcpToolOrigin,
+        runTools: materialized.runTools,
         release,
       };
     }
@@ -590,6 +593,18 @@ async function createSessionForAgent(
     recipe.mcp?.codemode === true && (mcp.tools?.length ?? 0) > 0
       ? [CODEMODE_TOOL_NAME]
       : [];
+  const mcpTools = createRecipeMcpToolsSlot();
+  if (mcp.runTools) {
+    mcpTools.resolve(mcp.runTools);
+  } else {
+    mcpTools.reject(
+      new Error(
+        mcp.available
+          ? `Recipe agent "${recipe.name}" must set mcp.mode: tools for its extensions to call MCP tools`
+          : `Recipe agent "${recipe.name}" has no MCP servers`
+      )
+    );
+  }
 
   const cleanup = async (): Promise<void> => {
     try {
@@ -685,7 +700,8 @@ async function createSessionForAgent(
                 ? [LEGACY_MCP_TOOL_SEARCH_NAME]
                 : []),
             ]
-          )
+          ),
+          mcpTools
         )
       );
     }
@@ -709,7 +725,8 @@ async function createSessionForAgent(
                 ? [LEGACY_MCP_TOOL_SEARCH_NAME]
                 : []),
             ]
-          )
+          ),
+          mcpTools
         )
       );
     }

@@ -6,6 +6,16 @@ import type { ValidateFunction } from "ajv";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { createCallResult } from "mcporter";
+
+import {
+  checkedCallResult,
+  decodeCallResult,
+  McpRunUsageError,
+  type McpRunResultFormat,
+  type McpRunToolFunction,
+  type McpRunTools,
+} from "./call-result.js";
 import { callMcpDaemonTool } from "./daemon/client.js";
 import type { McpCatalogServer } from "./daemon/protocol.js";
 import { mcpSelectionAllowsTool } from "./policy.js";
@@ -64,6 +74,12 @@ export interface McpToolSet {
   canonicalToPiName: ReadonlyMap<string, string>;
   /** The server serving a tool, by Pi tool name. */
   mcpToolOrigin: (piName: string) => McpToolOrigin | undefined;
+  /**
+   * The same tools for a Recipe extension's own code, as `mcp run` scripts call
+   * them: `tools["server"]["tool"](args)`. Deferred tools are callable here;
+   * deferral only hides a tool from the model.
+   */
+  runTools: McpRunTools;
 }
 
 interface UsableMcpTool {
@@ -712,5 +728,93 @@ export function createMcpToolSet(options: {
     ],
     canonicalToPiName,
     mcpToolOrigin,
+    runTools: createRunTools(usable, options.env),
   };
+}
+
+// Property names runtimes probe on plain objects; returning undefined keeps
+// `await tools`, JSON.stringify, and inspection from throwing.
+const PROXY_PROBE_PROPS = new Set(["then", "toJSON", "constructor", "inspect"]);
+const RUN_FORMATS: readonly Exclude<McpRunResultFormat, "json">[] = [
+  "text",
+  "markdown",
+  "images",
+  "content",
+  "structuredContent",
+  "raw",
+];
+
+function createRunTools(
+  usable: readonly UsableMcpTool[],
+  env: NodeJS.ProcessEnv
+): McpRunTools {
+  const byServer = new Map<string, Map<string, UsableMcpTool>>();
+  for (const tool of usable) {
+    const tools = byServer.get(tool.serverId) ?? new Map<string, UsableMcpTool>();
+    tools.set(tool.catalog.name, tool);
+    byServer.set(tool.serverId, tools);
+  }
+  const call = async (
+    tool: UsableMcpTool,
+    args: Record<string, unknown> | undefined,
+    format: McpRunResultFormat
+  ): Promise<unknown> => {
+    const input = args ?? {};
+    if (!tool.validateInput(input)) {
+      throw new McpRunUsageError(
+        `MCP tool '${tool.canonicalName}' received arguments that do not match inputSchema: ${schemaErrors(
+          tool.validateInput
+        )}`
+      );
+    }
+    const raw = await callMcpDaemonTool(tool.serverId, tool.catalog.name, input, {
+      env,
+      timeoutMs: positiveInteger(
+        env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
+        DEFAULT_CALL_TIMEOUT_MS
+      ),
+    });
+    return decodeCallResult(
+      checkedCallResult(createCallResult(raw as Parameters<typeof createCallResult>[0])),
+      format,
+      tool.canonicalName
+    );
+  };
+  const servers: Record<string, Readonly<Record<string, McpRunToolFunction>>> =
+    Object.create(null);
+  for (const [serverId, tools] of byServer) {
+    servers[serverId] = new Proxy(Object.create(null), {
+      get(_target, property) {
+        if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property)) {
+          return undefined;
+        }
+        const tool = tools.get(property);
+        if (!tool) {
+          throw new McpRunUsageError(
+            `MCP tool '${serverId}.${property}' is not available to this agent. Available: ${[
+              ...tools.keys(),
+            ].join(", ")}`
+          );
+        }
+        const run = ((args?: Record<string, unknown>) =>
+          call(tool, args, "json")) as McpRunToolFunction;
+        for (const format of RUN_FORMATS) {
+          run[format] = (args?: Record<string, unknown>) => call(tool, args, format);
+        }
+        return run;
+      },
+      has(_target, property) {
+        return typeof property === "string" && tools.has(property);
+      },
+      ownKeys() {
+        return [...tools.keys()];
+      },
+      getOwnPropertyDescriptor(_target, property) {
+        return typeof property === "string" && tools.has(property)
+          ? { configurable: true, enumerable: true }
+          : undefined;
+      },
+    });
+  }
+  return Object.freeze(servers);
 }
