@@ -18,12 +18,19 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import Trajectory
 from introspection_sdk.atif import spans_to_atif
 from introspection_sdk.schemas.genai_span import GenAiSpan, GenAiSpanList
 
 ADAPTER_VERSION = version("introspection-harbor")
 AGENT_NAME = "introspection-recipe"
+# The conversation as the platform's GenAI spans, beside Pi's own files in the
+# agent log directory. The Recipes extension writes it during the run, to the
+# path this variable names.
+SPANS_FILENAME = "genai-spans.json"
+SPANS_FILE_ENV = "PI_RECIPE_GENAI_SPANS_FILE"
+TRAJECTORY_FILENAME = "trajectory.json"
 
 
 def read_spans(path: Path) -> list[GenAiSpan]:
@@ -55,6 +62,44 @@ def spans_to_trajectory(spans: list[GenAiSpan]) -> Trajectory | None:
     # Harbor's own model is the contract a verifier and Harbor read, so a
     # projection it would reject fails here and not in a trial's grading.
     return Trajectory.model_validate(trajectory.model_dump(mode="json"))
+
+
+def write_conversation_trajectory(
+    logs_dir: Path, output_filename: str
+) -> tuple[list[GenAiSpan], Trajectory] | None:
+    """Write a Pi run's ATIF beside its spans; returns both, if there is one.
+
+    ``None`` when Pi stopped before its session started, so there is no
+    conversation and the run's own error is the one to report, and when no
+    model call was recorded. A run that reached the model without readable
+    spans raises.
+    """
+
+    output_path = logs_dir / output_filename
+    spans_path = logs_dir / SPANS_FILENAME
+    # As an ACP target Pi writes the spans but no event stream.
+    if not spans_path.is_file() and (
+        not output_path.is_file() or not pi_messages(output_path.read_text())
+    ):
+        return None
+    spans = read_spans(spans_path)
+    conversation = spans_to_trajectory(spans)
+    if conversation is None:
+        return None
+    (logs_dir / TRAJECTORY_FILENAME).write_text(
+        json.dumps(conversation.to_json_dict(), indent=2)
+    )
+    return spans, conversation
+
+
+def record_usage(context: AgentContext, trajectory: Trajectory) -> None:
+    """Put a trajectory's token totals and cost in Harbor's context."""
+
+    if metrics := trajectory.final_metrics:
+        context.n_input_tokens = metrics.total_prompt_tokens
+        context.n_output_tokens = metrics.total_completion_tokens
+        context.n_cache_tokens = metrics.total_cached_tokens
+        context.cost_usd = metrics.total_cost_usd
 
 
 def pi_messages(output: str) -> list[dict[str, Any]]:

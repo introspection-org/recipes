@@ -34,12 +34,22 @@ events and session, each prompt sent, what the Recipe writes to
 ``context.logs_dir``) is therefore kept in a host temp directory and copied
 into ``logs_dir`` only when Pi has exited and every primitive call has ended.
 
+The user agent's own ATIF is written into ``logs_dir`` right after that copy, on
+every exit of ``run``, so a subclass can read it in its ``finally``. Harbor
+copies ``logs_dir`` into a non-mounted environment before the verifier, as
+``/logs/user-agent/trajectory.json``; a Docker trial has it through the mount.
+
 In a trial with a user agent Harbor calls only the user agent's
 ``populate_context_post_run``, so ``populate_context_post_run`` here also runs
 the target's own: that is what writes the target's ATIF to its ``logs_dir``
 (``/logs/agent/trajectory.json``), the file a verifier reads. Harbor calls the
 hook only on an empty context, so ``run`` leaves the context to it. Harbor
 calling both hooks itself is harbor-framework/harbor#3971.
+
+Harbor may run inside an Operator Runtime, whose environment is the Operator's:
+its session token, its conversation, its Data Plane. Pi therefore gets an
+explicit environment (``pi_environment``), and reaches the model the way the
+target does (``managed_model_environment``).
 """
 
 from __future__ import annotations
@@ -59,10 +69,19 @@ from typing import Any, override
 
 from harbor.agents.base import BaseAgent
 from harbor.agents.factory import AgentFactory
+from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
-from .trajectory import ADAPTER_VERSION
+from .base import RUNTIME_PROVIDER_HTTP_EXTENSION_PATH, managed_model_environment
+from .trajectory import (
+    ADAPTER_VERSION,
+    SPANS_FILE_ENV,
+    SPANS_FILENAME,
+    TRAJECTORY_FILENAME,
+    record_usage,
+    write_conversation_trajectory,
+)
 from .user_agent_mcp import Tool, ToolServer
 
 USER_AGENT_URL_ENV = "INTROSPECTION_USER_AGENT_URL"
@@ -79,6 +98,75 @@ REMOTE_PROMPT_PATH = "/tmp/introspection-user-agent-prompt.json"
 # Tools that reach the primitives of a codemode-exposed MCP server. None may be
 # declared to the model: an MCP tool is named ``mcp__<server>__<tool>``.
 INDIRECT_TOOLS = ("codemode", "tool_search", "mcp__server__tool")
+# What Pi keeps of the environment Harbor runs in: the process basics, the
+# network path, the model providers' credentials (Pi reads dozens of them, and
+# a custom provider names its own) and the egress contract of a Runtime. Nothing
+# else: under an Operator Runtime, INTROSPECTION_TOKEN and the task's lineage
+# variables would let the Runtime's telemetry preload, which NODE_OPTIONS carries
+# into every child, report the user agent into the Operator's conversation.
+PI_ENV_NAMES = frozenset(
+    {
+        "ALL_PROXY",
+        "CI",
+        "COLORTERM",
+        "COPILOT_GITHUB_TOKEN",
+        "CURL_CA_BUNDLE",
+        "FORCE_COLOR",
+        "GCLOUD_PROJECT",
+        "HF_TOKEN",
+        "HOME",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "INTROSPECTION_EGRESS_CA_PEM",
+        "INTROSPECTION_EGRESS_PLACEHOLDERS",
+        "INTROSPECTION_EGRESS_PROXY_NATIVE",
+        "INTROSPECTION_EGRESS_RESTORES_AUTHORITY",
+        "INTROSPECTION_EGRESS_URL",
+        "INTROSPECTION_ENDPOINT_HOSTS",
+        "INTROSPECTION_LOG_LEVEL",
+        "INTROSPECTION_PROXY_KEY",
+        "INTROSPECTION_RELAY_TARGET",
+        "LANG",
+        "LANGUAGE",
+        "LOGNAME",
+        "NODE_EXTRA_CA_CERTS",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "NODE_USE_ENV_PROXY",
+        "NO_COLOR",
+        "NO_PROXY",
+        "PATH",
+        "REQUESTS_CA_BUNDLE",
+        "SHELL",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "TEMP",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "USER",
+        "all_proxy",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }
+)
+PI_ENV_PREFIXES = (
+    "ANTHROPIC_",
+    "AWS_",
+    "AZURE_",
+    "GOOGLE_",
+    "LC_",
+    "MCPORTER_",
+    "NVM_",
+    "OPENAI_",
+    "PI_",
+    "XDG_",
+)
+PI_ENV_KEY_SUFFIX = "_API_KEY"
+# Keys that end in PI_ENV_KEY_SUFFIX and are no model provider's.
+NOT_PROVIDER_KEY_PREFIXES = ("E2B_", "INTROSPECTION_")
 
 
 def model_tools(tools: Sequence[str]) -> list[str]:
@@ -108,6 +196,29 @@ def model_tools(tools: Sequence[str]) -> list[str]:
     return list(tools)
 
 
+def pi_environment(
+    model_name: str | None, host_env: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """What Pi gets of the host's environment, and the managed provider key.
+
+    With managed egress in the host environment, the key is the one the target
+    gets from the same helper, and wins over a key the host holds.
+    """
+
+    env = os.environ if host_env is None else host_env
+    kept = {
+        name: value
+        for name, value in env.items()
+        if name in PI_ENV_NAMES
+        or name.startswith(PI_ENV_PREFIXES)
+        or (
+            name.endswith(PI_ENV_KEY_SUFFIX)
+            and not name.startswith(NOT_PROVIDER_KEY_PREFIXES)
+        )
+    }
+    return {**kept, **managed_model_environment(model_name, dict(env))}
+
+
 def pi_argv(
     *,
     recipe_dir: Path,
@@ -117,6 +228,7 @@ def pi_argv(
     pi_command: str = "pi",
     model: str | None = None,
     agent: str | None = None,
+    provider_http_extension_path: str | None = None,
 ) -> list[str]:
     """Pi on the host: one print-mode run of the Recipe for the whole conversation.
 
@@ -137,6 +249,8 @@ def pi_argv(
         "--tools",
         ",".join(model_tools(tools)),
     ]
+    if provider_http_extension_path:
+        argv += ["--extension", provider_http_extension_path]
     if agent:
         argv += ["--agent", agent]
     if model:
@@ -380,7 +494,8 @@ class PiRecipeUserAgent(BaseAgent):
     - ``pi_command``: Pi's executable; a path relative to Harbor's working
       directory works like ``recipe_dir``.
 
-    The user agent's ``model_name`` is Pi's model.
+    The user agent's ``model_name`` is Pi's model. The job config's ``env`` is
+    added to Pi's environment (see ``pi_environment``) as given.
     """
 
     def __init__(
@@ -418,6 +533,8 @@ class PiRecipeUserAgent(BaseAgent):
             else pi_command
         )
         self._run_metadata: dict[str, Any] | None = None
+        self._trajectory = None
+        self._trajectory_error: Exception | None = None
 
     @staticmethod
     @override
@@ -465,6 +582,13 @@ class PiRecipeUserAgent(BaseAgent):
                 pi_command=self.pi_command,
                 model=self.model_name,
                 agent=self.agent,
+                # A host with the Runtime's extension is a Runtime; the target's
+                # adapter passes it for the same reason.
+                provider_http_extension_path=(
+                    RUNTIME_PROVIDER_HTTP_EXTENSION_PATH
+                    if Path(RUNTIME_PROVIDER_HTTP_EXTENSION_PATH).is_file()
+                    else None
+                ),
             )
             with (
                 (work_dir / PI_EVENTS_FILENAME).open("wb") as events,
@@ -477,8 +601,9 @@ class PiRecipeUserAgent(BaseAgent):
                     stdout=events,
                     stderr=stderr,
                     env={
-                        **os.environ,
+                        **pi_environment(self.model_name),
                         **self._extra_env,
+                        SPANS_FILE_ENV: str(work_dir / SPANS_FILENAME),
                         USER_AGENT_URL_ENV: url,
                         USER_AGENT_TOKEN_ENV: token,
                     },
@@ -491,15 +616,23 @@ class PiRecipeUserAgent(BaseAgent):
             # Every primitive call has ended before anything is copied.
             await server.close()
             metadata = self._keep_logs(work_dir)
+            trajectory = self._write_trajectory()
             self._run_metadata = {
                 "exit_code": exit_code,
                 "prompts": primitives.prompts,
+                **trajectory,
                 **({"metadata": metadata} if metadata is not None else {}),
             }
         if exit_code != 0:
             raise RuntimeError(
                 f"Pi exited {exit_code}; see {self.logs_dir / PI_STDERR_FILENAME}"
             )
+        if self._trajectory_error is not None:
+            # This type is the one Harbor records and goes on from: the target's
+            # hook and the verifier still run.
+            raise NonZeroAgentExitCodeError(
+                f"The user agent's trajectory failed: {self._trajectory_error}"
+            ) from self._trajectory_error
 
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:
@@ -509,9 +642,11 @@ class PiRecipeUserAgent(BaseAgent):
         back to the environment before the verifier runs, so the trajectory
         the target writes covers every prompt of the conversation. What the
         target puts in its context (its usage) is kept under ``target``: the
-        trial's context is the user agent's.
+        trial's context is the user agent's, its usage from its own trajectory.
         """
 
+        if self._trajectory is not None:
+            record_usage(context, self._trajectory)
         metadata: dict[str, Any] = {}
         if self._run_metadata is not None:
             metadata["user_agent"] = self._run_metadata
@@ -545,6 +680,24 @@ class PiRecipeUserAgent(BaseAgent):
         return AgentFactory.create_agent_from_config(
             config.agent, logs_dir=paths.agent_dir, logger=self.logger
         )
+
+    def _write_trajectory(self) -> dict[str, str]:
+        """Write the run's ATIF into ``logs_dir``; what the trial's metadata says of it.
+
+        Runs while an error of ``run`` may be on its way out, so a failure is
+        kept for ``run`` to raise, never raised here.
+        """
+
+        try:
+            written = write_conversation_trajectory(self.logs_dir, PI_EVENTS_FILENAME)
+        except Exception as error:  # noqa: BLE001 - whatever it is, the trial goes on
+            self.logger.error("The user agent's trajectory failed: %s", error)
+            self._trajectory_error = error
+            return {"trajectory_error": str(error)}
+        if written is None:
+            return {}
+        self._trajectory = written[1]
+        return {"atif": TRAJECTORY_FILENAME}
 
     def _keep_logs(self, work_dir: Path) -> Any:
         """Copy the run's directory into ``logs_dir`` and drop it.

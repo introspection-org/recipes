@@ -39,10 +39,13 @@ from introspection_sdk.schemas.genai_span import GenAiSpan
 
 from .trajectory import (
     ADAPTER_VERSION,
-    pi_messages,
+    SPANS_FILE_ENV,
+    SPANS_FILENAME,
+    TRAJECTORY_FILENAME,
     pi_terminal_provider_error,
-    read_spans,
+    record_usage,
     spans_to_trajectory,
+    write_conversation_trajectory,
 )
 
 RUN_SPEC_ENV = "INTROSPECTION_EVAL_RUN_SPEC"
@@ -100,11 +103,6 @@ RUNTIME_TELEMETRY_PRELOAD_PATH = (
 RUNTIME_PROVIDER_HTTP_EXTENSION_PATH = (
     "/usr/local/lib/introspection-runtime/provider-http-pi-extension.js"
 )
-# The conversation as the platform's GenAI spans, beside Pi's own files in the
-# agent log directory. The Recipes extension writes it during the run, to the
-# path this variable names.
-SPANS_FILENAME = "genai-spans.json"
-SPANS_FILE_ENV = "PI_RECIPE_GENAI_SPANS_FILE"
 # When the step's Pi run started, in milliseconds on the trial's own clock: the
 # clock Pi stamps its messages with, so it separates this step's spans from
 # those of the steps a continued session also holds.
@@ -584,24 +582,13 @@ class RecipeAgentBase(BaseInstalledAgent, ACPAgentMixin):
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:
         output_path = self.logs_dir / self._OUTPUT_FILENAME
-        spans_path = self.logs_dir / SPANS_FILENAME
-        # As an ACP target Pi writes the spans but no event stream.
-        if not spans_path.is_file() and (
-            not output_path.is_file() or not pi_messages(output_path.read_text())
-        ):
-            # Pi stopped before its session started, so there is no
-            # conversation and the run's own error is the one to report.
-            return
-        spans = read_spans(spans_path)
         # A continued step's verifier grades the conversation, so the file it
         # reads covers the earlier turns too, as Harbor's own resumable agents
         # write it. Harbor uploads this directory to the sandbox afterwards.
-        conversation = spans_to_trajectory(spans)
-        if conversation is None:
+        written = write_conversation_trajectory(self.logs_dir, self._OUTPUT_FILENAME)
+        if written is None:
             return
-        (self.logs_dir / "trajectory.json").write_text(
-            json.dumps(conversation.to_json_dict(), indent=2)
-        )
+        spans, conversation = written
         # This run alone: what the step cost.
         step_spans = self._step_spans(spans)
         step = conversation
@@ -610,14 +597,11 @@ class RecipeAgentBase(BaseInstalledAgent, ACPAgentMixin):
             # Harbor fills a step's per-model usage from the file unless the
             # agent reports it, which would count the earlier steps again.
             context.model_usage = compute_model_usage(step) if step else {}
-        if step and step.final_metrics:
-            context.n_input_tokens = step.final_metrics.total_prompt_tokens
-            context.n_output_tokens = step.final_metrics.total_completion_tokens
-            context.n_cache_tokens = step.final_metrics.total_cached_tokens
-            context.cost_usd = step.final_metrics.total_cost_usd
+        if step:
+            record_usage(context, step)
         context.metadata = {
             **({"pi_events": self._OUTPUT_FILENAME} if output_path.is_file() else {}),
-            "atif": "trajectory.json",
+            "atif": TRAJECTORY_FILENAME,
             "introspection": (self._spec.get("input") or {}).get("metadata"),
         }
 

@@ -16,9 +16,13 @@ from typing import Any
 from unittest import mock
 
 from harbor.agents.base import BaseAgent
+from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.models.agent.context import AgentContext
+from harbor.models.trajectories import Trajectory
 from harbor.models.trial.config import AgentConfig, TaskConfig, TrialConfig
+from test_agent import _spans
 
+from introspection_harbor.base import SESSION_TOKEN_ENV
 from introspection_harbor.pi_user_agent import (
     REMOTE_PROMPT_PATH,
     SESSION_SHOW_COMMAND,
@@ -28,12 +32,59 @@ from introspection_harbor.pi_user_agent import (
     Primitives,
     model_tools,
     pi_argv,
+    pi_environment,
     prompt_capabilities,
 )
+from introspection_harbor.trajectory import SPANS_FILE_ENV
 from introspection_harbor.user_agent_mcp import Tool, ToolServer
 
 # A Recipe in the pattern the README documents; a real Pi runs it as is.
 SYNTHETIC_RECIPE = Path(__file__).parent / "fixtures" / "synthetic-recipe"
+# What each of these tells the fake Pi, through the job config's ``env``.
+FAKE_PI_SPANS_ENV = "FAKE_PI_SPANS"
+FAKE_PI_MESSAGE_ENV = "FAKE_PI_MESSAGE"
+FAKE_PI_CRASH_ENV = "FAKE_PI_CRASH"
+# The variables whose values the fake Pi records, for a test whose values are
+# all synthetic. Otherwise it records names only: the rest of its environment is
+# the machine's, real provider keys included.
+FAKE_PI_RECORD_ENV = "FAKE_PI_RECORD"
+
+
+def spans_with_a_tool_call() -> str:
+    """A turn whose tool result has a structured ``details``, then a trailing one."""
+
+    def call(call_id: str) -> dict[str, Any]:
+        return {
+            "role": "assistant",
+            "parts": [
+                {"type": "tool_call", "id": call_id, "name": "say", "arguments": {}}
+            ],
+        }
+
+    def execute(span_id: str, second: int, call_id: str, reply: str) -> dict[str, Any]:
+        result = {
+            "content": [{"type": "text", "text": reply}],
+            "details": {"tool": "say", "reply": reply, "exit_code": 0},
+        }
+        return {
+            "trace_id": "session-1",
+            "span_id": span_id,
+            "start_time": f"2026-10-08T04:50:{second:02d}Z",
+            "attributes": {
+                "gen_ai": {
+                    "operation": {"name": "execute_tool"},
+                    "tool": {
+                        "name": "say",
+                        "call": {"id": call_id, "result": json.dumps(result)},
+                    },
+                }
+            },
+        }
+
+    listed = json.loads(_spans(("Start.", "Calling say.", 5)))
+    listed["data"][0]["attributes"]["gen_ai"]["output"]["messages"] = [call("call-1")]
+    listed["data"].append(execute("tool-1", 1, "call-1", "synthetic reply"))
+    return json.dumps(listed)
 
 
 class FakeEnvironment:
@@ -182,18 +233,91 @@ def fake_pi_main() -> None:
     url = os.environ[USER_AGENT_URL_ENV]
     token = os.environ[USER_AGENT_TOKEN_ENV]
     context = call_tool(url, token, "context", {})["structuredContent"]
+    logs = Path(context["logs_dir"])
+    recorded = os.environ.get(FAKE_PI_RECORD_ENV, "").split(",")
+    (logs / "pi-env.json").write_text(
+        json.dumps(
+            {
+                "names": sorted(os.environ),
+                "values": {
+                    name: os.environ[name] for name in recorded if name in os.environ
+                },
+            }
+        )
+    )
+    (logs / "pi-argv.json").write_text(json.dumps(sys.argv))
+    # The Recipes extension keeps the file current, turn by turn, so a run cut
+    # off below has it too.
+    if spans := os.environ.get(FAKE_PI_SPANS_ENV):
+        Path(os.environ[SPANS_FILE_ENV]).write_text(spans)
+    if message := os.environ.get(FAKE_PI_MESSAGE_ENV):
+        print(json.dumps({"type": "message_end", "message": {"role": message}}))
     reply = call_tool(
         url,
         token,
         "prompt_target",
         {"prompt": [{"type": "text", "text": "Hello from the user."}]},
     )
-    logs = Path(context["logs_dir"])
     (logs / "recipe-log.jsonl").write_text(json.dumps(reply["structuredContent"]))
     (logs / "metadata.json").write_text(json.dumps({"inputs": context["inputs"]}))
     print(json.dumps({"type": "tool_result", "result": reply}))
-    if os.environ.get("FAKE_PI_CRASH"):
+    if os.environ.get(FAKE_PI_CRASH_ENV):
         sys.exit(2)
+
+
+class PiEnvironmentTest(unittest.TestCase):
+    def test_pi_keeps_what_a_local_run_needs(self) -> None:
+        host = {
+            "PATH": "/bin",
+            "HOME": "/home/synthetic",
+            "LC_ALL": "C",
+            "NODE_OPTIONS": "--import preload.js",
+            "HTTPS_PROXY": "http://proxy",
+            "NVM_DIR": "/nvm",
+            "OPENAI_API_KEY": "synthetic-openai",
+            "OPENAI_BASE_URL": "http://synthetic",
+            "ANTHROPIC_OAUTH_TOKEN": "synthetic-anthropic",
+            "AWS_PROFILE": "synthetic",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/gcp.json",
+            "FIREWORKS_API_KEY": "synthetic-fireworks",
+            "PI_CODING_AGENT_DIR": "/pi",
+        }
+
+        self.assertEqual(pi_environment("openai/gpt-6-luna", host), host)
+
+    def test_pi_gets_nothing_of_the_operators_identity(self) -> None:
+        host = {
+            SESSION_TOKEN_ENV: "synthetic-session",
+            "INTROSPECTION_TASK_CONVERSATION_ID": "the-operators-conversation",
+            "INTROSPECTION_TASK_ID": "task",
+            "INTROSPECTION_BASE_OTEL_URL": "http://otel",
+            "INTROSPECTION_SERVICE_NAME": "operator",
+            "INTROSPECTION_API_KEY": "synthetic-project-key",
+            "E2B_API_KEY": "synthetic-sandbox-key",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel",
+            "SOME_UNRELATED_SECRET": "synthetic",
+        }
+
+        self.assertEqual(pi_environment("openai/gpt-6-luna", host), {})
+
+    def test_under_managed_egress_pi_presents_what_the_target_presents(self) -> None:
+        host = {
+            SESSION_TOKEN_ENV: "synthetic-locator",
+            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress",
+            "INTROSPECTION_EGRESS_URL": "http://egress",
+            "INTROSPECTION_ENDPOINT_HOSTS": "api.openai.com",
+            "INTROSPECTION_PROXY_KEY": "synthetic-locator",
+            "OPENAI_API_KEY": "a-real-key",
+        }
+
+        env = pi_environment("openai/gpt-6-luna", host)
+
+        self.assertEqual(env["OPENAI_API_KEY"], "synthetic-locator")
+        self.assertEqual(env["INTROSPECTION_EGRESS_URL"], "http://egress")
+        self.assertEqual(env["INTROSPECTION_ENDPOINT_HOSTS"], "api.openai.com")
+        self.assertEqual(env["INTROSPECTION_PROXY_KEY"], "synthetic-locator")
+        self.assertNotIn(SESSION_TOKEN_ENV, env)
+        self.assertNotIn("INTROSPECTION_PUBLIC_EGRESS_URL", env)
 
 
 class PiArgvTest(unittest.TestCase):
@@ -214,6 +338,18 @@ class PiArgvTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--tools") + 1], "say,log_*")
         self.assertEqual(argv[argv.index("--model") + 1], "openai/gpt-6-luna")
         self.assertEqual(argv[-2:], ["--", "Start."])
+        self.assertNotIn("--extension", argv)
+
+    def test_pi_takes_the_provider_extension_when_there_is_one(self) -> None:
+        argv = pi_argv(
+            recipe_dir=Path("/r/owner"),
+            session_dir=Path("/w/sessions"),
+            prompt="Start.",
+            tools=["say"],
+            provider_http_extension_path="/runtime/provider.js",
+        )
+
+        self.assertEqual(argv[argv.index("--extension") + 1], "/runtime/provider.js")
 
     def test_the_model_gets_no_tool_that_reaches_the_primitives(self) -> None:
         for tools in (
@@ -565,7 +701,7 @@ class PiRecipeUserAgentTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_pi_failing_fails_the_run_and_keeps_the_logs(self) -> None:
         agent = self.agent()
-        agent._extra_env = {"FAKE_PI_CRASH": "1"}
+        agent._extra_env = {FAKE_PI_CRASH_ENV: "1"}
         env = FakeEnvironment([(1, "agent crashed")])
 
         with self.assertRaisesRegex(RuntimeError, "Pi exited 2"):
@@ -659,6 +795,173 @@ class PiRecipeUserAgentTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.metadata["target"], {"n_input_tokens": 3})
         self.assertEqual(context.metadata["user_agent"]["prompts"], 1)
         self.assertIsNone(context.n_input_tokens)
+
+    async def test_run_writes_its_trajectory_and_the_hook_reports_its_usage(
+        self,
+    ) -> None:
+        self.write_trial_config(
+            AgentConfig(import_path=f"{__name__}:FakeTarget", kwargs={"reply": "r"})
+        )
+        agent = self.agent()
+        agent._extra_env = {FAKE_PI_SPANS_ENV: spans_with_a_tool_call()}
+        env = FakeEnvironment([(0, "Hi.")])
+        during: list[str] = []
+        env.on_acpx = lambda: during.extend(path.name for path in self.logs.iterdir())
+        context = AgentContext()
+
+        await agent.run("x", env, context)  # ty: ignore[invalid-argument-type]
+
+        self.assertEqual(during, [])
+        self.assertTrue(context.is_empty())
+        written = json.loads((self.logs / "trajectory.json").read_text())
+        Trajectory.model_validate(written)
+        results = [
+            result
+            for step in written["steps"]
+            for result in (step.get("observation") or {}).get("results", [])
+        ]
+        self.assertEqual(results[0]["extra"]["details"]["reply"], "synthetic reply")
+        self.assertEqual(results[0]["extra"]["details"]["tool"], "say")
+
+        agent.populate_context_post_run(context)
+
+        self.assertEqual(context.n_input_tokens, 5)
+        self.assertEqual(context.n_output_tokens, 2)
+        self.assertEqual(context.n_cache_tokens, 1)
+        self.assertEqual(context.cost_usd, 0.5)
+        self.assertEqual(context.metadata["user_agent"]["atif"], "trajectory.json")
+        # The target's usage stays apart.
+        self.assertEqual(context.metadata["target"], {"n_input_tokens": 3})
+
+    async def test_spans_go_to_the_run_directory_not_logs_dir(self) -> None:
+        agent = self.agent()
+        agent._extra_env = {FAKE_PI_RECORD_ENV: SPANS_FILE_ENV}
+
+        await agent.run("x", FakeEnvironment([(0, "Hi.")]), AgentContext())  # ty: ignore[invalid-argument-type]
+
+        recorded = json.loads((self.logs / "pi-env.json").read_text())
+        spans = recorded["values"][SPANS_FILE_ENV]
+        self.assertEqual(Path(spans).name, "genai-spans.json")
+        self.assertFalse(Path(spans).is_relative_to(self.logs))
+        self.assertFalse(Path(spans).parent.exists())
+
+    async def test_a_run_pi_failed_still_leaves_its_trajectory(self) -> None:
+        agent = self.agent()
+        agent._extra_env = {
+            FAKE_PI_CRASH_ENV: "1",
+            FAKE_PI_SPANS_ENV: spans_with_a_tool_call(),
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "Pi exited 2"):
+            await agent.run("x", FakeEnvironment([(0, "Hi.")]), AgentContext())  # ty: ignore[invalid-argument-type]
+
+        self.assertTrue((self.logs / "trajectory.json").is_file())
+
+    async def test_a_run_cut_off_still_leaves_its_trajectory(self) -> None:
+        agent = self.agent()
+        agent._extra_env = {FAKE_PI_SPANS_ENV: spans_with_a_tool_call()}
+        env = FakeEnvironment([(0, "never sent")])
+        env.acpx_gate = asyncio.Event()
+        asked = asyncio.Event()
+        env.on_acpx = asked.set
+
+        run = asyncio.ensure_future(agent.run("x", env, AgentContext()))  # ty: ignore[invalid-argument-type]
+        await asyncio.wait_for(asked.wait(), 30)
+        run.cancel()
+        # The cancellation is what comes out, as Harbor's timeout needs.
+        with self.assertRaises(asyncio.CancelledError):
+            await run
+
+        self.assertTrue((self.logs / "trajectory.json").is_file())
+
+    async def test_a_trajectory_failure_still_runs_the_targets_hook(self) -> None:
+        for name, extra_env, expected in (
+            ("no spans", {FAKE_PI_MESSAGE_ENV: "assistant"}, SPANS_FILE_ENV),
+            ("bad spans", {FAKE_PI_SPANS_ENV: "not json"}, "Invalid JSON"),
+        ):
+            with self.subTest(name):
+                self.setUp()
+                self.write_trial_config(
+                    AgentConfig(
+                        import_path=f"{__name__}:FakeTarget",
+                        kwargs={"reply": "synthetic reply"},
+                    )
+                )
+                agent = self.agent()
+                agent._extra_env = extra_env
+                context = AgentContext()
+
+                # The type Harbor records before it goes on to the verifier.
+                with self.assertRaisesRegex(NonZeroAgentExitCodeError, expected):
+                    await agent.run("x", FakeEnvironment([(0, "Hi.")]), context)  # ty: ignore[invalid-argument-type]
+                agent.populate_context_post_run(context)
+
+                self.assertFalse((self.logs / "trajectory.json").exists())
+                self.assertTrue((self.root / "agent" / "trajectory.json").is_file())
+                self.assertEqual(context.metadata["target"], {"n_input_tokens": 3})
+                self.assertIn(
+                    expected, context.metadata["user_agent"]["trajectory_error"]
+                )
+                self.assertIsNone(context.n_input_tokens)
+
+    async def test_a_run_that_never_started_pi_has_no_trajectory_and_no_error(
+        self,
+    ) -> None:
+        agent = self.agent()
+        context = AgentContext()
+
+        await agent.run("x", FakeEnvironment([(0, "Hi.")]), context)  # ty: ignore[invalid-argument-type]
+        agent.populate_context_post_run(context)
+
+        self.assertFalse((self.logs / "trajectory.json").exists())
+        self.assertNotIn("trajectory_error", context.metadata["user_agent"])
+        self.assertNotIn("atif", context.metadata["user_agent"])
+
+    async def test_pi_gets_an_explicit_environment_without_the_session_token(
+        self,
+    ) -> None:
+        agent = self.agent()
+        agent._extra_env = {
+            "RECIPE_SETTING": "from the job config",
+            FAKE_PI_RECORD_ENV: "OPENAI_API_KEY,RECIPE_SETTING",
+        }
+        host = {
+            SESSION_TOKEN_ENV: "synthetic-locator",
+            "INTROSPECTION_PUBLIC_EGRESS_URL": "https://egress",
+            "INTROSPECTION_TASK_CONVERSATION_ID": "the-operators-conversation",
+            "SOME_UNRELATED_SECRET": "synthetic",
+        }
+
+        with mock.patch.dict(os.environ, host):
+            await agent.run("x", FakeEnvironment([(0, "Hi.")]), AgentContext())  # ty: ignore[invalid-argument-type]
+
+        recorded = json.loads((self.logs / "pi-env.json").read_text())
+        self.assertNotIn(SESSION_TOKEN_ENV, recorded["names"])
+        self.assertNotIn("INTROSPECTION_TASK_CONVERSATION_ID", recorded["names"])
+        self.assertNotIn("SOME_UNRELATED_SECRET", recorded["names"])
+        self.assertIn("PATH", recorded["names"])
+        # A Runtime with no provider key: the managed one, as the target gets.
+        self.assertEqual(
+            recorded["values"],
+            {
+                "OPENAI_API_KEY": "synthetic-locator",
+                "RECIPE_SETTING": "from the job config",
+            },
+        )
+
+    async def test_a_runtime_host_gives_pi_the_provider_extension(self) -> None:
+        extension = self.root / "provider-http-pi-extension.js"
+        extension.write_text("")
+        agent = self.agent()
+
+        with mock.patch(
+            "introspection_harbor.pi_user_agent.RUNTIME_PROVIDER_HTTP_EXTENSION_PATH",
+            str(extension),
+        ):
+            await agent.run("x", FakeEnvironment([(0, "Hi.")]), AgentContext())  # ty: ignore[invalid-argument-type]
+
+        argv = json.loads((self.logs / "pi-argv.json").read_text())
+        self.assertEqual(argv[argv.index("--extension") + 1], str(extension))
 
     def test_without_a_trial_config_there_is_no_target(self) -> None:
         context = AgentContext()

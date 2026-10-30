@@ -717,7 +717,9 @@ Other `kwargs`: `prompt` (Pi's first message; default: the trial's
 instruction), `target_capabilities` (default: what the target's ACP session
 advertised, read with `acpx sessions show`), `workspace_dir` (where relative
 `upload_file` targets go; default: the container's working directory),
-`exec_timeout_sec` (default 900) and `pi_command`.
+`exec_timeout_sec` (default 900) and `pi_command`. The job config's
+`user_agent.env` is added to Pi's environment as given (see
+[Pi's environment](#pis-environment)).
 
 `tools` is required: it lists the Recipe's own tools the model may call, and
 goes to Pi as `--tools`. An entry is a name or a pattern with `*`. An entry
@@ -741,6 +743,75 @@ logs (Claude Code's session JSONL, a Recipe's GenAI spans), with the target
 made again from the trial's `config.json`. The target's trajectory covers every
 prompt the owner sent; its usage is kept under `metadata.target` in the trial's
 agent result.
+
+### The user agent's trajectory
+
+The user agent writes its own ATIF, as the target does: Pi gets
+`PI_RECIPE_GENAI_SPANS_FILE` in its host run directory, and `run` projects those
+spans to `<trial>/user-agent/trajectory.json` right after the run's directory is
+copied there. That happens on every exit of `run`, including Pi failing and
+Harbor's timeout, so a subclass can read the file in its own `finally`. A tool
+result's structured `details` is at `observation.results[].extra.details`
+(`introspection-sdk` 0.35.0 or newer).
+
+| | User agent | Target (Recipe adapter) |
+| --- | --- | --- |
+| Spans | Host run directory, copied to `<trial>/user-agent/` | `/logs/agent/genai-spans.json` |
+| `trajectory.json` written by | `run`, on any exit | `populate_context_post_run` |
+| Verifier reads | `/logs/user-agent/trajectory.json` | `/logs/agent/trajectory.json` |
+| Pi never started | No file, no error | No file, no error |
+| Pi reached the model, spans missing or unreadable | Harbor records the error, the target's hook and the verifier still run | The trial fails with the same error |
+| Usage | The trial's `agent_result` | `metadata.target`, when a user agent runs the trial |
+
+The file reaches a verifier on either kind of environment. Docker bind-mounts
+the directory, and for a non-mounted one Harbor 0.24 uploads `<trial>/user-agent/`
+to `/logs/user-agent/` after the post-run hook and before a shared verifier. A
+verifier with `environment_mode = "separate"` gets neither role's logs, only the
+task's artifacts. Harbor refuses a user agent on a multi-step task, so a trial
+has one user-agent conversation.
+
+`agent_result`, and with it the tokens and cost in the `introspection eval run`
+report, is the user agent's alone in such a trial. The target's are in
+`metadata.target`, and are in no report total. The report's `Model` line is
+still the target's: it reads only the `agent/` trajectory.
+
+### Pi's environment
+
+Pi gets an explicit environment, not the Harbor process's. Harbor can run in an
+Operator Runtime, where passing everything would hand the Recipe the Operator's
+`INTROSPECTION_TOKEN`, and the Runtime's telemetry preload would report Pi's
+calls into the Operator's conversation. Pi keeps:
+
+- the process basics: `PATH`, `HOME`, `USER`, `SHELL`, `TMPDIR`, `LANG`, `LC_*`,
+  `TERM`, `XDG_*`, `NVM_*` and `NODE_OPTIONS` and its neighbours;
+- the network path: the `*_PROXY` variables and the CA bundle variables;
+- provider credentials: any `*_API_KEY` except `E2B_*` and `INTROSPECTION_*`,
+  `ANTHROPIC_*`, `OPENAI_*`, `AWS_*`, `AZURE_*`, `GOOGLE_*`, `GCLOUD_PROJECT`,
+  `HF_TOKEN` and `COPILOT_GITHUB_TOKEN`;
+- Pi's own: `PI_*` and `MCPORTER_*`;
+- a Runtime's egress contract: `INTROSPECTION_EGRESS_*`,
+  `INTROSPECTION_ENDPOINT_HOSTS`, `INTROSPECTION_RELAY_TARGET`,
+  `INTROSPECTION_PROXY_KEY` and `INTROSPECTION_LOG_LEVEL`.
+
+A Recipe that reads any other variable names it in the job config, which is
+also how to hand Pi something on purpose:
+
+```yaml
+user_agent:
+  import_path: introspection_harbor.pi_user_agent:PiRecipeUserAgent
+  env:
+    RECIPE_SETTING: ${RECIPE_SETTING}
+```
+
+Model access takes the target's managed path. With `INTROSPECTION_TOKEN` and
+`INTROSPECTION_PUBLIC_EGRESS_URL` in the Harbor process and a `provider/model`
+`model_name`, Pi presents the session locator as that provider's key, and the
+egress proxy swaps it for the real credential, so a Runtime with no provider
+keys can run it. The locator is the token's value under the provider's name:
+the Recipe can still read it, but the telemetry preload, which looks for
+`INTROSPECTION_TOKEN`, stays off. On a host with the Runtime's provider extension
+Pi loads that too. Without managed egress, Pi uses the host's provider keys or
+its own `~/.pi` login, as before.
 
 ### The primitives
 
