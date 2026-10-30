@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.13.0...introspection-harbor-v0.14.0) (2026-10-30)
+
+
+### Features
+
+* **harbor:** write the user agent's own ATIF trajectory ([#668](https://github.com/introspection-org/introspection-cli/issues/668)) ([e25f0c0](https://github.com/introspection-org/introspection-cli/commit/e25f0c0bf8e4002f8af29a86f378f67bb6a05f8c))
+
 ## [0.13.0](https://github.com/introspection-org/introspection-cli/compare/introspection-harbor-v0.12.0...introspection-harbor-v0.13.0) (2026-10-29)
 
 
