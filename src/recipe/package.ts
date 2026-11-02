@@ -86,6 +86,16 @@ export function recipeChannelPackageName(provider: string): string {
   return `@introspection-ai/recipe-channel-${provider}`;
 }
 
+/** A document format the Recipe's `documents` tool opens, such as `docx` or `pdf`. */
+export interface RecipePackageDocument {
+  format: string;
+  commands?: string[];
+}
+
+export function recipeDocumentPackageName(format: string): string {
+  return `@introspection-ai/recipe-documents-${format}`;
+}
+
 export interface RecipePythonRuntimeRequirement {
   project: string;
   lockfile: string;
@@ -114,6 +124,7 @@ export interface RecipePackageManifest {
   /** Whether each resource key was explicitly authored in package.json#pi. */
   resourceDeclarations?: Record<keyof RecipePackageResources, boolean>;
   channels?: RecipePackageChannel[];
+  documents?: RecipePackageDocument[];
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -152,6 +163,7 @@ const RESOURCE_KEYS: Array<keyof RecipePackageResources> = [
 const PI_KEYS = new Set([
   ...RESOURCE_KEYS,
   "channels",
+  "documents",
   "evals",
   "mcp",
   "runtime",
@@ -224,6 +236,9 @@ function sourceShapeFindings(
   }
   findings.push(
     ...channelSourceShapeFindings(pi.channels, packageName, dependencies)
+  );
+  findings.push(
+    ...documentSourceShapeFindings(pi.documents, packageName, dependencies)
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
@@ -308,6 +323,60 @@ function channelSourceShapeFindings(
           )
         );
       }
+    }
+  }
+  return findings;
+}
+
+function documentSourceShapeFindings(
+  value: unknown,
+  packageName: string,
+  dependencies: unknown
+): RecipeValidationFinding[] {
+  if (value === undefined) return [];
+  const invalid = (message: string) =>
+    finding("pi.documents_invalid", message, packageName);
+  if (!Array.isArray(value)) {
+    return [invalid("package.json#pi.documents must be an array")];
+  }
+  const declaredDependencies =
+    dependencies && typeof dependencies === "object" && !Array.isArray(dependencies)
+      ? (dependencies as Record<string, unknown>)
+      : {};
+  const findings: RecipeValidationFinding[] = [];
+  const formats = new Set<string>();
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      findings.push(invalid(`package.json#pi.documents[${index}] must be an object`));
+      continue;
+    }
+    const declaration = raw as Record<string, unknown>;
+    const unknown = Object.keys(declaration).filter((key) => !["format", "commands"].includes(key));
+    if (unknown.length > 0) {
+      findings.push(invalid(`package.json#pi.documents[${index}] contains unknown field(s): ${unknown.join(", ")}`));
+    }
+    if (declaration.commands !== undefined && (!Array.isArray(declaration.commands) ||
+      declaration.commands.some((command) => typeof command !== "string" || !command.trim()) ||
+      new Set(declaration.commands).size !== declaration.commands.length)) {
+      findings.push(invalid(`package.json#pi.documents[${index}].commands must be an array of unique non-empty strings`));
+    }
+    const format =
+      typeof declaration.format === "string" && declaration.format.trim()
+        ? declaration.format.trim()
+        : undefined;
+    if (!format) {
+      findings.push(invalid(`package.json#pi.documents[${index}].format must be non-empty`));
+      continue;
+    }
+    if (formats.has(format)) {
+      findings.push(invalid(`package.json#pi.documents contains duplicate format '${format}'`));
+      continue;
+    }
+    formats.add(format);
+    const documentPackage = recipeDocumentPackageName(format);
+    const dependencyVersion = declaredDependencies[documentPackage];
+    if (typeof dependencyVersion !== "string" || !dependencyVersion.trim()) {
+      findings.push(invalid(`package.json#pi.documents format '${format}' requires dependency '${documentPackage}'`));
     }
   }
   return findings;
@@ -747,6 +816,19 @@ function parseChannels(value: unknown): RecipePackageChannel[] {
   return channels;
 }
 
+function parseDocuments(value: unknown): RecipePackageDocument[] {
+  const seen = new Set<string>();
+  const documents: RecipePackageDocument[] = [];
+  for (const raw of Array.isArray(value) ? value : []) {
+    const declaration = asRecord(raw);
+    const format = stringValue(declaration.format);
+    if (!format || seen.has(format)) continue;
+    seen.add(format);
+    documents.push({ format, ...(Array.isArray(declaration.commands) ? { commands: declaration.commands as string[] } : {}) });
+  }
+  return documents;
+}
+
 function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
   const runtime = asRecord(value);
   const python = asRecord(runtime.python);
@@ -821,6 +903,7 @@ export function readPiPackageManifest(packageDir: string): RecipePackageManifest
     resources,
     resourceDeclarations: resourceDeclarations(pi),
     channels: parseChannels(pi.channels),
+    documents: parseDocuments(pi.documents),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };

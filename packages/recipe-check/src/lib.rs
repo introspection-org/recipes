@@ -799,6 +799,7 @@ fn validate_pi_config(
         "skills",
         "prompts",
         "channels",
+        "documents",
         "mcp",
         "runtime",
         "evals",
@@ -843,6 +844,9 @@ fn validate_pi_config(
 
     if let Some(channels) = pi.get("channels") {
         validate_channel_config(channels, &package.dependencies, ctx);
+    }
+    if let Some(documents) = pi.get("documents") {
+        validate_documents_config(documents, &package.dependencies, ctx);
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
@@ -942,6 +946,115 @@ fn validate_channel_config(
                     Some("add the channel package to package.json#dependencies and commit the lockfile"),
                 );
             }
+        }
+    }
+}
+
+const DOCUMENT_COMMANDS: [&str; 7] = [
+    "read",
+    "revise",
+    "propose_edits",
+    "comment",
+    "respond",
+    "remove_section",
+    "render",
+];
+
+/// `pi.documents` mirrors `pi.channels`: one declaration per format, each
+/// naming the `@introspection-ai/recipe-documents-<format>` package that must
+/// be a dependency, with an optional `commands` allowlist from the neutral
+/// vocabulary. Whether a format supports a command is checked when the
+/// runtime loads the package's capability descriptor.
+fn validate_documents_config(
+    value: &JsonValue,
+    dependencies: &BTreeSet<String>,
+    ctx: &mut CheckContext,
+) {
+    const CODE: &str = "pi.documents_invalid";
+    let JsonValue::Array(declarations) = value else {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.documents must be an array",
+            Some("use a list of document format declarations, like [{ \"format\": \"word\" }]"),
+        );
+        return;
+    };
+    let mut formats = BTreeSet::new();
+    for (index, declaration) in declarations.iter().enumerate() {
+        let JsonValue::Object(declaration) = declaration else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.documents[{index}] must be an object"),
+                Some("remove the entry or make it a document format declaration"),
+            );
+            continue;
+        };
+        for key in declaration
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "format" | "commands"))
+        {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.documents[{index}] contains unknown field '{key}'"),
+                Some("use format and optional commands"),
+            );
+        }
+        if let Some(commands) = declaration.get("commands") {
+            let mut seen = BTreeSet::new();
+            let valid = commands.as_array().is_some_and(|values| {
+                values.iter().all(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+                })
+            });
+            if !valid {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.documents[{index}].commands must be an array of unique non-empty strings"),
+                    Some("use a list of unique command names"),
+                );
+            } else if let Some(unknown) = seen
+                .iter()
+                .find(|command| !DOCUMENT_COMMANDS.contains(command))
+            {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.documents[{index}].commands contains unknown command '{unknown}'"),
+                    Some("use read, revise, propose_edits, comment, respond, remove_section or render"),
+                );
+            }
+        }
+        let format = string_value(declaration.get("format"));
+        match format.as_deref() {
+            Some(format) if !formats.insert(format.to_owned()) => ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.documents contains duplicate format '{format}'"),
+                Some("declare each document format once"),
+            ),
+            Some(format) => {
+                let package = format!("@introspection-ai/recipe-documents-{format}");
+                if !dependencies.contains(&package) {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.documents format '{format}' requires dependency '{package}'"),
+                        Some("add the document format package to package.json#dependencies and commit the lockfile"),
+                    );
+                }
+            }
+            None => ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.documents[{index}].format must be non-empty"),
+                Some("name the document format, such as docx or pdf"),
+            ),
         }
     }
 }
@@ -3884,6 +3997,79 @@ mod tests {
             ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
             ("agents/agent.yaml", &agent),
         ])
+    }
+
+    fn documents_recipe(documents: JsonValue, dependencies: JsonValue) -> RecipeFiles {
+        let package = json!({
+            "name": "documents-test",
+            "version": "0.1.0",
+            "dependencies": dependencies,
+            "pi": { "agents": ["agents/*.yaml"], "documents": documents }
+        });
+        recipe_files(&[
+            ("package.json", &serde_json::to_string(&package).expect("serialize package")),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\ntools: [documents]\n",
+            ),
+        ])
+    }
+
+    fn documents_dependencies() -> JsonValue {
+        json!({
+            "@introspection-ai/recipe-documents-docx": "0.1.0",
+            "@introspection-ai/recipe-documents-pdf": "0.1.0"
+        })
+    }
+
+    fn documents_invalid(report: &Report) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "pi.documents_invalid")
+    }
+
+    #[test]
+    fn accepts_document_format_declarations() {
+        let report = check_recipe_files(&documents_recipe(
+            json!([{ "format": "docx", "commands": ["read", "propose_edits"] }, { "format": "pdf" }]),
+            documents_dependencies(),
+        ));
+        assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn document_format_requires_its_package() {
+        let report = check_recipe_files(&documents_recipe(
+            json!([{ "format": "docx" }]),
+            json!({ "@introspection-ai/recipe-documents-pdf": "0.1.0" }),
+        ));
+        assert!(!report.valid);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "pi.documents_invalid"
+                && diagnostic.message.contains("recipe-documents-docx")
+        }));
+    }
+
+    #[test]
+    fn document_declaration_shape() {
+        for (documents, valid) in [
+            (json!([{ "format": "docx" }]), true),
+            (json!([{ "format": "docx", "commands": [] }]), true),
+            (json!({ "format": "docx" }), false),
+            (json!(["word"]), false),
+            (json!([{ "format": "" }]), false),
+            (json!([{ "format": "docx" }, { "format": "docx" }]), false),
+            (json!([{ "format": "docx", "provider": "word" }]), false),
+            (json!([{ "format": "docx", "commands": ["read", "read"] }]), false),
+            (json!([{ "format": "docx", "commands": "read" }]), false),
+            (json!([{ "format": "docx", "commands": ["redline"] }]), false),
+        ] {
+            let report =
+                check_recipe_files(&documents_recipe(documents.clone(), documents_dependencies()));
+            assert_eq!(!documents_invalid(&report), valid, "{documents}: {:?}", report.diagnostics);
+        }
     }
 
     #[test]

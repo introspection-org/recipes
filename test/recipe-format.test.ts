@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -857,6 +858,55 @@ describe("release train isolation", () => {
     expect(releasedVersion).not.toBe("0.0.0");
     if (releasedVersion !== undefined) {
       expect(releasedVersion).toBe(slackPackage.version);
+    }
+  });
+
+  it("releases and publishes every adapter package on the npm train", () => {
+    const root = join(import.meta.dirname, "..");
+    const config = JSON.parse(
+      readFileSync(join(root, "release-please-config.json"), "utf8"),
+    ) as {
+      packages: Record<
+        string,
+        {
+          "package-name"?: string;
+          "include-component-in-tag"?: boolean;
+          "initial-version"?: string;
+        }
+      >;
+    };
+    const manifest = JSON.parse(
+      readFileSync(join(root, ".release-please-manifest.json"), "utf8"),
+    ) as Record<string, string>;
+    const workflow = readFileSync(
+      join(root, ".github", "workflows", "release-please.yml"),
+      "utf8",
+    );
+    const adapters = ["channels", "documents"].flatMap((group) =>
+      readdirSync(join(root, "packages", group)).map(
+        (name) => `packages/${group}/${name}`,
+      ),
+    );
+    expect(adapters).toEqual(
+      expect.arrayContaining([
+        "packages/channels/slack",
+        "packages/documents/docx",
+        "packages/documents/pdf",
+      ]),
+    );
+    for (const path of adapters) {
+      const pkg = JSON.parse(
+        readFileSync(join(root, path, "package.json"), "utf8"),
+      ) as { name: string; version: string };
+      expect(config.packages[path]).toMatchObject({
+        "package-name": pkg.name,
+        "include-component-in-tag": true,
+        "initial-version": "0.1.0",
+      });
+      // A manifest version is a real release, so it is absent until the first one.
+      if (manifest[path] !== undefined) expect(manifest[path]).toBe(pkg.version);
+      expect(workflow).toContain(`outputs['${path}--release_created']`);
+      expect(workflow).toContain(`channel_dirs+=("${path}")`);
     }
   });
 

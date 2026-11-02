@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../../..",
+    "paths": {
+      "@introspection-ai/recipes/documents": [
+        "../../../src/documents/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

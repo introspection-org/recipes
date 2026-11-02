@@ -139,5 +139,22 @@
       "evals/harbor/c1/task.toml": "[verifier]\ntimeout_sec = 60.0\n",
       "evals/vitest/hello.eval.jsonl": "{\"input\":\"hi\"}\n"
     }
+  },
+  {
+    "name": "declared document formats",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"with-documents\",\"dependencies\":{\"@introspection-ai/recipe-documents-docx\":\">=0.1.0 <1.0.0\",\"@introspection-ai/recipe-documents-pdf\":\">=0.1.0 <1.0.0\"},\"pi\":{\"documents\":[{\"format\":\"docx\",\"commands\":[\"read\",\"propose_edits\",\"comment\"]},{\"format\":\"pdf\"}]}}",
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
+    }
+  },
+  {
+    "name": "document format without its package",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"documents-missing-package\",\"pi\":{\"documents\":[{\"format\":\"docx\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
+    }
   }
 ]

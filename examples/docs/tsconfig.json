@@ -21,6 +21,7 @@
       "@introspection-ai/recipes/session": ["../../src/api/session.ts"],
       "@introspection-ai/recipes/memory": ["../../src/api/memory.ts"],
       "@introspection-ai/recipes/channels": ["../../src/channels/index.ts"],
+      "@introspection-ai/recipes/documents": ["../../src/documents/index.ts"],
       "@introspection-ai/recipes/test-utils": ["../../src/test-utils.ts"],
       "@introspection-ai/recipes/inspect": ["../../src/inspect.ts"]
     }

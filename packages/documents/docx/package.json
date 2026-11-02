@@ -1,0 +1,50 @@
+{
+  "name": "@introspection-ai/recipe-documents-docx",
+  "version": "0.1.0",
+  "description": "Word (.docx) format for the Introspection Recipes documents tool: tracked edits, comments and responses on paper-docx.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "python/*.py",
+    "python/recipe_documents_docx/*.py",
+    "python/recipe_documents_docx/LICENSE-redline-bench",
+    "python/pyproject.toml",
+    "python/uv.lock",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/introspection-org/recipes.git",
+    "directory": "packages/documents/docx"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
+  },
+  "peerDependencies": {
+    "@introspection-ai/recipes": "workspace:>=0.37.0 <1.0.0"
+  },
+  "devDependencies": {
+    "@introspection-ai/recipes": "workspace:>=0.37.0",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

@@ -60,7 +60,8 @@
   by `test/pi-floor-parity.test.ts`; copying it into a job or a doc is how it
   went stale twice in one change.
 - **Where the packages come from.** `@introspection-ai/recipes`,
-  `@introspection-ai/recipe-channel-*`, `@introspection-ai/mcp-client-*` and
+  `@introspection-ai/recipe-channel-*`, `@introspection-ai/recipe-documents-*`,
+  `@introspection-ai/mcp-client-*` and
   `introspection-recipe-check` are all published from THIS repository, but on
   **two release trains**: `release-please-config.json` covers the npm packages
   and `release-please-checker-config.json` the checker and its Python binding,

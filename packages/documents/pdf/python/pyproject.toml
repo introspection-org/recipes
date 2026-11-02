@@ -1,0 +1,14 @@
+[project]
+name = "recipe-documents-pdf"
+version = "0.1.0"
+description = "Python the @introspection-ai/recipe-documents-pdf adapter runs. For its tests; a Recipe brings its own environment with pypdfium2 and pillow, plus pdfplumber for the tables extra."
+requires-python = ">=3.12,<3.15"
+dependencies = ["pypdfium2==5.14.0", "pillow==13.0.0"]
+
+[project.optional-dependencies]
+# Table cells for fee schedules, SLA grids and price tables. Optional: about 41 MB
+# installed (pdfminer.six, cryptography, Pillow, cffi). Without it, read returns text.
+tables = ["pdfplumber==0.11.10"]
+
+[tool.uv]
+package = false

@@ -13,6 +13,7 @@ on:
           - all
           - root
           - channel
+          - documents
           - checker
         default: all
 
@@ -39,6 +40,8 @@ jobs:
     outputs:
       root_release_created: ${{ steps.root_release.outputs.release_created }}
       slack_channel_release_created: ${{ steps.root_release.outputs['packages/channels/slack--release_created'] }}
+      docx_documents_release_created: ${{ steps.root_release.outputs['packages/documents/docx--release_created'] }}
+      pdf_documents_release_created: ${{ steps.root_release.outputs['packages/documents/pdf--release_created'] }}
       crate_release_created: ${{ steps.checker_release.outputs['packages/recipe-check--release_created'] }}
       python_release_created: ${{ steps.checker_release.outputs['packages/recipe-check-python--release_created'] }}
     steps:
@@ -168,7 +171,7 @@ jobs:
     needs:
       - release-please
       - build-native-tools
-    if: ${{ always() && (needs.release-please.outputs.root_release_created == 'true' || needs.release-please.outputs.slack_channel_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root' || inputs.train == 'channel'))) }}
+    if: ${{ always() && (needs.release-please.outputs.root_release_created == 'true' || needs.release-please.outputs.slack_channel_release_created == 'true' || needs.release-please.outputs.docx_documents_release_created == 'true' || needs.release-please.outputs.pdf_documents_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root' || inputs.train == 'channel' || inputs.train == 'documents'))) }}
     runs-on: ubuntu-latest
     environment: publish
     permissions:
@@ -191,6 +194,12 @@ jobs:
           cache: pnpm
 
       - run: npm install -g npm@11
+
+      # test/documents-docx.test.ts builds the docx adapter's locked Python
+      # environment (paper-docx) with uv.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.21"
 
       - run: pnpm install --frozen-lockfile
 
@@ -229,8 +238,11 @@ jobs:
         env:
           ROOT_RELEASE_CREATED: ${{ needs.release-please.outputs.root_release_created }}
           SLACK_CHANNEL_RELEASE_CREATED: ${{ needs.release-please.outputs.slack_channel_release_created }}
+          DOCX_DOCUMENTS_RELEASE_CREATED: ${{ needs.release-please.outputs.docx_documents_release_created }}
+          PDF_DOCUMENTS_RELEASE_CREATED: ${{ needs.release-please.outputs.pdf_documents_release_created }}
           MANUAL_ROOT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root') }}
           MANUAL_CHANNEL_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'channel') }}
+          MANUAL_DOCUMENTS_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'documents') }}
           NATIVE_BUILD_RESULT: ${{ needs.build-native-tools.result }}
         shell: bash
         run: |
@@ -238,11 +250,19 @@ jobs:
 
           publish_root=false
           publish_slack=false
+          publish_docx=false
+          publish_pdf=false
           if [[ "$ROOT_RELEASE_CREATED" == "true" || "$MANUAL_ROOT_RELEASE" == "true" ]]; then
             publish_root=true
           fi
           if [[ "$SLACK_CHANNEL_RELEASE_CREATED" == "true" || "$MANUAL_CHANNEL_RELEASE" == "true" ]]; then
             publish_slack=true
+          fi
+          if [[ "$DOCX_DOCUMENTS_RELEASE_CREATED" == "true" || "$MANUAL_DOCUMENTS_RELEASE" == "true" ]]; then
+            publish_docx=true
+          fi
+          if [[ "$PDF_DOCUMENTS_RELEASE_CREATED" == "true" || "$MANUAL_DOCUMENTS_RELEASE" == "true" ]]; then
+            publish_pdf=true
           fi
 
           if [[ "$publish_root" == "true" && "$NATIVE_BUILD_RESULT" != "success" ]]; then
@@ -289,9 +309,17 @@ jobs:
             fi
           fi
 
+          # Channel and document adapters peer-depend on @introspection-ai/recipes,
+          # so they publish after the root and check the core version they need.
           channel_dirs=()
           if [[ "$publish_slack" == "true" ]]; then
             channel_dirs+=("packages/channels/slack")
+          fi
+          if [[ "$publish_docx" == "true" ]]; then
+            channel_dirs+=("packages/documents/docx")
+          fi
+          if [[ "$publish_pdf" == "true" ]]; then
+            channel_dirs+=("packages/documents/pdf")
           fi
 
           if [[ "${#channel_dirs[@]}" -gt 0 ]]; then

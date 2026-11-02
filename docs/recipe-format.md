@@ -128,6 +128,11 @@ are enabled. Incoming turns then require a successful final `reply`, so an
 enabled command allowlist must include `reply`. Set `requireReply: false` for
 intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
 
+`pi.documents` lists the document formats the `documents` tool opens, each as
+`{"format": "<format>"}` with the package
+`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
+`commands` allowlist. See [Document tools](documents.md).
+
 ## Agents
 
 `pi.agents` may declare YAML agent definitions explicitly. When omitted,

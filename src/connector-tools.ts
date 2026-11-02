@@ -1,5 +1,6 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { loadRecipeDocuments } from "./documents/module.js";
 import { loadRecipeModule } from "./recipe/extensions.js";
 import { deferTools } from "./tool-search.js";
 import {
@@ -159,13 +160,20 @@ export async function loadRecipeConnectors(
       };
     })
   );
-  const selected = loaded.flatMap((connector) => connector.selected);
+  const documents = await loadRecipeDocuments(manifest.documents ?? [], agentTools, options);
+  const selected = [
+    ...loaded.flatMap((connector) => connector.selected),
+    ...documents.toolNames.map((name) => ({ id: name, name, defaultActive: true })),
+  ];
   const registeredNames = selected.map((tool) => tool.name);
   if (new Set(registeredNames).size !== registeredNames.length) {
     throw new Error("Recipe connector packages register duplicate tool names");
   }
   return {
-    extensions: loaded.map((connector) => connector.extension),
+    extensions: [
+      ...loaded.map((connector) => connector.extension),
+      ...(documents.extension ? [documents.extension] : []),
+    ],
     loadout: {
       toolNames: selected.map((tool) => tool.name),
       initialActiveToolNames: selected
