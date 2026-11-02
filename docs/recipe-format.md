@@ -373,6 +373,48 @@ TypeScript extensions execute inside the Pi process with its authority. A host
 that accepts third-party Recipes MUST review or isolate them before execution;
 the format and Host API are not a sandbox boundary.
 
+## Evaluations
+
+A Recipe's evaluations live under `evals/` by default:
+
+```text
+evals/
+  vitest/              vitest-evals suites
+  harbor/<task>/       one Harbor task per folder
+  lib/                 code shared by several tasks or suites
+  sources/             pinned generators of derived eval data
+  fakes/<server>/      MCP fakes and their scenarios
+```
+
+`pi.evals` is optional and overrides those locations. Absent, hosts and tools
+discover `evals/vitest` and `evals/harbor` when they exist.
+
+```json
+{
+  "pi": {
+    "evals": {
+      "suites": [
+        { "type": "harbor", "path": "evals/harbor" },
+        { "type": "vitest", "path": "evals/vitest" }
+      ],
+      "lib": "evals/lib",
+      "sources": "evals/sources",
+      "fakes": "evals/fakes"
+    }
+  }
+}
+```
+
+`suites[].type` is `harbor` or `vitest`; several suites of one type may exist,
+and no two share a path. Every path is Recipe-relative, uses `/`, and stays
+inside the package. Unknown keys are errors.
+
+Nothing eval-only reaches a running agent: every suite, `lib`, `sources` and
+`fakes` path MUST be excluded by `.recipeignore` (a single `evals/` line does
+it), and in a Harbor trial only a task's `environment/` reaches the agent.
+Hosts accept `pi.evals` without reading it; it is for evaluation tooling and
+`recipe-check`, which reports a missing exclusion as a warning.
+
 ## Conformance
 
 There are two conformance layers:

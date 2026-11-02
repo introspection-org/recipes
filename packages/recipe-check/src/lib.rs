@@ -231,6 +231,17 @@ impl CheckContext {
             .collect()
     }
 
+    /// Directories that are direct children of `dir`.
+    fn child_dirs(&self, dir: &str) -> Vec<String> {
+        let prefix = format!("{dir}/");
+        self.directories
+            .range(prefix.clone()..)
+            .take_while(|path| path.starts_with(&prefix))
+            .filter(|path| !path[prefix.len()..].contains('/'))
+            .cloned()
+            .collect()
+    }
+
     fn push(
         &mut self,
         code: impl Into<String>,
@@ -790,6 +801,7 @@ fn validate_pi_config(
         "channels",
         "mcp",
         "runtime",
+        "evals",
     ]
     .into_iter()
     .collect();
@@ -834,6 +846,7 @@ fn validate_pi_config(
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
+    validate_evals_config(pi.get("evals"), ctx);
 
     resolved
 }
@@ -1047,6 +1060,450 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
             );
         }
     }
+}
+
+const RECIPE_IGNORE: &str = ".recipeignore";
+const EVALS_INVALID: &str = "pi.evals_invalid";
+const EVALS_PATH_INVALID: &str = "pi.evals_path_invalid";
+const EVALS_SUITE_MISSING: &str = "pi.evals_suite_missing";
+const EVALS_TASK_MISSING: &str = "pi.evals_task_missing";
+const EVALS_NOT_IGNORED: &str = "pi.evals_not_ignored";
+const EVALS_IGNORE_UNREADABLE: &str = "pi.evals_recipeignore_unreadable";
+const EVALS_STRAY_CONTENT: &str = "pi.evals_stray_content";
+const EVALS_SHAPE_HELP: &str = "use { suites: [{ type: harbor | vitest, path }], lib, sources, fakes } with package-relative paths";
+const EVALS_PATH_HELP: &str =
+    "use a package-relative path with / separators, no '..', and no glob characters";
+const EVALS_IGNORE_HELP: &str =
+    "add a single 'evals/' line to .recipeignore so eval-only files never reach a deployed runtime";
+const DEFAULT_EVAL_SUITES: [(EvalSuiteKind, &str); 2] = [
+    (EvalSuiteKind::Vitest, "evals/vitest"),
+    (EvalSuiteKind::Harbor, "evals/harbor"),
+];
+const EVAL_SUPPORT_KEYS: [(&str, &str); 3] = [
+    ("lib", "evals/lib"),
+    ("sources", "evals/sources"),
+    ("fakes", "evals/fakes"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvalSuiteKind {
+    Harbor,
+    Vitest,
+}
+
+#[derive(Debug, Clone)]
+struct EvalSuite {
+    kind: EvalSuiteKind,
+    path: String,
+    /// Authored in `pi.evals.suites`, as opposed to discovered by convention.
+    configured: bool,
+}
+
+/// Resolved eval layout: explicit `pi.evals` entries, with defaults for
+/// every key the block omits.
+#[derive(Debug, Clone, Default)]
+struct EvalLayout {
+    suites: Vec<EvalSuite>,
+    /// `(key, path)` for `lib`, `sources` and `fakes`.
+    support: Vec<(&'static str, String)>,
+}
+
+impl EvalLayout {
+    /// Every eval path, suites first, deduplicated.
+    fn paths(&self) -> Vec<&str> {
+        let mut seen = BTreeSet::new();
+        self.suites
+            .iter()
+            .map(|suite| suite.path.as_str())
+            .chain(self.support.iter().map(|(_, path)| path.as_str()))
+            .filter(|path| seen.insert(*path))
+            .collect()
+    }
+
+    fn contains(&self, path: &str) -> bool {
+        self.paths()
+            .iter()
+            .any(|root| path == *root || path.starts_with(&format!("{root}/")))
+    }
+}
+
+/// Validate `package.json#pi.evals` and the eval layout it (or the default
+/// layout) describes. Shape errors are fatal; layout findings are warnings so
+/// existing Recipes keep passing while the contract tightens.
+fn validate_evals_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
+    // Layout findings against a half-understood block are noise: report the
+    // shape errors alone and let the author fix those first.
+    let diagnostics_before = ctx.diagnostics.len();
+    let Some(layout) = eval_layout(value, ctx) else {
+        return;
+    };
+    if ctx.diagnostics.len() > diagnostics_before {
+        return;
+    }
+    validate_eval_suites(&layout, ctx);
+    validate_eval_ignore(&layout, ctx);
+    validate_stray_eval_content(&layout, ctx);
+}
+
+fn eval_layout(value: Option<&JsonValue>, ctx: &mut CheckContext) -> Option<EvalLayout> {
+    let Some(value) = value else {
+        return Some(default_eval_layout(None, ctx));
+    };
+    let Some(evals) = value.as_object() else {
+        ctx.error(
+            EVALS_INVALID,
+            PACKAGE_JSON,
+            "package.json#pi.evals must be an object",
+            Some(EVALS_SHAPE_HELP),
+        );
+        return None;
+    };
+    for key in evals.keys() {
+        if !matches!(key.as_str(), "suites" | "lib" | "sources" | "fakes") {
+            ctx.error(
+                EVALS_INVALID,
+                PACKAGE_JSON,
+                format!("package.json#pi.evals contains unknown key '{key}'"),
+                Some(EVALS_SHAPE_HELP),
+            );
+        }
+    }
+
+    let mut layout = default_eval_layout(Some(evals), ctx);
+    if let Some(suites) = evals.get("suites") {
+        layout.suites = configured_eval_suites(suites, ctx);
+    }
+    for (key, _) in EVAL_SUPPORT_KEYS {
+        let Some(value) = evals.get(key) else {
+            continue;
+        };
+        let label = format!("package.json#pi.evals.{key}");
+        layout.support.retain(|(existing, _)| *existing != key);
+        if let Some(path) = eval_path(value, &label, ctx) {
+            layout.support.push((key, path));
+        }
+    }
+    Some(layout)
+}
+
+/// The convention layout for every key `evals` does not author. Suites are
+/// discovered only when their directory exists; support paths always default.
+fn default_eval_layout(evals: Option<&JsonMap>, ctx: &CheckContext) -> EvalLayout {
+    let authored = |key: &str| evals.is_some_and(|evals| evals.contains_key(key));
+    let suites = if authored("suites") {
+        Vec::new()
+    } else {
+        DEFAULT_EVAL_SUITES
+            .iter()
+            .filter(|(_, path)| ctx.has_dir(path))
+            .map(|(kind, path)| EvalSuite {
+                kind: *kind,
+                path: (*path).to_owned(),
+                configured: false,
+            })
+            .collect()
+    };
+    let support = EVAL_SUPPORT_KEYS
+        .iter()
+        .filter(|(key, _)| !authored(key))
+        .map(|(key, path)| (*key, (*path).to_owned()))
+        .collect();
+    EvalLayout { suites, support }
+}
+
+fn configured_eval_suites(value: &JsonValue, ctx: &mut CheckContext) -> Vec<EvalSuite> {
+    let Some(entries) = value.as_array() else {
+        ctx.error(
+            EVALS_INVALID,
+            PACKAGE_JSON,
+            "package.json#pi.evals.suites must be an array",
+            Some(EVALS_SHAPE_HELP),
+        );
+        return Vec::new();
+    };
+    let mut suites: Vec<EvalSuite> = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let label = format!("package.json#pi.evals.suites[{index}]");
+        let Some(entry) = entry.as_object() else {
+            ctx.error(
+                EVALS_INVALID,
+                PACKAGE_JSON,
+                format!("{label} must be an object"),
+                Some("declare each suite as { type, path }"),
+            );
+            continue;
+        };
+        for key in entry
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "type" | "path"))
+        {
+            ctx.error(
+                EVALS_INVALID,
+                PACKAGE_JSON,
+                format!("{label} contains unknown field '{key}'"),
+                Some("declare each suite as { type, path }"),
+            );
+        }
+        let kind = match entry.get("type").and_then(JsonValue::as_str) {
+            Some("harbor") => Some(EvalSuiteKind::Harbor),
+            Some("vitest") => Some(EvalSuiteKind::Vitest),
+            _ => {
+                ctx.error(
+                    EVALS_INVALID,
+                    PACKAGE_JSON,
+                    format!("{label}.type must be 'harbor' or 'vitest'"),
+                    Some("set type to exactly harbor or vitest"),
+                );
+                None
+            }
+        };
+        let path = match entry.get("path") {
+            Some(path) => eval_path(path, &format!("{label}.path"), ctx),
+            None => {
+                ctx.error(
+                    EVALS_INVALID,
+                    PACKAGE_JSON,
+                    format!("{label}.path is required"),
+                    Some("name the suite directory relative to the package root"),
+                );
+                None
+            }
+        };
+        let Some(path) = path else { continue };
+        if suites.iter().any(|suite| suite.path == path) {
+            ctx.error(
+                EVALS_INVALID,
+                PACKAGE_JSON,
+                format!("package.json#pi.evals.suites contains duplicate path '{path}'"),
+                Some("give every suite its own path"),
+            );
+            continue;
+        }
+        if let Some(kind) = kind {
+            suites.push(EvalSuite {
+                kind,
+                path,
+                configured: true,
+            });
+        }
+    }
+    suites
+}
+
+/// A normalized package-relative eval path, or `None` after reporting why the
+/// authored value is not one. Containment is lexical: the snapshot carries no
+/// symlink information.
+fn eval_path(value: &JsonValue, label: &str, ctx: &mut CheckContext) -> Option<String> {
+    let Some(raw) = value.as_str() else {
+        ctx.error(
+            EVALS_INVALID,
+            PACKAGE_JSON,
+            format!("{label} must be a string path"),
+            Some(EVALS_PATH_HELP),
+        );
+        return None;
+    };
+    let reason = if raw.trim().is_empty() {
+        Some("must be non-empty")
+    } else if raw.contains('\\') {
+        Some("must use '/' separators")
+    } else if raw.starts_with('/') || Path::new(raw).is_absolute() || raw.contains(':') {
+        Some("must be relative to the package root")
+    } else if raw.split('/').any(|segment| segment == "..") {
+        Some("must stay inside the package")
+    } else if has_glob(raw) || raw.contains(['[', ']', '{', '}']) {
+        Some("must be a path, not a glob pattern")
+    } else {
+        None
+    };
+    let normalized = normalize_relative(raw);
+    let reason = reason.or_else(|| {
+        if normalized.is_empty() || normalized == "." {
+            Some("must name a directory below the package root")
+        } else if normalized
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == ".")
+        {
+            Some("must be a normalized path")
+        } else {
+            None
+        }
+    });
+    if let Some(reason) = reason {
+        ctx.error(
+            EVALS_PATH_INVALID,
+            PACKAGE_JSON,
+            format!("{label} {reason}: '{raw}'"),
+            Some(EVALS_PATH_HELP),
+        );
+        return None;
+    }
+    Some(normalized)
+}
+
+fn validate_eval_suites(layout: &EvalLayout, ctx: &mut CheckContext) {
+    for suite in &layout.suites {
+        if !ctx.path_exists(&suite.path) {
+            if suite.configured {
+                ctx.error(
+                    EVALS_SUITE_MISSING,
+                    PACKAGE_JSON,
+                    format!(
+                        "package.json#pi.evals suite path '{}' does not exist",
+                        suite.path
+                    ),
+                    Some("create the suite directory or remove the suite from pi.evals.suites"),
+                );
+            }
+            continue;
+        }
+        if suite.kind != EvalSuiteKind::Harbor {
+            continue;
+        }
+        for task in ctx.child_dirs(&suite.path) {
+            let manifest = format!("{task}/task.toml");
+            if !ctx.has_file(&manifest) {
+                ctx.warning(
+                    EVALS_TASK_MISSING,
+                    task.clone(),
+                    format!("Harbor task folder '{task}' has no task.toml"),
+                    Some("give every folder in a harbor suite a task.toml, or move shared code to evals/lib"),
+                );
+            }
+        }
+    }
+}
+
+fn validate_eval_ignore(layout: &EvalLayout, ctx: &mut CheckContext) {
+    let existing: Vec<String> = layout
+        .paths()
+        .into_iter()
+        .filter(|path| ctx.path_exists(path))
+        .map(str::to_owned)
+        .collect();
+    if existing.is_empty() {
+        return;
+    }
+    let patterns = if ctx.has_file(RECIPE_IGNORE) {
+        let Some(content) = ctx.content(RECIPE_IGNORE) else {
+            ctx.warning(
+                EVALS_IGNORE_UNREADABLE,
+                RECIPE_IGNORE,
+                ".recipeignore content was not provided, so eval path exclusion was not checked",
+                Some("supply .recipeignore content to the validator"),
+            );
+            return;
+        };
+        parse_recipe_ignore(content)
+    } else {
+        Vec::new()
+    };
+    for path in existing {
+        if !recipe_ignore_excludes_dir(&path, &patterns) {
+            ctx.warning(
+                EVALS_NOT_IGNORED,
+                RECIPE_IGNORE,
+                format!("eval path '{path}' is not excluded by .recipeignore"),
+                Some(EVALS_IGNORE_HELP),
+            );
+        }
+    }
+}
+
+/// Warn about eval-looking files outside every eval path: a vitest-evals
+/// suite (`*.eval.ts`) or a Harbor task manifest (`task.toml` with a
+/// `[verifier]` table). A `task.toml` whose content was not supplied is
+/// skipped; this heuristic never reports a file as unreadable.
+fn validate_stray_eval_content(layout: &EvalLayout, ctx: &mut CheckContext) {
+    let stray: Vec<(String, &'static str)> = ctx
+        .files
+        .iter()
+        .filter(|(path, _)| !layout.contains(path))
+        .filter_map(|(path, content)| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            if name.ends_with(".eval.ts") {
+                Some((path.clone(), "a vitest-evals suite"))
+            } else if name == "task.toml" && content.as_deref().is_some_and(toml_has_verifier_table)
+            {
+                Some((path.clone(), "a Harbor task"))
+            } else {
+                None
+            }
+        })
+        .collect();
+    for (path, what) in stray {
+        ctx.warning(
+            EVALS_STRAY_CONTENT,
+            path.clone(),
+            format!("'{path}' looks like {what} but is outside every eval path"),
+            Some("move it under an eval suite (evals/vitest or evals/harbor/<task>) or declare its location in package.json#pi.evals"),
+        );
+    }
+}
+
+fn toml_has_verifier_table(content: &str) -> bool {
+    content.lines().any(|line| {
+        let line = line.trim();
+        line.starts_with("[verifier]") || line.starts_with("[verifier.")
+    })
+}
+
+/// One `.recipeignore` rule, in the runtime materializer's small ordered
+/// language: `#` comments, `!` negation, a trailing `/` for directories only,
+/// and slash-free patterns that match any path segment.
+#[derive(Debug, Clone)]
+struct RecipeIgnorePattern {
+    negated: bool,
+    directory_only: bool,
+    pattern: String,
+}
+
+fn parse_recipe_ignore(content: &str) -> Vec<RecipeIgnorePattern> {
+    content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| {
+            let (negated, rest) = line
+                .strip_prefix('!')
+                .map_or((false, line), |rest| (true, rest));
+            let marked = rest.trim_start_matches('/');
+            let pattern = marked.trim_end_matches('/');
+            (!pattern.is_empty()).then(|| RecipeIgnorePattern {
+                negated,
+                directory_only: marked.ends_with('/'),
+                pattern: pattern.to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn recipe_ignore_matches(path: &str, directory: bool, patterns: &[RecipeIgnorePattern]) -> bool {
+    let mut ignored = false;
+    for rule in patterns {
+        if rule.directory_only && !directory {
+            continue;
+        }
+        let matched = if rule.pattern.contains('/') {
+            glob_matches(&rule.pattern, path) || glob_matches(&format!("**/{}", rule.pattern), path)
+        } else {
+            path.split('/')
+                .any(|segment| segment_match(&rule.pattern, segment))
+        };
+        if matched {
+            ignored = !rule.negated;
+        }
+    }
+    ignored
+}
+
+/// Whether the runtime prunes directory `path`: it or one of its ancestors is
+/// ignored. The runtime removes an ignored directory without visiting its
+/// children, so a later negation cannot bring a child back.
+fn recipe_ignore_excludes_dir(path: &str, patterns: &[RecipeIgnorePattern]) -> bool {
+    let segments: Vec<&str> = path.split('/').collect();
+    (1..=segments.len())
+        .any(|end| recipe_ignore_matches(&segments[..end].join("/"), true, patterns))
 }
 
 fn resource_patterns(
@@ -1403,7 +1860,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         ctx.error(
             "agent.tools_reserved",
             path,
-            &format!(
+            format!(
                 "Agent tools must not declare session-generated tools: {}",
                 reserved_tools.join(", ")
             ),
@@ -4851,5 +5308,428 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "package.lockfile_malformed"));
+    }
+
+    const HARBOR_TASK_TOML: &str = "version = \"1.0\"\n\n[verifier]\ntimeout_sec = 120\n";
+
+    /// A Recipe whose `pi` carries `evals` (when given) plus `extra` files.
+    fn evals_recipe(evals: Option<JsonValue>, extra: &[(&str, &str)]) -> RecipeFiles {
+        let mut pi = json!({ "agents": ["agents/*.yaml"] });
+        if let Some(evals) = evals {
+            pi["evals"] = evals;
+        }
+        let package = serde_json::to_string_pretty(&json!({ "name": "evals-test", "pi": pi }))
+            .expect("serialize package");
+        let mut files = vec![
+            ("package.json", package.as_str()),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\n",
+            ),
+        ];
+        files.extend_from_slice(extra);
+        recipe_files(&files)
+    }
+
+    fn evals_diagnostics(report: &Report) -> Vec<&Diagnostic> {
+        report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.starts_with("pi.evals_"))
+            .collect()
+    }
+
+    fn assert_single(report: &Report, code: &str, severity: Severity, needle: &str) {
+        let found = evals_diagnostics(report);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].code, code, "{found:?}");
+        assert_eq!(found[0].severity, severity, "{found:?}");
+        assert!(found[0].message.contains(needle), "{found:?}");
+    }
+
+    #[test]
+    fn evals_full_block_is_valid() {
+        let input = evals_recipe(
+            Some(json!({
+                "suites": [
+                    { "type": "harbor", "path": "evals/harbor" },
+                    { "type": "vitest", "path": "evals/vitest" },
+                    { "type": "vitest", "path": "evals/vitest-slow" }
+                ],
+                "lib": "evals/lib",
+                "sources": "evals/sources",
+                "fakes": "evals/fakes"
+            })),
+            &[
+                (".recipeignore", "# authoring only\nevals/\n"),
+                ("evals/README.md", "# Evals\n"),
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                ("evals/harbor/greet/instruction.md", "Say hello\n"),
+                ("evals/vitest/greet.eval.ts", "export {};\n"),
+                ("evals/vitest-slow/long.eval.ts", "export {};\n"),
+                ("evals/lib/grader.ts", "export {};\n"),
+                ("evals/sources/gen.ts", "export {};\n"),
+                ("evals/fakes/hello-mcp/server.ts", "export {};\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn evals_absent_block_discovers_default_suites() {
+        let tree = [
+            ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+            ("evals/harbor/greet/tests/test.sh", "exit 0\n"),
+            ("evals/vitest/greet.eval.ts", "export {};\n"),
+            ("evals/lib/judge.ts", "export {};\n"),
+        ];
+        let mut ignored = tree.to_vec();
+        ignored.push((".recipeignore", "evals/\n"));
+        let report = check_recipe_files(&evals_recipe(None, &ignored));
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+
+        // Without .recipeignore every discovered path that exists warns, and
+        // the defaults count as eval paths, so nothing is reported as stray.
+        let report = check_recipe_files(&evals_recipe(None, &tree));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let mut not_ignored: Vec<&str> = evals_diagnostics(&report)
+            .iter()
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.code, "pi.evals_not_ignored", "{diagnostic:?}");
+                assert_eq!(diagnostic.severity, Severity::Warning);
+                diagnostic.message.as_str()
+            })
+            .collect();
+        not_ignored.sort_unstable();
+        assert_eq!(
+            not_ignored,
+            [
+                "eval path 'evals/harbor' is not excluded by .recipeignore",
+                "eval path 'evals/lib' is not excluded by .recipeignore",
+                "eval path 'evals/vitest' is not excluded by .recipeignore",
+            ]
+        );
+
+        // No eval directories at all: nothing to check.
+        let report = check_recipe_files(&evals_recipe(None, &[]));
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn evals_shape_errors() {
+        let cases: Vec<(JsonValue, &str, &str)> = vec![
+            (
+                json!([]),
+                "pi.evals_invalid",
+                "package.json#pi.evals must be an object",
+            ),
+            (
+                json!({ "suite": [] }),
+                "pi.evals_invalid",
+                "unknown key 'suite'",
+            ),
+            (
+                json!({ "suites": {} }),
+                "pi.evals_invalid",
+                "suites must be an array",
+            ),
+            (
+                json!({ "suites": ["evals/harbor"] }),
+                "pi.evals_invalid",
+                "suites[0] must be an object",
+            ),
+            (
+                json!({ "suites": [{ "type": "harbor", "path": "evals/harbor", "name": "x" }] }),
+                "pi.evals_invalid",
+                "suites[0] contains unknown field 'name'",
+            ),
+            (
+                json!({ "suites": [{ "type": "pytest", "path": "evals/harbor" }] }),
+                "pi.evals_invalid",
+                "suites[0].type must be 'harbor' or 'vitest'",
+            ),
+            (
+                json!({ "suites": [{ "path": "evals/harbor" }] }),
+                "pi.evals_invalid",
+                "suites[0].type must be 'harbor' or 'vitest'",
+            ),
+            (
+                json!({ "suites": [{ "type": "harbor" }] }),
+                "pi.evals_invalid",
+                "suites[0].path is required",
+            ),
+            (
+                json!({ "suites": [{ "type": "harbor", "path": 3 }] }),
+                "pi.evals_invalid",
+                "suites[0].path must be a string path",
+            ),
+            (
+                json!({ "lib": ["evals/lib"] }),
+                "pi.evals_invalid",
+                "pi.evals.lib must be a string path",
+            ),
+            (
+                json!({ "suites": [
+                    { "type": "harbor", "path": "evals/harbor" },
+                    { "type": "vitest", "path": "./evals/harbor/" }
+                ] }),
+                "pi.evals_invalid",
+                "duplicate path 'evals/harbor'",
+            ),
+        ];
+        for (evals, code, needle) in cases {
+            let input = evals_recipe(
+                Some(evals.clone()),
+                &[
+                    (".recipeignore", "evals/\n"),
+                    ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                ],
+            );
+            let report = check_recipe_files(&input);
+            assert!(!report.valid, "{evals}: {:?}", report.diagnostics);
+            assert_single(&report, code, Severity::Error, needle);
+        }
+    }
+
+    #[test]
+    fn evals_path_errors() {
+        let cases = [
+            ("", "must be non-empty"),
+            ("evals\\harbor", "must use '/' separators"),
+            ("/evals/harbor", "must be relative to the package root"),
+            ("C:/evals", "must be relative to the package root"),
+            ("../shared/evals", "must stay inside the package"),
+            ("evals/../../outside", "must stay inside the package"),
+            ("evals/*", "must be a path, not a glob pattern"),
+            (".", "must name a directory below the package root"),
+            ("evals//harbor", "must be a normalized path"),
+            ("evals/./harbor", "must be a normalized path"),
+        ];
+        for (path, needle) in cases {
+            for evals in [
+                json!({ "suites": [{ "type": "harbor", "path": path }] }),
+                json!({ "suites": [], "fakes": path }),
+            ] {
+                let report = check_recipe_files(&evals_recipe(Some(evals.clone()), &[]));
+                assert!(!report.valid, "{evals}: {:?}", report.diagnostics);
+                assert_single(&report, "pi.evals_path_invalid", Severity::Error, needle);
+            }
+        }
+    }
+
+    #[test]
+    fn evals_configured_suite_must_exist() {
+        let input = evals_recipe(
+            Some(json!({ "suites": [{ "type": "vitest", "path": "evals/vitest" }] })),
+            &[(".recipeignore", "evals/\n")],
+        );
+        let report = check_recipe_files(&input);
+        assert!(!report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_suite_missing",
+            Severity::Error,
+            "suite path 'evals/vitest' does not exist",
+        );
+
+        // An empty directory exists.
+        let mut input = input;
+        input.directories.push("evals/vitest".to_owned());
+        let report = check_recipe_files(&input);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+
+        // Explicit empty suites opt out of discovery; missing lib/sources/fakes
+        // are not errors.
+        let input = evals_recipe(
+            Some(json!({ "suites": [], "lib": "evals/shared" })),
+            &[("evals/harbor/greet/task.toml", HARBOR_TASK_TOML)],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_stray_content",
+            Severity::Warning,
+            "'evals/harbor/greet/task.toml' looks like a Harbor task",
+        );
+    }
+
+    #[test]
+    fn evals_harbor_task_without_task_toml_warns() {
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\n"),
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                ("evals/harbor/shared/helpers.py", "\n"),
+                ("evals/harbor/README.md", "# Tasks\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_task_missing",
+            Severity::Warning,
+            "Harbor task folder 'evals/harbor/shared' has no task.toml",
+        );
+        assert_eq!(evals_diagnostics(&report)[0].path, "evals/harbor/shared");
+
+        // Vitest suites have no task folders.
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\n"),
+                ("evals/vitest/fixtures/a.jsonl", "{}\n"),
+            ],
+        );
+        assert!(check_recipe_files(&input).diagnostics.is_empty());
+    }
+
+    #[test]
+    fn evals_recipeignore_coverage() {
+        let tree = [
+            ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+            ("evals/fakes/hello-mcp/server.ts", "export {};\n"),
+        ];
+        let covered = [
+            "evals/\n",
+            "/evals\n",
+            "evals\n",
+            "evals/*\n",
+            "evals/harbor/\nevals/fakes/\n",
+            // A negation below an excluded directory cannot re-include it.
+            "evals/\n!evals/harbor/greet\n",
+            "evals/\n!evals/fakes/\n",
+        ];
+        for ignore in covered {
+            let mut files = tree.to_vec();
+            files.push((".recipeignore", ignore));
+            let report = check_recipe_files(&evals_recipe(None, &files));
+            assert!(
+                report.diagnostics.is_empty(),
+                "{ignore:?}: {:?}",
+                report.diagnostics
+            );
+        }
+
+        let partial = [
+            ("evals/harbor/\n", "'evals/fakes'"),
+            ("evals/harbor/*/tests/\nevals/fakes\n", "'evals/harbor'"),
+            ("evals/fakes/hello-mcp\nevals/harbor/\n", "'evals/fakes'"),
+        ];
+        for (ignore, needle) in partial {
+            let mut files = tree.to_vec();
+            files.push((".recipeignore", ignore));
+            let report = check_recipe_files(&evals_recipe(None, &files));
+            assert!(report.valid, "{:?}", report.diagnostics);
+            assert_single(&report, "pi.evals_not_ignored", Severity::Warning, needle);
+        }
+
+        // Unread .recipeignore: report once rather than guess.
+        let mut input = evals_recipe(None, &tree);
+        input.files.push(RecipeFile::unread(".recipeignore"));
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_recipeignore_unreadable",
+            Severity::Warning,
+            ".recipeignore content was not provided",
+        );
+    }
+
+    #[test]
+    fn evals_stray_content_warns() {
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\n"),
+                ("test/greet.eval.ts", "export {};\n"),
+                ("tasks/greet/task.toml", HARBOR_TASK_TOML),
+                // Not eval-looking: no [verifier] table, or not a suite file.
+                ("tools/task.toml", "name = \"tool\"\n"),
+                ("src/greet.eval.tsx", "export {};\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let mut stray: Vec<(&str, &str)> = evals_diagnostics(&report)
+            .iter()
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.code, "pi.evals_stray_content");
+                assert_eq!(diagnostic.severity, Severity::Warning);
+                (diagnostic.path.as_str(), diagnostic.message.as_str())
+            })
+            .collect();
+        stray.sort_unstable();
+        assert_eq!(
+            stray,
+            [
+                (
+                    "tasks/greet/task.toml",
+                    "'tasks/greet/task.toml' looks like a Harbor task but is outside every eval path"
+                ),
+                (
+                    "test/greet.eval.ts",
+                    "'test/greet.eval.ts' looks like a vitest-evals suite but is outside every eval path"
+                ),
+            ]
+        );
+
+        // Declaring the location makes it an eval path.
+        let input = evals_recipe(
+            Some(json!({ "suites": [
+                { "type": "vitest", "path": "test" },
+                { "type": "harbor", "path": "tasks" }
+            ] })),
+            &[
+                (".recipeignore", "test/\ntasks/\n"),
+                ("test/greet.eval.ts", "export {};\n"),
+                ("tasks/greet/task.toml", HARBOR_TASK_TOML),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn evals_redlining_layout_has_no_errors() {
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\nnode_modules/\n"),
+                ("evals/README.md", "# Redlining evals\n"),
+                ("evals/harbor/nda-mutual/task.toml", HARBOR_TASK_TOML),
+                (
+                    "evals/harbor/nda-mutual/instruction.md",
+                    "Redline the NDA\n",
+                ),
+                (
+                    "evals/harbor/nda-mutual/environment/Dockerfile",
+                    "FROM node:22\n",
+                ),
+                ("evals/harbor/nda-mutual/tests/test.sh", "exit 0\n"),
+                ("evals/harbor/msa-vendor/task.toml", HARBOR_TASK_TOML),
+                ("evals/harbor/msa-vendor/tests/rubric.json", "{}\n"),
+                (
+                    "evals/eval-artifacts/2026-10-01/results.json",
+                    "{\"score\": 1}\n",
+                ),
+                ("evals/eval-artifacts/latest/task.toml", HARBOR_TASK_TOML),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .all(|diagnostic| !diagnostic.severity.is_error()),
+            "{:?}",
+            report.diagnostics
+        );
     }
 }

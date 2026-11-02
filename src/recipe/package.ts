@@ -147,9 +147,12 @@ const RESOURCE_KEYS: Array<keyof RecipePackageResources> = [
   "prompts",
 ];
 
+// `evals` declares where a Recipe's eval suites live. The runtime never loads
+// evals, so it accepts the key without reading it; recipe-check validates it.
 const PI_KEYS = new Set([
   ...RESOURCE_KEYS,
   "channels",
+  "evals",
   "mcp",
   "runtime",
 ]);

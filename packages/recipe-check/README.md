@@ -11,6 +11,11 @@ The checker validates the portable authored contract:
 - package and agent MCP authorization policy;
 - direct-child `judges/*.yaml` definitions (`online`, `offline` and `mission`) and their typed authored schema;
 - dependency lockfile presence and npm lockfile identity;
+- the optional `package.json#pi.evals` eval layout (or its `evals/vitest`,
+  `evals/harbor`, `evals/lib`, `evals/sources`, `evals/fakes` defaults): shape
+  and path errors, plus warnings for Harbor task folders without `task.toml`,
+  eval paths that `.recipeignore` does not exclude, and eval-looking files
+  outside every eval path;
 - exclusion of local capability configuration from distributable snapshots,
   accepting a committed `.pi/mcp.local.json` only as an evaluation binding
   (declared ids, each once, at a loopback or single-label compose host).
