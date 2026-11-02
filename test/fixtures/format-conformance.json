@@ -128,5 +128,16 @@
       "package.json": "{\"name\":\"mcp-policy\",\"pi\":{\"mcp\":{\"servers\":[]}}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nmcp:\n  mode: cli\n  servers:\n    github:\n      include: [search]\n"
     }
+  },
+  {
+    "name": "declared eval suites",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"with-evals\",\"pi\":{\"evals\":{\"suites\":[{\"type\":\"harbor\",\"path\":\"evals/harbor\"},{\"type\":\"vitest\",\"path\":\"evals/vitest\"}],\"lib\":\"evals/lib\"}}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      ".recipeignore": "evals/\n",
+      "evals/harbor/c1/task.toml": "[verifier]\ntimeout_sec = 60.0\n",
+      "evals/vitest/hello.eval.jsonl": "{\"input\":\"hi\"}\n"
+    }
   }
 ]
