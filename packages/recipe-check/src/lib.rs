@@ -1140,8 +1140,15 @@ fn validate_evals_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
     if ctx.diagnostics.len() > diagnostics_before {
         return;
     }
-    validate_eval_suites(&layout, ctx);
+    // Eval files reaching the runtime are a leak whatever the Recipe declares.
+    // The layout checks are opt-in: a Recipe takes them on by declaring
+    // `pi.evals`, so an existing Recipe's eval layout is not judged by a
+    // contract it never adopted.
     validate_eval_ignore(&layout, ctx);
+    if value.is_none() {
+        return;
+    }
+    validate_eval_suites(&layout, ctx);
     validate_stray_eval_content(&layout, ctx);
 }
 
@@ -5558,8 +5565,9 @@ mod tests {
 
     #[test]
     fn evals_harbor_task_without_task_toml_warns() {
+        // An empty block adopts the layout checks with every default path.
         let input = evals_recipe(
-            None,
+            Some(json!({})),
             &[
                 (".recipeignore", "evals/\n"),
                 ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
@@ -5642,9 +5650,29 @@ mod tests {
     }
 
     #[test]
-    fn evals_stray_content_warns() {
+    fn evals_layout_checks_need_a_declaration() {
+        // Without pi.evals, only eval files reaching the runtime are reported.
         let input = evals_recipe(
             None,
+            &[
+                ("evals/harbor/greet/README.md", "# no task.toml\n"),
+                ("test/greet.eval.ts", "export {};\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_not_ignored",
+            Severity::Warning,
+            "eval path 'evals/harbor' is not excluded by .recipeignore",
+        );
+    }
+
+    #[test]
+    fn evals_stray_content_warns() {
+        let input = evals_recipe(
+            Some(json!({})),
             &[
                 (".recipeignore", "evals/\n"),
                 ("test/greet.eval.ts", "export {};\n"),

@@ -413,7 +413,10 @@ Nothing eval-only reaches a running agent: every suite, `lib`, `sources` and
 `fakes` path MUST be excluded by `.recipeignore` (a single `evals/` line does
 it), and in a Harbor trial only a task's `environment/` reaches the agent.
 Hosts accept `pi.evals` without reading it; it is for evaluation tooling and
-`recipe-check`, which reports a missing exclusion as a warning.
+`recipe-check`. `recipe-check` warns about eval paths missing from `.recipeignore`
+for every Recipe, and checks the rest of the layout (Harbor task folders, eval
+files outside the eval paths) only for a Recipe that declares `pi.evals`; an
+empty `{}` adopts those checks with the default paths.
 
 ## Conformance
 
