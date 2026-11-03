@@ -1,0 +1,64 @@
+name: checker portability
+
+# Builds the Rust checker for musl and Windows, only when something it is built from changes.
+on:
+  pull_request:
+    paths:
+      - "packages/recipe-check/**"
+      - "packages/recipe-check-python/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/checker-portability.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/recipe-check/**"
+      - "packages/recipe-check-python/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/checker-portability.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checker-portability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-validator-portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            platform_id: linux-x64-musl
+            target: x86_64-unknown-linux-musl
+            is_musl: true
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            platform_id: win32-x64
+            target: x86_64-pc-windows-msvc
+            is_musl: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install musl linker
+        if: ${{ matrix.is_musl }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - run: cargo build --release --target ${{ matrix.target }} -p introspection-recipe-check --bin introspection-recipe-check
+
