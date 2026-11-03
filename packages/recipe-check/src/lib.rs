@@ -1205,7 +1205,7 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
         return;
     };
     for key in runtime.keys() {
-        if !matches!(key.as_str(), "python" | "system") {
+        if key != "python" {
             ctx.error(
                 "pi.runtime_invalid",
                 PACKAGE_JSON,
@@ -1276,49 +1276,6 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
                     }
                 }
             }
-        }
-    }
-    if let Some(system_value) = runtime.get("system") {
-        let Some(system) = system_value.as_object() else {
-            ctx.error(
-                "pi.runtime_invalid",
-                PACKAGE_JSON,
-                "package.json#pi.runtime.system must be an object",
-                None::<String>,
-            );
-            return;
-        };
-        for key in system.keys() {
-            if key != "packages" {
-                ctx.error(
-                    "pi.runtime_invalid",
-                    PACKAGE_JSON,
-                    format!("package.json#pi.runtime.system contains unknown field '{key}'"),
-                    None::<String>,
-                );
-            }
-        }
-        let valid = system
-            .get("packages")
-            .and_then(JsonValue::as_array)
-            .is_some_and(|items| {
-                items.iter().all(|item| {
-                    item.as_object().is_some_and(|entry| {
-                        entry
-                            .keys()
-                            .all(|key| matches!(key.as_str(), "id" | "version"))
-                            && string_value(entry.get("id")).is_some()
-                            && string_value(entry.get("version")).is_some()
-                    })
-                })
-            });
-        if !valid {
-            ctx.error(
-                "pi.runtime_invalid",
-                PACKAGE_JSON,
-                "package.json#pi.runtime.system.packages must contain only { id, version } objects",
-                None::<String>,
-            );
         }
     }
 }
@@ -5624,11 +5581,6 @@ mod tests {
                         "lockfile": "python/uv.lock",
                         "version": ">=3.12,<3.15",
                         "imports": ["pandas", "openpyxl"]
-                    },
-                    "system": {
-                        "packages": [
-                            { "id": "document.pdf-tools", "version": "1" }
-                        ]
                     }
                 }
             }
@@ -5649,6 +5601,41 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn rejects_runtime_system_as_an_unknown_runtime_field() {
+        let package = json!({
+            "name": "runtime-system",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "runtime": {
+                    "system": {
+                        "packages": [
+                            { "id": "document.pdf-tools", "version": "1" }
+                        ]
+                    }
+                }
+            }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\n",
+            ),
+        ]);
+
+        let report = check_recipe_files(&input);
+
+        assert!(!report.valid);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "pi.runtime_invalid"
+                && diagnostic.message == "package.json#pi.runtime contains unknown field 'system'"
+        }));
     }
 
     #[test]

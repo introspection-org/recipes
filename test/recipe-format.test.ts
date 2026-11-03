@@ -324,9 +324,6 @@ describe("Recipe Format", () => {
         version: ">=3.12,<3.15",
         imports: ["pandas", "openpyxl"],
       },
-      system: {
-        packages: [{ id: "document.pdf-tools", version: "1" }],
-      },
     };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
@@ -337,10 +334,30 @@ describe("Recipe Format", () => {
         version: ">=3.12,<3.15",
         imports: ["pandas", "openpyxl"],
       },
-      system: {
-        packages: [{ id: "document.pdf-tools", version: "1" }],
-      },
     });
+  });
+
+  it("rejects pi.runtime.system as an unknown runtime field, as the Rust checker does", () => {
+    const fixtures = JSON.parse(
+      readFileSync(join(import.meta.dirname, "fixtures", "format-conformance.json"), "utf8"),
+    ) as Array<{ name: string; valid: boolean; files: Record<string, string> }>;
+    const conformance = fixtures.find(
+      (entry) => entry.name === "pi.runtime.system is an unknown runtime field",
+    );
+    expect(conformance?.valid).toBe(false);
+    const recipeDir = mkdtempSync(join(tmpdir(), "recipe-format-runtime-system-"));
+    cleanups.push(() => rmSync(recipeDir, { recursive: true, force: true }));
+    for (const [path, content] of Object.entries(conformance!.files)) {
+      mkdirSync(join(recipeDir, path, ".."), { recursive: true });
+      writeFileSync(join(recipeDir, path), content);
+    }
+
+    const report = validatePiPackageManifest(readPiPackageManifest(recipeDir));
+
+    expect(report.valid).toBe(false);
+    expect(report.findings.map((item) => item.message)).toContain(
+      "package.json#pi.runtime contains unknown field 'system'",
+    );
   });
 
   it("scopes resource globs and skips installed dependency trees", () => {
