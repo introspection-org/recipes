@@ -6,9 +6,9 @@ The Word (`.docx`) format for the Recipes [`documents` tool](../../../docs/docum
 
 Recipes installs this package alongside itself (an `optionalDependencies` entry), so a
 Recipe that declares the format without listing the package uses that copy, with its Python
-environment and profiles. To pin a version, add `"@introspection-ai/recipe-documents-docx": ">=0.3.0"` to the
-Recipe's `dependencies`, and the Recipe's copy wins. Listing it in `peerDependencies`
-instead says the platform provides it.
+environment and profiles. Declare it in `peerDependencies` (`"@introspection-ai/recipe-documents-docx": ">=X.Y.Z"`), which says the
+platform provides it. To pin an exact version, list `"@introspection-ai/recipe-documents-docx": "X.Y.Z"` in
+`dependencies` instead, and the Recipe's copy wins. `X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-documents-docx version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
 
 ## With and without a profile
 

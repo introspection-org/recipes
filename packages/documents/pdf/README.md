@@ -9,9 +9,9 @@ The PDF format for the Recipes [`documents` tool](../../../docs/documents.md): `
 
 Recipes installs this package alongside itself (an `optionalDependencies` entry), so a
 Recipe that declares the format without listing the package uses that copy, with its Python
-environment. To pin a version, add `"@introspection-ai/recipe-documents-pdf": ">=0.2.0"` to the
-Recipe's `dependencies`, and the Recipe's copy wins. Listing it in `peerDependencies`
-instead says the platform provides it.
+environment. Declare it in `peerDependencies` (`"@introspection-ai/recipe-documents-pdf": ">=X.Y.Z"`), which says the
+platform provides it. To pin an exact version, list `"@introspection-ai/recipe-documents-pdf": "X.Y.Z"` in
+`dependencies` instead, and the Recipe's copy wins. `X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-documents-pdf version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
 
 ## Reading paths
 

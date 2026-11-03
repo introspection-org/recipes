@@ -205,7 +205,7 @@ default, which says so explicitly: the platform provides it.
 ```json
 {
   "peerDependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.7.0"
+    "@introspection-ai/recipe-channel-slack": ">=X.Y.Z"
   },
   "pi": {
     "channels": [{ "provider": "slack" }]
@@ -219,10 +219,12 @@ copy wins:
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-channel-slack": "0.7.0"
+    "@introspection-ai/recipe-channel-slack": "X.Y.Z"
   }
 }
 ```
+
+`X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-channel-slack version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
 
 A provider the host does not
 supply must be declared: in `dependencies`, or in `peerDependencies` when the

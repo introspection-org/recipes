@@ -20,12 +20,13 @@ To pin it:
 
 Recipes installs this package alongside itself, so a Recipe declares it as a
 peer (the platform provides it), or omits it. List it in `dependencies` with
-an exact version only to pin one.
+an exact version only to pin one. `X.Y.Z` stands for a released version
+(`npm view @introspection-ai/recipe-channel-slack version`).
 
 ```json
 {
   "peerDependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.7.0"
+    "@introspection-ai/recipe-channel-slack": ">=X.Y.Z"
   },
   "pi": {
     "channels": [

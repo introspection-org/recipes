@@ -254,8 +254,8 @@ kind of work, such as `legal-redlining-en-US`, which the docx package ships.
 ```json
 {
   "peerDependencies": {
-    "@introspection-ai/recipe-documents-docx": ">=0.4.0",
-    "@introspection-ai/recipe-documents-pdf": ">=0.3.0"
+    "@introspection-ai/recipe-documents-docx": ">=X.Y.Z",
+    "@introspection-ai/recipe-documents-pdf": ">=X.Y.Z"
   },
   "pi": {
     "documents": [

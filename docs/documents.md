@@ -45,8 +45,8 @@ platform provides it.
 ```json
 {
   "peerDependencies": {
-    "@introspection-ai/recipe-documents-docx": ">=0.4.0",
-    "@introspection-ai/recipe-documents-pdf": ">=0.3.0"
+    "@introspection-ai/recipe-documents-docx": ">=X.Y.Z",
+    "@introspection-ai/recipe-documents-pdf": ">=X.Y.Z"
   },
   "pi": {
     "documents": [
@@ -63,10 +63,12 @@ Recipe's copy wins:
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-documents-docx": "0.4.0"
+    "@introspection-ai/recipe-documents-docx": "X.Y.Z"
   }
 }
 ```
+
+`X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-documents-docx version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
 
 Any other format must be declared, in `dependencies` (the
 Recipe brings it) or `peerDependencies` (the platform provides it, and the
