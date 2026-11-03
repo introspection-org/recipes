@@ -699,7 +699,7 @@ describe("createAgentSession", () => {
       [
         "name: agent",
         "ai:",
-        "  model: openai-codex/gpt-5.5",
+        "  model: openai-codex/gpt-5.6-sol",
         "  thinking_level: off",
         "  options:",
         "    temperature: 0.4",

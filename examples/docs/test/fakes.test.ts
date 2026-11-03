@@ -18,7 +18,6 @@ checkRecipeFakes({
   fakes,
   world,
   scenarios: SCENARIOS,
-  bundle: false,
 });
 
 test("the update-record handler writes the deal and answers in TOON", async () => {

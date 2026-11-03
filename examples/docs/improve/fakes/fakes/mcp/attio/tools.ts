@@ -1,0 +1,86 @@
+// Written by `introspection bindings mcp capture`. Do not edit.
+// biome-ignore-all format: the CLI writes this file and reads it back
+// prettier-ignore
+export default {
+  "tools": [
+    {
+      "name": "list-records",
+      "description": "List the records of one object.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "object"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get-records-by-ids",
+      "description": "Read records of one object by their ids.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "record_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "object",
+          "record_ids"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "update-record",
+      "description": "Update the values of one record.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "object",
+          "record_id",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      }
+    }
+  ]
+} as const;
