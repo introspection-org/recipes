@@ -1,0 +1,8 @@
+{
+  "server": { "name": "mail", "version": "0.1.0" },
+  "entities": ["emails", "sendAttempts"],
+  "settings": ["blocked"],
+  "tools": {
+    "send-email": { "kind": "stateful", "reads": [], "writes": ["emails", "sendAttempts"] }
+  }
+}

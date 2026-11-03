@@ -1,0 +1,342 @@
+# `@introspection-ai/vitest-evals`
+
+Run an Introspection Recipe through a [`vitest-evals`](https://github.com/getsentry/vitest-evals) custom harness.
+
+```ts
+import { expect } from "vitest";
+import { describeEval, toolCalls } from "vitest-evals";
+import {
+  createRecipeHarness,
+  recipeCases,
+  recipeJudge,
+} from "@introspection-ai/vitest-evals";
+
+const harness = createRecipeHarness();
+
+describeEval("Support behavior", {
+  harness,
+  judges: [recipeJudge("useful-support-resolution")],
+  judgeThreshold: 1,
+}, (it) => {
+  it.for(recipeCases("useful-support-resolution"))("$name", async ({ input }, { run }) => {
+    const result = await run(input);
+    expect(result.output).toContain("account");
+    expect(toolCalls(result)).toEqual([]);
+  });
+});
+```
+
+The named loader reads
+`evals/vitest/useful-support-resolution.eval.jsonl` from the Recipe root:
+
+```json
+{"schema_version":2,"name":"asks for the missing account identifier","input":{"history":[],"prompt":"Please check my account"}}
+```
+
+Each row is a rerunnable starting state, not a recording of the original
+completion. `history` contains the normalized messages and tool events before
+the selected turn; `prompt` is the selected user input. Running the suite asks
+the current Recipe to produce a new completion. Production system instructions
+are not replayed into the candidate: the current Recipe supplies its own
+effective instructions.
+
+Run the suite through the Recipe-aware CLI boundary:
+
+```bash
+introspection eval run -p evals/support.eval.ts
+```
+
+Vitest's default `include` only collects `*.test.*` and `*.spec.*` files, so
+a `*.eval.ts` suite needs a Vitest config that includes it. Agent turns also
+outlast Vitest's 5 second default test timeout. Vitest resolves `include`
+against its `root`, which is the current directory unless set, so the config
+sets `root` to its own directory and works wherever Vitest is started:
+
+```ts
+// vitest.config.ts
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    root: fileURLToPath(new URL(".", import.meta.url)),
+    include: ["evals/vitest/**/*.eval.ts"],
+    testTimeout: 300_000,
+  },
+});
+```
+
+`introspection eval create` writes this file when the Recipe has no
+`vitest.config.*` or `vite.config.*`. With it in place, the shortest native
+Vitest loop also works directly from the Recipe directory:
+
+```bash
+npx vitest run evals/vitest/support.eval.ts
+```
+
+`introspection eval run` owns candidate selection, repeated trials, production
+conversation replay, and native artifact locations. The harness invokes
+`introspection local`, so the same suite uses normal local Pi authentication on
+a developer machine and the managed model transport when an Operator runs it.
+Direct Vitest relies on local Recipe discovery and does not create an
+Introspection eval-run artifact directory.
+
+## Create cases from production turns
+
+Scaffold a named Vitest suite and a judge with the same behavioral name:
+
+```bash
+introspection eval create useful-support-resolution --with-judge
+```
+
+`eval create` also writes the `vitest.config.ts` above when the Recipe has no
+Vitest or Vite config. An existing config is left unchanged, and `eval create`
+prints the `root`, `include` and `testTimeout` settings it needs on stderr.
+When the config sits in a package above the Recipe, its `include` is written
+relative to that package, such as `apps/support/evals/vitest/**/*.eval.ts`.
+
+If the judge already exists under `judges/`, reference it instead:
+
+```bash
+introspection eval create useful-support-resolution --judge support-quality
+```
+
+The preferred production selector is a trace id. One command derives the two
+purpose-specific artifacts from that same completed turn:
+
+```bash
+introspection eval add useful-support-resolution \
+  --trace-id <trace-id> \
+  --expected fail
+```
+
+The paired path defaults to the same-name judge created by `--with-judge`. When
+the suite references an existing differently named judge, pass it explicitly:
+
+```bash
+introspection eval add useful-support-resolution \
+  --trace-id <trace-id> \
+  --judge support-quality \
+  --expected fail
+```
+
+That appends:
+
+- `history + prompt` to the Vitest JSONL, so the current Recipe can rerun it.
+- The original completed trajectory, explicit expected verdict, and effective
+  system instructions to the judge's working `.eval.jsonl` set.
+
+Omit `--expected` to add only the rerunnable Vitest input. Use `judges add` when
+only a labelled judge case is wanted. When a trace id is unavailable, select
+the turn explicitly:
+
+```bash
+introspection eval add useful-support-resolution \
+  --from-conversation <conversation-id> \
+  --turn 3
+```
+
+Judge-only import:
+
+```bash
+introspection judges add support-quality \
+  --trace-id <trace-id> \
+  --expected fail
+```
+
+Judge development and held-out validation remain judge concerns:
+
+```bash
+introspection judges eval useful-support-resolution
+introspection judges validate useful-support-resolution
+```
+
+## Multi-turn cases
+
+Every `run()` starts its own Pi session, kept until the test finishes. Pass an
+earlier run as `continue` to send the next turn in that session:
+
+```ts
+it("sends only after approval", async ({ run }) => {
+  const review = await run({ prompt: "Send the re-engagement email" });
+  await expect(review).toSatisfyJudge(recipeJudge("review-before-send"), { threshold: 1 });
+
+  const sent = await run({ prompt: "Approved, send it", continue: review });
+  await expect(sent).toSatisfyJudge(recipeJudge("faithful-send-report"), { threshold: 1 });
+});
+```
+
+This is a real second turn, so anything the Recipe keeps in session state
+survives; replaying `history` restores messages and tool events only.
+
+`vitest-evals` records one harness run per test, and the CLI totals usage from
+that run. A continued run therefore reports the whole conversation: its
+transcript holds the earlier turns and its usage and cost are session totals.
+A failed continued turn still carries the earlier turns in its partial run.
+
+A run that replays `history`, or a production turn selected with
+`introspection eval run --from-conversation`, cannot be continued:
+`introspection local` hydrates the replay into a Pi session of its own, which
+ends with that turn. Scores
+recorded before a later `run()` are dropped from the report by `vitest-evals`
+([getsentry/vitest-evals#108](https://github.com/getsentry/vitest-evals/issues/108)).
+
+## Fixtures and MCP bindings
+
+`beforeRun` may return the environment of the session it starts:
+
+```ts
+const harness = createRecipeHarness<Input, Fakes>({
+  beforeRun: async ({ input }) => {
+    const fakes = await startFakes({ scenario: input.scenario });
+    return {
+      mcpServers: [{ id: "crm", transport: "streamable_http", url: fakes.url }],
+      fixture: fakes,
+      teardown: () => fakes.close(),
+    };
+  },
+  collectArtifacts: ({ fixture }) => ({ state: fixture.state() }),
+});
+```
+
+- `mcpServers` are written to `.pi/mcp.local.json` in a temporary working
+  directory. Pi runs there, trusts that file, and loads the Recipe from the
+  original directory through `--work-dir`. The Recipe checkout is not touched.
+  A session that declares servers runs only with that binding in place.
+- `fixture` is handed to `collectArtifacts`, which runs after every turn. When a
+  turn fails, `result` is absent and the artifacts are attached to the failed
+  run.
+- `teardown` runs once when the test finishes, so a continued run still has
+  its fixture and bindings.
+
+`beforeRun` runs for the first turn of a session, not for a continued run.
+
+## MCP fakes
+
+A Recipe whose MCP servers have fakes served by
+[`@introspection-ai/mcp-fakes`](../mcp-fakes) (an optional peer dependency,
+installed by the Recipe) gets that `beforeRun` from `fakesHarness`:
+
+```ts
+import {
+  fakesHarness,
+  piToolCalls,
+  type RecipeFakeStates,
+  serverCalls,
+} from "@introspection-ai/vitest-evals";
+import { fakes } from "../../fakes/mcp/index.ts";
+import { type World, world } from "../../fakes/scenarios/index.ts";
+
+const harness = fakesHarness({ fakes, world, scenario: "quiet" });
+
+it("reads the deals without writing", async ({ run }) => {
+  const result = await run({ prompt: "Which deals went quiet?" });
+  const { initial, final } = result.artifacts?.fakeStates as RecipeFakeStates<World>;
+  expect(final.attio).toEqual(initial.attio);
+
+  const attio = serverCalls(piToolCalls(result.artifacts?.piEvents), "attio");
+  expect(attio.map((call) => call.name)).toContain("list-records");
+});
+```
+
+- Every Pi session starts its own fakes on a loopback port, seeded by
+  `world(scenario, clock)`, and is bound to them alone. A continued run keeps
+  its session's fakes; they close when the test finishes.
+- `scenario` may also be a function of the case input. `clock` fixes the time
+  `world` computes its dates from.
+- Each run's `fakeStates` artifact holds every fake's state when the session
+  started (`initial`) and after the turn (`final`). The fixture handed to
+  `collectArtifacts` is the running services, so a suite can add artifacts of
+  its own.
+
+`piToolCalls(piEvents)` pairs Pi's `tool_execution_start` and
+`tool_execution_end` events into `{ name, args, isError, content, structured }`,
+where `structured` is the `structuredContent` the Recipes MCP wrapper keeps in
+the result's details, when it is an object. A call that never ended is left
+out.
+
+`serverCalls(calls, server, tools?)` keeps one MCP server's calls under the
+server's own tool names: Pi names them `mcp_<server>_<tool>`, sometimes cut
+short and with a hash suffix. Pass the server's tool names as `tools` to name a
+long or renamed tool correctly (a call to no listed tool is then left out);
+without them the hash is stripped, which recovers short names only. Each is `{ name, args, isError, response, structured? }`, `response`
+being the text parts of the result joined, which is what mcp-fakes'
+`answered(fake, calls)` reads to type each successful call by its contract.
+
+## Application context and system instructions
+
+The harness runs the Recipe through `introspection local`. `SYSTEM.md`, the
+selected agent's `system_instructions`, and Recipe extensions therefore build
+the system prompt exactly as they do in a normal local or Operator run. Eval
+inputs should not duplicate or override those instructions.
+
+When the application normally appends first-party context to the user message,
+keep that context structured in the case and render the model-visible message
+at the harness boundary:
+
+```ts
+type SupportInput = {
+  prompt: string;
+  systemContext: {
+    accountId: string;
+    entryPoint: string;
+  };
+};
+
+const harness = createRecipeHarness<SupportInput>({
+  renderPrompt: ({ prompt, systemContext }) =>
+    `${prompt}\n\n<system_context>\n${JSON.stringify(systemContext)}\n</system_context>`,
+});
+```
+
+The rendered message is both sent to the Recipe and recorded in the normalized
+Vitest trajectory. This keeps authored cases readable while ensuring judges
+see the same user message the evaluated agent saw. Production-derived JSONL
+cases bypass `renderPrompt` because their captured prompt already is the
+complete model-visible message, including application context.
+
+`recipeJudge("name")` resolves a YAML judge from the current Recipe's
+`judges/` directory and grades the normalized Vitest trajectory with the same
+judge engine used for dataset evaluation and production. An explicit relative or
+absolute YAML path is also accepted when name lookup is not appropriate.
+
+Judge cases and `recipeJudge` share this evidence contract:
+
+```json
+{
+  "schema_version": 2,
+  "trajectory": [
+    { "type": "message", "role": "user", "content": "Research Sentry" },
+    { "type": "tool_call", "id": "call-1", "name": "bash", "arguments": {} },
+    { "type": "tool_result", "tool_call_id": "call-1", "content": "evidence" },
+    { "type": "message", "role": "assistant", "content": "Findings..." }
+  ],
+  "system_instructions": "Optional effective system prompt"
+}
+```
+
+Judge dataset rows add `expected` at the top level. Working cases live in
+`<judge>.eval.jsonl`; held-out cases live in `<judge>.validate.jsonl`.
+Timestamps are optional and are never fabricated. Feedback is separate
+operational context: a production `on:` gate can match the event's raw
+`name` (for example `thumbs_down`), but feedback is not stored in cases or
+sent to the judge model.
+
+### Associate offline judgements with a conversation
+
+`recipeJudge` accepts an optional subject callback evaluated for each harness
+run. Supply the runtime slug and the conversation actually evaluated, from
+your harness artifacts; the conversation launching the eval is not a fallback.
+
+```ts
+recipeJudge('helpful', (run) => {
+  const conversationId = run.artifacts?.conversationId;
+  return typeof conversationId === 'string'
+    ? { runtimeSlug: 'recruitment-pipeline', conversationId }
+    : undefined;
+});
+```
+
+The CLI publishes a standard judgement after grading when the session token and
+collector are configured. Its identity is the runtime slug plus the judge YAML
+name, with a fresh UUIDv7 result ID. Without a subject, scoring remains local.

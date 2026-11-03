@@ -1,0 +1,9 @@
+name: owner
+ai:
+  model: openai/gpt-6-luna
+tools: [say]
+system_instructions:
+  mode: replace
+  content: >-
+    You are a synthetic business owner. Call `say` exactly once with the text
+    "Hello, synthetic agent." Then reply "done".

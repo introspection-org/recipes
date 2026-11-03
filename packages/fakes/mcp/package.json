@@ -1,0 +1,69 @@
+{
+  "name": "@introspection-ai/mcp-fakes",
+  "version": "0.5.0",
+  "description": "Serve a Recipe's MCP fakes from their captured contracts",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./checks": {
+      "types": "./dist/checks.d.ts",
+      "import": "./dist/checks.js"
+    },
+    "./verify": {
+      "types": "./dist/verify.d.ts",
+      "import": "./dist/verify.js"
+    },
+    "./answers": {
+      "types": "./dist/answers.d.ts",
+      "import": "./dist/answers.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "bin": {
+    "mcp-fakes": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "@toon-format/toon": "2.3.1"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "typebox": "^1"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/client": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "^24.0.0",
+    "typebox": "1.4.3",
+    "typescript": "^5.9.0",
+    "vitest": "4.1.12"
+  },
+  "engines": {
+    "node": ">=22.18 <25"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

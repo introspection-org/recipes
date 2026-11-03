@@ -1,0 +1,10 @@
+{
+  "server": { "name": "notes", "version": "1.2.3" },
+  "entities": ["notes"],
+  "settings": ["now", "brokenId"],
+  "tools": {
+    "list-notes": { "kind": "stateful", "reads": ["notes"], "writes": [] },
+    "create-note": { "kind": "stateful", "reads": [], "writes": ["notes"] },
+    "get-note": { "kind": "stateful", "reads": ["notes"], "writes": [] }
+  }
+}

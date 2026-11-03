@@ -1,0 +1,34 @@
+[project]
+name = "introspection-harbor"
+version = "0.14.0"
+description = "Harbor installed-agent adapter for Introspection Recipes"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# Harbor is capped at the minor the adapter is tested on: 0.24 added a
+# pre-trial capability check that refused every task with MCP servers. Raise
+# the cap together with the lock, so tests/test_harbor_pretrial.py runs on it.
+dependencies = [
+    "harbor[e2b]>=0.24.0,<0.25",
+    "introspection-sdk>=0.35.0",
+    "jsonschema>=4",
+    "pyyaml>=6",
+    "rfc3339-validator>=0.1.4",
+    "tenacity>=8",
+    "toon-format==1.0.0",
+]
+
+[project.scripts]
+harbor = "harbor.cli.main:app"
+hb = "harbor.cli.main:app"
+hr = "harbor.cli.main:app"
+
+[dependency-groups]
+dev = ["ruff==0.16.5", "ty==0.0.77"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/introspection_harbor"]
