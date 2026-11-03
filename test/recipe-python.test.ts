@@ -381,6 +381,33 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const prepared = await prepare(dir);
       expect(prepared.packages.pkg?.environmentDir).not.toBe(prepared.recipe?.environmentDir);
     });
+
+    it("keys each installed copy of a package apart, even with identical project files", async () => {
+      const { prepare } = harness();
+      const pkg = { name: "pkg", python: { project: "python", lockfile: "python/uv.lock" } };
+      const first = recipe({ python: false, packages: [pkg] });
+      const second = recipe({ python: false, packages: [pkg] });
+      const firstEnv = (await prepare(first.dir)).packages.pkg?.environmentDir;
+      const secondEnv = (await prepare(second.dir)).packages.pkg?.environmentDir;
+      expect(firstEnv).toBeDefined();
+      expect(secondEnv).not.toBe(firstEnv);
+      // The same copy keeps its environment.
+      expect((await prepare(first.dir)).packages.pkg?.environmentDir).toBe(firstEnv);
+      // A new version installed in the same place gets a new one.
+      const manifest = join(first.dir, "node_modules", "pkg", "package.json");
+      writeFileSync(manifest, readFileSync(manifest, "utf8").replace('"1.0.0"', '"1.0.1"'));
+      expect((await prepare(first.dir)).packages.pkg?.environmentDir).not.toBe(firstEnv);
+    });
+
+    it("keys a Recipe whose lock installs a local source by its project directory", async () => {
+      const { prepare } = harness();
+      const lock = 'version = 1\n\n[[package]]\nname = "synthdep"\nversion = "0.1.0"\nsource = { directory = "../synthdep" }\n';
+      const first = recipe({});
+      const second = recipe({});
+      writeFileSync(join(first.dir, "python", "uv.lock"), lock);
+      writeFileSync(join(second.dir, "python", "uv.lock"), lock);
+      expect((await prepare(first.dir)).recipe?.environmentDir).not.toBe((await prepare(second.dir)).recipe?.environmentDir);
+    });
   });
 });
 

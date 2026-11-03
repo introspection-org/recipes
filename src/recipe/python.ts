@@ -221,11 +221,22 @@ function hashFile(hash: ReturnType<typeof createHash>, label: string, path: stri
   hash.update("\0");
 }
 
+/** A `uv.lock` that installs a source from the local disk: editable, directory or path. */
+const LOCAL_LOCK_SOURCE = /^\s*source\s*=\s*\{\s*(?:editable|directory|path)\s*=/m;
+
 /**
  * The shared-cache key: the environment kind, platform, `uv.lock`,
- * `pyproject.toml` and the declared version range. A Recipe project that
- * is itself a package installs editable, bound to its directory, so that
- * directory is part of its key as well.
+ * `pyproject.toml` and the declared version range, plus the identity of any
+ * local source the environment installs, since uv does not re-install a local
+ * package whose version is unchanged:
+ *
+ * - A package environment installs that package's own project, so its key
+ *   holds the package's realpath and `name@version`. Two installed copies of a
+ *   dependency never share one environment, even with identical project files.
+ * - The Recipe's shell environment holds local code only when its project is
+ *   itself a package (`[build-system]`, installed editable) or its lock names a
+ *   local source; then the project's realpath is in the key. Otherwise Recipes
+ *   with the same lock share one environment.
  */
 function environmentHash(declaration: Declaration, projectDir: string, lockfile: string): string {
   const hash = createHash("sha256");
@@ -235,7 +246,14 @@ function environmentHash(declaration: Declaration, projectDir: string, lockfile:
   const pyproject = join(projectDir, "pyproject.toml");
   hashFile(hash, "pyproject.toml", pyproject);
   hash.update(`version\0${declaration.python.version ?? ""}\0`);
-  if (declaration.kind === "recipe" && /^\s*\[build-system\]/m.test(readFileSync(pyproject, "utf8"))) {
+  if (declaration.kind === "package") {
+    const packageJson = readJson(join(declaration.packageDir, "package.json"));
+    const version = typeof packageJson.version === "string" ? packageJson.version : "";
+    hash.update(`package\0${declaration.owner}@${version}\0${realpathSync(declaration.packageDir)}\0`);
+  } else if (
+    /^\s*\[build-system\]/m.test(readFileSync(pyproject, "utf8")) ||
+    LOCAL_LOCK_SOURCE.test(readFileSync(lockfile, "utf8"))
+  ) {
     hash.update(`project\0${realpathSync(projectDir)}\0`);
   }
   return hash.digest("hex").slice(0, 32);
