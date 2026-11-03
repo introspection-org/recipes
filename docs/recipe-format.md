@@ -86,53 +86,6 @@ partial version, or another manager. A Recipe installs with pnpm, so
 read. An npm lockfile left in the tree MUST still carry the same package name
 and version as `package.json`.
 
-## Channel tools
-
-`pi.channels` declares official provider tools that the host may register for
-the Recipe. The declaration does not contain a connector ID, workspace ID, or
-credential. A host binds those values when it starts a task.
-
-```json
-{
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
-  },
-  "pi": {
-    "channels": [
-      {
-        "provider": "slack"
-      }
-    ]
-  }
-}
-```
-
-Each provider may appear once. The host derives the package name from the
-provider. For example, `slack` resolves to
-`@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
-and marks which tools are active by default.
-
-The provider package must be in the Recipe's production dependencies and
-lockfile. The host imports the package only when the Recipe declares the
-provider. An agent lists each allowed tool by its full name, such as
-`channels`, in its `tools` list. The host fails when the agent names a
-tool that the connector does not register.
-
-Chat providers share one connector shape. A channel connector registers the
-provider-neutral `channels` tool with commands for supported operations. An
-optional `commands` array on the connector restricts these operations for all
-agents using it, for example `{"provider":"slack","commands":["read","reply"]}`.
-Omitting it allows supported commands; an empty list exposes no channel tool.
-`requireReply` is an optional boolean that defaults to `true` when channel tools
-are enabled. Incoming turns then require a successful final `reply`, so an
-enabled command allowlist must include `reply`. Set `requireReply: false` for
-intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
-
-`pi.documents` lists the document formats the `documents` tool opens, each as
-`{"format": "<format>"}` with the package
-`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
-`commands` allowlist. See [Document tools](documents.md).
-
 ## Agents
 
 `pi.agents` may declare YAML agent definitions explicitly. When omitted,
@@ -227,6 +180,81 @@ delegation depth allows it (see below).
 The default agent is named `agent`. If no `agent` exists, a host MAY select the
 only declared agent. When multiple agents exist without `agent`, the caller
 MUST select one explicitly.
+
+## First-party packages
+
+Some tools come from packages we publish, which a Recipe adds as dependencies
+and turns on with a `pi` declaration. There are two kinds today: channel tools
+(`@introspection-ai/recipe-channel-<provider>`, such as Slack) and document
+tools (`@introspection-ai/recipe-documents-<format>`, docx and pdf). A package
+can also ship skills a Recipe uses; see [Shipping skills in a package](#shipping-skills-in-a-package).
+
+### Channel tools
+
+`pi.channels` declares official provider tools that the host may register for
+the Recipe. The declaration does not contain a connector ID, workspace ID, or
+credential. A host binds those values when it starts a task.
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-channel-slack": ">=0.4.0"
+  },
+  "pi": {
+    "channels": [
+      {
+        "provider": "slack"
+      }
+    ]
+  }
+}
+```
+
+Each provider may appear once. The host derives the package name from the
+provider. For example, `slack` resolves to
+`@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
+and marks which tools are active by default.
+
+The provider package must be in the Recipe's production dependencies and
+lockfile. The host imports the package only when the Recipe declares the
+provider. An agent lists each allowed tool by its full name, such as
+`channels`, in its `tools` list. The host fails when the agent names a
+tool that the connector does not register.
+
+Chat providers share one connector shape. A channel connector registers the
+provider-neutral `channels` tool with commands for supported operations. An
+optional `commands` array on the connector restricts these operations for all
+agents using it, for example `{"provider":"slack","commands":["read","reply"]}`.
+Omitting it allows supported commands; an empty list exposes no channel tool.
+`requireReply` is an optional boolean that defaults to `true` when channel tools
+are enabled. Incoming turns then require a successful final `reply`, so an
+enabled command allowlist must include `reply`. Set `requireReply: false` for
+intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
+
+### Document tools
+
+`pi.documents` lists the document formats the `documents` tool opens, each as
+`{"format": "<format>"}` with the package
+`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
+`commands` allowlist and `profile`. A profile is a skill with guidance for one
+kind of work, such as `legal-redlining-en-US`, which the docx package ships.
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-documents-docx": ">=0.3.0",
+    "@introspection-ai/recipe-documents-pdf": ">=0.2.0"
+  },
+  "pi": {
+    "documents": [
+      { "format": "docx", "profile": "legal-redlining-en-US" },
+      { "format": "pdf" }
+    ]
+  }
+}
+```
+
+See [Document tools](documents.md).
 
 ## Judges
 
