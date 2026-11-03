@@ -103,21 +103,22 @@ export function showChoiceTui(
             const marker = multiple
               ? `${selected.has(index) ? "[x]" : "[ ]"} `
               : "";
+            // Titles only: a list of choices reads at a glance; the
+            // question carries the context.
             const label = `${marker}${index + 1}. ${option.label}`;
             add(prefix + theme.fg(active ? "accent" : "text", label));
-            for (const line of wrapText(option.description ?? "", width - 8)) {
-              add(`       ${theme.fg("muted", line)}`);
-            }
           }
 
+          // The last row is an input: a placeholder until something is
+          // typed, with a cursor while it's selected.
           const typedActive = activeIndex === typedIndex;
+          const cursor = typedActive ? "█" : "";
           const typedRow = typed
-            ? `${typedIndex + 1}. ${typed}${typedActive ? "█" : ""}`
-            : `${typedIndex + 1}. ${typedLabel}`;
-          add(
-            (typedActive ? theme.fg("accent", " > ") : "   ") +
-              theme.fg(typed || typedActive ? "accent" : "muted", typedRow)
-          );
+            ? theme.fg("accent", `${typedIndex + 1}. ${typed}${cursor}`)
+            : theme.fg(typedActive ? "accent" : "text", `${typedIndex + 1}. `) +
+              theme.fg("dim", typedLabel) +
+              theme.fg("accent", cursor);
+          add((typedActive ? theme.fg("accent", " > ") : "   ") + typedRow);
           if (multiple) {
             const doneActive = activeIndex === doneIndex;
             add(

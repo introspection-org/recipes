@@ -33,6 +33,9 @@ export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 /** The terminal option that opens a text input for the user's own answer. */
 export const ASK_USER_TYPED_ANSWER_OPTION = "Something else — I'll type it";
 
+/** The terminal list's input row, before anything is typed. */
+export const ASK_USER_TYPE_SOMETHING = "Type something.";
+
 /** What the model sees when the user pressed Esc to answer in the chat. */
 export const DISMISSED_TEXT =
   "The user dismissed the question to reply in the chat. Stop here and wait for their message; don't proceed on your own judgment.";
@@ -223,7 +226,7 @@ export async function askInTerminal(
     const { showChoiceTui } = await import("./interaction-tui.js");
     const result = await showChoiceTui(question, options, ui, signal, {
       multiple: multiSelect,
-      typedLabel: `${ASK_USER_TYPED_ANSWER_OPTION}`,
+      typedLabel: ASK_USER_TYPE_SOMETHING,
     });
     throwIfAborted(signal);
     if (!result) {

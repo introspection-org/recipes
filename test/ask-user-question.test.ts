@@ -7,6 +7,7 @@ import type {
 import {
   ASK_USER_QUESTION_TOOL_NAME,
   ASK_USER_TYPED_ANSWER_OPTION,
+  ASK_USER_TYPE_SOMETHING,
   DISMISSED_TEXT,
   askUserQuestionExtension,
   createAskUserQuestionTool,
@@ -330,7 +331,7 @@ describe("ask_user_question tool", () => {
 
       expect(calls[0]!.kind).toBe("custom");
       expect(calls[0]!.options!.join("\n")).toContain(
-        `4. ${ASK_USER_TYPED_ANSWER_OPTION}`
+        `4. ${ASK_USER_TYPE_SOMETHING}`
       );
       expect(calls[1]!.kind).toBe("input");
       expect(result.content[0]!.text).toBe("Features: Export, Audit log");
@@ -346,9 +347,10 @@ describe("ask_user_question tool", () => {
       const { ctx, calls } = tui([..."Magic link", "\r"]);
       const result = await run(tool, { questions: [authQuestion] }, ctx);
       expect(calls.map((call) => call.kind)).toEqual(["custom"]);
-      expect(calls[0]!.options!.join("\n")).toContain(
-        `4. ${ASK_USER_TYPED_ANSWER_OPTION}`
-      );
+      const shown = calls[0]!.options!.join("\n");
+      expect(shown).toContain(`4. ${ASK_USER_TYPE_SOMETHING}`);
+      // Titles only: option descriptions aren't repeated under each choice.
+      expect(shown).not.toContain("No passwords; newest browsers only");
       expect(result.content[0]!.text).toBe("Auth: Magic link");
     });
 
