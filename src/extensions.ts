@@ -13,6 +13,31 @@ export interface RecipeExtensionSessionContext {
   readonly session: {
     readonly role: "root" | "subagent";
   };
+  /**
+   * The interpreter the host prepared for a direct dependency that declares
+   * `pi.runtime.python`, by package name; `undefined` when that package
+   * declares none or is not a direct dependency. Pass it to
+   * `pythonExecutable({ python })` from `@introspection-ai/recipes/python`.
+   */
+  packagePython(name: string): string | undefined;
+}
+
+/** @internal Build the frozen context a host binds to its extensions. */
+export function createRecipeExtensionSessionContext(options: {
+  recipe: string;
+  agent: string;
+  role: "root" | "subagent";
+  python?: Readonly<Record<string, { readonly interpreter: string }>>;
+}): RecipeExtensionSessionContext {
+  const python = options.python;
+  return Object.freeze({
+    recipe: Object.freeze({ name: options.recipe }),
+    agent: Object.freeze({ name: options.agent }),
+    session: Object.freeze({ role: options.role }),
+    packagePython(name: string): string | undefined {
+      return python && Object.hasOwn(python, name) ? python[name]?.interpreter : undefined;
+    },
+  });
 }
 
 // Embedded hosts may bundle Recipes while extensions resolve their own copy.

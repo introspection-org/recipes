@@ -29,7 +29,7 @@
   needing a helper subpath newer than the active host declares
   `@introspection-ai/recipes` as an ordinary dependency too. The loader prefers
   a Recipe-installed copy for exactly this reason
-  (`src/recipe-extensions.ts::recipeExtensionAliases`), and a peer alone is
+  (`src/recipe/extensions.ts::recipeExtensionAliases`), and a peer alone is
   never installed, so the import would silently resolve to the older host copy
   and fail.
 - **A channel adapter is a dependency, not a peer.** There is one per provider,

@@ -36,6 +36,8 @@ export interface CreateIsolatedChildSessionOptions {
   agentName: string;
   cwd: string;
   env: NodeJS.ProcessEnv;
+  /** Where the host prepared the Python environments; see `pythonEnvironmentRoot` on the session. */
+  pythonEnvironmentRoot?: string;
   credentials?: CredentialStore;
   /** Host settings the child layers its own `session` policy over. */
   settingsManager?: SettingsManager;
@@ -121,6 +123,9 @@ export async function createIsolatedChildSession(
       agentName: opts.agentName,
       cwd: opts.cwd,
       env: { ...opts.env },
+      ...(opts.pythonEnvironmentRoot
+        ? { pythonEnvironmentRoot: opts.pythonEnvironmentRoot }
+        : {}),
       ...(opts.credentials ? { credentials: opts.credentials } : {}),
       ...(opts.settingsManager
         ? { settingsManager: opts.settingsManager }

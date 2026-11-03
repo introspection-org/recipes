@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { build } from "esbuild";
 
@@ -35,6 +35,15 @@ process.stdin.on("end", async () => {
       "npm package vendors native binaries; they ship as os/cpu-gated platform packages:"
     );
     for (const path of vendored) console.error(`- ${path}`);
+    process.exitCode = 1;
+  }
+
+  const unshippedPython = unshippedPythonRuntime(files);
+  if (unshippedPython.length > 0) {
+    console.error(
+      "npm package declares pi.runtime.python but does not ship its project files:"
+    );
+    for (const path of unshippedPython) console.error(`- ${path}`);
     process.exitCode = 1;
   }
 
@@ -95,4 +104,18 @@ async function missingRelativeImports(files) {
     }
   }
   return missing;
+}
+
+// A package declaring pi.runtime.python gets its own environment, synced from
+// the pyproject.toml and uv.lock the host finds in node_modules, so both must
+// be in the tarball.
+function unshippedPythonRuntime(files) {
+  if (!existsSync("package.json")) return [];
+  const python = JSON.parse(readFileSync("package.json", "utf8"))?.pi?.runtime?.python;
+  if (!python || typeof python !== "object") return [];
+  const strip = (path) => String(path ?? "").replace(/^\.\//, "").replace(/\/+$/, "");
+  const packed = new Set(files);
+  return [`${strip(python.project)}/pyproject.toml`, strip(python.lockfile)].filter(
+    (path) => !packed.has(path)
+  );
 }

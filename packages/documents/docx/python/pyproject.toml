@@ -1,7 +1,7 @@
 [project]
 name = "recipe-documents-docx"
 version = "0.1.0"
-description = "Python helpers the @introspection-ai/recipe-documents-docx adapter runs. For its tests; a Recipe brings its own environment with paper-docx."
+description = "Python helpers the @introspection-ai/recipe-documents-docx adapter runs, in the environment the host prepares from the package's pi.runtime.python."
 requires-python = ">=3.12,<3.15"
 dependencies = ["paper-docx==0.2.0"]
 

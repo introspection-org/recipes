@@ -21,6 +21,7 @@ import { registerGenAiSpansFile } from "./genai-spans-file.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
+  createRecipeExtensionSessionContext,
   createRecipeExtensionRegistrationRegistry,
   recipeExtensionToolAllowlist,
   type RecipeExtensionRegistrationRegistry,
@@ -70,6 +71,12 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
+import {
+  activateRecipePython,
+  prepareRecipePython,
+  RECIPE_PYTHON_ROOT_ENV,
+  type PreparedRecipePython,
+} from "./recipe/python.js";
 import { createSystemPrompt } from "./recipe/skills-prompt.js";
 import {
   createAgentTool,
@@ -164,6 +171,8 @@ interface RecipeLaunchState {
   mcpPrivateEnv?: NodeJS.ProcessEnv;
   mcpPrivateDirectory?: string;
   mcpAmbientMcporterConfig?: string;
+  python?: PreparedRecipePython;
+  pythonFailure?: string;
 }
 
 const require = createRequire(import.meta.url);
@@ -807,6 +816,65 @@ export function createRecipesExtension(
     }
   }
 
+  // The variables a shell activation changes, as they were before it, so
+  // session_shutdown can hand the process environment back unchanged.
+  let pythonEnvBeforeActivation: Map<string, string | undefined> | null = null;
+
+  /**
+   * Install the Recipe's Python environments (sync, with interpreter
+   * downloads allowed) and put its shell environment in front of `env`, which
+   * the built-in shell tools inherit. Fails closed: a Recipe whose declared
+   * environment cannot be prepared does not start.
+   */
+  async function prepareRecipePythonEnvironments(
+    ctx: Pick<ExtensionContext, "ui">,
+    launchState: RecipeLaunchState
+  ): Promise<void> {
+    if (launchState.pythonFailure) throw new Error(launchState.pythonFailure);
+    if (!launchState.python) {
+      try {
+        launchState.python = await prepareRecipePython(launchState.resolved.recipeDir, {
+          mode: "sync",
+          allowPythonDownloads: true,
+          env,
+          ...(stringFlag(env[RECIPE_PYTHON_ROOT_ENV])
+            ? { environmentRoot: stringFlag(env[RECIPE_PYTHON_ROOT_ENV]) }
+            : {}),
+          onSync: (event) =>
+            ctx.ui.notify(
+              event.firstBuild
+                ? `Python: downloading packages for ${event.owner} (first build, this can take a minute)`
+                : `Python: updating packages for ${event.owner} to match its uv.lock`,
+              "info"
+            ),
+        });
+      } catch (error) {
+        launchState.pythonFailure = error instanceof Error ? error.message : String(error);
+        throw error;
+      }
+    }
+    const activation = launchState.python.recipe?.activation;
+    if (!activation) return;
+    if (!pythonEnvBeforeActivation) {
+      const keys = new Set([
+        ...Object.keys(activation.set),
+        ...activation.unset,
+        Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH",
+      ]);
+      pythonEnvBeforeActivation = new Map([...keys].map((key) => [key, env[key]]));
+    }
+    activateRecipePython(env, activation);
+  }
+
+  function restorePythonActivation(): void {
+    if (!pythonEnvBeforeActivation) return;
+    for (const [key, value] of pythonEnvBeforeActivation) {
+      if (value === undefined) delete env[key];
+      else env[key] = value;
+    }
+    pythonEnvBeforeActivation = null;
+  }
+
   async function loadRecipeExtensions(
     pi: ExtensionAPI,
     ctx: ExtensionContext,
@@ -836,6 +904,7 @@ export function createRecipesExtension(
           recipeDir: launchState.resolved.recipeDir,
           env,
           cwd: launchState.cwd,
+          ...(launchState.python ? { python: launchState.python.packages } : {}),
         }
       );
       launchState.initialConnectorToolNames =
@@ -856,10 +925,11 @@ export function createRecipesExtension(
       for (const connector of connectors.extensions) {
         const factory = bindRecipeExtensionFactory(
           connector.factory,
-          Object.freeze({
-            recipe: Object.freeze({ name: launchState.resolved.manifest.name }),
-            agent: Object.freeze({ name: launchState.resolved.name }),
-            session: Object.freeze({ role: "root" as const }),
+          createRecipeExtensionSessionContext({
+            recipe: launchState.resolved.manifest.name,
+            agent: launchState.resolved.name,
+            role: "root",
+            ...(launchState.python ? { python: launchState.python.packages } : {}),
           }),
           launchState.extensionRegistrations,
           connector.owner,
@@ -873,12 +943,11 @@ export function createRecipesExtension(
             launchState.resolved.recipeDir,
             extensionPath
           ),
-          Object.freeze({
-            recipe: Object.freeze({ name: launchState.resolved.manifest.name }),
-            agent: Object.freeze({ name: launchState.resolved.name }),
-            session: Object.freeze({
-              role: "root" as const,
-            }),
+          createRecipeExtensionSessionContext({
+            recipe: launchState.resolved.manifest.name,
+            agent: launchState.resolved.name,
+            role: "root",
+            ...(launchState.python ? { python: launchState.python.packages } : {}),
           }),
           launchState.extensionRegistrations,
           extensionPath,
@@ -1473,6 +1542,13 @@ export function createRecipesExtension(
         visibleAgentDefinitions.set(name, definition);
       }
       try {
+        await prepareRecipePythonEnvironments(ctx, launchState);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failRecipeSession(pi, `Python environment could not be prepared\n${message}`, ctx);
+        return;
+      }
+      try {
         await loadRecipeExtensions(pi, ctx, launchState);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1522,6 +1598,7 @@ export function createRecipesExtension(
       await closeRootMcpRuntime();
       clearMcpCatalogPreload(env);
       await stopMcpDaemon(env);
+      restorePythonActivation();
       if (originalRecipeDirEnv === undefined) {
         delete env.PI_RECIPE_DIR;
       } else {

@@ -127,8 +127,11 @@ tests.
 - `@introspection-ai/recipes/session` — create a live Pi Recipe session
 - `@introspection-ai/recipes/mcp` — MCP declarations, bindings, and selection
 - `@introspection-ai/recipes/pi-extension` — Pi extension entrypoint
-- `@introspection-ai/recipes/extensions` — session identity and conditional
-  Recipe extension helpers
+- `@introspection-ai/recipes/extensions` — session identity, the prepared
+  Python of each package (`packagePython`), and conditional Recipe extension
+  helpers
+- `@introspection-ai/recipes/python` — `pythonExecutable` and
+  `runPythonJson`: run a package's Python helper with JSON in and out
 - `@introspection-ai/recipes/channels` defines the provider-neutral `channels`
   tool, capability descriptors, and opaque message references. Replies answer
   the task's origin; capable adapters also support explicit read and send targets.

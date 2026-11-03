@@ -1154,6 +1154,20 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
                 .is_some_and(|items| items.iter().all(|item| string_value(Some(item)).is_some()));
             if !valid {
                 ctx.error("pi.runtime_invalid", PACKAGE_JSON, "package.json#pi.runtime.python.imports must be an array of non-empty module names", None::<String>);
+            } else {
+                for item in imports.as_array().into_iter().flatten() {
+                    let Some(name) = string_value(Some(item)) else {
+                        continue;
+                    };
+                    if !is_python_module_name(name.trim()) {
+                        ctx.error(
+                            "pi.runtime_invalid",
+                            PACKAGE_JSON,
+                            format!("package.json#pi.runtime.python.imports entry '{name}' must be a dotted Python module name"),
+                            Some("name an importable module, such as docx or paper_docx.api"),
+                        );
+                    }
+                }
             }
         }
     }
@@ -1200,6 +1214,19 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
             );
         }
     }
+}
+
+/// A dotted Python module name: identifiers of ASCII letters, digits and `_`,
+/// none starting with a digit, joined by `.`.
+fn is_python_module_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.split('.').all(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
 }
 
 const RECIPE_IGNORE: &str = ".recipeignore";
@@ -5101,6 +5128,50 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn rejects_python_imports_that_are_not_dotted_module_names() {
+        let package = json!({
+            "name": "runtime-imports",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "runtime": {
+                    "python": {
+                        "project": "python",
+                        "lockfile": "python/uv.lock",
+                        "imports": ["paper_docx.api", "python-docx", "os; import sys"]
+                    }
+                }
+            }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\n",
+            ),
+            ("python/pyproject.toml", "[project]\nname='controls'\n"),
+            ("python/uv.lock", "version = 1\n"),
+        ]);
+
+        let report = check_recipe_files(&input);
+
+        let messages: Vec<_> = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "pi.runtime_invalid")
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect();
+        assert_eq!(messages.len(), 2, "{messages:?}");
+        assert!(messages[0].contains("'python-docx'"));
+        assert!(messages[1].contains("'os; import sys'"));
+        assert!(is_python_module_name("_private.mod2"));
+        assert!(!is_python_module_name("2fast"));
+        assert!(!is_python_module_name("a..b"));
     }
 
     #[test]

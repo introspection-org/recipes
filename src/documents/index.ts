@@ -6,6 +6,12 @@ export {
   workspacePath,
 } from "./tools.js";
 export type { DocumentCommand, DocumentToolHost, RegisterDocumentToolsOptions } from "./tools.js";
+export {
+  documentPythonExecutable,
+  RECIPE_DOCUMENTS_PYTHON_ENV,
+  runDocumentHelper,
+} from "./python.js";
+export type { DocumentHelperOptions } from "./python.js";
 export { createDocumentFormatModule, DOCUMENTS_SKILL, loadRecipeDocuments } from "./module.js";
 export {
   DOCUMENT_PROFILE_NAME,
@@ -15,7 +21,7 @@ export {
   recipeProfileSkill,
   resolveDocumentProfile,
 } from "./profile.js";
-export type { DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
+export type { DocumentAdapterOptions, DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
 export type {
   DocumentAdapter,
   DocumentAdapterContext,

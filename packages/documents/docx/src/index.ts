@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   createDocumentFormatModule,
+  runDocumentHelper,
   type DocumentAdapter,
   type DocumentAdapterContext,
   type DocumentCapabilities,
@@ -14,9 +15,10 @@ import {
   type DocumentResult,
 } from "@introspection-ai/recipes/documents";
 
-import { runHelper } from "./python.js";
-
-export { pythonExecutable, runHelper } from "./python.js";
+export {
+  documentPythonExecutable as pythonExecutable,
+  runDocumentHelper as runHelper,
+} from "@introspection-ai/recipes/documents";
 
 /** The helper entry point shipped in this package. */
 export const DOCX_HELPER = fileURLToPath(new URL("../python/docx_helper.py", import.meta.url));
@@ -41,10 +43,18 @@ export class DocxDocumentAdapter implements DocumentAdapter {
   readonly extensions = [".docx"] as const;
   readonly capabilities = DOCX_DOCUMENT_CAPABILITIES;
 
-  constructor(private readonly env: NodeJS.ProcessEnv = process.env, private readonly script = DOCX_HELPER) {}
+  /**
+   * `python` is the interpreter of this package's environment, which the host
+   * prepares from its `pi.runtime.python`; see `pythonExecutable` for the order.
+   */
+  constructor(
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly script = DOCX_HELPER,
+    private readonly python?: string,
+  ) {}
 
   private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
-    return runHelper(this.script, { command, ...input }, { env: this.env, cwd: ctx.cwd, signal: ctx.signal });
+    return runDocumentHelper(this.script, { command, ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
   }
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput) {
@@ -94,7 +104,7 @@ export const docxDocumentFormatModule = createDocumentFormatModule({
   extensions: [".docx"],
   capabilities: DOCX_DOCUMENT_CAPABILITIES,
   profiles: { "legal-redlining-en-US": LEGAL_REDLINING_EN_US },
-  createAdapter: ({ env }) => new DocxDocumentAdapter(env),
+  createAdapter: ({ env, python }) => new DocxDocumentAdapter(env, DOCX_HELPER, python),
 });
 
 export default docxDocumentFormatModule;

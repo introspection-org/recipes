@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionRegistrationRegistry,
+  createRecipeExtensionSessionContext,
   forAgent,
   forRecipeSession,
   getRecipeSessionContext,
@@ -14,11 +15,7 @@ function context(
   agent = "reviewer",
   role: "root" | "subagent" = "root"
 ): RecipeExtensionSessionContext {
-  return Object.freeze({
-    recipe: Object.freeze({ name: "demo" }),
-    agent: Object.freeze({ name: agent }),
-    session: Object.freeze({ role }),
-  });
+  return createRecipeExtensionSessionContext({ recipe: "demo", agent, role });
 }
 
 function api(): ExtensionAPI {
@@ -30,6 +27,20 @@ function api(): ExtensionAPI {
 }
 
 describe("Recipe extension context", () => {
+  it("answers packagePython with the prepared interpreter of a package", () => {
+    const bound = createRecipeExtensionSessionContext({
+      recipe: "demo",
+      agent: "reviewer",
+      role: "root",
+      python: { "@acme/tables": { interpreter: "/envs/acme-tables/bin/python" } },
+    });
+    expect(bound.packagePython("@acme/tables")).toBe("/envs/acme-tables/bin/python");
+    expect(bound.packagePython("@acme/other")).toBeUndefined();
+    expect(bound.packagePython("toString")).toBeUndefined();
+    expect(context().packagePython("@acme/tables")).toBeUndefined();
+    expect(Object.isFrozen(bound)).toBe(true);
+  });
+
   it("shares context across separate Recipes module instances", async () => {
     const bindingModule = await import("../src/extensions.js");
     vi.resetModules();
@@ -65,6 +76,7 @@ describe("Recipe extension context", () => {
         recipe: { name: "demo" },
         agent: { name: "researcher" },
         session: { role: "subagent" },
+        packagePython: expect.any(Function),
       },
     ]);
     expect(Object.isFrozen(seen[0])).toBe(true);

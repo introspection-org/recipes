@@ -24,6 +24,8 @@ export interface RecipeConnectorExtensionOptions {
   recipeDir: string;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
+  /** Prepared package Python environments by package name (see `prepareRecipePython`). */
+  python?: Readonly<Record<string, { interpreter: string }>>;
 }
 
 export interface RecipeConnectorToolLoadout {
