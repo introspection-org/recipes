@@ -97,6 +97,12 @@ function recipe(options: {
   return { dir };
 }
 
+function declareVersion(dir: string, version: string): void {
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  manifest.pi.runtime.python.version = version;
+  writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+}
+
 function harness(extraEnv: Record<string, string> = {}) {
   const uv = fakeUv();
   const home = scratch("recipe-python-home-");
@@ -169,6 +175,30 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       expect((error as Error).message).toContain(">=3.99");
     });
 
+    it("rejects an environment built for an interpreter the declared version no longer selects", async () => {
+      // uv's check passes such an environment: it exits 0 with "Would replace project environment".
+      const { prepare } = harness();
+      const { dir } = recipe({ python: { version: "3.12" } });
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      declareVersion(dir, "3.14");
+      const error = await prepare(dir, { mode: "check", environmentRoot: root }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RecipePythonOutdatedError);
+      expect((error as Error).message).toContain("does not satisfy 3.14");
+    });
+
+    it("names a version no interpreter satisfies when the environment no longer does", async () => {
+      const { env, prepare } = harness();
+      const { dir } = recipe({ python: { version: "3.12" } });
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      declareVersion(dir, "3.99");
+      env.FAKE_UV_FIND_NONE = "1";
+      await expect(prepare(dir, { mode: "check", environmentRoot: root })).rejects.toBeInstanceOf(
+        RecipePythonVersionError
+      );
+    });
+
     it("passes a current environment and runs only the check and the imports", async () => {
       const { uv, prepare } = harness();
       const { dir } = recipe({ python: { imports: ["docx", "paper_docx.api"] } });
@@ -178,11 +208,26 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const prepared = await prepare(dir, { mode: "check", environmentRoot: root });
       expect(prepared.recipe?.synced).toBe(false);
       const after = uv.calls().slice(before).filter((call) => call.args[0] !== "--version");
-      expect(after.map((call) => call.args.includes("--check"))).toEqual([true]);
+      expect(after.map((call) => (call.args.includes("--check") ? "check" : call.args.slice(0, 2).join(" ")))).toEqual([
+        "check",
+        "python find",
+      ]);
     });
   });
 
   describe("sync mode", () => {
+    it("replaces an environment built for an interpreter the declared version no longer selects", async () => {
+      const { prepare } = harness();
+      const { dir } = recipe({ python: { version: "3.12" } });
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      declareVersion(dir, "3.14");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.recipe?.synced).toBe(true);
+      expect(readFileSync(join(root, "python", "pyvenv.cfg"), "utf8")).toContain("version_info = 3.14");
+      expect((await prepare(dir, { mode: "check", environmentRoot: root })).recipe?.synced).toBe(false);
+    });
+
     it("installs a missing shell environment once, compiled, and returns its activation", async () => {
       const { uv, prepare } = harness();
       const { dir } = recipe({ python: { version: ">=3.12,<3.15" } });
@@ -447,6 +492,34 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       expect((await prepare(first.dir)).packages.pkg?.environmentDir).not.toBe(firstEnv);
     });
 
+    it("keys Recipes without a declared version by the Python pins uv would discover", async () => {
+      const { prepare, env, home } = harness();
+      const first = recipe({});
+      const second = recipe({});
+      const shared = (await prepare(first.dir)).recipe?.environmentDir;
+      expect((await prepare(second.dir)).recipe?.environmentDir).toBe(shared);
+      // A pin in the project, or in any directory above it, selects another interpreter.
+      writeFileSync(join(second.dir, "python", ".python-version"), "3.12\n");
+      const pinned = (await prepare(second.dir)).recipe?.environmentDir;
+      expect(pinned).not.toBe(shared);
+      writeFileSync(join(first.dir, ".python-version"), "3.12\n");
+      expect((await prepare(first.dir)).recipe?.environmentDir).not.toBe(shared);
+      // The same pin in the same place shares again.
+      rmSync(join(first.dir, ".python-version"));
+      writeFileSync(join(first.dir, "python", ".python-version"), "3.12\n");
+      expect((await prepare(first.dir)).recipe?.environmentDir).toBe(pinned);
+      // UV_PYTHON and the global pin count too.
+      const third = recipe({});
+      expect((await prepare(third.dir, { env: { ...env, UV_PYTHON: "3.11" } })).recipe?.environmentDir).not.toBe(shared);
+      write(join(home, ".config", "uv", ".python-version"), "3.11\n");
+      expect((await prepare(third.dir)).recipe?.environmentDir).not.toBe(shared);
+      // A declared version overrides every pin, so they are not read.
+      declareVersion(first.dir, ">=3.11");
+      declareVersion(second.dir, ">=3.11");
+      rmSync(join(first.dir, "python", ".python-version"));
+      expect((await prepare(first.dir)).recipe?.environmentDir).toBe((await prepare(second.dir)).recipe?.environmentDir);
+    });
+
     it("keys a Recipe whose lock installs a local source by its project directory", async () => {
       const { prepare } = harness();
       const lock = 'version = 1\n\n[[package]]\nname = "synthdep"\nversion = "0.1.0"\nsource = { directory = "../synthdep" }\n';
@@ -549,6 +622,22 @@ export default { kind: "documents", format: "docx", extensions: [".docx"], capab
 });
 
 const hasUv = spawnSync("uv", ["--version"]).status === 0;
+/** Installed interpreters' `major.minor` (3.9 or newer), oldest first, without downloading any. */
+const installedMinors: string[] = hasUv
+  ? [
+      ...new Set(
+        (
+          JSON.parse(
+            spawnSync("uv", ["python", "list", "--only-installed", "--output-format", "json"], { encoding: "utf8" })
+              .stdout || "[]"
+          ) as Array<{ implementation: string; version_parts: { major: number; minor: number } }>
+        )
+          .filter((python) => python.implementation === "cpython" && python.version_parts.major === 3 && python.version_parts.minor >= 9)
+          .sort((a, b) => a.version_parts.minor - b.version_parts.minor)
+          .map((python) => `3.${python.version_parts.minor}`)
+      ),
+    ]
+  : [];
 
 /**
  * Against the real uv, with a synthetic locked project whose one dependency
@@ -556,6 +645,25 @@ const hasUv = spawnSync("uv", ["--version"]).status === 0;
  * bundled build backend already covers.
  */
 describe.skipIf(!hasUv || IS_WINDOWS)("prepareRecipePython with the real uv", () => {
+  /** A locked project without dependencies, which uv's check alone passes for any interpreter. */
+  function emptyRecipe(): string {
+    const dir = scratch("recipe-python-real-empty-");
+    write(
+      join(dir, "python", "pyproject.toml"),
+      ["[project]", 'name = "synthetic"', 'version = "0.1.0"', 'requires-python = ">=3.9"', "dependencies = []", ""].join("\n")
+    );
+    const lockEnv = { ...process.env };
+    delete lockEnv.UV_FROZEN;
+    delete lockEnv.UV_LOCKED;
+    const locked = spawnSync("uv", ["lock", "--project", join(dir, "python")], { env: lockEnv, encoding: "utf8" });
+    if (locked.status !== 0) throw new Error(`uv lock failed: ${locked.stderr}`);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "synthetic-empty", version: "0.1.0", pi: { runtime: { python: { project: "python", lockfile: "python/uv.lock" } } } })
+    );
+    return dir;
+  }
+
   function lockedRecipe(): string {
     const dir = scratch("recipe-python-real-");
     write(join(dir, "synthdep", "src", "synthdep", "__init__.py"), "VALUE = 42\n");
@@ -633,6 +741,32 @@ describe.skipIf(!hasUv || IS_WINDOWS)("prepareRecipePython with the real uv", ()
       await expect(
         prepareRecipePython(dir, { mode: "check", env, environmentRoot: scratch("recipe-python-real-empty-") })
       ).rejects.toBeInstanceOf(RecipePythonOutdatedError);
+    },
+    120_000
+  );
+
+  it.skipIf(installedMinors.length < 2)(
+    "replaces an environment whose interpreter the declared version no longer selects",
+    async () => {
+      // uv's own check exits 0 here, printing "Would replace project environment".
+      const [older, newer] = [installedMinors[0]!, installedMinors.at(-1)!];
+      const dir = emptyRecipe();
+      const root = scratch("recipe-python-real-root-");
+      const env = { ...process.env };
+      delete env.VIRTUAL_ENV;
+      declareVersion(dir, older);
+      await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root });
+      const version = () => readFileSync(join(root, "python", "pyvenv.cfg"), "utf8").match(/version_info = (\d+\.\d+)/)?.[1];
+      expect(version()).toBe(older);
+
+      declareVersion(dir, newer);
+      await expect(prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).rejects.toBeInstanceOf(
+        RecipePythonOutdatedError
+      );
+      const replaced = await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root });
+      expect(replaced.recipe?.synced).toBe(true);
+      expect(version()).toBe(newer);
+      expect((await prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).recipe?.synced).toBe(false);
     },
     120_000
   );

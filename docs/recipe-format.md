@@ -420,8 +420,11 @@ versions of the same library.
 `prepareRecipePython(recipeDir, options)` from
 `@introspection-ai/recipes/recipe` finds every declaration and prepares it:
 
-- `mode: "check"` runs `uv sync --frozen --no-dev --check --offline` and the
-  import preflight. It writes nothing and uses no network.
+- `mode: "check"` runs `uv sync --frozen --no-dev --check --offline`, then
+  `uv python find` with the environment active, and the import preflight. The
+  second step catches an environment whose interpreter no longer satisfies the
+  declared version or `requires-python`, which uv's check passes. It writes
+  nothing and uses no network.
 - `mode: "sync"` checks first and installs only a missing or outdated
   environment, with `uv sync --frozen --no-dev --compile-bytecode`. A current
   environment is never recompiled.
@@ -430,7 +433,10 @@ versions of the same library.
 By default environments live in a shared cache,
 `~/.introspection/python/<hash>`, keyed by the environment kind (shell or
 package), platform and architecture, the `uv.lock` and `pyproject.toml`
-contents, and the declared `version`; a Recipe project that is itself a
+contents, and the declared `version`. Without a declared `version` it also
+keys on what uv would pick the interpreter from: `UV_PYTHON`, every
+`.python-version` or `.python-versions` file from the project directory up to
+the filesystem root, and uv's global pin. A Recipe project that is itself a
 package (it has `[build-system]`, so it installs editable) also keys on its
 directory. `environmentRoot` (or `PI_RECIPES_PYTHON_ROOT`) fixes the
 location instead: the shell environment is `<root>/python` and each package's
