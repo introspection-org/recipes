@@ -1843,6 +1843,10 @@ fn resolve_agents(
 struct DependencySkills {
     /// Resource paths (snapshot-relative) each declaring package resolved to.
     resources: Vec<String>,
+    /// Roots (`node_modules/<name>`) of the dependencies that declare `pi.skills`.
+    /// A `SKILL.md` directly in one is named `skill` when it has no frontmatter
+    /// name, as the runtime names it, not after the dependency's folder.
+    roots: Vec<String>,
     /// Direct dependencies whose `package.json` the snapshot does not hold.
     /// A snapshot usually leaves `node_modules` out, so their skills are unknown.
     uninstalled: Vec<String>,
@@ -1869,6 +1873,7 @@ fn resolve_dependency_skills(package: &Package, ctx: &mut CheckContext) -> Depen
         let Some(pi_skills) = pi_skills else {
             continue;
         };
+        found.roots.push(root.clone());
         let Some(patterns) = pi_skills.as_array().and_then(|items| {
             items
                 .iter()
@@ -1942,7 +1947,7 @@ fn validate_agents(
         .chain(&dependency_skills.resources)
         .cloned()
         .collect();
-    let skill_names = packaged_skill_names(&skill_resources, ctx);
+    let skill_names = packaged_skill_names(&skill_resources, &dependency_skills.roots, ctx);
     for name in unique_names {
         validate_agent_inheritance(&name, &raw_by_name, ctx);
         for field in AgentField::REQUIRED {
@@ -3188,6 +3193,7 @@ fn resolved_field_provided(
 
 fn packaged_skill_names(
     resource_paths: &[String],
+    package_roots: &[String],
     ctx: &CheckContext,
 ) -> BTreeMap<String, Vec<String>> {
     let mut skill_files = BTreeSet::new();
@@ -3203,9 +3209,12 @@ fn packaged_skill_names(
     let mut names = BTreeMap::<String, Vec<String>>::new();
     for path in skill_files {
         let name = skill_frontmatter_name(&path, ctx).unwrap_or_else(|| {
-            Path::new(&path)
-                .parent()
-                .and_then(Path::file_name)
+            let parent = Path::new(&path).parent().and_then(Path::to_str).unwrap_or("");
+            if parent.is_empty() || package_roots.iter().any(|root| root == parent) {
+                return "skill".to_owned();
+            }
+            Path::new(parent)
+                .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("skill")
                 .to_owned()
@@ -5030,6 +5039,19 @@ mod tests {
         let report = check_recipe_files(&dependency_skills_recipe("review", &[ACME_SKILLS, ACME_REVIEW]));
         assert!(report.valid, "{:?}", report.diagnostics);
         assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn names_an_unnamed_root_skill_md_in_a_dependency_skill_as_the_runtime_does() {
+        let root_skill = (
+            "node_modules/@acme/skills/package.json",
+            r#"{"name":"@acme/skills","pi":{"skills":["SKILL.md"]}}"#,
+        );
+        let unnamed = ("node_modules/@acme/skills/SKILL.md", "---\ndescription: Root\n---\n");
+        let report = check_recipe_files(&dependency_skills_recipe("skill", &[root_skill, unnamed]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let report = check_recipe_files(&dependency_skills_recipe("skills", &[root_skill, unnamed]));
+        assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
     }
 
     #[test]
