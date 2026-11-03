@@ -253,9 +253,11 @@ prompt when the selected agent has model-invocable skills and a `read` or
 `bash` tool.
 
 Skills follow the [Agent Skills](https://agentskills.io) directory convention
-and are selected from the resources declared by `pi.skills`. A skill is named
-by its `SKILL.md` frontmatter `name`, then by its containing directory; a
-root-level unnamed `SKILL.md` uses the portable fallback name `skill`.
+and are selected from the resources declared by `pi.skills` and by the
+Recipe's dependencies (see [Shipping skills in a package](#shipping-skills-in-a-package)).
+A skill is named by its `SKILL.md` frontmatter `name`, then by its containing
+directory; a root-level unnamed `SKILL.md` uses the portable fallback name
+`skill`.
 
 Prompt templates are declared by `pi.prompts`. They retain Pi's normal SDK and
 TUI behavior: hosts expose them through `AgentSession.promptTemplates`, and a
@@ -289,6 +291,66 @@ runtime policy. Interactive Pi may already have trusted global or project
 resources loaded; compatible hosts MUST keep those additions distinguishable
 from Recipe-owned inputs. `tools` limits model-callable tools, not extension
 hook execution.
+
+## Shipping skills in a package
+
+An npm package ships skills by declaring them in its own `package.json`, with
+the same `pi.skills` key a Recipe uses:
+
+```json
+{
+  "name": "@acme/contract-skills",
+  "version": "1.2.0",
+  "files": ["skills"],
+  "pi": { "skills": ["skills"] }
+}
+```
+
+A Recipe uses those skills by listing the package in `dependencies` and
+selecting them by name in an agent's `skills`, like its own:
+
+```json
+{
+  "name": "contracts",
+  "dependencies": { "@acme/contract-skills": "^1.2.0" },
+  "pi": {}
+}
+```
+
+```yaml
+name: agent
+skills: [review-nda]
+```
+
+The rules:
+
+- Hosts read `pi.skills` from each direct `dependencies` entry installed in
+  the Recipe's `node_modules`. `peerDependencies`, `devDependencies` and
+  transitive dependencies are not read; peers are not installed by the managed
+  install.
+- Only an explicit `pi.skills` counts. A dependency's `skills/` folder is not
+  discovered by convention, and a dependency without `pi.skills` contributes
+  no skills.
+- Paths are relative to the dependency package, MUST NOT resolve outside it
+  (including through symlinks, compared by real path), and every explicit path
+  MUST match. A violation is an error naming the package.
+- Dependency skills join the Recipe's own skills. An agent's `skills` list
+  selects among all of them; an agent gets no skill it does not list.
+- A name an agent selects MUST resolve to exactly one `SKILL.md` across the
+  Recipe and its dependencies. Two with the same name are an error naming
+  both. Give each skill a unique frontmatter `name`.
+
+These skills arrive with the install: the build installs the Recipe's
+dependencies from its lockfile, and nothing is fetched at run time. A check
+run without `node_modules` cannot see dependency skills, so a skill an agent
+selects that is not in the Recipe is a warning there rather than an error.
+
+Document profiles use a different path. A Recipe such as
+[`introspection-org/recipe-redlining`](https://github.com/introspection-org/recipe-redlining)
+lists `@introspection-ai/recipe-documents-docx` and
+`@introspection-ai/recipe-documents-pdf` in `dependencies` and selects a
+profile in `pi.documents`; the `documents` tool delivers the core `documents`
+skill and that profile itself, for agents that list the tool.
 
 ## Tools, subagents, and capabilities
 

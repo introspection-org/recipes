@@ -641,11 +641,12 @@ function assertPackageResourcePath(
   pkg: RecipePackageManifest,
   key: keyof RecipePackageResources,
   resource: string,
-  resolved: string
+  resolved: string,
+  owner = `Recipe ${pkg.name}`
 ): void {
   if (isAbsolute(resource) || hasTraversalSegment(resource)) {
     throw new RecipePackageError(
-      `Recipe ${pkg.name} declares ${key} resource outside the package: ${resource}`
+      `${owner} declares ${key} resource outside the package: ${resource}`
     );
   }
   const relativePath = relative(resolve(pkg.path), resolved);
@@ -656,17 +657,26 @@ function assertPackageResourcePath(
     isAbsolute(relativePath)
   ) {
     throw new RecipePackageError(
-      `Recipe ${pkg.name} declares ${key} resource outside the package: ${resource}`
+      `${owner} declares ${key} resource outside the package: ${resource}`
     );
   }
 }
 
-export function assertRecipePathContained(packageDir: string, path: string, label: string): void {
+/**
+ * Throw unless `path`'s real path is inside `packageDir`'s real path. `owner`
+ * starts the message; a dependency package passes `Dependency <name>`.
+ */
+export function assertRecipePathContained(
+  packageDir: string,
+  path: string,
+  label: string,
+  owner = "Recipe"
+): void {
   const root = realpathSync(packageDir);
   const target = realpathSync(path);
   const relativePath = relative(root, target);
   if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
-    throw new RecipePackageError(`Recipe ${label} resolves outside the package: ${path}`);
+    throw new RecipePackageError(`${owner} ${label} resolves outside the package: ${path}`);
   }
 }
 
@@ -674,18 +684,19 @@ function assertResourceTreeContained(
   packageDir: string,
   path: string,
   label: string,
+  owner = "Recipe",
   seen = new Set<string>()
 ): void {
-  assertRecipePathContained(packageDir, path, label);
+  assertRecipePathContained(packageDir, path, label, owner);
   const realPath = realpathSync(path);
   if (seen.has(realPath)) return;
   seen.add(realPath);
   if (!statSync(path).isDirectory()) return;
   for (const entry of readdirSync(path, { withFileTypes: true })) {
     const child = join(path, entry.name);
-    assertRecipePathContained(packageDir, child, label);
+    assertRecipePathContained(packageDir, child, label, owner);
     if (statSync(child).isDirectory()) {
-      assertResourceTreeContained(packageDir, child, label, seen);
+      assertResourceTreeContained(packageDir, child, label, owner, seen);
     }
   }
 }
@@ -1020,10 +1031,18 @@ export function resolvePiPackageMcpManifestPaths(pkg: RecipePackageManifest): st
   return resolved;
 }
 
+/**
+ * Resolve a package's declared resources of one kind. `owner` names the
+ * package in errors: the Recipe by default, `Dependency <name>` for a
+ * dependency package.
+ */
 export function resolvePiPackageResourcePaths(
   pkg: RecipePackageManifest,
-  key: keyof RecipePackageResources
+  key: keyof RecipePackageResources,
+  owner?: string
 ): string[] {
+  const declarer = owner ?? `Recipe ${pkg.name}`;
+  const container = owner ?? "Recipe";
   const globs = pkg.resources[key];
   const resolved: string[] = [];
   const seen = new Set<string>();
@@ -1036,15 +1055,15 @@ export function resolvePiPackageResourcePaths(
 
   for (const glob of globs) {
     if (!glob.trim()) continue;
-    assertPackageResourcePath(pkg, key, glob, resolve(pkg.path, glob));
+    assertPackageResourcePath(pkg, key, glob, resolve(pkg.path, glob), declarer);
     if (!hasGlob(glob)) {
       const direct = resolve(pkg.path, glob);
       if (!existsSync(direct)) {
         throw new RecipePackageError(
-          `Recipe ${pkg.name} declares missing ${key} resource: ${glob}`
+          `${declarer} declares missing ${key} resource: ${glob}`
         );
       }
-      assertResourceTreeContained(pkg.path, direct, `${key} resource`);
+      assertResourceTreeContained(pkg.path, direct, `${key} resource`, container);
       add(direct);
       continue;
     }
@@ -1055,11 +1074,11 @@ export function resolvePiPackageResourcePaths(
       .map((entry) => resolve(pkg.path, entry));
     if (matches.length === 0) {
       throw new RecipePackageError(
-        `Recipe ${pkg.name} declares ${key} glob with no matches: ${glob}`
+        `${declarer} declares ${key} glob with no matches: ${glob}`
       );
     }
     for (const match of matches.sort()) {
-      assertResourceTreeContained(pkg.path, match, `${key} resource`);
+      assertResourceTreeContained(pkg.path, match, `${key} resource`, container);
       add(match);
     }
   }
@@ -1244,4 +1263,83 @@ export function validateRecipePythonPackage(packageDir: string): RecipeValidatio
     }
   }
   return { valid: findings.length === 0, findings, name, ...(python ? { python } : {}) };
+}
+
+/** A direct dependency installed in the Recipe's `node_modules`. */
+export interface InstalledRecipeDependency {
+  /** The name the Recipe's `package.json` declares it under. */
+  name: string;
+  /** The real path of the installed package (pnpm links into `.pnpm`). */
+  packageDir: string;
+}
+
+/**
+ * The Recipe's direct dependencies installed in its `node_modules`, in
+ * declaration order, from the `package.json` blocks named by `keys`.
+ * Transitive dependencies are never read, and a declared dependency that is
+ * not installed is skipped.
+ */
+export function installedRecipeDependencies(
+  recipeDir: string,
+  keys: readonly ("dependencies" | "peerDependencies")[]
+): InstalledRecipeDependency[] {
+  const root = resolve(recipeDir);
+  const packagePath = packageJsonPath(root);
+  if (!packagePath) return [];
+  const raw = readJsonFile(packagePath);
+  const names = new Set<string>();
+  for (const key of keys) {
+    for (const name of Object.keys(asRecord(raw[key]))) names.add(name);
+  }
+  const installed: InstalledRecipeDependency[] = [];
+  for (const name of names) {
+    const candidate = join(root, "node_modules", ...name.split("/"));
+    if (!existsSync(join(candidate, "package.json"))) continue;
+    installed.push({ name, packageDir: realpathSync(candidate) });
+  }
+  return installed;
+}
+
+/** One package's skill resources: the Recipe's own, or a dependency's `pi.skills`. */
+export interface RecipeSkillResource {
+  /** A skill file or a directory searched for `SKILL.md`. */
+  path: string;
+  /** The package the resource must stay inside (a real path for a dependency). */
+  packageDir: string;
+  /** The dependency's name; absent for the Recipe's own skills. */
+  dependency?: string;
+}
+
+/**
+ * The skill resources each direct `dependencies` entry declares with an
+ * explicit `pi.skills`, resolved inside that package. Peer, dev and
+ * transitive dependencies are not read, a dependency without `pi.skills`
+ * contributes nothing (its `skills/` folder is not discovered by convention),
+ * and an installed dependency whose `pi.skills` is malformed, unmatched or
+ * escapes the package throws an error naming it.
+ */
+export function recipeDependencySkillResources(recipeDir: string): RecipeSkillResource[] {
+  const resources: RecipeSkillResource[] = [];
+  for (const { name, packageDir } of installedRecipeDependencies(recipeDir, ["dependencies"])) {
+    const raw = readJsonFile(join(packageDir, "package.json"));
+    const pi = piPackageManifestBlock(raw);
+    if (!pi || pi.skills === undefined) continue;
+    const owner = `Dependency ${name}`;
+    if (!Array.isArray(pi.skills) || pi.skills.some((item) => typeof item !== "string" || !item.trim())) {
+      throw new RecipePackageError(`${owner} package.json#pi.skills must be an array of non-empty strings`);
+    }
+    const pkg: RecipePackageManifest = {
+      name,
+      version: stringValue(raw.version) ?? "0.0.0",
+      path: packageDir,
+      resources: { ...emptyResources(), skills: stringArray(pi.skills).map(normalizeResourcePath) },
+      channels: [],
+      documents: [],
+      mcp: { manifests: [], servers: [] },
+    };
+    for (const path of resolvePiPackageResourcePaths(pkg, "skills", owner)) {
+      resources.push({ path, packageDir, dependency: name });
+    }
+  }
+  return resources;
 }
