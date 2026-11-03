@@ -31,6 +31,8 @@ export interface InProcessRunControllerOptions {
   recipe: ResolvedRecipe;
   cwd: string;
   env?: NodeJS.ProcessEnv;
+  /** Where the host prepared the Python environments; see `pythonEnvironmentRoot` on the session. */
+  pythonEnvironmentRoot?: string;
   credentials?: CredentialStore;
   /** The root's host settings; each child layers its own `session` policy over them. */
   settingsManager?: SettingsManager;
@@ -141,6 +143,9 @@ export function createInProcessRunController(
           // root object would either collide with its lease or expose its CLI
           // runtime to the child.
           env,
+          ...(opts.pythonEnvironmentRoot
+            ? { pythonEnvironmentRoot: opts.pythonEnvironmentRoot }
+            : {}),
           ...(opts.credentials ? { credentials: opts.credentials } : {}),
           ...(opts.settingsManager
             ? { settingsManager: opts.settingsManager }

@@ -822,6 +822,9 @@ async function createSessionForAgent(
             recipe: opts.recipe!,
             cwd,
             env,
+            // Children check the environments this session checked, wherever
+            // the host prepared them, not the shared cache.
+            ...(pythonEnvironmentRoot ? { pythonEnvironmentRoot } : {}),
             ...(opts.credentials ? { credentials: opts.credentials } : {}),
             ...(opts.settingsManager
               ? { settingsManager: opts.settingsManager }
