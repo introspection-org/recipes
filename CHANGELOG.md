@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.40.0](https://github.com/introspection-org/recipes/compare/v0.39.0...v0.40.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe:** `pi.runtime.system` is removed from the Recipe format. No published Recipe used it. A Recipe that still declares it is now rejected as an unknown field: "package.json#pi.runtime contains unknown field 'system'". `RecipeRuntimeRequirements` no longer carries `system`, and `RecipeSystemPackageRequirement` is no longer exported.
+* the packages no longer depend on or peer on @introspection-ai/recipes, and need a Recipes host that implements module API version 1 (the release that ships with this change). docx and pdf no longer re-export runHelper or pythonExecutable (use runDocumentHelper and documentPythonExecutable from @introspection-ai/recipes/documents), and DocxDocumentAdapter and PdfDocumentAdapter take an options object ({ runHelper, env?, script?, python? }). createSlackChannelSession no longer reads the channel config from the environment when none is passed; pass config: resolveChannelConfig(env).
+
+### Features
+
+* install first-party tool packages alongside Recipes, with no dependency back on it ([#399](https://github.com/introspection-org/recipes/issues/399)) ([b6249d6](https://github.com/introspection-org/recipes/commit/b6249d6535a8831e84ca1aeb8f4d299502b3c347))
+* **recipe:** offer skills from dependency packages ([#398](https://github.com/introspection-org/recipes/issues/398)) ([1dd9b14](https://github.com/introspection-org/recipes/commit/1dd9b1404508d939ddfc23de13dba63b7c40bfaf))
+* **recipe:** remove pi.runtime.system ([#402](https://github.com/introspection-org/recipes/issues/402)) ([175fa9c](https://github.com/introspection-org/recipes/commit/175fa9cda2df5f56e3f41180dee30e522f3ab2b6))
+
 ## [0.39.0](https://github.com/introspection-org/recipes/compare/v0.38.0...v0.39.0) (2026-11-03)
 
 

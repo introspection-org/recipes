@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.6.0...recipe-channel-slack-v0.7.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* the packages no longer depend on or peer on @introspection-ai/recipes, and need a Recipes host that implements module API version 1 (the release that ships with this change). docx and pdf no longer re-export runHelper or pythonExecutable (use runDocumentHelper and documentPythonExecutable from @introspection-ai/recipes/documents), and DocxDocumentAdapter and PdfDocumentAdapter take an options object ({ runHelper, env?, script?, python? }). createSlackChannelSession no longer reads the channel config from the environment when none is passed; pass config: resolveChannelConfig(env).
+
+### Features
+
+* install first-party tool packages alongside Recipes, with no dependency back on it ([#399](https://github.com/introspection-org/recipes/issues/399)) ([b6249d6](https://github.com/introspection-org/recipes/commit/b6249d6535a8831e84ca1aeb8f4d299502b3c347))
+
 ## [0.6.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.5.0...recipe-channel-slack-v0.6.0) (2026-10-20)
 
 
