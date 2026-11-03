@@ -39,8 +39,9 @@
   (`src/recipe/extensions.ts::recipeExtensionAliases`), and a peer alone is
   never installed, so the import would silently resolve to the older host copy
   and fail.
-- **A channel adapter or document format is a dependency, or a peer or
-  omitted when it is a companion package.** The companions are the
+- **A channel adapter or document format is a peer by default when it is a
+  companion package** (or omitted), **and a dependency with an exact version
+  only to pin it.** Third-party ones are dependencies. The companions are the
   first-party ones published here (`recipe-channel-*`, `recipe-documents-*`),
   listed in Recipes' `optionalDependencies` so installing Recipes installs
   them beside it. A Recipe may declare one as a peer (the platform provides

@@ -199,9 +199,34 @@ send idempotency or claim exactly-once delivery.
 The channel declaration enables the provider package. The Slack package is
 one Recipes installs alongside itself (an `optionalDependencies` entry of
 `@introspection-ai/recipes`), so the copy beside the running Recipes is used
-when the Recipe does not list it, or lists it in `peerDependencies` (the
-platform provides it). List `@introspection-ai/recipe-channel-slack` in
-`dependencies` to pin a version, and the Recipe's copy wins. A provider the host does not
+when the Recipe does not list it. Declare it in `peerDependencies` by
+default, which says so explicitly: the platform provides it.
+
+```json
+{
+  "peerDependencies": {
+    "@introspection-ai/recipe-channel-slack": ">=X.Y.Z"
+  },
+  "pi": {
+    "channels": [{ "provider": "slack" }]
+  }
+}
+```
+
+To pin an exact version, list it in `dependencies` instead, and the Recipe's
+copy wins:
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-channel-slack": "X.Y.Z"
+  }
+}
+```
+
+`X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-channel-slack version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
+
+A provider the host does not
 supply must be declared: in `dependencies`, or in `peerDependencies` when the
 platform running the Recipe provides it. The
 declaration's optional
