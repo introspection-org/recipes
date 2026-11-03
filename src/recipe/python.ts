@@ -15,15 +15,15 @@
  * installs only an environment that is missing or outdated.
  */
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   statSync,
   writeSync,
@@ -163,6 +163,7 @@ const IS_WINDOWS = process.platform === "win32";
 const ENVIRONMENT_FORMAT = "1";
 const LOCK_TIMEOUT_MS = 15 * 60_000;
 const LOCK_POLL_MS = 100;
+const TAKEOVER_MARKER_STALE_MS = 60_000;
 
 function readJson(path: string): Record<string, unknown> {
   const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
@@ -221,11 +222,22 @@ function hashFile(hash: ReturnType<typeof createHash>, label: string, path: stri
   hash.update("\0");
 }
 
+/** A `uv.lock` that installs a source from the local disk: editable, directory or path. */
+const LOCAL_LOCK_SOURCE = /^\s*source\s*=\s*\{\s*(?:editable|directory|path)\s*=/m;
+
 /**
  * The shared-cache key: the environment kind, platform, `uv.lock`,
- * `pyproject.toml` and the declared version range. A Recipe project that
- * is itself a package installs editable, bound to its directory, so that
- * directory is part of its key as well.
+ * `pyproject.toml` and the declared version range, plus the identity of any
+ * local source the environment installs, since uv does not re-install a local
+ * package whose version is unchanged:
+ *
+ * - A package environment installs that package's own project, so its key
+ *   holds the package's realpath and `name@version`. Two installed copies of a
+ *   dependency never share one environment, even with identical project files.
+ * - The Recipe's shell environment holds local code only when its project is
+ *   itself a package (`[build-system]`, installed editable) or its lock names a
+ *   local source; then the project's realpath is in the key. Otherwise Recipes
+ *   with the same lock share one environment.
  */
 function environmentHash(declaration: Declaration, projectDir: string, lockfile: string): string {
   const hash = createHash("sha256");
@@ -235,7 +247,14 @@ function environmentHash(declaration: Declaration, projectDir: string, lockfile:
   const pyproject = join(projectDir, "pyproject.toml");
   hashFile(hash, "pyproject.toml", pyproject);
   hash.update(`version\0${declaration.python.version ?? ""}\0`);
-  if (declaration.kind === "recipe" && /^\s*\[build-system\]/m.test(readFileSync(pyproject, "utf8"))) {
+  if (declaration.kind === "package") {
+    const packageJson = readJson(join(declaration.packageDir, "package.json"));
+    const version = typeof packageJson.version === "string" ? packageJson.version : "";
+    hash.update(`package\0${declaration.owner}@${version}\0${realpathSync(declaration.packageDir)}\0`);
+  } else if (
+    /^\s*\[build-system\]/m.test(readFileSync(pyproject, "utf8")) ||
+    LOCAL_LOCK_SOURCE.test(readFileSync(lockfile, "utf8"))
+  ) {
     hash.update(`project\0${realpathSync(projectDir)}\0`);
   }
   return hash.digest("hex").slice(0, 32);
@@ -535,68 +554,154 @@ class Preparer {
   }
 }
 
-function lockIsStale(lockPath: string): boolean {
+/** What a waiter saw in a lock file: who holds it, and whether that holder is gone. */
+export interface InspectedEnvironmentLock {
+  /** Identifies this one lock file: its inode, mtime and owner record. */
+  generation: string;
+  stale: boolean;
+}
+
+function lockGeneration(lockPath: string): { generation: string; owner: string } | undefined {
   try {
-    const owner = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number; host?: string };
+    const fd = openSync(lockPath, "r");
+    try {
+      const stat = fstatSync(fd);
+      const owner = readFileSync(fd, "utf8");
+      const generation = createHash("sha256")
+        .update(`${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.size}\0${owner}`)
+        .digest("hex")
+        .slice(0, 32);
+      return { generation, owner };
+    } finally {
+      closeSync(fd);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/** Read the lock at `lockPath`; `undefined` when there is none. */
+export function inspectEnvironmentLock(lockPath: string): InspectedEnvironmentLock | undefined {
+  const seen = lockGeneration(lockPath);
+  if (!seen) return undefined;
+  let stale: boolean | undefined;
+  try {
+    const owner = JSON.parse(seen.owner) as { pid?: number; host?: string };
     if (owner.host === hostname() && typeof owner.pid === "number") {
       try {
         process.kill(owner.pid, 0);
-        return false;
+        stale = false;
       } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ESRCH";
+        stale = (error as NodeJS.ErrnoException).code === "ESRCH";
       }
     }
   } catch {
     // Unreadable: a writer died between create and write, or the file is mid-write.
   }
+  if (stale === undefined) {
+    try {
+      stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_TIMEOUT_MS;
+    } catch {
+      stale = false;
+    }
+  }
+  return { generation: seen.generation, stale };
+}
+
+/**
+ * Remove the lock at `lockPath` only if it is still the `generation` a waiter
+ * inspected and judged stale. Returns whether it was removed.
+ *
+ * Two waiters can both judge one lock stale. Each must first create the
+ * takeover marker for that generation exclusively, so only one of them can
+ * remove it; the other sees the marker, or, once it is gone, a lock of a new
+ * generation, and leaves that lock alone. Nothing but the marker's holder
+ * removes a lock of that generation (its owner is gone), so the check and the
+ * removal cannot be split by another taker.
+ */
+export function takeOverStaleEnvironmentLock(lockPath: string, generation: string): boolean {
+  const marker = `${lockPath}.takeover-${generation}`;
+  let fd: number;
   try {
-    return Date.now() - statSync(lockPath).mtimeMs > LOCK_TIMEOUT_MS;
+    fd = openSync(marker, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    // A marker outlives its few synchronous steps only when its taker died
+    // between them; clear it so the next attempt can take the lock over.
+    try {
+      if (Date.now() - statSync(marker).mtimeMs > TAKEOVER_MARKER_STALE_MS) rmSync(marker, { force: true });
+    } catch {
+      // Gone already.
+    }
+    return false;
+  }
+  closeSync(fd);
+  try {
+    if (lockGeneration(lockPath)?.generation !== generation) return false;
+    rmSync(lockPath, { force: true });
+    return true;
+  } finally {
+    rmSync(marker, { force: true });
+  }
+}
+
+/** Create the lock at `lockPath` if there is none. Returns the owner token on success. */
+export function tryAcquireEnvironmentLock(lockPath: string): string | undefined {
+  let fd: number;
+  try {
+    fd = openSync(lockPath, "wx");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return undefined;
+    throw error;
+  }
+  const token = randomUUID();
+  try {
+    writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), token, at: new Date().toISOString() }));
+  } finally {
+    closeSync(fd);
+  }
+  return token;
+}
+
+/** Remove the lock at `lockPath` only if it still carries `token`: never another owner's. */
+export function releaseEnvironmentLock(lockPath: string, token: string): boolean {
+  let owner: { token?: unknown };
+  try {
+    owner = JSON.parse(readFileSync(lockPath, "utf8")) as { token?: unknown };
   } catch {
     return false;
   }
+  if (owner.token !== token) return false;
+  rmSync(lockPath, { force: true });
+  return true;
 }
 
 /**
  * Serialise installs into one environment across processes with an
  * exclusive-create lock file beside it. A lock whose owner is gone is taken
- * over; one held longer than the timeout fails the wait.
+ * over, by one waiter only (see `takeOverStaleEnvironmentLock`); one held
+ * longer than the timeout fails the wait. Only the lock this call created is
+ * removed when it finishes.
  */
 export async function withEnvironmentLock<T>(environmentDir: string, fn: () => Promise<T>): Promise<T> {
   mkdirSync(dirname(environmentDir), { recursive: true });
   const lockPath = `${environmentDir}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
-  for (;;) {
-    try {
-      const fd = openSync(lockPath, "wx");
-      try {
-        writeSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), at: new Date().toISOString() }));
-      } finally {
-        closeSync(fd);
-      }
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (lockIsStale(lockPath)) {
-        // Rename before removing, so two waiters cannot both clear one stale lock.
-        const aside = `${lockPath}.stale-${process.pid}-${Date.now()}`;
-        try {
-          renameSync(lockPath, aside);
-          rmSync(aside, { force: true });
-        } catch {
-          // Another waiter took it over first.
-        }
-        continue;
-      }
-      if (Date.now() > deadline) {
-        throw new RecipePythonError(`Timed out waiting for another process preparing ${environmentDir} (${lockPath})`);
-      }
-      await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
+  let token: string | undefined;
+  while ((token = tryAcquireEnvironmentLock(lockPath)) === undefined) {
+    const held = inspectEnvironmentLock(lockPath);
+    if (!held) continue;
+    if (held.stale && takeOverStaleEnvironmentLock(lockPath, held.generation)) continue;
+    if (Date.now() > deadline) {
+      throw new RecipePythonError(`Timed out waiting for another process preparing ${environmentDir} (${lockPath})`);
     }
+    await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
   }
   try {
     return await fn();
   } finally {
-    rmSync(lockPath, { force: true });
+    releaseEnvironmentLock(lockPath, token);
   }
 }
 

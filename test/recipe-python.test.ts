@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,11 +9,15 @@ import { loadRecipeDocuments } from "../src/documents/index.js";
 import { validateRecipePythonPackage } from "../src/recipe/package.js";
 import {
   activateRecipePython,
+  inspectEnvironmentLock,
   prepareRecipePython,
+  releaseEnvironmentLock,
   RecipePythonImportError,
   RecipePythonOutdatedError,
   RecipePythonUvMissingError,
   RecipePythonVersionError,
+  takeOverStaleEnvironmentLock,
+  tryAcquireEnvironmentLock,
   UV_INSTALL_URL,
   type PrepareRecipePythonOptions,
   type RecipePythonSyncEvent,
@@ -280,6 +285,49 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       write(join(root, "python.lock"), JSON.stringify({ pid: Number(gone), host: (await import("node:os")).hostname() }));
       await expect(prepare(dir, { environmentRoot: root })).resolves.toMatchObject({ recipe: { synced: true } });
     });
+
+    it("lets only one of two waiters that judged one lock stale take it over", async () => {
+      const lockPath = join(scratch("locks-"), "env.lock");
+      const gone = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"]).stdout.toString();
+      write(lockPath, JSON.stringify({ pid: Number(gone), host: hostname() }));
+      // Both waiters inspect the same stale lock before either acts.
+      const seenByA = inspectEnvironmentLock(lockPath)!;
+      const seenByB = inspectEnvironmentLock(lockPath)!;
+      expect(seenByA).toMatchObject({ stale: true });
+      expect(seenByB.generation).toBe(seenByA.generation);
+      // A takes it over and acquires a fresh lock.
+      expect(takeOverStaleEnvironmentLock(lockPath, seenByA.generation)).toBe(true);
+      const tokenA = tryAcquireEnvironmentLock(lockPath)!;
+      expect(tokenA).toBeDefined();
+      // B acts on what it saw: it must neither remove A's lock nor acquire one.
+      expect(takeOverStaleEnvironmentLock(lockPath, seenByB.generation)).toBe(false);
+      expect(tryAcquireEnvironmentLock(lockPath)).toBeUndefined();
+      expect(JSON.parse(readFileSync(lockPath, "utf8")).token).toBe(tokenA);
+      expect(inspectEnvironmentLock(lockPath)).toMatchObject({ stale: false });
+      // Only the owner's token releases it.
+      expect(releaseEnvironmentLock(lockPath, "someone-else")).toBe(false);
+      expect(existsSync(lockPath)).toBe(true);
+      expect(releaseEnvironmentLock(lockPath, tokenA)).toBe(true);
+      expect(existsSync(lockPath)).toBe(false);
+      expect(readdirSync(dirname(lockPath))).toEqual([]);
+    });
+
+    it("never removes a lock whose generation is being taken over by another waiter", async () => {
+      const lockPath = join(scratch("locks-"), "env.lock");
+      write(lockPath, "");
+      utimesSync(lockPath, new Date(0), new Date(0));
+      const seen = inspectEnvironmentLock(lockPath)!;
+      expect(seen.stale).toBe(true);
+      // Another waiter holds the takeover marker for this generation.
+      write(`${lockPath}.takeover-${seen.generation}`, "");
+      expect(takeOverStaleEnvironmentLock(lockPath, seen.generation)).toBe(false);
+      expect(existsSync(lockPath)).toBe(true);
+      // A marker left by a taker that died is cleared, and the next attempt succeeds.
+      utimesSync(`${lockPath}.takeover-${seen.generation}`, new Date(0), new Date(0));
+      expect(takeOverStaleEnvironmentLock(lockPath, seen.generation)).toBe(false);
+      expect(takeOverStaleEnvironmentLock(lockPath, seen.generation)).toBe(true);
+      expect(existsSync(lockPath)).toBe(false);
+    });
   });
 
   describe("imports", () => {
@@ -380,6 +428,33 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const { dir } = recipe({ packages: [{ name: "pkg", python: { project: "python", lockfile: "python/uv.lock" } }] });
       const prepared = await prepare(dir);
       expect(prepared.packages.pkg?.environmentDir).not.toBe(prepared.recipe?.environmentDir);
+    });
+
+    it("keys each installed copy of a package apart, even with identical project files", async () => {
+      const { prepare } = harness();
+      const pkg = { name: "pkg", python: { project: "python", lockfile: "python/uv.lock" } };
+      const first = recipe({ python: false, packages: [pkg] });
+      const second = recipe({ python: false, packages: [pkg] });
+      const firstEnv = (await prepare(first.dir)).packages.pkg?.environmentDir;
+      const secondEnv = (await prepare(second.dir)).packages.pkg?.environmentDir;
+      expect(firstEnv).toBeDefined();
+      expect(secondEnv).not.toBe(firstEnv);
+      // The same copy keeps its environment.
+      expect((await prepare(first.dir)).packages.pkg?.environmentDir).toBe(firstEnv);
+      // A new version installed in the same place gets a new one.
+      const manifest = join(first.dir, "node_modules", "pkg", "package.json");
+      writeFileSync(manifest, readFileSync(manifest, "utf8").replace('"1.0.0"', '"1.0.1"'));
+      expect((await prepare(first.dir)).packages.pkg?.environmentDir).not.toBe(firstEnv);
+    });
+
+    it("keys a Recipe whose lock installs a local source by its project directory", async () => {
+      const { prepare } = harness();
+      const lock = 'version = 1\n\n[[package]]\nname = "synthdep"\nversion = "0.1.0"\nsource = { directory = "../synthdep" }\n';
+      const first = recipe({});
+      const second = recipe({});
+      writeFileSync(join(first.dir, "python", "uv.lock"), lock);
+      writeFileSync(join(second.dir, "python", "uv.lock"), lock);
+      expect((await prepare(first.dir)).recipe?.environmentDir).not.toBe((await prepare(second.dir)).recipe?.environmentDir);
     });
   });
 });
