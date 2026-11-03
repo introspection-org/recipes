@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.1](https://github.com/introspection-org/recipes/compare/v0.40.0...v0.40.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **release:** keep the companion packages when stamping the MCP client binaries ([#403](https://github.com/introspection-org/recipes/issues/403)) ([427bb43](https://github.com/introspection-org/recipes/commit/427bb43a64e79627147a8cea9887e563830ba063))
+
 ## [0.40.0](https://github.com/introspection-org/recipes/compare/v0.39.0...v0.40.0) (2026-11-03)
 
 
