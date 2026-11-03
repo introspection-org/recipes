@@ -14,7 +14,7 @@ from introspection_harbor.answers import (
 
 # The cases @introspection-ai/mcp-fakes' test/answers.test.ts runs too, so both read answers alike.
 CASES = json.loads(
-    (Path(__file__).parents[2] / "testdata" / "fakes" / "answers.json").read_text()
+    (Path(__file__).parents[3] / "fakes" / "testdata" / "answers.json").read_text()
 )
 
 

@@ -3,6 +3,11 @@
   "version": "0.5.0",
   "description": "Serve a Recipe's MCP fakes from their captured contracts",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/introspection-org/recipes.git",
+    "directory": "packages/fakes/mcp"
+  },
   "type": "module",
   "exports": {
     ".": {

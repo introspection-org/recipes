@@ -265,12 +265,12 @@ for call in server_calls(tool_calls(load_trajectory()), "attio", ANSWERS["attio"
 
 An answer that fails to read is the fake's fault, not the agent's, so treat it
 as an invalid measurement rather than a failed criterion. Both packages' tests
-run the cases in `integrations/testdata/fakes/answers.json`, so the two read an
+run the cases in `packages/fakes/testdata/answers.json`, so the two read an
 answer alike.
 
 `@introspection-ai/mcp-fakes/verify` holds the same checks for a vitest eval
 (`changedEntities`, `writeAttempts`), and both packages' tests run the cases in
-this repository's `integrations/testdata/fakes/cases.json`, so the two runners
+this repository's `packages/fakes/testdata/cases.json`, so the two runners
 score a trial alike.
 
 ## Adapters, one launch

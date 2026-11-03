@@ -20,7 +20,7 @@ from introspection_harbor.fakes import (
 )
 
 # The cases @introspection-ai/mcp-fakes' verify tests share, with the manifests they read.
-FAKES = Path(__file__).parents[2] / "testdata" / "fakes"
+FAKES = Path(__file__).parents[3] / "fakes" / "testdata"
 MANIFESTS = load_manifests(FAKES / "mcp")
 
 WORLD = {

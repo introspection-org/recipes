@@ -14,7 +14,7 @@ import { fakes } from "./fixtures/fakes/mcp/index.js";
 import { type World, world } from "./fixtures/fakes/scenarios/index.js";
 
 // The cases introspection-harbor's tests/test_fakes.py runs too, so both runners score alike.
-const SHARED = path.join(import.meta.dirname, "../../testdata/fakes");
+const SHARED = path.join(import.meta.dirname, "../../testdata");
 const cases = JSON.parse(fs.readFileSync(path.join(SHARED, "cases.json"), "utf8")) as {
   stateChanges: {
     name: string;

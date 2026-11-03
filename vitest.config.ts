@@ -5,7 +5,8 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     // examples/docs runs its own tests on the vitest its eval packages support.
-    exclude: [...configDefaults.exclude, "examples/**"],
+    // So do the eval and fakes packages, each from its own npm lockfile.
+    exclude: [...configDefaults.exclude, "examples/**", "packages/evals/**", "packages/fakes/**"],
   },
   resolve: {
     alias: {

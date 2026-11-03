@@ -5,7 +5,7 @@ import { type Read, readAnswer, readResult } from "../src/answers.js";
 import type { Answer, Entry } from "../src/contract.js";
 
 // The cases introspection-harbor's tests/test_answers.py runs too, so both read answers alike.
-const SHARED = path.join(import.meta.dirname, "../../testdata/fakes");
+const SHARED = path.join(import.meta.dirname, "../../testdata");
 type Case = {
   name: string;
   answer: Answer & { structured?: boolean };

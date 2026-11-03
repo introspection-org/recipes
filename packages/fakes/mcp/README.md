@@ -390,7 +390,7 @@ compare as JSON values, so `false` and `0` differ.
   contract name; `readOnlyHint` plays no part.
 
 This package's tests run the checks on the cases in this repository's
-`integrations/testdata/fakes/cases.json`, which a Harbor verifier's port of
+`packages/fakes/testdata/cases.json`, which a Harbor verifier's port of
 them runs too, so the two runners score a run alike.
 
 ## The Harbor sidecar
