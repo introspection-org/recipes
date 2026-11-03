@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { loadRecipeModule } from "../recipe/extensions.js";
+import { loadRecipePackageModule } from "../recipe/companions.js";
 import { recipeDocumentPackageName, type RecipePackageDocument } from "../recipe/package.js";
 import {
   DOCUMENT_COMMANDS,
@@ -13,14 +13,31 @@ import {
   type DocumentCommand,
 } from "./tools.js";
 import { resolveDocumentProfile } from "./profile.js";
+import { runDocumentHelper } from "./python.js";
 import type { DocumentAdapter, DocumentCapabilities } from "./types.js";
 
 /** The core `documents` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
 export const DOCUMENTS_SKILL = fileURLToPath(new URL("../../documents/SKILL.md", import.meta.url));
 
-/** What a format package exports as its default: transport plus a capability descriptor, no schemas. */
+/**
+ * The document format contract this host implements. A format module
+ * declares the version it was written against, and the host refuses one that
+ * differs; bump it on any breaking change to `RecipeDocumentFormatModule` or
+ * `DocumentAdapterOptions`.
+ */
+export const DOCUMENT_FORMAT_API_VERSION = 1 as const;
+
+/**
+ * What a format package exports as its default: transport plus a capability
+ * descriptor, no schemas. A plain object: everything the format needs from
+ * the host at run time (`runHelper`) arrives through `createAdapter`, so a
+ * format package needs no run-time import of `@introspection-ai/recipes`,
+ * only its types.
+ */
 export interface RecipeDocumentFormatModule {
   readonly kind: "documents";
+  /** The contract version, `DOCUMENT_FORMAT_API_VERSION` when written. */
+  readonly apiVersion: typeof DOCUMENT_FORMAT_API_VERSION;
   readonly format: string;
   readonly extensions: readonly string[];
   /** Static, so the loader can build the tool before any session exists. */
@@ -30,16 +47,21 @@ export interface RecipeDocumentFormatModule {
   createAdapter(options: DocumentAdapterOptions): DocumentAdapter;
 }
 
+/** Runs one Python helper request for a format: the host's `runDocumentHelper`. */
+export type DocumentHelperRunner = typeof runDocumentHelper;
+
 /**
  * What the host passes a format's `createAdapter`. `python` is the
  * interpreter of the environment the format package's own
  * `pi.runtime.python` declares, prepared by the host; absent when the package
- * declares none. An adapter that ignores it keeps working.
+ * declares none. An adapter that ignores it keeps working. `runHelper` is the
+ * host's `runDocumentHelper`, for formats whose work runs in a Python helper.
  */
 export interface DocumentAdapterOptions {
   env: NodeJS.ProcessEnv;
   cwd: string;
   python?: string;
+  runHelper: DocumentHelperRunner;
 }
 
 export interface DocumentFormatModuleOptions {
@@ -58,29 +80,35 @@ function sameCapabilities(left: DocumentCapabilities, right: DocumentCapabilitie
 }
 
 /**
- * Build a format module from an adapter factory. The neutral tool, its
- * schemas, the path policy and the capability filtering live in the host.
+ * Build a format module from an adapter factory, checking its shape. A
+ * convenience for formats that already depend on Recipes; a format may
+ * instead export the plain object itself. The host checks every module the
+ * same way when it loads it.
  */
 export function createDocumentFormatModule(options: DocumentFormatModuleOptions): RecipeDocumentFormatModule {
   if (!options.capabilities.read) throw new Error(`Document format '${options.format}' must support read`);
   if (options.extensions.length === 0) throw new Error(`Document format '${options.format}' opens no extensions`);
   return {
     kind: "documents",
+    apiVersion: DOCUMENT_FORMAT_API_VERSION,
     format: options.format,
     extensions: options.extensions.map((extension) => extension.toLowerCase()),
     capabilities: options.capabilities,
     profiles: { ...options.profiles },
-    createAdapter(createOptions) {
-      const adapter = options.createAdapter(createOptions);
-      if (adapter.format !== options.format) {
-        throw new Error(`Document adapter for '${options.format}' returned format '${adapter.format}'`);
-      }
-      if (!sameCapabilities(adapter.capabilities, options.capabilities)) {
-        throw new Error(`Document adapter '${options.format}' returned capabilities that differ from its declared catalog`);
-      }
-      return adapter;
-    },
+    createAdapter: (createOptions) => options.createAdapter(createOptions),
   };
+}
+
+/** Create a module's adapter, checking it returns the format and capabilities it declared. */
+function createCheckedAdapter(module: RecipeDocumentFormatModule, options: DocumentAdapterOptions): DocumentAdapter {
+  const adapter = module.createAdapter(options);
+  if (adapter.format !== module.format) {
+    throw new Error(`Document adapter for '${module.format}' returned format '${adapter.format}'`);
+  }
+  if (!sameCapabilities(adapter.capabilities, module.capabilities)) {
+    throw new Error(`Document adapter '${module.format}' returned capabilities that differ from its declared catalog`);
+  }
+  return adapter;
 }
 
 function parseFormatModule(value: unknown, declaration: RecipePackageDocument): RecipeDocumentFormatModule {
@@ -93,12 +121,13 @@ function parseFormatModule(value: unknown, declaration: RecipePackageDocument): 
     module.kind !== "documents" ||
     module.format !== declaration.format ||
     !Array.isArray(module.extensions) ||
+    module.extensions.length === 0 ||
     !module.capabilities?.read ||
     typeof module.createAdapter !== "function"
   ) {
     throw new Error(`Recipe document package ${packageName} has an invalid module contract`);
   }
-  return module as RecipeDocumentFormatModule;
+  return { ...module, extensions: module.extensions.map((extension) => String(extension).toLowerCase()) } as RecipeDocumentFormatModule;
 }
 
 export interface LoadedRecipeDocuments {
@@ -128,20 +157,19 @@ export async function loadRecipeDocuments(
     cwd?: string;
     /** Prepared package environments by package name (see `prepareRecipePython`). */
     python?: Readonly<Record<string, { interpreter: string }>>;
+    /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
+    hostDir?: string;
   },
 ): Promise<LoadedRecipeDocuments> {
   if (declarations.length === 0) return { toolNames: [] };
   const modules = await Promise.all(
     declarations.map(async (declaration) => {
       const packageName = recipeDocumentPackageName(declaration.format);
-      let imported: unknown;
-      try {
-        imported = await loadRecipeModule(options.recipeDir, packageName);
-      } catch (error) {
-        throw new Error(`Recipe document format '${declaration.format}' requires ${packageName} in the Recipe dependencies`, {
-          cause: error,
-        });
-      }
+      const imported = await loadRecipePackageModule(options.recipeDir, packageName, {
+        what: `Recipe document format '${declaration.format}'`,
+        api: { name: "document format", version: DOCUMENT_FORMAT_API_VERSION },
+        ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
+      });
       const module = parseFormatModule(imported, declaration);
       const supported = documentCommandsFor(module.capabilities);
       for (const command of declaration.commands ?? []) {
@@ -173,7 +201,7 @@ export async function loadRecipeDocuments(
         const cwd = options.cwd ?? process.cwd();
         const adapters = enabled.map(({ declaration, module }) => {
           const python = options.python?.[recipeDocumentPackageName(declaration.format)]?.interpreter;
-          const adapter = module.createAdapter({ env, cwd, ...(python ? { python } : {}) });
+          const adapter = createCheckedAdapter(module, { env, cwd, runHelper: runDocumentHelper, ...(python ? { python } : {}) });
           const allowed = declaration.commands;
           if (allowed === undefined) return adapter;
           // Narrow the descriptor to the allowlist so the shared tool filters on it.

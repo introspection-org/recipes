@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { minimatch } from "minimatch";
 
 import { documentProfileShapeProblem, isDocumentProfilePath, recipeProfileSkill } from "../documents/profile.js";
+import { isCompanionPackage, isHostPeerPackage } from "./companions.js";
 
 
 export interface RecipePackageResources {
@@ -159,6 +160,13 @@ export interface RecipeValidationFinding {
   code: string;
   message: string;
   packageName?: string;
+  /** Absent for an error. A warning never makes a report invalid. */
+  severity?: "warning";
+}
+
+/** The findings that make a report invalid: every finding but warnings. */
+export function recipeValidationErrors(findings: readonly RecipeValidationFinding[]): RecipeValidationFinding[] {
+  return findings.filter((item) => item.severity !== "warning");
 }
 
 export interface RecipeValidationReport {
@@ -222,10 +230,66 @@ function resourceDeclarations(
   >;
 }
 
+/** The package's dependency blocks, as written. */
+interface DeclaredDependencies {
+  dependencies: unknown;
+  peerDependencies: unknown;
+}
+
+function versioned(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * Why a `pi.channels` or `pi.documents` declaration's package (`packageName`)
+ * is declared wrongly, or undefined when it is fine. Listed in `dependencies`
+ * with a version, the Recipe brings and pins it; listed in `peerDependencies`,
+ * the platform provides it (see `peerFindings`). Omitted entirely, only a host
+ * default is supplied; every other package must be declared.
+ */
+function declarationPackageProblem(
+  declarationName: string,
+  packageName: string,
+  declared: DeclaredDependencies
+): string | undefined {
+  const dependencies = asRecord(declared.dependencies);
+  const required = `${declarationName} requires dependency '${packageName}'`;
+  if (Object.hasOwn(dependencies, packageName)) {
+    return versioned(dependencies[packageName]) ? undefined : required;
+  }
+  if (Object.hasOwn(asRecord(declared.peerDependencies), packageName)) return undefined;
+  return isCompanionPackage(packageName) ? undefined : required;
+}
+
+/**
+ * A peer means the platform running the Recipe provides it: the managed
+ * install never installs peers. Each needs a version range; one that is
+ * neither a package the host imports (Recipes' own peers) nor a companion package
+ * is a warning, since a standard platform does not provide it.
+ */
+function peerFindings(declared: DeclaredDependencies, packageName: string): RecipeValidationFinding[] {
+  const findings: RecipeValidationFinding[] = [];
+  for (const [name, version] of Object.entries(asRecord(declared.peerDependencies))) {
+    if (!versioned(version)) {
+      findings.push(finding("package.peer_version_missing", `package.json#peerDependencies '${name}' needs a version range`, packageName));
+    } else if (!isHostPeerPackage(name) && !isCompanionPackage(name)) {
+      findings.push({
+        ...finding(
+          "package.peer_not_provided_by_default",
+          `package.json#peerDependencies '${name}' is not provided by a standard platform: the platform running the Recipe must provide it, or the runtime image build fails. Add it to dependencies to bring it with the Recipe`,
+          packageName
+        ),
+        severity: "warning",
+      });
+    }
+  }
+  return findings;
+}
+
 function sourceShapeFindings(
   pi: Record<string, unknown>,
   packageName: string,
-  dependencies: unknown,
+  dependencies: DeclaredDependencies,
   packageDir?: string
 ): RecipeValidationFinding[] {
   const findings: RecipeValidationFinding[] = [];
@@ -268,13 +332,14 @@ function sourceShapeFindings(
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
+  findings.push(...peerFindings(dependencies, packageName));
   return findings;
 }
 
 function channelSourceShapeFindings(
   value: unknown,
   packageName: string,
-  dependencies: unknown
+  dependencies: DeclaredDependencies
 ): RecipeValidationFinding[] {
   if (value === undefined) return [];
   const invalid = (message: string) =>
@@ -331,24 +396,12 @@ function channelSourceShapeFindings(
     }
 
     if (provider) {
-      const channelPackage = recipeChannelPackageName(provider);
-      const declaredDependencies =
-        dependencies &&
-        typeof dependencies === "object" &&
-        !Array.isArray(dependencies)
-          ? (dependencies as Record<string, unknown>)
-          : {};
-      const dependencyVersion = declaredDependencies[channelPackage];
-      if (
-        typeof dependencyVersion !== "string" ||
-        !dependencyVersion.trim()
-      ) {
-        findings.push(
-          invalid(
-            `package.json#pi.channels provider '${provider ?? "unknown"}' requires dependency '${channelPackage}'`
-          )
-        );
-      }
+      const problem = declarationPackageProblem(
+        `package.json#pi.channels provider '${provider}'`,
+        recipeChannelPackageName(provider),
+        dependencies
+      );
+      if (problem) findings.push(invalid(problem));
     }
   }
   return findings;
@@ -357,7 +410,7 @@ function channelSourceShapeFindings(
 function documentSourceShapeFindings(
   value: unknown,
   packageName: string,
-  dependencies: unknown,
+  dependencies: DeclaredDependencies,
   packageDir?: string
 ): RecipeValidationFinding[] {
   if (value === undefined) return [];
@@ -366,10 +419,6 @@ function documentSourceShapeFindings(
   if (!Array.isArray(value)) {
     return [invalid("package.json#pi.documents must be an array")];
   }
-  const declaredDependencies =
-    dependencies && typeof dependencies === "object" && !Array.isArray(dependencies)
-      ? (dependencies as Record<string, unknown>)
-      : {};
   const findings: RecipeValidationFinding[] = [];
   const formats = new Set<string>();
   for (const [index, raw] of value.entries()) {
@@ -402,11 +451,12 @@ function documentSourceShapeFindings(
       continue;
     }
     formats.add(format);
-    const documentPackage = recipeDocumentPackageName(format);
-    const dependencyVersion = declaredDependencies[documentPackage];
-    if (typeof dependencyVersion !== "string" || !dependencyVersion.trim()) {
-      findings.push(invalid(`package.json#pi.documents format '${format}' requires dependency '${documentPackage}'`));
-    }
+    const problem = declarationPackageProblem(
+      `package.json#pi.documents format '${format}'`,
+      recipeDocumentPackageName(format),
+      dependencies
+    );
+    if (problem) findings.push(invalid(problem));
   }
   return findings;
 }
@@ -969,7 +1019,12 @@ export function readPiPackageManifest(packageDir: string): RecipePackageManifest
     runtime: parseRuntimeRequirements(pi.runtime),
   };
   Object.defineProperty(manifest, SOURCE_FINDINGS, {
-    value: sourceShapeFindings(pi, manifest.name, raw.dependencies, packageDir),
+    value: sourceShapeFindings(
+      pi,
+      manifest.name,
+      { dependencies: raw.dependencies, peerDependencies: raw.peerDependencies },
+      packageDir
+    ),
     enumerable: false,
   });
   return manifest;
@@ -1178,7 +1233,7 @@ export function validatePiPackageManifest(pkg: RecipePackageManifest): RecipeVal
     }
   }
   return {
-    valid: findings.length === 0,
+    valid: recipeValidationErrors(findings).length === 0,
     findings,
   };
 }
@@ -1283,11 +1338,16 @@ export interface InstalledRecipeDependency {
  * Node's lookup folders rather than resolving an entry. Falls back to
  * `findPackageJSON` for anything only Node's resolver can see.
  */
-function resolveDependencyDir(recipeDir: string, name: string): string | undefined {
-  const base = join(realpathSync(recipeDir), "package.json");
-  const lookupFolders = (createRequire(base).resolve.paths(name) ?? []).filter(
-    (folder) => basename(folder) === "node_modules"
-  );
+export function resolveDependencyDir(recipeDir: string, name: string): string | undefined {
+  const realDir = realpathSync(recipeDir);
+  const base = join(realDir, "package.json");
+  // Only the `node_modules` folders of the directory and its ancestors: not
+  // NODE_PATH or the global folders, which hold nothing the Recipe installed.
+  const lookupFolders = (createRequire(base).resolve.paths(name) ?? []).filter((folder) => {
+    if (basename(folder) !== "node_modules") return false;
+    const owner = relative(dirname(folder), realDir);
+    return owner !== ".." && !owner.startsWith(`..${sep}`) && !isAbsolute(owner);
+  });
   for (const folder of lookupFolders) {
     const candidate = join(folder, ...name.split("/"));
     if (existsSync(join(candidate, "package.json"))) return realpathSync(candidate);
@@ -1337,16 +1397,18 @@ export interface RecipeSkillResource {
 }
 
 /**
- * The skill resources each direct `dependencies` entry declares with an
- * explicit `pi.skills`, resolved inside that package. Peer, dev and
- * transitive dependencies are not read, a dependency without `pi.skills`
+ * The skill resources each direct `dependencies` or `peerDependencies` entry
+ * declares with an explicit `pi.skills`, resolved inside that package (a peer
+ * is provided by the platform, often from an ancestor `node_modules`). One
+ * that is not installed is skipped. Dev and transitive dependencies are not
+ * read, a dependency without `pi.skills`
  * contributes nothing (its `skills/` folder is not discovered by convention),
  * and an installed dependency whose `pi.skills` is malformed, unmatched or
  * escapes the package throws an error naming it.
  */
 export function recipeDependencySkillResources(recipeDir: string): RecipeSkillResource[] {
   const resources: RecipeSkillResource[] = [];
-  for (const { name, packageDir } of installedRecipeDependencies(recipeDir, ["dependencies"])) {
+  for (const { name, packageDir } of installedRecipeDependencies(recipeDir, ["dependencies", "peerDependencies"])) {
     const raw = readJsonFile(join(packageDir, "package.json"));
     const pi = piPackageManifestBlock(raw);
     if (!pi || pi.skills === undefined) continue;

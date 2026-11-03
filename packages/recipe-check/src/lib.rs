@@ -102,7 +102,14 @@ struct Package {
     name: Option<String>,
     version: Option<String>,
     pi: Option<JsonValue>,
+    /// `dependencies` entries with a version.
     dependencies: BTreeSet<String>,
+    /// Every `dependencies` key, with or without a version.
+    dependency_keys: BTreeSet<String>,
+    /// `peerDependencies` entries with a version.
+    peer_dependencies: BTreeSet<String>,
+    /// Every `peerDependencies` key, with or without a version.
+    peer_dependency_keys: BTreeSet<String>,
     runtime_dependencies: bool,
     package_manager: Option<String>,
 }
@@ -433,6 +440,9 @@ fn read_package(ctx: &mut CheckContext) -> Option<Package> {
                     .collect()
             })
             .unwrap_or_default(),
+        dependency_keys: object_keys(object.get("dependencies")),
+        peer_dependencies: versioned_keys(object.get("peerDependencies")),
+        peer_dependency_keys: object_keys(object.get("peerDependencies")),
         runtime_dependencies: has_non_empty_object(object.get("dependencies"))
             || has_non_empty_object(object.get("optionalDependencies")),
         package_manager: string_value(object.get("packageManager")),
@@ -451,6 +461,7 @@ fn validate_package_identity(package: &Package, ctx: &mut CheckContext) {
 }
 
 fn validate_dependency_package(package: &Package, ctx: &mut CheckContext) {
+    validate_peers(package, ctx);
     if package.runtime_dependencies && !has_dependency_lockfile(ctx) {
         ctx.warning(
             "package.lockfile_missing",
@@ -850,10 +861,10 @@ fn validate_pi_config(
     }
 
     if let Some(channels) = pi.get("channels") {
-        validate_channel_config(channels, &package.dependencies, ctx);
+        validate_channel_config(channels, package, ctx);
     }
     if let Some(documents) = pi.get("documents") {
-        validate_documents_config(documents, &package.dependencies, ctx);
+        validate_documents_config(documents, package, ctx);
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
@@ -862,11 +873,94 @@ fn validate_pi_config(
     resolved
 }
 
-fn validate_channel_config(
-    value: &JsonValue,
-    dependencies: &BTreeSet<String>,
-    ctx: &mut CheckContext,
-) {
+/// The companion packages: the first-party channel and document format packages
+/// Recipes installs alongside itself, so a Recipe may omit them. They are the
+/// keys of `optionalDependencies` in the `@introspection-ai/recipes`
+/// package.json; a test keeps the two in step.
+const COMPANION_PACKAGES: [&str; 3] = [
+    "@introspection-ai/recipe-channel-slack",
+    "@introspection-ai/recipe-documents-docx",
+    "@introspection-ai/recipe-documents-pdf",
+];
+
+fn versioned_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
+    value
+        .and_then(JsonValue::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .filter(|(_, version)| string_value(Some(version)).is_some())
+                .map(|(name, _)| name.to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn object_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
+    value
+        .and_then(JsonValue::as_object)
+        .map(|object| object.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// The packages the host imports itself and so always provides: Recipes and
+/// Recipes' own `peerDependencies`. A test keeps the two in step.
+const HOST_PEER_PACKAGES: [&str; 6] = [
+    "@introspection-ai/recipes",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-tui",
+    "typebox",
+];
+
+/// Why a channel or document declaration's package is declared wrongly. In
+/// `dependencies` with a version, the Recipe brings and pins it; in
+/// `peerDependencies`, the platform provides it (see `validate_peers`).
+/// Omitted entirely, only a companion package is supplied; every other package
+/// must be declared.
+fn declaration_package_problem(
+    declaration: &str,
+    package_name: &str,
+    package: &Package,
+) -> Option<String> {
+    let required = format!("{declaration} requires dependency '{package_name}'");
+    if package.dependency_keys.contains(package_name) {
+        return (!package.dependencies.contains(package_name)).then_some(required);
+    }
+    if package.peer_dependency_keys.contains(package_name) {
+        return None;
+    }
+    (!COMPANION_PACKAGES.contains(&package_name)).then_some(required)
+}
+
+/// A peer means the platform running the Recipe provides it: the managed
+/// install never installs peers. Each needs a version range; one that is
+/// neither a host import nor a companion package is a warning, since a standard
+/// platform does not provide it.
+fn validate_peers(package: &Package, ctx: &mut CheckContext) {
+    for name in &package.peer_dependency_keys {
+        if !package.peer_dependencies.contains(name) {
+            ctx.error(
+                "package.peer_version_missing",
+                PACKAGE_JSON,
+                format!("package.json#peerDependencies '{name}' needs a version range"),
+                Some("give the peer a range, such as >=1.0.0"),
+            );
+        } else if !HOST_PEER_PACKAGES.contains(&name.as_str())
+            && !COMPANION_PACKAGES.contains(&name.as_str())
+        {
+            ctx.warning(
+                "package.peer_not_provided_by_default",
+                PACKAGE_JSON,
+                format!("package.json#peerDependencies '{name}' is not provided by a standard platform: the platform running the Recipe must provide it, or the runtime image build fails"),
+                Some("add it to dependencies to bring it with the Recipe"),
+            );
+        }
+    }
+}
+
+fn validate_channel_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
     let JsonValue::Array(connectors) = value else {
         ctx.error(
             "pi.channels_invalid",
@@ -944,12 +1038,15 @@ fn validate_channel_config(
         }
 
         if let Some(provider) = provider.as_deref() {
-            let package = format!("@introspection-ai/recipe-channel-{provider}");
-            if !dependencies.contains(&package) {
+            if let Some(problem) = declaration_package_problem(
+                &format!("package.json#pi.channels provider '{provider}'"),
+                &format!("@introspection-ai/recipe-channel-{provider}"),
+                package,
+            ) {
                 ctx.error(
                     "pi.channels_invalid",
                     PACKAGE_JSON,
-                    format!("package.json#pi.channels provider '{provider}' requires dependency '{package}'"),
+                    problem,
                     Some("add the channel package to package.json#dependencies and commit the lockfile"),
                 );
             }
@@ -988,14 +1085,11 @@ fn document_profile_problem(profile: &JsonValue) -> Option<String> {
 
 /// `pi.documents` mirrors `pi.channels`: one declaration per format, each
 /// naming the `@introspection-ai/recipe-documents-<format>` package that must
-/// be a dependency, with an optional `commands` allowlist from the neutral
+/// be declared unless Recipes installs it alongside itself (see
+/// `COMPANION_PACKAGES`), with an optional `commands` allowlist from the neutral
 /// vocabulary. Whether a format supports a command is checked when the
 /// runtime loads the package's capability descriptor.
-fn validate_documents_config(
-    value: &JsonValue,
-    dependencies: &BTreeSet<String>,
-    ctx: &mut CheckContext,
-) {
+fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
     const CODE: &str = "pi.documents_invalid";
     let JsonValue::Array(declarations) = value else {
         ctx.error(
@@ -1056,7 +1150,10 @@ fn validate_documents_config(
                 );
             }
         }
-        if let Some(problem) = declaration.get("profile").and_then(document_profile_problem) {
+        if let Some(problem) = declaration
+            .get("profile")
+            .and_then(document_profile_problem)
+        {
             ctx.error(
                 CODE,
                 PACKAGE_JSON,
@@ -1073,12 +1170,15 @@ fn validate_documents_config(
                 Some("declare each document format once"),
             ),
             Some(format) => {
-                let package = format!("@introspection-ai/recipe-documents-{format}");
-                if !dependencies.contains(&package) {
+                if let Some(problem) = declaration_package_problem(
+                    &format!("package.json#pi.documents format '{format}'"),
+                    &format!("@introspection-ai/recipe-documents-{format}"),
+                    package,
+                ) {
                     ctx.error(
                         CODE,
                         PACKAGE_JSON,
-                        format!("package.json#pi.documents format '{format}' requires dependency '{package}'"),
+                        problem,
                         Some("add the document format package to package.json#dependencies and commit the lockfile"),
                     );
                 }
@@ -1837,7 +1937,7 @@ fn resolve_agents(
     agents.into_iter().collect()
 }
 
-/// Skills the Recipe's direct `dependencies` declare with `pi.skills`, read
+/// Skills the Recipe's direct `dependencies` and `peerDependencies` declare with `pi.skills`, read
 /// from `node_modules/<name>` in the snapshot.
 #[derive(Debug, Default)]
 struct DependencySkills {
@@ -1854,13 +1954,20 @@ struct DependencySkills {
 
 const DEPENDENCY_SKILLS_INVALID: &str = "dependency.skills_invalid";
 
-/// Resolve the `pi.skills` of each direct `dependencies` entry installed in
-/// the snapshot's `node_modules`. Peer, dev and transitive dependencies are
-/// not read, and only an explicit `pi.skills` counts: a dependency's `skills/`
+/// Resolve the `pi.skills` of each direct `dependencies` or `peerDependencies`
+/// entry installed in the snapshot's `node_modules` (a peer is provided by the
+/// platform). Dev and transitive dependencies are not read, and only an explicit `pi.skills` counts: a dependency's `skills/`
 /// folder is not discovered by convention.
 fn resolve_dependency_skills(package: &Package, ctx: &mut CheckContext) -> DependencySkills {
     let mut found = DependencySkills::default();
-    for name in &package.dependencies {
+    // The host's own imports (Recipes, Pi) ship no skills, and a snapshot
+    // rarely holds them, so they never make a skill unverifiable.
+    let peers = package
+        .peer_dependencies
+        .iter()
+        .filter(|name| !HOST_PEER_PACKAGES.contains(&name.as_str()));
+    let names: BTreeSet<&String> = package.dependencies.iter().chain(peers).collect();
+    for name in names {
         let root = format!("node_modules/{name}");
         let manifest_path = format!("{root}/package.json");
         let Some(content) = ctx.content(&manifest_path).map(str::to_owned) else {
@@ -4207,16 +4314,63 @@ mod tests {
     }
 
     #[test]
-    fn document_format_requires_its_package() {
-        let report = check_recipe_files(&documents_recipe(
-            json!([{ "format": "docx" }]),
-            json!({ "@introspection-ai/recipe-documents-pdf": "0.1.0" }),
+    fn companion_document_format_may_be_omitted_or_a_peer() {
+        let omitted = check_recipe_files(&documents_recipe(
+            json!([{ "format": "docx" }, { "format": "pdf" }]),
+            json!({}),
         ));
-        assert!(!report.valid);
-        assert!(report.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "pi.documents_invalid"
-                && diagnostic.message.contains("recipe-documents-docx")
-        }));
+        assert!(omitted.valid, "{:?}", omitted.diagnostics);
+
+        let peer = |version: JsonValue| {
+            let mut files = documents_recipe(json!([{ "format": "docx" }]), json!({}));
+            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).expect("package.json");
+            let mut package: JsonValue =
+                serde_json::from_str(package_file.content.as_deref().expect("package content")).expect("parse package");
+            package["peerDependencies"] = json!({ "@introspection-ai/recipe-documents-docx": version });
+            package_file.content = Some(serde_json::to_string(&package).expect("serialize"));
+            check_recipe_files(&files)
+        };
+        let provided = peer(json!(">=0.3.0"));
+        assert!(provided.valid && provided.diagnostics.is_empty(), "{:?}", provided.diagnostics);
+        let versionless = peer(json!(""));
+        assert_eq!(codes(&versionless), [("package.peer_version_missing", Severity::Error)]);
+
+        let listed_without_version = check_recipe_files(&documents_recipe(
+            json!([{ "format": "docx" }]),
+            json!({ "@introspection-ai/recipe-documents-docx": "" }),
+        ));
+        assert!(documents_invalid(&listed_without_version));
+    }
+
+    #[test]
+    fn document_format_without_a_companion_requires_its_package() {
+        let report = check_recipe_files(&documents_recipe(json!([{ "format": "odt" }]), json!({})));
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "pi.documents_invalid"
+                    && diagnostic.message.contains("recipe-documents-odt")
+            }),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    /// The checker's companion packages are the keys of `optionalDependencies`
+    /// in the Recipes package.json.
+    #[test]
+    fn companion_packages_match_the_recipes_package() {
+        let manifest: JsonValue = serde_json::from_str(include_str!("../../../package.json"))
+            .expect("Recipes package.json must parse");
+        let declared: BTreeSet<&str> = manifest["optionalDependencies"]
+            .as_object()
+            .expect("optionalDependencies must be an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            declared,
+            COMPANION_PACKAGES.into_iter().collect::<BTreeSet<_>>()
+        );
     }
 
     #[test]
@@ -4229,28 +4383,65 @@ mod tests {
             (json!([{ "format": "" }]), false),
             (json!([{ "format": "docx" }, { "format": "docx" }]), false),
             (json!([{ "format": "docx", "provider": "word" }]), false),
-            (json!([{ "format": "docx", "commands": ["read", "read"] }]), false),
+            (
+                json!([{ "format": "docx", "commands": ["read", "read"] }]),
+                false,
+            ),
             (json!([{ "format": "docx", "commands": "read" }]), false),
-            (json!([{ "format": "docx", "commands": ["redline"] }]), false),
-            (json!([{ "format": "docx", "profile": "legal-redlining-en-US" }]), true),
-            (json!([{ "format": "docx", "profile": "./profiles/house-style-en-gb" }]), true),
-            (json!([{ "format": "docx", "profile": "profiles/house-style-en-gb/SKILL.md" }]), true),
-            (json!([{ "format": "docx", "profile": "legal-redlining" }]), true),
-            (json!([{ "format": "docx", "profile": "../profile.ts" }]), false),
-            (json!([{ "format": "docx", "profile": "/abs/profile.ts" }]), false),
-            (json!([{ "format": "docx", "profile": "C:\\profiles\\house" }]), false),
-            (json!([{ "format": "docx", "profile": "profiles/../../outside" }]), false),
+            (
+                json!([{ "format": "docx", "commands": ["redline"] }]),
+                false,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "legal-redlining-en-US" }]),
+                true,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "./profiles/house-style-en-gb" }]),
+                true,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "profiles/house-style-en-gb/SKILL.md" }]),
+                true,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "legal-redlining" }]),
+                true,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "../profile.ts" }]),
+                false,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "/abs/profile.ts" }]),
+                false,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "C:\\profiles\\house" }]),
+                false,
+            ),
+            (
+                json!([{ "format": "docx", "profile": "profiles/../../outside" }]),
+                false,
+            ),
             (json!([{ "format": "docx", "profile": "" }]), false),
             (json!([{ "format": "docx", "profile": 3 }]), false),
         ] {
-            let report =
-                check_recipe_files(&documents_recipe(documents.clone(), documents_dependencies()));
-            assert_eq!(!documents_invalid(&report), valid, "{documents}: {:?}", report.diagnostics);
+            let report = check_recipe_files(&documents_recipe(
+                documents.clone(),
+                documents_dependencies(),
+            ));
+            assert_eq!(
+                !documents_invalid(&report),
+                valid,
+                "{documents}: {:?}",
+                report.diagnostics
+            );
         }
     }
 
-    #[test]
-    fn connector_requires_its_runtime_dependency() {
+    /// `connector_recipe` with its package.json changed by `edit`.
+    fn edited_connector_recipe(edit: impl FnOnce(&mut JsonValue)) -> RecipeFiles {
         let mut files = connector_recipe(&["slack_origin"]);
         let package_file = files
             .files
@@ -4260,39 +4451,85 @@ mod tests {
         let mut package: JsonValue =
             serde_json::from_str(package_file.content.as_deref().expect("package content"))
                 .expect("parse package");
-        package
-            .as_object_mut()
-            .expect("package object")
-            .remove("dependencies");
+        edit(&mut package);
         package_file.content = Some(serde_json::to_string_pretty(&package).expect("serialize"));
+        files
+    }
 
-        let report = check_recipe_files(&files);
+    fn channels_invalid_naming(report: &Report, package: &str) -> bool {
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "pi.channels_invalid" && diagnostic.message.contains(package)
+        })
+    }
 
-        assert!(!report.valid);
-        assert!(report.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "pi.channels_invalid"
-                && diagnostic.message.contains("recipe-channel-slack")
+    #[test]
+    fn channel_package_may_be_a_peer_and_only_a_companion_may_be_omitted() {
+        let omitted = check_recipe_files(&edited_connector_recipe(|package| {
+            package.as_object_mut().expect("package object").remove("dependencies");
+        }));
+        assert!(omitted.valid, "{:?}", omitted.diagnostics);
+
+        let as_peer = |provider: &str| {
+            let provider = provider.to_owned();
+            check_recipe_files(&edited_connector_recipe(move |package| {
+                package.as_object_mut().expect("package object").remove("dependencies");
+                package["peerDependencies"] =
+                    json!({ format!("@introspection-ai/recipe-channel-{provider}"): ">=0.1.0" });
+                package["pi"]["channels"] = json!([{ "provider": provider }]);
+            }))
+        };
+        let slack = as_peer("slack");
+        assert!(slack.diagnostics.is_empty(), "{:?}", slack.diagnostics);
+        let teams = as_peer("teams");
+        assert!(teams.valid, "{:?}", teams.diagnostics);
+        assert_eq!(codes(&teams), [("package.peer_not_provided_by_default", Severity::Warning)]);
+    }
+
+    /// The checker's host imports are Recipes and the keys of Recipes'
+    /// `peerDependencies`.
+    #[test]
+    fn host_peer_packages_match_the_recipes_package() {
+        let manifest: JsonValue = serde_json::from_str(include_str!("../../../package.json"))
+            .expect("Recipes package.json must parse");
+        let mut declared: BTreeSet<&str> = manifest["peerDependencies"]
+            .as_object()
+            .expect("peerDependencies must be an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        declared.insert(manifest["name"].as_str().expect("name"));
+        assert_eq!(declared, HOST_PEER_PACKAGES.into_iter().collect::<BTreeSet<_>>());
+    }
+
+    #[test]
+    fn channel_without_a_companion_requires_its_dependency() {
+        let report = check_recipe_files(&edited_connector_recipe(|package| {
+            package
+                .as_object_mut()
+                .expect("package object")
+                .remove("dependencies");
+            package["pi"]["channels"] = json!([{ "provider": "teams" }]);
         }));
 
+        assert!(!report.valid);
+        assert!(
+            channels_invalid_naming(&report, "recipe-channel-teams"),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn connector_dependency_needs_a_version_when_listed() {
         for invalid_version in [JsonValue::Null, json!("")] {
-            let mut files = connector_recipe(&["slack_origin"]);
-            let package_file = files
-                .files
-                .iter_mut()
-                .find(|file| file.path == PACKAGE_JSON)
-                .expect("package.json");
-            let mut package: JsonValue =
-                serde_json::from_str(package_file.content.as_deref().expect("package content"))
-                    .expect("parse package");
-            package["dependencies"]["@introspection-ai/recipe-channel-slack"] = invalid_version;
-            package_file.content = Some(serde_json::to_string_pretty(&package).expect("serialize"));
-
-            let report = check_recipe_files(&files);
-
-            assert!(report.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == "pi.channels_invalid"
-                    && diagnostic.message.contains("recipe-channel-slack")
+            let report = check_recipe_files(&edited_connector_recipe(|package| {
+                package["dependencies"]["@introspection-ai/recipe-channel-slack"] = invalid_version;
             }));
+            assert!(
+                channels_invalid_naming(&report, "recipe-channel-slack"),
+                "{:?}",
+                report.diagnostics
+            );
         }
     }
 
@@ -4996,13 +5233,13 @@ mod tests {
             .any(|diagnostic| diagnostic.code == "agent.subagent_missing"));
     }
 
-    /// A Recipe depending on `@acme/skills` (and `acme-peer` as a peer, `acme-dev`
+    /// A Recipe depending on `@acme/skills` (and `typebox` as a peer, `acme-dev`
     /// as a devDependency), with its agent selecting `agent_skills`, plus `extra`.
     fn dependency_skills_recipe(agent_skills: &str, extra: &[(&str, &str)]) -> RecipeFiles {
         let package = json!({
             "name": "dependency-skills",
             "dependencies": { "@acme/skills": ">=1.0.0" },
-            "peerDependencies": { "acme-peer": ">=1.0.0" },
+            "peerDependencies": { "typebox": "*" },
             "devDependencies": { "acme-dev": ">=1.0.0" },
             "pi": { "agents": ["agents"] }
         });
@@ -5055,7 +5292,47 @@ mod tests {
     }
 
     #[test]
-    fn ignores_dependency_skills_without_explicit_pi_skills_and_from_peer_dev_and_transitive_packages() {
+    fn names_an_unnamed_root_skill_md_in_a_peer_skill_as_the_runtime_does() {
+        let mut input = dependency_skills_recipe(
+            "skill",
+            &[
+                ("node_modules/@acme/peer-skill/package.json", r#"{"name":"@acme/peer-skill","pi":{"skills":["SKILL.md"]}}"#),
+                ("node_modules/@acme/peer-skill/SKILL.md", "---\ndescription: Root\n---\n"),
+            ],
+        );
+        let package = input.files.iter_mut().find(|file| file.path == "package.json").expect("package.json");
+        let mut manifest: JsonValue =
+            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
+        manifest["peerDependencies"]["@acme/peer-skill"] = json!(">=1.0.0");
+        package.content = Some(manifest.to_string());
+
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(!report.diagnostics.iter().any(|diagnostic| diagnostic.code.starts_with("agent.")), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn offers_skills_a_peer_declares_and_warns_the_platform_must_provide_it() {
+        let mut input = dependency_skills_recipe(
+            "contracts",
+            &[
+                ("node_modules/acme-peer/package.json", r#"{"name":"acme-peer","pi":{"skills":["skills"]}}"#),
+                ("node_modules/acme-peer/skills/contracts/SKILL.md", "---\nname: contracts\ndescription: Contracts\n---\n"),
+            ],
+        );
+        let package = input.files.iter_mut().find(|file| file.path == "package.json").expect("package.json");
+        let mut manifest: JsonValue =
+            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
+        manifest["peerDependencies"]["acme-peer"] = json!(">=1.0.0");
+        package.content = Some(manifest.to_string());
+
+        let report = check_recipe_files(&input);
+        assert_eq!(codes(&report), [("package.peer_not_provided_by_default", Severity::Warning)]);
+        assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn ignores_dependency_skills_without_explicit_pi_skills_and_from_dev_and_transitive_packages() {
         let skill = |name: &'static str| {
             (name, "---\nname: hidden\ndescription: Hidden\n---\n")
         };
@@ -5068,8 +5345,6 @@ mod tests {
                 // Installed direct dependency without pi.skills: its skills/ folder is not read.
                 ("node_modules/@acme/skills/package.json", r#"{"name":"@acme/skills"}"#),
                 skill("node_modules/@acme/skills/skills/hidden/SKILL.md"),
-                ("node_modules/acme-peer/package.json", r#"{"name":"acme-peer","pi":{"skills":["skills"]}}"#),
-                skill("node_modules/acme-peer/skills/hidden/SKILL.md"),
                 ("node_modules/acme-dev/package.json", r#"{"name":"acme-dev","pi":{"skills":["skills"]}}"#),
                 skill("node_modules/acme-dev/skills/hidden/SKILL.md"),
                 ("node_modules/acme-transitive/package.json", r#"{"name":"acme-transitive","pi":{"skills":["skills"]}}"#),

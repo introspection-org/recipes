@@ -1,7 +1,8 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { CHANNEL_MODULE_API_VERSION, createChannelConnectorModule, type RecipeChannelModule } from "./channels/module.js";
 import { loadRecipeDocuments } from "./documents/module.js";
-import { loadRecipeModule } from "./recipe/extensions.js";
+import { loadRecipePackageModule } from "./recipe/companions.js";
 import { deferTools } from "./tool-search.js";
 import {
   recipeChannelPackageName,
@@ -26,6 +27,8 @@ export interface RecipeConnectorExtensionOptions {
   cwd?: string;
   /** Prepared package Python environments by package name (see `prepareRecipePython`). */
   python?: Readonly<Record<string, { interpreter: string }>>;
+  /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
+  hostDir?: string;
 }
 
 export interface RecipeConnectorToolLoadout {
@@ -110,27 +113,42 @@ function parseRecipeConnectorModule(
   return module as RecipeConnectorModule;
 }
 
+/**
+ * A channel package's plain descriptor (`kind: "channel"`) becomes a connector
+ * here, in the host. A package built with `createChannelConnectorModule`
+ * already is one.
+ */
+function fromChannelModule(value: unknown, channel: RecipePackageChannel): unknown {
+  if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "channel") return value;
+  const module = value as Partial<RecipeChannelModule>;
+  if (
+    module.provider !== channel.provider ||
+    !module.capabilities ||
+    typeof module.capabilities !== "object" ||
+    typeof module.createSession !== "function"
+  ) {
+    throw connectorModuleError(channel, "has an invalid module contract");
+  }
+  return createChannelConnectorModule(module as RecipeChannelModule);
+}
+
 async function loadRecipeConnectorModule(
   recipeDir: string,
-  channel: RecipePackageChannel
+  channel: RecipePackageChannel,
+  hostDir: string | undefined
 ): Promise<RecipeConnectorModule> {
-  const packageName = recipeChannelPackageName(channel.provider);
-  let imported: unknown;
-  try {
-    imported = await loadRecipeModule(recipeDir, packageName);
-  } catch (error) {
-    throw new Error(
-      `Recipe channel '${channel.provider}' requires ${packageName} in the Recipe dependencies`,
-      { cause: error }
-    );
-  }
+  const imported = await loadRecipePackageModule(recipeDir, recipeChannelPackageName(channel.provider), {
+    what: `Recipe channel '${channel.provider}'`,
+    api: { name: "channel module", version: CHANNEL_MODULE_API_VERSION },
+    ...(hostDir !== undefined ? { hostDir } : {}),
+  });
   const connectorModule =
     imported &&
     typeof imported === "object" &&
     "default" in imported
       ? imported.default
       : imported;
-  return parseRecipeConnectorModule(connectorModule, channel);
+  return parseRecipeConnectorModule(fromChannelModule(connectorModule, channel), channel);
 }
 
 export async function loadRecipeConnectors(
@@ -140,7 +158,7 @@ export async function loadRecipeConnectors(
 ): Promise<LoadedRecipeConnectors> {
   const loaded = await Promise.all(
     (manifest.channels ?? []).map(async (channel) => {
-      const module = await loadRecipeConnectorModule(options.recipeDir, channel);
+      const module = await loadRecipeConnectorModule(options.recipeDir, channel, options.hostDir);
       const selected = module.tools.filter((tool) =>
         agentTools.includes(tool.name) && channel.commands?.length !== 0
       );

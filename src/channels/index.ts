@@ -12,10 +12,11 @@ export type {
   ChannelToolId,
   RegisterChannelToolsOptions,
 } from "./tools.js";
-export { createChannelConnectorModule } from "./module.js";
+export { CHANNEL_MODULE_API_VERSION, createChannelConnectorModule } from "./module.js";
 export type {
   ChannelConnectorModuleOptions,
   ChannelConnectorSession,
+  RecipeChannelModule,
 } from "./module.js";
 export type {
   ChannelAdapter,

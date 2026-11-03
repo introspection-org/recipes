@@ -186,9 +186,6 @@ send idempotency or claim exactly-once delivery.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
-  },
   "pi": {
     "channels": [
       {
@@ -199,7 +196,15 @@ send idempotency or claim exactly-once delivery.
 }
 ```
 
-The channel declaration enables the provider package, and its optional
+The channel declaration enables the provider package. The Slack package is
+one Recipes installs alongside itself (an `optionalDependencies` entry of
+`@introspection-ai/recipes`), so the copy beside the running Recipes is used
+when the Recipe does not list it, or lists it in `peerDependencies` (the
+platform provides it). List `@introspection-ai/recipe-channel-slack` in
+`dependencies` to pin a version, and the Recipe's copy wins. A provider the host does not
+supply must be declared: in `dependencies`, or in `peerDependencies` when the
+platform running the Recipe provides it. The
+declaration's optional
 `commands` allowlist narrows the supported operations. Each agent selects the
 tool in its YAML file:
 
@@ -221,11 +226,19 @@ the same operation. Set `targeting: true` and implement `send(ctx, {text})` to
 opt into the shared targeting schema; set `list: true` and implement `list()` to
 expose `channels list`. Omit these capabilities for origin-bound tools.
 
+A package exports a plain descriptor, `RecipeChannelModule`, and the host
+builds the connector from it. Everything the package needs at run time (the
+resolved channel config, `env` and `cwd`) arrives through `createSession`, so
+the package imports only Recipes' types and needs no run-time dependency on
+`@introspection-ai/recipes` (keep it in `devDependencies`). `apiVersion` names
+the contract the package was written against; the host refuses a different
+one, naming the package, both versions and the fix.
+
 ```ts
-import {
-  createChannelConnectorModule,
-  type ChannelAdapter,
-  type ChannelConfig,
+import type {
+  ChannelAdapter,
+  ChannelConfig,
+  RecipeChannelModule,
 } from "@introspection-ai/recipes/channels";
 
 const capabilities = {
@@ -253,7 +266,9 @@ function targetFrom(config: ChannelConfig | null) {
   };
 }
 
-export default createChannelConnectorModule({
+const myChannel: RecipeChannelModule = {
+  kind: "channel",
+  apiVersion: 1,
   provider: "my-channel",
   capabilities,
   createSession: ({ config, env }) => ({
@@ -262,7 +277,9 @@ export default createChannelConnectorModule({
     // fail when called, the session does not fail to open.
     target: () => targetFrom(config),
   }),
-});
+};
+
+export default myChannel;
 ```
 
 The host resolves `ChannelConfig` once from the `INTROSPECTION_TASK_CHANNEL_*`
@@ -272,7 +289,9 @@ their own API fields and do not define provider-specific origin types.
 Registration checks that the adapter implements every method its capabilities
 claim, so a descriptor cannot promise a tool the adapter does not have.
 
-The result is an ordinary `RecipeConnectorModule`. Manifest validation and agent
+The host turns the descriptor into an ordinary `RecipeConnectorModule` with
+`createChannelConnectorModule`, which a package may still call itself if it
+depends on Recipes. Manifest validation and agent
 tool selection work without provider-specific code in the Recipe. The unified
 tool is active immediately and does not require `tool_search`.
 

@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire, findPackageJSON } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,27 +20,36 @@ export function resolvePackageFromHost(
   }
   try {
     const manifestPath = findPackageJSON(specifier, realHostEntry);
-    if (!manifestPath) return undefined;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-      exports?: string | { "."?: string | { import?: string; default?: string } };
-      module?: string;
-      main?: string;
-    };
-    const rootExport =
-      typeof manifest.exports === "string"
-        ? manifest.exports
-        : manifest.exports?.["."];
-    const entry =
-      typeof rootExport === "string"
-        ? rootExport
-        : rootExport?.import ??
-          rootExport?.default ??
-          manifest.module ??
-          manifest.main;
-    return entry ? resolve(dirname(manifestPath), entry) : undefined;
+    return manifestPath ? packageEntry(dirname(manifestPath)) : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The file an ESM `import` of the package at `packageDir` loads: its root
+ * export's `import` or `default` condition, else `module` or `main`, else
+ * `index.js` as Node defaults to.
+ */
+export function packageEntry(packageDir: string): string | undefined {
+  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
+    exports?: string | { "."?: string | { import?: string; default?: string } };
+    module?: string;
+    main?: string;
+  };
+  const rootExport =
+    typeof manifest.exports === "string"
+      ? manifest.exports
+      : manifest.exports?.["."];
+  const entry =
+    typeof rootExport === "string"
+      ? rootExport
+      : rootExport?.import ??
+        rootExport?.default ??
+        manifest.module ??
+        manifest.main ??
+        (existsSync(join(packageDir, "index.js")) ? "index.js" : undefined);
+  return entry ? resolve(packageDir, entry) : undefined;
 }
 
 function resolvePackage(specifier: string): string | undefined {

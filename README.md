@@ -135,8 +135,11 @@ tests.
 - `@introspection-ai/recipes/channels` defines the provider-neutral `channels`
   tool, capability descriptors, and opaque message references. Replies answer
   the task's origin; capable adapters also support explicit read and send targets.
-- `@introspection-ai/recipe-channel-slack` is the optional Slack adapter. A
-  Recipe adds it as a dependency when it declares Slack in `pi.channels`.
+- `@introspection-ai/recipe-channel-slack` is the Slack adapter, and
+  `@introspection-ai/recipe-documents-docx` and `-pdf` the Word and PDF
+  formats. Recipes installs them alongside itself (`optionalDependencies`), so
+  a Recipe that declares Slack in `pi.channels` or a format in `pi.documents`
+  needs no dependency; one in `dependencies` pins it.
 - `@introspection-ai/recipes/agents` — portable agent-run controller and tool
   contract
 - `@introspection-ai/recipes/interactions` — portable user-input and approval contract

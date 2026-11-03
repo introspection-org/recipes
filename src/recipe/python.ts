@@ -31,10 +31,13 @@ import {
 import { homedir, hostname } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 
+import { resolveRecipePackage } from "./companions.js";
 import {
   installedRecipeDependencies,
   isPythonModuleName,
   readPiPackageManifest,
+  recipeChannelPackageName,
+  recipeDocumentPackageName,
   validateRecipePythonPackage,
   type RecipePythonRuntimeRequirement,
 } from "./package.js";
@@ -64,6 +67,8 @@ export interface PrepareRecipePythonOptions {
   uv?: string;
   /** Called before an environment is installed: `firstBuild` when it did not exist yet. */
   onSync?(event: RecipePythonSyncEvent): void;
+  /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
+  hostDir?: string;
 }
 
 export interface RecipePythonSyncEvent {
@@ -173,8 +178,25 @@ function readJson(path: string): Record<string, unknown> {
     : {};
 }
 
-/** Every `pi.runtime.python` the Recipe and its direct dependencies declare. */
-export function recipePythonDeclarations(recipeDir: string): Declaration[] {
+function packagePythonDeclaration(name: string, packageDir: string): Declaration | undefined {
+  const report = validateRecipePythonPackage(packageDir);
+  if (!report.valid) {
+    throw new RecipePythonError(
+      `Dependency ${name} declares an invalid pi.runtime.python:\n${report.findings
+        .map((item) => `- ${item.message}`)
+        .join("\n")}`
+    );
+  }
+  return report.python ? { kind: "package", owner: name, packageDir, python: report.python } : undefined;
+}
+
+/**
+ * Every `pi.runtime.python` the Recipe declares: its own, its direct
+ * dependencies', and that of each channel or document format package its
+ * `pi.channels` or `pi.documents` uses but does not list, found as the loader
+ * finds it (the copy installed alongside Recipes; see `resolveRecipePackage`).
+ */
+export function recipePythonDeclarations(recipeDir: string, options: { hostDir?: string } = {}): Declaration[] {
   const root = resolve(recipeDir);
   const declarations: Declaration[] = [];
   const manifest = readPiPackageManifest(root);
@@ -190,17 +212,18 @@ export function recipePythonDeclarations(recipeDir: string): Declaration[] {
     "dependencies",
     "peerDependencies",
   ])) {
-    const report = validateRecipePythonPackage(packageDir);
-    if (!report.valid) {
-      throw new RecipePythonError(
-        `Dependency ${name} declares an invalid pi.runtime.python:\n${report.findings
-          .map((item) => `- ${item.message}`)
-          .join("\n")}`
-      );
-    }
-    if (report.python) {
-      declarations.push({ kind: "package", owner: name, packageDir, python: report.python });
-    }
+    const declaration = packagePythonDeclaration(name, packageDir);
+    if (declaration) declarations.push(declaration);
+  }
+  const used = [
+    ...(manifest.channels ?? []).map((channel) => recipeChannelPackageName(channel.provider)),
+    ...(manifest.documents ?? []).map((document) => recipeDocumentPackageName(document.format)),
+  ];
+  for (const name of used) {
+    if (declarations.some((declaration) => declaration.kind === "package" && declaration.owner === name)) continue;
+    const resolved = resolveRecipePackage(root, name, options.hostDir);
+    const declaration = resolved && packagePythonDeclaration(name, resolved.packageDir);
+    if (declaration) declarations.push(declaration);
   }
   return declarations;
 }
@@ -837,15 +860,17 @@ export async function withEnvironmentLock<T>(environmentDir: string, fn: () => P
 
 /**
  * Find and prepare every `pi.runtime.python` the Recipe at `recipeDir`
- * declares: its own (the shell environment) and each direct `dependencies` or
- * `peerDependencies` entry Node resolves from the Recipe directory (each in an
- * environment of its own). Dev and transitive dependencies are not read.
+ * declares: its own (the shell environment), each direct `dependencies` or
+ * `peerDependencies` entry Node resolves from the Recipe directory, and each
+ * companion channel or document format package the Recipe uses without
+ * listing it (each package in an environment of its own). Dev and transitive
+ * dependencies are not read.
  */
 export async function prepareRecipePython(
   recipeDir: string,
   options: PrepareRecipePythonOptions
 ): Promise<PreparedRecipePython> {
-  const declarations = recipePythonDeclarations(recipeDir);
+  const declarations = recipePythonDeclarations(recipeDir, options.hostDir !== undefined ? { hostDir: options.hostDir } : {});
   const preparer = new Preparer(options);
   const packages: Record<string, RecipePythonEnvironment> = {};
   let recipe: RecipeShellPythonEnvironment | undefined;

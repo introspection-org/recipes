@@ -47,6 +47,26 @@ export interface ChannelConnectorModuleOptions {
   }): ChannelConnectorSession;
 }
 
+/**
+ * The channel contract this host implements. A channel module declares the
+ * version it was written against, and the host refuses one that differs; bump
+ * it on any breaking change to `RecipeChannelModule`.
+ */
+export const CHANNEL_MODULE_API_VERSION = 1 as const;
+
+/**
+ * What a channel package exports as its default: a plain descriptor, which
+ * the host turns into its connector with `createChannelConnectorModule`. The
+ * host passes everything the package needs at run time (the resolved channel
+ * config, env and cwd) to `createSession`, so a channel package needs no
+ * run-time import of `@introspection-ai/recipes`, only its types.
+ */
+export interface RecipeChannelModule extends ChannelConnectorModuleOptions {
+  readonly kind: "channel";
+  /** The contract version, `CHANNEL_MODULE_API_VERSION` when written. */
+  readonly apiVersion: typeof CHANNEL_MODULE_API_VERSION;
+}
+
 const channelToolIds = new Set<string>(CHANNEL_TOOL_IDS);
 
 /** Whether two capability descriptors say the same thing. */

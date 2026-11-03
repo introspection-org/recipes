@@ -239,19 +239,52 @@ describe("Recipe Format", () => {
     ]);
   });
 
-  it("requires the Slack connector package when Slack is declared", () => {
+  function channelReport(provider: string, edit: (pkg: Record<string, unknown>) => void = () => {}) {
     const recipeDir = fixture();
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
-    pkg.pi.channels = [{ provider: "slack" }];
+    pkg.pi.channels = [{ provider }];
+    edit(pkg);
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+    return validatePiPackageManifest(readPiPackageManifest(recipeDir));
+  }
 
-    const report = validatePiPackageManifest(readPiPackageManifest(recipeDir));
+  it("lets a Recipe omit the Slack package, which the host supplies by default", () => {
+    expect(channelReport("slack").findings).toEqual([]);
+  });
+
+  it("accepts a channel package as a peer the platform provides, warning when a standard platform does not", () => {
+    const slack = channelReport("slack", (pkg) => {
+      pkg.peerDependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: ">=0.6.0" };
+    });
+    expect(slack.findings).toEqual([]);
+    const teams = channelReport("teams", (pkg) => {
+      pkg.peerDependencies = { "@introspection-ai/recipe-channel-teams": ">=0.1.0" };
+    });
+    expect(teams.valid).toBe(true);
+    expect(teams.findings).toEqual([
+      expect.objectContaining({ code: "package.peer_not_provided_by_default", severity: "warning" }),
+    ]);
+  });
+
+  it("rejects a peer without a version range, and a listed dependency without a version", () => {
+    const peer = channelReport("slack", (pkg) => {
+      pkg.peerDependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "" };
+    });
+    expect(peer.findings.map((finding) => finding.code)).toEqual(["package.peer_version_missing"]);
+    const versionless = channelReport("slack", (pkg) => {
+      pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "" };
+    });
+    expect(versionless.valid).toBe(false);
+  });
+
+  it("requires the package of a channel the host does not supply", () => {
+    const report = channelReport("teams");
 
     expect(report.valid).toBe(false);
     expect(report.findings.map((finding) => finding.message)).toContain(
-      `package.json#pi.channels provider 'slack' requires dependency '${SLACK_RECIPE_CHANNEL_PACKAGE}'`,
+      "package.json#pi.channels provider 'teams' requires dependency '@introspection-ai/recipe-channel-teams'",
     );
   });
 

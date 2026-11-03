@@ -14,9 +14,6 @@ protocol.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
-  },
   "pi": {
     "channels": [
       {
@@ -27,8 +24,10 @@ protocol.
 }
 ```
 
-Commit the package manager lockfile. The host loads the package only for a
-Recipe that declares the connector.
+Recipes installs the Slack package alongside itself, so the declaration is
+enough. To pin a version, add `"@introspection-ai/recipe-channel-slack":
+">=0.6.0"` to `dependencies` and commit the lockfile; the Recipe's copy wins.
+The host loads the package only for a Recipe that declares the connector.
 
 The connector registers one `channels` tool. Agents select `tools: [channels]`;
 all supported commands are immediately visible. An optional connector `commands`
