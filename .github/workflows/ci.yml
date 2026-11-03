@@ -138,33 +138,17 @@ jobs:
 
       - run: test -x vendor/mcp-client/linux-arm64/mcp-client
 
-  vitest-evals:
+  evals-npm:
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - packages/evals/vitest
+          - packages/fakes/mcp
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/evals/vitest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-
-      - run: npm ci
-
-      - run: npm test
-
-      - run: npm run typecheck
-
-      - run: npm run build
-
-      - run: npm pack --dry-run
-
-  mcp-fakes:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/fakes/mcp
+        working-directory: ${{ matrix.directory }}
     steps:
       - uses: actions/checkout@v7
 
@@ -176,11 +160,9 @@ jobs:
 
       - run: npm run typecheck
 
-      # The tests bundle the package from dist.
-      - run: npm run build
-
       - run: npm test
 
+      # prepack builds dist, so this also proves the build.
       - run: npm pack --dry-run
 
   harbor:
