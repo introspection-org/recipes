@@ -34,6 +34,11 @@ import {
 } from "./ask-user-question.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
+  activateRecipePython,
+  prepareRecipePython,
+  RECIPE_PYTHON_ROOT_ENV,
+} from "./recipe/python.js";
+import {
   clearMcpCatalogPreload,
   preloadMcpCatalogs,
 } from "./mcp/catalog.js";
@@ -171,6 +176,14 @@ export interface CreateAgentSessionOptions {
   mcpDiscovery?: McpDiscoveryRequirement;
   /** `${VAR}` resolution source and MCP runtime environment. Default: `process.env`. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Where the host prepared the Recipe's `pi.runtime.python` environments
+   * (see `prepareRecipePython`'s `environmentRoot`). Default:
+   * `env.PI_RECIPES_PYTHON_ROOT`, else the shared cache under
+   * `~/.introspection/python`. The session only checks them, never installs:
+   * a missing or outdated environment fails construction.
+   */
+  pythonEnvironmentRoot?: string;
   /** Default: `SessionManager.inMemory(cwd)`. */
   sessionManager?: SessionManager;
   /**
@@ -585,6 +598,16 @@ async function createSessionForAgent(
   let agentRuns: AgentRunController | undefined;
   let unsubscribe: (() => void) | undefined;
   let detachInstrumentation: (() => void) | undefined;
+  // Python: check only, fail-closed before any MCP runtime starts. The host
+  // prepares the environments (sync mode) before it creates sessions.
+  const pythonEnvironmentRoot =
+    opts.pythonEnvironmentRoot ?? (env[RECIPE_PYTHON_ROOT_ENV]?.trim() || undefined);
+  const python = await prepareRecipePython(recipe.recipeDir, {
+    mode: "check",
+    env,
+    ...(pythonEnvironmentRoot ? { environmentRoot: pythonEnvironmentRoot } : {}),
+  });
+  const pythonActivation = python.recipe?.activation;
   const mcp = await configureSessionMcp(recipe, cwd, env, opts);
 
   const cleanup = async (): Promise<void> => {
@@ -645,7 +668,7 @@ async function createSessionForAgent(
     const connectors = await loadRecipeConnectors(
       recipe.manifest,
       recipe.tools,
-      { recipeDir: recipe.recipeDir, env, cwd }
+      { recipeDir: recipe.recipeDir, env, cwd, python: python.packages }
     );
     const connectorLoadout = connectors.loadout;
     for (const toolName of [
@@ -875,19 +898,30 @@ async function createSessionForAgent(
       ...mcpToolNames,
       ...toolSearchTools.map((tool) => tool.name),
     ];
-    const environmentBash: ToolDefinition | undefined =
+    // The bash tool runs in `env` when the session's MCP CLI lives there, and
+    // in the Recipe's Python shell environment when it declares one.
+    const mcpShellEnv =
       (recipe.mcp?.mode ?? "cli") === "cli" &&
       mcp.available &&
-      env !== process.env &&
+      env !== process.env;
+    const environmentBash: ToolDefinition | undefined =
+      (mcpShellEnv || pythonActivation) &&
       tools.includes("bash") &&
       !(opts.customTools ?? []).some((tool) => tool.name === "bash")
         ? (createBashToolDefinition(cwd, {
             commandPrefix: settingsManager.getShellCommandPrefix(),
             shellPath: settingsManager.getShellPath(),
-            spawnHook: (context) => ({
-              ...context,
-              env: { ...context.env, ...env },
-            }),
+            spawnHook: (context) => {
+              const shellEnv = mcpShellEnv
+                ? { ...context.env, ...env }
+                : { ...context.env };
+              return {
+                ...context,
+                env: pythonActivation
+                  ? activateRecipePython(shellEnv, pythonActivation)
+                  : shellEnv,
+              };
+            },
           }) as ToolDefinition)
         : undefined;
     const customTools = [

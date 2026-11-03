@@ -27,7 +27,19 @@ export interface RecipeDocumentFormatModule {
   readonly capabilities: DocumentCapabilities;
   /** Profiles this format ships: name to the absolute path of its SKILL.md (see profile.ts). */
   readonly profiles?: Readonly<Record<string, string>>;
-  createAdapter(options: { env: NodeJS.ProcessEnv; cwd: string }): DocumentAdapter;
+  createAdapter(options: DocumentAdapterOptions): DocumentAdapter;
+}
+
+/**
+ * What the host passes a format's `createAdapter`. `python` is the
+ * interpreter of the environment the format package's own
+ * `pi.runtime.python` declares, prepared by the host; absent when the package
+ * declares none. An adapter that ignores it keeps working.
+ */
+export interface DocumentAdapterOptions {
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+  python?: string;
 }
 
 export interface DocumentFormatModuleOptions {
@@ -36,7 +48,7 @@ export interface DocumentFormatModuleOptions {
   capabilities: DocumentCapabilities;
   /** Profiles shipped with the format: name to the absolute path of its SKILL.md. */
   profiles?: Readonly<Record<string, string>>;
-  createAdapter(options: { env: NodeJS.ProcessEnv; cwd: string }): DocumentAdapter;
+  createAdapter(options: DocumentAdapterOptions): DocumentAdapter;
 }
 
 function sameCapabilities(left: DocumentCapabilities, right: DocumentCapabilities): boolean {
@@ -110,7 +122,13 @@ const knownCommands = new Set<string>(DOCUMENT_COMMANDS);
 export async function loadRecipeDocuments(
   declarations: readonly RecipePackageDocument[],
   agentTools: readonly string[],
-  options: { recipeDir: string; env?: NodeJS.ProcessEnv; cwd?: string },
+  options: {
+    recipeDir: string;
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    /** Prepared package environments by package name (see `prepareRecipePython`). */
+    python?: Readonly<Record<string, { interpreter: string }>>;
+  },
 ): Promise<LoadedRecipeDocuments> {
   if (declarations.length === 0) return { toolNames: [] };
   const modules = await Promise.all(
@@ -154,7 +172,8 @@ export async function loadRecipeDocuments(
         const env = options.env ?? process.env;
         const cwd = options.cwd ?? process.cwd();
         const adapters = enabled.map(({ declaration, module }) => {
-          const adapter = module.createAdapter({ env, cwd });
+          const python = options.python?.[recipeDocumentPackageName(declaration.format)]?.interpreter;
+          const adapter = module.createAdapter({ env, cwd, ...(python ? { python } : {}) });
           const allowed = declaration.commands;
           if (allowed === undefined) return adapter;
           // Narrow the descriptor to the allowlist so the shared tool filters on it.

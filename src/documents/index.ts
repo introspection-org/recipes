@@ -15,7 +15,7 @@ export {
   recipeProfileSkill,
   resolveDocumentProfile,
 } from "./profile.js";
-export type { DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
+export type { DocumentAdapterOptions, DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
 export type {
   DocumentAdapter,
   DocumentAdapterContext,

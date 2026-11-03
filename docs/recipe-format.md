@@ -382,10 +382,75 @@ first model call or reject the Recipe with an actionable diagnostic.
 ```
 
 `python.project` names a Recipe-relative Python project directory and
-`python.lockfile` names its committed `uv.lock`. Hosts MUST install with frozen
-resolution into a Recipe-local environment. `imports` are optional boot
-preflights. Hosts MUST NOT install into system Python or resolve an unlocked
-dependency graph.
+`python.lockfile` names its committed `uv.lock`, which must be the
+`uv.lock` beside the project's `pyproject.toml`. Hosts MUST install with
+frozen resolution (`uv sync --frozen --no-dev`) and MUST NOT install into
+system Python or resolve an unlocked dependency graph. `version` is passed to
+uv as the interpreter request. `imports` are optional boot preflights, each a
+dotted Python module name (`docx`, `paper_docx.api`); hosts import them with
+`PYTHONHOME` removed.
+
+### Package declarations
+
+A package the Recipe depends on MAY declare `pi.runtime.python` in its own
+`package.json`, with the same fields relative to the package. Hosts read it
+from each direct `dependencies` or `peerDependencies` entry installed in the
+Recipe's `node_modules`; `devDependencies` and transitive dependencies are
+not read, and a declared dependency that is not installed is skipped. A
+package declaring it MUST ship the project's `pyproject.toml` and `uv.lock`:
+when its `package.json` lists `files`, both must be covered. `pi.runtime.system`
+is a Recipe-only declaration.
+
+Each declaration gets its own environment:
+
+- **The Recipe's own declaration is the shell environment.** Hosts activate
+  it for the agent's shell tools: `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`
+  name it, its `bin` (`Scripts` on Windows) comes first on `PATH`, and
+  `PYTHONHOME` is removed.
+- **Each package's declaration gets a separate environment**, installed with
+  `--no-editable` and never activated or put on `PATH`. The host hands the
+  package its interpreter; a documents format receives it as
+  `createAdapter({ env, cwd, python })`.
+
+No declaration has to agree with another: two packages may lock different
+versions of the same library.
+
+### Preparing environments
+
+`prepareRecipePython(recipeDir, options)` from
+`@introspection-ai/recipes/recipe` finds every declaration and prepares it:
+
+- `mode: "check"` runs `uv sync --frozen --no-dev --check --offline` and the
+  import preflight. It writes nothing and uses no network.
+- `mode: "sync"` checks first and installs only a missing or outdated
+  environment, with `uv sync --frozen --no-dev --compile-bytecode`. A current
+  environment is never recompiled.
+- uv runs with `--no-python-downloads` unless `allowPythonDownloads` is set.
+
+By default environments live in a shared cache,
+`~/.introspection/python/<hash>`, keyed by the environment kind (shell or
+package), platform and architecture, the `uv.lock` and `pyproject.toml`
+contents, and the declared `version`; a Recipe project that is itself a
+package (it has `[build-system]`, so it installs editable) also keys on its
+directory. `environmentRoot` (or `PI_RECIPES_PYTHON_ROOT`) fixes the
+location instead: the shell environment is `<root>/python` and each package's
+`<root>/python-packages/<name>`, so a host baking environments into a Recipe
+image passes `<recipe>/.pi`. Concurrent preparations of one environment are
+serialised by a lock file beside it.
+
+Each prepared environment reports its directory and interpreter, plus the
+activation for the shell environment. Failures are named errors:
+`RecipePythonUvMissingError` (uv not installed), `RecipePythonVersionError`
+(no interpreter satisfies the version), `RecipePythonOutdatedError` (check
+mode found an environment missing or not matching its lock) and
+`RecipePythonImportError`.
+
+**Hosts fail closed.** Pi's extension prepares in sync mode with interpreter
+downloads allowed when it loads a Recipe, tells the user when a first build
+downloads packages, and refuses to start the session if any environment fails.
+The session API (`createAgentSession`) only checks: it never installs, so the
+host prepares the environments before it creates sessions, and an unprepared
+one fails construction.
 
 System package ids name versioned, host-approved bundles. They are not apt,
 brew, or shell commands. A host that does not provide a declared bundle MUST

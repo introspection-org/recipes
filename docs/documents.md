@@ -330,6 +330,12 @@ export default createDocumentFormatModule({
 });
 ```
 
+`createAdapter` also receives `python`: the interpreter of the environment the
+format package's own `pi.runtime.python` declares, which the host prepares
+(see [Runtime requirements](recipe-format.md#runtime-requirements)). It is
+absent when the package declares none; an adapter that ignores it keeps
+working.
+
 Registration checks that the adapter implements every method its
 capabilities claim, and that the adapter returns the declared capabilities.
 A format package ships its code and its profiles (see Skills and profiles).

@@ -29,6 +29,27 @@ import {
 
 export type { RecipePackageManifest } from "./package.js";
 export type { RecipeAgentMcp } from "./agent.js";
+export {
+  activateRecipePython,
+  prepareRecipePython,
+  RECIPE_PYTHON_ROOT_ENV,
+  RecipePythonError,
+  RecipePythonImportError,
+  RecipePythonOutdatedError,
+  RecipePythonUvMissingError,
+  RecipePythonVersionError,
+  UV_INSTALL_URL,
+} from "./python.js";
+export type {
+  PreparedRecipePython,
+  PrepareRecipePythonOptions,
+  RecipePythonActivation,
+  RecipePythonEnvironment,
+  RecipePythonMode,
+  RecipePythonSyncEvent,
+  RecipeShellPythonEnvironment,
+} from "./python.js";
+export { validateRecipePythonPackage } from "./package.js";
 
 export interface ResolvedRecipeAgentMcp
   extends Omit<RecipeAgentMcp, "mode"> {

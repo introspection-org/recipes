@@ -169,6 +169,8 @@ type PackageJson = {
   version?: unknown;
   description?: unknown;
   dependencies?: unknown;
+  peerDependencies?: unknown;
+  files?: unknown;
   pi?: unknown;
 };
 
@@ -407,6 +409,13 @@ function documentSourceShapeFindings(
   return findings;
 }
 
+const PYTHON_MODULE_NAME = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+
+/** Whether `value` is a dotted Python module name such as `docx` or `paper_docx.api`. */
+export function isPythonModuleName(value: string): boolean {
+  return PYTHON_MODULE_NAME.test(value);
+}
+
 function runtimeSourceShapeFindings(
   value: unknown,
   packageName: string
@@ -456,6 +465,16 @@ function runtimeSourceShapeFindings(
             "package.json#pi.runtime.python.imports must be an array of non-empty module names"
           )
         );
+      } else if (Array.isArray(python.imports)) {
+        for (const item of python.imports as string[]) {
+          if (!isPythonModuleName(item.trim())) {
+            findings.push(
+              invalid(
+                `package.json#pi.runtime.python.imports entry '${item}' must be a dotted Python module name`
+              )
+            );
+          }
+        }
       }
     }
   }
@@ -1141,4 +1160,87 @@ export function validatePiPackageManifest(pkg: RecipePackageManifest): RecipeVal
     valid: findings.length === 0,
     findings,
   };
+}
+
+/** Whether npm's `files` list ships `path` (a package-relative POSIX path). */
+function packageFilesInclude(files: readonly unknown[], path: string): boolean {
+  let included = false;
+  for (const raw of files) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const negated = raw.startsWith("!");
+    const entry = normalizeResourcePath(negated ? raw.slice(1) : raw).replace(/\/+$/, "");
+    const matches = (candidate: string) =>
+      hasGlob(entry) ? globToRegExp(entry).test(candidate) : candidate === entry;
+    const segments = path.split("/");
+    // An entry naming a directory ships everything beneath it.
+    const hit = segments.some((_, index) => matches(segments.slice(0, index + 1).join("/")));
+    if (hit) included = !negated;
+  }
+  return included;
+}
+
+/**
+ * Validate the `pi.runtime.python` a dependency package (not the Recipe)
+ * declares: the same shape a Recipe's takes, a project directory holding
+ * `pyproject.toml` and its `uv.lock` inside the package, and, when the package
+ * lists `files`, both files shipped in it. Returns no requirement when the
+ * package declares none. `pi.runtime.system` is a Recipe-only declaration and
+ * is not read here.
+ */
+export function validateRecipePythonPackage(packageDir: string): RecipeValidationReport & {
+  name: string;
+  python?: RecipePythonRuntimeRequirement;
+} {
+  const packagePath = packageJsonPath(packageDir);
+  if (!packagePath) {
+    throw new RecipePackageError(`Package at ${packageDir} is missing package.json`);
+  }
+  const raw = readJsonFile(packagePath);
+  const name = stringValue(raw.name) ?? packageDir;
+  const pi = piPackageManifestBlock(raw);
+  const runtime = pi ? asRecord(pi.runtime) : {};
+  if (runtime.python === undefined) return { valid: true, findings: [], name };
+  const findings = runtimeSourceShapeFindings({ python: runtime.python }, name);
+  const python = parseRuntimeRequirements({ python: runtime.python }).python;
+  if (findings.length === 0 && python) {
+    const invalidPath = (message: string) =>
+      findings.push(finding("pi.runtime_path_invalid", message, name));
+    const contained = (authored: string) => {
+      const rel = relative(resolve(packageDir), resolve(packageDir, authored));
+      return !(
+        isAbsolute(authored) ||
+        hasTraversalSegment(authored) ||
+        rel === ".." ||
+        rel.startsWith(`..${sep}`) ||
+        isAbsolute(rel)
+      );
+    };
+    const projectDir = resolve(packageDir, python.project);
+    const pyproject = `${python.project}/pyproject.toml`.replace(/^\.\//, "");
+    if (!contained(python.project) || !existsSync(projectDir) || !statSync(projectDir).isDirectory()) {
+      invalidPath(`package.json#pi.runtime.python.project must resolve to a directory inside the package`);
+    } else if (!existsSync(join(projectDir, "pyproject.toml"))) {
+      invalidPath(`package.json#pi.runtime.python.project has no pyproject.toml: ${python.project}`);
+    }
+    const lockfile = resolve(packageDir, python.lockfile);
+    if (!contained(python.lockfile) || !existsSync(lockfile) || !statSync(lockfile).isFile()) {
+      invalidPath(`package.json#pi.runtime.python.lockfile must resolve to a file inside the package`);
+    } else if (lockfile !== join(projectDir, "uv.lock")) {
+      invalidPath(`package.json#pi.runtime.python.lockfile must be the project's uv.lock: ${python.lockfile}`);
+    }
+    if (Array.isArray(raw.files)) {
+      for (const shipped of [pyproject, normalizeResourcePath(python.lockfile)]) {
+        if (!packageFilesInclude(raw.files, shipped)) {
+          findings.push(
+            finding(
+              "pi.runtime_files_missing",
+              `package.json#files must ship ${shipped}, which pi.runtime.python needs`,
+              name
+            )
+          );
+        }
+      }
+    }
+  }
+  return { valid: findings.length === 0, findings, name, ...(python ? { python } : {}) };
 }
