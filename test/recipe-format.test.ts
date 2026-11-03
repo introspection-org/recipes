@@ -842,6 +842,40 @@ describe("release train isolation", () => {
     });
   });
 
+  it("releases the document format adapters together, at one version", () => {
+    const root = join(import.meta.dirname, "..");
+    const config = JSON.parse(readFileSync(join(root, "release-please-config.json"), "utf8")) as {
+      plugins?: { type: string; components?: string[]; merge?: boolean }[];
+    };
+    expect(config.plugins).toContainEqual({
+      type: "linked-versions",
+      groupName: "recipe-documents",
+      components: ["recipe-documents-docx", "recipe-documents-pdf"],
+      // A merged group would retitle the root release PR without its version.
+      merge: false,
+    });
+
+    // linked-versions aligns only the packages released in one run; it ignores versions
+    // already published. So the two must start equal, or a pdf-only fix (0.1.0 -> 0.1.1)
+    // would set docx below its current 0.2.0. Until they match, both are forced to one
+    // version above the highest released (release-as), and that version is synchronized.
+    const manifest = JSON.parse(readFileSync(join(root, ".release-please-manifest.json"), "utf8")) as Record<string, string>;
+    const packages = (config as unknown as { packages: Record<string, { "release-as"?: string }> }).packages;
+    const docx = manifest["packages/documents/docx"]!;
+    const pdf = manifest["packages/documents/pdf"]!;
+    if (docx !== pdf) {
+      const forced = packages["packages/documents/docx"]?.["release-as"];
+      expect(forced).toBeDefined();
+      expect(packages["packages/documents/pdf"]?.["release-as"]).toBe(forced);
+      const above = (v: string) => forced!.localeCompare(v, undefined, { numeric: true }) > 0;
+      expect(above(docx) && above(pdf)).toBe(true);
+    } else {
+      // Once synchronized, a leftover release-as would pin every later release to it.
+      expect(packages["packages/documents/docx"]?.["release-as"]).toBeUndefined();
+      expect(packages["packages/documents/pdf"]?.["release-as"]).toBeUndefined();
+    }
+  });
+
   it("does not record a false Slack release version", () => {
     const root = join(import.meta.dirname, "..");
     const manifest = JSON.parse(

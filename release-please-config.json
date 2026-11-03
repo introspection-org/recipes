@@ -7,12 +7,26 @@
   "release-label": "autorelease: tagged-root",
   "always-update": true,
   "group-pull-request-title-pattern": "chore(${branch}): release ${version}",
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "recipe-documents",
+      "components": [
+        "recipe-documents-docx",
+        "recipe-documents-pdf"
+      ],
+      "merge": false
+    }
+  ],
   "packages": {
     ".": {
       "release-type": "node",
       "package-name": "",
       "bump-minor-pre-major": true,
-      "exclude-paths": ["packages/recipe-check", "packages/recipe-check-python"]
+      "exclude-paths": [
+        "packages/recipe-check",
+        "packages/recipe-check-python"
+      ]
     },
     "packages/channels/slack": {
       "release-type": "node",
@@ -26,14 +40,16 @@
       "package-name": "@introspection-ai/recipe-documents-docx",
       "include-component-in-tag": true,
       "initial-version": "0.1.0",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "release-as": "0.3.0"
     },
     "packages/documents/pdf": {
       "release-type": "node",
       "package-name": "@introspection-ai/recipe-documents-pdf",
       "include-component-in-tag": true,
       "initial-version": "0.1.0",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "release-as": "0.3.0"
     }
   },
   "bump-minor-pre-major": true
