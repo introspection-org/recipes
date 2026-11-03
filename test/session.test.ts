@@ -747,6 +747,111 @@ describe("createAgentSession", () => {
     );
   });
 
+  it("provides the built-in ask_user_question tool only when the agent lists it", async () => {
+    const listed = fixture({ tools: ["read", "ask_user_question"] });
+    const withTool = await open({
+      recipeDir: listed.recipeDir,
+      cwd: listed.workspaceDir,
+    });
+    expect(withTool.session.getActiveToolNames()).toContain("ask_user_question");
+    const definition = withTool.session
+      .getAllTools()
+      .find((tool) => tool.name === "ask_user_question");
+    expect(definition?.description).toContain("One decision per question");
+
+    const unlisted = fixture({ tools: ["read"] });
+    const withoutTool = await open({
+      recipeDir: unlisted.recipeDir,
+      cwd: unlisted.workspaceDir,
+    });
+    expect(
+      withoutTool.session.getAllTools().map((tool) => tool.name)
+    ).not.toContain("ask_user_question");
+  });
+
+  it("gives ask_user_question the session environment, not process.env", async () => {
+    const question = {
+      questions: [
+        {
+          question: "Which region should we deploy to?",
+          header: "Region",
+          options: [{ label: "Sydney" }, { label: "Oregon" }],
+        },
+      ],
+    };
+    const noUi = { hasUI: false, mode: "print" } as never;
+    expect(process.env.PI_INTERRUPT_RESUME).toBeUndefined();
+    expect(process.env.PI_ASK_USER_AUTO_APPROVE).toBeUndefined();
+
+    const paused = fixture({ tools: ["ask_user_question"] });
+    const pauseHandle = await open({
+      recipeDir: paused.recipeDir,
+      cwd: paused.workspaceDir,
+      env: { ...cleanEnv(), PI_INTERRUPT_RESUME: "1" },
+    });
+    const pauseTool = pauseHandle.session.getToolDefinition("ask_user_question")!;
+    expect((pauseTool.parameters as any).properties.questions.maxItems).toBe(1);
+    const pausedResult = await pauseTool.execute(
+      "call-1",
+      question as never,
+      undefined,
+      undefined,
+      noUi
+    );
+    expect(pausedResult.content).toEqual([
+      { type: "text", text: "Awaiting user response." },
+    ]);
+    expect((pausedResult.details as any).interrupt.outcome).toEqual({
+      type: "awaiting_user",
+    });
+
+    const headless = fixture({ tools: ["ask_user_question"] });
+    const headlessHandle = await open({
+      recipeDir: headless.recipeDir,
+      cwd: headless.workspaceDir,
+      env: { ...cleanEnv(), PI_ASK_USER_AUTO_APPROVE: "1" },
+    });
+    const declined = await headlessHandle.session
+      .getToolDefinition("ask_user_question")!
+      .execute("call-2", question as never, undefined, undefined, {
+        hasUI: true,
+        mode: "tui",
+        ui: {},
+      } as never);
+    expect((declined.details as any).questions[0].outcome).toBe("declined");
+  });
+
+  it("keeps a Recipe extension's own ask_user_question over the built-in", async () => {
+    const { recipeDir, workspaceDir } = fixture({
+      manifestPi: { extensions: ["extensions/ask.ts"] },
+      tools: ["ask_user_question"],
+    });
+    mkdirSync(join(recipeDir, "extensions"), { recursive: true });
+    writeFileSync(
+      join(recipeDir, "extensions", "ask.ts"),
+      [
+        "export default (pi) => {",
+        "  pi.registerTool({",
+        "    name: 'ask_user_question',",
+        "    label: 'Recipe question',",
+        "    description: 'The Recipe-owned question tool.',",
+        "    parameters: { type: 'object', properties: {} },",
+        "    async execute() { return { content: [], details: {} }; }",
+        "  });",
+        "};",
+      ].join("\n")
+    );
+
+    const handle = await open({ recipeDir, cwd: workspaceDir });
+
+    expect(handle.session.getActiveToolNames()).toContain("ask_user_question");
+    expect(
+      handle.session
+        .getAllTools()
+        .find((tool) => tool.name === "ask_user_question")?.description
+    ).toBe("The Recipe-owned question tool.");
+  });
+
   it("prevents package extensions from activating undeclared tools", async () => {
     const { recipeDir, workspaceDir } = fixture({
       manifestPi: { extensions: ["extensions/policy.ts"] },

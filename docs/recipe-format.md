@@ -273,7 +273,8 @@ own Pi runtime. Interactive Pi keeps one extension runtime for the selected
 Recipe launch and does not retry a partially failed closure without rebuilding
 that runtime. Extension load failures stop the agent before a model call.
 Recipe extensions MUST NOT override host or Pi built-in tool names; use a
-distinct tool name when behavior differs. Extension code retains its non-tool
+distinct tool name when behavior differs. The one exception is
+`ask_user_question` (see [Tools](#tools-subagents-and-capabilities)). Extension code retains its non-tool
 behavior even when none of its tools appear in the selected agent's `tools`
 allowlist.
 
@@ -288,6 +289,23 @@ hook execution.
 
 `tools` is an allowlist. A host MUST expose no undeclared Pi or extension tool
 through this field.
+
+Besides Pi's own tools (`read`, `bash`, `edit`, `write`, `grep`, `find`,
+`ls`), Recipes provides these built-in tools, available only to an agent that
+lists them in `tools`:
+
+| Tool | What it does |
+| --- | --- |
+| `ask_user_question` | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool). |
+
+```yaml
+tools: [read, bash, ask_user_question]
+```
+
+If a Recipe extension registers its own `ask_user_question`, the host keeps
+the Recipe's tool and does not register the built-in one. This exception to
+the rule below lets a Recipe migrate from its own question tool without a
+coordinated release; new Recipes list the built-in tool instead.
 
 `subagents` names agents the selected agent may invoke. A host MUST expose only
 those resolved definitions through the shared `agent` tool. How child work is

@@ -52,6 +52,8 @@ const contexts = sharedRecipeExtensionContexts();
 export interface RecipeExtensionRegistrationRegistry {
   claim(kind: string, name: string, owner: string): void;
   release(kind: string, name: string, owner: string): void;
+  /** The owner of a registration, if any. */
+  owner(kind: string, name: string): string | undefined;
 }
 
 /** @internal Exact tool names a package extension may keep model-visible. */
@@ -91,6 +93,9 @@ export function createRecipeExtensionRegistrationRegistry(): RecipeExtensionRegi
         );
       }
       owners.delete(key);
+    },
+    owner(kind, name) {
+      return owners.get(`${kind}\0${name}`);
     },
   };
 }

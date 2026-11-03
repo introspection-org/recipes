@@ -5,13 +5,81 @@ asking the user a question or requesting approval that works on every Pi host:
 the local TUI, RPC-driven UIs, headless runs, and hosts that stream tool
 results to a remote frontend and can pause/resume a run.
 
-The module registers no tools. Recipes own their interaction tools — their
-names, schemas, and prompts — and call `askUserQuestion()` or
-`askUserApproval()` from the tool's `execute()`. Those helpers build the
-`details.interrupt` request, local Pi dialog copy, and host metadata. Use raw
-`askUser()` only when a tool needs a lower-level interaction shape.
+Most Recipes need only the built-in `ask_user_question` tool: list it in an
+agent's `tools` (see below). The module itself registers no tools. A Recipe
+that needs its own interaction tool — its own name, schema, and prompt — calls
+`askUserQuestion()` or `askUserApproval()` from the tool's `execute()`. Those
+helpers build the `details.interrupt` request, local Pi dialog copy, and host
+metadata. Use raw `askUser()` only when a tool needs a lower-level interaction
+shape.
 
-## Quick start
+## The built-in `ask_user_question` tool
+
+List `ask_user_question` in an agent's `tools` and the host registers it for
+that agent; agents that do not list it never see it.
+
+```yaml
+name: agent
+ai:
+  model: anthropic/claude-sonnet-4-5
+tools: [read, bash, ask_user_question]
+```
+
+Its inputs mirror Claude Code's `AskUserQuestion`, so models use it without
+extra prompting:
+
+```ts
+ask_user_question({
+  questions: [            // 1 to 4
+    {
+      question: string,   // the full question, ending in "?"
+      header: string,     // short label, at most 12 characters
+      options: [          // 2 to 4
+        { label: string, description?: string }
+      ],
+      multiSelect?: boolean
+    }
+  ]
+})
+```
+
+The model never adds an "Other" option: the user can always give their own
+answer. The tool description carries the usage guidance (one decision per
+question, short enough to read aloud, enough context that a bare option makes
+sense, no options inside the question text, no "change it" option on
+approvals, and prefer the tool over asking in plain text).
+
+How each host renders it:
+
+| Host | Rendering | Result the model sees |
+| --- | --- | --- |
+| Pi terminal (TUI) and RPC | One dialog per question, in order. Options are numbered (numbers the model put in labels are stripped), with descriptions after the label, and a last option, `Something else — I'll type it`, opens a text input. `multiSelect` uses the toggle list in the TUI and a toggle-then-`Done` selector over RPC. | One line per question, `<header>: <answer>` (several answers joined with `, `), and `details.questions` / `details.answers` with each answer. |
+| Pause/resume host (`PI_INTERRUPT_RESUME`) | The tool returns the `details.interrupt` request from `askUserQuestion()` with bare option labels and their descriptions, `metadata.header` and `metadata.question`; the host renders its own option list and free-text answer. | The host's resume envelope, for example `Answer: Email link`. |
+| Headless (`PI_ASK_USER_AUTO_APPROVE`) and child agents | Nothing is shown; every question declines. | `<header>: (no answer)` per question, then an instruction to proceed with best judgment. |
+| No channel | Nothing is shown. | The unavailable envelope, telling the model to ask in its reply. |
+
+The built-in tool reads `PI_INTERRUPT_RESUME` and `PI_ASK_USER_AUTO_APPROVE`
+from the session's environment, the `env` passed to `createAgentSession()` or
+`createRecipesExtension()`, and falls back to `process.env` when none is given.
+A Recipe's own tool can do the same by passing `env` to the helpers.
+
+A pause carries one interrupt per tool call, so on a pause/resume host the
+schema asks for one question per call and the description tells the model to
+make one call per question in the same turn; the host collects them into one
+pause. A call that still carries several questions shows nothing and returns
+text asking the model to split it.
+
+If a Recipe extension registers its own `ask_user_question`, the host keeps
+it and skips the built-in tool, so a Recipe can migrate at its own pace.
+
+### Skills shared with other hosts
+
+A skill that also runs in Claude Code or another host should not name one
+host's tool as the only way to ask. Write, for example: "Ask with the host's
+question tool (`ask_user_question` here, `AskUserQuestion` in Claude Code);
+otherwise ask with numbered options in text."
+
+## Writing your own interaction tool
 
 ```ts
 import { Type } from "typebox";
@@ -20,8 +88,8 @@ import { askUserQuestion } from "@introspection-ai/recipes/interactions";
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: "ask_user_question",
-    label: "Ask user",
+    name: "clarify",
+    label: "Clarify",
     description: "Ask the user a clarifying question and wait for the answer.",
     parameters: Type.Object({
       question: Type.String(),
