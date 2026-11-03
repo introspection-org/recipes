@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.37.0](https://github.com/introspection-org/recipes/compare/v0.36.2...v0.37.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a committed evaluation binding naming an id that package.json#pi.mcp.servers does not declare, naming one twice, or omitting the id is now rejected.
+
+### Features
+
+* a first-party ask_user_question tool ([#384](https://github.com/introspection-org/recipes/issues/384)) ([73af4de](https://github.com/introspection-org/recipes/commit/73af4de71b170c664f388366576e1c3591f64db1))
+* declare where a Recipe's evals live with pi.evals ([#381](https://github.com/introspection-org/recipes/issues/381)) ([13d1b01](https://github.com/introspection-org/recipes/commit/13d1b01ed55429569085babf9617f6c077ce7552))
+* documents tool with docx and pdf adapters ([#382](https://github.com/introspection-org/recipes/issues/382)) ([2f4e49c](https://github.com/introspection-org/recipes/commit/2f4e49c7169314cb71936de4d8735006c2206c44))
+* **recipe-check:** accept compose-service hosts in a committed evaluation binding ([#369](https://github.com/introspection-org/recipes/issues/369)) ([9a0105f](https://github.com/introspection-org/recipes/commit/9a0105f55246da8c0e3cb224aa38c9047654bc60))
+
 ## [0.36.2](https://github.com/introspection-org/recipes/compare/v0.36.1...v0.36.2) (2026-10-22)
 
 
