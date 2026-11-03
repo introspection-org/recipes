@@ -246,5 +246,13 @@
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
       "node_modules/@acme/legal-skills/package.json": "{\"name\":\"@acme/legal-skills\",\"pi\":{\"skills\":[\"missing\"]}}"
     }
+  },
+  {
+    "name": "pi.runtime.system is an unknown runtime field",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"runtime-system\",\"pi\":{\"runtime\":{\"system\":{\"packages\":[{\"id\":\"document.pdf-tools\",\"version\":\"1\"}]}}}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n"
+    }
   }
 ]

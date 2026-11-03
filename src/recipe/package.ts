@@ -127,16 +127,8 @@ export interface RecipePythonRuntimeRequirement {
   imports: string[];
 }
 
-export interface RecipeSystemPackageRequirement {
-  id: string;
-  version: string;
-}
-
 export interface RecipeRuntimeRequirements {
   python?: RecipePythonRuntimeRequirement;
-  system: {
-    packages: RecipeSystemPackageRequirement[];
-  };
 }
 
 export interface RecipePackageManifest {
@@ -480,7 +472,7 @@ function runtimeSourceShapeFindings(
   const runtime = value as Record<string, unknown>;
   const findings: RecipeValidationFinding[] = [];
   for (const key of Object.keys(runtime)) {
-    if (!["python", "system"].includes(key)) {
+    if (key !== "python") {
       findings.push(invalid(`package.json#pi.runtime contains unknown field '${key}'`));
     }
   }
@@ -523,43 +515,6 @@ function runtimeSourceShapeFindings(
             findings.push(
               invalid(
                 `package.json#pi.runtime.python.imports entry '${item}' must be a dotted Python module name`
-              )
-            );
-          }
-        }
-      }
-    }
-  }
-  if (runtime.system !== undefined) {
-    if (!runtime.system || typeof runtime.system !== "object" || Array.isArray(runtime.system)) {
-      findings.push(invalid("package.json#pi.runtime.system must be an object"));
-    } else {
-      const system = runtime.system as Record<string, unknown>;
-      for (const key of Object.keys(system)) {
-        if (key !== "packages") {
-          findings.push(invalid(`package.json#pi.runtime.system contains unknown field '${key}'`));
-        }
-      }
-      if (!Array.isArray(system.packages)) {
-        findings.push(invalid("package.json#pi.runtime.system.packages must be an array"));
-      } else {
-        for (const [index, entry] of system.packages.entries()) {
-          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-            findings.push(
-              invalid(`package.json#pi.runtime.system.packages[${index}] must be an object`)
-            );
-            continue;
-          }
-          const pkg = entry as Record<string, unknown>;
-          if (
-            typeof pkg.id !== "string" ||
-            !pkg.id.trim() ||
-            typeof pkg.version !== "string" ||
-            !pkg.version.trim()
-          ) {
-            findings.push(
-              invalid(
-                `package.json#pi.runtime.system.packages[${index}] requires non-empty id and version`
               )
             );
           }
@@ -943,7 +898,6 @@ function parseDocuments(value: unknown): RecipePackageDocument[] {
 function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
   const runtime = asRecord(value);
   const python = asRecord(runtime.python);
-  const system = asRecord(runtime.system);
   return {
     ...(stringValue(python.project) && stringValue(python.lockfile)
       ? {
@@ -955,15 +909,6 @@ function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
           },
         }
       : {}),
-    system: {
-      packages: (Array.isArray(system.packages) ? system.packages : [])
-        .map(asRecord)
-        .filter((item) => stringValue(item.id) && stringValue(item.version))
-        .map((item) => ({
-          id: stringValue(item.id)!,
-          version: stringValue(item.version)!,
-        })),
-    },
   };
 }
 
@@ -1260,8 +1205,7 @@ function packageFilesInclude(files: readonly unknown[], path: string): boolean {
  * declares: the same shape a Recipe's takes, a project directory holding
  * `pyproject.toml` and its `uv.lock` inside the package, and, when the package
  * lists `files`, both files shipped in it. Returns no requirement when the
- * package declares none. `pi.runtime.system` is a Recipe-only declaration and
- * is not read here.
+ * package declares none.
  */
 export function validateRecipePythonPackage(packageDir: string): RecipeValidationReport & {
   name: string;

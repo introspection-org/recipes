@@ -504,9 +504,6 @@ first model call or reject the Recipe with an actionable diagnostic.
         "lockfile": "python/uv.lock",
         "version": ">=3.12,<3.15",
         "imports": ["pandas", "openpyxl"]
-      },
-      "system": {
-        "packages": [{ "id": "document.pdf-tools", "version": "1" }]
       }
     }
   }
@@ -522,6 +519,12 @@ uv as the interpreter request. `imports` are optional boot preflights, each a
 dotted Python module name (`docx`, `paper_docx.api`); hosts import them with
 `PYTHONHOME` removed.
 
+`pi.runtime.python` is the only runtime key; any other key under `pi.runtime`
+is rejected. PDF and Word work goes through the `documents` tool (`pi.documents`
+with the `pdf` or `docx` format), not shell utilities. A Recipe that only uses
+the `documents` tool needs no `pi.runtime.python`; the format packages bring
+their own.
+
 ### Package declarations
 
 A package the Recipe depends on MAY declare `pi.runtime.python` in its own
@@ -532,8 +535,7 @@ or one above it when an npm install hoists the dependency beside the Recipe);
 `devDependencies` and transitive dependencies are
 not read, and a declared dependency that is not installed is skipped. A
 package declaring it MUST ship the project's `pyproject.toml` and `uv.lock`:
-when its `package.json` lists `files`, both must be covered. `pi.runtime.system`
-is a Recipe-only declaration.
+when its `package.json` lists `files`, both must be covered.
 
 Each declaration gets its own environment:
 
@@ -615,10 +617,6 @@ downloads packages, and refuses to start the session if any environment fails.
 The session API (`createAgentSession`) only checks: it never installs, so the
 host prepares the environments before it creates sessions, and an unprepared
 one fails construction.
-
-System package ids name versioned, host-approved bundles. They are not apt,
-brew, or shell commands. A host that does not provide a declared bundle MUST
-fail closed; Recipes cannot run privileged installers.
 
 Recipe packages are trusted application code. In particular, authored
 TypeScript extensions execute inside the Pi process with its authority. A host
