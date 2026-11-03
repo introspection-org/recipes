@@ -244,12 +244,24 @@ describe("Recipes' optionalDependencies", () => {
     readdirSync(resolve(root)).map((name) => JSON.parse(readFileSync(resolve(root, name, "package.json"), "utf8")) as { name: string; version: string })
   );
 
+  // A release stamps the MCP client's platform binaries in beside the companions
+  // (packages/mcp-client/npm/build-mcp-client-packages.mjs); they aren't companions.
+  const companionEntries = Object.entries(manifest.optionalDependencies).filter(([name]) =>
+    name.startsWith("@introspection-ai/recipe-")
+  );
+
   it("is what the loader uses, each a workspace link that publishes as a range", () => {
-    for (const [name, specifier] of Object.entries(manifest.optionalDependencies)) {
+    expect(companionEntries.length).toBeGreaterThan(0);
+    for (const [name, specifier] of companionEntries) {
       expect(specifier, name).toMatch(/^workspace:>=/);
       expect(companionPackages()[name]).toBe(specifier.slice("workspace:".length));
     }
-    expect(Object.keys(companionPackages())).toEqual(Object.keys(manifest.optionalDependencies));
+    expect(Object.keys(companionPackages())).toEqual(companionEntries.map(([name]) => name));
+  });
+
+  it("keeps the companions when the release stamps the MCP client's binaries in", () => {
+    const script = readFileSync(resolve("packages/mcp-client/npm/build-mcp-client-packages.mjs"), "utf8");
+    expect(script).toMatch(/optionalDependencies = \{ \.\.\.rootPkg\.optionalDependencies, \.\.\.optionalDependencies \}/);
   });
 
   it("are never a run-time dependency of Recipes' companions: no cycle back to Recipes", () => {

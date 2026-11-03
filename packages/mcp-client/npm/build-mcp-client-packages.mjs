@@ -104,7 +104,8 @@ for (const t of targets) {
 
 const rootPkgPath = path.join(repoRoot, "package.json");
 const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"));
-rootPkg.optionalDependencies = optionalDependencies;
+// Merge: the root also lists its companion packages here (src/recipe/companions.ts).
+rootPkg.optionalDependencies = { ...rootPkg.optionalDependencies, ...optionalDependencies };
 fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, "\t") + "\n");
 console.log(`stamped optionalDependencies onto ${rootPkg.name}`);
 console.warn(
