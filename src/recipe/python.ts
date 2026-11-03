@@ -497,17 +497,23 @@ class Preparer {
    * would accept an environment built for a version no longer declared. Ask
    * uv which interpreter the request selects with this environment active: it
    * prefers the active environment whenever that satisfies the request.
+   *
+   * The request is the declared version, else `UV_PYTHON`, which `uv sync`
+   * reads but `uv python find` does not. A request naming an interpreter path
+   * selects that path rather than the environment, so an interpreter found
+   * elsewhere is still accepted when it is the environment's base interpreter.
    */
   private async checkInterpreter(
     declaration: Declaration,
     projectDir: string,
     environmentDir: string
   ): Promise<{ state: "current" | "outdated" | "interpreter"; detail: string }> {
+    const request = declaration.python.version ?? (this.env.UV_PYTHON || undefined);
     const result = await this.uvRun(
       [
         "python",
         "find",
-        ...(declaration.python.version ? [declaration.python.version] : []),
+        ...(request ? [request] : []),
         "--project",
         projectDir,
         "--no-python-downloads",
@@ -528,16 +534,38 @@ class Preparer {
     // uv names the environment's interpreter by the path it was given; an
     // interpreter elsewhere means the environment no longer satisfies the
     // request, and a warning means it conflicts with `requires-python`.
-    if (sameDirectory(dirname(dirname(found)), environmentDir) && !INTERPRETER_PROBLEM.test(result.stderr)) {
+    if (
+      !INTERPRETER_PROBLEM.test(result.stderr) &&
+      (sameDirectory(dirname(dirname(found)), environmentDir) ||
+        (await this.sameBaseInterpreter(found, environmentDir)))
+    ) {
       return { state: "current", detail: "" };
     }
-    const wanted = declaration.python.version ?? "the project's requires-python";
+    const wanted = request ?? "the project's requires-python";
     return {
       state: "outdated",
       detail: `the interpreter in ${environmentDir} does not satisfy ${wanted}${
         result.stderr.trim() ? `:\n${lastLines(result.stderr)}` : ""
       }`,
     };
+  }
+
+  /** Whether `found` is the interpreter `environmentDir` was created from: same implementation, version and base prefix. */
+  private async sameBaseInterpreter(found: string, environmentDir: string): Promise<boolean> {
+    if (!found) return false;
+    const probe = async (python: string): Promise<string | undefined> => {
+      const script =
+        "import os, sys; print(sys.implementation.name, sys.version_info[:3], os.path.realpath(sys.base_prefix))";
+      try {
+        const result = await run(python, ["-c", script], { cwd: environmentDir, env: withoutPythonHome(this.env) });
+        const line = result.stdout.trim();
+        return result.code === 0 && line ? line : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    const [base, environment] = await Promise.all([probe(found), probe(interpreterPath(environmentDir))]);
+    return base !== undefined && base === environment;
   }
 
   private versionError(declaration: Declaration, detail: string): RecipePythonVersionError {

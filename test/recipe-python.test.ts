@@ -187,6 +187,23 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       expect((error as Error).message).toContain("does not satisfy 3.14");
     });
 
+    it("asks uv for UV_PYTHON's interpreter when no version is declared", async () => {
+      // `uv sync` reads UV_PYTHON, `uv python find` does not, so it is passed on.
+      const { env, uv, prepare } = harness({ UV_PYTHON: "3.12" });
+      const { dir } = recipe({});
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      env.UV_PYTHON = "3.14";
+      const error = await prepare(dir, { mode: "check", environmentRoot: root }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RecipePythonOutdatedError);
+      expect((error as Error).message).toContain("does not satisfy 3.14");
+      expect(uv.calls().filter((call) => call.args[1] === "find").at(-1)?.args.slice(0, 3)).toEqual([
+        "python",
+        "find",
+        "3.14",
+      ]);
+    });
+
     it("names a version no interpreter satisfies when the environment no longer does", async () => {
       const { env, prepare } = harness();
       const { dir } = recipe({ python: { version: "3.12" } });
@@ -767,6 +784,54 @@ describe.skipIf(!hasUv || IS_WINDOWS)("prepareRecipePython with the real uv", ()
       expect(replaced.recipe?.synced).toBe(true);
       expect(version()).toBe(newer);
       expect((await prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).recipe?.synced).toBe(false);
+    },
+    120_000
+  );
+
+  it.skipIf(installedMinors.length < 2)(
+    "replaces an environment whose interpreter UV_PYTHON no longer selects",
+    async () => {
+      const [older, newer] = [installedMinors[0]!, installedMinors.at(-1)!];
+      const dir = emptyRecipe();
+      const root = scratch("recipe-python-real-root-");
+      const env: NodeJS.ProcessEnv = { ...process.env, UV_PYTHON: older };
+      delete env.VIRTUAL_ENV;
+      await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root });
+      const version = () => readFileSync(join(root, "python", "pyvenv.cfg"), "utf8").match(/version_info = (\d+\.\d+)/)?.[1];
+      expect(version()).toBe(older);
+
+      env.UV_PYTHON = newer;
+      await expect(prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).rejects.toBeInstanceOf(
+        RecipePythonOutdatedError
+      );
+      expect((await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root })).recipe?.synced).toBe(true);
+      expect(version()).toBe(newer);
+    },
+    120_000
+  );
+
+  it.skipIf(installedMinors.length < 1)(
+    "accepts an environment created from a declared interpreter path, and replaces it for another",
+    async () => {
+      const env = { ...process.env };
+      delete env.VIRTUAL_ENV;
+      delete env.UV_PYTHON;
+      const find = (minor: string) =>
+        spawnSync("uv", ["python", "find", "--no-python-downloads", "--system", minor], { env, encoding: "utf8" }).stdout.trim();
+      const [older, newer] = [installedMinors[0]!, installedMinors.at(-1)!];
+      const dir = emptyRecipe();
+      const root = scratch("recipe-python-real-root-");
+      declareVersion(dir, find(older));
+      expect((await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root })).recipe?.synced).toBe(true);
+      expect((await prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).recipe?.synced).toBe(false);
+      expect((await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root })).recipe?.synced).toBe(false);
+      if (older === newer) return;
+
+      declareVersion(dir, find(newer));
+      await expect(prepareRecipePython(dir, { mode: "check", env, environmentRoot: root })).rejects.toBeInstanceOf(
+        RecipePythonOutdatedError
+      );
+      expect((await prepareRecipePython(dir, { mode: "sync", env, environmentRoot: root })).recipe?.synced).toBe(true);
     },
     120_000
   );
