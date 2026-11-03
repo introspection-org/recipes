@@ -42,15 +42,15 @@
   it is a ceiling, not a floor. For our own packages (`@introspection-ai/*`,
   `@introspection/*`) that ceiling buys nothing and costs a republish every
   time a sibling ticks: the lockfile already pins what installs, and CI gates
-  every relock. The shape is an open lower bound with a **major** cap —
-  `>=0.26.0 <1.0.0`, in `dependencies` and `peerDependencies` alike, which is
-  what `packages/channels/slack/package.json` ships. The cap is not a ceiling
-  anything hits: below 1.0 nothing crosses it, and 1.0.0 will be a deliberate
-  declaration that the API is stable, so leaving the range unbounded would
-  claim compatibility with a release nobody has reviewed. Note `workspace:^`
+  every relock. The shape is an open lower bound and nothing else —
+  `>=0.39.0`, in `dependencies` and `peerDependencies` alike. No `<1.0.0` cap
+  for now: we will move off pre-release, and a cap would make every 1.0.0
+  package unusable with every Recipe and package that still declares the 0.x
+  range until each is republished. `packages/channels/slack` still ships the
+  older `>=0.26.0 <1.0.0` shape; drop its cap the next time it changes. Note `workspace:^`
   publishes as `^`, so a published peer must be written out. Keep the caret for
   third-party packages, where an unreviewed relock would take someone else's
-  breaking change. Pi takes the same major cap, written out as `>=1.1.0 <2.0.0` because the
+  breaking change. Pi keeps a major cap, written out as `>=1.1.0 <2.0.0` because the
   host supplies it and the runtime image resolves the version. Pi crossing a
   major is a deliberate migration (fix the SDK, move the floor, and move the
   host's runtime image with it), never a Dependabot bump.

@@ -44,10 +44,10 @@
     "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
   },
   "dependencies": {
-    "@introspection-ai/recipes": "workspace:>=0.39.0 <1.0.0"
+    "@introspection-ai/recipes": "workspace:>=0.39.0"
   },
   "peerDependencies": {
-    "@introspection-ai/recipes": "workspace:>=0.39.0 <1.0.0"
+    "@introspection-ai/recipes": "workspace:>=0.39.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
