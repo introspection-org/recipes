@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkRecipeFakes, type RecipeFakesOptions } from "@introspection-ai/mcp-fakes/checks";
+import { checkRecipeFakes, type RecipeFakesOptions } from "@introspection-ai/recipe-fakes-mcp/checks";
 import { describe, expect, test, vi } from "vitest";
 import {
   type Fake,

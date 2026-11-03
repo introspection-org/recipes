@@ -116,7 +116,7 @@ const tools = (fake: Fake): ListedTools => ({
 });
 
 /**
- * Registers the tests every Recipe keeps about its own fakes (fake-server.md "The tests a
+ * Registers the tests every Recipe keeps about its own fakes (the README's "The tests a
  * Recipe keeps"), with the runner's `test`:
  *
  * - each fake serves the Recipe's allowed tools from its `contract`, in captured order;

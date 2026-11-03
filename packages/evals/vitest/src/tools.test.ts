@@ -1,4 +1,4 @@
-import { piToolNames } from "@introspection-ai/mcp-fakes/verify";
+import { piToolNames } from "@introspection-ai/recipe-fakes-mcp/verify";
 import { describe, expect, it } from "vitest";
 
 import { piToolCalls, serverCalls } from "./index.js";

@@ -1,4 +1,4 @@
-# `@introspection-ai/vitest-evals`
+# `@introspection-ai/recipe-evals-vitest`
 
 Run an Introspection Recipe through a [`vitest-evals`](https://github.com/getsentry/vitest-evals) custom harness.
 
@@ -9,7 +9,7 @@ import {
   createRecipeHarness,
   recipeCases,
   recipeJudge,
-} from "@introspection-ai/vitest-evals";
+} from "@introspection-ai/recipe-evals-vitest";
 
 const harness = createRecipeHarness();
 
@@ -43,7 +43,7 @@ effective instructions.
 Run the suite through the Recipe-aware CLI boundary:
 
 ```bash
-introspection eval run -p evals/support.eval.ts
+introspection eval run -p evals/vitest/support.eval.ts
 ```
 
 Vitest's default `include` only collects `*.test.*` and `*.spec.*` files, so
@@ -214,7 +214,7 @@ const harness = createRecipeHarness<Input, Fakes>({
 ## MCP fakes
 
 A Recipe whose MCP servers have fakes served by
-[`@introspection-ai/mcp-fakes`](../mcp-fakes) (an optional peer dependency,
+[`@introspection-ai/recipe-fakes-mcp`](../../fakes/mcp) (an optional peer dependency,
 installed by the Recipe) gets that `beforeRun` from `fakesHarness`:
 
 ```ts
@@ -223,7 +223,7 @@ import {
   piToolCalls,
   type RecipeFakeStates,
   serverCalls,
-} from "@introspection-ai/vitest-evals";
+} from "@introspection-ai/recipe-evals-vitest";
 import { fakes } from "../../fakes/mcp/index.ts";
 import { type World, world } from "../../fakes/scenarios/index.ts";
 

@@ -6,15 +6,15 @@ const src = (file: string) => fileURLToPath(new URL(`./src/${file}`, import.meta
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@introspection-ai\/mcp-fakes\/checks$/, replacement: src("checks.ts") },
-      { find: /^@introspection-ai\/mcp-fakes\/verify$/, replacement: src("verify.ts") },
-      { find: /^@introspection-ai\/mcp-fakes\/answers$/, replacement: src("answers.ts") },
-      { find: /^@introspection-ai\/mcp-fakes\/testing$/, replacement: src("testing.ts") },
-      { find: /^@introspection-ai\/mcp-fakes$/, replacement: src("index.ts") },
+      { find: /^@introspection-ai\/recipe-fakes-mcp\/checks$/, replacement: src("checks.ts") },
+      { find: /^@introspection-ai\/recipe-fakes-mcp\/verify$/, replacement: src("verify.ts") },
+      { find: /^@introspection-ai\/recipe-fakes-mcp\/answers$/, replacement: src("answers.ts") },
+      { find: /^@introspection-ai\/recipe-fakes-mcp\/testing$/, replacement: src("testing.ts") },
+      { find: /^@introspection-ai\/recipe-fakes-mcp$/, replacement: src("index.ts") },
     ],
   },
   test: {
-    // The bundler resolves the package by name, from dist.
+    // serve.test.ts runs dist/cli.js and copies.test.ts copies dist/, so build it first.
     globalSetup: ["./test/build.ts"],
   },
 });

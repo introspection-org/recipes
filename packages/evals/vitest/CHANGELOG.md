@@ -1,5 +1,7 @@
 # Changelog
 
+Renamed from `@introspection-ai/vitest-evals` to `@introspection-ai/recipe-evals-vitest` when the package moved from introspection-cli to this repository. Releases up to 0.4.0 below were published as `@introspection-ai/vitest-evals`, and their links point at introspection-cli.
+
 ## [0.4.0](https://github.com/introspection-org/introspection-cli/compare/vitest-evals-v0.3.0...vitest-evals-v0.4.0) (2026-10-28)
 
 

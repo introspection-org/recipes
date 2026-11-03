@@ -1,4 +1,4 @@
-import { type McpServer, notImplemented, text, toolsOf } from "@introspection-ai/mcp-fakes";
+import { type McpServer, notImplemented, text, toolsOf } from "@introspection-ai/recipe-fakes-mcp";
 import { contract } from "./contract.ts";
 
 export interface Note {

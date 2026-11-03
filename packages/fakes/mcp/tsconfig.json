@@ -11,11 +11,11 @@
     "strict": true,
     "skipLibCheck": true,
     "paths": {
-      "@introspection-ai/mcp-fakes": ["./src/index.ts"],
-      "@introspection-ai/mcp-fakes/checks": ["./src/checks.ts"],
-      "@introspection-ai/mcp-fakes/verify": ["./src/verify.ts"],
-      "@introspection-ai/mcp-fakes/answers": ["./src/answers.ts"],
-      "@introspection-ai/mcp-fakes/testing": ["./src/testing.ts"]
+      "@introspection-ai/recipe-fakes-mcp": ["./src/index.ts"],
+      "@introspection-ai/recipe-fakes-mcp/checks": ["./src/checks.ts"],
+      "@introspection-ai/recipe-fakes-mcp/verify": ["./src/verify.ts"],
+      "@introspection-ai/recipe-fakes-mcp/answers": ["./src/answers.ts"],
+      "@introspection-ai/recipe-fakes-mcp/testing": ["./src/testing.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

@@ -1,5 +1,7 @@
 # Changelog
 
+Renamed from `@introspection-ai/mcp-fakes` to `@introspection-ai/recipe-fakes-mcp` when the package moved from introspection-cli to this repository. Releases up to 0.5.0 below were published as `@introspection-ai/mcp-fakes`, and their links point at introspection-cli.
+
 ## [0.5.0](https://github.com/introspection-org/introspection-cli/compare/mcp-fakes-v0.4.0...mcp-fakes-v0.5.0) (2026-10-29)
 
 

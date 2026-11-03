@@ -1,4 +1,4 @@
-# @introspection-ai/mcp-fakes
+# @introspection-ai/recipe-fakes-mcp
 
 The host for a Recipe's MCP fakes. A fake stands in for an MCP server the
 Recipe declares, during an eval run: it serves the tools the server's captured
@@ -19,7 +19,7 @@ server id the Recipe declares:
 
 ```text
 fakes/
-  package.json            # depends on @introspection-ai/mcp-fakes
+  package.json            # depends on @introspection-ai/recipe-fakes-mcp
   package-lock.json       # what the sidecar image installs with npm ci
   Dockerfile              # the Harbor sidecar's image (below)
   mcp/
@@ -86,7 +86,7 @@ export const answers = {
 };
 
 // contract.ts
-import { contractOf } from '@introspection-ai/mcp-fakes';
+import { contractOf } from '@introspection-ai/recipe-fakes-mcp';
 import { answers } from './answers.ts';
 import tools from './tools.ts';
 
@@ -125,7 +125,7 @@ entry and types the callback's arguments, and `answer(name, value)`, which
 answers in the tool's declared format, its value typed by the answer's schema:
 
 ```ts
-import { type McpServer, notImplemented, text, toolsOf } from '@introspection-ai/mcp-fakes';
+import { type McpServer, notImplemented, text, toolsOf } from '@introspection-ai/recipe-fakes-mcp';
 import { contract } from './contract.ts';
 import type { State } from './entities.ts';
 
@@ -174,7 +174,7 @@ export function register(server: McpServer, state: State) {
 
 ## Reading answers
 
-`@introspection-ai/mcp-fakes/answers` reads a successful answer back: decoded
+`@introspection-ai/recipe-fakes-mcp/answers` reads a successful answer back: decoded
 by its format and validated against its schema with TypeBox's compiled
 validator. A Recipe's contract tests check every answer with it, and its eval
 checks read the agent's tool results with it.
@@ -205,7 +205,7 @@ must be <= 50`).
 ## Starting the fakes
 
 ```ts
-import { startServices } from '@introspection-ai/mcp-fakes';
+import { startServices } from '@introspection-ai/recipe-fakes-mcp';
 import { fakes } from './mcp/index.ts';
 import { world } from './scenarios/index.ts';
 
@@ -307,14 +307,14 @@ introspection local --agent agent --scenario quiet --keep-state -p 'What did you
 ## In a vitest eval
 
 A Recipe's vitest eval starts its fakes itself, through the hooks of
-`@introspection-ai/vitest-evals`' `createRecipeHarness`: `beforeRun` starts a
+`@introspection-ai/recipe-evals-vitest`' `createRecipeHarness`: `beforeRun` starts a
 fresh world for each Pi session and binds it, and `collectArtifacts`, which
 runs after every turn, including a failed one, records each fake's state:
 
 ```ts
 // evals/vitest/lib/harness.ts
-import { type Services, startServices } from '@introspection-ai/mcp-fakes';
-import { createRecipeHarness, type RecipeEvalInput } from '@introspection-ai/vitest-evals';
+import { type Services, startServices } from '@introspection-ai/recipe-fakes-mcp';
+import { createRecipeHarness, type RecipeEvalInput } from '@introspection-ai/recipe-evals-vitest';
 import { fakes } from '../../../fakes/mcp/index.ts';
 import { type World, world } from '../../../fakes/scenarios/index.ts';
 
@@ -346,13 +346,13 @@ What the agent called is in the run itself (vitest-evals'
 
 ## Checking a run
 
-`@introspection-ai/mcp-fakes/verify` holds the two checks a Recipe's cases
+`@introspection-ai/recipe-fakes-mcp/verify` holds the two checks a Recipe's cases
 share. It imports only Node built-ins, not the MCP SDK or a test
 runner, so a judge or a `node --test` file can import it:
 
 ```ts
 import { fileURLToPath } from 'node:url';
-import { changedEntities, type FakeStates, loadManifests, writeAttempts } from '@introspection-ai/mcp-fakes/verify';
+import { changedEntities, type FakeStates, loadManifests, writeAttempts } from '@introspection-ai/recipe-fakes-mcp/verify';
 import { toolCalls } from 'vitest-evals';
 
 const manifests = loadManifests(fileURLToPath(new URL('../../../fakes/mcp', import.meta.url)));
@@ -450,7 +450,7 @@ fakes with the runner's `test`, `node:test`'s or vitest's:
 ```js
 // fakes/tests/fakes.test.js
 import { test } from 'node:test';
-import { checkRecipeFakes } from '@introspection-ai/mcp-fakes/checks';
+import { checkRecipeFakes } from '@introspection-ai/recipe-fakes-mcp/checks';
 import { fakes } from '../mcp/index.ts';
 import { SCENARIOS, world } from '../scenarios/index.ts';
 
@@ -516,7 +516,7 @@ the TypeScript fakes as they are. A Recipe does not repeat them.
 
 What only the Recipe knows, its fake's semantics, it tests itself: an empty
 and a missing result, pagination, a read after a write, an injected failure.
-`@introspection-ai/mcp-fakes/testing` calls the fakes with the official MCP
+`@introspection-ai/recipe-fakes-mcp/testing` calls the fakes with the official MCP
 client, `@modelcontextprotocol/client` 2.3.1 (the version of the
 `@modelcontextprotocol/server` this host is built on), an optional peer
 dependency the Recipe's `fakes/` adds as a dev dependency; the host's own
@@ -528,7 +528,7 @@ export const RECORD = new URL('./responses.jsonl', import.meta.url).pathname;
 export const options = { clock: '2026-10-01T09:00:00.000Z', record: RECORD };
 
 // fakes/tests/setup.js: node --test --test-global-setup=tests/setup.js tests/*.test.js
-import { recording } from '@introspection-ai/mcp-fakes/testing';
+import { recording } from '@introspection-ai/recipe-fakes-mcp/testing';
 import { RECORD } from './client.js';
 
 export const { globalSetup, globalTeardown } = recording(RECORD);
@@ -536,7 +536,7 @@ export const { globalSetup, globalTeardown } = recording(RECORD);
 // fakes/tests/notes.test.js
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { call, callTool, withFakes } from '@introspection-ai/mcp-fakes/testing';
+import { call, callTool, withFakes } from '@introspection-ai/recipe-fakes-mcp/testing';
 import { fakes } from '../mcp/index.ts';
 import { world } from '../scenarios/index.ts';
 import { options } from './client.js';

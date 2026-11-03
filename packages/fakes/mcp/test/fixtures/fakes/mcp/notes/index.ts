@@ -1,4 +1,4 @@
-import { observedOf } from "@introspection-ai/mcp-fakes";
+import { observedOf } from "@introspection-ai/recipe-fakes-mcp";
 import manifest from "./manifest.json" with { type: "json" };
 import recorded from "./observed.ts";
 

@@ -538,13 +538,13 @@ export function createRecipeHarness<
   });
 }
 
-/** One fake as its `index.ts` exports it, the part `@introspection-ai/mcp-fakes` serves. */
+/** One fake as its `index.ts` exports it, the part `@introspection-ai/recipe-fakes-mcp` serves. */
 export type RecipeFake = {
   manifest: { server: { name: string; version: string }; tools: Record<string, unknown> };
   register: (server: never, state: never) => void;
 };
 
-/** A Pi session's running fakes: `Services` of `@introspection-ai/mcp-fakes`. */
+/** A Pi session's running fakes: `Services` of `@introspection-ai/recipe-fakes-mcp`. */
 export type RecipeFakeServices<TWorld> = {
   mcpServers: () => RecipeMcpServer[];
   /** Every fake's current state, which its handlers change in place. */
@@ -573,7 +573,7 @@ export type FakesHarnessOptions<
 
 /**
  * A Recipe harness bound to fresh loopback fakes for every Pi session, served by
- * `@introspection-ai/mcp-fakes`. Each run records the fakes' state when the session started and
+ * `@introspection-ai/recipe-fakes-mcp`. Each run records the fakes' state when the session started and
  * after the turn as its `fakeStates` artifact, beside what `collectArtifacts` adds.
  */
 export function fakesHarness<TWorld extends object, TInput extends RecipeEvalInput = RecipeEvalInput>(
@@ -583,7 +583,7 @@ export function fakesHarness<TWorld extends object, TInput extends RecipeEvalInp
   return createRecipeHarness<TInput, RecipeFakeServices<TWorld>>({
     ...harness,
     beforeRun: async ({ input }) => {
-      const { startServices } = await import("@introspection-ai/mcp-fakes");
+      const { startServices } = await import("@introspection-ai/recipe-fakes-mcp");
       const services = await startServices(fakes as Parameters<typeof startServices>[0], {
         world,
         scenario: typeof scenario === "function" ? scenario(input) : scenario,
