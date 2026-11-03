@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "1c6af38382e3cd8d635b910c173d568518b3e1aa",
+  "label": "autorelease: pending-evals",
+  "release-label": "autorelease: tagged-evals",
+  "always-update": true,
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "component-no-space": true,
+  "pull-request-title-pattern": "chore(evals): release ${component} ${version}",
+  "packages": {
+    "packages/evals/vitest": {
+      "release-type": "node",
+      "package-name": "@introspection-ai/vitest-evals",
+      "component": "vitest-evals",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    },
+    "packages/fakes/mcp": {
+      "release-type": "node",
+      "package-name": "@introspection-ai/mcp-fakes",
+      "component": "mcp-fakes",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
+    },
+    "packages/evals/harbor": {
+      "release-type": "python",
+      "package-name": "introspection-harbor",
+      "component": "introspection-harbor",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='introspection-harbor')].version"
+        }
+      ]
+    }
+  },
+  "bump-minor-pre-major": true
+}

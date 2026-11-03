@@ -137,3 +137,94 @@ jobs:
           MCP_CLIENT_ARCH: arm64
 
       - run: test -x vendor/mcp-client/linux-arm64/mcp-client
+
+  vitest-evals:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/evals/vitest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run typecheck
+
+      - run: npm run build
+
+      - run: npm pack --dry-run
+
+  mcp-fakes:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fakes/mcp
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # The tests bundle the package from dist.
+      - run: npm run build
+
+      - run: npm test
+
+      - run: npm pack --dry-run
+
+  harbor:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/evals/harbor
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.21"
+          enable-cache: true
+          cache-dependency-glob: packages/evals/harbor/uv.lock
+
+      - run: uv sync --locked
+
+      - run: uv build
+
+      # Installs the wheel as the CLI does, so a missing entry point or module
+      # fails here rather than in `introspection eval`.
+      - name: Install + import round-trip
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file "$RUNNER_TEMP/harbor-constraints.txt"
+          UV_TOOL_DIR="$RUNNER_TEMP/harbor-tools" UV_TOOL_BIN_DIR="$RUNNER_TEMP/harbor-bin" \
+            uv tool install --force --constraints "$RUNNER_TEMP/harbor-constraints.txt" dist/*.whl
+          "$RUNNER_TEMP/harbor-bin/harbor" --version
+          "$RUNNER_TEMP/harbor-tools/introspection-harbor/bin/python" -c \
+            "from introspection_harbor.agent import IntrospectionRecipeAgent; from introspection_harbor.environment import IntrospectionE2BEnvironment; assert IntrospectionRecipeAgent.name() == 'introspection-recipe'"
+
+      - run: uv run python -m unittest discover -s tests -v
+
+      - name: Test extraction into a root-owned mount
+        env:
+          HARBOR_BOOTSTRAP_DOCKER: "1"
+        run: uv run python -m unittest tests.test_bootstrap_docker.DirectoryTransferAgainstMountedVolumeTest -v
+
+      - run: uv run ruff format --check src tests
+
+      - run: uv run ruff check src tests
+
+      - run: uv run ty check src

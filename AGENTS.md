@@ -88,12 +88,16 @@
   went stale twice in one change.
 - **Where the packages come from.** `@introspection-ai/recipes`,
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/recipe-documents-*`,
-  `@introspection-ai/mcp-client-*` and
-  `introspection-recipe-check` are all published from THIS repository, but on
-  **two release trains**: `release-please-config.json` covers the npm packages
-  and `release-please-checker-config.json` the checker and its Python binding,
-  each with its own manifest and release PR. A change spanning both publishes
-  twice and needs coordinating; it is not atomic.
+  `@introspection-ai/mcp-client-*`,
+  `introspection-recipe-check`, and the eval packages
+  (`@introspection-ai/vitest-evals`, `@introspection-ai/mcp-fakes`,
+  `introspection-harbor`) are all published from THIS repository, but on
+  **three release trains**: `release-please-config.json` covers the npm packages,
+  `release-please-checker-config.json` the checker and its Python binding, and
+  `release-please-evals-config.json` the eval packages, each with its own
+  manifest and release PRs. A change spanning two publishes twice and needs
+  coordinating; it is not atomic. The eval packages are not pnpm workspace
+  members: each keeps its own `package-lock.json` or `uv.lock`.
   `@introspection-ai/cli` comes from `introspection-cli`, the language SDKs
   (`@introspection-sdk/*`) from `introspection-js-sdk`, and `@earendil-works/*`
   (Pi) is third-party.

@@ -15,6 +15,7 @@ on:
           - channel
           - documents
           - checker
+          - evals
         default: all
 
 permissions: {}
@@ -44,6 +45,14 @@ jobs:
       pdf_documents_release_created: ${{ steps.root_release.outputs['packages/documents/pdf--release_created'] }}
       crate_release_created: ${{ steps.checker_release.outputs['packages/recipe-check--release_created'] }}
       python_release_created: ${{ steps.checker_release.outputs['packages/recipe-check-python--release_created'] }}
+      vitest_evals_release_created: ${{ steps.evals_release.outputs['packages/evals/vitest--release_created'] }}
+      mcp_fakes_release_created: ${{ steps.evals_release.outputs['packages/fakes/mcp--release_created'] }}
+      harbor_release_created: ${{ steps.evals_release.outputs['packages/evals/harbor--release_created'] }}
+      # A train with separate release PRs can tag each package at a different
+      # commit, so each publishes the commit release-please tagged.
+      vitest_evals_release_sha: ${{ steps.evals_release.outputs['packages/evals/vitest--sha'] }}
+      mcp_fakes_release_sha: ${{ steps.evals_release.outputs['packages/fakes/mcp--sha'] }}
+      harbor_release_sha: ${{ steps.evals_release.outputs['packages/evals/harbor--sha'] }}
     steps:
       # Each train owns a different manifest. Concurrent release PRs therefore
       # never edit the same version-state file.
@@ -60,6 +69,13 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-checker-config.json
           manifest-file: .release-please-checker-manifest.json
+
+      - uses: googleapis/release-please-action@v5
+        id: evals_release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-evals-config.json
+          manifest-file: .release-please-evals-manifest.json
 
       # A grouped release PR title must contain the root version. Without it,
       # release-please can merge the manifest update without creating tags or
@@ -105,6 +121,27 @@ jobs:
           )"
           if [[ -n "$stale_prs" ]]; then
             echo "Merged checker release PRs remain untagged:" >&2
+            echo "$stale_prs" >&2
+            exit 1
+          fi
+
+      - name: Verify evals release state
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          stale_prs="$(
+            gh api --paginate --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+              -f state=closed \
+              -f per_page=100 \
+              --jq '.[]
+                | select(.merged_at != null)
+                | select(any(.labels[]; .name == "autorelease: pending-evals"))
+                | "#\(.number) \(.title)"'
+          )"
+          if [[ -n "$stale_prs" ]]; then
+            echo "Merged evals release PRs remain untagged:" >&2
             echo "$stale_prs" >&2
             exit 1
           fi
@@ -463,4 +500,114 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist
+          skip-existing: true
+
+  # The eval packages each keep their own npm lockfile, so they publish with
+  # npm from their own directory rather than through the pnpm workspace.
+  publish-vitest-evals:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.vitest_evals_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'evals'))) }}
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: npm-publish-vitest-evals
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: packages/evals/vitest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.vitest_evals_release_sha || github.sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci && npm test && npm run build
+
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec="$(node -p 'const p = require("./package.json"); p.name + "@" + p.version')"
+          if npm view "$spec" version >/dev/null 2>&1; then
+            echo "$spec is already published"
+          else
+            npm publish --access public
+          fi
+
+  publish-mcp-fakes:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.mcp_fakes_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'evals'))) }}
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: npm-publish-mcp-fakes
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: packages/fakes/mcp
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.mcp_fakes_release_sha || github.sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci && npm run build && npm test
+
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec="$(node -p 'const p = require("./package.json"); p.name + "@" + p.version')"
+          if npm view "$spec" version >/dev/null 2>&1; then
+            echo "$spec is already published"
+          else
+            npm publish --access public
+          fi
+
+  publish-harbor:
+    needs: release-please
+    if: ${{ always() && (needs.release-please.outputs.harbor_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'evals'))) }}
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: pypi-publish-harbor
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: packages/evals/harbor
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.harbor_release_sha || github.sha }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.21"
+
+      - run: uv sync --locked && uv build
+
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+        with:
+          packages-dir: packages/evals/harbor/dist
           skip-existing: true
