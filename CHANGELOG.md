@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.39.0](https://github.com/introspection-org/recipes/compare/v0.38.0...v0.39.0) (2026-11-03)
+
+
+### Features
+
+* prepare pi.runtime.python for Recipes and their packages ([#393](https://github.com/introspection-org/recipes/issues/393)) ([de35a67](https://github.com/introspection-org/recipes/commit/de35a676407565090ab95d96fffd2cb8a855f5ce))
+
+
+### Bug Fixes
+
+* **documents:** require Recipes 0.38.0 for docx profiles, and export the pdf adapter's package.json ([#391](https://github.com/introspection-org/recipes/issues/391)) ([5852182](https://github.com/introspection-org/recipes/commit/58521826989410af39fb47f9bf34b1385ca7b9bb))
+* **pi:** a launch for another Recipe doesn't inherit the parent's agent name ([#395](https://github.com/introspection-org/recipes/issues/395)) ([683f188](https://github.com/introspection-org/recipes/commit/683f188347c4bb11862bafa5f07c8584e36a4612))
+
 ## [0.38.0](https://github.com/introspection-org/recipes/compare/v0.37.0...v0.38.0) (2026-11-03)
 
 
