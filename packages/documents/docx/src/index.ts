@@ -83,10 +83,17 @@ export class DocxDocumentAdapter implements DocumentAdapter {
  * tools: [documents]
  * ```
  */
+/**
+ * Contract redlining in US English: how to plan a first markup and answer the
+ * other side's redline. A Recipe selects it with `"profile": "legal-redlining-en-US"`.
+ */
+export const LEGAL_REDLINING_EN_US = fileURLToPath(new URL("../profiles/legal-redlining-en-us/SKILL.md", import.meta.url));
+
 export const docxDocumentFormatModule = createDocumentFormatModule({
   format: "docx",
   extensions: [".docx"],
   capabilities: DOCX_DOCUMENT_CAPABILITIES,
+  profiles: { "legal-redlining-en-US": LEGAL_REDLINING_EN_US },
   createAdapter: ({ env }) => new DocxDocumentAdapter(env),
 });
 

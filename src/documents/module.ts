@@ -1,4 +1,6 @@
 
+import { fileURLToPath } from "node:url";
+
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import { loadRecipeModule } from "../recipe/extensions.js";
@@ -10,7 +12,11 @@ import {
   registerDocumentTools,
   type DocumentCommand,
 } from "./tools.js";
+import { resolveDocumentProfile } from "./profile.js";
 import type { DocumentAdapter, DocumentCapabilities } from "./types.js";
+
+/** The core `documents` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
+export const DOCUMENTS_SKILL = fileURLToPath(new URL("../../documents/SKILL.md", import.meta.url));
 
 /** What a format package exports as its default: transport plus a capability descriptor, no schemas. */
 export interface RecipeDocumentFormatModule {
@@ -19,6 +25,8 @@ export interface RecipeDocumentFormatModule {
   readonly extensions: readonly string[];
   /** Static, so the loader can build the tool before any session exists. */
   readonly capabilities: DocumentCapabilities;
+  /** Profiles this format ships: name to the absolute path of its SKILL.md (see profile.ts). */
+  readonly profiles?: Readonly<Record<string, string>>;
   createAdapter(options: { env: NodeJS.ProcessEnv; cwd: string }): DocumentAdapter;
 }
 
@@ -26,6 +34,8 @@ export interface DocumentFormatModuleOptions {
   format: string;
   extensions: readonly string[];
   capabilities: DocumentCapabilities;
+  /** Profiles shipped with the format: name to the absolute path of its SKILL.md. */
+  profiles?: Readonly<Record<string, string>>;
   createAdapter(options: { env: NodeJS.ProcessEnv; cwd: string }): DocumentAdapter;
 }
 
@@ -47,6 +57,7 @@ export function createDocumentFormatModule(options: DocumentFormatModuleOptions)
     format: options.format,
     extensions: options.extensions.map((extension) => extension.toLowerCase()),
     capabilities: options.capabilities,
+    profiles: { ...options.profiles },
     createAdapter(createOptions) {
       const adapter = options.createAdapter(createOptions);
       if (adapter.format !== options.format) {
@@ -81,13 +92,17 @@ function parseFormatModule(value: unknown, declaration: RecipePackageDocument): 
 export interface LoadedRecipeDocuments {
   extension?: { owner: string; factory: ExtensionFactory };
   toolNames: string[];
+  /** The core `documents` skill, then each declared profile's skill, offered beside the tool. */
+  skillPaths?: string[];
 }
 
 const knownCommands = new Set<string>(DOCUMENT_COMMANDS);
 
 /**
- * Load every `pi.documents` format package and, when the agent selects
- * `documents`, one extension registering the shared tool.
+ * Load every `pi.documents` format package and the profile each declaration
+ * names (only those) and, when the agent selects `documents`, one extension
+ * registering the shared tool and offering the core `documents` skill with
+ * each profile's hints beside it.
  *
  * Each declaration's `commands` allowlist narrows what that format may do;
  * the tool exposes the union of what the formats allow.
@@ -117,13 +132,22 @@ export async function loadRecipeDocuments(
           throw new Error(`Document format '${declaration.format}' does not support command: ${command}`);
         }
       }
-      return { declaration, module };
+      const profile =
+        declaration.profile === undefined
+          ? undefined
+          : resolveDocumentProfile(declaration.profile, { format: declaration.format, shipped: module.profiles, recipeDir: options.recipeDir });
+      return { declaration, module, profile };
     }),
   );
   const enabled = modules.filter(({ declaration }) => declaration.commands?.length !== 0);
   if (!agentTools.includes("documents") || enabled.length === 0) return { toolNames: [] };
+  const skillPaths = [DOCUMENTS_SKILL];
+  for (const { profile } of enabled) {
+    if (profile && !skillPaths.includes(profile)) skillPaths.push(profile);
+  }
   return {
     toolNames: ["documents"],
+    skillPaths,
     extension: {
       owner: `<documents:${enabled.map(({ declaration }) => declaration.format).join(",")}>`,
       factory: (pi) => {
@@ -148,6 +172,7 @@ export async function loadRecipeDocuments(
           });
         });
         registerDocumentTools(pi, adapters, { cwd });
+        pi.on("resources_discover", () => ({ skillPaths }));
       },
     },
   };
