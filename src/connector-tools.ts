@@ -54,6 +54,8 @@ export interface RecipeConnectorModule {
 export interface LoadedRecipeConnectors {
   extensions: RecipeConnectorExtension[];
   loadout: RecipeConnectorToolLoadout;
+  /** Skills the `documents` tool offers: its core skill and the selected profiles. */
+  skillPaths: string[];
 }
 
 function connectorModuleError(
@@ -190,6 +192,7 @@ export async function loadRecipeConnectors(
     throw new Error("Recipe connector packages register duplicate tool names");
   }
   return {
+    skillPaths: documents.skillPaths ?? [],
     extensions: [
       ...loaded.map((connector) => connector.extension),
       ...(documents.extension ? [documents.extension] : []),

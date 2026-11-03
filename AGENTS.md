@@ -106,6 +106,18 @@
   `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
   that file is missing.
 
+## Recipe isolation
+
+- **A Recipe run sees only the Recipe's skills.** That means its own, its
+  dependency and peer packages' `pi.skills`, and the `documents` tool's core
+  skill and profile, never a skill Pi discovered elsewhere (an installed Pi
+  package, user or project skills, `--skill`). Pi still fills its resource
+  loader, and an extension cannot replace that, so `src/pi-extension.ts`
+  rebuilds the prompt's skills (`before_agent_start`) and `/skill:` commands
+  (`input`) from the resolved paths. `src/session.ts` filters the loader with
+  `skillsOverride`. Any new source of Recipe skills must join both, and
+  `test/recipe-skill-isolation.test.ts` must cover it.
+
 ## Docs regions
 
 - **A docs region (`#region docs:…` under `examples/docs/`) shows every helper

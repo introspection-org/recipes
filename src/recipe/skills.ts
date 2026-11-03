@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { assertRecipePathContained, type RecipeSkillResource } from "./package.js";
 
@@ -94,4 +94,27 @@ export function resolveAgentSkillPaths(
     .filter((skill) => selected.has(skill.name))
     .map((skill) => skill.path)
     .sort();
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * Match a skill file against the skills a Recipe run may offer. Each path is
+ * a `SKILL.md` or a folder of skills; a skill matches when its file is one of
+ * them or lies inside one, compared by real path.
+ */
+export function recipeSkillMatcher(
+  paths: readonly string[]
+): (filePath: string) => boolean {
+  const roots = paths.map(canonicalPath);
+  return (filePath) => {
+    const file = canonicalPath(filePath);
+    return roots.some((root) => file === root || file.startsWith(root.endsWith(sep) ? root : `${root}${sep}`));
+  };
 }
