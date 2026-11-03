@@ -44,7 +44,7 @@ platform provides it. To pin a version, list the package in `dependencies`,
 and the Recipe's copy wins:
 
 ```json
-{ "dependencies": { "@introspection-ai/recipe-documents-docx": ">=0.3.0" } }
+{ "dependencies": { "@introspection-ai/recipe-documents-docx": "0.4.0" } }
 ```
 
 Any other format must be declared, in `dependencies` (the

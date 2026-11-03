@@ -18,18 +18,14 @@ it, and the Recipe's copy wins.
 
 To pin it:
 
-```bash
-pnpm add @introspection-ai/recipe-channel-slack
-```
-
-Then replace the caret with an open lower bound: a caret on a `0.x` version
-pins the MINOR, so `^0.6.0` would strand the Recipe on the adapter's next
-release.
+Recipes installs this package alongside itself, so a Recipe declares it as a
+peer (the platform provides it), or omits it. List it in `dependencies` with
+an exact version only to pin one.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.6.0"
+  "peerDependencies": {
+    "@introspection-ai/recipe-channel-slack": ">=0.7.0"
   },
   "pi": {
     "channels": [

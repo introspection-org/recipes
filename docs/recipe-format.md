@@ -208,12 +208,15 @@ alongside itself, as its `optionalDependencies`, so installing
 puts them in the same `node_modules`. They depend on nothing of Recipes at
 run time, only its types, so there is no cycle back to it. A Recipe may
 declare one as a peer, or omit it entirely, and the copy beside the running
-Recipes is used. A Recipe that lists the
-package in its `dependencies` **pins** it, and its own copy wins. So a
-redlining Recipe can declare only `"pi": { "documents": [{ "format": "docx",
-"profile": "legal-redlining-en-US" }] }` and run on the platform's docx
-package, or add `"@introspection-ai/recipe-documents-docx": ">=0.3.0"` to
-`dependencies` to pin the version it was tested with. Whichever copy loads
+Recipes is used. **Declare them as peers by default** (or omit them), so a
+Recipe runs on the platform's copy and never brings a second one. A Recipe
+that needs one exact version lists it in `dependencies` with that version,
+and its own copy wins. So a redlining Recipe declares
+`"peerDependencies": { "@introspection-ai/recipe-documents-docx": ">=0.4.0" }`
+with `"pi": { "documents": [{ "format": "docx", "profile":
+"legal-redlining-en-US" }] }`, and only if it must stay on the version it was
+tested with, adds `"@introspection-ai/recipe-documents-docx": "0.4.0"` to
+`dependencies` instead. Whichever copy loads
 must implement the module contract the running Recipes implements (its
 `apiVersion`), or the Recipe fails to load, naming the package, both versions
 and the fix. A third-party package that declares a Recipes peer range is
