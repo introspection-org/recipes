@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-documents-pdf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PDF format for the Introspection Recipes documents tool: read and render pages.",
   "license": "Apache-2.0",
   "type": "module",
@@ -34,7 +34,10 @@
         "project": "python",
         "lockfile": "python/uv.lock",
         "version": ">=3.12,<3.15",
-        "imports": ["pypdfium2", "PIL"]
+        "imports": [
+          "pypdfium2",
+          "PIL"
+        ]
       }
     }
   },
