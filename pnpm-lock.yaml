@@ -23,6 +23,9 @@ importers:
       minimatch:
         specifier: ^10.2.6
         version: 10.2.6
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       yaml:
         specifier: ^2.9.0
         version: 2.9.1
@@ -42,6 +45,9 @@ importers:
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
+      '@types/semver':
+        specifier: ^7.8.0
+        version: 7.8.0
       esbuild:
         specifier: ^0.28.1
         version: 0.28.2
@@ -54,6 +60,16 @@ importers:
       vitest:
         specifier: ^5.0.1
         version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+    optionalDependencies:
+      '@introspection-ai/recipe-channel-slack':
+        specifier: workspace:>=0.6.0
+        version: link:packages/channels/slack
+      '@introspection-ai/recipe-documents-docx':
+        specifier: workspace:>=0.3.0
+        version: link:packages/documents/docx
+      '@introspection-ai/recipe-documents-pdf':
+        specifier: workspace:>=0.2.0
+        version: link:packages/documents/pdf
 
   examples/docs:
     devDependencies:
@@ -114,11 +130,10 @@ importers:
         version: 7.0.2
 
   packages/documents/docx:
-    dependencies:
-      '@introspection-ai/recipes':
-        specifier: workspace:>=0.39.0
-        version: link:../../..
     devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:^
+        version: link:../../..
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
@@ -127,11 +142,10 @@ importers:
         version: 7.0.2
 
   packages/documents/pdf:
-    dependencies:
-      '@introspection-ai/recipes':
-        specifier: workspace:>=0.39.0
-        version: link:../../..
     devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:^
+        version: link:../../..
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
@@ -952,6 +966,9 @@ packages:
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -3006,6 +3023,8 @@ snapshots:
       undici-types: 8.9.0
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.8.0': {}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true

@@ -31,8 +31,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
-    "typebox": "*",
-    "@introspection-ai/recipes": "workspace:>=0.26.0 <1.0.0"
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {

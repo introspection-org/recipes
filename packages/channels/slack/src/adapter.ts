@@ -1,20 +1,19 @@
-import {
-  resolveChannelConfig,
-  type ChannelConfig,
-  type ChannelConnectorSession,
-  type ChannelEnvironment,
-  type ChannelAdapter,
-  type ChannelAdapterContext,
-  type ChannelCapabilities,
-  type ChannelListEntry,
-  type ChannelLocalFile,
-  type ChannelMessage,
-  type ChannelPostResult,
-  type ChannelReactionAction,
-  type ChannelReadPage,
-  type ChannelTarget,
-  type FileRef,
-  type MessageRef,
+import type {
+  ChannelConfig,
+  ChannelConnectorSession,
+  ChannelEnvironment,
+  ChannelAdapter,
+  ChannelAdapterContext,
+  ChannelCapabilities,
+  ChannelListEntry,
+  ChannelLocalFile,
+  ChannelMessage,
+  ChannelPostResult,
+  ChannelReactionAction,
+  ChannelReadPage,
+  ChannelTarget,
+  FileRef,
+  MessageRef,
 } from "@introspection-ai/recipes/channels";
 
 import { SlackApiError, type SlackApiResult } from "./client.js";
@@ -514,6 +513,12 @@ export function slackChannelTarget(config: ChannelConfig | null): ChannelTarget 
   };
 }
 
+/**
+ * One Slack credential session. `config` is the task's channel destination,
+ * which the host resolves and passes (`resolveChannelConfig` from
+ * `@introspection-ai/recipes/channels`); without it, the session has no
+ * default conversation.
+ */
 export function createSlackChannelSession(options: {
   config?: ChannelConfig | null;
   env?: ChannelEnvironment;
@@ -521,10 +526,7 @@ export function createSlackChannelSession(options: {
   session?: SlackFileSession;
 } = {}): ChannelConnectorSession {
   const env = options.env ?? process.env;
-  const config =
-    options.config === undefined
-      ? resolveChannelConfig(env)
-      : options.config;
+  const config = options.config ?? null;
   const session =
     options.session ??
     new SlackFileSession({ env, cwd: options.cwd ?? process.cwd() });

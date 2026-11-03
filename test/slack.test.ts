@@ -182,12 +182,11 @@ function response(options: {
 
 describe("channel configuration", () => {
   it("resolves the task destination for a Slack session", () => {
-    const session = createSlackChannelSession({
-      env: {
-        INTROSPECTION_TASK_CHANNEL_PROVIDER: "slack",
-        INTROSPECTION_TASK_CHANNEL_ID: "C_NEW",
-      },
-    });
+    const env = {
+      INTROSPECTION_TASK_CHANNEL_PROVIDER: "slack",
+      INTROSPECTION_TASK_CHANNEL_ID: "C_NEW",
+    };
+    const session = createSlackChannelSession({ env, config: resolveChannelConfig(env) });
     const target =
       typeof session.target === "function" ? session.target() : session.target;
     expect(target).toEqual({ provider: "slack", conversation: "C_NEW", thread: null });

@@ -1,20 +1,28 @@
 import { fileURLToPath } from "node:url";
 
-import {
-  createDocumentFormatModule,
-  runDocumentHelper,
-  type DocumentAdapter,
-  type DocumentAdapterContext,
-  type DocumentCapabilities,
-  type DocumentReadInput,
-  type DocumentRenderInput,
-  type DocumentResult,
+// Types only: the host passes what this package runs (`runHelper`) into
+// `createAdapter`, so it has no run-time dependency on @introspection-ai/recipes.
+import type {
+  DocumentAdapter,
+  DocumentAdapterContext,
+  DocumentCapabilities,
+  DocumentHelperRunner,
+  DocumentReadInput,
+  DocumentRenderInput,
+  DocumentResult,
+  RecipeDocumentFormatModule,
 } from "@introspection-ai/recipes/documents";
 
-export {
-  documentPythonExecutable as pythonExecutable,
-  runDocumentHelper as runHelper,
-} from "@introspection-ai/recipes/documents";
+/** What a `PdfDocumentAdapter` runs with. */
+export interface PdfDocumentAdapterOptions {
+  /** The host's `runDocumentHelper`, from `createAdapter`. */
+  runHelper: DocumentHelperRunner;
+  env?: NodeJS.ProcessEnv;
+  /** The helper script. Default `PDF_HELPER`. */
+  script?: string;
+  /** The interpreter of this package's environment, which the host prepares from its `pi.runtime.python`. */
+  python?: string;
+}
 
 export const PDF_HELPER = fileURLToPath(new URL("../python/pdf.py", import.meta.url));
 
@@ -38,31 +46,30 @@ export class PdfDocumentAdapter implements DocumentAdapter {
   readonly extensions = [".pdf"] as const;
   readonly capabilities = PDF_DOCUMENT_CAPABILITIES;
 
-  /**
-   * `python` is the interpreter of this package's environment, which the host
-   * prepares from its `pi.runtime.python`; see `pythonExecutable` for the order.
-   */
-  constructor(
-    private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly script = PDF_HELPER,
-    private readonly python?: string,
-  ) {}
+  constructor(private readonly options: PdfDocumentAdapterOptions) {}
+
+  private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
+    const { runHelper, env = process.env, script = PDF_HELPER, python } = this.options;
+    return runHelper(script, { command, ...input }, { env, cwd: ctx.cwd, python, signal: ctx.signal });
+  }
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput): Promise<DocumentResult> {
-    return runDocumentHelper(this.script, { command: "read", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    return this.call(ctx, "read", input);
   }
 
   render(ctx: DocumentAdapterContext, input: DocumentRenderInput): Promise<DocumentResult> {
-    return runDocumentHelper(this.script, { command: "render", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    return this.call(ctx, "render", input);
   }
 }
 
 /** PDF as a document format: `{ "pi": { "documents": [{ "format": "pdf" }] } }`. */
-export const pdfDocumentFormatModule = createDocumentFormatModule({
+export const pdfDocumentFormatModule: RecipeDocumentFormatModule = {
+  kind: "documents",
+  apiVersion: 1,
   format: "pdf",
   extensions: [".pdf"],
   capabilities: PDF_DOCUMENT_CAPABILITIES,
-  createAdapter: ({ env, python }) => new PdfDocumentAdapter(env, PDF_HELPER, python),
-});
+  createAdapter: ({ env, python, runHelper }) => new PdfDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
+};
 
 export default pdfDocumentFormatModule;

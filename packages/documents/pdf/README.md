@@ -7,6 +7,12 @@ The PDF format for the Recipes [`documents` tool](../../../docs/documents.md): `
 { "pi": { "documents": [{ "format": "pdf" }] } }
 ```
 
+Recipes installs this package alongside itself (an `optionalDependencies` entry), so a
+Recipe that declares the format without listing the package uses that copy, with its Python
+environment. To pin a version, add `"@introspection-ai/recipe-documents-pdf": ">=0.2.0"` to the
+Recipe's `dependencies`, and the Recipe's copy wins. Listing it in `peerDependencies`
+instead says the platform provides it.
+
 ## Reading paths
 
 Every `read` result starts with the path it used:
