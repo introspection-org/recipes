@@ -236,11 +236,8 @@ engine (MIT, Crosby Legal; the licence ships beside the helpers).
 `render` is absent for Word: page images need a layout engine such as
 LibreOffice, which the runtime image does not carry. Table structure, fields,
 content controls, headers and footers, footnotes and formatting changes are
-not commands. For those, the package ships the `docx` skill: Paper's public
-`docx` skill and paper-docx 0.2.0 API reference, vendored at a pinned commit
-with its MIT notice and with its install instructions replaced, offered to
-any agent that selects `documents` with the docx format. It is a fallback
-reference, not the primary path.
+not commands. The core `documents` skill tells the agent to say so in its
+reply rather than work around the tool with a script or by editing the XML.
 
 ### PDF: text, tables and page images
 
@@ -298,8 +295,9 @@ recommend the extra; a Recipe that only reads briefs can leave it out.
 The Word and PDF helpers are small Python programs run with the Recipe's own
 `pi.runtime.python` environment (`VIRTUAL_ENV`, or `RECIPE_DOCUMENTS_PYTHON`
 to override). That environment must provide paper-docx for Word and
-pypdfium2 and pillow for PDF, plus pdfplumber for PDF tables. A package-level Python environment, so a Recipe
-need not declare these itself, is a follow-up; until then a Recipe declaring
+pypdfium2 and pillow for PDF, plus pdfplumber for PDF tables. A package-level
+Python environment, so a Recipe need not declare these itself, is a follow-up;
+until then a Recipe declaring
 `pi.documents` must lock them in its own `python/uv.lock`. The packages'
 `python/uv.lock` files pin the versions their tests run on.
 
@@ -334,9 +332,9 @@ export default createDocumentFormatModule({
 
 Registration checks that the adapter implements every method its
 capabilities claim, and that the adapter returns the declared capabilities.
-A format package ships code only. A skill that teaches a format library, such
-as Paper's `docx` skill, is a dependency of the Recipe that uses it, installed
-when the runtime is baked.
+A format package ships its code and its profiles (see Skills and profiles).
+A skill that teaches a format library, such as Paper's `docx` skill, is a
+dependency of the Recipe that uses it, installed when the runtime is baked.
 
 ## Format pages
 
