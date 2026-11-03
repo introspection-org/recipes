@@ -22,7 +22,7 @@ from introspection_harbor.verifier import (
     tool_calls,
 )
 
-# The cases @introspection-ai/mcp-fakes' tests share, Pi's tool names among them.
+# The cases @introspection-ai/recipe-fakes-mcp' tests share, Pi's tool names among them.
 CASES = json.loads(
     (Path(__file__).parents[3] / "fakes" / "testdata" / "cases.json").read_text()
 )

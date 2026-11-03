@@ -1,6 +1,6 @@
 """A Recipe's MCP fakes' answers, read and checked, for a task's verifier.
 
-The Python twin of ``@introspection-ai/mcp-fakes/answers``. A tool answers in
+The Python twin of ``@introspection-ai/recipe-fakes-mcp/answers``. A tool answers in
 one of the formats ``introspection bindings mcp observe`` names (``json``,
 ``toon``, ``prefixed_json``: JSON between fixed text, and ``text``), and its
 answer's schema is JSON Schema. ``mcp-fakes serve`` writes each fake's answers

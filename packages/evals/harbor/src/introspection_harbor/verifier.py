@@ -117,7 +117,7 @@ def server_calls(
 
     Each is ``name``, ``args``, ``isError``, ``response`` (the result as
     text) and, when the call has it, ``structured``: the keys of
-    ``serverCalls`` in ``@introspection-ai/vitest-evals``, which
+    ``serverCalls`` in ``@introspection-ai/recipe-evals-vitest``, which
     ``introspection_harbor.answers.read_result`` reads.
     """
 

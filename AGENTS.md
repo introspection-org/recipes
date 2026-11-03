@@ -90,7 +90,7 @@
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/recipe-documents-*`,
   `@introspection-ai/mcp-client-*`,
   `introspection-recipe-check`, and the eval packages
-  (`@introspection-ai/vitest-evals`, `@introspection-ai/mcp-fakes`,
+  (`@introspection-ai/recipe-evals-vitest`, `@introspection-ai/recipe-fakes-mcp`,
   `introspection-harbor`) are all published from THIS repository, but on
   **three release trains**: `release-please-config.json` covers the npm packages,
   `release-please-checker-config.json` the checker and its Python binding, and

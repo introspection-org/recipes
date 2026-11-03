@@ -1,5 +1,5 @@
 {
-  "comment": "Shared by @introspection-ai/mcp-fakes' test/answers.test.ts and introspection-harbor's tests/test_answers.py, so both read a fake's answers alike. A case without a value expects the read to fail; paths are the paths of its issues. A readResult answer with structured: true is of a tool that states an outputSchema, as mcp-fakes serve writes answers.json.",
+  "comment": "Shared by @introspection-ai/recipe-fakes-mcp' test/answers.test.ts and introspection-harbor's tests/test_answers.py, so both read a fake's answers alike. A case without a value expects the read to fail; paths are the paths of its issues. A readResult answer with structured: true is of a tool that states an outputSchema, as mcp-fakes serve writes answers.json.",
   "readAnswer": [
     { "name": "a text answer is its text", "answer": { "format": "text" }, "text": "Sent email-1", "value": "Sent email-1" },
     {

@@ -1,5 +1,5 @@
 {
-  "comment": "Shared by @introspection-ai/mcp-fakes' test/verify.test.ts and introspection-harbor's tests/test_fakes.py, so both runners score the fakes' checks alike. The manifests are mcp/<id>/manifest.json beside this file unless a case gives its own; a case with an error expects the check to refuse with it, and a loadManifests directory is relative to this file.",
+  "comment": "Shared by @introspection-ai/recipe-fakes-mcp' test/verify.test.ts and introspection-harbor's tests/test_fakes.py, so both runners score the fakes' checks alike. The manifests are mcp/<id>/manifest.json beside this file unless a case gives its own; a case with an error expects the check to refuse with it, and a loadManifests directory is relative to this file.",
   "stateChanges": [
     {
       "name": "a read changes nothing",

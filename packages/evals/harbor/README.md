@@ -158,7 +158,7 @@ answers from `load_answers` below, each call is named by the tool whose Pi name
 it carries, and a call to no listed tool is left out; without them, the hash
 is stripped, which recovers only a short name Pi did not have to replace
 characters of. Each is `{"name", "args", "isError",
-"response"}`, the keys of `serverCalls` in `@introspection-ai/vitest-evals`,
+"response"}`, the keys of `serverCalls` in `@introspection-ai/recipe-evals-vitest`,
 so a check ports between the two runners unchanged, plus `structured`, the
 result's `structuredContent`, when the call has it. A trajectory carries
 `structuredContent` only where the result's ATIF `extra` holds it as
@@ -171,7 +171,7 @@ Add the package to the verifier's environment, for example
 ### Checking a Recipe's MCP fakes
 
 A Recipe's fakes run in one sidecar of the trial, on
-`@introspection-ai/mcp-fakes`, which serves each fake's state at
+`@introspection-ai/recipe-fakes-mcp`, which serves each fake's state at
 `/<id>/admin/state` and the state it started with at
 `/<id>/admin/initial-state`. `introspection_harbor.fakes` reads them and
 holds the two checks every case of a Recipe may share. Each returns what it
@@ -231,7 +231,7 @@ compares states as JSON, so `false` and `0` differ.
 ### Reading the fakes' answers
 
 `introspection_harbor.answers` reads a tool's successful answer as
-`@introspection-ai/mcp-fakes/answers` does: decoded by its format (`json`,
+`@introspection-ai/recipe-fakes-mcp/answers` does: decoded by its format (`json`,
 `toon`, `prefixed_json`, or `text`) and validated against its JSON Schema.
 `mcp-fakes serve` writes each fake's answers beside its manifest, as
 `mcp/<id>/answers.json` under `MCP_FAKES_MANIFEST_DIR`. TOON is read with
@@ -268,7 +268,7 @@ as an invalid measurement rather than a failed criterion. Both packages' tests
 run the cases in `packages/fakes/testdata/answers.json`, so the two read an
 answer alike.
 
-`@introspection-ai/mcp-fakes/verify` holds the same checks for a vitest eval
+`@introspection-ai/recipe-fakes-mcp/verify` holds the same checks for a vitest eval
 (`changedEntities`, `writeAttempts`), and both packages' tests run the cases in
 this repository's `packages/fakes/testdata/cases.json`, so the two runners
 score a trial alike.

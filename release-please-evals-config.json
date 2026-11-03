@@ -11,23 +11,20 @@
   "packages": {
     "packages/evals/vitest": {
       "release-type": "node",
-      "package-name": "@introspection-ai/vitest-evals",
-      "component": "vitest-evals",
-      "changelog-path": "CHANGELOG.md",
+      "package-name": "@introspection-ai/recipe-evals-vitest",
+      "component": "recipe-evals-vitest",
       "bump-minor-pre-major": true
     },
     "packages/fakes/mcp": {
       "release-type": "node",
-      "package-name": "@introspection-ai/mcp-fakes",
-      "component": "mcp-fakes",
-      "changelog-path": "CHANGELOG.md",
+      "package-name": "@introspection-ai/recipe-fakes-mcp",
+      "component": "recipe-fakes-mcp",
       "bump-minor-pre-major": true
     },
     "packages/evals/harbor": {
       "release-type": "python",
       "package-name": "introspection-harbor",
       "component": "introspection-harbor",
-      "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "extra-files": [
         {

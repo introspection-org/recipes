@@ -19,7 +19,7 @@ from introspection_harbor.fakes import (
     write_attempts,
 )
 
-# The cases @introspection-ai/mcp-fakes' verify tests share, with the manifests they read.
+# The cases @introspection-ai/recipe-fakes-mcp' verify tests share, with the manifests they read.
 FAKES = Path(__file__).parents[3] / "fakes" / "testdata"
 MANIFESTS = load_manifests(FAKES / "mcp")
 
@@ -180,7 +180,7 @@ def _manifests(case: dict) -> dict:
 
 
 class SharedCasesTest(unittest.TestCase):
-    """The cases @introspection-ai/mcp-fakes' verify tests run too, so both runners score alike."""
+    """The cases @introspection-ai/recipe-fakes-mcp' verify tests run too, so both runners score alike."""
 
     def test_load_manifests(self) -> None:
         for case in CASES["loadManifests"]:

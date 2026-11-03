@@ -1,6 +1,6 @@
 """What a Recipe's MCP fakes hold and which writes the agent tried, for a task's verifier.
 
-A trial's fakes run in one sidecar on ``@introspection-ai/mcp-fakes``, which
+A trial's fakes run in one sidecar on ``@introspection-ai/recipe-fakes-mcp``, which
 serves each fake's state at ``/<id>/admin/state`` and the state it started
 with at ``/<id>/admin/initial-state``. Each fake's ``manifest.json`` maps its
 tools to the entities they read and write; the entities some tool writes,
@@ -138,7 +138,7 @@ def state_changes(
     """``<fake>.<entity>`` for every written entity of these fakes that changed in the trial.
 
     Empty when no state changed. Compares as JSON, so ``false`` and ``0``
-    differ; ``changedEntities`` in ``@introspection-ai/mcp-fakes/verify``
+    differ; ``changedEntities`` in ``@introspection-ai/recipe-fakes-mcp/verify``
     computes the same. No manifests raises rather than reports no change.
     """
 
