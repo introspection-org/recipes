@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.13.0...introspection-recipe-check-v0.14.0) (2026-11-03)
+
+
+### Features
+
+* declare where a Recipe's evals live with pi.evals ([#381](https://github.com/introspection-org/recipes/issues/381)) ([13d1b01](https://github.com/introspection-org/recipes/commit/13d1b01ed55429569085babf9617f6c077ce7552))
+* documents tool with docx and pdf adapters ([#382](https://github.com/introspection-org/recipes/issues/382)) ([2f4e49c](https://github.com/introspection-org/recipes/commit/2f4e49c7169314cb71936de4d8735006c2206c44))
+
 ## [0.13.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.12.0...introspection-recipe-check-v0.13.0) (2026-10-29)
 
 
