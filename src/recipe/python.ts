@@ -32,6 +32,7 @@ import { homedir, hostname } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 
 import {
+  installedRecipeDependencies,
   isPythonModuleName,
   readPiPackageManifest,
   validateRecipePythonPackage,
@@ -172,18 +173,6 @@ function readJson(path: string): Record<string, unknown> {
     : {};
 }
 
-/** Direct `dependencies` and `peerDependencies` names, in declaration order. */
-function directDependencyNames(packageJson: Record<string, unknown>): string[] {
-  const names = new Set<string>();
-  for (const key of ["dependencies", "peerDependencies"]) {
-    const block = packageJson[key];
-    if (block && typeof block === "object" && !Array.isArray(block)) {
-      for (const name of Object.keys(block)) names.add(name);
-    }
-  }
-  return [...names];
-}
-
 /** Every `pi.runtime.python` the Recipe and its direct dependencies declare. */
 export function recipePythonDeclarations(recipeDir: string): Declaration[] {
   const root = resolve(recipeDir);
@@ -197,10 +186,10 @@ export function recipePythonDeclarations(recipeDir: string): Declaration[] {
       python: manifest.runtime.python,
     });
   }
-  for (const name of directDependencyNames(readJson(join(root, "package.json")))) {
-    const candidate = join(root, "node_modules", ...name.split("/"));
-    if (!existsSync(join(candidate, "package.json"))) continue;
-    const packageDir = realpathSync(candidate);
+  for (const { name, packageDir } of installedRecipeDependencies(root, [
+    "dependencies",
+    "peerDependencies",
+  ])) {
     const report = validateRecipePythonPackage(packageDir);
     if (!report.valid) {
       throw new RecipePythonError(
@@ -849,7 +838,7 @@ export async function withEnvironmentLock<T>(environmentDir: string, fn: () => P
 /**
  * Find and prepare every `pi.runtime.python` the Recipe at `recipeDir`
  * declares: its own (the shell environment) and each direct `dependencies` or
- * `peerDependencies` entry installed in its `node_modules` (each in an
+ * `peerDependencies` entry Node resolves from the Recipe directory (each in an
  * environment of its own). Dev and transitive dependencies are not read.
  */
 export async function prepareRecipePython(

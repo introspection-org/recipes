@@ -156,5 +156,47 @@
       "package.json": "{\"name\":\"documents-missing-package\",\"pi\":{\"documents\":[{\"format\":\"docx\"}]}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
     }
+  },
+  {
+    "name": "skill from a dependency package",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"with-dependency-skills\",\"dependencies\":{\"@acme/legal-skills\":\">=1.0.0\"},\"pi\":{}}",
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nskills: [review]\n",
+      "node_modules/@acme/legal-skills/package.json": "{\"name\":\"@acme/legal-skills\",\"pi\":{\"skills\":[\"skills\"]}}",
+      "node_modules/@acme/legal-skills/skills/review/SKILL.md": "---\nname: review\ndescription: Review a contract.\n---\n"
+    }
+  },
+  {
+    "name": "skill from a dependency that is not installed",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"with-dependency-skills\",\"dependencies\":{\"@acme/legal-skills\":\">=1.0.0\"},\"pi\":{}}",
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nskills: [review]\n"
+    }
+  },
+  {
+    "name": "skill shipped by the Recipe and a dependency",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"with-dependency-skills\",\"dependencies\":{\"@acme/legal-skills\":\">=1.0.0\"},\"pi\":{}}",
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nskills: [review]\n",
+      "skills/review/SKILL.md": "---\nname: review\ndescription: Review a contract.\n---\n",
+      "node_modules/@acme/legal-skills/package.json": "{\"name\":\"@acme/legal-skills\",\"pi\":{\"skills\":[\"skills\"]}}",
+      "node_modules/@acme/legal-skills/skills/review/SKILL.md": "---\nname: review\ndescription: Review a contract.\n---\n"
+    }
+  },
+  {
+    "name": "dependency pi.skills path with no match",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"with-dependency-skills\",\"dependencies\":{\"@acme/legal-skills\":\">=1.0.0\"},\"pi\":{}}",
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "node_modules/@acme/legal-skills/package.json": "{\"name\":\"@acme/legal-skills\",\"pi\":{\"skills\":[\"missing\"]}}"
+    }
   }
 ]

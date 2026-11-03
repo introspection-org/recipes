@@ -19,12 +19,14 @@ import {
 } from "./agent.js";
 import type { RecipeAgentModelConfig } from "./model.js";
 import type { RecipeAgentSessionConfig } from "./session.js";
-import { resolveAgentSkillPaths } from "./skills.js";
+import { packagedSkills, resolveAgentSkillPaths } from "./skills.js";
 import {
   packageResourcePaths,
   readPiPackageManifest,
+  recipeDependencySkillResources,
   validatePiPackageManifest,
   type PiPackageManifest,
+  type RecipeSkillResource,
 } from "./package.js";
 
 export type { RecipePackageManifest } from "./package.js";
@@ -328,7 +330,7 @@ function buildResolvedRecipeAgent(
   definitions: ReadonlyMap<string, RecipeAgentDefinition>,
   agent: RecipeAgentDefinition,
   recipeSystemPrompt: string | undefined,
-  skillResourcePaths: string[],
+  skillResources: readonly (string | RecipeSkillResource)[],
   promptPaths: string[],
   extensionPaths: string[]
 ): ResolvedRecipeAgent {
@@ -343,22 +345,30 @@ function buildResolvedRecipeAgent(
 
   const skillPaths = resolveAgentSkillPaths(
     recipeDir,
-    skillResourcePaths,
+    skillResources,
     agent.skills
   );
-  for (const skill of agent.skills) {
-    const matches = resolveAgentSkillPaths(recipeDir, skillResourcePaths, [
-      skill,
-    ]);
-    if (matches.length === 0) {
-      throw new RecipeResolutionError(
-        `Recipe agent "${agentName}" references missing packaged skill "${skill}"`
-      );
-    }
-    if (matches.length > 1) {
-      throw new RecipeResolutionError(
-        `Recipe agent "${agentName}" skill "${skill}" resolves to multiple packaged SKILL.md files`
-      );
+  if (agent.skills.length > 0) {
+    const skills = packagedSkills(recipeDir, skillResources);
+    for (const skill of agent.skills) {
+      const matches = skills.filter((candidate) => candidate.name === skill);
+      if (matches.length === 0) {
+        throw new RecipeResolutionError(
+          `Recipe agent "${agentName}" references missing packaged skill "${skill}"`
+        );
+      }
+      if (matches.length > 1) {
+        const sources = matches
+          .map((match) =>
+            match.dependency
+              ? `dependency ${match.dependency} (${match.path})`
+              : `the Recipe (${relative(recipeDir, match.path)})`
+          )
+          .join(", ");
+        throw new RecipeResolutionError(
+          `Recipe agent "${agentName}" skill "${skill}" resolves to multiple packaged SKILL.md files: ${sources}. Give each skill a unique frontmatter name.`
+        );
+      }
     }
   }
 
@@ -428,6 +438,11 @@ export function resolveRecipe(
   }
   const recipeSystemPrompt = loadRecipeSystemPrompt(recipeDir);
   const skillResourcePaths = packageResourcePaths(manifest, "skills");
+  const dependencySkillResources = recipeDependencySkillResources(recipeDir);
+  const skillResources: (string | RecipeSkillResource)[] = [
+    ...skillResourcePaths,
+    ...dependencySkillResources,
+  ];
   const promptPaths = packageResourcePaths(manifest, "prompts");
   const extensionPaths = resolvePackageExtensionPaths(
     recipeDir,
@@ -443,7 +458,7 @@ export function resolveRecipe(
         definitions,
         definition,
         recipeSystemPrompt,
-        skillResourcePaths,
+        skillResources,
         promptPaths,
         extensionPaths
       )
@@ -455,7 +470,10 @@ export function resolveRecipe(
     recipeDir,
     manifest,
     resources: {
-      skills: [...skillResourcePaths],
+      skills: [
+        ...skillResourcePaths,
+        ...dependencySkillResources.map((resource) => resource.path),
+      ],
       prompts: [...promptPaths],
       extensions: [...extensionPaths],
       hasSystemPrompt: recipeSystemPrompt !== undefined,

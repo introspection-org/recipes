@@ -321,6 +321,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             .as_ref()
             .and_then(JsonValue::as_object)
             .and_then(|pi| mcp_tool_policy(pi.get("mcp")));
+        let dependency_skills = resolve_dependency_skills(&package, &mut ctx);
         let agent_paths = resolve_agents(&resources, &ctx);
         resource_counts.insert("agents".to_owned(), agent_paths.len());
         for key in ["extensions", "skills", "prompts"] {
@@ -328,7 +329,13 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
                 resource_counts.insert(key.to_owned(), paths.len());
             }
         }
-        validate_agents(&agent_paths, &resources, mcp_tool_policy.as_ref(), &mut ctx);
+        validate_agents(
+            &agent_paths,
+            &resources,
+            &dependency_skills,
+            mcp_tool_policy.as_ref(),
+            &mut ctx,
+        );
     }
 
     let judge_count = judges::validate_judges(&mut ctx);
@@ -1830,9 +1837,87 @@ fn resolve_agents(
     agents.into_iter().collect()
 }
 
+/// Skills the Recipe's direct `dependencies` declare with `pi.skills`, read
+/// from `node_modules/<name>` in the snapshot.
+#[derive(Debug, Default)]
+struct DependencySkills {
+    /// Resource paths (snapshot-relative) each declaring package resolved to.
+    resources: Vec<String>,
+    /// Roots (`node_modules/<name>`) of the dependencies that declare `pi.skills`.
+    /// A `SKILL.md` directly in one is named `skill` when it has no frontmatter
+    /// name, as the runtime names it, not after the dependency's folder.
+    roots: Vec<String>,
+    /// Direct dependencies whose `package.json` the snapshot does not hold.
+    /// A snapshot usually leaves `node_modules` out, so their skills are unknown.
+    uninstalled: Vec<String>,
+}
+
+const DEPENDENCY_SKILLS_INVALID: &str = "dependency.skills_invalid";
+
+/// Resolve the `pi.skills` of each direct `dependencies` entry installed in
+/// the snapshot's `node_modules`. Peer, dev and transitive dependencies are
+/// not read, and only an explicit `pi.skills` counts: a dependency's `skills/`
+/// folder is not discovered by convention.
+fn resolve_dependency_skills(package: &Package, ctx: &mut CheckContext) -> DependencySkills {
+    let mut found = DependencySkills::default();
+    for name in &package.dependencies {
+        let root = format!("node_modules/{name}");
+        let manifest_path = format!("{root}/package.json");
+        let Some(content) = ctx.content(&manifest_path).map(str::to_owned) else {
+            found.uninstalled.push(name.clone());
+            continue;
+        };
+        let pi_skills = serde_json::from_str::<JsonValue>(&content)
+            .ok()
+            .and_then(|manifest| manifest.get("pi")?.get("skills").cloned());
+        let Some(pi_skills) = pi_skills else {
+            continue;
+        };
+        found.roots.push(root.clone());
+        let Some(patterns) = pi_skills.as_array().and_then(|items| {
+            items
+                .iter()
+                .map(|item| string_value(Some(item)))
+                .collect::<Option<Vec<_>>>()
+        }) else {
+            ctx.error(
+                DEPENDENCY_SKILLS_INVALID,
+                manifest_path,
+                format!("dependency '{name}' package.json#pi.skills must be an array of non-empty strings"),
+                Some("fix the dependency's package.json or remove it from dependencies"),
+            );
+            continue;
+        };
+        for pattern in patterns {
+            if let Err(message) = validate_relative_pattern(&pattern) {
+                ctx.error(
+                    DEPENDENCY_SKILLS_INVALID,
+                    manifest_path.clone(),
+                    format!("dependency '{name}' package.json#pi.skills: {message}"),
+                    Some("skill paths must stay inside the dependency package"),
+                );
+                continue;
+            }
+            let pattern = pattern.trim().trim_start_matches("./");
+            let matches = match_paths(ctx, &format!("{root}/{pattern}"));
+            if matches.is_empty() {
+                ctx.error(
+                    "dependency.skills_unmatched",
+                    manifest_path.clone(),
+                    format!("dependency '{name}' package.json#pi.skills pattern '{pattern}' matched no files"),
+                    Some("every explicit pi.skills path must match; fix or upgrade the dependency"),
+                );
+            }
+            found.resources.extend(matches);
+        }
+    }
+    found
+}
+
 fn validate_agents(
     agent_paths: &[String],
     resources: &HashMap<&'static str, Vec<String>>,
+    dependency_skills: &DependencySkills,
     mcp_tool_policy: Option<&McpToolPolicy>,
     ctx: &mut CheckContext,
 ) {
@@ -1855,13 +1940,14 @@ fn validate_agents(
 
     let mut unique_names: Vec<String> = raw_by_name.keys().cloned().collect();
     unique_names.sort();
-    let skill_names = packaged_skill_names(
-        resources
-            .get("skills")
-            .map(Vec::as_slice)
-            .unwrap_or_default(),
-        ctx,
-    );
+    let skill_resources: Vec<String> = resources
+        .get("skills")
+        .into_iter()
+        .flatten()
+        .chain(&dependency_skills.resources)
+        .cloned()
+        .collect();
+    let skill_names = packaged_skill_names(&skill_resources, &dependency_skills.roots, ctx);
     for name in unique_names {
         validate_agent_inheritance(&name, &raw_by_name, ctx);
         for field in AgentField::REQUIRED {
@@ -1882,7 +1968,13 @@ fn validate_agents(
             }
         }
         if let Some(agent) = raw_by_name.get(&name) {
-            validate_declared_agent_references(agent, &raw_by_name, &skill_names, ctx);
+            validate_declared_agent_references(
+                agent,
+                &raw_by_name,
+                &skill_names,
+                &dependency_skills.uninstalled,
+                ctx,
+            );
         }
         validate_resolved_agent_mcp(&name, &raw_by_name, mcp_tool_policy, ctx);
     }
@@ -3101,6 +3193,7 @@ fn resolved_field_provided(
 
 fn packaged_skill_names(
     resource_paths: &[String],
+    package_roots: &[String],
     ctx: &CheckContext,
 ) -> BTreeMap<String, Vec<String>> {
     let mut skill_files = BTreeSet::new();
@@ -3116,9 +3209,12 @@ fn packaged_skill_names(
     let mut names = BTreeMap::<String, Vec<String>>::new();
     for path in skill_files {
         let name = skill_frontmatter_name(&path, ctx).unwrap_or_else(|| {
-            Path::new(&path)
-                .parent()
-                .and_then(Path::file_name)
+            let parent = Path::new(&path).parent().and_then(Path::to_str).unwrap_or("");
+            if parent.is_empty() || package_roots.iter().any(|root| root == parent) {
+                return "skill".to_owned();
+            }
+            Path::new(parent)
+                .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("skill")
                 .to_owned()
@@ -3165,26 +3261,40 @@ fn validate_declared_agent_references(
     agent: &RawAgent,
     raw_by_name: &HashMap<String, &RawAgent>,
     skill_names: &BTreeMap<String, Vec<String>>,
+    uninstalled_dependencies: &[String],
     ctx: &mut CheckContext,
 ) {
     let name = &agent.name;
     let path = &agent.path;
     for skill in agent.skills.as_deref().unwrap_or_default() {
-        match skill_names.get(skill).map(Vec::len).unwrap_or_default() {
+        let matches = skill_names.get(skill).map(Vec::as_slice).unwrap_or_default();
+        match matches.len() {
+            // A dependency missing from the snapshot may ship the skill, and a
+            // check without node_modules (CI) must not fail on that.
+            0 if !uninstalled_dependencies.is_empty() => ctx.warning(
+                "agent.skill_unverified",
+                path,
+                format!(
+                    "Recipe agent '{name}' skill '{skill}' is not in the Recipe and was not checked against dependencies that are not installed: {}",
+                    uninstalled_dependencies.join(", ")
+                ),
+                Some("install dependencies before checking to verify skills from dependency packages"),
+            ),
             0 => ctx.error(
                 "agent.skill_missing",
                 path,
                 format!("Recipe agent '{name}' references missing packaged skill '{skill}'"),
-                Some("declare the skill under package.json#pi.skills or remove the reference"),
+                Some("declare the skill under package.json#pi.skills, or in a dependency's pi.skills, or remove the reference"),
             ),
             1 => {}
             count => ctx.error(
                 "agent.skill_ambiguous",
                 path,
                 format!(
-                    "Recipe agent '{name}' skill '{skill}' resolves to {count} packaged SKILL.md files"
+                    "Recipe agent '{name}' skill '{skill}' resolves to {count} packaged SKILL.md files: {}",
+                    matches.join(", ")
                 ),
-                Some("give packaged skills unique frontmatter names"),
+                Some("give packaged skills unique frontmatter names, across the Recipe and its dependencies"),
             ),
         }
     }
@@ -4884,6 +4994,142 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "agent.subagent_missing"));
+    }
+
+    /// A Recipe depending on `@acme/skills` (and `acme-peer` as a peer, `acme-dev`
+    /// as a devDependency), with its agent selecting `agent_skills`, plus `extra`.
+    fn dependency_skills_recipe(agent_skills: &str, extra: &[(&str, &str)]) -> RecipeFiles {
+        let package = json!({
+            "name": "dependency-skills",
+            "dependencies": { "@acme/skills": ">=1.0.0" },
+            "peerDependencies": { "acme-peer": ">=1.0.0" },
+            "devDependencies": { "acme-dev": ">=1.0.0" },
+            "pi": { "agents": ["agents"] }
+        });
+        let package = serde_json::to_string_pretty(&package).expect("serialize package");
+        let agent = format!("name: agent\nmodel:\n  name: test/provider-model\nskills: [{agent_skills}]\n");
+        let mut files = vec![
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            ("agents/agent.yaml", agent.as_str()),
+        ];
+        files.extend_from_slice(extra);
+        recipe_files(&files)
+    }
+
+    const ACME_SKILLS: (&str, &str) = (
+        "node_modules/@acme/skills/package.json",
+        r#"{"name":"@acme/skills","pi":{"skills":["skills"]}}"#,
+    );
+    const ACME_REVIEW: (&str, &str) = (
+        "node_modules/@acme/skills/skills/review/SKILL.md",
+        "---\nname: review\ndescription: Review\n---\n",
+    );
+
+    fn codes(report: &Report) -> Vec<(&str, Severity)> {
+        report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.code.as_str(), diagnostic.severity))
+            .collect()
+    }
+
+    #[test]
+    fn offers_skills_a_direct_dependency_declares_in_pi_skills() {
+        let report = check_recipe_files(&dependency_skills_recipe("review", &[ACME_SKILLS, ACME_REVIEW]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn names_an_unnamed_root_skill_md_in_a_dependency_skill_as_the_runtime_does() {
+        let root_skill = (
+            "node_modules/@acme/skills/package.json",
+            r#"{"name":"@acme/skills","pi":{"skills":["SKILL.md"]}}"#,
+        );
+        let unnamed = ("node_modules/@acme/skills/SKILL.md", "---\ndescription: Root\n---\n");
+        let report = check_recipe_files(&dependency_skills_recipe("skill", &[root_skill, unnamed]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let report = check_recipe_files(&dependency_skills_recipe("skills", &[root_skill, unnamed]));
+        assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
+    }
+
+    #[test]
+    fn ignores_dependency_skills_without_explicit_pi_skills_and_from_peer_dev_and_transitive_packages() {
+        let skill = |name: &'static str| {
+            (name, "---\nname: hidden\ndescription: Hidden\n---\n")
+        };
+        // The Recipe also depends on acme-visible, whose skill is offered.
+        let mut input = dependency_skills_recipe(
+            "visible, hidden",
+            &[
+                ("node_modules/acme-visible/package.json", r#"{"name":"acme-visible","pi":{"skills":["skills"]}}"#),
+                ("node_modules/acme-visible/skills/visible/SKILL.md", "---\nname: visible\ndescription: Visible\n---\n"),
+                // Installed direct dependency without pi.skills: its skills/ folder is not read.
+                ("node_modules/@acme/skills/package.json", r#"{"name":"@acme/skills"}"#),
+                skill("node_modules/@acme/skills/skills/hidden/SKILL.md"),
+                ("node_modules/acme-peer/package.json", r#"{"name":"acme-peer","pi":{"skills":["skills"]}}"#),
+                skill("node_modules/acme-peer/skills/hidden/SKILL.md"),
+                ("node_modules/acme-dev/package.json", r#"{"name":"acme-dev","pi":{"skills":["skills"]}}"#),
+                skill("node_modules/acme-dev/skills/hidden/SKILL.md"),
+                ("node_modules/acme-transitive/package.json", r#"{"name":"acme-transitive","pi":{"skills":["skills"]}}"#),
+                skill("node_modules/acme-transitive/skills/hidden/SKILL.md"),
+            ],
+        );
+        let package = input
+            .files
+            .iter_mut()
+            .find(|file| file.path == "package.json")
+            .expect("package.json");
+        let mut manifest: JsonValue =
+            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
+        manifest["dependencies"]["acme-visible"] = json!(">=1.0.0");
+        package.content = Some(manifest.to_string());
+
+        let report = check_recipe_files(&input);
+        assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
+        assert!(report.diagnostics[0].message.contains("'hidden'"), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn warns_instead_of_failing_when_a_dependency_is_not_installed() {
+        let report = check_recipe_files(&dependency_skills_recipe("review", &[]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_eq!(codes(&report), [("agent.skill_unverified", Severity::Warning)]);
+        assert!(report.diagnostics[0].message.contains("@acme/skills"));
+    }
+
+    #[test]
+    fn rejects_a_selected_skill_name_shipped_twice_across_packages() {
+        let report = check_recipe_files(&dependency_skills_recipe(
+            "review",
+            &[
+                ACME_SKILLS,
+                ACME_REVIEW,
+                ("skills/review/SKILL.md", "---\nname: review\ndescription: Own\n---\n"),
+            ],
+        ));
+        assert_eq!(codes(&report), [("agent.skill_ambiguous", Severity::Error)]);
+        let message = &report.diagnostics[0].message;
+        assert!(message.contains("skills/review/SKILL.md"), "{message}");
+        assert!(message.contains("node_modules/@acme/skills/skills/review/SKILL.md"), "{message}");
+    }
+
+    #[test]
+    fn rejects_dependency_skill_paths_that_do_not_match_or_leave_the_package() {
+        for (skills, code) in [
+            (r#"["missing"]"#, "dependency.skills_unmatched"),
+            (r#"["../escape"]"#, "dependency.skills_invalid"),
+            (r#""skills""#, "dependency.skills_invalid"),
+        ] {
+            let manifest = format!(r#"{{"name":"@acme/skills","pi":{{"skills":{skills}}}}}"#);
+            let report = check_recipe_files(&dependency_skills_recipe(
+                "",
+                &[("node_modules/@acme/skills/package.json", &manifest), ACME_REVIEW],
+            ));
+            assert_eq!(codes(&report), [(code, Severity::Error)], "{skills}");
+            assert!(report.diagnostics[0].message.contains("'@acme/skills'"), "{skills}");
+        }
     }
 
     #[test]

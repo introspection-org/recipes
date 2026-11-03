@@ -86,53 +86,6 @@ partial version, or another manager. A Recipe installs with pnpm, so
 read. An npm lockfile left in the tree MUST still carry the same package name
 and version as `package.json`.
 
-## Channel tools
-
-`pi.channels` declares official provider tools that the host may register for
-the Recipe. The declaration does not contain a connector ID, workspace ID, or
-credential. A host binds those values when it starts a task.
-
-```json
-{
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
-  },
-  "pi": {
-    "channels": [
-      {
-        "provider": "slack"
-      }
-    ]
-  }
-}
-```
-
-Each provider may appear once. The host derives the package name from the
-provider. For example, `slack` resolves to
-`@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
-and marks which tools are active by default.
-
-The provider package must be in the Recipe's production dependencies and
-lockfile. The host imports the package only when the Recipe declares the
-provider. An agent lists each allowed tool by its full name, such as
-`channels`, in its `tools` list. The host fails when the agent names a
-tool that the connector does not register.
-
-Chat providers share one connector shape. A channel connector registers the
-provider-neutral `channels` tool with commands for supported operations. An
-optional `commands` array on the connector restricts these operations for all
-agents using it, for example `{"provider":"slack","commands":["read","reply"]}`.
-Omitting it allows supported commands; an empty list exposes no channel tool.
-`requireReply` is an optional boolean that defaults to `true` when channel tools
-are enabled. Incoming turns then require a successful final `reply`, so an
-enabled command allowlist must include `reply`. Set `requireReply: false` for
-intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
-
-`pi.documents` lists the document formats the `documents` tool opens, each as
-`{"format": "<format>"}` with the package
-`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
-`commands` allowlist. See [Document tools](documents.md).
-
 ## Agents
 
 `pi.agents` may declare YAML agent definitions explicitly. When omitted,
@@ -228,6 +181,81 @@ The default agent is named `agent`. If no `agent` exists, a host MAY select the
 only declared agent. When multiple agents exist without `agent`, the caller
 MUST select one explicitly.
 
+## First-party packages
+
+Some tools come from packages we publish, which a Recipe adds as dependencies
+and turns on with a `pi` declaration. There are two kinds today: channel tools
+(`@introspection-ai/recipe-channel-<provider>`, such as Slack) and document
+tools (`@introspection-ai/recipe-documents-<format>`, docx and pdf). A package
+can also ship skills a Recipe uses; see [Shipping skills in a package](#shipping-skills-in-a-package).
+
+### Channel tools
+
+`pi.channels` declares official provider tools that the host may register for
+the Recipe. The declaration does not contain a connector ID, workspace ID, or
+credential. A host binds those values when it starts a task.
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-channel-slack": ">=0.4.0"
+  },
+  "pi": {
+    "channels": [
+      {
+        "provider": "slack"
+      }
+    ]
+  }
+}
+```
+
+Each provider may appear once. The host derives the package name from the
+provider. For example, `slack` resolves to
+`@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
+and marks which tools are active by default.
+
+The provider package must be in the Recipe's production dependencies and
+lockfile. The host imports the package only when the Recipe declares the
+provider. An agent lists each allowed tool by its full name, such as
+`channels`, in its `tools` list. The host fails when the agent names a
+tool that the connector does not register.
+
+Chat providers share one connector shape. A channel connector registers the
+provider-neutral `channels` tool with commands for supported operations. An
+optional `commands` array on the connector restricts these operations for all
+agents using it, for example `{"provider":"slack","commands":["read","reply"]}`.
+Omitting it allows supported commands; an empty list exposes no channel tool.
+`requireReply` is an optional boolean that defaults to `true` when channel tools
+are enabled. Incoming turns then require a successful final `reply`, so an
+enabled command allowlist must include `reply`. Set `requireReply: false` for
+intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
+
+### Document tools
+
+`pi.documents` lists the document formats the `documents` tool opens, each as
+`{"format": "<format>"}` with the package
+`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
+`commands` allowlist and `profile`. A profile is a skill with guidance for one
+kind of work, such as `legal-redlining-en-US`, which the docx package ships.
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-documents-docx": ">=0.3.0",
+    "@introspection-ai/recipe-documents-pdf": ">=0.2.0"
+  },
+  "pi": {
+    "documents": [
+      { "format": "docx", "profile": "legal-redlining-en-US" },
+      { "format": "pdf" }
+    ]
+  }
+}
+```
+
+See [Document tools](documents.md).
+
 ## Judges
 
 A Recipe MAY include portable LLM grading definitions as direct `.yaml` or
@@ -253,9 +281,11 @@ prompt when the selected agent has model-invocable skills and a `read` or
 `bash` tool.
 
 Skills follow the [Agent Skills](https://agentskills.io) directory convention
-and are selected from the resources declared by `pi.skills`. A skill is named
-by its `SKILL.md` frontmatter `name`, then by its containing directory; a
-root-level unnamed `SKILL.md` uses the portable fallback name `skill`.
+and are selected from the resources declared by `pi.skills` and by the
+Recipe's dependencies (see [Shipping skills in a package](#shipping-skills-in-a-package)).
+A skill is named by its `SKILL.md` frontmatter `name`, then by its containing
+directory; a root-level unnamed `SKILL.md` uses the portable fallback name
+`skill`.
 
 Prompt templates are declared by `pi.prompts`. They retain Pi's normal SDK and
 TUI behavior: hosts expose them through `AgentSession.promptTemplates`, and a
@@ -289,6 +319,68 @@ runtime policy. Interactive Pi may already have trusted global or project
 resources loaded; compatible hosts MUST keep those additions distinguishable
 from Recipe-owned inputs. `tools` limits model-callable tools, not extension
 hook execution.
+
+## Shipping skills in a package
+
+An npm package ships skills by declaring them in its own `package.json`, with
+the same `pi.skills` key a Recipe uses:
+
+```json
+{
+  "name": "@acme/contract-skills",
+  "version": "1.2.0",
+  "files": ["skills"],
+  "pi": { "skills": ["skills"] }
+}
+```
+
+A Recipe uses those skills by listing the package in `dependencies` and
+selecting them by name in an agent's `skills`, like its own:
+
+```json
+{
+  "name": "contracts",
+  "dependencies": { "@acme/contract-skills": "^1.2.0" },
+  "pi": {}
+}
+```
+
+```yaml
+name: agent
+skills: [review-nda]
+```
+
+The rules:
+
+- Hosts read `pi.skills` from each direct `dependencies` entry, found with
+  Node's package resolution from the Recipe directory: in the Recipe's own
+  `node_modules`, or in one above it when an npm install hoists the
+  dependency beside the Recipe. `peerDependencies`, `devDependencies` and
+  transitive dependencies are not read; peers are not installed by the managed
+  install.
+- Only an explicit `pi.skills` counts. A dependency's `skills/` folder is not
+  discovered by convention, and a dependency without `pi.skills` contributes
+  no skills.
+- Paths are relative to the dependency package, MUST NOT resolve outside it
+  (including through symlinks, compared by real path), and every explicit path
+  MUST match. A violation is an error naming the package.
+- Dependency skills join the Recipe's own skills. An agent's `skills` list
+  selects among all of them; an agent gets no skill it does not list.
+- A name an agent selects MUST resolve to exactly one `SKILL.md` across the
+  Recipe and its dependencies. Two with the same name are an error naming
+  both. Give each skill a unique frontmatter `name`.
+
+These skills arrive with the install: the build installs the Recipe's
+dependencies from its lockfile, and nothing is fetched at run time. A check
+run without `node_modules` cannot see dependency skills, so a skill an agent
+selects that is not in the Recipe is a warning there rather than an error.
+
+Document profiles use a different path. A Recipe such as
+[`introspection-org/recipe-redlining`](https://github.com/introspection-org/recipe-redlining)
+lists `@introspection-ai/recipe-documents-docx` and
+`@introspection-ai/recipe-documents-pdf` in `dependencies` and selects a
+profile in `pi.documents`; the `documents` tool delivers the core `documents`
+skill and that profile itself, for agents that list the tool.
 
 ## Tools, subagents, and capabilities
 
@@ -394,8 +486,10 @@ dotted Python module name (`docx`, `paper_docx.api`); hosts import them with
 
 A package the Recipe depends on MAY declare `pi.runtime.python` in its own
 `package.json`, with the same fields relative to the package. Hosts read it
-from each direct `dependencies` or `peerDependencies` entry installed in the
-Recipe's `node_modules`; `devDependencies` and transitive dependencies are
+from each direct `dependencies` or `peerDependencies` entry, found with Node's
+package resolution from the Recipe directory (the Recipe's own `node_modules`,
+or one above it when an npm install hoists the dependency beside the Recipe);
+`devDependencies` and transitive dependencies are
 not read, and a declared dependency that is not installed is skipped. A
 package declaring it MUST ship the project's `pyproject.toml` and `uv.lock`:
 when its `package.json` lists `files`, both must be covered. `pi.runtime.system`
