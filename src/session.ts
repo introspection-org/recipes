@@ -76,6 +76,7 @@ import {
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
+  createRecipeExtensionSessionContext,
   createRecipeExtensionRegistrationRegistry,
   recipeExtensionToolAllowlist,
   type RecipeExtensionSessionContext,
@@ -547,13 +548,6 @@ async function createSessionForAgent(
     ? opts.memoryOverride(loadedMemory)
     : loadedMemory;
   const memoryPrompt = formatMemoryForPrompt(memoryResult.memory);
-  const recipeExtensionContext: RecipeExtensionSessionContext = Object.freeze({
-    recipe: Object.freeze({ name: recipe.manifest.name }),
-    agent: Object.freeze({ name: recipe.name }),
-    session: Object.freeze({
-      role: opts.sessionRole,
-    }),
-  });
   const otel = opts.otel
     ? {
         ...opts.otel,
@@ -608,6 +602,12 @@ async function createSessionForAgent(
     ...(pythonEnvironmentRoot ? { environmentRoot: pythonEnvironmentRoot } : {}),
   });
   const pythonActivation = python.recipe?.activation;
+  const recipeExtensionContext = createRecipeExtensionSessionContext({
+    recipe: recipe.manifest.name,
+    agent: recipe.name,
+    role: opts.sessionRole,
+    python: python.packages,
+  });
   const mcp = await configureSessionMcp(recipe, cwd, env, opts);
 
   const cleanup = async (): Promise<void> => {

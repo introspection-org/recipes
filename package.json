@@ -68,6 +68,10 @@
 			"types": "./dist/channels/index.d.ts",
 			"import": "./dist/channels/index.js"
 		},
+		"./python": {
+			"types": "./dist/python.d.ts",
+			"import": "./dist/python.js"
+		},
 		"./documents": {
 			"types": "./dist/documents/index.d.ts",
 			"import": "./dist/documents/index.js"

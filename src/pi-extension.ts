@@ -21,6 +21,7 @@ import { registerGenAiSpansFile } from "./genai-spans-file.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import {
   bindRecipeExtensionFactory,
+  createRecipeExtensionSessionContext,
   createRecipeExtensionRegistrationRegistry,
   recipeExtensionToolAllowlist,
   type RecipeExtensionRegistrationRegistry,
@@ -913,10 +914,11 @@ export function createRecipesExtension(
       for (const connector of connectors.extensions) {
         const factory = bindRecipeExtensionFactory(
           connector.factory,
-          Object.freeze({
-            recipe: Object.freeze({ name: launchState.resolved.manifest.name }),
-            agent: Object.freeze({ name: launchState.resolved.name }),
-            session: Object.freeze({ role: "root" as const }),
+          createRecipeExtensionSessionContext({
+            recipe: launchState.resolved.manifest.name,
+            agent: launchState.resolved.name,
+            role: "root",
+            ...(launchState.python ? { python: launchState.python.packages } : {}),
           }),
           launchState.extensionRegistrations,
           connector.owner,
@@ -930,12 +932,11 @@ export function createRecipesExtension(
             launchState.resolved.recipeDir,
             extensionPath
           ),
-          Object.freeze({
-            recipe: Object.freeze({ name: launchState.resolved.manifest.name }),
-            agent: Object.freeze({ name: launchState.resolved.name }),
-            session: Object.freeze({
-              role: "root" as const,
-            }),
+          createRecipeExtensionSessionContext({
+            recipe: launchState.resolved.manifest.name,
+            agent: launchState.resolved.name,
+            role: "root",
+            ...(launchState.python ? { python: launchState.python.packages } : {}),
           }),
           launchState.extensionRegistrations,
           extensionPath,

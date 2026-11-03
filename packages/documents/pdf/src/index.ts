@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   createDocumentFormatModule,
+  runDocumentHelper,
   type DocumentAdapter,
   type DocumentAdapterContext,
   type DocumentCapabilities,
@@ -10,9 +11,10 @@ import {
   type DocumentResult,
 } from "@introspection-ai/recipes/documents";
 
-import { runHelper } from "./python.js";
-
-export { pythonExecutable, runHelper } from "./python.js";
+export {
+  documentPythonExecutable as pythonExecutable,
+  runDocumentHelper as runHelper,
+} from "@introspection-ai/recipes/documents";
 
 export const PDF_HELPER = fileURLToPath(new URL("../python/pdf.py", import.meta.url));
 
@@ -47,11 +49,11 @@ export class PdfDocumentAdapter implements DocumentAdapter {
   ) {}
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput): Promise<DocumentResult> {
-    return runHelper(this.script, { command: "read", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    return runDocumentHelper(this.script, { command: "read", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
   }
 
   render(ctx: DocumentAdapterContext, input: DocumentRenderInput): Promise<DocumentResult> {
-    return runHelper(this.script, { command: "render", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    return runDocumentHelper(this.script, { command: "render", ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
   }
 }
 

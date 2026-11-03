@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   createDocumentFormatModule,
+  runDocumentHelper,
   type DocumentAdapter,
   type DocumentAdapterContext,
   type DocumentCapabilities,
@@ -14,9 +15,10 @@ import {
   type DocumentResult,
 } from "@introspection-ai/recipes/documents";
 
-import { runHelper } from "./python.js";
-
-export { pythonExecutable, runHelper } from "./python.js";
+export {
+  documentPythonExecutable as pythonExecutable,
+  runDocumentHelper as runHelper,
+} from "@introspection-ai/recipes/documents";
 
 /** The helper entry point shipped in this package. */
 export const DOCX_HELPER = fileURLToPath(new URL("../python/docx_helper.py", import.meta.url));
@@ -52,7 +54,7 @@ export class DocxDocumentAdapter implements DocumentAdapter {
   ) {}
 
   private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
-    return runHelper(this.script, { command, ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    return runDocumentHelper(this.script, { command, ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
   }
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput) {

@@ -301,7 +301,10 @@ and passes its interpreter to the adapter. A Recipe declaring `pi.documents`
 declares and locks none of these packages itself; its own
 `pi.runtime.python`, if any, stays its shell environment. The helpers use
 `RECIPE_DOCUMENTS_PYTHON` first when it is set (tests, custom hosts), then the
-interpreter the host passes, then `VIRTUAL_ENV`, then `python3`. Package
+interpreter the host passes, then `VIRTUAL_ENV`, then `python3`. An extension
+that needs one of these interpreters itself reads it with
+`packagePython("@introspection-ai/recipe-documents-docx")` on its session
+context (see [Package declarations](recipe-format.md#package-declarations)). Package
 environments are synced without extras, so PDF `tables: true` needs
 pdfplumber from an environment synced with `--extra tables` and named by
 `RECIPE_DOCUMENTS_PYTHON`.
@@ -340,6 +343,16 @@ format package's own `pi.runtime.python` declares, which the host prepares
 (see [Runtime requirements](recipe-format.md#runtime-requirements)). It is
 absent when the package declares none; an adapter that ignores it keeps
 working.
+
+A Python helper runs with `runDocumentHelper(script, request, { env, cwd,
+python, signal })` from `@introspection-ai/recipes/documents`. It is
+`runPythonJson` from `@introspection-ai/recipes/python` with the document
+contract on top: the interpreter order above, including
+`RECIPE_DOCUMENTS_PYTHON`; a helper that prints `{ "error": "..." }` fails the
+call with that message; and the result is a `DocumentResult` (`text`,
+`details`, `images`) whose `details.timing.call_ms` records the round trip.
+The Word and PDF packages use it and re-export it as `runHelper`, with
+`documentPythonExecutable` as `pythonExecutable`.
 
 Registration checks that the adapter implements every method its
 capabilities claim, and that the adapter returns the declared capabilities.

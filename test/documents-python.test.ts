@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import { loadRecipeDocuments } from "../src/documents/index.js";
 import { prepareRecipePython } from "../src/recipe/python.js";
-import { pythonExecutable as docxPython } from "../packages/documents/docx/src/python.js";
-import { pythonExecutable as pdfPython } from "../packages/documents/pdf/src/python.js";
+import { pythonExecutable as docxPython } from "../packages/documents/docx/src/index.js";
+import { pythonExecutable as pdfPython } from "../packages/documents/pdf/src/index.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 describe.each([

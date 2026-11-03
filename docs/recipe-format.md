@@ -412,6 +412,30 @@ Each declaration gets its own environment:
   package its interpreter; a documents format receives it as
   `createAdapter({ env, cwd, python })`.
 
+A package extension asks for a package's interpreter with
+`packagePython(name)` on its session context, by the package's name; it is
+`undefined` when that package declares no `pi.runtime.python` or is not a
+direct dependency. `@introspection-ai/recipes/python` runs a script with it:
+`pythonExecutable({ python, env, override })` picks the interpreter
+(`env[override]`, then `python`, then `VIRTUAL_ENV`, then `python3`), and
+`runPythonJson(script, request, { python, env, cwd, signal, timeoutMs })`
+runs `python -I <script>` with the request as JSON on stdin and resolves its
+stdout parsed as JSON (default timeout 300 s, 64 MB output):
+
+```ts
+import { getRecipeSessionContext } from "@introspection-ai/recipes/extensions";
+import { pythonExecutable, runPythonJson } from "@introspection-ai/recipes/python";
+
+export default function tables(pi) {
+  const python = pythonExecutable({
+    python: getRecipeSessionContext(pi).packagePython("@acme/recipe-tables"),
+    override: "ACME_TABLES_PYTHON",
+  });
+  // ... later, in a tool:
+  // await runPythonJson(helperScript, { path }, { python, cwd: ctx.cwd });
+}
+```
+
 No declaration has to agree with another: two packages may lock different
 versions of the same library.
 
