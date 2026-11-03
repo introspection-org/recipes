@@ -9,8 +9,15 @@
 // lacks, and the next run picks it up here.
 //
 // Usage: node scripts/release-plan.mjs
-// Prints the plan, and writes `<key>=true|false` plus `npm=true|false` to
-// $GITHUB_OUTPUT when set.
+// Prints the plan, and writes `<key>=true|false`, `npm=true|false` and
+// `python_wheels=<wheels.json>` (the wheel build matrix) to $GITHUB_OUTPUT
+// when set.
+//
+// npm and crates.io hold one file per version, so a version check is enough;
+// each mcp-client platform package is its own npm package and checked on its
+// own. A PyPI release holds many files and its version exists once any one is
+// uploaded, so the Python package counts as published only when the sdist and
+// every wheel in packages/recipe-check-python/wheels.json are there.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -26,6 +33,7 @@ export function readArtifacts(repo) {
   const checker = json(".release-please-checker-manifest.json");
   const npmName = (dir) => json(path.join(dir, "package.json")).name;
   const npmVersion = (dir) => json(path.join(dir, "package.json")).version;
+  const wheels = json("packages/recipe-check-python/wheels.json");
   const mcpClients = json("packages/mcp-client/npm/targets.json").map(
     (t) => `@introspection-ai/mcp-client-${t.pkg}`
   );
@@ -60,15 +68,30 @@ export function readArtifacts(repo) {
       tag: `introspection-recipe-check-python-v${checker["packages/recipe-check-python"]}`,
       registry: "pypi",
       names: ["introspection-recipe-check"],
+      wheels,
     },
   ];
 }
 
+/** The sdist and wheel files of a PyPI release that `files` lacks. */
+export function missingDistributions(name, version, wheels, files) {
+  const stem = `${name.replace(/[-.]+/g, "_")}-${version}`;
+  const missing = files.includes(`${stem}.tar.gz`) ? [] : [`${stem}.tar.gz`];
+  for (const { platform } of wheels) {
+    const tag = new RegExp(`-${platform.replaceAll("*", "[^-]*")}\\.whl$`);
+    if (!files.some((file) => file.startsWith(`${stem}-`) && tag.test(file))) {
+      missing.push(`${stem}-*-${platform}.whl`);
+    }
+  }
+  return missing;
+}
+
 /**
  * For each artifact: `publish` when its tag exists and some name lacks the
- * version on its registry. An untagged manifest version is never published.
+ * version on its registry (for PyPI, some distribution file). An untagged
+ * manifest version is never published.
  */
-export async function plan(artifacts, { tags, isPublished }) {
+export async function plan(artifacts, { tags, isPublished, pypiFiles }) {
   const result = [];
   for (const a of artifacts) {
     if (a.packageVersion !== undefined && a.packageVersion !== a.version) {
@@ -78,7 +101,12 @@ export async function plan(artifacts, { tags, isPublished }) {
     }
     const missing = [];
     for (const name of a.names) {
-      if (!(await isPublished(a.registry, name, a.version))) missing.push(name);
+      if (a.registry === "pypi") {
+        const files = await pypiFiles(name, a.version);
+        missing.push(...missingDistributions(name, a.version, a.wheels, files));
+      } else if (!(await isPublished(a.registry, name, a.version))) {
+        missing.push(name);
+      }
     }
     const tagged = tags.has(a.tag);
     result.push({ ...a, missing, tagged, publish: tagged && missing.length > 0 });
@@ -99,14 +127,21 @@ function remoteTags(repo) {
   );
 }
 
-async function httpOk(url) {
+async function get(url) {
   const response = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-  if (response.ok) return true;
-  if (response.status === 404) return false;
+  if (response.ok) return response;
+  if (response.status === 404) return undefined;
   throw new Error(`${url}: HTTP ${response.status}`);
 }
 
-/** The same checks the publish jobs run before publishing. */
+/** Filenames PyPI holds for a release; empty when the version does not exist. */
+async function pypiFiles(name, version) {
+  const response = await get(`https://pypi.org/pypi/${name}/${version}/json`);
+  if (!response) return [];
+  return (await response.json()).urls.map((file) => file.filename);
+}
+
+/** The same checks the npm and crates publish steps run before publishing. */
 async function isPublished(registry, name, version) {
   switch (registry) {
     case "npm":
@@ -117,9 +152,7 @@ async function isPublished(registry, name, version) {
         return false;
       }
     case "crates.io":
-      return httpOk(`https://crates.io/api/v1/crates/${name}/${version}`);
-    case "pypi":
-      return httpOk(`https://pypi.org/pypi/${name}/${version}/json`);
+      return (await get(`https://crates.io/api/v1/crates/${name}/${version}`)) !== undefined;
     default:
       throw new Error(`unknown registry ${registry}`);
   }
@@ -127,7 +160,8 @@ async function isPublished(registry, name, version) {
 
 async function main() {
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const results = await plan(readArtifacts(repo), { tags: remoteTags(repo), isPublished });
+  const artifacts = readArtifacts(repo);
+  const results = await plan(artifacts, { tags: remoteTags(repo), isPublished, pypiFiles });
 
   const outputs = [];
   for (const r of results) {
@@ -142,6 +176,8 @@ async function main() {
   }
   const npm = results.some((r) => r.registry === "npm" && r.publish);
   outputs.push(`npm=${npm}`);
+  const wheels = artifacts.find((a) => a.key === "python").wheels;
+  outputs.push(`python_wheels=${JSON.stringify(wheels)}`);
 
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `${outputs.join("\n")}\n`);
