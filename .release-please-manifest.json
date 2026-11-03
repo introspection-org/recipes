@@ -1,6 +1,6 @@
 {
-  ".": "0.37.0",
+  ".": "0.38.0",
   "packages/channels/slack": "0.6.0",
-  "packages/documents/docx": "0.1.0",
+  "packages/documents/docx": "0.2.0",
   "packages/documents/pdf": "0.1.0"
 }
