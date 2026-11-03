@@ -28,6 +28,10 @@ import {
   type AgentRunController,
   type AgentRunEventObserver,
 } from "./agents.js";
+import {
+  askUserQuestionExtension,
+  wantsAskUserQuestion,
+} from "./ask-user-question.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   clearMcpCatalogPreload,
@@ -703,6 +707,11 @@ async function createSessionForAgent(
           )
         )
       );
+    }
+    // The first-party ask_user_question tool loads after the Recipe's own
+    // extensions, so a Recipe that still ships its own keeps it.
+    if (wantsAskUserQuestion(recipe.tools)) {
+      inlineExtensions.push(askUserQuestionExtension(recipeRegistrations, env));
     }
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 

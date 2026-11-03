@@ -15,7 +15,8 @@ export function showMultiSelectTui(
   message: string,
   options: readonly MultiSelectOption[],
   ui: ExtensionUIContext,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  customLabel = "Other"
 ): Promise<MultiSelectTuiResult | null> {
   return ui.custom<MultiSelectTuiResult | null>(
     (tui, theme, _keybindings, done) => {
@@ -75,7 +76,7 @@ export function showMultiSelectTui(
           const customActive = activeIndex === customIndex;
           add(
             (customActive ? theme.fg("accent", " > ") : "   ") +
-              theme.fg(customActive ? "accent" : "muted", "Other")
+              theme.fg(customActive ? "accent" : "muted", customLabel)
           );
           const doneActive = activeIndex === doneIndex;
           add(
