@@ -285,6 +285,14 @@ function interpreterPath(environmentDir: string): string {
   return join(binDir(environmentDir), IS_WINDOWS ? "python.exe" : "python");
 }
 
+function sameDirectory(a: string, b: string): boolean {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
 function environmentExists(environmentDir: string): boolean {
   return existsSync(join(environmentDir, "pyvenv.cfg")) && existsSync(interpreterPath(environmentDir));
 }
@@ -364,12 +372,17 @@ class Preparer {
     this.uv = options.uv ?? "uv";
   }
 
-  private async uvRun(args: readonly string[], cwd: string, environmentDir: string): Promise<RunResult> {
+  private async uvRun(
+    args: readonly string[],
+    cwd: string,
+    environmentDir: string,
+    variable: "UV_PROJECT_ENVIRONMENT" | "VIRTUAL_ENV" = "UV_PROJECT_ENVIRONMENT"
+  ): Promise<RunResult> {
     const env = withoutPythonHome(this.env);
     for (const key of Object.keys(env)) {
       if (["VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"].includes(key.toUpperCase())) delete env[key];
     }
-    if (environmentDir) env.UV_PROJECT_ENVIRONMENT = environmentDir;
+    if (environmentDir) env[variable] = environmentDir;
     try {
       return await run(this.uv, args, { cwd, env });
     } catch (error) {
@@ -418,13 +431,64 @@ class Preparer {
       projectDir,
       environmentDir
     );
-    if (result.code === 0) return { state: "current", detail: "" };
+    if (result.code === 0) return this.checkInterpreter(declaration, projectDir, environmentDir);
     const detail = lastLines(`${result.stdout}\n${result.stderr}`);
     if (result.code === 1) return { state: "outdated", detail };
     if (result.code === 2 && INTERPRETER_PROBLEM.test(detail)) return { state: "interpreter", detail };
     throw new RecipePythonError(
       `uv could not check the Python environment for ${declaration.owner} (exit ${result.code}):\n${detail}`
     );
+  }
+
+  /**
+   * Whether the environment's interpreter still satisfies the declared version
+   * and the project's `requires-python`. `uv sync --check` exits 0 even when
+   * the sync it stands for would replace the environment for another
+   * interpreter ("Would replace project environment"), so the check alone
+   * would accept an environment built for a version no longer declared. Ask
+   * uv which interpreter the request selects with this environment active: it
+   * prefers the active environment whenever that satisfies the request.
+   */
+  private async checkInterpreter(
+    declaration: Declaration,
+    projectDir: string,
+    environmentDir: string
+  ): Promise<{ state: "current" | "outdated" | "interpreter"; detail: string }> {
+    const result = await this.uvRun(
+      [
+        "python",
+        "find",
+        ...(declaration.python.version ? [declaration.python.version] : []),
+        "--project",
+        projectDir,
+        "--no-python-downloads",
+        "--offline",
+      ],
+      projectDir,
+      environmentDir,
+      "VIRTUAL_ENV"
+    );
+    const detail = lastLines(`${result.stdout}\n${result.stderr}`);
+    if (result.code === 2 && INTERPRETER_PROBLEM.test(detail)) return { state: "interpreter", detail };
+    if (result.code !== 0) {
+      throw new RecipePythonError(
+        `uv could not check the Python interpreter for ${declaration.owner} (exit ${result.code}):\n${detail}`
+      );
+    }
+    const found = result.stdout.trim().split(/\r?\n/).at(-1) ?? "";
+    // uv names the environment's interpreter by the path it was given; an
+    // interpreter elsewhere means the environment no longer satisfies the
+    // request, and a warning means it conflicts with `requires-python`.
+    if (sameDirectory(dirname(dirname(found)), environmentDir) && !INTERPRETER_PROBLEM.test(result.stderr)) {
+      return { state: "current", detail: "" };
+    }
+    const wanted = declaration.python.version ?? "the project's requires-python";
+    return {
+      state: "outdated",
+      detail: `the interpreter in ${environmentDir} does not satisfy ${wanted}${
+        result.stderr.trim() ? `:\n${lastLines(result.stderr)}` : ""
+      }`,
+    };
   }
 
   private versionError(declaration: Declaration, detail: string): RecipePythonVersionError {
