@@ -420,8 +420,11 @@ versions of the same library.
 `prepareRecipePython(recipeDir, options)` from
 `@introspection-ai/recipes/recipe` finds every declaration and prepares it:
 
-- `mode: "check"` runs `uv sync --frozen --no-dev --check --offline` and the
-  import preflight. It writes nothing and uses no network.
+- `mode: "check"` runs `uv sync --frozen --no-dev --check --offline`, then
+  `uv python find` with the environment active, and the import preflight. The
+  second step catches an environment whose interpreter no longer satisfies the
+  declared version or `requires-python`, which uv's check passes. It writes
+  nothing and uses no network.
 - `mode: "sync"` checks first and installs only a missing or outdated
   environment, with `uv sync --frozen --no-dev --compile-bytecode`. A current
   environment is never recompiled.
