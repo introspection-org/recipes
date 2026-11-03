@@ -20,6 +20,9 @@ importers:
       mcporter:
         specifier: 0.16.1
         version: 0.16.1
+      minimatch:
+        specifier: ^10.2.6
+        version: 10.2.6
       yaml:
         specifier: ^2.9.0
         version: 2.9.1

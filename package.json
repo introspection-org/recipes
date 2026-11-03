@@ -107,6 +107,7 @@
 		"@opentelemetry/api": "^1.9.1",
 		"ajv": "^8.20.0",
 		"mcporter": "0.16.1",
+		"minimatch": "^10.2.6",
 		"yaml": "^2.9.0"
 	},
 	"peerDependencies": {

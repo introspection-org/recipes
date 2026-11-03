@@ -1,5 +1,6 @@
 import { existsSync, realpathSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { minimatch } from "minimatch";
 
 import { documentProfileShapeProblem, isDocumentProfilePath, recipeProfileSkill } from "../documents/profile.js";
 
@@ -1169,8 +1170,8 @@ function packageFilesInclude(files: readonly unknown[], path: string): boolean {
     if (typeof raw !== "string" || !raw.trim()) continue;
     const negated = raw.startsWith("!");
     const entry = normalizeResourcePath(negated ? raw.slice(1) : raw).replace(/\/+$/, "");
-    const matches = (candidate: string) =>
-      hasGlob(entry) ? globToRegExp(entry).test(candidate) : candidate === entry;
+    // npm reads `files` with minimatch, so braces and classes expand here too.
+    const matches = (candidate: string) => minimatch(candidate, entry, { dot: true });
     const segments = path.split("/");
     // An entry naming a directory ships everything beneath it.
     const hit = segments.some((_, index) => matches(segments.slice(0, index + 1).join("/")));

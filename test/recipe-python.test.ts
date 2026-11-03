@@ -577,7 +577,7 @@ describe("validateRecipePythonPackage", () => {
   const python = { project: "python", lockfile: "python/uv.lock" };
 
   it("accepts a package shipping its project, by file, directory or glob", () => {
-    for (const files of [["python/pyproject.toml", "python/uv.lock"], ["python"], ["python/*"], ["dist", "python/"]]) {
+    for (const files of [["python/pyproject.toml", "python/uv.lock"], ["python"], ["python/*"], ["dist", "python/"], ["python/*.{toml,lock}"], ["python/[pu]*"]]) {
       expect(validateRecipePythonPackage(pkg({ files, pi: { runtime: { python } } })).findings).toEqual([]);
     }
     expect(validateRecipePythonPackage(pkg({ pi: { runtime: { python } } })).valid).toBe(true);
@@ -585,7 +585,7 @@ describe("validateRecipePythonPackage", () => {
   });
 
   it("rejects files that leave out the lock, or negate it", () => {
-    for (const files of [["python/pyproject.toml"], ["python", "!python/uv.lock"]]) {
+    for (const files of [["python/pyproject.toml"], ["python", "!python/uv.lock"], ["python/*.{toml,json}"]]) {
       const report = validateRecipePythonPackage(pkg({ files, pi: { runtime: { python } } }));
       expect(report.findings.map((item) => item.code)).toEqual(["pi.runtime_files_missing"]);
     }
