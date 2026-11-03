@@ -433,7 +433,10 @@ versions of the same library.
 By default environments live in a shared cache,
 `~/.introspection/python/<hash>`, keyed by the environment kind (shell or
 package), platform and architecture, the `uv.lock` and `pyproject.toml`
-contents, and the declared `version`; a Recipe project that is itself a
+contents, and the declared `version`. Without a declared `version` it also
+keys on what uv would pick the interpreter from: `UV_PYTHON`, every
+`.python-version` or `.python-versions` file from the project directory up to
+the filesystem root, and uv's global pin. A Recipe project that is itself a
 package (it has `[build-system]`, so it installs editable) also keys on its
 directory. `environmentRoot` (or `PI_RECIPES_PYTHON_ROOT`) fixes the
 location instead: the shell environment is `<root>/python` and each package's

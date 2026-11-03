@@ -222,6 +222,45 @@ function hashFile(hash: ReturnType<typeof createHash>, label: string, path: stri
   hash.update("\0");
 }
 
+const PIN_FILES = [".python-version", ".python-versions"] as const;
+
+/** uv's user configuration directory, which holds its global pin (`uv python pin --global`). */
+function uvUserConfigDir(env: NodeJS.ProcessEnv): string {
+  if (IS_WINDOWS) return join(env.APPDATA || join(homedir(), "AppData", "Roaming"), "uv");
+  return join(env.XDG_CONFIG_HOME || join(env.HOME || homedir(), ".config"), "uv");
+}
+
+/**
+ * What uv picks the interpreter from when the declaration names no version:
+ * `UV_PYTHON`, a `.python-version` or `.python-versions` pin it discovers from
+ * the project, and the global pin. Every pin file from the project directory
+ * up to the filesystem root is included, a superset of where any uv version
+ * looks, so two projects that may select different interpreters never share a
+ * key. A declared version is passed as `--python`, which overrides all of
+ * them, so then none is read.
+ */
+function hashDiscoveredPins(
+  hash: ReturnType<typeof createHash>,
+  projectDir: string,
+  env: NodeJS.ProcessEnv
+): void {
+  hash.update(`UV_PYTHON\0${env.UV_PYTHON ?? ""}\0`);
+  // Labelled by level, not path, so Recipes with the same pins still share.
+  const dirs: Array<[string, string]> = [];
+  let level = 0;
+  for (let dir = resolve(projectDir); ; dir = dirname(dir)) {
+    dirs.push([`pin ${level++}`, dir]);
+    if (dirname(dir) === dir) break;
+  }
+  dirs.push(["global pin", uvUserConfigDir(env)]);
+  for (const [label, dir] of dirs) {
+    for (const name of PIN_FILES) {
+      const path = join(dir, name);
+      if (existsSync(path) && statSync(path).isFile()) hashFile(hash, `${label} ${name}`, path);
+    }
+  }
+}
+
 /** A `uv.lock` that installs a source from the local disk: editable, directory or path. */
 const LOCAL_LOCK_SOURCE = /^\s*source\s*=\s*\{\s*(?:editable|directory|path)\s*=/m;
 
@@ -231,6 +270,10 @@ const LOCAL_LOCK_SOURCE = /^\s*source\s*=\s*\{\s*(?:editable|directory|path)\s*=
  * local source the environment installs, since uv does not re-install a local
  * package whose version is unchanged:
  *
+ * - Without a declared version, the pins uv would select the interpreter from
+ *   (`UV_PYTHON`, `.python-version` files, the global pin): see
+ *   {@link hashDiscoveredPins}.
+ *
  * - A package environment installs that package's own project, so its key
  *   holds the package's realpath and `name@version`. Two installed copies of a
  *   dependency never share one environment, even with identical project files.
@@ -239,7 +282,12 @@ const LOCAL_LOCK_SOURCE = /^\s*source\s*=\s*\{\s*(?:editable|directory|path)\s*=
  *   local source; then the project's realpath is in the key. Otherwise Recipes
  *   with the same lock share one environment.
  */
-function environmentHash(declaration: Declaration, projectDir: string, lockfile: string): string {
+function environmentHash(
+  declaration: Declaration,
+  projectDir: string,
+  lockfile: string,
+  env: NodeJS.ProcessEnv
+): string {
   const hash = createHash("sha256");
   hash.update(`recipes-python-env:${ENVIRONMENT_FORMAT}\0${declaration.kind}\0`);
   hash.update(`${process.platform}-${process.arch}\0`);
@@ -247,6 +295,7 @@ function environmentHash(declaration: Declaration, projectDir: string, lockfile:
   const pyproject = join(projectDir, "pyproject.toml");
   hashFile(hash, "pyproject.toml", pyproject);
   hash.update(`version\0${declaration.python.version ?? ""}\0`);
+  if (!declaration.python.version) hashDiscoveredPins(hash, projectDir, env);
   if (declaration.kind === "package") {
     const packageJson = readJson(join(declaration.packageDir, "package.json"));
     const version = typeof packageJson.version === "string" ? packageJson.version : "";
@@ -274,7 +323,7 @@ function environmentDirFor(
       : join(root, "python-packages", ...declaration.owner.split("/"));
   }
   const home = (IS_WINDOWS ? env.USERPROFILE : env.HOME) || homedir();
-  return join(home, ".introspection", "python", environmentHash(declaration, projectDir, lockfile));
+  return join(home, ".introspection", "python", environmentHash(declaration, projectDir, lockfile, env));
 }
 
 function binDir(environmentDir: string): string {

@@ -492,6 +492,34 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       expect((await prepare(first.dir)).packages.pkg?.environmentDir).not.toBe(firstEnv);
     });
 
+    it("keys Recipes without a declared version by the Python pins uv would discover", async () => {
+      const { prepare, env, home } = harness();
+      const first = recipe({});
+      const second = recipe({});
+      const shared = (await prepare(first.dir)).recipe?.environmentDir;
+      expect((await prepare(second.dir)).recipe?.environmentDir).toBe(shared);
+      // A pin in the project, or in any directory above it, selects another interpreter.
+      writeFileSync(join(second.dir, "python", ".python-version"), "3.12\n");
+      const pinned = (await prepare(second.dir)).recipe?.environmentDir;
+      expect(pinned).not.toBe(shared);
+      writeFileSync(join(first.dir, ".python-version"), "3.12\n");
+      expect((await prepare(first.dir)).recipe?.environmentDir).not.toBe(shared);
+      // The same pin in the same place shares again.
+      rmSync(join(first.dir, ".python-version"));
+      writeFileSync(join(first.dir, "python", ".python-version"), "3.12\n");
+      expect((await prepare(first.dir)).recipe?.environmentDir).toBe(pinned);
+      // UV_PYTHON and the global pin count too.
+      const third = recipe({});
+      expect((await prepare(third.dir, { env: { ...env, UV_PYTHON: "3.11" } })).recipe?.environmentDir).not.toBe(shared);
+      write(join(home, ".config", "uv", ".python-version"), "3.11\n");
+      expect((await prepare(third.dir)).recipe?.environmentDir).not.toBe(shared);
+      // A declared version overrides every pin, so they are not read.
+      declareVersion(first.dir, ">=3.11");
+      declareVersion(second.dir, ">=3.11");
+      rmSync(join(first.dir, "python", ".python-version"));
+      expect((await prepare(first.dir)).recipe?.environmentDir).toBe((await prepare(second.dir)).recipe?.environmentDir);
+    });
+
     it("keys a Recipe whose lock installs a local source by its project directory", async () => {
       const { prepare } = harness();
       const lock = 'version = 1\n\n[[package]]\nname = "synthdep"\nversion = "0.1.0"\nsource = { directory = "../synthdep" }\n';
