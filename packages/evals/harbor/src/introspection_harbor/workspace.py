@@ -7,9 +7,11 @@ output, generated Pi state and anything that looks like a credential.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
-from pathlib import Path
+from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
 
 EXCLUDED_DIRECTORY_NAMES = {
     ".git",
@@ -35,14 +37,45 @@ EXCLUDED_SECRET_FILES = {
 }
 SECRET_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SAFE_ENV_SUFFIXES = {".example", ".sample", ".template"}
+DEFAULT_EVAL_LIB = "evals/lib"
 
 
-def materialize_workspace(source: Path, destination: Path) -> None:
-    """Copy the uploadable part of ``source`` into a fresh ``destination``."""
+def recipe_eval_lib(recipe: Path) -> Path:
+    """The Recipe's shared eval code: ``pi.evals.lib``, else ``evals/lib``.
 
+    It holds graders and judge code, which an agent must never read. A
+    deployed version leaves it out through ``.recipeignore``; this upload
+    doesn't read that file, so it skips this path instead.
+    """
+
+    try:
+        manifest = json.loads((recipe / "package.json").read_text(encoding="utf-8"))
+        declared = manifest["pi"]["evals"]["lib"]
+    except (OSError, ValueError, KeyError, TypeError):
+        declared = DEFAULT_EVAL_LIB
+    if not isinstance(declared, str) or not declared:
+        declared = DEFAULT_EVAL_LIB
+    path = PurePosixPath(declared)
+    if path.is_absolute() or ".." in path.parts:
+        path = PurePosixPath(DEFAULT_EVAL_LIB)
+    return Path(*path.parts)
+
+
+def materialize_workspace(
+    source: Path, destination: Path, excluded_paths: Iterable[Path] = ()
+) -> None:
+    """Copy the uploadable part of ``source`` into a fresh ``destination``.
+
+    ``excluded_paths`` are ``source``-relative directories or files left out
+    as well, such as a Recipe's ``evals/lib``.
+    """
+
+    excluded = tuple(excluded_paths)
     destination.mkdir()
-    for relative in sorted(workspace_paths(source), key=lambda path: path.as_posix()):
-        if excluded_workspace_path(relative):
+    for relative in sorted(
+        workspace_paths(source, excluded), key=lambda path: path.as_posix()
+    ):
+        if excluded_workspace_path(relative) or under_any(relative, excluded):
             continue
         source_path = source / relative
         if not source_path.exists() and not source_path.is_symlink():
@@ -57,14 +90,19 @@ def materialize_workspace(source: Path, destination: Path) -> None:
             shutil.copy2(source_path, target_path)
 
 
-def workspace_paths(source: Path) -> list[Path]:
+def under_any(path: Path, roots: Iterable[Path]) -> bool:
+    return any(path == root or root in path.parents for root in roots)
+
+
+def workspace_paths(source: Path, excluded_paths: Iterable[Path] = ()) -> list[Path]:
+    excluded = tuple(excluded_paths)
     paths: list[Path] = []
     for current, directories, files in os.walk(source, followlinks=False):
         current_path = Path(current)
         kept_directories: list[str] = []
         for name in directories:
             relative = (current_path / name).relative_to(source)
-            if excluded_workspace_path(relative):
+            if excluded_workspace_path(relative) or under_any(relative, excluded):
                 continue
             if (current_path / name).is_symlink():
                 paths.append(relative)

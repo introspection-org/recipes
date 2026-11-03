@@ -25,7 +25,7 @@ from .base import (
     RecipeAgentBase,
     prepare_recipe_command,
 )
-from .workspace import materialize_workspace
+from .workspace import materialize_workspace, recipe_eval_lib
 
 # A foreign image is someone else's, and the bootstrap owns no path in it.
 # /opt is root-owned, the sandbox runs every command as an ordinary user, and
@@ -214,7 +214,10 @@ class IntrospectionBootstrapAgent(RecipeAgentBase):
             prefix="introspection-recipe-workspace-"
         ) as temp_dir:
             staged = Path(temp_dir) / "workspace"
-            materialize_workspace(self._workspace_path, staged)
+            eval_lib = self._recipe_relative_path / recipe_eval_lib(
+                self._workspace_path / self._recipe_relative_path
+            )
+            materialize_workspace(self._workspace_path, staged, [eval_lib])
             await environment.upload_dir(staged, REMOTE_WORKSPACE_DIR)
         await self.exec_as_agent(
             environment, command=layout_command(self._recipe_relative_path)

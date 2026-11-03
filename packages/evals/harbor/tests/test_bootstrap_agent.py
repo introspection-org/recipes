@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from introspection_harbor.bootstrap_agent import (
 from introspection_harbor.workspace import (
     excluded_workspace_path,
     materialize_workspace,
+    recipe_eval_lib,
 )
 
 
@@ -98,6 +100,10 @@ class BootstrapInstallTest(unittest.IsolatedAsyncioTestCase):
             recipe = workspace / "recipes" / "refunds"
             recipe.mkdir(parents=True)
             (recipe / "package.json").write_text("{}")
+            (recipe / "evals" / "lib").mkdir(parents=True)
+            (recipe / "evals" / "lib" / "grader.py").write_text("JUDGE = 1")
+            (recipe / "lib").mkdir()
+            (recipe / "lib" / "tool.ts").write_text("export {};")
             (workspace / ".env").write_text("SECRET=1")
             (workspace / ".git").mkdir()
             (workspace / ".git" / "HEAD").write_text("ref")
@@ -119,6 +125,12 @@ class BootstrapInstallTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertFalse((Path(source) / ".env").exists())
                 self.assertFalse((Path(source) / ".git").exists())
+                # The Recipe's shared eval code (graders, judges) stays behind;
+                # its own lib/ goes up.
+                self.assertFalse((Path(source) / "recipes/refunds/evals/lib").exists())
+                self.assertTrue(
+                    (Path(source) / "recipes/refunds/lib/tool.ts").is_file()
+                )
 
             instance.exec_as_root = as_root
             instance.exec_as_agent = as_agent
@@ -183,3 +195,47 @@ class WorkspaceStagingTest(unittest.TestCase):
             materialize_workspace(source, destination)
             self.assertTrue((destination / "link").is_symlink())
             self.assertEqual((destination / "real" / "a.txt").read_text(), "a")
+
+
+class RecipeEvalLibTest(unittest.TestCase):
+    def _recipe(self, temp_dir: str, manifest: str) -> Path:
+        recipe = Path(temp_dir)
+        (recipe / "package.json").write_text(manifest)
+        return recipe
+
+    def test_defaults_to_evals_lib(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for manifest in ("{}", '{"pi": {}}', '{"pi": {"evals": {}}}', "not json"):
+                self.assertEqual(
+                    recipe_eval_lib(self._recipe(temp_dir, manifest)), Path("evals/lib")
+                )
+
+    def test_follows_a_declared_lib(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recipe = self._recipe(
+                temp_dir, '{"pi": {"evals": {"lib": "evals/shared"}}}'
+            )
+            self.assertEqual(recipe_eval_lib(recipe), Path("evals/shared"))
+
+    def test_ignores_a_lib_outside_the_recipe(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for lib in ("../elsewhere", "/abs/lib", ""):
+                manifest = json.dumps({"pi": {"evals": {"lib": lib}}})
+                recipe = self._recipe(temp_dir, manifest)
+                self.assertEqual(recipe_eval_lib(recipe), Path("evals/lib"))
+
+    def test_materialize_leaves_out_only_the_named_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "src"
+            for path in (
+                "evals/lib/judge.py",
+                "evals/harbor/t/task.toml",
+                "lib/tool.ts",
+            ):
+                (source / path).parent.mkdir(parents=True, exist_ok=True)
+                (source / path).write_text("x")
+            destination = Path(temp_dir) / "dst"
+            materialize_workspace(source, destination, [Path("evals/lib")])
+            self.assertFalse((destination / "evals/lib").exists())
+            self.assertTrue((destination / "evals/harbor/t/task.toml").is_file())
+            self.assertTrue((destination / "lib/tool.ts").is_file())
