@@ -695,8 +695,19 @@ export function createRecipesExtension(
     return stringFlag(pi.getFlag("recipe")) ?? launchRecipeDir;
   }
 
-  function selectedAgentName(pi: Parameters<ExtensionFactory>[0]): string | undefined {
-    return stringFlag(pi.getFlag("agent")) ?? launchAgentName;
+  // An agent name from the environment belongs to the Recipe the environment
+  // names. A launch from a Recipe session's shell inherits both exported
+  // values, so `--recipe <another Recipe>` there must not pick up the parent's
+  // agent: it selects its own default instead.
+  function selectedAgentName(
+    pi: Parameters<ExtensionFactory>[0],
+    cwd: string,
+    recipeDir: string
+  ): string | undefined {
+    const flag = stringFlag(pi.getFlag("agent"));
+    if (flag) return flag;
+    if (launchRecipeDir && resolve(cwd, launchRecipeDir) !== recipeDir) return undefined;
+    return launchAgentName;
   }
 
   function loadState(pi: Parameters<ExtensionFactory>[0], cwd: string): RecipeLaunchState | null {
@@ -707,7 +718,7 @@ export function createRecipesExtension(
     if (!existsSync(recipeDir)) {
       throw new RecipeLaunchError(recipeNotFoundMessage(flag, recipeDir));
     }
-    const requestedAgentName = selectedAgentName(pi);
+    const requestedAgentName = selectedAgentName(pi, cwd, recipeDir);
     const key = [cwd, recipeDir, requestedAgentName ?? ""].join("\0");
     if (state?.key === key) return state;
 
