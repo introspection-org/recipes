@@ -50,8 +50,22 @@ the folder's name, and point `profile` at it.
 [Write your own profile](../../../docs/documents.md#write-your-own-profile) has the
 contract, what a profile should say, and a complete example.
 
-The helpers in `python/` run with the Recipe's `pi.runtime.python` environment, which must
-provide `paper-docx==0.2.0`. `python/uv.lock` pins what the tests run on.
+## Python
+
+The helpers in `python/` run in this package's own Python environment. The package
+declares it in `package.json#pi.runtime.python` (`python/pyproject.toml`, locked by
+`python/uv.lock`, with paper-docx), and the host prepares it with uv beside the Recipe and
+passes its interpreter to the adapter. A Recipe declares no Python for Word: it needs none
+of its own, and one it does declare is its agent's shell environment, which the helpers
+don't use. This needs `@introspection-ai/recipes` 0.39.0 or later.
+
+The interpreter is the first of:
+
+1. `RECIPE_DOCUMENTS_PYTHON`, an explicit override;
+2. the package environment's interpreter, from the host;
+3. `VIRTUAL_ENV` (`bin/python`, or `Scripts\python.exe` on Windows), for a host that
+   prepares no package environment;
+4. `python3` on `PATH`.
 
 Licences: the anchoring and section removal follow RedlineBench's redline engine (MIT,
 Crosby Legal), see `python/recipe_documents_docx/LICENSE-redline-bench`. The rest is Apache-2.0.
