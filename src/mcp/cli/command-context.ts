@@ -1,7 +1,33 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Readable, Writable } from "node:stream";
 
-export type McpRuntime = Awaited<ReturnType<typeof import("mcporter").createRuntime>>;
+/**
+ * What the `mcp` command and its daemon use of an MCP runtime: mcporter's, or
+ * the pi-mcp one (`../pi-runtime.ts`).
+ */
+export interface McpRuntime {
+  listServers(): string[];
+  listTools(
+    server: string,
+    options?: {
+      includeSchema?: boolean;
+      autoAuthorize?: boolean;
+      allowCachedAuth?: boolean;
+      disableOAuth?: boolean;
+    }
+  ): Promise<unknown[]>;
+  callTool(
+    server: string,
+    tool: string,
+    options?: {
+      args?: Record<string, unknown>;
+      timeoutMs?: number;
+      disableOAuth?: boolean;
+      signal?: AbortSignal;
+    }
+  ): Promise<unknown>;
+  close(): Promise<void>;
+}
 
 export interface McpCommandContext {
   runtime: McpRuntime;

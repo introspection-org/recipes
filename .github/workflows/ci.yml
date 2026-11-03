@@ -34,6 +34,13 @@ jobs:
 
       - run: pnpm test
 
+      # The mcp command's suites again on the pi-mcp client, so it and mcporter
+      # stay interchangeable behind PI_RECIPES_MCP_CLIENT.
+      - name: mcp command on pi-mcp
+        env:
+          PI_RECIPES_MCP_CLIENT: pi-mcp
+        run: pnpm exec vitest run test/mcp.test.ts test/mcp-catalog.test.ts test/mcp-cli-entry.test.ts test/mcp-cli-options.test.ts test/mcp-cli-policy.test.ts test/mcp-handshake-retry.test.ts test/mcp-trace-context.test.ts test/mcp-bundled-entry.test.ts test/mcp-entrypoints.test.ts test/mcp-tools.test.ts test/mcp-search-render.test.ts test/session-mcp-tools.test.ts test/pi-extension-mcp-tools.test.ts
+
       - run: pnpm build
 
       - run: pnpm pack:check

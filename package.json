@@ -94,6 +94,7 @@
 		"clean": "rm -rf dist .turbo node_modules target vendor/mcp-client"
 	},
 	"dependencies": {
+		"@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
 		"@introspection-sdk/introspection-pi": "^0.35.0",
 		"@opentelemetry/api": "^1.9.1",
 		"ajv": "^8.20.0",
