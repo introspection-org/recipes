@@ -21,22 +21,48 @@
 
 ## Dependencies
 
-- **Declare a peer only for what the host imports too.** The runtime imports
-  `@introspection-ai/recipes` and the Pi packages, and a Recipe's agent runs
-  inside the runtime's module graph — so those must resolve to one shared
-  instance, and the runtime supplies them. Anything the host does not import is
-  an ordinary dependency the Recipe brings. ⚠️ **One carve-out**: an extension
+- **A peer means the platform provides it; a dependency means the Recipe
+  brings and pins it.** The runtime imports `@introspection-ai/recipes` and the
+  Pi packages, and a Recipe's agent runs inside the runtime's module graph — so
+  those must be peers, resolving to one shared instance the runtime supplies.
+  The companion packages (Recipes' `optionalDependencies`) may also be peers:
+  they install alongside Recipes wherever Recipes installs, and a runtime
+  image puts them in a `node_modules` above the Recipe; the image build fails
+  if one is missing. The managed install never
+  installs peers (`auto-install-peers=false`), while local pnpm and npm do, so
+  any other peer is a promise only a platform that provides it can keep:
+  `recipes check` warns (`package.peer_not_provided_by_default`). Anything
+  else the Recipe needs is an ordinary dependency it brings. ⚠️ **One carve-out**: an extension
   needing a helper subpath newer than the active host declares
   `@introspection-ai/recipes` as an ordinary dependency too. The loader prefers
   a Recipe-installed copy for exactly this reason
   (`src/recipe/extensions.ts::recipeExtensionAliases`), and a peer alone is
   never installed, so the import would silently resolve to the older host copy
   and fail.
-- **A channel adapter is a dependency, not a peer.** There is one per provider,
-  so the runtime carries none. A peer declaration fails `recipes check`, and
-  would not load even if it passed: the managed install runs `pnpm install
-  --prod` with `auto-install-peers=false`, so a peer the runtime lacks is never
-  installed.
+- **A channel adapter or document format is a dependency, or a peer or
+  omitted when it is a companion package.** The companions are the
+  first-party ones published here (`recipe-channel-*`, `recipe-documents-*`),
+  listed in Recipes' `optionalDependencies` so installing Recipes installs
+  them beside it. A Recipe may declare one as a peer (the platform provides
+  it) or omit it (the copy beside Recipes is used); listing one in
+  `dependencies` pins it (the Recipe's copy wins, as in
+  `recipeExtensionAliases`). Any other channel or format package must be
+  declared, and a third-party one belongs in `dependencies`. The list is read
+  at run time by `src/recipe/companions.ts`; `test/companions.test.ts` and the
+  checker's `COMPANION_PACKAGES` and `HOST_PEER_PACKAGES` tests keep the
+  copies in step, and a new channel or format package here must join it.
+- **Companions never depend on Recipes at run time.** Recipes depends on
+  them, so a dependency or peer back would be a cycle. A companion imports
+  only Recipes' types (`import type`, with Recipes in `devDependencies`), and
+  the host injects what it runs: a document format exports a plain
+  `RecipeDocumentFormatModule` whose `createAdapter` receives `runHelper`; a
+  channel exports a plain `RecipeChannelModule` the host builds the connector
+  from. `test/companions.test.ts` fails on a run-time import or a
+  dependency or peer on Recipes. Compatibility is the module's `apiVersion`
+  (`DOCUMENT_FORMAT_API_VERSION`, `CHANNEL_MODULE_API_VERSION`), checked when
+  it loads; bump it on a breaking contract change. A third-party package that
+  declares a Recipes peer range is checked against it with semver. Never add
+  minimum-version constants.
 - **First-party packages take an open lower bound; third-party take a caret.**
   ⚠️ A caret on a `0.x` version pins the MINOR — `^0.26.0` rejects `0.27.0` — so
   it is a ceiling, not a floor. For our own packages (`@introspection-ai/*`,
@@ -46,9 +72,9 @@
   `>=0.39.0`, in `dependencies` and `peerDependencies` alike. No `<1.0.0` cap
   for now: we will move off pre-release, and a cap would make every 1.0.0
   package unusable with every Recipe and package that still declares the 0.x
-  range until each is republished. `packages/channels/slack` still ships the
-  older `>=0.26.0 <1.0.0` shape; drop its cap the next time it changes. Note `workspace:^`
-  publishes as `^`, so a published peer must be written out. Keep the caret for
+  range until each is republished. Note `workspace:^` publishes as `^`, so a
+  published range must be written out (`workspace:>=0.6.0` publishes as
+  `>=0.6.0`, as Recipes' `optionalDependencies` do). Keep the caret for
   third-party packages, where an unreviewed relock would take someone else's
   breaking change. Pi keeps a major cap, written out as `>=1.1.0 <2.0.0` because the
   host supplies it and the runtime image resolves the version. Pi crossing a

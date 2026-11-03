@@ -150,11 +150,59 @@
     }
   },
   {
-    "name": "document format without its package",
+    "name": "companion document format without its package",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"documents-companion\",\"pi\":{\"documents\":[{\"format\":\"docx\"},{\"format\":\"pdf\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
+    }
+  },
+  {
+    "name": "non-companion document format without its package",
     "valid": false,
     "files": {
-      "package.json": "{\"name\":\"documents-missing-package\",\"pi\":{\"documents\":[{\"format\":\"docx\"}]}}",
+      "package.json": "{\"name\":\"documents-missing-package\",\"pi\":{\"documents\":[{\"format\":\"odt\"}]}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
+    }
+  },
+  {
+    "name": "companion document format as a peer",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"documents-peer\",\"peerDependencies\":{\"@introspection-ai/recipe-documents-docx\":\">=0.3.0\"},\"pi\":{\"documents\":[{\"format\":\"docx\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [documents]\n"
+    }
+  },
+  {
+    "name": "companion channel without its package",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"channel-companion\",\"pi\":{\"channels\":[{\"provider\":\"slack\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [channels]\n"
+    }
+  },
+  {
+    "name": "non-companion channel without its package",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"channel-missing-package\",\"pi\":{\"channels\":[{\"provider\":\"teams\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [channels]\n"
+    }
+  },
+  {
+    "name": "third-party channel package as a peer, provided by the platform",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"channel-peer\",\"peerDependencies\":{\"@introspection-ai/recipe-channel-teams\":\">=0.1.0\"},\"pi\":{\"channels\":[{\"provider\":\"teams\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [channels]\n"
+    }
+  },
+  {
+    "name": "peer without a version range",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"channel-peer-versionless\",\"peerDependencies\":{\"@introspection-ai/recipe-channel-slack\":\"\"},\"pi\":{\"channels\":[{\"provider\":\"slack\"}]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\ntools: [channels]\n"
     }
   },
   {

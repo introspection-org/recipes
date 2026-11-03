@@ -24,6 +24,7 @@ import {
   packageResourcePaths,
   readPiPackageManifest,
   recipeDependencySkillResources,
+  recipeValidationErrors,
   validatePiPackageManifest,
   type PiPackageManifest,
   type RecipeSkillResource,
@@ -408,7 +409,7 @@ export function resolveRecipe(
 ): ResolvedRecipe {
   const recipeDir = resolve(opts.recipeDir);
   const manifest = deepFreeze(readPiPackageManifest(recipeDir));
-  const packageErrors = validatePiPackageManifest(manifest).findings;
+  const packageErrors = recipeValidationErrors(validatePiPackageManifest(manifest).findings);
   if (packageErrors.length > 0) {
     throw new RecipeResolutionError(
       packageErrors.map((finding) => finding.message).join("\n")

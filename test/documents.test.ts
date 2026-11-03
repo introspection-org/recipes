@@ -1,16 +1,17 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
-  createDocumentFormatModule,
+  loadRecipeDocuments,
   documentCommandsFor,
   registerDocumentTools,
   workspacePath,
   type DocumentAdapter,
 } from "../src/documents/index.js";
+import { recipesVersion } from "../src/recipe/companions.js";
 import { readPiPackageManifest, validatePiPackageManifest } from "../src/recipe/package.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
@@ -189,14 +190,32 @@ describe("documents tool", () => {
     expect(() => tool([broken], workspace())).toThrow("does not implement: render");
   });
 
-  it("checks a format module's adapter against its declared capabilities", () => {
-    const module = createDocumentFormatModule({
-      format: "pdf",
-      extensions: [".pdf"],
-      capabilities: { read: true, render: true },
-      createAdapter: () => ({ ...pdfStub, capabilities: { read: true } }),
-    });
-    expect(() => module.createAdapter({ env: {}, cwd: "/" })).toThrow("differ from its declared catalog");
+  it("checks a format module's adapter against its declared capabilities when the host loads it", async () => {
+    const recipeDir = mkdtempSync(join(tmpdir(), "documents-catalog-"));
+    const pkg = join(recipeDir, "node_modules", "@introspection-ai", "recipe-documents-pdf");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@introspection-ai/recipe-documents-pdf", version: "9.0.0", type: "module", main: "index.js" }));
+    writeFileSync(
+      join(pkg, "index.js"),
+      `export default { kind: "documents", apiVersion: 1, format: "pdf", extensions: [".pdf"], capabilities: { read: true, render: true },
+        createAdapter: () => ({ format: "pdf", extensions: [".pdf"], capabilities: { read: true }, read: async () => ({ text: "" }) }) };\n`,
+    );
+    const loaded = await loadRecipeDocuments([{ format: "pdf" }], ["documents"], { recipeDir });
+    expect(() => loaded.extension!.factory(createMockExtensionAPI() as never)).toThrow("differ from its declared catalog");
+  });
+
+  it("refuses a format module written against another contract version", async () => {
+    const recipeDir = mkdtempSync(join(tmpdir(), "documents-api-"));
+    const pkg = join(recipeDir, "node_modules", "@introspection-ai", "recipe-documents-pdf");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@introspection-ai/recipe-documents-pdf", version: "9.0.0", type: "module", main: "index.js" }));
+    writeFileSync(join(pkg, "index.js"), `export default { kind: "documents", apiVersion: 2, format: "pdf", extensions: [".pdf"], capabilities: { read: true }, createAdapter() {} };\n`);
+
+    await expect(loadRecipeDocuments([{ format: "pdf" }], ["documents"], { recipeDir })).rejects.toThrow(
+      `@introspection-ai/recipe-documents-pdf@9.0.0 (resolved from the Recipe, ${realpathSync(pkg)}) implements document format API 2, ` +
+        `but @introspection-ai/recipes ${recipesVersion()} implements document format API 1. ` +
+        "Raise or remove the Recipe's pin on @introspection-ai/recipe-documents-pdf in its dependencies, or run `introspection upgrade`.",
+    );
   });
 });
 
@@ -222,10 +241,28 @@ describe("pi.documents manifest", () => {
     [{ documents: [{ format: "docx" }, { format: "docx" }] }, "duplicate format"],
     [{ documents: [{ format: "docx", provider: "x" }] }, "unknown field"],
     [{ documents: [{ format: "docx", commands: ["read", "read"] }] }, "unique non-empty strings"],
-    [{ documents: [{ format: "pdf" }] }, "requires dependency '@introspection-ai/recipe-documents-pdf'"],
+    [{ documents: [{ format: "odt" }] }, "requires dependency '@introspection-ai/recipe-documents-odt'"],
   ])("rejects %j", (pi, message) => {
     const report = validatePiPackageManifest(manifest(pi, deps));
     expect(report.valid).toBe(false);
     expect(report.findings.map((finding) => finding.message).join("\n")).toContain(message);
+  });
+
+  it("accepts a companion format the Recipe does not list", () => {
+    expect(validatePiPackageManifest(manifest({ documents: [{ format: "docx" }, { format: "pdf" }] })).findings).toEqual([]);
+  });
+
+  it("accepts a companion format declared as a peer, which the platform provides", () => {
+    const dir = mkdtempSync(join(tmpdir(), "documents-manifest-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "r",
+        version: "0.1.0",
+        peerDependencies: { "@introspection-ai/recipe-documents-pdf": ">=0.2.0" },
+        pi: { documents: [{ format: "pdf" }] },
+      }),
+    );
+    expect(validatePiPackageManifest(readPiPackageManifest(dir)).findings.filter((item) => item.code.startsWith("pi.documents") || item.code.startsWith("package.peer"))).toEqual([]);
   });
 });

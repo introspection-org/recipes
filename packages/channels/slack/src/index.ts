@@ -1,4 +1,4 @@
-import { createChannelConnectorModule } from "@introspection-ai/recipes/channels";
+import type { RecipeChannelModule } from "@introspection-ai/recipes/channels";
 
 import {
   SLACK_CHANNEL_CAPABILITIES,
@@ -34,10 +34,12 @@ export {
 /**
  * Slack as a channel connector.
  *
- * The package supplies transport and a capability descriptor; the tool names,
- * schemas, and opaque message handles come from
- * `@introspection-ai/recipes/channels`, so Slack cannot drift from any other
- * channel and cannot grow a provider-specific tool schema of its own.
+ * The package supplies transport and a capability descriptor, as a plain
+ * object; the host builds the connector from it, so the tool names, schemas,
+ * and opaque message handles come from the host's
+ * `@introspection-ai/recipes/channels`. Slack cannot drift from any other
+ * channel, cannot grow a provider-specific tool schema of its own, and needs
+ * no run-time import of Recipes.
  *
  * Recipes declare the provider. Each agent then selects complete tool names in
  * its YAML file.
@@ -54,11 +56,13 @@ export {
  * credentials. Search, directory lookup, binding authorization and
  * cross-channel reply routing are deferred.
  */
-export const slackRecipeConnectorModule = createChannelConnectorModule({
+export const slackRecipeConnectorModule: RecipeChannelModule = {
+  kind: "channel",
+  apiVersion: 1,
   provider: "slack",
   capabilities: SLACK_CHANNEL_CAPABILITIES,
   createSession: ({ config, env, cwd }) =>
     createSlackChannelSession({ config, env, cwd }),
-});
+};
 
 export default slackRecipeConnectorModule;

@@ -108,7 +108,13 @@
 		"ajv": "^8.20.0",
 		"mcporter": "0.16.1",
 		"minimatch": "^10.2.6",
+		"semver": "^7.8.5",
 		"yaml": "^2.9.0"
+	},
+	"optionalDependencies": {
+		"@introspection-ai/recipe-channel-slack": "workspace:>=0.6.0",
+		"@introspection-ai/recipe-documents-docx": "workspace:>=0.3.0",
+		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",
@@ -123,6 +129,7 @@
 		"@earendil-works/pi-coding-agent": "1.4.0",
 		"@earendil-works/pi-tui": "1.4.0",
 		"@types/node": "^26.1.2",
+		"@types/semver": "^7.8.0",
 		"esbuild": "^0.28.1",
 		"typebox": "^1.0.56",
 		"typescript": "^7.0.2",

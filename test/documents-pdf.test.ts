@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { registerDocumentTools } from "../src/documents/index.js";
+import { registerDocumentTools, runDocumentHelper } from "../src/documents/index.js";
 import { PdfDocumentAdapter } from "../packages/documents/pdf/src/index.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
@@ -30,7 +30,7 @@ function environment(name: string, extras: string[]): string {
 
 function documents(python: string): Tool {
   const pi = createMockExtensionAPI();
-  registerDocumentTools(pi, [new PdfDocumentAdapter({ ...process.env, RECIPE_DOCUMENTS_PYTHON: python })], { cwd, pagesDir });
+  registerDocumentTools(pi, [new PdfDocumentAdapter({ runHelper: runDocumentHelper, env: { ...process.env, RECIPE_DOCUMENTS_PYTHON: python } })], { cwd, pagesDir });
   return pi.tools.get("documents") as unknown as Tool;
 }
 

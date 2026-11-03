@@ -4,6 +4,12 @@ The Word (`.docx`) format for the Recipes [`documents` tool](../../../docs/docum
 `read`, `propose_edits`, `comment`, `respond` and `remove_section`, on paper-docx.
 `render` is not registered.
 
+Recipes installs this package alongside itself (an `optionalDependencies` entry), so a
+Recipe that declares the format without listing the package uses that copy, with its Python
+environment and profiles. To pin a version, add `"@introspection-ai/recipe-documents-docx": ">=0.3.0"` to the
+Recipe's `dependencies`, and the Recipe's copy wins. Listing it in `peerDependencies`
+instead says the platform provides it.
+
 ## With and without a profile
 
 The tool is the same either way: the same commands, the same checks, and the original

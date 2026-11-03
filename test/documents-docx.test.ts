@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { registerDocumentTools } from "../src/documents/index.js";
+import { registerDocumentTools, runDocumentHelper } from "../src/documents/index.js";
 import { DocxDocumentAdapter } from "../packages/documents/docx/src/index.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
@@ -27,7 +27,7 @@ beforeAll(() => {
   cwd = mkdtempSync(join(tmpdir(), "documents-word-"));
   execFileSync(python, [resolve("test/fixtures/documents/make_contract.py"), join(cwd, "contract.docx")]);
   const pi = createMockExtensionAPI();
-  registerDocumentTools(pi, [new DocxDocumentAdapter({ ...process.env, RECIPE_DOCUMENTS_PYTHON: python })], { cwd });
+  registerDocumentTools(pi, [new DocxDocumentAdapter({ runHelper: runDocumentHelper, env: { ...process.env, RECIPE_DOCUMENTS_PYTHON: python } })], { cwd });
   documents = pi.tools.get("documents") as unknown as Tool;
 }, 300_000);
 

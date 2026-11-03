@@ -123,8 +123,29 @@ describe("skills from dependency packages", () => {
   const VISIBLE: FakePackage = { name: "acme-visible", skills: ["skills"], files: { "skills/visible/SKILL.md": skill("visible") } };
   const visiblePath = (fixture: ReturnType<typeof recipe>) => join(fixture.packageDir("acme-visible"), "skills", "visible", "SKILL.md");
 
-  it("ignores peer, dev and transitive dependencies", () => {
-    for (const as of ["peerDependencies", "devDependencies", "none"] as const) {
+  it("offers the skills of a peer the platform provides from an ancestor node_modules, and skips a missing peer", () => {
+    const root = mkdtempSync(join(tmpdir(), "recipe-peer-skills-"));
+    scratchDirs.push(root);
+    const recipeDir = join(root, "opt", "recipe");
+    const peerDir = join(root, "opt", "node_modules", "@acme", "peer-skills");
+    write(join(peerDir, "package.json"), JSON.stringify({ name: "@acme/peer-skills", version: "1.0.0", pi: { skills: ["skills"] } }));
+    write(join(peerDir, "skills", "review", "SKILL.md"), skill("review"));
+    write(
+      join(recipeDir, "package.json"),
+      JSON.stringify({
+        name: "synthetic-recipe",
+        version: "0.1.0",
+        peerDependencies: { "@acme/peer-skills": ">=1.0.0", "@acme/not-provided": ">=1.0.0" },
+        pi: {},
+      })
+    );
+    write(join(recipeDir, "agents", "agent.yaml"), "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nskills: [review]\n");
+
+    expect(skillPaths(recipeDir)).toEqual([join(realpathSync(peerDir), "skills", "review", "SKILL.md")]);
+  });
+
+  it("ignores dev and transitive dependencies", () => {
+    for (const as of ["devDependencies", "none"] as const) {
       const ignored: FakePackage = { name: "acme-skills", as, skills: ["skills"], files: { "skills/hidden/SKILL.md": skill("hidden") } };
       const fixture = recipe({ agentSkills: ["visible"], packages: [VISIBLE, ignored] });
       expect(skillPaths(fixture.dir), as).toEqual([visiblePath(fixture)]);

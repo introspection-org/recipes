@@ -1,3 +1,8 @@
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -10,6 +15,7 @@ import {
   recipeExtensionToolAllowlist,
   type RecipeExtensionSessionContext,
 } from "../src/extensions.js";
+import { packageEntry } from "../src/recipe/extensions.js";
 
 function context(
   agent = "reviewer",
@@ -202,5 +208,41 @@ describe("Recipe extension context", () => {
     expect(recipeExtensionToolAllowlist(["read"], false)).toEqual(
       new Set(["read"])
     );
+  });
+});
+
+describe("packageEntry", () => {
+  function pkg(manifest: object, files: string[] = []): string {
+    const dir = mkdtempSync(join(tmpdir(), "package-entry-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", type: "module", ...manifest }));
+    for (const file of files) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), "export default 1;\n");
+    }
+    return dir;
+  }
+
+  it.each([
+    ["a string export", { exports: "./dist/a.js" }, "dist/a.js"],
+    ["root conditions", { exports: { import: "./dist/a.js", require: "./dist/a.cjs" } }, "dist/a.js"],
+    ["root conditions in order, require first", { exports: { require: "./dist/a.cjs", default: "./dist/a.js" } }, "dist/a.js"],
+    ["nested conditions", { exports: { node: { import: "./dist/a.js" }, default: "./dist/b.js" } }, "dist/a.js"],
+    ["an array of targets", { exports: [{ import: "./dist/a.js" }, "./dist/b.js"] }, "dist/a.js"],
+    ["a subpath map", { exports: { ".": { import: "./dist/a.js" }, "./package.json": "./package.json" } }, "dist/a.js"],
+    ["main without exports", { main: "./dist/a.js" }, "dist/a.js"],
+  ])("finds the entry of %s", async (_, manifest, expected) => {
+    const dir = pkg(manifest, ["dist/a.js", "dist/b.js"]);
+    expect(packageEntry(dir)).toBe(join(dir, expected));
+  });
+
+  it("matches what Node's own ESM resolution picks for root conditions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "package-entry-node-"));
+    const dir = join(root, "node_modules", "p");
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", type: "module", exports: { import: "./dist/a.js" } }));
+    writeFileSync(join(dir, "dist", "a.js"), "export default 1;\n");
+    writeFileSync(join(root, "probe.mjs"), "export default import.meta.resolve('p');\n");
+    const { default: resolved } = await import(pathToFileURL(join(root, "probe.mjs")).href);
+    expect(packageEntry(dir)).toBe(realpathSync(fileURLToPath(resolved)).replace(realpathSync(dir), dir));
   });
 });

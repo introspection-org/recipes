@@ -183,11 +183,50 @@ MUST select one explicitly.
 
 ## First-party packages
 
-Some tools come from packages we publish, which a Recipe adds as dependencies
-and turns on with a `pi` declaration. There are two kinds today: channel tools
+Some tools come from packages we publish, which a Recipe turns on with a `pi`
+declaration. There are two kinds today: channel tools
 (`@introspection-ai/recipe-channel-<provider>`, such as Slack) and document
 tools (`@introspection-ai/recipe-documents-<format>`, docx and pdf). A package
 can also ship skills a Recipe uses; see [Shipping skills in a package](#shipping-skills-in-a-package).
+
+**Dependencies and peers.** For any package a Recipe uses, `dependencies`
+means the Recipe brings it and pins its version, and `peerDependencies`
+means the platform running the Recipe provides it. The managed cloud install
+never installs peers (`auto-install-peers=false`): the platform's runtime
+image installs them in a `node_modules` above the Recipe, where Node's
+resolution finds them, and the image build fails if one is missing. Locally,
+pnpm and npm install peers by default, so the Recipe gets its own copy. A
+peer needs a version range like any dependency. `recipes check` warns about a
+peer a standard platform does not provide (`package.peer_not_provided_by_default`):
+anything other than Recipes, Pi and typebox, which the host imports, and the
+companion packages below. Skills and `pi.runtime.python` are read from peers as
+well as dependencies.
+
+These first-party packages are **companion packages**: Recipes installs them
+alongside itself, as its `optionalDependencies`, so installing
+`@introspection-ai/recipes` (into Pi, a runtime image, or with npm or npx)
+puts them in the same `node_modules`. They depend on nothing of Recipes at
+run time, only its types, so there is no cycle back to it. A Recipe may
+declare one as a peer, or omit it entirely, and the copy beside the running
+Recipes is used. A Recipe that lists the
+package in its `dependencies` **pins** it, and its own copy wins. So a
+redlining Recipe can declare only `"pi": { "documents": [{ "format": "docx",
+"profile": "legal-redlining-en-US" }] }` and run on the platform's docx
+package, or add `"@introspection-ai/recipe-documents-docx": ">=0.3.0"` to
+`dependencies` to pin the version it was tested with. Whichever copy loads
+must implement the module contract the running Recipes implements (its
+`apiVersion`), or the Recipe fails to load, naming the package, both versions
+and the fix. A third-party package that declares a Recipes peer range is
+checked against the running version the same way. Only a companion package
+may be omitted; any other package, including a channel or document format
+package outside the list, must be declared, and a third-party package
+belongs in `dependencies`.
+
+Recipes' `optionalDependencies` is the statement of what a standard platform
+provides: each companion package and the version range Recipes is compatible
+with (`npm view @introspection-ai/recipes optionalDependencies --json`). Being
+optional, a companion that fails to install does not fail the Recipes
+install. A platform may provide more.
 
 ### Channel tools
 
@@ -197,9 +236,6 @@ credential. A host binds those values when it starts a task.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0"
-  },
   "pi": {
     "channels": [
       {
@@ -215,9 +251,11 @@ provider. For example, `slack` resolves to
 `@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
 and marks which tools are active by default.
 
-The provider package must be in the Recipe's production dependencies and
-lockfile. The host imports the package only when the Recipe declares the
-provider. An agent lists each allowed tool by its full name, such as
+The host supplies the Slack package by default; list it in the Recipe's
+production dependencies (and lockfile) to pin it. A provider the host does not
+supply must be declared: in `dependencies`, or in `peerDependencies` when the
+platform provides it. The host imports the package only when the Recipe
+declares the provider. An agent lists each allowed tool by its full name, such as
 `channels`, in its `tools` list. The host fails when the agent names a
 tool that the connector does not register.
 
@@ -234,9 +272,10 @@ intentional silence, such as a read-only allowlist. See [Channel tools](channels
 ### Document tools
 
 `pi.documents` lists the document formats the `documents` tool opens, each as
-`{"format": "<format>"}` with the package
-`@introspection-ai/recipe-documents-<format>` as a dependency, and an optional
-`commands` allowlist and `profile`. A profile is a skill with guidance for one
+`{"format": "<format>"}` served by the package
+`@introspection-ai/recipe-documents-<format>` (a companion package for docx and pdf,
+pinned when listed in `dependencies`, provided by the platform when listed in
+`peerDependencies`), and an optional `commands` allowlist and `profile`. A profile is a skill with guidance for one
 kind of work, such as `legal-redlining-en-US`, which the docx package ships.
 
 ```json
@@ -334,8 +373,9 @@ the same `pi.skills` key a Recipe uses:
 }
 ```
 
-A Recipe uses those skills by listing the package in `dependencies` and
-selecting them by name in an agent's `skills`, like its own:
+A Recipe uses those skills by listing the package in `dependencies` (or in
+`peerDependencies`, when the platform provides it) and selecting them by name
+in an agent's `skills`, like its own:
 
 ```json
 {
@@ -352,12 +392,12 @@ skills: [review-nda]
 
 The rules:
 
-- Hosts read `pi.skills` from each direct `dependencies` entry, found with
-  Node's package resolution from the Recipe directory: in the Recipe's own
-  `node_modules`, or in one above it when an npm install hoists the
-  dependency beside the Recipe. `peerDependencies`, `devDependencies` and
-  transitive dependencies are not read; peers are not installed by the managed
-  install.
+- Hosts read `pi.skills` from each direct `dependencies` and
+  `peerDependencies` entry, found with Node's package resolution from the
+  Recipe directory: in the Recipe's own `node_modules`, or in one above it,
+  where an npm install hoists a dependency beside the Recipe and a platform
+  image installs the peers it provides. One that is not installed is skipped.
+  `devDependencies` and transitive dependencies are not read.
 - Only an explicit `pi.skills` counts. A dependency's `skills/` folder is not
   discovered by convention, and a dependency without `pi.skills` contributes
   no skills.
@@ -377,10 +417,10 @@ selects that is not in the Recipe is a warning there rather than an error.
 
 Document profiles use a different path. A Recipe such as
 [`introspection-org/recipe-redlining`](https://github.com/introspection-org/recipe-redlining)
-lists `@introspection-ai/recipe-documents-docx` and
-`@introspection-ai/recipe-documents-pdf` in `dependencies` and selects a
-profile in `pi.documents`; the `documents` tool delivers the core `documents`
-skill and that profile itself, for agents that list the tool.
+selects a profile in `pi.documents`, from a pinned docx package or the host
+default (see [First-party packages](#first-party-packages)); the `documents`
+tool delivers the core `documents` skill and that profile itself, for agents
+that list the tool.
 
 ## Tools, subagents, and capabilities
 

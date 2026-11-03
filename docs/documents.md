@@ -24,10 +24,6 @@ Agents select `tools: [documents]`.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-documents-docx": ">=0.1.0",
-    "@introspection-ai/recipe-documents-pdf": ">=0.1.0"
-  },
   "pi": {
     "documents": [{ "format": "docx" }, { "format": "pdf" }]
   }
@@ -38,9 +34,28 @@ Agents select `tools: [documents]`.
 tools: [documents]
 ```
 
-Each declaration names a format; the package
-`@introspection-ai/recipe-documents-<format>` must be a dependency, and
-`recipes check` and the runtime both reject a declaration without it. An
+Each declaration names a format, served by the package
+`@introspection-ai/recipe-documents-<format>`. Recipes installs the docx and
+pdf packages alongside itself (they are `optionalDependencies` of
+`@introspection-ai/recipes`), so a Recipe that does not list them uses the
+copy beside the running Recipes, Python environment and profiles included.
+Declaring it in `peerDependencies` says the same thing explicitly: the
+platform provides it. To pin a version, list the package in `dependencies`,
+and the Recipe's copy wins:
+
+```json
+{ "dependencies": { "@introspection-ai/recipe-documents-docx": ">=0.3.0" } }
+```
+
+Any other format must be declared, in `dependencies` (the
+Recipe brings it) or `peerDependencies` (the platform provides it, and the
+runtime image build fails without it); `recipes check` and the runtime both
+reject a declaration with neither. Whichever copy loads must implement the
+format contract the running Recipes implements (`apiVersion`, below), and a
+package that declares a Recipes peer range must admit the running version, or
+the Recipe fails to load naming the package and the fix. When neither the
+Recipe nor the Recipes install has the package, add it to `dependencies` or
+reinstall Recipes with `introspection upgrade`. An
 optional `commands` allowlist narrows what that format may do, for every agent:
 
 ```json
@@ -325,18 +340,30 @@ looked at with `read`.
 ## Write a format
 
 A format supplies an adapter and a capability descriptor; it writes no tool
-schemas.
+schemas. It exports a plain object, `RecipeDocumentFormatModule`, and
+everything it needs from Recipes at run time arrives through `createAdapter`,
+so the package imports only Recipes' types and needs no run-time dependency on
+`@introspection-ai/recipes` (keep it in `devDependencies`):
 
 ```ts
-import { createDocumentFormatModule } from "@introspection-ai/recipes/documents";
+import type { RecipeDocumentFormatModule } from "@introspection-ai/recipes/documents";
 
-export default createDocumentFormatModule({
+const pdf: RecipeDocumentFormatModule = {
+  kind: "documents",
+  apiVersion: 1,
   format: "pdf",
   extensions: [".pdf"],
   capabilities: { read: true, render: true },
-  createAdapter: ({ env }) => new PdfDocumentAdapter(env),
-});
+  createAdapter: ({ env, python, runHelper }) => new PdfDocumentAdapter({ env, python, runHelper }),
+};
+
+export default pdf;
 ```
+
+`apiVersion` names the contract the format was written against; the host
+refuses a different one, naming the package, both versions and the fix.
+`createDocumentFormatModule` from `@introspection-ai/recipes/documents` builds
+the same object, for a format that depends on Recipes anyway.
 
 `createAdapter` also receives `python`: the interpreter of the environment the
 format package's own `pi.runtime.python` declares, which the host prepares
@@ -344,19 +371,21 @@ format package's own `pi.runtime.python` declares, which the host prepares
 absent when the package declares none; an adapter that ignores it keeps
 working.
 
-A Python helper runs with `runDocumentHelper(script, request, { env, cwd,
-python, signal })` from `@introspection-ai/recipes/documents`. It is
+A Python helper runs with `runHelper(script, request, { env, cwd, python,
+signal })`, which the host passes to `createAdapter`: its
+`runDocumentHelper`. It is
 `runPythonJson` from `@introspection-ai/recipes/python` with the document
 contract on top: the interpreter order above, including
 `RECIPE_DOCUMENTS_PYTHON`; a helper that prints `{ "error": "..." }` fails the
 call with that message; and the result is a `DocumentResult` (`text`,
 `details`, `images`) whose `details.timing.call_ms` records the round trip.
-The Word and PDF packages use it and re-export it as `runHelper`, with
-`documentPythonExecutable` as `pythonExecutable`.
+The Word and PDF packages run every command through it.
 
 Registration checks that the adapter implements every method its
 capabilities claim, and that the adapter returns the declared capabilities.
-A format package ships its code and its profiles (see Skills and profiles).
+A format package ships its code and its profiles (see Skills and profiles), so
+a profile resolves the same from the copy installed alongside Recipes as from
+a pinned one.
 A skill that teaches a format library, such as Paper's `docx` skill, is a
 dependency of the Recipe that uses it, installed when the runtime is baked.
 

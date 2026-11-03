@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire, findPackageJSON } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,27 +20,64 @@ export function resolvePackageFromHost(
   }
   try {
     const manifestPath = findPackageJSON(specifier, realHostEntry);
-    if (!manifestPath) return undefined;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-      exports?: string | { "."?: string | { import?: string; default?: string } };
-      module?: string;
-      main?: string;
-    };
-    const rootExport =
-      typeof manifest.exports === "string"
-        ? manifest.exports
-        : manifest.exports?.["."];
-    const entry =
-      typeof rootExport === "string"
-        ? rootExport
-        : rootExport?.import ??
-          rootExport?.default ??
-          manifest.module ??
-          manifest.main;
-    return entry ? resolve(dirname(manifestPath), entry) : undefined;
+    return manifestPath ? packageEntry(dirname(manifestPath)) : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** The conditions an ESM `import` in Node matches, in Node's order of preference. */
+const IMPORT_CONDITIONS = ["import", "node", "default"];
+
+/**
+ * The target an `exports` value resolves to for an ESM import, following
+ * Node's rules: a string is the target, an array is tried in order, and a
+ * conditions object takes its first key, in its own order, that `import` in
+ * Node matches.
+ */
+function exportTarget(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const target = exportTarget(item);
+      if (target) return target;
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    for (const [condition, nested] of Object.entries(value)) {
+      if (!IMPORT_CONDITIONS.includes(condition)) continue;
+      const target = exportTarget(nested);
+      if (target) return target;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The file an ESM `import` of the package at `packageDir` loads: its root
+ * export, whether written as `exports["."]` or as conditions at the top of
+ * `exports`; else `module` or `main`; else `index.js`, as Node defaults to.
+ */
+export function packageEntry(packageDir: string): string | undefined {
+  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
+    exports?: unknown;
+    module?: string;
+    main?: string;
+  };
+  const { exports } = manifest;
+  const isSubpathMap =
+    !!exports &&
+    typeof exports === "object" &&
+    !Array.isArray(exports) &&
+    Object.keys(exports).some((key) => key.startsWith("."));
+  const rootExport = isSubpathMap ? (exports as Record<string, unknown>)["."] : exports;
+  const entry =
+    exportTarget(rootExport) ??
+    manifest.module ??
+    manifest.main ??
+    (existsSync(join(packageDir, "index.js")) ? "index.js" : undefined);
+  return entry ? resolve(packageDir, entry) : undefined;
 }
 
 function resolvePackage(specifier: string): string | undefined {

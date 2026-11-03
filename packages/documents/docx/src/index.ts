@@ -1,24 +1,32 @@
 import { fileURLToPath } from "node:url";
 
-import {
-  createDocumentFormatModule,
-  runDocumentHelper,
-  type DocumentAdapter,
-  type DocumentAdapterContext,
-  type DocumentCapabilities,
-  type DocumentCommentInput,
-  type DocumentProposeEditsInput,
-  type DocumentReadInput,
-  type DocumentRemoveSectionInput,
-  type DocumentRespondInput,
-  type DocumentReviseInput,
-  type DocumentResult,
+// Types only: the host passes what this package runs (`runHelper`) into
+// `createAdapter`, so it has no run-time dependency on @introspection-ai/recipes.
+import type {
+  DocumentAdapter,
+  DocumentAdapterContext,
+  DocumentCapabilities,
+  DocumentCommentInput,
+  DocumentHelperRunner,
+  DocumentProposeEditsInput,
+  DocumentReadInput,
+  DocumentRemoveSectionInput,
+  DocumentRespondInput,
+  DocumentReviseInput,
+  DocumentResult,
+  RecipeDocumentFormatModule,
 } from "@introspection-ai/recipes/documents";
 
-export {
-  documentPythonExecutable as pythonExecutable,
-  runDocumentHelper as runHelper,
-} from "@introspection-ai/recipes/documents";
+/** What a `DocxDocumentAdapter` runs with. */
+export interface DocxDocumentAdapterOptions {
+  /** The host's `runDocumentHelper`, from `createAdapter`. */
+  runHelper: DocumentHelperRunner;
+  env?: NodeJS.ProcessEnv;
+  /** The helper script. Default `DOCX_HELPER`. */
+  script?: string;
+  /** The interpreter of this package's environment, which the host prepares from its `pi.runtime.python`. */
+  python?: string;
+}
 
 /** The helper entry point shipped in this package. */
 export const DOCX_HELPER = fileURLToPath(new URL("../python/docx_helper.py", import.meta.url));
@@ -43,18 +51,11 @@ export class DocxDocumentAdapter implements DocumentAdapter {
   readonly extensions = [".docx"] as const;
   readonly capabilities = DOCX_DOCUMENT_CAPABILITIES;
 
-  /**
-   * `python` is the interpreter of this package's environment, which the host
-   * prepares from its `pi.runtime.python`; see `pythonExecutable` for the order.
-   */
-  constructor(
-    private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly script = DOCX_HELPER,
-    private readonly python?: string,
-  ) {}
+  constructor(private readonly options: DocxDocumentAdapterOptions) {}
 
   private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
-    return runDocumentHelper(this.script, { command, ...input }, { env: this.env, cwd: ctx.cwd, python: this.python, signal: ctx.signal });
+    const { runHelper, env = process.env, script = DOCX_HELPER, python } = this.options;
+    return runHelper(script, { command, ...input }, { env, cwd: ctx.cwd, python, signal: ctx.signal });
   }
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput) {
@@ -99,12 +100,14 @@ export class DocxDocumentAdapter implements DocumentAdapter {
  */
 export const LEGAL_REDLINING_EN_US = fileURLToPath(new URL("../profiles/legal-redlining-en-us/SKILL.md", import.meta.url));
 
-export const docxDocumentFormatModule = createDocumentFormatModule({
+export const docxDocumentFormatModule: RecipeDocumentFormatModule = {
+  kind: "documents",
+  apiVersion: 1,
   format: "docx",
   extensions: [".docx"],
   capabilities: DOCX_DOCUMENT_CAPABILITIES,
   profiles: { "legal-redlining-en-US": LEGAL_REDLINING_EN_US },
-  createAdapter: ({ env, python }) => new DocxDocumentAdapter(env, DOCX_HELPER, python),
-});
+  createAdapter: ({ env, python, runHelper }) => new DocxDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
+};
 
 export default docxDocumentFormatModule;

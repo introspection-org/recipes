@@ -2,34 +2,34 @@
 
 The Slack adapter for the provider-neutral
 [channel tools](https://github.com/introspection-org/recipes/blob/main/docs/channels.md).
-A Recipe installs it when its `package.json#pi.channels` list includes the
+A Recipe uses it when its `package.json#pi.channels` list includes the
 `slack` provider.
 
 The package supplies Slack Web API transport and a capability descriptor. The
 tool names and schemas come from `@introspection-ai/recipes/channels`, so a
 Recipe written against `channels reply` is not written against Slack.
 
-The adapter is a dependency; the SDK is a peer the runtime supplies, so they
-install differently. Adding both in one `pnpm add` puts both in
-`dependencies` — and a Recipe-local copy of the SDK is the one
-`recipeExtensionAliases()` prefers, which is how a Recipe ends up running a
-different SDK instance from its host:
+Recipes installs this package alongside itself (an `optionalDependencies`
+entry), so a Recipe that declares the `slack` provider without listing the
+package, or lists it in `peerDependencies`, uses that copy. The package has no
+run-time dependency on Recipes: it exports a plain descriptor, and the host
+builds the connector from it. A Recipe that lists it in `dependencies` pins
+it, and the Recipe's copy wins.
+
+To pin it:
 
 ```bash
 pnpm add @introspection-ai/recipe-channel-slack
-pnpm add --save-peer @introspection-ai/recipes
 ```
 
-Then widen both ranges: pnpm saves a caret, and a caret on a `0.x` version pins
-the MINOR, so `^0.4.0` would strand the Recipe on the adapter's next release.
+Then replace the caret with an open lower bound: a caret on a `0.x` version
+pins the MINOR, so `^0.6.0` would strand the Recipe on the adapter's next
+release.
 
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-channel-slack": ">=0.4.0 <1.0.0"
-  },
-  "peerDependencies": {
-    "@introspection-ai/recipes": ">=0.26.0 <1.0.0"
+    "@introspection-ai/recipe-channel-slack": ">=0.6.0"
   },
   "pi": {
     "channels": [

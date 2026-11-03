@@ -12,7 +12,7 @@ export {
   runDocumentHelper,
 } from "./python.js";
 export type { DocumentHelperOptions } from "./python.js";
-export { createDocumentFormatModule, DOCUMENTS_SKILL, loadRecipeDocuments } from "./module.js";
+export { createDocumentFormatModule, DOCUMENT_FORMAT_API_VERSION, DOCUMENTS_SKILL, loadRecipeDocuments } from "./module.js";
 export {
   DOCUMENT_PROFILE_NAME,
   documentProfileShapeProblem,
@@ -21,7 +21,7 @@ export {
   recipeProfileSkill,
   resolveDocumentProfile,
 } from "./profile.js";
-export type { DocumentAdapterOptions, DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
+export type { DocumentAdapterOptions, DocumentFormatModuleOptions, DocumentHelperRunner, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
 export type {
   DocumentAdapter,
   DocumentAdapterContext,
