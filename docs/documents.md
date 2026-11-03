@@ -55,6 +55,101 @@ Unlike channels, where each provider owns its own `channels` tool, formats
 share one tool: a Recipe reads a PDF brief and edits a Word contract in the
 same turn, and two `documents` tools would collide.
 
+## Skills and profiles
+
+Every agent that selects `documents` is offered a core `documents` skill: which
+command fits which change, how to quote, and what each failure means. It is
+generic, with nothing about any one kind of work.
+
+A **profile** is a skill for one kind of work, offered beside the core skill.
+A declaration selects at most one, either shipped by the format, by name, or the
+Recipe's own, by a relative path:
+
+```json
+{ "pi": { "documents": [{ "format": "docx", "profile": "legal-redlining-en-US" }] } }
+```
+
+```json
+{ "pi": { "documents": [{ "format": "docx", "profile": "./profiles/house-style-en-gb" }] } }
+```
+
+The docx package ships `legal-redlining-en-US`
+(`packages/documents/docx/profiles/`): planning a first markup of a contract,
+answering the other side's redline with counters and replies, and writing each
+rationale in your side's voice. A name matches regardless of case.
+
+A profile changes what the agent is told, never what the tool does: commands,
+schemas and the path policy are the same with or without one. Nothing in a
+profile runs; it is only read.
+
+### Write your own profile
+
+A profile is a folder holding a `SKILL.md`, anywhere inside the Recipe:
+
+```text
+profiles/
+  house-style-en-gb/
+    SKILL.md
+```
+
+The `SKILL.md` starts with frontmatter. `name` must be the folder's name, in
+lower case; `description` says when to read it:
+
+```markdown
+---
+name: house-style-en-gb
+description: How we edit internal memos in Word. Read it with the documents skill before changing a memo.
+---
+
+# Editing memos
+
+This profile layers on the core `documents` skill.
+
+## When it applies
+Internal memos and policies in Word. Not contracts: those go to legal.
+
+## Planning
+Read the whole memo first. Change only what's wrong or unclear; keep the
+author's structure and voice.
+
+## Making the changes
+- Rewrite a paragraph with `revise`: its `paragraph` id, its full new `text`,
+  and a `rationale`.
+- Fix a word or a figure with `propose_edits`, quoting from a fresh `read`.
+- Raise a question without changing the text with `comment`.
+
+## Comments
+Each rationale says why in one sentence, in plain British English. Never
+narrate the edit; the tracked change already shows it.
+
+## When an edit fails
+Fix that edit from its reason and the closest text, and resubmit only it. After
+two failures, list it for the author instead.
+```
+
+Then point the declaration at the folder, or at its `SKILL.md`. The path must
+stay inside the Recipe, by its real path too: a symlink to a folder outside it
+is refused.
+
+What a profile should say:
+
+- **When it applies,** and when it doesn't, so the agent reads it at the right time.
+- **How to plan the work** before editing: what to change, what to leave alone.
+- **Which `documents` commands to use for which change,** and how: `revise` for
+  rewriting paragraphs, `propose_edits` for small fixes, `comment`, `respond`,
+  `remove_section`.
+- **How to write rationales and comments:** voice, length, what they explain.
+- **What to do when an edit fails,** and when to stop and hand it to a person.
+
+What belongs in the Recipe's own skills instead: a team's or a client's
+positions, playbooks, approvals and facts about a deal. A profile describes a
+kind of work; the Recipe knows the particular case.
+
+`recipes check` validates the shape: a name, or a relative path inside the
+Recipe. For a path it also checks that the `SKILL.md` exists, resolves inside
+the Recipe, and has a matching `name` and a `description`. A name the format
+doesn't ship fails when the Recipe loads, with the names it does ship.
+
 ## Commands
 
 | Command (`documents` + `command`) | Arguments | Requires |

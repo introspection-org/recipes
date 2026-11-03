@@ -960,6 +960,25 @@ const DOCUMENT_COMMANDS: [&str; 7] = [
     "render",
 ];
 
+/// Why a profile value is invalid. A profile is the name of one the format package
+/// ships (checked when the Recipe loads), or a relative path to a profile folder in
+/// the Recipe: a skill folder whose SKILL.md the TypeScript check and the runtime read.
+fn document_profile_problem(profile: &JsonValue) -> Option<String> {
+    const USAGE: &str = "must be the name of a profile the format ships, such as legal-redlining-en-US, or a relative path to a profile folder in the Recipe";
+    let Some(profile) = profile.as_str().filter(|value| !value.trim().is_empty()) else {
+        return Some(USAGE.to_owned());
+    };
+    let is_path = profile.contains('/') || profile.contains('\\') || profile.starts_with('.');
+    if !is_path {
+        let valid = profile.chars().next().is_some_and(|first| first.is_ascii_alphanumeric())
+            && profile.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        return (!valid).then(|| USAGE.to_owned());
+    }
+    let absolute = profile.starts_with('/') || profile.starts_with('\\') || profile.get(1..2) == Some(":");
+    (absolute || profile.split(['/', '\\']).any(|part| part == ".."))
+        .then(|| format!("'{profile}' must be a relative path inside the Recipe"))
+}
+
 /// `pi.documents` mirrors `pi.channels`: one declaration per format, each
 /// naming the `@introspection-ai/recipe-documents-<format>` package that must
 /// be a dependency, with an optional `commands` allowlist from the neutral
@@ -993,13 +1012,13 @@ fn validate_documents_config(
         };
         for key in declaration
             .keys()
-            .filter(|key| !matches!(key.as_str(), "format" | "commands"))
+            .filter(|key| !matches!(key.as_str(), "format" | "commands" | "profile"))
         {
             ctx.error(
                 CODE,
                 PACKAGE_JSON,
                 format!("package.json#pi.documents[{index}] contains unknown field '{key}'"),
-                Some("use format and optional commands"),
+                Some("use format, and optional commands and profile"),
             );
         }
         if let Some(commands) = declaration.get("commands") {
@@ -1029,6 +1048,14 @@ fn validate_documents_config(
                     Some("use read, revise, propose_edits, comment, respond, remove_section or render"),
                 );
             }
+        }
+        if let Some(problem) = declaration.get("profile").and_then(document_profile_problem) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.documents[{index}].profile {problem}"),
+                Some("name a profile the format ships, such as legal-redlining-en-US, or a profile folder such as ./profiles/house-style-en-gb"),
+            );
         }
         let format = string_value(declaration.get("format"));
         match format.as_deref() {
@@ -4033,7 +4060,10 @@ mod tests {
     #[test]
     fn accepts_document_format_declarations() {
         let report = check_recipe_files(&documents_recipe(
-            json!([{ "format": "docx", "commands": ["read", "propose_edits"] }, { "format": "pdf" }]),
+            json!([
+                { "format": "docx", "commands": ["read", "propose_edits"], "profile": "legal-redlining-en-US" },
+                { "format": "pdf", "profile": "./profiles/brief-reading-en-us" }
+            ]),
             documents_dependencies(),
         ));
         assert!(report.valid, "{:?}", report.diagnostics);
@@ -4065,6 +4095,16 @@ mod tests {
             (json!([{ "format": "docx", "commands": ["read", "read"] }]), false),
             (json!([{ "format": "docx", "commands": "read" }]), false),
             (json!([{ "format": "docx", "commands": ["redline"] }]), false),
+            (json!([{ "format": "docx", "profile": "legal-redlining-en-US" }]), true),
+            (json!([{ "format": "docx", "profile": "./profiles/house-style-en-gb" }]), true),
+            (json!([{ "format": "docx", "profile": "profiles/house-style-en-gb/SKILL.md" }]), true),
+            (json!([{ "format": "docx", "profile": "legal-redlining" }]), true),
+            (json!([{ "format": "docx", "profile": "../profile.ts" }]), false),
+            (json!([{ "format": "docx", "profile": "/abs/profile.ts" }]), false),
+            (json!([{ "format": "docx", "profile": "C:\\profiles\\house" }]), false),
+            (json!([{ "format": "docx", "profile": "profiles/../../outside" }]), false),
+            (json!([{ "format": "docx", "profile": "" }]), false),
+            (json!([{ "format": "docx", "profile": 3 }]), false),
         ] {
             let report =
                 check_recipe_files(&documents_recipe(documents.clone(), documents_dependencies()));

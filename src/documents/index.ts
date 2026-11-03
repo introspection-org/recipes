@@ -6,7 +6,15 @@ export {
   workspacePath,
 } from "./tools.js";
 export type { DocumentCommand, DocumentToolHost, RegisterDocumentToolsOptions } from "./tools.js";
-export { createDocumentFormatModule, loadRecipeDocuments } from "./module.js";
+export { createDocumentFormatModule, DOCUMENTS_SKILL, loadRecipeDocuments } from "./module.js";
+export {
+  DOCUMENT_PROFILE_NAME,
+  documentProfileShapeProblem,
+  documentProfileSkillProblem,
+  isDocumentProfilePath,
+  recipeProfileSkill,
+  resolveDocumentProfile,
+} from "./profile.js";
 export type { DocumentFormatModuleOptions, LoadedRecipeDocuments, RecipeDocumentFormatModule } from "./module.js";
 export type {
   DocumentAdapter,

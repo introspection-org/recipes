@@ -1,6 +1,9 @@
 import { existsSync, realpathSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { documentProfileShapeProblem, isDocumentProfilePath, recipeProfileSkill } from "../documents/profile.js";
+
+
 export interface RecipePackageResources {
   agents: string[];
   extensions: string[];
@@ -90,6 +93,24 @@ export function recipeChannelPackageName(provider: string): string {
 export interface RecipePackageDocument {
   format: string;
   commands?: string[];
+  /** A profile the format ships, by name, or a relative path to a profile folder in the Recipe. */
+  profile?: string;
+}
+
+/**
+ * Why a `pi.documents[].profile` value is invalid, or undefined when it is
+ * valid. A name is checked against the format's profiles when the Recipe
+ * loads; a path is checked here too when the Recipe folder is known.
+ */
+export function documentProfileProblem(profile: unknown, packageDir?: string): string | undefined {
+  const shape = documentProfileShapeProblem(profile);
+  if (shape || packageDir === undefined || !isDocumentProfilePath(profile as string)) return shape;
+  try {
+    recipeProfileSkill(profile as string, packageDir);
+    return undefined;
+  } catch (error) {
+    return (error as Error).message.replace(/^Document profile /, "");
+  }
 }
 
 export function recipeDocumentPackageName(format: string): string {
@@ -200,7 +221,8 @@ function resourceDeclarations(
 function sourceShapeFindings(
   pi: Record<string, unknown>,
   packageName: string,
-  dependencies: unknown
+  dependencies: unknown,
+  packageDir?: string
 ): RecipeValidationFinding[] {
   const findings: RecipeValidationFinding[] = [];
   for (const key of Object.keys(pi)) {
@@ -238,7 +260,7 @@ function sourceShapeFindings(
     ...channelSourceShapeFindings(pi.channels, packageName, dependencies)
   );
   findings.push(
-    ...documentSourceShapeFindings(pi.documents, packageName, dependencies)
+    ...documentSourceShapeFindings(pi.documents, packageName, dependencies, packageDir)
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
@@ -331,7 +353,8 @@ function channelSourceShapeFindings(
 function documentSourceShapeFindings(
   value: unknown,
   packageName: string,
-  dependencies: unknown
+  dependencies: unknown,
+  packageDir?: string
 ): RecipeValidationFinding[] {
   if (value === undefined) return [];
   const invalid = (message: string) =>
@@ -351,7 +374,7 @@ function documentSourceShapeFindings(
       continue;
     }
     const declaration = raw as Record<string, unknown>;
-    const unknown = Object.keys(declaration).filter((key) => !["format", "commands"].includes(key));
+    const unknown = Object.keys(declaration).filter((key) => !["format", "commands", "profile"].includes(key));
     if (unknown.length > 0) {
       findings.push(invalid(`package.json#pi.documents[${index}] contains unknown field(s): ${unknown.join(", ")}`));
     }
@@ -360,6 +383,8 @@ function documentSourceShapeFindings(
       new Set(declaration.commands).size !== declaration.commands.length)) {
       findings.push(invalid(`package.json#pi.documents[${index}].commands must be an array of unique non-empty strings`));
     }
+    const profileProblem = declaration.profile === undefined ? undefined : documentProfileProblem(declaration.profile, packageDir);
+    if (profileProblem) findings.push(invalid(`package.json#pi.documents[${index}].profile ${profileProblem}`));
     const format =
       typeof declaration.format === "string" && declaration.format.trim()
         ? declaration.format.trim()
@@ -824,7 +849,11 @@ function parseDocuments(value: unknown): RecipePackageDocument[] {
     const format = stringValue(declaration.format);
     if (!format || seen.has(format)) continue;
     seen.add(format);
-    documents.push({ format, ...(Array.isArray(declaration.commands) ? { commands: declaration.commands as string[] } : {}) });
+    documents.push({
+      format,
+      ...(Array.isArray(declaration.commands) ? { commands: declaration.commands as string[] } : {}),
+      ...(typeof declaration.profile === "string" ? { profile: declaration.profile } : {}),
+    });
   }
   return documents;
 }
@@ -908,7 +937,7 @@ export function readPiPackageManifest(packageDir: string): RecipePackageManifest
     runtime: parseRuntimeRequirements(pi.runtime),
   };
   Object.defineProperty(manifest, SOURCE_FINDINGS, {
-    value: sourceShapeFindings(pi, manifest.name, raw.dependencies),
+    value: sourceShapeFindings(pi, manifest.name, raw.dependencies, packageDir),
     enumerable: false,
   });
   return manifest;

@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    "profiles",
     "python/*.py",
     "python/recipe_documents_docx/*.py",
     "python/recipe_documents_docx/LICENSE-redline-bench",
