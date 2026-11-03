@@ -46,7 +46,7 @@ of a base configuration.
 name: agent
 description: Main release coordinator
 ai:
-  model: anthropic/claude-sonnet-4-6
+  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
   thinking_level: medium
 tools: [read, bash]
 skills: [release-policy]
@@ -128,7 +128,7 @@ needs.
 
 ```yaml
 ai:
-  model: anthropic/claude-sonnet-4-6
+  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
   thinking_level: medium
   options:
     temperature: 0.2

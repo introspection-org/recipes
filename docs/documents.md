@@ -39,13 +39,36 @@ Each declaration names a format, served by the package
 pdf packages alongside itself (they are `optionalDependencies` of
 `@introspection-ai/recipes`), so a Recipe that does not list them uses the
 copy beside the running Recipes, Python environment and profiles included.
-Declaring it in `peerDependencies` says the same thing explicitly: the
-platform provides it. To pin a version, list the package in `dependencies`,
-and the Recipe's copy wins:
+Declare it in `peerDependencies` by default, which says so explicitly: the
+platform provides it.
 
 ```json
-{ "dependencies": { "@introspection-ai/recipe-documents-docx": ">=0.3.0" } }
+{
+  "peerDependencies": {
+    "@introspection-ai/recipe-documents-docx": ">=X.Y.Z",
+    "@introspection-ai/recipe-documents-pdf": ">=X.Y.Z"
+  },
+  "pi": {
+    "documents": [
+      { "format": "docx", "profile": "legal-redlining-en-US" },
+      { "format": "pdf" }
+    ]
+  }
+}
 ```
+
+To pin an exact version, list the package in `dependencies` instead, and the
+Recipe's copy wins:
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-documents-docx": "X.Y.Z"
+  }
+}
+```
+
+`X.Y.Z` stands for a released version (`npm view @introspection-ai/recipe-documents-docx version`): a peer takes an open floor, `>=X.Y.Z`, and a pin an exact version.
 
 Any other format must be declared, in `dependencies` (the
 Recipe brings it) or `peerDependencies` (the platform provides it, and the
@@ -106,6 +129,14 @@ profiles/
   house-style-en-gb/
     SKILL.md
 ```
+
+Name a profile `<use-case>-<locale>`: a kebab-case use case, which may be a
+domain and a task (`legal-redlining`, `house-style`), then a BCP 47 locale
+with its region (`en-US`, `en-GB`), because spelling and conventions, legal
+ones above all, differ by region. Use the language alone (`-en`) only when
+the guidance doesn't depend on region. The folder and the frontmatter `name`
+are the name in lower case (`house-style-en-gb`); a `profile` declaration
+matches it in any case.
 
 The `SKILL.md` starts with frontmatter. `name` must be the folder's name, in
 lower case; `description` says when to read it:

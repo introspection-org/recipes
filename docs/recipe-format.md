@@ -96,7 +96,7 @@ Recipe MUST contain at least one agent.
 name: agent
 description: Produce a sourced research brief.
 ai:
-  model: openrouter/anthropic/claude-sonnet-4.5
+  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
   thinking_level: high
   options:
     max_tokens: 4096
@@ -183,50 +183,27 @@ MUST select one explicitly.
 
 ## First-party packages
 
-Some tools come from packages we publish, which a Recipe turns on with a `pi`
-declaration. There are two kinds today: channel tools
-(`@introspection-ai/recipe-channel-<provider>`, such as Slack) and document
-tools (`@introspection-ai/recipe-documents-<format>`, docx and pdf). A package
-can also ship skills a Recipe uses; see [Shipping skills in a package](#shipping-skills-in-a-package).
+Some tools come from packages we publish: **channel tools**
+(`@introspection-ai/recipe-channel-<provider>`, such as Slack) and
+**document tools** (`@introspection-ai/recipe-documents-<format>`, docx and
+pdf). A Recipe turns one on with a `pi` declaration.
 
-**Dependencies and peers.** For any package a Recipe uses, `dependencies`
-means the Recipe brings it and pins its version, and `peerDependencies`
-means the platform running the Recipe provides it. The managed cloud install
-never installs peers (`auto-install-peers=false`): the platform's runtime
-image installs them in a `node_modules` above the Recipe, where Node's
-resolution finds them, and the image build fails if one is missing. Locally,
-pnpm and npm install peers by default, so the Recipe gets its own copy. A
-peer needs a version range like any dependency. `recipes check` warns about a
-peer a standard platform does not provide (`package.peer_not_provided_by_default`):
-anything other than Recipes, Pi and typebox, which the host imports, and the
-companion packages below. Skills and `pi.runtime.python` are read from peers as
-well as dependencies.
+These are **companion packages**: Recipes installs them alongside itself, as
+its `optionalDependencies`, so wherever Recipes is installed (Pi, a runtime
+image, npm) they are there too.
 
-These first-party packages are **companion packages**: Recipes installs them
-alongside itself, as its `optionalDependencies`, so installing
-`@introspection-ai/recipes` (into Pi, a runtime image, or with npm or npx)
-puts them in the same `node_modules`. They depend on nothing of Recipes at
-run time, only its types, so there is no cycle back to it. A Recipe may
-declare one as a peer, or omit it entirely, and the copy beside the running
-Recipes is used. A Recipe that lists the
-package in its `dependencies` **pins** it, and its own copy wins. So a
-redlining Recipe can declare only `"pi": { "documents": [{ "format": "docx",
-"profile": "legal-redlining-en-US" }] }` and run on the platform's docx
-package, or add `"@introspection-ai/recipe-documents-docx": ">=0.3.0"` to
-`dependencies` to pin the version it was tested with. Whichever copy loads
-must implement the module contract the running Recipes implements (its
-`apiVersion`), or the Recipe fails to load, naming the package, both versions
-and the fix. A third-party package that declares a Recipes peer range is
-checked against the running version the same way. Only a companion package
-may be omitted; any other package, including a channel or document format
-package outside the list, must be declared, and a third-party package
-belongs in `dependencies`.
+- **Declare them as peers by default**, or omit them. The Recipe then uses the
+  copy beside the running Recipes and never brings a second one.
+- **Pin one only when needed**, by listing it in `dependencies` with an exact
+  version. The Recipe's own copy then wins.
+- **Any other package** the Recipe uses is a `dependency`, unless the platform
+  running it provides that package, in which case it is a peer. `recipes check`
+  warns about a peer a standard platform does not provide.
 
-Recipes' `optionalDependencies` is the statement of what a standard platform
-provides: each companion package and the version range Recipes is compatible
-with (`npm view @introspection-ai/recipes optionalDependencies --json`). Being
-optional, a companion that fails to install does not fail the Recipes
-install. A platform may provide more.
+A package can also ship skills a Recipe uses; see
+[Shipping skills in a package](#shipping-skills-in-a-package).
+[Channel tools](channels.md) and [Document tools](documents.md) show full
+examples, and how a loaded package is checked against the running Recipes.
 
 ### Channel tools
 
@@ -251,11 +228,8 @@ provider. For example, `slack` resolves to
 `@introspection-ai/recipe-channel-slack`. The package owns its tool catalog
 and marks which tools are active by default.
 
-The host supplies the Slack package by default; list it in the Recipe's
-production dependencies (and lockfile) to pin it. A provider the host does not
-supply must be declared: in `dependencies`, or in `peerDependencies` when the
-platform provides it. The host imports the package only when the Recipe
-declares the provider. An agent lists each allowed tool by its full name, such as
+The Slack package is a companion package (see above). The host imports it
+only when the Recipe declares the provider. An agent lists each allowed tool by its full name, such as
 `channels`, in its `tools` list. The host fails when the agent names a
 tool that the connector does not register.
 
@@ -272,17 +246,16 @@ intentional silence, such as a read-only allowlist. See [Channel tools](channels
 ### Document tools
 
 `pi.documents` lists the document formats the `documents` tool opens, each as
-`{"format": "<format>"}` served by the package
-`@introspection-ai/recipe-documents-<format>` (a companion package for docx and pdf,
-pinned when listed in `dependencies`, provided by the platform when listed in
-`peerDependencies`), and an optional `commands` allowlist and `profile`. A profile is a skill with guidance for one
+`{"format": "<format>"}` served by the companion package
+`@introspection-ai/recipe-documents-<format>`, with an optional `commands`
+allowlist and `profile`. A profile is a skill with guidance for one
 kind of work, such as `legal-redlining-en-US`, which the docx package ships.
 
 ```json
 {
-  "dependencies": {
-    "@introspection-ai/recipe-documents-docx": ">=0.3.0",
-    "@introspection-ai/recipe-documents-pdf": ">=0.2.0"
+  "peerDependencies": {
+    "@introspection-ai/recipe-documents-docx": ">=X.Y.Z",
+    "@introspection-ai/recipe-documents-pdf": ">=X.Y.Z"
   },
   "pi": {
     "documents": [
