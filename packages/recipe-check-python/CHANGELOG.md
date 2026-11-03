@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.13.0...introspection-recipe-check-python-v0.14.0) (2026-11-03)
+
+
+### Miscellaneous Chores
+
+* **introspection-recipe-check-python:** Synchronize introspection-recipe-check versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.13.0 to 0.14.0
+
 ## [0.13.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.12.0...introspection-recipe-check-python-v0.13.0) (2026-10-29)
 
 
