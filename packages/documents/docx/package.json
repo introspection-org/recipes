@@ -37,7 +37,9 @@
         "project": "python",
         "lockfile": "python/uv.lock",
         "version": ">=3.12,<3.15",
-        "imports": ["docx"]
+        "imports": [
+          "docx"
+        ]
       }
     }
   },
@@ -46,11 +48,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
   },
+  "dependencies": {
+    "@introspection-ai/recipes": "workspace:>=0.39.0 <1.0.0"
+  },
   "peerDependencies": {
     "@introspection-ai/recipes": "workspace:>=0.39.0 <1.0.0"
   },
   "devDependencies": {
-    "@introspection-ai/recipes": "workspace:>=0.37.0",
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
   },

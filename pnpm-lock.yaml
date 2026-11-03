@@ -114,10 +114,11 @@ importers:
         version: 7.0.2
 
   packages/documents/docx:
-    devDependencies:
+    dependencies:
       '@introspection-ai/recipes':
-        specifier: workspace:>=0.37.0
+        specifier: workspace:>=0.39.0 <1.0.0
         version: link:../../..
+    devDependencies:
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
@@ -126,10 +127,11 @@ importers:
         version: 7.0.2
 
   packages/documents/pdf:
-    devDependencies:
+    dependencies:
       '@introspection-ai/recipes':
-        specifier: workspace:>=0.37.0
+        specifier: workspace:>=0.39.0 <1.0.0
         version: link:../../..
+    devDependencies:
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
