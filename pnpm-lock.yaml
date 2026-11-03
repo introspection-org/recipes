@@ -110,6 +110,30 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/documents/docx:
+    devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:>=0.37.0
+        version: link:../../..
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/documents/pdf:
+    devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:>=0.37.0
+        version: link:../../..
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
 packages:
 
   '@ag-ui/core@0.0.59':

@@ -67,6 +67,10 @@
 			"types": "./dist/channels/index.d.ts",
 			"import": "./dist/channels/index.js"
 		},
+		"./documents": {
+			"types": "./dist/documents/index.d.ts",
+			"import": "./dist/documents/index.js"
+		},
 		"./test-utils": {
 			"types": "./dist/test-utils.d.ts",
 			"import": "./dist/test-utils.js"

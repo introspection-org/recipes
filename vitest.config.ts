@@ -15,6 +15,9 @@ export default defineConfig({
       // source, mirroring what the recipe extension loader does at runtime
       // (it aliases the package prefix to the host's resolved module root and
       // appends the subpath).
+      "@introspection-ai/recipes/documents": fileURLToPath(
+        new URL("./src/documents/index.ts", import.meta.url),
+      ),
       "@introspection-ai/recipes/channels": fileURLToPath(
         new URL("./src/channels/index.ts", import.meta.url),
       ),

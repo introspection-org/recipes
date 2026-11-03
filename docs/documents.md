@@ -1,0 +1,249 @@
+# Document tools
+
+A Recipe that reads or marks up documents declares the **document formats** it
+works with. The host then registers one `documents` tool with a `command`
+discriminator, shaped identically for every format. Each format is a package
+that supplies the mechanics and a capability descriptor; the commands, their
+schemas and the rules about where files may be written live in the host.
+
+Two properties follow, as for [channels](channels.md):
+
+- **A command a format cannot support is absent for that format, not
+  failing.** Each format package declares what it supports, and the tool
+  routes by file extension. `render` exists when some declared format
+  renders; calling it on a `.docx` fails before any work and names the
+  formats that support it.
+- **The original is never changed.** Every write takes the document to read
+  (`path`) and a new file under `outputs/` to save (`output`). Later calls
+  edit that saved file in place by passing it as `path`. The tool refuses to
+  write outside `outputs/` or over a file it did not save.
+
+Agents select `tools: [documents]`.
+
+## Declare document formats
+
+```json
+{
+  "dependencies": {
+    "@introspection-ai/recipe-documents-docx": ">=0.1.0 <1.0.0",
+    "@introspection-ai/recipe-documents-pdf": ">=0.1.0 <1.0.0"
+  },
+  "pi": {
+    "documents": [{ "format": "docx" }, { "format": "pdf" }]
+  }
+}
+```
+
+```yaml
+tools: [documents]
+```
+
+Each declaration names a format; the package
+`@introspection-ai/recipe-documents-<format>` must be a dependency, and
+`recipes check` and the runtime both reject a declaration without it. An
+optional `commands` allowlist narrows what that format may do, for every agent:
+
+```json
+{ "pi": { "documents": [{ "format": "docx", "commands": ["read", "comment"] }] } }
+```
+
+`read` is always available for a declared format; an empty list disables the
+format. Unknown commands fail `recipes check`; a command the format does not
+support fails when the runtime loads the package.
+
+Unlike channels, where each provider owns its own `channels` tool, formats
+share one tool: a Recipe reads a PDF brief and edits a Word contract in the
+same turn, and two `documents` tools would collide.
+
+## Commands
+
+| Command (`documents` + `command`) | Arguments | Requires |
+| --- | --- | --- |
+| `read` | `path`, `offset?`, `budget?`, `pages?`, `tables?` | always |
+| `revise` | `path`, `output?`, `author`, `revisions[]` (`paragraph`, `text`, `rationale`) | `revise` |
+| `propose_edits` | `path`, `output?`, `author`, `edits[]` | `proposeEdits` |
+| `comment` | `path`, `output?`, `author`, `text`, and `quote` (`paragraph?`, `near?`, `occurrence?`) or `thread` | `comment` |
+| `respond` | `path`, `output?`, `author`, `responses[]` | `respond` |
+| `remove_section` | `path`, `output?`, `author`, `from`, `through`, `keep?`, `rationale` | `removeSection` |
+| `render` | `path`, `pages?` | `render` |
+
+An edit is `{ op: "replace" | "delete" | "insert_after", quote, paragraph?,
+near?, occurrence?, new?, rationale }`. A response is `{ action: "accept" |
+"reject", changes }`, `{ action: "reply", thread, text }` or `{ action:
+"counter", quote, new, rationale, paragraph?, near?, occurrence?, thread? }`.
+
+Results are compact text for the model: a write reports each edit as applied,
+with a one-line before/after, or failed, with a reason and the closest
+candidate paragraphs. It never returns the whole document; `read` does that.
+
+## What each format registers
+
+| Command | docx (`@introspection-ai/recipe-documents-docx`) | PDF (`@introspection-ai/recipe-documents-pdf`) |
+| --- | --- | --- |
+| `read` | Paragraphs with stable ids (`p-031`, `p-012.r2c3` in tables) and their current text, Word's list numbers, a `markup:` line with tracked changes and comments by author, then numbered changes and comment threads. Paged by paragraph. | The path used (text, tables or page images), then pypdfium2's text page by page in reading order, filled form fields and page comments. `tables: true` adds table cells with the `tables` extra. Pages with no text layer are named, to render. Paged by character. |
+| `revise` | Each paragraph's revised text: on a file with no pending changes, untracked edits on a working copy and paper-docx `compare(granularity="word")` build the redline; if compare refuses the batch, or the file already has changes, the same word-level changes go in as targeted tracked edits. The rationale is a comment on the changed text. | not registered |
+| `propose_edits` | Tracked changes signed by `author`, each with its rationale as a comment, saved with `patch_save` | not registered |
+| `comment` | New comment on a quote, or a reply under a thread's first comment | not registered |
+| `respond` | Accept or reject by change number (tracked moves resolve as a pair), reply, or counter | not registered |
+| `remove_section` | Strikes the paragraphs, leaves `Reserved.` after `keep`, keeps numbering | not registered |
+| `render` | not registered | PNG files of pages, at most 10 per call; returns their paths for Pi's `read` tool |
+
+### docx: revise or propose_edits
+
+`revise` takes no quotes: the agent gives a paragraph id and that paragraph's
+full revised text, and the tool works out the changed words. It is the path for
+a first markup, where most failures in practice came from quoting. One
+`compare` runs per batch; on a contract full of proofing marks and layout hints
+it often refuses, and the batch then takes the tracked path, which handles those
+marks. `propose_edits` remains for small fixes and response turns, where an edit
+sits inside someone else's change. A revision whose text is unchanged becomes a
+comment on that paragraph, and a revision without a rationale fails alone rather
+than failing the batch's schema check.
+
+`compare` is used only when its result keeps the body's block structure:
+paper-docx 0.2.0 inserts empty paragraphs for some multi-paragraph batches, which
+would move every later paragraph id, so such a result is discarded for the
+tracked path.
+
+### docx: anchors
+
+A quote is matched against the paragraph's current text, the text `read`
+shows. Matching forgives runs of whitespace, non-breaking and thin spaces,
+curly quotes and apostrophes, dashes and soft hyphens, then case. When a
+quote only matches without a leading list number such as `5.2` or `(a)`, the
+number is ignored and the result says so. `paragraph` restricts the search to
+one paragraph; `near` ranks repeats by distance to nearby text; `occurrence`
+picks the nth.
+
+The edit lands on the original runs. Unchanged words at either end of the
+quote are kept out of the change, compared after the same folding, so retyping
+a curly quote as a straight one does not strike it. A replacement is written
+as a deletion of the old words and an insertion of the new ones, so Word shows
+whole words rather than paper-docx's letter-level alignment. A span that
+crosses a bookmark, proofing mark, layout hint (`lastRenderedPageBreak`), the
+edge of a tracked change, a tab, a line break or a no-break hyphen is edited in
+parts between the marks; a tab, break or hyphen stays as it was. paper-docx does
+not match text across a tracked deletion, so the same split applies to finding
+text. When the parts are refused too, the result is `crosses_marker`, naming the
+marks and the safe parts. The tool never retries by widening an edit.
+
+A failed anchor is reported, never guessed: `not_found` (with the closest
+paragraphs and their most similar text), `ambiguous` (with every match),
+`paragraph_not_found`, `occurrence_out_of_range`, `unaddressable` (inside a
+field, content control or text box), or `refused` with the library's reason.
+The failed edit is rolled back and the rest of the batch still applies.
+
+The anchoring and the `Reserved.` removal follow RedlineBench's redline
+engine (MIT, Crosby Legal; the licence ships beside the helpers).
+
+### docx: not registered
+
+`render` is absent for Word: page images need a layout engine such as
+LibreOffice, which the runtime image does not carry. Table structure, fields,
+content controls, headers and footers, footnotes and formatting changes are
+not commands. For those, the package ships the `docx` skill: Paper's public
+`docx` skill and paper-docx 0.2.0 API reference, vendored at a pinned commit
+with its MIT notice and with its install instructions replaced, offered to
+any agent that selects `documents` with the docx format. It is a fallback
+reference, not the primary path.
+
+### PDF: text, tables and page images
+
+Every PDF `read` starts with `Path:` and the route it took:
+
+- **text**: pypdfium2's text for each page, in reading order. This is the
+  default and suits prose: on legal deal briefs it got every key fact in about
+  5 ms a brief, against about 55 ms for pypdf.
+- **tables**: with `tables: true`, each table also comes back as rows of cells
+  from pdfplumber. Ask for tables on contracts with fee schedules, SLA grids or
+  price tables: plain text runs a row's cells together, and pdfplumber was the
+  only library tried that returned a fee table as real cells. It needs the
+  adapter's `tables` extra (below); without it, `read` returns the text and a
+  note that the extra is missing.
+- **page images (no text layer)**: a page with no text is a scan. `read` names
+  those pages and suggests `render`, which writes each page as a PNG file and
+  returns its path; the agent opens it with Pi's `read` tool. Render also to
+  check signatures, stamps, charts or layout.
+  The images go to a new directory per call under the system temp
+  directory, or under `pagesDir` when the host passes one to
+  `registerDocumentTools`.
+
+PDFs are never changed: every write command is absent for `.pdf`.
+
+#### The `tables` extra
+
+pdfplumber is optional because of its size: about 41 MB installed, since it
+brings pdfminer.six, cryptography, Pillow and cffi, against 7.7 MB for
+pypdfium2. To enable tables, add it to the Recipe's Python environment and lock
+it:
+
+```toml
+# python/pyproject.toml
+dependencies = ["pypdfium2==5.14.0", "pillow==13.0.0", "pdfplumber==0.11.10"]
+```
+
+then `uv lock`. The helper imports pdfplumber only when a read asks for tables,
+and nothing is fetched at run time. A profile for contract or pricing work may
+recommend the extra; a Recipe that only reads briefs can leave it out.
+
+## Limits
+
+- `read` returns about 50,000 characters per part; pass the `offset` it gives.
+- A batch takes at most 60 edits or responses.
+- Paragraph ids are body-block positions. Edits never add or remove blocks, so
+  ids hold for a whole redline; a document edited elsewhere gets new ids.
+- Change numbers for `respond` are positions in the file as read: read again
+  after any change. Each accept or reject response applies whole or not at
+  all, so a bad number leaves its response's other changes unresolved.
+- List numbers in `read` are approximate: restarts and overrides are not
+  modelled.
+
+## Python
+
+The Word and PDF helpers are small Python programs run with the Recipe's own
+`pi.runtime.python` environment (`VIRTUAL_ENV`, or `RECIPE_DOCUMENTS_PYTHON`
+to override). That environment must provide paper-docx for Word and
+pypdfium2 and pillow for PDF, plus pdfplumber for PDF tables. A package-level Python environment, so a Recipe
+need not declare these itself, is a follow-up; until then a Recipe declaring
+`pi.documents` must lock them in its own `python/uv.lock`. The packages'
+`python/uv.lock` files pin the versions their tests run on.
+
+## How a Recipe's skills should use it
+
+Skills say what good work is; the tool does the mechanics. A skill names the
+command and what goes in it (`documents propose_edits`, one edit per change,
+the rationale as the comment) and spends its words on judgement: what to
+change, how to word the comment, which bucket a counterparty change falls in.
+It does not print scripts, explain library calls or describe file copying.
+Tell the agent to copy quotes from `read`, give the paragraph id, resubmit
+only failed edits, and read the result back before finishing. For PDFs, a skill
+says when tables matter (fee schedules, SLA grids, price tables) so the agent
+passes `tables: true`, and that a page with no text layer is rendered and
+looked at with `read`.
+
+## Write a format
+
+A format supplies an adapter and a capability descriptor; it writes no tool
+schemas.
+
+```ts
+import { createDocumentFormatModule } from "@introspection-ai/recipes/documents";
+
+export default createDocumentFormatModule({
+  format: "pdf",
+  extensions: [".pdf"],
+  capabilities: { read: true, render: true },
+  createAdapter: ({ env }) => new PdfDocumentAdapter(env),
+});
+```
+
+Registration checks that the adapter implements every method its
+capabilities claim, and that the adapter returns the declared capabilities.
+A format package ships code only. A skill that teaches a format library, such
+as Paper's `docx` skill, is a dependency of the Recipe that uses it, installed
+when the runtime is baked.
+
+## Format pages
+
+- Word: this page; `packages/documents/docx/README.md`.
+- PDF: this page; `packages/documents/pdf/README.md`.

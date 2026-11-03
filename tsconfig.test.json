@@ -6,6 +6,9 @@
     "paths": {
       "@introspection-ai/recipes/channels": [
         "./src/channels/index.ts"
+      ],
+      "@introspection-ai/recipes/documents": [
+        "./src/documents/index.ts"
       ]
     }
   },
