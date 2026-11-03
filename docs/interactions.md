@@ -21,7 +21,7 @@ that agent; agents that do not list it never see it.
 ```yaml
 name: agent
 ai:
-  model: anthropic/claude-sonnet-4-5
+  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
 tools: [read, bash, ask_user_question]
 ```
 

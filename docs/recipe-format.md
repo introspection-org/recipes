@@ -96,7 +96,7 @@ Recipe MUST contain at least one agent.
 name: agent
 description: Produce a sourced research brief.
 ai:
-  model: openrouter/anthropic/claude-sonnet-4.5
+  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
   thinking_level: high
   options:
     max_tokens: 4096
