@@ -25,8 +25,8 @@ Agents select `tools: [documents]`.
 ```json
 {
   "dependencies": {
-    "@introspection-ai/recipe-documents-docx": ">=0.1.0 <1.0.0",
-    "@introspection-ai/recipe-documents-pdf": ">=0.1.0 <1.0.0"
+    "@introspection-ai/recipe-documents-docx": ">=0.1.0",
+    "@introspection-ai/recipe-documents-pdf": ">=0.1.0"
   },
   "pi": {
     "documents": [{ "format": "docx" }, { "format": "pdf" }]
