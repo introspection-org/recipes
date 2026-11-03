@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { recipePythonDeclarations } from "../src/recipe/python.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
+import { pythonProject } from "./helpers/fake-uv.js";
 
 const scratchDirs: string[] = [];
 
@@ -150,6 +152,36 @@ describe("skills from dependency packages", () => {
   it("skips a declared dependency that is not installed", () => {
     const fixture = recipe({ agentSkills: ["visible"], packages: [VISIBLE], missingDependency: "not-installed" });
     expect(skillPaths(fixture.dir)).toEqual([visiblePath(fixture)]);
+  });
+
+  it("finds a dependency hoisted beside the Recipe, for its skills and its Python declaration", () => {
+    // npm, npx and `npm install --prefix` install the Recipe as
+    // <prefix>/node_modules/recipe and its dependencies beside it.
+    const prefix = mkdtempSync(join(tmpdir(), "recipe-dependency-skills-hoisted-"));
+    scratchDirs.push(prefix);
+    const recipeDir = join(prefix, "node_modules", "recipe");
+    const depDir = join(prefix, "node_modules", "@acme", "legal-skills");
+    write(
+      join(recipeDir, "package.json"),
+      JSON.stringify({ name: "recipe", version: "0.1.0", dependencies: { "@acme/legal-skills": ">=1.0.0" }, pi: {} })
+    );
+    write(join(recipeDir, "agents", "agent.yaml"), "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\nskills: [review]\n");
+    write(
+      join(depDir, "package.json"),
+      JSON.stringify({
+        name: "@acme/legal-skills",
+        version: "1.0.0",
+        pi: { skills: ["skills"], runtime: { python: { project: "python", lockfile: "python/uv.lock" } } },
+      })
+    );
+    write(join(depDir, "skills", "review", "SKILL.md"), skill("review"));
+    pythonProject(depDir);
+    const realDepDir = realpathSync(depDir);
+
+    expect(skillPaths(recipeDir)).toEqual([join(realDepDir, "skills", "review", "SKILL.md")]);
+    expect(recipePythonDeclarations(recipeDir)).toEqual([
+      expect.objectContaining({ kind: "package", owner: "@acme/legal-skills", packageDir: realDepDir }),
+    ]);
   });
 
   it("refuses a selected skill name that the Recipe and a dependency both ship", () => {

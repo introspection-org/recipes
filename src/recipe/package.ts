@@ -1,5 +1,6 @@
 import { existsSync, realpathSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createRequire, findPackageJSON } from "node:module";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { minimatch } from "minimatch";
 
 import { documentProfileShapeProblem, isDocumentProfilePath, recipeProfileSkill } from "../documents/profile.js";
@@ -1265,7 +1266,7 @@ export function validateRecipePythonPackage(packageDir: string): RecipeValidatio
   return { valid: findings.length === 0, findings, name, ...(python ? { python } : {}) };
 }
 
-/** A direct dependency installed in the Recipe's `node_modules`. */
+/** A direct dependency of the Recipe, as Node resolves it from the Recipe directory. */
 export interface InstalledRecipeDependency {
   /** The name the Recipe's `package.json` declares it under. */
   name: string;
@@ -1274,10 +1275,36 @@ export interface InstalledRecipeDependency {
 }
 
 /**
- * The Recipe's direct dependencies installed in its `node_modules`, in
- * declaration order, from the `package.json` blocks named by `keys`.
- * Transitive dependencies are never read, and a declared dependency that is
- * not installed is skipped.
+ * The directory of `name` as Node resolves it from `recipeDir`: the first
+ * `node_modules/<name>/package.json` walking up from the Recipe's real path,
+ * so a dependency hoisted beside the Recipe (npm, npx, `npm install --prefix`)
+ * is found as well as one nested inside it or linked by pnpm. A package with
+ * no entry point (a skills-only package) still resolves, because this reads
+ * Node's lookup folders rather than resolving an entry. Falls back to
+ * `findPackageJSON` for anything only Node's resolver can see.
+ */
+function resolveDependencyDir(recipeDir: string, name: string): string | undefined {
+  const base = join(realpathSync(recipeDir), "package.json");
+  const lookupFolders = (createRequire(base).resolve.paths(name) ?? []).filter(
+    (folder) => basename(folder) === "node_modules"
+  );
+  for (const folder of lookupFolders) {
+    const candidate = join(folder, ...name.split("/"));
+    if (existsSync(join(candidate, "package.json"))) return realpathSync(candidate);
+  }
+  try {
+    const found = findPackageJSON(name, base);
+    return found ? realpathSync(dirname(found)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The Recipe's direct dependencies that are installed, in declaration order,
+ * from the `package.json` blocks named by `keys`, each found with Node's
+ * resolution from the Recipe directory. Transitive dependencies are never
+ * read, and a declared dependency that does not resolve is skipped.
  */
 export function installedRecipeDependencies(
   recipeDir: string,
@@ -1293,9 +1320,8 @@ export function installedRecipeDependencies(
   }
   const installed: InstalledRecipeDependency[] = [];
   for (const name of names) {
-    const candidate = join(root, "node_modules", ...name.split("/"));
-    if (!existsSync(join(candidate, "package.json"))) continue;
-    installed.push({ name, packageDir: realpathSync(candidate) });
+    const packageDir = resolveDependencyDir(root, name);
+    if (packageDir) installed.push({ name, packageDir });
   }
   return installed;
 }

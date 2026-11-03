@@ -352,8 +352,10 @@ skills: [review-nda]
 
 The rules:
 
-- Hosts read `pi.skills` from each direct `dependencies` entry installed in
-  the Recipe's `node_modules`. `peerDependencies`, `devDependencies` and
+- Hosts read `pi.skills` from each direct `dependencies` entry, found with
+  Node's package resolution from the Recipe directory: in the Recipe's own
+  `node_modules`, or in one above it when an npm install hoists the
+  dependency beside the Recipe. `peerDependencies`, `devDependencies` and
   transitive dependencies are not read; peers are not installed by the managed
   install.
 - Only an explicit `pi.skills` counts. A dependency's `skills/` folder is not
@@ -484,8 +486,10 @@ dotted Python module name (`docx`, `paper_docx.api`); hosts import them with
 
 A package the Recipe depends on MAY declare `pi.runtime.python` in its own
 `package.json`, with the same fields relative to the package. Hosts read it
-from each direct `dependencies` or `peerDependencies` entry installed in the
-Recipe's `node_modules`; `devDependencies` and transitive dependencies are
+from each direct `dependencies` or `peerDependencies` entry, found with Node's
+package resolution from the Recipe directory (the Recipe's own `node_modules`,
+or one above it when an npm install hoists the dependency beside the Recipe);
+`devDependencies` and transitive dependencies are
 not read, and a declared dependency that is not installed is skipped. A
 package declaring it MUST ship the project's `pyproject.toml` and `uv.lock`:
 when its `package.json` lists `files`, both must be covered. `pi.runtime.system`

@@ -838,7 +838,7 @@ export async function withEnvironmentLock<T>(environmentDir: string, fn: () => P
 /**
  * Find and prepare every `pi.runtime.python` the Recipe at `recipeDir`
  * declares: its own (the shell environment) and each direct `dependencies` or
- * `peerDependencies` entry installed in its `node_modules` (each in an
+ * `peerDependencies` entry Node resolves from the Recipe directory (each in an
  * environment of its own). Dev and transitive dependencies are not read.
  */
 export async function prepareRecipePython(
