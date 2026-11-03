@@ -10,18 +10,11 @@ tool names and schemas come from `@introspection-ai/recipes/channels`, so a
 Recipe written against `channels reply` is not written against Slack.
 
 Recipes installs this package alongside itself (an `optionalDependencies`
-entry), so a Recipe that declares the `slack` provider without listing the
-package, or lists it in `peerDependencies`, uses that copy. The package has no
-run-time dependency on Recipes: it exports a plain descriptor, and the host
-builds the connector from it. A Recipe that lists it in `dependencies` pins
-it, and the Recipe's copy wins.
-
-To pin it:
-
-Recipes installs this package alongside itself, so a Recipe declares it as a
-peer (the platform provides it), or omits it. List it in `dependencies` with
-an exact version only to pin one. `X.Y.Z` stands for a released version
-(`npm view @introspection-ai/recipe-channel-slack version`).
+entry). The package has no run-time dependency on Recipes: it exports a plain
+descriptor, and the host builds the connector from it. Declare it as a peer,
+meaning the platform provides it, or omit it; list it in `dependencies` with
+an exact version only to pin one, and the Recipe's copy then wins. `X.Y.Z`
+stands for a released version (`npm view @introspection-ai/recipe-channel-slack version`).
 
 ```json
 {
