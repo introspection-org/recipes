@@ -1533,6 +1533,80 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
+  it("registers the built-in ask_user_question tool only when the agent lists it", async () => {
+    for (const [tools, expected] of [
+      ["[read, ask_user_question]", true],
+      ["[read]", false],
+    ] as const) {
+      const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
+      try {
+        const recipeDir = writeRecipe(root);
+        writeFileSync(
+          join(recipeDir, "defs", "main.yaml"),
+          ["name: main", "model:", "  name: openai/gpt-4.1", `tools: ${tools}`].join(
+            "\n"
+          )
+        );
+        const pi = createMockExtensionAPI();
+        pi.flagValues.set("recipe", recipeDir);
+        pi.flagValues.set("agent", "main");
+        createRecipesExtension()(pi);
+
+        await pi.emitExtensionEvent(
+          { type: "session_start", reason: "startup" } as any,
+          extensionContext(join(root, "project"), vi.fn())
+        );
+
+        expect(pi.tools.has("ask_user_question")).toBe(expected);
+        expect(pi.activeTools.includes("ask_user_question")).toBe(expected);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("gives ask_user_question the extension's environment, not process.env", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      writeFileSync(
+        join(recipeDir, "defs", "main.yaml"),
+        ["name: main", "model:", "  name: openai/gpt-4.1", "tools: [ask_user_question]"].join("\n")
+      );
+      expect(process.env.PI_INTERRUPT_RESUME).toBeUndefined();
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension({
+        env: { ...process.env, PI_INTERRUPT_RESUME: "1" },
+      })(pi);
+
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(join(root, "project"), vi.fn())
+      );
+
+      const result = await pi.tools.get("ask_user_question")!.execute(
+        "call-1",
+        {
+          questions: [
+            {
+              question: "Which region should we deploy to?",
+              header: "Region",
+              options: [{ label: "Sydney" }, { label: "Oregon" }],
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        { hasUI: false, mode: "print" } as any
+      );
+      expect(result.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when an agent requests an unavailable tool", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
     try {

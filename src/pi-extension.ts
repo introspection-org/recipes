@@ -76,6 +76,10 @@ import {
   type AgentRunController,
   type AgentRunSummary,
 } from "./agents.js";
+import {
+  askUserQuestionExtension,
+  wantsAskUserQuestion,
+} from "./ask-user-question.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   createRecipeToolSearchTools,
@@ -871,6 +875,14 @@ export function createRecipesExtension(
         );
         await factory(pi);
         loadedCount += 1;
+      }
+      // The first-party ask_user_question tool loads after the Recipe's own
+      // extensions, so a Recipe that still ships its own keeps it.
+      if (wantsAskUserQuestion(launchState.resolved.tools)) {
+        await askUserQuestionExtension(
+          launchState.extensionRegistrations,
+          env
+        )(pi);
       }
     } catch (error) {
       launchState.extensionFailure =
