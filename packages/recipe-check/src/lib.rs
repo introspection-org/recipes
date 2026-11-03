@@ -4312,8 +4312,10 @@ mod tests {
         );
     }
 
-    /// The checker's companion packages are the keys of `optionalDependencies`
-    /// in the Recipes package.json.
+    /// The checker's companion packages are the `@introspection-ai/recipe-*`
+    /// keys of `optionalDependencies` in the Recipes package.json. A release
+    /// also stamps the MCP client's platform binaries there; they aren't
+    /// companions.
     #[test]
     fn companion_packages_match_the_recipes_package() {
         let manifest: JsonValue = serde_json::from_str(include_str!("../../../package.json"))
@@ -4323,6 +4325,7 @@ mod tests {
             .expect("optionalDependencies must be an object")
             .keys()
             .map(String::as_str)
+            .filter(|name| name.starts_with("@introspection-ai/recipe-"))
             .collect();
         assert_eq!(
             declared,

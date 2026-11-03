@@ -52,16 +52,26 @@ export function recipesVersion(): string {
  */
 export function companionPackages(): Readonly<Record<string, string>> {
   return Object.fromEntries(
-    Object.entries(readRecipesManifest().optionalDependencies ?? {}).map(([name, range]) => [
-      name,
-      range.replace(/^workspace:/, ""),
-    ])
+    Object.entries(readRecipesManifest().optionalDependencies ?? {})
+      .filter(([name]) => isCompanionName(name))
+      .map(([name, range]) => [name, range.replace(/^workspace:/, "")])
   );
 }
 
+/**
+ * The published manifest's `optionalDependencies` also names the MCP client's
+ * platform binaries, which the release stamps in; only the tool packages
+ * (`@introspection-ai/recipe-*`) are companions.
+ */
+function isCompanionName(name: string): boolean {
+  return name.startsWith(COMPANION_PREFIX);
+}
+
+const COMPANION_PREFIX = "@introspection-ai/recipe-";
+
 /** Whether Recipes installs `name` alongside itself, so a Recipe may omit it. */
 export function isCompanionPackage(name: string): boolean {
-  return Object.hasOwn(readRecipesManifest().optionalDependencies ?? {}, name);
+  return isCompanionName(name) && Object.hasOwn(readRecipesManifest().optionalDependencies ?? {}, name);
 }
 
 /**
