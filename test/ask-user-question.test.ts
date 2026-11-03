@@ -7,6 +7,7 @@ import type {
 import {
   ASK_USER_QUESTION_TOOL_NAME,
   ASK_USER_TYPED_ANSWER_OPTION,
+  DISMISSED_TEXT,
   askUserQuestionExtension,
   createAskUserQuestionTool,
   stripOptionNumbering,
@@ -29,13 +30,17 @@ function fakeCtx(opts: {
   selectResults?: Array<string | undefined>;
   inputResults?: Array<string | undefined>;
   customInputs?: string[];
-}): { ctx: ExtensionContext; calls: UiCall[] } {
+}): { ctx: ExtensionContext; calls: UiCall[]; aborts: () => number } {
   const calls: UiCall[] = [];
+  let aborts = 0;
   const selectResults = [...(opts.selectResults ?? [])];
   const inputResults = [...(opts.inputResults ?? [])];
   const ctx = {
     hasUI: opts.hasUI,
     mode: opts.mode ?? "tui",
+    abort() {
+      aborts += 1;
+    },
     ui: {
       async select(title: string, options: string[]) {
         calls.push({ kind: "select", title, options });
@@ -96,7 +101,7 @@ function fakeCtx(opts: {
       notify() {},
     },
   } as unknown as ExtensionContext;
-  return { ctx, calls };
+  return { ctx, calls, aborts: () => aborts };
 }
 
 function run(
@@ -328,6 +333,68 @@ describe("ask_user_question tool", () => {
         `4. ${ASK_USER_TYPED_ANSWER_OPTION}`
       );
       expect(calls[1]!.kind).toBe("input");
+      expect(result.content[0]!.text).toBe("Features: Export, Audit log");
+    });
+  });
+
+  describe("terminal list: type to answer", () => {
+    const tui = (customInputs: string[], inputResults: string[] = []) =>
+      fakeCtx({ hasUI: true, mode: "tui", customInputs, inputResults });
+
+    it("takes typed text as the answer without opening a separate input", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const { ctx, calls } = tui([..."Magic link", "\r"]);
+      const result = await run(tool, { questions: [authQuestion] }, ctx);
+      expect(calls.map((call) => call.kind)).toEqual(["custom"]);
+      expect(calls[0]!.options!.join("\n")).toContain(
+        `4. ${ASK_USER_TYPED_ANSWER_OPTION}`
+      );
+      expect(result.content[0]!.text).toBe("Auth: Magic link");
+    });
+
+    it("picks an option by its digit or with Enter, and digits are text once typing starts", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const byDigit = await run(tool, { questions: [authQuestion] }, tui(["2"]).ctx);
+      expect(byDigit.content[0]!.text).toBe("Auth: Email link");
+      const byEnter = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui(["\x1b[B", "\x1b[B", "\r"]).ctx
+      );
+      expect(byEnter.content[0]!.text).toBe("Auth: Password");
+      const typed = await run(tool, { questions: [authQuestion] }, tui([..."v2 SSO", "\r"]).ctx);
+      expect(typed.content[0]!.text).toBe("Auth: v2 SSO");
+    });
+
+    it("backspace edits, and Esc clears the typed text before it dismisses", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const edited = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui([..."SSOx", "\x7f", "\r"]).ctx
+      );
+      expect(edited.content[0]!.text).toBe("Auth: SSO");
+      const cleared = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui([..."SSO", "\x1b", "1"]).ctx
+      );
+      expect(cleared.content[0]!.text).toBe("Auth: Passkeys");
+    });
+
+    it("stops the turn when the user presses Esc, so the agent waits for their message", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const { ctx, aborts } = tui(["\x1b"]);
+      const result = await run(tool, { questions: [authQuestion, featuresQuestion] }, ctx);
+      expect(aborts()).toBe(1);
+      expect(result.content[0]!.text).toBe(DISMISSED_TEXT);
+    });
+
+    it("adds typed text to the toggled options in a multi-select list", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const { ctx, calls } = tui(["2", ..."Audit log", "\r"]);
+      const result = await run(tool, { questions: [featuresQuestion] }, ctx);
+      expect(calls.map((call) => call.kind)).toEqual(["custom"]);
       expect(result.content[0]!.text).toBe("Features: Export, Audit log");
     });
   });
