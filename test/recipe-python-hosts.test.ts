@@ -221,6 +221,7 @@ describe.skipIf(IS_WINDOWS)("session API: Recipe Python", () => {
         env,
         credentials: store,
         pythonEnvironmentRoot: root,
+        sessionRole: "root",
         sessionFactory: async (options) => {
           const child = await createAgentSessionInternal({ ...options, credentials: store });
           scriptReply(child, `${options.agentName} done`);
