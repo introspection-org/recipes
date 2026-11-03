@@ -44,7 +44,10 @@ The extension no longer maintains a separate installed-Recipe store. Git,
 package managers, and ordinary paths own distribution.
 
 The selected path and agent are exposed to Recipe-owned tools as
-`PI_RECIPE_DIR` and `PI_AGENT_NAME`.
+`PI_RECIPE_DIR` and `PI_AGENT_NAME`. A launch without `--recipe` or `--agent`
+reads them as its defaults, but an agent name only counts for the Recipe it
+came with: `pi --recipe <another Recipe>` run from a Recipe session's shell
+selects that Recipe's default agent, not the parent's.
 
 ## GenAI spans
 

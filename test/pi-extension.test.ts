@@ -121,6 +121,58 @@ describe("Recipes extension for Pi", () => {
     );
   });
 
+  it("ignores an inherited agent name when --recipe names another Recipe", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-nested-launch-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      // A default agent, which a launch without an agent name selects.
+      writeFileSync(
+        join(recipeDir, "defs", "agent.yaml"),
+        readFileSync(join(recipeDir, "defs", "main.yaml"), "utf8").replace("name: main", "name: agent")
+      );
+      // What a shell command inherits from a parent session running another Recipe's `build` agent.
+      const env: NodeJS.ProcessEnv = {
+        PI_RECIPE_DIR: join(root, "parent-recipe"),
+        PI_AGENT_NAME: "build",
+      };
+      const pi = createMockExtensionAPI();
+      const notify = vi.fn();
+      pi.flagValues.set("recipe", recipeDir);
+
+      createRecipesExtension({ env })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(root, notify)
+      );
+
+      expect(env.PI_RECIPE_DIR).toBe(recipeDir);
+      expect(env.PI_AGENT_NAME).toBe("agent");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an inherited agent name for the Recipe it came with", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-same-launch-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const env: NodeJS.ProcessEnv = { PI_RECIPE_DIR: recipeDir, PI_AGENT_NAME: "explorer" };
+      const pi = createMockExtensionAPI();
+      const notify = vi.fn();
+      pi.flagValues.set("recipe", recipeDir);
+
+      createRecipesExtension({ env })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(root, notify)
+      );
+
+      expect(env.PI_AGENT_NAME).toBe("explorer");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not reuse exported resolved values as later launch inputs", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-inputs-"));
     try {
