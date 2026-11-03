@@ -1,17 +1,29 @@
 import { execFile } from "node:child_process";
-import { resolve } from "node:path";
+import { posix, win32 } from "node:path";
 
 /**
- * How the helpers run: the Recipe's own Python environment.
+ * The interpreter the helpers run with, first match wins:
  *
- * The runtime activates `pi.runtime.python` as VIRTUAL_ENV, and that
- * environment must provide paper-docx. A package-level Python environment
- * is a follow-up; until then the Recipe declares the dependency.
- * `RECIPE_DOCUMENTS_PYTHON` overrides the interpreter (tests, custom hosts).
+ * 1. `RECIPE_DOCUMENTS_PYTHON`: an explicit override (tests, custom hosts).
+ * 2. `python`: the interpreter of this package's own environment, which the
+ *    host prepares from the package's `pi.runtime.python` and passes to
+ *    `createAdapter`. A Recipe declares no Python for its documents.
+ * 3. `VIRTUAL_ENV`: an activated environment, for hosts that pass none.
+ *    `bin/python`, or `Scripts\\python.exe` on Windows.
+ * 4. `python3` from `PATH`.
  */
-export function pythonExecutable(env: NodeJS.ProcessEnv = process.env): string {
+export function pythonExecutable(
+  env: NodeJS.ProcessEnv = process.env,
+  python?: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (env.RECIPE_DOCUMENTS_PYTHON) return env.RECIPE_DOCUMENTS_PYTHON;
-  if (env.VIRTUAL_ENV) return resolve(env.VIRTUAL_ENV, "bin", "python");
+  if (python) return python;
+  if (env.VIRTUAL_ENV) {
+    return platform === "win32"
+      ? win32.join(env.VIRTUAL_ENV, "Scripts", "python.exe")
+      : posix.join(env.VIRTUAL_ENV, "bin", "python");
+  }
   return "python3";
 }
 
@@ -25,12 +37,12 @@ export interface HelperResult {
 export function runHelper(
   script: string,
   request: Record<string, unknown>,
-  options: { env: NodeJS.ProcessEnv; cwd: string; signal?: AbortSignal; timeoutMs?: number },
+  options: { env: NodeJS.ProcessEnv; cwd: string; python?: string; signal?: AbortSignal; timeoutMs?: number },
 ): Promise<HelperResult> {
   const started = performance.now();
   return new Promise((resolvePromise, reject) => {
     const child = execFile(
-      pythonExecutable(options.env),
+      pythonExecutable(options.env, options.python),
       ["-I", script],
       {
         cwd: options.cwd,
