@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import { registerSkillProgress } from "./skill-progress.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -1582,7 +1581,6 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
-      skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
       for (const [name, definition] of launchState.resolved.subagents) {
@@ -1667,9 +1665,6 @@ export function createRecipesExtension(
       // prompt after recipe configuration failed.
       ctx.abort();
     });
-
-    // The footer names the step the agent is in: the skill it last loaded.
-    const skillProgress = registerSkillProgress(pi, (ctx) => safeLoadState(pi, ctx.cwd)?.resolved.definition.skills);
 
     pi.on("resources_discover", (event) => {
       const launchState = safeLoadState(pi, event.cwd);

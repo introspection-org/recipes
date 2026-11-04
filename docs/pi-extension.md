@@ -116,10 +116,6 @@ available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
 host keeps it and registers neither the built-in tool nor `/recipe view`.
 
-### The current step in the footer
-
-When the agent reads one of its skills' `SKILL.md`, Pi's footer names that skill. A skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done, current and to come, for example `build · ✓ brainstorm  ▸ draft  ○ review` for an agent listing `build-brainstorm`, `build-draft` and `build-review`. A resumed session shows the step it was in, from its earlier reads. Nothing is declared for it.
-
 ### Reviewing several files
 
 List `review_artifacts` and the agent can ask the user to review several
