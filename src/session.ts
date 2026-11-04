@@ -78,6 +78,7 @@ import {
   resolveRecipeCredentials,
 } from "./model-binding.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
+import { recipeSkillMatcher } from "./recipe/skills.js";
 import {
   bindRecipeExtensionFactory,
   createRecipeExtensionSessionContext,
@@ -223,7 +224,11 @@ export interface CreateAgentSessionOptions {
   agentRun?: { id: string; depth: number };
   /** Configuration for the default in-process controller. Ignored when injected. */
   inProcessRunController?: { concurrency?: number };
-  /** Extra skill roots beyond the recipe's. */
+  /**
+   * Extra skill roots beyond the recipe's, added deliberately by the host. The
+   * session otherwise offers only the Recipe's resolved skills and the
+   * documents tool's skills: nothing from Pi's discovery or an extension.
+   */
   additionalSkillPaths?: string[];
   /** Host-materialized replacement for the Recipe's resolved skill roots. */
   materializedSkillPaths?: string[];
@@ -752,6 +757,14 @@ async function createSessionForAgent(
       baseSettingsManager,
       recipe.sessionConfig?.settings
     );
+    const offeredSkillPaths = [
+      ...(opts.materializedSkillPaths ?? recipe.skillPaths),
+      ...(opts.additionalSkillPaths ?? []),
+    ];
+    const isOfferedSkill = recipeSkillMatcher(
+      [...offeredSkillPaths, ...connectors.skillPaths],
+      cwd
+    );
     const services = await createAgentSessionServices({
       cwd,
       agentDir: recipe.recipeDir,
@@ -763,10 +776,14 @@ async function createSessionForAgent(
         noSkills: true,
         noPromptTemplates: true,
         noContextFiles: true,
-        additionalSkillPaths: [
-          ...(opts.materializedSkillPaths ?? recipe.skillPaths),
-          ...(opts.additionalSkillPaths ?? []),
-        ],
+        additionalSkillPaths: offeredSkillPaths,
+        // Offer exactly the Recipe's skills, the host's explicit additions and
+        // the documents tool's skills; no extension adds one through
+        // resources_discover, matching `pi --recipe`.
+        skillsOverride: ({ skills, diagnostics }) => ({
+          skills: skills.filter((skill) => isOfferedSkill(skill.filePath)),
+          diagnostics,
+        }),
         additionalPromptTemplatePaths: [...recipe.promptPaths],
         extensionFactories: inlineExtensions,
         systemPromptOverride: (base) => {

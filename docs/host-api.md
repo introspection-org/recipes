@@ -98,6 +98,9 @@ It:
   to prepare a session that does no work;
 - loads the complete ordered Recipe extension closure, selected skills, and
   package prompts;
+- offers only the Recipe's selected skills, the `documents` tool's skills, and
+  any `additionalSkillPaths` the host passes; a skill an extension adds through
+  `resources_discover` is not offered;
 - registers the shared subagent tool;
 - creates and binds the Pi `AgentSession`;
 - returns one idempotent `dispose()` boundary.

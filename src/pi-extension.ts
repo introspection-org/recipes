@@ -77,7 +77,12 @@ import {
   RECIPE_PYTHON_ROOT_ENV,
   type PreparedRecipePython,
 } from "./recipe/python.js";
-import { createSystemPrompt } from "./recipe/skills-prompt.js";
+import {
+  createSystemPrompt,
+  loadRecipeSkills,
+  offerOnlyRecipeSkills,
+  resolveRecipeSkillCommand,
+} from "./recipe/skills-prompt.js";
 import {
   createAgentTool,
   type AgentRunController,
@@ -175,6 +180,8 @@ interface RecipeLaunchState {
   initialConnectorToolNames: string[];
   connectorToolNames: string[];
   connectorDeferredToolNames: string[];
+  /** Skills the `documents` tool offers, known once the connectors load. */
+  documentSkillPaths: string[];
   toolSearchRegistered: boolean;
   extensionAllowedToolNames: Set<string>;
   mcpPrivateEnv?: NodeJS.ProcessEnv;
@@ -771,6 +778,7 @@ export function createRecipesExtension(
       initialConnectorToolNames: [],
       connectorToolNames: [],
       connectorDeferredToolNames: [],
+      documentSkillPaths: [],
       toolSearchRegistered: false,
       extensionAllowedToolNames: new Set([
         ...resolved.tools,
@@ -921,6 +929,7 @@ export function createRecipesExtension(
       launchState.connectorToolNames = connectors.loadout.toolNames;
       launchState.connectorDeferredToolNames =
         connectors.loadout.deferredToolNames;
+      launchState.documentSkillPaths = connectors.skillPaths;
       if (launchState.connectorDeferredToolNames.length > 0) {
         launchState.extensionRegistrations.claim(
           "tool",
@@ -1662,9 +1671,41 @@ export function createRecipesExtension(
       };
     });
 
+    // In recipe mode the agent is offered exactly the Recipe's skills. Pi's
+    // own discovery (installed packages, user and project skill folders,
+    // `--skill`) still fills its resource loader, which an extension cannot
+    // replace, so the prompt and `/skill:` commands are rebuilt from the
+    // Recipe's resolved skills instead.
+    const recipeSkills = (launchState: RecipeLaunchState) =>
+      loadRecipeSkills(launchState.resolved.recipeDir, launchState.cwd, [
+        ...launchState.resolved.skillPaths,
+        ...launchState.documentSkillPaths,
+      ]);
+
+    pi.on("input", (event, ctx) => {
+      if (!event.text.startsWith("/skill:")) return { action: "continue" };
+      const launchState = safeLoadState(pi, ctx.cwd, ctx);
+      if (!launchState) return { action: "continue" };
+      const command = resolveRecipeSkillCommand(event.text, recipeSkills(launchState));
+      if (!command) return { action: "continue" };
+      if (command.kind === "expanded") {
+        return {
+          action: "transform",
+          text: command.text,
+          ...(event.images ? { images: event.images } : {}),
+        };
+      }
+      ctx.ui.notify(
+        `Skill '${command.name}' is not one of this Recipe's skills.`,
+        "error"
+      );
+      return { action: "handled" };
+    });
+
     pi.on("before_agent_start", (event, ctx) => {
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return {};
+      offerOnlyRecipeSkills(event, recipeSkills(launchState));
       return {
         systemPrompt: createSystemPrompt(event, launchState),
       };

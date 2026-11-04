@@ -299,6 +299,16 @@ A skill is named by its `SKILL.md` frontmatter `name`, then by its containing
 directory; a root-level unnamed `SKILL.md` uses the portable fallback name
 `skill`.
 
+In recipe mode the agent sees only the Recipe's skills: the ones its agent
+selects from the Recipe and its dependency and peer packages, plus the
+`documents` tool's core skill and profile, wherever the format package comes
+from (a dependency, a peer, or the copy beside Recipes). These arrive through
+Recipes' own resolution, so Pi's `--no-skills` does not remove them. Skills
+Pi discovers anywhere else (an installed Pi package, the user or project
+skills folder, `--skill <path>`) never reach the prompt or a `/skill:`
+command, under `pi --recipe` and the session API alike. To use a skill, add
+it to the Recipe or a package it depends on.
+
 Prompt templates are declared by `pi.prompts`. They retain Pi's normal SDK and
 TUI behavior: hosts expose them through `AgentSession.promptTemplates`, and a
 caller invokes one by prompting with its slash command and arguments.
