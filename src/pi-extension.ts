@@ -92,6 +92,14 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
+import {
+  artifactViewerExtension,
+  recipeSubcommand,
+  recipeSubcommandCompletions,
+  recipeSubcommandNames,
+  splitRecipeSubcommand,
+  wantsArtifactViewer,
+} from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   createRecipeToolSearchTools,
@@ -973,6 +981,10 @@ export function createRecipesExtension(
           env
         )(pi);
       }
+      // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
+      if (wantsArtifactViewer(launchState.resolved.tools)) {
+        await artifactViewerExtension(launchState.extensionRegistrations)(pi);
+      }
     } catch (error) {
       launchState.extensionFailure =
         error instanceof Error ? error.message : String(error);
@@ -1484,9 +1496,26 @@ export function createRecipesExtension(
     });
 
     pi.registerCommand("recipe", {
-      description: "Inspect or reload the active recipe",
+      description: "Inspect or reload the active recipe; view or close an artifact when the agent shows them",
+      getArgumentCompletions: (prefix) => {
+        const items = [
+          ...(!prefix.includes(" ") && "reload".startsWith(prefix.trim())
+            ? [{ value: "reload", label: "reload", description: "Reload the active recipe" }]
+            : []),
+          ...recipeSubcommandCompletions(pi, prefix, process.cwd()),
+        ];
+        return items.length > 0 ? items : null;
+      },
       handler: async (args, ctx) => {
         const action = args.trim();
+        // Optional built-ins (the artifact viewer's `view` and `close`) add
+        // subcommands here rather than top-level commands of their own.
+        const { name, args: rest } = splitRecipeSubcommand(action);
+        const subcommand = recipeSubcommand(pi, name);
+        if (subcommand) {
+          await subcommand(rest, ctx);
+          return;
+        }
         if (action === "reload") {
           const launchState = safeLoadState(pi, ctx.cwd, ctx);
           if (!launchState) {
@@ -1506,7 +1535,8 @@ export function createRecipesExtension(
           return;
         }
         if (action) {
-          ctx.ui.notify("Usage: /recipe [reload]", "info");
+          const usage = ["reload", ...recipeSubcommandNames(pi)].join("|");
+          ctx.ui.notify(`Usage: /recipe [${usage}]`, "info");
           return;
         }
         const launchState = safeLoadState(pi, ctx.cwd, ctx);

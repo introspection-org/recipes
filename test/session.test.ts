@@ -769,6 +769,33 @@ describe("createAgentSession", () => {
     ).not.toContain("ask_user_question");
   });
 
+  it("provides the built-in show_artifact tool only when the agent lists it", async () => {
+    const listed = fixture({ tools: ["read", "show_artifact"] });
+    const withTool = await open({
+      recipeDir: listed.recipeDir,
+      cwd: listed.workspaceDir,
+    });
+    expect(withTool.session.getActiveToolNames()).toContain("show_artifact");
+    writeFileSync(join(listed.workspaceDir, "brief.md"), "# Brief\n");
+    const result = await withTool.session
+      .getToolDefinition("show_artifact")!
+      .execute("call-1", { path: "brief.md" } as never, undefined, undefined, {
+        cwd: listed.workspaceDir,
+        hasUI: false,
+        mode: "print",
+      } as never);
+    expect((result.details as any).shown).toBe(false);
+
+    const unlisted = fixture({ tools: ["read"] });
+    const withoutTool = await open({
+      recipeDir: unlisted.recipeDir,
+      cwd: unlisted.workspaceDir,
+    });
+    expect(
+      withoutTool.session.getAllTools().map((tool) => tool.name)
+    ).not.toContain("show_artifact");
+  });
+
   it("gives ask_user_question the session environment, not process.env", async () => {
     const question = {
       questions: [

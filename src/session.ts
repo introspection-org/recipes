@@ -32,6 +32,10 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
+import {
+  artifactViewerExtension,
+  wantsArtifactViewer,
+} from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   activateRecipePython,
@@ -740,6 +744,10 @@ async function createSessionForAgent(
     // extensions, so a Recipe that still ships its own keeps it.
     if (wantsAskUserQuestion(recipe.tools)) {
       inlineExtensions.push(askUserQuestionExtension(recipeRegistrations, env));
+    }
+    // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
+    if (wantsArtifactViewer(recipe.tools)) {
+      inlineExtensions.push(artifactViewerExtension(recipeRegistrations));
     }
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 
