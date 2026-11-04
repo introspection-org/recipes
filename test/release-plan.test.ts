@@ -22,6 +22,7 @@ interface Planned extends Artifact {
 }
 interface ReleasePlan {
   readArtifacts(repo: string): Artifact[];
+  pythonVersion(version: string): string;
   plan(
     artifacts: Artifact[],
     deps: {
@@ -34,7 +35,7 @@ interface ReleasePlan {
 
 // A non-literal specifier keeps tsc from demanding declarations for the .mjs.
 const scriptPath: string = "../scripts/release-plan.mjs";
-const { readArtifacts, plan } = (await import(scriptPath)) as ReleasePlan;
+const { readArtifacts, plan, pythonVersion } = (await import(scriptPath)) as ReleasePlan;
 
 const artifacts = readArtifacts(join(import.meta.dirname, ".."));
 const allTags = new Set(artifacts.map((a) => a.tag));
@@ -115,6 +116,26 @@ describe("release plan", () => {
     expect(results.find((r) => r.key === "python")?.missing).toEqual([
       `${stem}-*-win_amd64.whl`,
     ]);
+  });
+
+  it("matches a prerelease's files by Python's spelling of its version", async () => {
+    expect(pythonVersion("0.17.0-beta.0")).toBe("0.17.0b0");
+    expect(pythonVersion("0.17.0-alpha.2")).toBe("0.17.0a2");
+    expect(pythonVersion("0.17.0-rc.1")).toBe("0.17.0rc1");
+    expect(pythonVersion("0.17.0")).toBe("0.17.0");
+    const beta = { ...python, version: "0.17.0-beta.0" };
+    const betaFiles = pythonFiles.map((f) => f.replace(python.version, "0.17.0b0"));
+    const asked: string[] = [];
+    const results = await plan([beta], {
+      tags: new Set([beta.tag]),
+      isPublished: async () => true,
+      pypiFiles: async (_name, version) => {
+        asked.push(version);
+        return betaFiles;
+      },
+    });
+    expect(toPublish(results)).toEqual([]);
+    expect(asked).toEqual(["0.17.0-beta.0"]);
   });
 
   it("finishes a PyPI release that is missing its sdist", async () => {

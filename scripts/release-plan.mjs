@@ -73,9 +73,21 @@ export function readArtifacts(repo) {
   ];
 }
 
+/**
+ * A SemVer version as Python packaging spells it (PEP 440), which is what
+ * PyPI's URLs and distribution filenames use: `0.17.0-beta.0` is `0.17.0b0`,
+ * `-alpha.N` is `aN`, `-rc.N` is `rcN`. A plain release is unchanged.
+ */
+export function pythonVersion(version) {
+  const match = /^(\d+\.\d+\.\d+)-(alpha|beta|rc)\.?(\d+)$/.exec(version);
+  if (!match) return version;
+  const [, release, label, number] = match;
+  return `${release}${{ alpha: "a", beta: "b", rc: "rc" }[label]}${number}`;
+}
+
 /** The sdist and wheel files of a PyPI release that `files` lacks. */
 export function missingDistributions(name, version, wheels, files) {
-  const stem = `${name.replace(/[-.]+/g, "_")}-${version}`;
+  const stem = `${name.replace(/[-.]+/g, "_")}-${pythonVersion(version)}`;
   const missing = files.includes(`${stem}.tar.gz`) ? [] : [`${stem}.tar.gz`];
   for (const { platform } of wheels) {
     const tag = new RegExp(`-${platform.replaceAll("*", "[^-]*")}\\.whl$`);
@@ -136,7 +148,7 @@ async function get(url) {
 
 /** Filenames PyPI holds for a release; empty when the version does not exist. */
 async function pypiFiles(name, version) {
-  const response = await get(`https://pypi.org/pypi/${name}/${version}/json`);
+  const response = await get(`https://pypi.org/pypi/${name}/${pythonVersion(version)}/json`);
   if (!response) return [];
   return (await response.json()).urls.map((file) => file.filename);
 }
