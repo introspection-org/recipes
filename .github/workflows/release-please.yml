@@ -4,18 +4,9 @@ on:
   push:
     branches:
       - main
+  # Publishes whatever is released but missing from its registry -- the same
+  # thing every push run does, without waiting for a push.
   workflow_dispatch:
-    inputs:
-      train:
-        description: Release train to recover
-        type: choice
-        options:
-          - all
-          - root
-          - channel
-          - documents
-          - checker
-        default: all
 
 permissions: {}
 
@@ -23,8 +14,8 @@ permissions: {}
 # push is cancelled rather than queued behind. workflow_dispatch runs live in
 # a separate group (cancel-in-progress: false below), so a manual re-run to
 # finish an interrupted release is never cancelled by a concurrent push. Safe
-# either way: release-please is idempotent and the npm/crates publish
-# steps skip already-published versions.
+# either way: release-please is idempotent, and the plan job publishes only
+# versions their registries lack.
 concurrency:
   group: release-please-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -37,13 +28,6 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-    outputs:
-      root_release_created: ${{ steps.root_release.outputs.release_created }}
-      slack_channel_release_created: ${{ steps.root_release.outputs['packages/channels/slack--release_created'] }}
-      docx_documents_release_created: ${{ steps.root_release.outputs['packages/documents/docx--release_created'] }}
-      pdf_documents_release_created: ${{ steps.root_release.outputs['packages/documents/pdf--release_created'] }}
-      crate_release_created: ${{ steps.checker_release.outputs['packages/recipe-check--release_created'] }}
-      python_release_created: ${{ steps.checker_release.outputs['packages/recipe-check-python--release_created'] }}
     steps:
       # Each train owns a different manifest. Concurrent release PRs therefore
       # never edit the same version-state file.
@@ -109,9 +93,42 @@ jobs:
             exit 1
           fi
 
-  build-native-tools:
+  # Publishes what has been released but not published, not just what this run
+  # released: a failed publish leaves its tag and manifest version behind, and
+  # the next run (push or dispatch) finishes it. Each output is true when that
+  # package's manifest version is tagged and missing from its registry; see
+  # scripts/release-plan.mjs. Push runs plan after release-please so they see
+  # the tags it just cut; dispatch runs skip release-please.
+  plan:
     needs: release-please
-    if: ${{ always() && (needs.release-please.outputs.root_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root'))) }}
+    if: ${{ !cancelled() && needs.release-please.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      root: ${{ steps.plan.outputs.root }}
+      slack: ${{ steps.plan.outputs.slack }}
+      docx: ${{ steps.plan.outputs.docx }}
+      pdf: ${{ steps.plan.outputs.pdf }}
+      crate: ${{ steps.plan.outputs.crate }}
+      python: ${{ steps.plan.outputs.python }}
+      python_wheels: ${{ steps.plan.outputs.python_wheels }}
+      npm: ${{ steps.plan.outputs.npm }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - id: plan
+        run: node scripts/release-plan.mjs
+
+  # Jobs below gate on `!cancelled()` rather than the default success(): the
+  # skipped release-please job on a dispatch would otherwise skip them too.
+  build-native-tools:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.root == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -169,9 +186,9 @@ jobs:
 
   publish:
     needs:
-      - release-please
+      - plan
       - build-native-tools
-    if: ${{ always() && (needs.release-please.outputs.root_release_created == 'true' || needs.release-please.outputs.slack_channel_release_created == 'true' || needs.release-please.outputs.docx_documents_release_created == 'true' || needs.release-please.outputs.pdf_documents_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root' || inputs.train == 'channel' || inputs.train == 'documents'))) }}
+    if: ${{ !cancelled() && needs.plan.outputs.npm == 'true' }}
     runs-on: ubuntu-latest
     environment: publish
     permissions:
@@ -206,13 +223,13 @@ jobs:
       - run: pnpm typecheck && pnpm test && pnpm build
 
       - uses: actions/download-artifact@v8
-        if: ${{ needs.release-please.outputs.root_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root')) }}
+        if: ${{ needs.plan.outputs.root == 'true' }}
         with:
           pattern: native-tools-*
           path: native-tool-artifacts
 
       - name: Assemble the per-platform mcp-client packages
-        if: ${{ needs.release-please.outputs.root_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root')) }}
+        if: ${{ needs.plan.outputs.root == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -236,34 +253,14 @@ jobs:
       # what left `latest` five releases behind.
       - name: Publish
         env:
-          ROOT_RELEASE_CREATED: ${{ needs.release-please.outputs.root_release_created }}
-          SLACK_CHANNEL_RELEASE_CREATED: ${{ needs.release-please.outputs.slack_channel_release_created }}
-          DOCX_DOCUMENTS_RELEASE_CREATED: ${{ needs.release-please.outputs.docx_documents_release_created }}
-          PDF_DOCUMENTS_RELEASE_CREATED: ${{ needs.release-please.outputs.pdf_documents_release_created }}
-          MANUAL_ROOT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'root') }}
-          MANUAL_CHANNEL_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'channel') }}
-          MANUAL_DOCUMENTS_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'documents') }}
+          publish_root: ${{ needs.plan.outputs.root }}
+          publish_slack: ${{ needs.plan.outputs.slack }}
+          publish_docx: ${{ needs.plan.outputs.docx }}
+          publish_pdf: ${{ needs.plan.outputs.pdf }}
           NATIVE_BUILD_RESULT: ${{ needs.build-native-tools.result }}
         shell: bash
         run: |
           set -euo pipefail
-
-          publish_root=false
-          publish_slack=false
-          publish_docx=false
-          publish_pdf=false
-          if [[ "$ROOT_RELEASE_CREATED" == "true" || "$MANUAL_ROOT_RELEASE" == "true" ]]; then
-            publish_root=true
-          fi
-          if [[ "$SLACK_CHANNEL_RELEASE_CREATED" == "true" || "$MANUAL_CHANNEL_RELEASE" == "true" ]]; then
-            publish_slack=true
-          fi
-          if [[ "$DOCX_DOCUMENTS_RELEASE_CREATED" == "true" || "$MANUAL_DOCUMENTS_RELEASE" == "true" ]]; then
-            publish_docx=true
-          fi
-          if [[ "$PDF_DOCUMENTS_RELEASE_CREATED" == "true" || "$MANUAL_DOCUMENTS_RELEASE" == "true" ]]; then
-            publish_pdf=true
-          fi
 
           if [[ "$publish_root" == "true" && "$NATIVE_BUILD_RESULT" != "success" ]]; then
             echo "The root release requires successful native builds." >&2
@@ -352,8 +349,8 @@ jobs:
           fi
 
   publish-crate:
-    needs: release-please
-    if: ${{ always() && (needs.release-please.outputs.crate_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'checker'))) }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.crate == 'true' }}
     runs-on: ubuntu-latest
     environment: publish
     permissions:
@@ -387,27 +384,14 @@ jobs:
           fi
 
   build-python-wheels:
-    needs: release-please
-    if: ${{ always() && (needs.release-please.outputs.python_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'checker'))) }}
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.python == 'true' }}
     strategy:
       fail-fast: false
+      # One wheel per entry in packages/recipe-check-python/wheels.json, which the
+      # plan also reads to tell whether PyPI has every wheel of a version.
       matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            manylinux: "2_28"
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            manylinux: "2_28"
-          - os: macos-14
-            target: aarch64-apple-darwin
-            manylinux: auto
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            manylinux: auto
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            manylinux: auto
+        include: ${{ fromJSON(needs.plan.outputs.python_wheels) }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -427,12 +411,14 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
 
+  # Still after the crate, but a crate already on crates.io (publish-crate
+  # skipped) no longer blocks a Python release the registry lacks.
   publish-python:
     needs:
-      - release-please
+      - plan
       - build-python-wheels
       - publish-crate
-    if: ${{ always() && needs.build-python-wheels.result == 'success' && needs.publish-crate.result == 'success' && (needs.release-please.outputs.python_release_created == 'true' || (github.event_name == 'workflow_dispatch' && (inputs.train == 'all' || inputs.train == 'checker'))) }}
+    if: ${{ !cancelled() && needs.plan.outputs.python == 'true' && needs.build-python-wheels.result == 'success' && (needs.publish-crate.result == 'success' || needs.publish-crate.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment: publish
     permissions:

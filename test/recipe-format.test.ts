@@ -932,6 +932,10 @@ describe("release train isolation", () => {
       join(root, ".github", "workflows", "release-please.yml"),
       "utf8",
     );
+    const releasePlan = readFileSync(
+      join(root, "scripts", "release-plan.mjs"),
+      "utf8",
+    );
     const adapters = ["channels", "documents"].flatMap((group) =>
       readdirSync(join(root, "packages", group)).map(
         (name) => `packages/${group}/${name}`,
@@ -955,7 +959,8 @@ describe("release train isolation", () => {
       });
       // A manifest version is a real release, so it is absent until the first one.
       if (manifest[path] !== undefined) expect(manifest[path]).toBe(pkg.version);
-      expect(workflow).toContain(`outputs['${path}--release_created']`);
+      // The release plan decides whether it is published.
+      expect(releasePlan).toContain(`"${path}"`);
       expect(workflow).toContain(`channel_dirs+=("${path}")`);
     }
   });
