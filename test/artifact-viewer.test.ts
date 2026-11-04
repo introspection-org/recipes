@@ -624,4 +624,23 @@ describe("default file watcher", () => {
       stop();
     }
   });
+
+  it("sees an edit to the file a symlink points to, in another folder", async () => {
+    const { watchFileWithFs } = await import("../src/artifact-viewer.js");
+    mkdirSync(join(workspace, "reports"));
+    symlinkSync(join("..", "brief.md"), join(workspace, "reports", "latest.md"));
+    let changes = 0;
+    const stop = watchFileWithFs(join(workspace, "reports", "latest.md"), () => {
+      changes += 1;
+    });
+    try {
+      writeFileSync(join(workspace, "brief.md"), "# Revised through the target\n");
+      for (let waited = 0; changes === 0 && waited < 2000; waited += 20) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(changes).toBeGreaterThan(0);
+    } finally {
+      stop();
+    }
+  });
 });

@@ -278,18 +278,47 @@ export function openWithSystemApp(absolutePath: string): Promise<void> {
   });
 }
 
-/** The default watcher: the file's folder, filtered to the file's name. */
+/**
+ * The default watcher: the file's folder, filtered to the file's name. When
+ * the path is a symlink, the folder of the file it points to is watched too,
+ * so an edit to the target is seen; replacing or retargeting the link is seen
+ * through its own folder, which moves the target watch along.
+ */
 export function watchFileWithFs(absolutePath: string, onChange: () => void): () => void {
-  const name = basename(absolutePath);
-  try {
-    const watcher = watch(dirname(absolutePath), (_event, filename) => {
-      if (!filename || filename.toString() === name) onChange();
-    });
-    watcher.on("error", () => {});
-    return () => watcher.close();
-  } catch {
-    return () => {};
-  }
+  const watchName = (path: string, changed: () => void): (() => void) => {
+    const name = basename(path);
+    try {
+      const watcher = watch(dirname(path), (_event, filename) => {
+        if (!filename || filename.toString() === name) changed();
+      });
+      watcher.on("error", () => {});
+      return () => watcher.close();
+    } catch {
+      return () => {};
+    }
+  };
+  const realPath = () => {
+    try {
+      return realpathSync(absolutePath);
+    } catch {
+      return absolutePath;
+    }
+  };
+  let target = realPath();
+  let stopTarget = target === absolutePath ? () => {} : watchName(target, onChange);
+  const stopLink = watchName(absolutePath, () => {
+    const next = realPath();
+    if (next !== target) {
+      stopTarget();
+      target = next;
+      stopTarget = target === absolutePath ? () => {} : watchName(target, onChange);
+    }
+    onChange();
+  });
+  return () => {
+    stopLink();
+    stopTarget();
+  };
 }
 
 function readDocument(target: ResolvedArtifactPath): ArtifactDocument {
