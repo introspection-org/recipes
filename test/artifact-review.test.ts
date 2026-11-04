@@ -129,7 +129,9 @@ describe("review_artifacts in the terminal", () => {
     type(list, ["a", "\r"]); // approve C1, no comment; moves to C2
     await flush();
     expect(panel().render(80).join("\n")).toContain("Body of C2.");
-    type(list, ["c", ..."code check", "\r"]); // changes on C2
+    type(list, ["c", "\r"]); // a change request needs a comment: Enter alone does nothing
+    expect(list.render(120).join("\n")).toContain("What should change?");
+    type(list, [..."code check", "\r"]); // changes on C2
     type(list, ["\r"]); // submit; C3 left undecided
 
     const out = await result;
@@ -169,7 +171,7 @@ describe("review_artifacts elsewhere", () => {
   it("asks per file over RPC", async () => {
     const fake = fakeCtx(dir, "rpc");
     fake.answers.select.push("Approve", "Request changes", "Skip");
-    fake.answers.input.push("", "needs a code check");
+    fake.answers.input.push("", "", "needs a code check"); // the empty change request is asked again
     const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
     const out = await (tool.execute as any)("call-1", { title: "The cases", items }, undefined, undefined, fake.ctx);
     expect(fake.selects[0]).toEqual(["C1: four questions (evals/cases/C1.md)", "Approve", "Request changes", "Skip"]);

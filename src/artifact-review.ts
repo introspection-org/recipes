@@ -41,7 +41,7 @@ export interface ArtifactReview {
 }
 
 const description = [
-  "Ask the user to review several markdown files you wrote (a brief, test cases, a design), one decision per file: approve, or request changes, each with an optional comment.",
+  "Ask the user to review several markdown files you wrote (a brief, test cases, a design), one decision per file: approve, with an optional comment, or request changes, saying what to change.",
   "In Pi's terminal the user steps through the files with each one shown in the panel on the right; other hosts render their own review. Prefer it to asking for approval of files in plain text.",
   `Give 1 to ${MAX_REVIEW_ITEMS} files, in reading order, with a short label for each. Paths are relative to the working directory; only markdown files can be reviewed.`,
   "The result lists each file's decision and comment. Record an approval only for a file the result says was approved, and change any file with changes requested, then review it again.",
@@ -209,9 +209,13 @@ export function showReviewTui(
         });
         lines.push("");
         if (commenting) {
-          const what = commenting === "approved" ? "Approve" : "Request changes on";
-          add(` ${theme.fg("text", `${what} ${items[active]!.label}. Comment (optional): `)}${theme.fg("accent", `${draft}█`)}`);
-          add(theme.fg("dim", " Enter save · Esc back"));
+          const prompt =
+            commenting === "approved"
+              ? `Approve ${items[active]!.label}. Comment (optional): `
+              : `Request changes on ${items[active]!.label}. What should change? `;
+          add(` ${theme.fg("text", prompt)}${theme.fg("accent", `${draft}█`)}`);
+          const needsText = commenting === "changes_requested" && !draft.trim();
+          add(theme.fg("dim", needsText ? " Type what should change · Esc back" : " Enter save · Esc back"));
         } else {
           add(
             theme.fg(
@@ -230,6 +234,8 @@ export function showReviewTui(
             draft = "";
           } else if (matchesKey(data, Key.enter)) {
             const comment = draft.trim();
+            // A change request says what to change, or the agent has nothing to act on.
+            if (commenting === "changes_requested" && !comment) return;
             states[active] = { decision: commenting, ...(comment ? { comment } : {}) };
             commenting = undefined;
             draft = "";
@@ -284,7 +290,17 @@ async function reviewOverDialogs(
       reviews.push({ path: item.target.relativePath, decision: "not_reviewed", opened: true });
       continue;
     }
-    const comment = (await ui.input("Comment (optional)", "", dialog))?.trim();
+    let comment: string | undefined;
+    if (choice === "Approve") {
+      comment = (await ui.input("Comment (optional)", "", dialog))?.trim();
+    } else {
+      // A change request says what to change; dismissing the prompt cancels the review.
+      while (!comment) {
+        const typed = await ui.input("What should change?", "", dialog);
+        if (typed === undefined) return null;
+        comment = typed.trim();
+      }
+    }
     reviews.push({
       path: item.target.relativePath,
       decision: choice === "Approve" ? "approved" : "changes_requested",

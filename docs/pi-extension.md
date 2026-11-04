@@ -119,7 +119,7 @@ host keeps it and registers neither the built-in tool nor `/recipe view`.
 
 List `review_artifacts` and the agent can ask the user to review several
 markdown files it wrote, one decision per file, as in a pull request review:
-approve, or request changes, each with an optional comment.
+approve, with an optional comment, or request changes, saying what to change.
 
 ```ts
 review_artifacts({
@@ -139,14 +139,14 @@ the cursor, so the user never moves the keyboard between them:
 | `Up` / `Down`, `Tab` / `Shift+Tab`, `Ctrl+N` / `Ctrl+P` | Next or previous file |
 | `j` / `k`, `PgUp` / `PgDn`, `Space` | Scroll the file |
 | `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
-| `c` | Request changes, then an optional comment |
+| `c` | Request changes, then what should change (required) |
 | `A` | Approve every file not yet decided |
 | `Enter` | Submit; files left undecided are `not reviewed` |
 | `Esc` | Cancel the review; nothing is approved |
 
 It is an interaction ([Interactions](interactions.md)), so it works on every
-host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`)
-and an optional comment; on a pause/resume host it pauses with
+host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`),
+then a comment (required for changes); on a pause/resume host it pauses with
 `details.interrupt.metadata` `{ kind: "review_artifacts", items: [{ path, label }] }`
 for the host to render its own review, and resumes with `{ answer }` in the
 format below; headless runs and child agents decline, so nothing is approved
