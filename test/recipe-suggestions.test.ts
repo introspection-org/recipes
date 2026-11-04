@@ -208,6 +208,7 @@ interface PickerOptions {
   templates?: Record<string, string>;
   seed?: string;
   gitName?: string;
+  exec?: () => Promise<{ stdout: string; stderr: string; code: number; killed: boolean }>;
 }
 
 async function startPicker(options: PickerOptions = {}) {
@@ -216,12 +217,15 @@ async function startPicker(options: PickerOptions = {}) {
   pi.flagValues.set("recipe", recipeDir);
   const sendUserMessage = vi.fn();
   (pi as any).sendUserMessage = sendUserMessage;
-  (pi as any).exec = vi.fn(async () => ({
-    stdout: options.gitName ? `${options.gitName}\n` : "",
-    stderr: "",
-    code: options.gitName ? 0 : 1,
-    killed: false,
-  }));
+  (pi as any).exec = vi.fn(
+    options.exec ??
+      (async () => ({
+        stdout: options.gitName ? `${options.gitName}\n` : "",
+        stderr: "",
+        code: options.gitName ? 0 : 1,
+        killed: false,
+      }))
+  );
   const select = vi.fn(options.select ?? (async () => undefined));
   const ui = {
     notify: vi.fn(),
@@ -398,6 +402,25 @@ describe("first-run picker", () => {
     );
     await settle();
     expect(dismissed).toBe(true);
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when an initial message arrives while the git name is read", async () => {
+    let finishGit: (value: { stdout: string; stderr: string; code: number; killed: boolean }) => void =
+      () => {};
+    const { pi, ctx, sendUserMessage, settle } = await startPicker({
+      templates: { "redline.md": TEMPLATES["redline.md"]! },
+      select: async (_title, choices) => choices[0],
+      exec: () => new Promise((resolve) => (finishGit = resolve)),
+    });
+    await settle();
+    expect((pi as any).exec).toHaveBeenCalled();
+    await pi.emitExtensionEvent(
+      { type: "input", text: "/redline", source: "interactive" } as any,
+      ctx
+    );
+    finishGit({ stdout: "Ada Lovelace\n", stderr: "", code: 0, killed: false });
+    await settle();
     expect(sendUserMessage).not.toHaveBeenCalled();
   });
 

@@ -101,6 +101,8 @@ export async function offerRecipeSuggestions(
     return;
   }
   const values = picked.placeholders.length > 0 ? await localValues(pi) : {};
+  // An initial message or a session change can abort the picker while git runs.
+  if (signal?.aborted) return;
   pi.sendUserMessage(fillSuggestion(expandWithoutArguments(picked.text), values));
 }
 
