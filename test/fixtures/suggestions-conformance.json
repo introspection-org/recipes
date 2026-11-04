@@ -1,0 +1,95 @@
+[
+  {
+    "name": "marked templates, in file order",
+    "files": {
+      "package.json": "{\"name\":\"marked\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
+      "agents/main.yaml": "name: main\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/redline.md": "---\nsuggest: true\ndescription: Redline a contract\nargument-hint: \"[contract]\"\n---\nRedline ${1:-the contract} for {{member.name}} on {{today}}, {{member.name}} and {{deal.id}}.",
+      "prompts/brief.md": "---\r\nsuggest: true\r\n---\r\n\r\nBrief me on {{org.name}}.\r\nKeep it short.",
+      "prompts/long.md": "---\nsuggest: true\n---\nSummarize every clause in the attached agreement and flag anything unusual for review today",
+      "prompts/hint.md": "---\nsuggest: true\ndescription: \"  Padded  \"\nargument-hint: \"\"\n---\nGo.",
+      "prompts/notes.md": "---\ndescription: Take notes\n---\nTake notes.",
+      "prompts/off.md": "---\nsuggest: false\n---\nOff.",
+      "prompts/string.md": "---\nsuggest: \"true\"\n---\nString.",
+      "prompts/yes.md": "---\nsuggest: yes\n---\nYes."
+    },
+    "suggestions": [
+      {
+        "name": "brief",
+        "description": "Brief me on {{org.name}}.",
+        "text": "Brief me on {{org.name}}.\nKeep it short.",
+        "placeholders": [
+          "org.name"
+        ]
+      },
+      {
+        "name": "hint",
+        "description": "Padded",
+        "text": "Go.",
+        "placeholders": []
+      },
+      {
+        "name": "long",
+        "description": "Summarize every clause in the attached agreement and flag an...",
+        "text": "Summarize every clause in the attached agreement and flag anything unusual for review today",
+        "placeholders": []
+      },
+      {
+        "name": "redline",
+        "description": "Redline a contract",
+        "argumentHint": "[contract]",
+        "text": "Redline ${1:-the contract} for {{member.name}} on {{today}}, {{member.name}} and {{deal.id}}.",
+        "placeholders": [
+          "member.name",
+          "today",
+          "deal.id"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "the first template with a name wins, in manifest order",
+    "files": {
+      "package.json": "{\"name\":\"order\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts\",\"./more\"]}}",
+      "agents/main.yaml": "name: main\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/go.md": "---\ndescription: Unmarked\n---\nFirst.",
+      "more/go.md": "---\nsuggest: true\n---\nSecond.",
+      "more/other.md": "---\nsuggest: true\n---\nOther."
+    },
+    "suggestions": [
+      {
+        "name": "other",
+        "description": "Other.",
+        "text": "Other.",
+        "placeholders": []
+      }
+    ]
+  },
+  {
+    "name": "prompts/ by convention, direct children only, bad YAML skipped",
+    "files": {
+      "package.json": "{\"name\":\"convention\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"]}}",
+      "agents/main.yaml": "name: main\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/bad.md": "---\nsuggest: true\ndescription: [unclosed\n---\nBad.",
+      "prompts/good.md": "---\nsuggest: true\ndescription: Good\n---\nGood.",
+      "prompts/nested/deep.md": "---\nsuggest: true\n---\nDeep."
+    },
+    "suggestions": [
+      {
+        "name": "good",
+        "description": "Good",
+        "text": "Good.",
+        "placeholders": []
+      }
+    ]
+  },
+  {
+    "name": "nothing marked",
+    "files": {
+      "package.json": "{\"name\":\"none\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
+      "agents/main.yaml": "name: main\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/notes.md": "---\ndescription: Take notes\n---\nTake notes."
+    },
+    "suggestions": []
+  }
+]

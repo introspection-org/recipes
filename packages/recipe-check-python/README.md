@@ -21,3 +21,9 @@ report = check_recipe_files(
 The binding performs no filesystem I/O. Paths are relative to the Recipe root,
 and missing `content` means the host supplied file identity without source
 text.
+
+`list_recipe_suggestions(snapshot)` returns the same snapshot's suggestions:
+the prompt templates marked `suggest: true`, in file order, as `Suggestion`
+values (`name`, `description`, `argument_hint`, `text` and `placeholders`). It
+reads them exactly as `listRecipeSuggestions` in `@introspection-ai/recipes`
+does, so a host can offer them (as chat chips, say) without starting Pi.
