@@ -236,7 +236,7 @@ export function showReviewTui(
           add(theme.fg("dim", needsText ? " Type what should change · Esc back" : " Enter save · Esc back"));
         } else {
           // Wrapped, never cut off: the keys are the only way to finish.
-          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "v hide/show file", "a approve", "c request changes", "A approve all", "Enter submit", "Esc cancel"];
+          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "v hide/show file", "a approve", "c request changes", "A approve the rest", "Enter submit", "Esc cancel"];
           let line = "";
           for (const key of keys) {
             const next = line ? `${line} · ${key}` : key;

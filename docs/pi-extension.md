@@ -142,7 +142,7 @@ the cursor, so the user never moves the keyboard between them:
 | `v` | Hide or show the file, to read the conversation under the panel |
 | `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
 | `c` | Request changes, then what should change (required) |
-| `A` | Approve all, and submit; a file you asked to change keeps its change request |
+| `A` | Approve the rest (every file not yet decided), and submit |
 | `Enter` | Submit early; files left undecided are `not reviewed` |
 
 The review submits on its own once every file has a decision. A long review shows eight files at a time around the cursor, with how many more are above and below.
