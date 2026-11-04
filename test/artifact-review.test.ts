@@ -203,6 +203,14 @@ describe("what the review shows of a file", () => {
     ).toContain("approved by owner");
   });
 
+  it("doesn't take a # line in a code fence for a heading", () => {
+    const brief =
+      "## Part A\n\nThe job.\n\n```\n# not a heading\n```\n\nStill Part A.\n\n## Part B\n\nTables.";
+    const shown = reviewSource(brief, "Part A");
+    expect(shown).toContain("Still Part A.");
+    expect(shown).not.toContain("Tables.");
+  });
+
   it("shows only the section asked for, to the next heading at its level", () => {
     const brief =
       "# Design\n\n## Part A: what it does\n\nThe job.\n\n### Detail\n\nMore.\n\n## Part B: how it is built\n\nTables.";
@@ -390,8 +398,11 @@ describe("review_artifacts elsewhere", () => {
       undefined,
       fake.ctx,
     );
-    expect(fake.selects[0]).toEqual([
-      "C1: four questions (evals/cases/C1.md)",
+    // The dialog carries the file, since an RPC client sees only what it's sent.
+    expect(fake.selects[0]![0]).toMatch(
+      /^C1: four questions \(evals\/cases\/C1\.md\)\n\n# C1\n\nBody of C1\./,
+    );
+    expect(fake.selects[0]!.slice(1)).toEqual([
       "Approve",
       "Request changes",
       "Skip",
@@ -454,6 +465,25 @@ describe("review_artifacts elsewhere", () => {
       opened: true,
     });
     expect(out.details.reviews).toHaveLength(3);
+  });
+
+  it("closes an open artifact panel before the terminal review", async () => {
+    const fake = fakeCtx(dir, "tui");
+    let closed = 0;
+    const tool = createReviewArtifactsTool(undefined, () => {
+      closed += 1;
+    });
+    const result = (tool.execute as any)(
+      "call-1",
+      { title: "The cases", items },
+      undefined,
+      undefined,
+      fake.ctx,
+    );
+    await flush();
+    expect(closed).toBe(1);
+    type(fake.components.find((c) => !c.overlay)!.component, ["\x1b"]);
+    await result;
   });
 
   it("gives a pause/resume host the files to render", async () => {

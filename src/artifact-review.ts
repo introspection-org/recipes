@@ -138,20 +138,26 @@ export function reviewSource(source: string, section?: string): string {
   if (section?.trim()) {
     const lines = text.split("\n");
     const wanted = section.trim().toLowerCase();
+    // A `#` line inside a fenced code block isn't a heading.
+    let fenced = false;
+    const levels = lines.map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+      return !fenced && /^#{1,6}\s/.test(line)
+        ? /^#+/.exec(line)![0].length
+        : 0;
+    });
     const start = lines.findIndex(
-      (line) =>
-        /^#{1,6}\s/.test(line) &&
+      (line, i) =>
+        levels[i]! > 0 &&
         line
           .replace(/^#+\s*/, "")
           .toLowerCase()
           .includes(wanted),
     );
     if (start >= 0) {
-      const level = /^#+/.exec(lines[start]!)![0].length;
       let end = lines.length;
       for (let i = start + 1; i < lines.length; i += 1) {
-        const heading = /^(#{1,6})\s/.exec(lines[i]!);
-        if (heading && heading[1]!.length <= level) {
+        if (levels[i]! > 0 && levels[i]! <= levels[start]!) {
           end = i;
           break;
         }
@@ -243,7 +249,7 @@ export function showReviewTui(
     (tui, theme: Theme, _keybindings, done) => {
       const states: ReviewState[] = items.map(() => ({}));
       const opened = new Set<number>([0]);
-      const scrolls = items.map(() => 0);
+      const scrolls = [...items.map(() => 0), 0];
       const documents = new Map<number, Markdown>();
       const several = items.length > 1;
       // The Submit tab sits after the files.
@@ -340,7 +346,6 @@ export function showReviewTui(
         return markdown;
       };
       const scroll = (by: ArtifactPanelScrollBy) => {
-        if (onSubmitTab()) return;
         const page = Math.max(1, lastBodyHeight - 1);
         const delta =
           by === "line-up"
@@ -390,7 +395,8 @@ export function showReviewTui(
           const inner = Math.max(10, width - 4);
           const border = (text: string) => theme.fg("dim", text);
           let body: string[];
-          let scrollable = false;
+          // Both the file and the Submit summary scroll; the summary keeps its position in the slot after the files.
+          const scrollable = true;
           if (onSubmitTab()) {
             const count = (decision: ReviewDecision) =>
               items.filter(
@@ -430,7 +436,6 @@ export function showReviewTui(
                 theme.fg("dim", `  ${item.target.relativePath}`),
             );
             body = document(active).render(inner);
-            scrollable = true;
           }
           const rows = tui.terminal?.rows ?? 24;
           // At most half the terminal, so the conversation above stays in view.
@@ -441,9 +446,7 @@ export function showReviewTui(
           lastMaxScroll = scrollable
             ? Math.max(0, body.length - lastBodyHeight)
             : 0;
-          const top = scrollable
-            ? Math.min(scrolls[active]!, lastMaxScroll)
-            : 0;
+          const top = Math.min(scrolls[active]!, lastMaxScroll);
           add(border(` ┌${"─".repeat(inner + 1)}`));
           for (const line of body.slice(top, top + lastBodyHeight))
             add(`${border(" │ ")}${line}`);
@@ -571,8 +574,18 @@ async function reviewOverDialogs(
 ): Promise<ArtifactReview[] | null> {
   const reviews: ArtifactReview[] = [];
   for (const item of items) {
+    let shown: string;
+    try {
+      shown = reviewSource(
+        readFileSync(item.target.absolutePath, "utf8"),
+        item.section,
+      );
+    } catch {
+      shown = "This file doesn't exist.";
+    }
+    // An RPC client renders only what the dialog carries, so the file goes in it.
     const choice = await ui.select(
-      `${item.label} (${item.target.relativePath})`,
+      `${item.label} (${item.target.relativePath})\n\n${shown}`,
       ["Approve", "Request changes", "Skip"],
       dialog,
     );
@@ -615,6 +628,8 @@ function answered(reviews: ArtifactReview[] | null): AskUserOutcome {
 /** Build the tool over a session's viewer. */
 export function createReviewArtifactsTool(
   env?: NodeJS.ProcessEnv,
+  /** Called before the terminal review opens, so an open artifact panel doesn't cover it. */
+  beforeReview?: () => void,
 ): ToolDefinition {
   const tool: ToolDefinition<typeof parameters> = {
     name: REVIEW_ARTIFACTS_TOOL_NAME,
@@ -665,7 +680,8 @@ export function createReviewArtifactsTool(
           interactive: async (ui, dialog) =>
             answered(
               ctx.mode === "tui"
-                ? await showReviewTui(params.title, items, ui, signal)
+                ? (beforeReview?.(),
+                  await showReviewTui(params.title, items, ui, signal))
                 : await reviewOverDialogs(items, ui, dialog),
             ),
         },
