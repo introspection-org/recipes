@@ -660,15 +660,18 @@ the format and Host API are not a sandbox boundary.
 
 ## Evaluations
 
-A Recipe's evaluations live under `evals/` by default:
+A Recipe's evaluations live under `evals/` by default, with its fakes at the
+Recipe root:
 
 ```text
 evals/
-  vitest/              vitest-evals suites
-  harbor/<task>/       one Harbor task per folder
+  cases/<id>.md        one case file per case: the owner's words and approval
+  cases/inputs/        optional: synthetic inputs only
+  vitest/              vitest-evals suites; each *.eval.jsonl row names its case
+  harbor/<id>/         one Harbor task per folder; the folder name is the case id
   lib/                 code shared by several tasks or suites
   sources/             pinned generators of derived eval data
-  fakes/<server>/      MCP fakes and their scenarios
+fakes/<server>/        MCP fakes and their scenarios, also used for local testing
 ```
 
 `pi.evals` is optional and overrides those locations. Absent, hosts and tools
@@ -684,7 +687,8 @@ discover `evals/vitest` and `evals/harbor` when they exist.
       ],
       "lib": "evals/lib",
       "sources": "evals/sources",
-      "fakes": "evals/fakes"
+      "fakes": "fakes",
+      "cases": "evals/cases"
     }
   }
 }
@@ -692,16 +696,111 @@ discover `evals/vitest` and `evals/harbor` when they exist.
 
 `suites[].type` is `harbor` or `vitest`; several suites of one type may exist,
 and no two share a path. Every path is Recipe-relative, uses `/`, and stays
-inside the package. Unknown keys are errors.
+inside the package. Unknown keys are errors. `fakes` defaults to `fakes` at the
+Recipe root; a Recipe that keeps its fakes under `evals/fakes` names that path
+(`"fakes": "evals/fakes"`). `cases` is newer than the other keys, and an older
+`recipe-check` rejects it as unknown, so declare it only for a path other than
+`evals/cases`.
 
-Nothing eval-only reaches a running agent: every suite, `lib`, `sources` and
-`fakes` path MUST be excluded by `.recipeignore` (a single `evals/` line does
-it), and in a Harbor trial only a task's `environment/` reaches the agent.
-Hosts accept `pi.evals` without reading it; it is for evaluation tooling and
-`recipe-check`. `recipe-check` warns about eval paths missing from `.recipeignore`
-for every Recipe, and checks the rest of the layout (Harbor task folders, eval
-files outside the eval paths) only for a Recipe that declares `pi.evals`; an
-empty `{}` adopts those checks with the default paths.
+### Cases
+
+A case is one situation in the owner's words, in its case file
+`evals/cases/<id>.md`. An implementation is how one runner executes a case: a
+Vitest row or a Harbor task. Implementations point to their case, never the
+other way round, so a case file never names a path.
+
+A case file is YAML front matter, then a body. The front matter:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The file name without `.md`. Unique across the Recipe and never reused. Any name safe as a file name. |
+| `title` | One line in the owner's words. |
+| `check` | `code` (a verifier), `person` (the owner or a reviewer) or `later` (left for a later improvement pass). Only `code` cases get an implementation. |
+| `inputs` | A list of `{ name, sha256, location }`: each input by its hash and where it came from. The case file never holds an input; the implementation carries the copy it runs on, such as a Harbor task's `environment/`. |
+| `sources` | What the agent must reach for this case, such as `[documents]`. |
+| `approved_by`, `approved_at`, `approved_in` | Who approved the case, when, and in which message. All empty means a draft. |
+| `conversation` | Optional: `{ id, task_id, turn }` of the real conversation the case came from, `task_id` only when it ran as a platform task. Provenance only: a run never fetches it. |
+| `issue` | Optional: the UUID of the issue recording the hypothesis the case tests. |
+
+Unknown keys are allowed: the other fields and the body are for people. By
+convention the body has the sections Situation, A good result and A bad
+result, and optionally Verification. `evals/cases/inputs/` holds only
+synthetic inputs; real inputs stay where `location` says.
+
+```markdown
+---
+id: C3
+title: Refund for a late delivery
+check: code
+sources: [orders]
+approved_by: owner@example.com
+approved_at: 2026-11-04
+approved_in: msg_01
+---
+
+## Situation
+...
+```
+
+A case has zero or one implementation per runner: zero for `check: person`,
+`check: later` and drafts, and one Vitest and one Harbor implementation at
+most for a `code` case. A case that must run against a deployed version or a
+pushed commit needs a Harbor implementation. Case ids are unique across the
+Recipe, not per suite.
+
+- **Vitest.** Each `.eval.jsonl` row names its case with `"case": "<id>"`.
+  Rows with a `case` are at `schema_version: 3`, and version 3 requires
+  `case`. A row at `schema_version: 2` may carry `case` too, for helpers that
+  only read version 2. A row built inline in an `.eval.ts` must still carry
+  `case`; the runner checks it there.
+- **Harbor.** A task names its case with `case = "<id>"` in the `[metadata]`
+  table of its `task.toml`. Without it, the task's folder name is the case id,
+  so a task folder named after its case needs no key. The same table declares
+  the scoring contract version the verifier writes, `contract = <n>`; absent
+  means 1.
+
+### Scoring
+
+Both runners produce the same two objects for a case, whatever language the
+verifier is written in:
+
+- **Scores** (`reward.json`): a flat object of finite numbers from 0 to 1,
+  booleans rejected. `reward` is the case's score; every other key is one
+  dimension. With no `reward`, tooling derives the plain mean of the
+  dimensions. A plain `reward.txt` counts as `{"reward": n}`. Counts and other
+  numbers that are not scores stay in the verifier's own artifacts.
+- **Reasons** (`reward-details.json`, optional): one entry per key of the
+  scores, each with `score` and a `criteria[]` of `name`, `value`, `reasoning`
+  and, for a criterion that did not apply, `optional: true` with an `error`.
+  It is read tolerantly; without it a case just has no reasoning.
+
+A Harbor verifier writes both files to `/logs/verifier/`; a Vitest test hands
+the same objects over in its test metadata. A malformed score object makes the
+case incomplete, never a score of 0, and a criterion that did not apply has no
+score. The contract has an integer version, starting at 1, that changes only
+on a breaking change.
+
+### Packaging and checks
+
+Nothing eval-only reaches a running agent: every suite, `lib`, `sources`,
+`fakes` and `cases` path MUST be excluded by `.recipeignore` (an `evals/` line
+and a `fakes/` line do it), and in a Harbor trial only a task's `environment/`
+reaches the agent. Hosts accept `pi.evals` without reading it; it is for
+evaluation tooling and `recipe-check`.
+
+`recipe-check` warns about eval paths missing from `.recipeignore` for every
+Recipe. It checks the rest of the layout only for a Recipe that declares
+`pi.evals`; an empty `{}` adopts those checks with the default paths. Those
+checks are Harbor task folders without `task.toml`, eval files outside the
+eval paths, and the links between cases and implementations, all as warnings:
+
+| Code | Rule |
+| --- | --- |
+| `pi.evals_case_unknown` | A Vitest row or Harbor task names a case with no case file. |
+| `pi.evals_case_duplicate` | A case has more than one implementation on one runner. |
+| `pi.evals_case_unapproved` | A case with an implementation has an empty approval field. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
+| `pi.evals_case_row_missing_id` | A `.eval.jsonl` row has no `case`. |
+| `pi.evals_case_invalid` | A case file has no readable front matter, an `id` other than its file name, or an `issue` that is not a UUID. |
 
 ## Conformance
 
