@@ -5,6 +5,7 @@
 //! Hosts own filesystem discovery and any environment-specific policy.
 
 mod judges;
+mod prompts;
 pub mod resources;
 pub mod spec;
 pub mod template;
@@ -335,6 +336,9 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             if let Some(paths) = resources.get(key) {
                 resource_counts.insert(key.to_owned(), paths.len());
             }
+        }
+        if let Some(paths) = resources.get("prompts") {
+            prompts::validate_prompt_templates(paths, &mut ctx);
         }
         validate_agents(
             &agent_paths,

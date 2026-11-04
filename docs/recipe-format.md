@@ -303,6 +303,46 @@ Prompt templates are declared by `pi.prompts`. They retain Pi's normal SDK and
 TUI behavior: hosts expose them through `AgentSession.promptTemplates`, and a
 caller invokes one by prompting with its slash command and arguments.
 
+### Prompt templates are suggestions
+
+A Recipe's prompt templates are also its suggestions: the things a new user
+can ask it to do. There is no separate field. Give each template a
+`description`, because that is what people see:
+
+```markdown
+---
+description: Redline a contract against our playbook
+argument-hint: "[contract]"
+---
+Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
+```
+
+- **In Pi.** A new session in the terminal (`pi --recipe <dir>`, or
+  `introspection local`) with no messages asks once, "What would you like to
+  do?", with up to three templates (a random three when there are more) and a
+  row to type your own request. Picking one sends it as the first message;
+  a template whose `argument-hint` has a required `<argument>` is put in the
+  editor instead, for you to finish. Typing sends what you typed, and Esc
+  leaves the empty prompt. Set `PI_RECIPES_SUGGESTIONS_SEED` to pin which
+  three show. The picker never appears on resume, outside the terminal UI,
+  or when Pi starts with a message.
+- **Starting with one.** Pi expands a template given as the initial message,
+  so `pi --recipe <dir> "/redline nda.docx"` (or
+  `introspection local -- "/redline nda.docx"`) starts with it expanded.
+- **Placeholders.** Besides Pi's `$1` and `${1:-default}` arguments, a
+  template may use `{{member.name}}`, `{{member.email}}`, `{{org.name}}` and
+  `{{today}}` (an ISO date). A host fills the ones it knows and leaves the rest
+  as written. Pi's picker fills `{{today}}`, and `{{member.name}}` from
+  `git config user.name`; a template typed as `/name` is sent unfilled.
+- **Other surfaces.** `listRecipeSuggestions(recipeDir)` returns
+  `{ name, description, argumentHint?, text, placeholders }[]`, and
+  `fillSuggestion(text, values)` fills placeholders; both are exported from
+  `@introspection-ai/recipes/suggestions`.
+  `inspectRecipe` includes the same list as `suggestions`.
+- **Checks.** The checker warns when a template has no `description`
+  (`prompts.description_missing`) or uses a placeholder outside the list
+  above (`prompts.placeholder_unknown`).
+
 Recipe-owned Pi extensions are declared by `pi.extensions`. The deterministically
 resolved set forms the package's executable trust boundary and loads for every
 root and child session. Package membership means execution; agent YAML cannot

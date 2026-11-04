@@ -83,6 +83,10 @@
 		"./inspect": {
 			"types": "./dist/inspect.d.ts",
 			"import": "./dist/inspect.js"
+		},
+		"./suggestions": {
+			"types": "./dist/recipe/suggestions.d.ts",
+			"import": "./dist/recipe/suggestions.js"
 		}
 	},
 	"pi": {
