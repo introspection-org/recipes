@@ -87,6 +87,10 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
+import {
+  artifactViewerExtension,
+  wantsArtifactViewer,
+} from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   createRecipeToolSearchTools,
@@ -963,6 +967,10 @@ export function createRecipesExtension(
           launchState.extensionRegistrations,
           env
         )(pi);
+      }
+      // Likewise the first-party artifact viewer (show_artifact and /view).
+      if (wantsArtifactViewer(launchState.resolved.tools)) {
+        await artifactViewerExtension(launchState.extensionRegistrations)(pi);
       }
     } catch (error) {
       launchState.extensionFailure =

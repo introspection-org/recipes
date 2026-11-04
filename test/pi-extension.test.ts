@@ -1617,6 +1617,39 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
+  it("registers the built-in show_artifact tool and /view only when the agent lists it", async () => {
+    for (const [tools, expected] of [
+      ["[read, show_artifact]", true],
+      ["[read]", false],
+    ] as const) {
+      const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
+      try {
+        const recipeDir = writeRecipe(root);
+        writeFileSync(
+          join(recipeDir, "defs", "main.yaml"),
+          ["name: main", "model:", "  name: openai/gpt-4.1", `tools: ${tools}`].join(
+            "\n"
+          )
+        );
+        const pi = createMockExtensionAPI();
+        pi.flagValues.set("recipe", recipeDir);
+        pi.flagValues.set("agent", "main");
+        createRecipesExtension()(pi);
+
+        await pi.emitExtensionEvent(
+          { type: "session_start", reason: "startup" } as any,
+          extensionContext(join(root, "project"), vi.fn())
+        );
+
+        expect(pi.tools.has("show_artifact")).toBe(expected);
+        expect(pi.activeTools.includes("show_artifact")).toBe(expected);
+        expect(pi.commands.has("view")).toBe(expected);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("gives ask_user_question the extension's environment, not process.env", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
     try {

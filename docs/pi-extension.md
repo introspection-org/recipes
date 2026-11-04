@@ -73,6 +73,44 @@ For the selected agent, the extension:
 See [Recipe Format](recipe-format.md) for the authored contract and
 [Agent composition](agent-composition.md) for inheritance and selection.
 
+## Artifact panel
+
+List `show_artifact` in an agent's `tools` and the agent can show the user a
+markdown file it wrote, such as a design brief, `evals/cases/*.md` or a
+report, rendered in a panel on the right of Pi's terminal, instead of only
+printing its path. Agents that do not list it never see the tool or `/view`.
+
+```yaml
+tools: [read, write, edit, ask_user_question, show_artifact]
+```
+
+```ts
+show_artifact({ path: "evals/cases/refund.md" })  // relative to the working directory
+```
+
+The tool refuses a path outside the working directory (including a symlink
+that leads out of it), a missing file, and anything that is not `.md` or
+`.markdown`. The panel takes the top-right 45% of the terminal at full height
+and shows the file name and the visible line range. It opens without taking
+the keyboard, so the user keeps typing in the editor. Showing another file
+replaces the content, and the panel re-renders when the file changes on disk.
+
+| Key | Where | Does |
+| --- | --- | --- |
+| `Alt+M` | editor or panel | Moves the keyboard to the panel and back; with no panel open, reopens the last file |
+| `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
+| `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
+| `Esc` / `q` | panel | Closes the panel |
+
+`/view <file>` opens a file the same way; `/view` on its own opens the last
+markdown file the agent showed or wrote with `write` or `edit` in this session.
+
+The panel exists only in Pi's interactive terminal. In print, RPC and embedded
+sessions the tool returns `The file is at <path>. The artifact panel is only
+available in Pi's interactive terminal, ...` so the model can tell the user
+where to look. If a Recipe extension registers its own `show_artifact`, the
+host keeps it and registers neither the built-in tool nor `/view`.
+
 ## Structured child events
 
 Pi's JSON mode emits root session events directly. Recipes appends one Pi
