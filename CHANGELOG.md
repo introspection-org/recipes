@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.41.0](https://github.com/introspection-org/recipes/compare/v0.40.1...v0.41.0) (2026-11-04)
+
+
+### Features
+
+* **ask-user-question:** type to answer straight away, and Esc stops the turn ([#409](https://github.com/introspection-org/recipes/issues/409)) ([7115a42](https://github.com/introspection-org/recipes/commit/7115a4257f04bd5d6d83557ca8cc1374e389c046))
+* offer a Recipe's prompt templates as suggestions ([#411](https://github.com/introspection-org/recipes/issues/411)) ([eb089a7](https://github.com/introspection-org/recipes/commit/eb089a70184436bfc2e0aed166778d23a544b25f))
+* show markdown artifacts in a panel beside the Pi editor ([#410](https://github.com/introspection-org/recipes/issues/410)) ([5d02a8e](https://github.com/introspection-org/recipes/commit/5d02a8e14ea722dc25c3a8f5b5a76360edc1beb6))
+
+
+### Bug Fixes
+
+* **recipe:** offer only the Recipe's own skills in recipe mode ([#406](https://github.com/introspection-org/recipes/issues/406)) ([7a61651](https://github.com/introspection-org/recipes/commit/7a616515061b2cbc5f11f59f4c5d10cdd57888b6))
+
 ## [0.40.1](https://github.com/introspection-org/recipes/compare/v0.40.0...v0.40.1) (2026-11-03)
 
 
