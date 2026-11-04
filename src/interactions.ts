@@ -530,6 +530,10 @@ async function multiSelectDialogWalk(
     throwIfAborted(signal);
     if (!result) return { type: "declined" };
     const answers = selectedAnswers(options, new Set(result.selected));
+    if (result.typed) {
+      if (!answers.includes(result.typed)) answers.push(result.typed);
+      return { type: "answered", answers };
+    }
     if (result.custom) {
       const text = await ui.input("Answer", "Type another answer", dialog);
       throwIfAborted(signal);
