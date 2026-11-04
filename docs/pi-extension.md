@@ -78,7 +78,7 @@ See [Recipe Format](recipe-format.md) for the authored contract and
 List `show_artifact` in an agent's `tools` and the agent can show the user a
 markdown file it wrote, such as a design brief, `evals/cases/*.md` or a
 report, rendered in a panel on the right of Pi's terminal, instead of only
-printing its path. Agents that do not list it never see the tool or `/view`.
+printing its path. Agents that do not list it never see the tool or `/recipe view`.
 
 ```yaml
 tools: [read, write, edit, ask_user_question, show_artifact]
@@ -102,14 +102,17 @@ replaces the content, and the panel re-renders when the file changes on disk.
 | `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
 | `Esc` / `q` | panel | Closes the panel |
 
-`/view <file>` opens a file the same way; `/view` on its own opens the last
-markdown file the agent showed or wrote with `write` or `edit` in this session.
+`/recipe view <file>` opens a file the same way; `/recipe view` on its own opens
+the last markdown file the agent showed or wrote with `write` or `edit` in this
+session, and `/recipe close` closes the panel from the editor. They are
+subcommands of `/recipe`, so they never clash with another extension's or your
+own commands.
 
 The panel exists only in Pi's interactive terminal. In print, RPC and embedded
 sessions the tool returns `The file is at <path>. The artifact panel is only
 available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
-host keeps it and registers neither the built-in tool nor `/view`.
+host keeps it and registers neither the built-in tool nor `/recipe view`.
 
 ## Structured child events
 
