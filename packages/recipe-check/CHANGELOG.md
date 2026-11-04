@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.18.0...introspection-recipe-check-v0.19.0) (2026-11-04)
+
+
+### Features
+
+* **recipe-check:** case files, case rows and root fakes ([#416](https://github.com/introspection-org/recipes/issues/416)) ([c0cc283](https://github.com/introspection-org/recipes/commit/c0cc2839d9c9bb2098b9de6d2428cc7a40175b89))
+
 ## [0.18.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.17.0...introspection-recipe-check-v0.18.0) (2026-11-04)
 
 
