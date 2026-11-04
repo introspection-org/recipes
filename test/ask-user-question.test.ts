@@ -399,6 +399,13 @@ describe("ask_user_question tool", () => {
         tui(["\x1b[200~Magic", "\nlink 2", "\x1b[201~", "\r"]).ctx
       );
       expect(split.content[0]!.text).toBe("Auth: Magic link 2");
+      // Tabs become spaces and other control characters are dropped, never the whole paste.
+      const tabbed = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui(["\x1b[200~Magic\tlink\x07\x1b[201~", "\r"]).ctx
+      );
+      expect(tabbed.content[0]!.text).toBe("Auth: Magic link");
     });
 
     it("backspace removes a whole character, emoji included", async () => {

@@ -171,7 +171,9 @@ export function showChoiceTui(
             const text = data
               .replace(PASTE_START, "")
               .replace(PASTE_END, "")
-              .replace(/\r\n|\r|\n/g, " ");
+              .replace(/\r\n|\r|\n|\t/g, " ")
+              // eslint-disable-next-line no-control-regex
+              .replace(/[\x00-\x1f\x7f]/g, "");
             const clean = printable(text);
             if (clean) type(clean);
             return;
