@@ -33,6 +33,13 @@ export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 /** The terminal option that opens a text input for the user's own answer. */
 export const ASK_USER_TYPED_ANSWER_OPTION = "Something else — I'll type it";
 
+/** The terminal list's input row, before anything is typed. */
+export const ASK_USER_TYPE_SOMETHING = "Type something.";
+
+/** What the model sees when the user pressed Esc to answer in the chat. */
+export const DISMISSED_TEXT =
+  "The user dismissed the question to reply in the chat. Stop here and wait for their message; don't proceed on your own judgment.";
+
 const DONE_OPTION = "Done";
 const BUILTIN_OWNER = "<builtin:ask_user_question>";
 
@@ -210,9 +217,34 @@ export async function askInTerminal(
   ui: ExtensionUIContext,
   dialog: ExtensionUIDialogOptions,
   signal: AbortSignal | undefined,
-  preferCustomTui: boolean
+  preferCustomTui: boolean,
+  onDismiss?: () => void
 ): Promise<AskUserOutcome> {
   const typedIndex = options.length;
+  // In the terminal, typing answers straight away; Esc dismisses the list.
+  if (preferCustomTui && typeof ui.custom === "function") {
+    const { showChoiceTui } = await import("./interaction-tui.js");
+    const result = await showChoiceTui(question, options, ui, signal, {
+      multiple: multiSelect,
+      typedLabel: ASK_USER_TYPE_SOMETHING,
+    });
+    throwIfAborted(signal);
+    if (!result) {
+      onDismiss?.();
+      return { type: "declined" };
+    }
+    const answers = options
+      .filter((_, index) => result.selected.includes(index))
+      .map((option) => option.label);
+    const typed =
+      result.typed ??
+      (result.custom ? await typedAnswer(question, ui, dialog, signal) : undefined);
+    if (typed && !answers.includes(typed)) answers.push(typed);
+    if (answers.length === 0) return { type: "declined" };
+    return multiSelect
+      ? { type: "answered", answers }
+      : { type: "answered", answer: answers[0]! };
+  }
   if (!multiSelect) {
     const choices = [
       ...options.map((option, index) => numbered(index, option)),
@@ -244,20 +276,6 @@ export async function askInTerminal(
       ? { type: "answered", answers }
       : { type: "declined" };
   };
-
-  if (preferCustomTui && typeof ui.custom === "function") {
-    const { showMultiSelectTui } = await import("./interaction-tui.js");
-    const result = await showMultiSelectTui(
-      question,
-      options,
-      ui,
-      signal,
-      `${typedIndex + 1}. ${ASK_USER_TYPED_ANSWER_OPTION}`
-    );
-    throwIfAborted(signal);
-    if (!result) return { type: "declined" };
-    return finish(new Set(result.selected), Boolean(result.custom));
-  }
 
   // Portable loop for RPC clients: toggle options, then Done.
   const selected = new Set<number>();
@@ -372,6 +390,9 @@ async function runAskUserQuestion(
 }> {
   const questions = params.questions.slice(0, MAX_QUESTIONS);
   const collected: AskUserQuestionAnswer[] = [];
+  // Esc on the terminal list means "let me reply in the chat": stop the turn
+  // and wait for the owner, as other coding tools do, rather than going on.
+  let dismissed = false;
 
   for (const input of questions) {
     const options = questionOptions(input);
@@ -398,7 +419,10 @@ async function runAskUserQuestion(
             ui,
             dialog,
             opts.signal,
-            opts.ctx.mode === "tui"
+            opts.ctx.mode === "tui",
+            () => {
+              dismissed = true;
+            }
           ),
       }
     );
@@ -424,6 +448,13 @@ async function runAskUserQuestion(
     // The channel is the same for every question, so this is the first one.
     if (result.outcome.type === "unavailable") return result;
     collected.push(answerFrom(input, result.outcome));
+    if (dismissed) {
+      opts.ctx.abort();
+      return {
+        content: [{ type: "text", text: DISMISSED_TEXT }],
+        details: detailsFor(collected),
+      };
+    }
   }
 
   return {
