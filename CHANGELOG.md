@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.0](https://github.com/introspection-org/recipes/compare/v0.41.0...v0.42.0) (2026-11-04)
+
+
+### Features
+
+* **recipe-check:** list a Recipe's suggestions from a file snapshot ([#413](https://github.com/introspection-org/recipes/issues/413)) ([b8b468f](https://github.com/introspection-org/recipes/commit/b8b468f155d2f02f691fddde5f4ed0900bd2d9de))
+
 ## [0.41.0](https://github.com/introspection-org/recipes/compare/v0.40.1...v0.41.0) (2026-11-04)
 
 
