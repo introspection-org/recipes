@@ -89,6 +89,8 @@ import {
 } from "./ask-user-question.js";
 import {
   artifactViewerExtension,
+  recipeSubcommand,
+  recipeSubcommandNames,
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
@@ -968,7 +970,7 @@ export function createRecipesExtension(
           env
         )(pi);
       }
-      // Likewise the first-party artifact viewer (show_artifact and /view).
+      // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
       if (wantsArtifactViewer(launchState.resolved.tools)) {
         await artifactViewerExtension(launchState.extensionRegistrations)(pi);
       }
@@ -1483,9 +1485,17 @@ export function createRecipesExtension(
     });
 
     pi.registerCommand("recipe", {
-      description: "Inspect or reload the active recipe",
+      description: "Inspect or reload the active recipe; view or close an artifact when the agent shows them",
       handler: async (args, ctx) => {
         const action = args.trim();
+        // Optional built-ins (the artifact viewer's `view` and `close`) add
+        // subcommands here rather than top-level commands of their own.
+        const [name = "", ...rest] = action.split(/\s+/);
+        const subcommand = recipeSubcommand(pi, name);
+        if (subcommand) {
+          await subcommand(rest.join(" "), ctx);
+          return;
+        }
         if (action === "reload") {
           const launchState = safeLoadState(pi, ctx.cwd, ctx);
           if (!launchState) {
@@ -1505,7 +1515,8 @@ export function createRecipesExtension(
           return;
         }
         if (action) {
-          ctx.ui.notify("Usage: /recipe [reload]", "info");
+          const usage = ["reload", ...recipeSubcommandNames(pi)].join("|");
+          ctx.ui.notify(`Usage: /recipe [${usage}]`, "info");
           return;
         }
         const launchState = safeLoadState(pi, ctx.cwd, ctx);

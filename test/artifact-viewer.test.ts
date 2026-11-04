@@ -12,6 +12,8 @@ import {
   ARTIFACT_PANEL_FOCUS_KEY,
   SHOW_ARTIFACT_TOOL_NAME,
   artifactViewerExtension,
+  recipeSubcommand,
+  recipeSubcommandNames,
   resolveArtifactPath,
   wantsArtifactViewer,
   type ArtifactViewerOptions,
@@ -24,7 +26,7 @@ const KEYS = {
   pageUp: "\x1b[5~",
   pageDown: "\x1b[6~",
   escape: "\x1b",
-  altM: "\x1bm",
+  altR: "\x1br",
 };
 
 interface Component {
@@ -185,7 +187,8 @@ async function setup(options: ArtifactViewerOptions = {}, mode?: "tui" | "rpc" |
       content: Array<{ type: "text"; text: string }>;
       details: Record<string, any>;
     }>;
-  return { ...fake, ...ui, tool, show };
+  const subcommand = (name: string) => recipeSubcommand(fake.pi, name)!;
+  return { ...fake, ...ui, tool, show, subcommand };
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -232,7 +235,7 @@ describe("show_artifact tool", () => {
     expect(lines[0]).toMatch(/1-\d+\/\d+/);
     expect(lines.join("\n")).toContain("Design brief");
     expect(lines.join("\n")).toContain("first");
-    expect(lines.at(-1)).toContain("Alt+M");
+    expect(lines.at(-1)).toContain("Alt+R");
   });
 
   it("replaces the content when another file is shown", async () => {
@@ -338,7 +341,7 @@ describe("artifact panel", () => {
 
     // Pi only sends keys to the focused overlay, so the panel handles the
     // shortcut itself to hand input back to the editor.
-    overlay.component.handleInput!(KEYS.altM);
+    overlay.component.handleInput!(KEYS.altR);
     expect(overlay.focused).toBe(false);
     expect(overlay.unfocusCalls).toBe(1);
 
@@ -470,20 +473,20 @@ describe("artifact panel", () => {
   });
 });
 
-describe("/view command", () => {
+describe("/recipe view and /recipe close", () => {
   it("opens the given file", async () => {
-    const { commands, ctx, overlays } = await setup({
+    const { subcommand, ctx, overlays } = await setup({
       watchFile: fakeWatcher().watchFile,
     });
-    await commands.get("view")!.handler(" @evals/cases/refund.md ", ctx);
+    await subcommand("view")(" @evals/cases/refund.md ", ctx as never);
     expect(overlays).toHaveLength(1);
     expect(overlays[0]!.focused).toBe(false);
     expect(overlays[0]!.component.render(60)[0]).toContain("evals/cases/refund.md");
   });
 
   it("reports a bad path as a notice", async () => {
-    const { commands, ctx, overlays, notices } = await setup();
-    await commands.get("view")!.handler("notes.txt", ctx);
+    const { subcommand, ctx, overlays, notices } = await setup();
+    await subcommand("view")("notes.txt", ctx as never);
     expect(overlays).toHaveLength(0);
     expect(notices[0]).toEqual({
       message:
@@ -493,13 +496,13 @@ describe("/view command", () => {
   });
 
   it("with no argument, opens the last markdown file the agent wrote or showed", async () => {
-    const { commands, events, ctx, overlays, notices, show } = await setup({
+    const { subcommand, events, ctx, overlays, notices, show } = await setup({
       watchFile: fakeWatcher().watchFile,
     });
-    const view = commands.get("view")!.handler;
+    const view = (args: string, context: unknown) => subcommand("view")(args, context as never);
     await view("", ctx);
     expect(overlays).toHaveLength(0);
-    expect(notices[0]!.message).toContain("Usage: /view <file.md>");
+    expect(notices[0]!.message).toContain("Usage: /recipe view <file.md>");
 
     const toolResult = (toolName: string, path: string, isError = false) => {
       for (const handler of events.get("tool_result") ?? []) {
@@ -520,19 +523,29 @@ describe("/view command", () => {
   });
 
   it("needs the interactive terminal", async () => {
-    const { commands, ctx, overlays, notices } = await setup({}, "rpc");
-    await commands.get("view")!.handler("brief.md", ctx);
+    const { subcommand, ctx, overlays, notices } = await setup({}, "rpc");
+    await subcommand("view")("brief.md", ctx as never);
     expect(overlays).toHaveLength(0);
-    expect(notices[0]!.message).toBe("/view needs Pi's interactive terminal.");
+    expect(notices[0]!.message).toBe("/recipe view needs Pi's interactive terminal.");
+  });
+
+  it("closes the panel from the editor", async () => {
+    const { subcommand, ctx, overlays } = await setup({ watchFile: fakeWatcher().watchFile });
+    await subcommand("view")("brief.md", ctx as never);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]!.closed).toBe(false);
+    await subcommand("close")("", ctx as never);
+    expect(overlays[0]!.closed).toBe(true);
   });
 });
 
 describe("registration", () => {
-  it("registers the tool, /view and the shortcut", async () => {
-    const { tools, commands, shortcuts, events } = await setup();
+  it("registers the tool, the /recipe subcommands and the shortcut, and no top-level command", async () => {
+    const { tools, commands, shortcuts, events, pi } = await setup();
     expect(tools.map((tool) => tool.name)).toEqual(["show_artifact"]);
-    expect([...commands.keys()]).toEqual(["view"]);
-    expect([...shortcuts.keys()]).toEqual(["alt+m"]);
+    expect([...commands.keys()]).toEqual([]);
+    expect(recipeSubcommandNames(pi)).toEqual(["view", "close"]);
+    expect([...shortcuts.keys()]).toEqual(["alt+r"]);
     expect([...events.keys()].sort()).toEqual(["session_shutdown", "tool_result"]);
   });
 

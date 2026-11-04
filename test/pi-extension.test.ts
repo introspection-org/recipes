@@ -1617,7 +1617,7 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
-  it("registers the built-in show_artifact tool and /view only when the agent lists it", async () => {
+  it("registers the built-in show_artifact tool and /recipe view only when the agent lists it", async () => {
     for (const [tools, expected] of [
       ["[read, show_artifact]", true],
       ["[read]", false],
@@ -1643,7 +1643,10 @@ describe("Recipes extension for Pi", () => {
 
         expect(pi.tools.has("show_artifact")).toBe(expected);
         expect(pi.activeTools.includes("show_artifact")).toBe(expected);
-        expect(pi.commands.has("view")).toBe(expected);
+        expect(pi.commands.has("view")).toBe(false);
+        const notify = vi.fn();
+        await pi.commands.get("recipe")!.handler("bogus", extensionContext(join(root, "project"), notify));
+        expect(String(notify.mock.calls[0]?.[0])).toContain(expected ? "reload|view|close" : "[reload]");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

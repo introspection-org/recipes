@@ -97,7 +97,7 @@ replaces the content, and the panel re-renders when the file changes on disk.
 
 | Key | Where | Does |
 | --- | --- | --- |
-| `Alt+M` | editor or panel | Moves the keyboard to the panel and back; with no panel open, reopens the last file |
+| `Alt+R` | editor or panel | Moves the keyboard to the panel and back; with no panel open, reopens the last file |
 | `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
 | `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
 | `Esc` / `q` | panel | Closes the panel |

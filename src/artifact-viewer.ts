@@ -1,5 +1,5 @@
 /**
- * The first-party artifact viewer: a `show_artifact` tool, a `/view` command
+ * The first-party artifact viewer: a `show_artifact` tool, `/recipe view` and `/recipe close`
  * and a focus shortcut that show a markdown file the agent wrote in a panel on
  * the right of Pi's terminal, so the user can read it before approving it.
  *
@@ -30,16 +30,40 @@ import {
 import type { RecipeExtensionRegistrationRegistry } from "./extensions.js";
 
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
-export const VIEW_ARTIFACT_COMMAND = "view";
+/** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
+ * never clash with another extension's or the user's commands. */
+export const VIEW_ARTIFACT_COMMAND = "recipe view";
+export const CLOSE_ARTIFACT_COMMAND = "recipe close";
+
+/** A `/recipe` subcommand an optional built-in adds: `/recipe <name> <args>`. */
+export type RecipeSubcommand = (args: string, ctx: ExtensionContext) => Promise<void>;
+
+const recipeSubcommands = new WeakMap<object, Map<string, RecipeSubcommand>>();
+
+/** The `/recipe` subcommand `name` registered for this Pi instance, if any. */
+export function recipeSubcommand(pi: object, name: string): RecipeSubcommand | undefined {
+  return recipeSubcommands.get(pi)?.get(name);
+}
+
+/** The `/recipe` subcommand names registered for this Pi instance. */
+export function recipeSubcommandNames(pi: object): string[] {
+  return [...(recipeSubcommands.get(pi)?.keys() ?? [])];
+}
+
+function addRecipeSubcommand(pi: object, name: string, handler: RecipeSubcommand): void {
+  const commands = recipeSubcommands.get(pi) ?? new Map<string, RecipeSubcommand>();
+  commands.set(name, handler);
+  recipeSubcommands.set(pi, commands);
+}
 
 /**
- * Moves input between the editor and the panel. Alt+M ("markdown") is unbound
+ * Moves input between the editor and the panel. Alt+R ("recipe") is unbound
  * in Pi's defaults; plain Ctrl letters are all taken, and Ctrl+Shift letters
  * are indistinguishable from Ctrl letters in terminals without the Kitty
  * keyboard protocol.
  */
-export const ARTIFACT_PANEL_FOCUS_KEY = "alt+m" as const;
-const FOCUS_KEY_LABEL = "Alt+M";
+export const ARTIFACT_PANEL_FOCUS_KEY = "alt+r" as const;
+const FOCUS_KEY_LABEL = "Alt+R";
 
 /** File extensions the panel renders. */
 export const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [".md", ".markdown"];
@@ -203,7 +227,7 @@ interface OpenPanel {
 
 /**
  * One session's viewer: at most one panel, the file it shows, and the last
- * markdown file the agent showed or wrote (for `/view` with no argument).
+ * markdown file the agent showed or wrote (for `/recipe view` with no argument).
  */
 export class ArtifactViewer {
   private open: OpenPanel | undefined;
@@ -227,7 +251,7 @@ export class ArtifactViewer {
     return this.open !== undefined;
   }
 
-  /** Remember a markdown file the agent wrote, for `/view` with no argument. */
+  /** Remember a markdown file the agent wrote, for `/recipe view` with no argument. */
   remember(cwd: string, path: string): void {
     if (!isMarkdownPath(path)) return;
     try {
@@ -416,7 +440,7 @@ export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         content: [
           {
             type: "text",
-            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor; ${FOCUS_KEY_LABEL} activates the panel to scroll or close it (q or Esc).`,
+            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor, closes it with /${CLOSE_ARTIFACT_COMMAND}, and can press ${FOCUS_KEY_LABEL} to scroll it.`,
           },
         ],
         details: { path: target.relativePath, shown: true },
@@ -434,7 +458,7 @@ function commandPath(args: string): string {
 }
 
 /**
- * An extension factory registering the tool, `/view` and the focus shortcut,
+ * An extension factory registering the tool, `/recipe view` and `/recipe close`, and the focus shortcut,
  * unless a Recipe or host extension already registered a `show_artifact`
  * tool. Callers add it only when the agent lists `show_artifact` in `tools`,
  * after the Recipe's own extensions.
@@ -449,31 +473,27 @@ export function artifactViewerExtension(
     const viewer = new ArtifactViewer(options);
     pi.registerTool(createShowArtifactTool(viewer));
 
-    pi.registerCommand(VIEW_ARTIFACT_COMMAND, {
-      description:
-        "Show a markdown file in the panel on the right (default: the last one the agent showed or wrote)",
-      handler: async (args, ctx) => {
-        if (ctx.mode !== "tui") {
-          ctx.ui.notify(
-            `/${VIEW_ARTIFACT_COMMAND} needs Pi's interactive terminal.`,
-            "warning"
-          );
-          return;
-        }
-        const path = commandPath(args) || viewer.lastPath;
-        if (!path) {
-          ctx.ui.notify(
-            `Usage: /${VIEW_ARTIFACT_COMMAND} <file.md>. With no file, it shows the last markdown file the agent showed or wrote.`,
-            "info"
-          );
-          return;
-        }
-        try {
-          viewer.show(ctx, resolveArtifactPath(ctx.cwd, path));
-        } catch (error) {
-          ctx.ui.notify(errorText(error), "warning");
-        }
-      },
+    addRecipeSubcommand(pi, "view", async (args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify(`/${VIEW_ARTIFACT_COMMAND} needs Pi's interactive terminal.`, "warning");
+        return;
+      }
+      const path = commandPath(args) || viewer.lastPath;
+      if (!path) {
+        ctx.ui.notify(
+          `Usage: /${VIEW_ARTIFACT_COMMAND} <file.md>. With no file, it shows the last markdown file the agent showed or wrote.`,
+          "info"
+        );
+        return;
+      }
+      try {
+        viewer.show(ctx, resolveArtifactPath(ctx.cwd, path));
+      } catch (error) {
+        ctx.ui.notify(errorText(error), "warning");
+      }
+    });
+    addRecipeSubcommand(pi, "close", async () => {
+      viewer.close();
     });
 
     pi.registerShortcut(ARTIFACT_PANEL_FOCUS_KEY, {
