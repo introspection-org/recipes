@@ -66,7 +66,7 @@ export interface RecipeInspection {
     extensions: string[];
     prompts: string[];
   };
-  /** The Recipe's prompt templates, which hosts offer as suggestions. */
+  /** The prompt templates marked `suggest: true`, which hosts offer as suggestions. */
   suggestions: RecipeSuggestion[];
   resolvedAgents: RecipeAgentInspection[];
 }

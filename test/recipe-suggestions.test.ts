@@ -1,5 +1,5 @@
 /**
- * A Recipe's prompt templates are its suggestions: the read API other
+ * A Recipe's prompt templates marked `suggest: true` are its suggestions: the read API other
  * surfaces use, the placeholder filling, and the first-run picker Pi shows in
  * a new terminal session.
  */
@@ -30,25 +30,32 @@ import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 const TEMPLATES: Record<string, string> = {
   "redline.md": [
     "---",
+    "suggest: true",
     "description: Redline a contract against the playbook",
     "---",
     "Redline ${1:-the attached contract} for {{member.name}} on {{today}}.",
   ].join("\n"),
   "respond.md": [
     "---",
+    "suggest: true",
     "description: Draft a reply to the other side",
     'argument-hint: "[tone]"',
     "---",
     "Draft a reply in a ${1:-neutral} tone.",
   ].join("\n"),
-  "risks.md": "List the top risks in $@.\n",
+  "risks.md": "---\nsuggest: true\n---\nList the top risks in $@.\n",
   "summarize.md": [
     "---",
+    "suggest: true",
     "description: Summarize a file",
     'argument-hint: "<file>"',
     "---",
     "Summarize $1 for {{org.name}}.",
   ].join("\n"),
+  // Not suggestions: unmarked, off, or not a boolean. They still work as /name.
+  "notes.md": "---\ndescription: Take notes\n---\nTake notes.",
+  "off.md": "---\nsuggest: false\ndescription: Off\n---\nOff.",
+  "string.md": '---\nsuggest: "true"\ndescription: String\n---\nString.',
 };
 
 const cleanups: Array<() => void> = [];
@@ -68,7 +75,7 @@ function recipeWithPrompts(templates: Record<string, string> = TEMPLATES) {
 }
 
 describe("listRecipeSuggestions", () => {
-  it("reads each prompt template's name, description, hint, text and placeholders", () => {
+  it("reads each marked template's name, description, hint, text and placeholders", () => {
     const { recipeDir } = recipeWithPrompts();
     expect(listRecipeSuggestions(recipeDir)).toEqual([
       {
@@ -85,10 +92,10 @@ describe("listRecipeSuggestions", () => {
         placeholders: [],
       },
       {
-        // No frontmatter: Pi falls back to the first non-empty line.
+        // No description: Pi falls back to the first non-empty line.
         name: "risks",
         description: "List the top risks in $@.",
-        text: "List the top risks in $@.\n",
+        text: "List the top risks in $@.",
         placeholders: [],
       },
       {
@@ -101,7 +108,7 @@ describe("listRecipeSuggestions", () => {
     ]);
   });
 
-  it("reads the conventional prompts directory and returns [] without templates", () => {
+  it("reads the conventional prompts directory and returns [] with none marked", () => {
     const fixture = writeFixtureRecipe();
     cleanups.push(fixture.cleanup);
     expect(listRecipeSuggestions(fixture.recipeDir)).toEqual([]);
@@ -109,6 +116,11 @@ describe("listRecipeSuggestions", () => {
     writeFileSync(
       join(fixture.recipeDir, "prompts", "plan.md"),
       "---\ndescription: Plan the week\n---\nPlan it."
+    );
+    expect(listRecipeSuggestions(fixture.recipeDir)).toEqual([]);
+    writeFileSync(
+      join(fixture.recipeDir, "prompts", "plan.md"),
+      "---\nsuggest: true\ndescription: Plan the week\n---\nPlan it."
     );
     expect(listRecipeSuggestions(fixture.recipeDir).map((s) => s.name)).toEqual(["plan"]);
   });
@@ -156,12 +168,13 @@ describe("pickSuggestions", () => {
     expect(pickSuggestions([1, 2, 3])).toEqual([1, 2, 3]);
   });
 
-  it("picks a random three that a seed pins", () => {
+  it("picks a random three in their original order that a seed pins", () => {
     const items = ["a", "b", "c", "d", "e", "f"];
     const first = pickSuggestions(items, 3, seededRandom("eval-1"));
     expect(first).toHaveLength(3);
     expect(new Set(first).size).toBe(3);
     expect(pickSuggestions(items, 3, seededRandom("eval-1"))).toEqual(first);
+    expect([...first].sort()).toEqual(first);
     const seen = new Set(
       ["1", "2", "3", "4", "5", "6", "7", "8"].map((seed) =>
         pickSuggestions(items, 3, seededRandom(seed)).join()
@@ -235,6 +248,20 @@ describe("first-run picker", () => {
     for (const choice of choices.slice(0, 3)) expect(choice).toMatch(/^\d\. .+/);
   });
 
+  it("offers only marked templates, a random three in file order", async () => {
+    const order = ["redline", "respond", "risks", "summarize"];
+    for (const seed of ["a", "b", "c", "d", "e"]) {
+      const { select, settle } = await startPicker({ seed });
+      await settle();
+      const shown = (select.mock.calls[0]![1] as string[])
+        .slice(0, 3)
+        .map((choice) => /\/(\w+)$/.exec(choice)?.[1]);
+      expect(shown).toHaveLength(3);
+      for (const name of shown) expect(order).toContain(name);
+      expect([...shown].sort((a, b) => order.indexOf(a!) - order.indexOf(b!))).toEqual(shown);
+    }
+  });
+
   it("pins the three with the seed env var", async () => {
     const first = await startPicker({ seed: "pin" });
     await first.settle();
@@ -245,7 +272,7 @@ describe("first-run picker", () => {
 
   it("labels each option with its description and command", async () => {
     const { select, settle } = await startPicker({
-      templates: { "redline.md": TEMPLATES["redline.md"]!, "risks.md": "---\n---\n" },
+      templates: { "redline.md": TEMPLATES["redline.md"]!, "risks.md": "---\nsuggest: true\n---\n" },
     });
     await settle();
     expect(select.mock.calls[0]![1]).toEqual([
@@ -317,6 +344,10 @@ describe("first-run picker", () => {
     ["on fork", { reason: "fork" }],
     ["when the session has messages", { entries: [{ type: "message" }] }],
     ["without prompt templates", { templates: {} }],
+    [
+      "when no template is marked",
+      { templates: { "notes.md": TEMPLATES["notes.md"]!, "off.md": TEMPLATES["off.md"]! } },
+    ],
   ])("does not ask %s", async (_name, options) => {
     const { select, settle } = await startPicker(options as PickerOptions);
     await settle();

@@ -305,12 +305,15 @@ caller invokes one by prompting with its slash command and arguments.
 
 ### Prompt templates are suggestions
 
-A Recipe's prompt templates are also its suggestions: the things a new user
-can ask it to do. There is no separate field. Give each template a
-`description`, because that is what people see:
+A Recipe's suggestions are the things a new user can ask it to do. They are
+the prompt templates marked with `suggest: true` in their frontmatter; there
+is no separate manifest field. Templates without the mark still work as
+`/name` commands and are never suggested. Give each suggested template a
+short `description` (ten words or fewer), because that is what people see:
 
 ```markdown
 ---
+suggest: true
 description: Redline a contract against our playbook
 argument-hint: "[contract]"
 ---
@@ -319,8 +322,9 @@ Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
 
 - **In Pi.** A new session in the terminal (`pi --recipe <dir>`, or
   `introspection local`) with no messages asks once, "What would you like to
-  do?", with up to three templates (a random three when there are more) and a
-  row to type your own request. Picking one sends it as the first message;
+  do?", with up to three marked templates (a random three, in file order,
+  when more are marked) and a row to type your own request. With none
+  marked, it does not ask. Picking one sends it as the first message;
   a template whose `argument-hint` has a required `<argument>` is put in the
   editor instead, for you to finish. Typing sends what you typed, and Esc
   leaves the empty prompt. Set `PI_RECIPES_SUGGESTIONS_SEED` to pin which
@@ -334,14 +338,16 @@ Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
   `{{today}}` (an ISO date). A host fills the ones it knows and leaves the rest
   as written. Pi's picker fills `{{today}}`, and `{{member.name}}` from
   `git config user.name`; a template typed as `/name` is sent unfilled.
-- **Other surfaces.** `listRecipeSuggestions(recipeDir)` returns
-  `{ name, description, argumentHint?, text, placeholders }[]`, and
+- **Other surfaces.** `listRecipeSuggestions(recipeDir)` returns the marked
+  templates as `{ name, description, argumentHint?, text, placeholders }[]`, and
   `fillSuggestion(text, values)` fills placeholders; both are exported from
   `@introspection-ai/recipes/suggestions`.
   `inspectRecipe` includes the same list as `suggestions`.
-- **Checks.** The checker warns when a template has no `description`
-  (`prompts.description_missing`) or uses a placeholder outside the list
-  above (`prompts.placeholder_unknown`).
+- **Checks.** For a marked template, the checker warns when it has no
+  `description` (`prompts.description_missing`), when the description is over
+  ten words (`prompts.description_long`), or when it uses a placeholder outside
+  the list above (`prompts.placeholder_unknown`). A `suggest` value that is not
+  a boolean is also a warning (`prompts.suggest_invalid`).
 
 Recipe-owned Pi extensions are declared by `pi.extensions`. The deterministically
 resolved set forms the package's executable trust boundary and loads for every

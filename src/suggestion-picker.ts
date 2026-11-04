@@ -1,7 +1,8 @@
 /**
  * The first-run picker: a new Recipe session in the terminal asks once
  * "What would you like to do?" with up to three of the Recipe's prompt
- * templates, through the same terminal helper `ask_user_question` uses.
+ * templates marked `suggest: true`, through the same terminal helper
+ * `ask_user_question` uses. With none marked, it does not ask.
  * Picking one sends it as the first message; typing an answer sends that;
  * Esc leaves the empty prompt. An initial message given on the command line
  * dismisses the picker before it can send anything.

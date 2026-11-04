@@ -1,7 +1,7 @@
-//! Prompt templates double as a Recipe's suggestions: Pi offers them as `/`
-//! commands, and hosts show them in a first-run picker or as chips. Both read
-//! the template's `description`, and a host fills a fixed set of `{{name}}`
-//! placeholders, so warn when either would show up wrong.
+//! Prompt templates marked `suggest: true` are a Recipe's suggestions: hosts
+//! show them in a first-run picker or as chips. Both read the template's
+//! `description`, and a host fills a fixed set of `{{name}}` placeholders, so
+//! warn when either would show up wrong.
 
 use regex::Regex;
 use serde_json::Value as JsonValue;
@@ -31,36 +31,62 @@ fn template_files(paths: &[String], ctx: &CheckContext) -> Vec<String> {
     files
 }
 
-/// The template's frontmatter `description`, when it has a non-empty one.
-fn has_description(content: &str) -> bool {
+/// The longest suggestion description, in words, that reads well as a chip.
+const MAX_DESCRIPTION_WORDS: usize = 10;
+
+/// The template's parsed frontmatter, or an empty object when it has none.
+fn frontmatter(content: &str) -> JsonValue {
     let normalized = content.trim_start_matches('\u{feff}').replace("\r\n", "\n");
-    let Some(rest) = normalized.strip_prefix("---") else {
-        return false;
-    };
-    let Some(end) = rest.find("\n---") else {
-        return false;
-    };
-    let Ok(parsed) = serde_saphyr::from_str::<JsonValue>(&rest[..end]) else {
-        return false;
-    };
-    parsed
-        .get("description")
-        .and_then(JsonValue::as_str)
-        .is_some_and(|description| !description.trim().is_empty())
+    normalized
+        .strip_prefix("---")
+        .and_then(|rest| rest.find("\n---").map(|end| rest[..end].to_owned()))
+        .and_then(|yaml| serde_saphyr::from_str::<JsonValue>(&yaml).ok())
+        .filter(JsonValue::is_object)
+        .unwrap_or_else(|| JsonValue::Object(Default::default()))
 }
 
+/// Templates marked `suggest: true` are suggestions. Check what hosts show
+/// for those, and that `suggest` itself is a boolean wherever it appears.
 pub(crate) fn validate_prompt_templates(paths: &[String], ctx: &mut CheckContext) {
     let placeholder = Regex::new(r"\{\{([A-Za-z][\w.-]*)\}\}").expect("placeholder pattern");
     for file in template_files(paths, ctx) {
         let Some(content) = ctx.content(&file).map(str::to_owned) else {
             continue;
         };
-        if !has_description(&content) {
+        let frontmatter = frontmatter(&content);
+        match frontmatter.get("suggest") {
+            None | Some(JsonValue::Bool(false)) => continue,
+            Some(JsonValue::Bool(true)) => {}
+            Some(_) => {
+                ctx.warning(
+                    "prompts.suggest_invalid",
+                    file.clone(),
+                    format!("Prompt template '{file}' has a `suggest` value that is not a boolean"),
+                    Some("set `suggest: true` to offer the template as a suggestion, or remove it"),
+                );
+                continue;
+            }
+        }
+        let description = frontmatter
+            .get("description")
+            .and_then(JsonValue::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        if description.is_empty() {
             ctx.warning(
                 "prompts.description_missing",
                 file.clone(),
-                format!("Prompt template '{file}' has no description"),
-                Some("add a `description` to the frontmatter; Pi and hosts show it when suggesting the template"),
+                format!("Suggested prompt template '{file}' has no description"),
+                Some("add a `description` to the frontmatter; hosts show it when suggesting the template"),
+            );
+        } else if description.split_whitespace().count() > MAX_DESCRIPTION_WORDS {
+            ctx.warning(
+                "prompts.description_long",
+                file.clone(),
+                format!(
+                    "Suggested prompt template '{file}' has a description over {MAX_DESCRIPTION_WORDS} words"
+                ),
+                Some("shorten the description; hosts show it as a one-line suggestion"),
             );
         }
         let mut reported = Vec::new();
@@ -73,7 +99,9 @@ pub(crate) fn validate_prompt_templates(paths: &[String], ctx: &mut CheckContext
             ctx.warning(
                 "prompts.placeholder_unknown",
                 file.clone(),
-                format!("Prompt template '{file}' uses unknown placeholder '{{{{{name}}}}}'"),
+                format!(
+                    "Suggested prompt template '{file}' uses unknown placeholder '{{{{{name}}}}}'"
+                ),
                 Some(format!(
                     "hosts fill only {}; other placeholders are sent as written",
                     SUGGESTION_PLACEHOLDERS
@@ -114,19 +142,21 @@ mod tests {
     }
 
     #[test]
-    fn warns_on_a_template_without_a_description() {
+    fn warns_on_a_suggested_template_without_a_description() {
         let report = check(&[
             ("package.json", PACKAGE),
             ("agents/agent.yaml", AGENT),
             (
                 "prompts/good.md",
-                "---\ndescription: Review a draft\n---\nReview it.",
+                "---\nsuggest: true\ndescription: Review a draft\n---\nReview it.",
             ),
-            ("prompts/bare.md", "Review it."),
+            ("prompts/bare.md", "---\nsuggest: true\n---\nReview it."),
             (
                 "prompts/empty.md",
-                "---\ndescription: \"  \"\n---\nReview it.",
+                "---\nsuggest: true\ndescription: \"  \"\n---\nReview it.",
             ),
+            ("prompts/unmarked.md", "Review it."),
+            ("prompts/off.md", "---\nsuggest: false\n---\nReview it."),
         ]);
         assert!(report.valid, "{:?}", report.diagnostics);
         assert_eq!(
@@ -136,14 +166,65 @@ mod tests {
     }
 
     #[test]
-    fn warns_once_per_unknown_placeholder() {
+    fn warns_on_a_long_suggested_description() {
+        let report = check(&[
+            ("package.json", PACKAGE),
+            ("agents/agent.yaml", AGENT),
+            (
+                "prompts/ten.md",
+                "---\nsuggest: true\ndescription: one two three four five six seven eight nine ten\n---\nGo.",
+            ),
+            (
+                "prompts/eleven.md",
+                "---\nsuggest: true\ndescription: one two three four five six seven eight nine ten eleven\n---\nGo.",
+            ),
+            (
+                "prompts/unmarked.md",
+                "---\ndescription: one two three four five six seven eight nine ten eleven\n---\nGo.",
+            ),
+        ]);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_eq!(
+            codes(&report, "prompts.description_long"),
+            vec!["prompts/eleven.md"]
+        );
+    }
+
+    #[test]
+    fn warns_when_suggest_is_not_a_boolean() {
+        let report = check(&[
+            ("package.json", PACKAGE),
+            ("agents/agent.yaml", AGENT),
+            (
+                "prompts/yes.md",
+                "---\nsuggest: \"yes\"\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/one.md",
+                "---\nsuggest: 1\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/good.md",
+                "---\nsuggest: true\ndescription: Go\n---\nGo.",
+            ),
+        ]);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_eq!(
+            codes(&report, "prompts.suggest_invalid"),
+            vec!["prompts/one.md", "prompts/yes.md"]
+        );
+    }
+
+    #[test]
+    fn warns_once_per_unknown_placeholder_in_suggested_templates() {
         let report = check(&[
             ("package.json", PACKAGE),
             ("agents/agent.yaml", AGENT),
             (
                 "prompts/brief.md",
-                "---\ndescription: Brief\n---\nFor {{member.name}} at {{org.name}} on {{today}}: {{deal.id}} and {{deal.id}}, {{ spaced }}.",
+                "---\nsuggest: true\ndescription: Brief\n---\nFor {{member.name}} at {{org.name}} on {{today}}: {{deal.id}} and {{deal.id}}, {{ spaced }}.",
             ),
+            ("prompts/unmarked.md", "Use {{deal.id}}."),
         ]);
         assert!(report.valid, "{:?}", report.diagnostics);
         let unknown: Vec<_> = report
@@ -154,7 +235,7 @@ mod tests {
             .collect();
         assert_eq!(
             unknown,
-            vec!["Prompt template 'prompts/brief.md' uses unknown placeholder '{{deal.id}}'"]
+            vec!["Suggested prompt template 'prompts/brief.md' uses unknown placeholder '{{deal.id}}'"]
         );
     }
 
@@ -166,7 +247,7 @@ mod tests {
                 r#"{"name":"suggest","version":"0.1.0","pi":{"agents":["agents/*.yaml"]}}"#,
             ),
             ("agents/agent.yaml", AGENT),
-            ("prompts/bare.md", "Review it."),
+            ("prompts/bare.md", "---\nsuggest: true\n---\nReview it."),
         ]);
         assert_eq!(
             codes(&report, "prompts.description_missing"),

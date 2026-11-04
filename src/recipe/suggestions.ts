@@ -1,8 +1,9 @@
 /**
- * Suggestions are a Recipe's Pi prompt templates: the Markdown files its
- * `pi.prompts` selects (or `prompts/` by convention). There is no separate
- * manifest field. Pi turns each into a `/name` command; this module reads the
- * same files so other surfaces (a web chat's chips, `introspection check`,
+ * Suggestions are the Recipe's Pi prompt templates marked `suggest: true` in
+ * their frontmatter, among the Markdown files its `pi.prompts` selects (or
+ * `prompts/` by convention). There is no separate manifest field. Pi turns
+ * every template into a `/name` command, marked or not; this module reads the
+ * marked ones so other surfaces (a web chat's chips, `introspection check`,
  * the first-run picker in Pi) can offer them without a Pi session.
  */
 
@@ -95,6 +96,7 @@ function readTemplate(path: string): RecipeSuggestion | undefined {
   } catch {
     return undefined;
   }
+  if (frontmatter.suggest !== true) return undefined;
   let description =
     typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
   if (!description) {
@@ -120,9 +122,9 @@ function isFile(path: string): boolean {
 }
 
 /**
- * Read prompt templates from resolved prompt paths, as Pi loads them: a
- * directory contributes its direct `.md` children, a file itself. Later
- * duplicates of a name are dropped.
+ * Read the templates marked `suggest: true` from resolved prompt paths, as Pi
+ * loads them: a directory contributes its direct `.md` children, a file
+ * itself. Later duplicates of a name are dropped.
  */
 export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSuggestion[] {
   const files: string[] = [];
@@ -149,8 +151,8 @@ export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSug
 }
 
 /**
- * A Recipe's suggestions: its prompt templates, read from `recipeDir`.
- * Returns an empty list when the Recipe has none.
+ * A Recipe's suggestions: its prompt templates marked `suggest: true`, read
+ * from `recipeDir` in file order. Returns an empty list when none are marked.
  */
 export function listRecipeSuggestions(recipeDir: string): RecipeSuggestion[] {
   const manifest = readPiPackageManifest(recipeDir);
@@ -169,17 +171,23 @@ export function seededRandom(seed: string): () => number {
   };
 }
 
-/** Up to `count` suggestions; a random selection when there are more. */
+/**
+ * Up to `count` suggestions in their original order; a random selection
+ * when there are more.
+ */
 export function pickSuggestions<T>(
   suggestions: readonly T[],
   count = 3,
   random: () => number = Math.random
 ): T[] {
   if (suggestions.length <= count) return [...suggestions];
-  const pool = [...suggestions];
+  const pool = suggestions.map((_, index) => index);
   for (let index = 0; index < count; index++) {
     const swap = index + Math.floor(random() * (pool.length - index));
     [pool[index], pool[swap]] = [pool[swap]!, pool[index]!];
   }
-  return pool.slice(0, count);
+  return pool
+    .slice(0, count)
+    .sort((a, b) => a - b)
+    .map((index) => suggestions[index]!);
 }
