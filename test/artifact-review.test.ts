@@ -240,10 +240,12 @@ describe("review_artifacts in the terminal", () => {
     ]);
   });
 
-  it("submits on its own once the last file is decided", async () => {
+  it("goes to the Submit tab once the last file is decided, and submits from there", async () => {
     const { fake, result } = run("tui");
     await flush();
     type(dialog(fake), ["1", "\r", "2", ..."fix it", "\r"]);
+    expect(shown(dialog(fake))).toContain("3 of 3 decided");
+    type(dialog(fake), ["\r"]);
     const reviews = (await result).details.reviews as ArtifactReview[];
     expect(reviews.map((r) => r.decision)).toEqual([
       "approved",

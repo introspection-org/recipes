@@ -226,8 +226,8 @@ export function showReviewTui(
         comment?: string,
       ) => {
         states[active] = { decision, ...(comment ? { comment } : {}) };
-        // Every file decided: nothing is left to do, so submit.
-        if (decided() === items.length) finish(results());
+        // A single file has nothing more to decide; several end on the Submit tab, as a review does.
+        if (!several) finish(results());
         else nextUndecided();
       };
       const options = (): string[] =>
@@ -313,6 +313,13 @@ export function showReviewTui(
           add();
           if (onSubmitTab()) {
             add(theme.bold(` ${decided()} of ${items.length} decided`));
+            if (decided() < items.length)
+              add(
+                theme.fg(
+                  "dim",
+                  " Files left undecided are sent as not reviewed: they aren't approved.",
+                ),
+              );
             items.forEach((item, index) => {
               const state = states[index]!;
               const comment = state.comment

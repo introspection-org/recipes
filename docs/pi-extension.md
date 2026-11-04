@@ -144,8 +144,9 @@ is for showing a file without asking for a decision.
 | `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down` | Scroll a file longer than the box |
 | `Esc` | Cancel the review; nothing is approved |
 
-After a decision the review moves to the next undecided file, and submits on
-its own once every file has one. The Submit tab lists the decisions and offers
+After a decision the review moves to the next undecided file, and once every
+file has one, to the Submit tab; nothing is sent until the user submits there
+(a single file submits with its decision). The Submit tab lists the decisions and offers
 `Submit` (files left undecided are `not reviewed`) or `Approve the rest and submit`.
 
 It is an interaction ([Interactions](interactions.md)), so it works on every
