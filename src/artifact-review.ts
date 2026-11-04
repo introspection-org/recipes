@@ -158,12 +158,17 @@ export function showReviewTui(
     const refresh = () => tui.requestRender();
     const showActive = () => {
       opened.add(active);
+      // Moving to another file shows it again, even after `v` hid the panel.
+      if (viewer.isHidden) viewer.toggleHidden();
       viewer.show(ctx, items[active]!.target);
       viewer.setDialogHint(`${DIALOG_PANEL_HINT}, or j/k`);
       refresh();
     };
+    // Stops at the first and last file rather than wrapping round.
     const move = (delta: number) => {
-      active = (active + delta + items.length) % items.length;
+      const next = Math.min(items.length - 1, Math.max(0, active + delta));
+      if (next === active) return;
+      active = next;
       showActive();
     };
     const nextUndecided = () => {
@@ -231,7 +236,7 @@ export function showReviewTui(
           add(theme.fg("dim", needsText ? " Type what should change · Esc back" : " Enter save · Esc back"));
         } else {
           // Wrapped, never cut off: the keys are the only way to finish.
-          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "a approve", "c request changes", "A approve the rest", "Enter submit", "Esc cancel"];
+          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "v hide/show file", "a approve", "c request changes", "A approve all", "Enter submit", "Esc cancel"];
           let line = "";
           for (const key of keys) {
             const next = line ? `${line} · ${key}` : key;
@@ -277,6 +282,10 @@ export function showReviewTui(
         else if (data === "j") viewer.scroll("line-down");
         else if (data === "k") viewer.scroll("line-up");
         else if (matchesKey(data, Key.space)) viewer.scroll("page-down");
+        else if (data === "v") {
+          viewer.toggleHidden();
+          refresh();
+        }
         else if (data === "a") {
           commenting = "approved";
           refresh();

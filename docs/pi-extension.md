@@ -91,7 +91,8 @@ show_artifact({ path: "evals/cases/refund.md" })  // relative to the working dir
 The tool refuses a path outside the working directory (including a symlink
 that leads out of it), a missing file, and anything that is not `.md` or
 `.markdown`. The panel takes the top-right 45% of the terminal at full height
-and shows the file name and the visible line range. It opens without taking
+and shows the file name and the visible line range. It draws over the
+conversation, so it isn't drawn on a terminal narrower than 100 columns. It opens without taking
 the keyboard, so the user keeps typing in the editor. Showing another file
 replaces the content, and the panel re-renders when the file changes on disk.
 
@@ -137,10 +138,11 @@ the cursor, so the user never moves the keyboard between them:
 | Key | Does |
 | --- | --- |
 | `Up` / `Down`, `Tab` / `Shift+Tab`, `Ctrl+N` / `Ctrl+P` | Next or previous file |
-| `j` / `k`, `PgUp` / `PgDn`, `Space` | Scroll the file |
+| `j` / `k`, `Shift+Up` / `Shift+Down`, `PgUp` / `PgDn`, `Space` | Scroll the file |
+| `v` | Hide or show the file, to read the conversation under the panel |
 | `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
 | `c` | Request changes, then what should change (required) |
-| `A` | Approve every file not yet decided, and submit |
+| `A` | Approve all, and submit; a file you asked to change keeps its change request |
 | `Enter` | Submit early; files left undecided are `not reviewed` |
 
 The review submits on its own once every file has a decision. A long review shows eight files at a time around the cursor, with how many more are above and below.

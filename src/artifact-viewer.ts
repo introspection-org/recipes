@@ -392,6 +392,10 @@ export class ArtifactViewer {
     return this.open !== undefined;
   }
 
+  get isHidden(): boolean {
+    return this.open?.handle?.isHidden() ?? false;
+  }
+
   /** Remember a markdown file the agent wrote, for `/recipe view` with no argument. */
   remember(cwd: string, path: string): void {
     if (!isMarkdownPath(path)) return;
@@ -499,6 +503,14 @@ export class ArtifactViewer {
     if (!panel) return;
     const lines = { "line-up": -3, "line-down": 3, "page-up": -panel.pageLines, "page-down": panel.pageLines }[by];
     panel.scrollBy(lines);
+  }
+
+  /** Hide or show the open panel, so the user can read the conversation under it. Returns whether it is now hidden. */
+  toggleHidden(): boolean {
+    const handle = this.open?.handle;
+    if (!handle) return false;
+    handle.setHidden(!handle.isHidden());
+    return handle.isHidden();
   }
 
   /** While a dialog holds the keyboard, its keys replace the panel footer's. */

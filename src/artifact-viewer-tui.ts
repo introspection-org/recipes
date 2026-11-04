@@ -21,6 +21,9 @@ import {
 } from "@earendil-works/pi-tui";
 
 /** Where the panel sits: the top-right corner, 45% wide, full height. */
+/** Below this many columns the panel isn't drawn. */
+export const ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS = 100;
+
 export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
   anchor: "top-right",
   width: "45%",
@@ -29,6 +32,8 @@ export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
   margin: 1,
   // Opening the panel never takes input from the editor.
   nonCapturing: true,
+  // It draws over the conversation, so on a narrow terminal it would hide most of it.
+  visible: (termWidth) => termWidth >= ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS,
 };
 
 /** The document the panel shows. */

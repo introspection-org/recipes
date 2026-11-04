@@ -196,6 +196,22 @@ describe("review_artifacts in the terminal", () => {
     await result;
   });
 
+  it("stops at the first and last file instead of wrapping, and v hides the file", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const list = fake.components.find((c) => !c.overlay)!.component;
+    const panel = () => fake.components.filter((c) => c.overlay && !c.closed).at(-1)!.component;
+    type(list, ["\x1b[A"]); // up on the first file stays there
+    expect(panel().render(80).join("\n")).toContain("Body of C1.");
+    type(list, ["\x1b[B", "\x1b[B", "\x1b[B", "\x1b[B"]); // down past the last
+    await flush();
+    expect(panel().render(80).join("\n")).toContain("Body of C3.");
+    type(list, ["v"]);
+    expect(list.render(120).join("\n")).toContain("v hide/show file");
+    type(list, ["\x1b"]);
+    await result;
+  });
+
   it("declines when dismissed, approving nothing", async () => {
     const { fake, result } = run("tui");
     await flush();
