@@ -289,8 +289,8 @@ export function showMultiSelectTui(
 }
 
 /** Bracketed-paste markers: terminals wrap pasted text in these. */
-const PASTE_START = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
+export const PASTE_START = "\x1b[200~";
+export const PASTE_END = "\x1b[201~";
 
 /** `text` without its last user-visible character (grapheme cluster). */
 export function withoutLastCharacter(text: string): string {

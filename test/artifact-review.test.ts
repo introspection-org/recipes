@@ -303,6 +303,23 @@ describe("review_artifacts in the terminal", () => {
     ]);
   });
 
+  it("takes a bracketed paste into a change request, lines joined", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const review = dialog(fake);
+    type(review, [
+      "2",
+      "\x1b[200~Fix the setup\nAdd a",
+      " regression test\x1b[201~",
+      "\r",
+    ]);
+    type(review, ["1", "1", "\r"]);
+    expect((await result).details.reviews[0]).toMatchObject({
+      decision: "changes_requested",
+      comment: "Fix the setup Add a regression test",
+    });
+  });
+
   it("declines when dismissed, approving nothing", async () => {
     const { fake, result } = run("tui");
     await flush();
@@ -357,6 +374,39 @@ describe("review_artifacts elsewhere", () => {
       if (previous === undefined) delete process.env.PI_ASK_USER_AUTO_APPROVE;
       else process.env.PI_ASK_USER_AUTO_APPROVE = previous;
     }
+  });
+
+  it("pauses for a host that sets PI_INTERRUPT_RESUME in the session's env, not process.env", async () => {
+    const fake = fakeCtx(dir, "print");
+    const tool = createReviewArtifactsTool({ PI_INTERRUPT_RESUME: "1" });
+    const out = await (tool.execute as any)(
+      "call-1",
+      { title: "The cases", items },
+      undefined,
+      undefined,
+      fake.ctx,
+    );
+    expect(out.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
+  });
+
+  it("keeps a multi-line RPC comment on its file's line, so the decision survives", async () => {
+    const fake = fakeCtx(dir, "rpc");
+    fake.answers.select.push("Request changes", "Approve", "Approve");
+    fake.answers.input.push("Fix the setup\nAdd a regression test", "", "");
+    const out = await (createReviewArtifactsTool().execute as any)(
+      "call-1",
+      { title: "The cases", items },
+      undefined,
+      undefined,
+      fake.ctx,
+    );
+    expect(out.details.reviews[0]).toEqual({
+      path: "evals/cases/C1.md",
+      decision: "changes_requested",
+      comment: "Fix the setup Add a regression test",
+      opened: true,
+    });
+    expect(out.details.reviews).toHaveLength(3);
   });
 
   it("gives a pause/resume host the files to render", async () => {

@@ -35,6 +35,8 @@ import {
 import { artifactMarkdownTheme } from "./artifact-viewer-tui.js";
 import {
   type ArtifactPanelScrollBy,
+  PASTE_END,
+  PASTE_START,
   panelScrollFor,
   printable,
   withoutLastCharacter,
@@ -114,7 +116,9 @@ export function formatReviews(reviews: readonly ArtifactReview[]): string {
     `Reviewed ${reviews.length} file${reviews.length === 1 ? "" : "s"}: ${count("approved")} approved, ${count("changes_requested")} with changes requested, ${count("not_reviewed")} not reviewed.`,
   ];
   for (const review of reviews) {
-    const comment = review.comment ? ` — "${review.comment}"` : "";
+    // One line per file: the answer is parsed line by line, so a comment's own newlines are folded.
+    const text = review.comment?.replace(/\s+/g, " ").trim();
+    const comment = text ? ` — "${text}"` : "";
     const unopened = review.opened ? "" : " (not opened)";
     lines.push(
       `${review.path}: ${DECISION_TEXT[review.decision]}${unopened}${comment}`,
@@ -182,6 +186,7 @@ export function showReviewTui(
       let option = 0;
       let commenting = false;
       let draft = "";
+      let pasting = false;
       let settled = false;
       let lastBodyHeight = 1;
       let lastMaxScroll = 0;
@@ -415,6 +420,18 @@ export function showReviewTui(
         },
         handleInput(data: string) {
           if (commenting) {
+            if (pasting || data.includes(PASTE_START)) {
+              // A bracketed paste can arrive over several events: take its text, lines joined, until the end marker.
+              pasting = !data.includes(PASTE_END);
+              draft += data
+                .replace(PASTE_START, "")
+                .replace(PASTE_END, "")
+                .replace(/\s+/g, " ")
+                // eslint-disable-next-line no-control-regex
+                .replace(/[\x00-\x1f\x7f]/g, "");
+              refresh();
+              return;
+            }
             if (matchesKey(data, Key.escape)) {
               commenting = false;
               draft = "";
@@ -429,8 +446,9 @@ export function showReviewTui(
             } else if (matchesKey(data, Key.backspace)) {
               draft = withoutLastCharacter(draft);
             } else {
-              const text = printable(data);
-              if (text) draft += text.replace(/[\r\n\t]+/g, " ");
+              // Unbracketed multi-line input: join the lines before checking it's printable.
+              const text = printable(data.replace(/[\r\n\t]+/g, " "));
+              if (text) draft += text;
             }
             refresh();
             return;
@@ -513,7 +531,9 @@ function answered(reviews: ArtifactReview[] | null): AskUserOutcome {
 }
 
 /** Build the tool over a session's viewer. */
-export function createReviewArtifactsTool(): ToolDefinition {
+export function createReviewArtifactsTool(
+  env?: NodeJS.ProcessEnv,
+): ToolDefinition {
   const tool: ToolDefinition<typeof parameters> = {
     name: REVIEW_ARTIFACTS_TOOL_NAME,
     label: "Review artifacts",
@@ -554,6 +574,7 @@ export function createReviewArtifactsTool(): ToolDefinition {
           toolCallId,
           ctx,
           signal,
+          ...(env ? { env } : {}),
           interactive: async (ui, dialog) =>
             answered(
               ctx.mode === "tui"

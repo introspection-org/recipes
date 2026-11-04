@@ -987,7 +987,8 @@ export function createRecipesExtension(
         await artifactViewerExtension(
           launchState.extensionRegistrations,
           {},
-          launchState.resolved.tools
+          launchState.resolved.tools,
+          env
         )(pi);
       }
     } catch (error) {

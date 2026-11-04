@@ -639,7 +639,8 @@ function commandPath(args: string): string {
 export function artifactViewerExtension(
   registrations?: RecipeExtensionRegistrationRegistry,
   options: ArtifactViewerOptions = {},
-  agentTools: readonly string[] = [SHOW_ARTIFACT_TOOL_NAME]
+  agentTools: readonly string[] = [SHOW_ARTIFACT_TOOL_NAME],
+  env?: NodeJS.ProcessEnv
 ): ExtensionFactory {
   return (pi) => {
     const viewer = new ArtifactViewer(options);
@@ -649,7 +650,7 @@ export function artifactViewerExtension(
       !registrations?.owner("tool", REVIEW_ARTIFACTS_TOOL_NAME)
     ) {
       registrations?.claim("tool", REVIEW_ARTIFACTS_TOOL_NAME, BUILTIN_OWNER);
-      pi.registerTool(createReviewArtifactsTool());
+      pi.registerTool(createReviewArtifactsTool(env));
     }
     if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;
