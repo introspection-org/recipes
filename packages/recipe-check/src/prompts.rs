@@ -4,6 +4,7 @@
 //! warn when either would show up wrong.
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use super::CheckContext;
@@ -31,6 +32,12 @@ fn template_files(paths: &[String], ctx: &CheckContext) -> Vec<String> {
     files
 }
 
+/// Frontmatter YAML read as YAML 1.2, as Pi's `yaml` package reads it: only
+/// `true` and `false` are booleans, so `suggest: yes` is not a mark.
+fn parse_yaml(yaml: &str) -> Result<JsonValue, serde_saphyr::Error> {
+    serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true })
+}
+
 /// The longest suggestion description, in words, that reads well as a chip.
 const MAX_DESCRIPTION_WORDS: usize = 10;
 
@@ -40,9 +47,116 @@ fn frontmatter(content: &str) -> JsonValue {
     normalized
         .strip_prefix("---")
         .and_then(|rest| rest.find("\n---").map(|end| rest[..end].to_owned()))
-        .and_then(|yaml| serde_saphyr::from_str::<JsonValue>(&yaml).ok())
+        .and_then(|yaml| parse_yaml(&yaml).ok())
         .filter(JsonValue::is_object)
         .unwrap_or_else(|| JsonValue::Object(Default::default()))
+}
+
+/// One suggestion: a prompt template marked `suggest: true`, read the way
+/// `listRecipeSuggestions` in `src/recipe/suggestions.ts` reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Suggestion {
+    /// The command name: the file name without `.md`. Invoked as `/name`.
+    pub name: String,
+    /// The frontmatter `description`, or Pi's fallback (the body's first
+    /// non-empty line, cut at 60 characters) when it has none.
+    pub description: String,
+    /// Frontmatter `argument-hint`, such as `<file>` or `[focus]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub argument_hint: Option<String>,
+    /// The template body, with Pi arguments and placeholders unexpanded.
+    pub text: String,
+    /// The `{{name}}` placeholders the body uses, in order, without duplicates.
+    pub placeholders: Vec<String>,
+}
+
+/// Split frontmatter from the body as Pi's `parseFrontmatter` does. `None`
+/// when the frontmatter is not valid YAML: Pi skips such a template.
+fn split_template(content: &str) -> Option<(JsonValue, String)> {
+    let normalized = content
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let end = normalized
+        .strip_prefix("---")
+        .and_then(|rest| rest.find("\n---"))
+        .map(|index| index + 3);
+    let Some(end) = end else {
+        return Some((JsonValue::Object(Default::default()), normalized));
+    };
+    let yaml = normalized.get(4..end).unwrap_or_default();
+    let parsed = if yaml.trim().is_empty() {
+        JsonValue::Null
+    } else {
+        parse_yaml(yaml).ok()?
+    };
+    let frontmatter = if parsed.is_object() {
+        parsed
+    } else {
+        JsonValue::Object(Default::default())
+    };
+    Some((frontmatter, normalized[end + 4..].trim().to_owned()))
+}
+
+/// The suggestions among the templates that resolved `pi.prompts` paths
+/// select, in file order. As in Pi, the first template with a name wins,
+/// marked or not, so an unmarked template hides a later marked one.
+pub(crate) fn read_suggestions(paths: &[String], ctx: &CheckContext) -> Vec<Suggestion> {
+    let placeholder = Regex::new(r"\{\{([A-Za-z][\w.-]*)\}\}").expect("placeholder pattern");
+    let mut seen = std::collections::HashSet::new();
+    let mut suggestions = Vec::new();
+    for file in template_files(paths, ctx) {
+        let Some((frontmatter, body)) = ctx.content(&file).and_then(split_template) else {
+            continue;
+        };
+        let name = file
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file)
+            .trim_end_matches(".md")
+            .to_owned();
+        if !seen.insert(name.clone()) || frontmatter.get("suggest") != Some(&JsonValue::Bool(true))
+        {
+            continue;
+        }
+        let mut description = frontmatter
+            .get("description")
+            .and_then(JsonValue::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_owned();
+        if description.is_empty() {
+            let first = body
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or_default();
+            description = if first.chars().count() > 60 {
+                format!("{}...", first.chars().take(60).collect::<String>())
+            } else {
+                first.to_owned()
+            };
+        }
+        let argument_hint = frontmatter
+            .get("argument-hint")
+            .and_then(JsonValue::as_str)
+            .filter(|hint| !hint.is_empty())
+            .map(str::to_owned);
+        let mut placeholders: Vec<String> = Vec::new();
+        for captures in placeholder.captures_iter(&body) {
+            let found = &captures[1];
+            if !placeholders.iter().any(|seen| seen == found) {
+                placeholders.push(found.to_owned());
+            }
+        }
+        suggestions.push(Suggestion {
+            name,
+            description,
+            argument_hint,
+            text: body,
+            placeholders,
+        });
+    }
+    suggestions
 }
 
 /// Templates marked `suggest: true` are suggestions. Check what hosts show
@@ -203,6 +317,11 @@ mod tests {
                 "prompts/one.md",
                 "---\nsuggest: 1\ndescription: Go\n---\nGo.",
             ),
+            // YAML 1.1 booleans are strings to Pi, which reads YAML 1.2.
+            (
+                "prompts/on.md",
+                "---\nsuggest: on\ndescription: Go\n---\nGo.",
+            ),
             (
                 "prompts/good.md",
                 "---\nsuggest: true\ndescription: Go\n---\nGo.",
@@ -211,7 +330,7 @@ mod tests {
         assert!(report.valid, "{:?}", report.diagnostics);
         assert_eq!(
             codes(&report, "prompts.suggest_invalid"),
-            vec!["prompts/one.md", "prompts/yes.md"]
+            vec!["prompts/on.md", "prompts/one.md", "prompts/yes.md"]
         );
     }
 
@@ -253,5 +372,64 @@ mod tests {
             codes(&report, "prompts.description_missing"),
             vec!["prompts/bare.md"]
         );
+    }
+
+    fn suggestions(files: &[(&str, &str)]) -> Vec<crate::Suggestion> {
+        crate::list_recipe_suggestions(&RecipeFiles {
+            files: files
+                .iter()
+                .map(|(path, content)| RecipeFile::new(*path, *content))
+                .collect(),
+            directories: Vec::new(),
+        })
+    }
+
+    /// The cases `test/recipe-suggestions.test.ts` also runs against
+    /// `listRecipeSuggestions`, so both readers agree.
+    #[test]
+    fn shared_suggestions_conformance_fixtures() {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Expected {
+            name: String,
+            description: String,
+            argument_hint: Option<String>,
+            text: String,
+            placeholders: Vec<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Case {
+            name: String,
+            files: std::collections::BTreeMap<String, String>,
+            suggestions: Vec<Expected>,
+        }
+        let cases: Vec<Case> = serde_json::from_str(include_str!(
+            "../../../test/fixtures/suggestions-conformance.json"
+        ))
+        .expect("shared suggestions fixtures must parse");
+        for case in cases {
+            let files: Vec<(&str, &str)> = case
+                .files
+                .iter()
+                .map(|(path, content)| (path.as_str(), content.as_str()))
+                .collect();
+            let expected: Vec<crate::Suggestion> = case
+                .suggestions
+                .into_iter()
+                .map(|e| crate::Suggestion {
+                    name: e.name,
+                    description: e.description,
+                    argument_hint: e.argument_hint,
+                    text: e.text,
+                    placeholders: e.placeholders,
+                })
+                .collect();
+            assert_eq!(suggestions(&files), expected, "{}", case.name);
+        }
+    }
+
+    #[test]
+    fn lists_nothing_without_a_package() {
+        assert!(suggestions(&[("prompts/go.md", "---\nsuggest: true\n---\nGo.")]).is_empty());
     }
 }

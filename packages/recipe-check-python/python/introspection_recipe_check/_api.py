@@ -73,6 +73,43 @@ def check_recipe_files(snapshot: RecipeFiles) -> Report:
 
 
 @dataclass(frozen=True, slots=True)
+class Suggestion:
+    """A prompt template marked `suggest: true`: something to offer a new user.
+
+    `text` is the raw template body. Pi arguments (`$1`, `${1:-default}`) and
+    `placeholders` (`{{member.name}}` and the like) are left for the host.
+    """
+
+    name: str
+    description: str
+    text: str
+    placeholders: tuple[str, ...]
+    argument_hint: str | None = None
+
+
+def list_recipe_suggestions(snapshot: RecipeFiles) -> tuple[Suggestion, ...]:
+    """A Recipe's suggestions, in file order; empty when none are marked."""
+    raw = cast(
+        list[dict[str, object]],
+        json.loads(
+            _native.list_recipe_suggestions_json(
+                json.dumps(snapshot, separators=(",", ":")),
+            )
+        ),
+    )
+    return tuple(
+        Suggestion(
+            name=cast(str, item["name"]),
+            description=cast(str, item["description"]),
+            text=cast(str, item["text"]),
+            placeholders=tuple(cast(list[str], item.get("placeholders", []))),
+            argument_hint=cast("str | None", item.get("argument_hint")),
+        )
+        for item in raw
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class TemplateVariable:
     name: str
     kind: str = "string"

@@ -4,8 +4,9 @@
  * a new terminal session.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ASK_USER_TYPED_ANSWER_OPTION } from "../src/ask-user-question.js";
@@ -75,6 +76,25 @@ function recipeWithPrompts(templates: Record<string, string> = TEMPLATES) {
 }
 
 describe("listRecipeSuggestions", () => {
+  // The same cases run against the Rust checker's `list_recipe_suggestions`
+  // (packages/recipe-check/src/prompts.rs), so the control plane reads
+  // suggestions exactly as Pi does.
+  const conformance = JSON.parse(
+    readFileSync(join(import.meta.dirname, "fixtures", "suggestions-conformance.json"), "utf8")
+  ) as Array<{ name: string; files: Record<string, string>; suggestions: unknown[] }>;
+  it.each(conformance.map((entry) => [entry.name, entry] as const))(
+    "matches the shared fixture: %s",
+    (_name, entry) => {
+      const recipeDir = mkdtempSync(join(tmpdir(), "recipe-suggestions-"));
+      cleanups.push(() => rmSync(recipeDir, { recursive: true, force: true }));
+      for (const [path, content] of Object.entries(entry.files)) {
+        mkdirSync(dirname(join(recipeDir, path)), { recursive: true });
+        writeFileSync(join(recipeDir, path), content);
+      }
+      expect(listRecipeSuggestions(recipeDir)).toEqual(entry.suggestions);
+    }
+  );
+
   it("reads each marked template's name, description, hint, text and placeholders", () => {
     const { recipeDir } = recipeWithPrompts();
     expect(listRecipeSuggestions(recipeDir)).toEqual([

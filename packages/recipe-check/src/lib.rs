@@ -10,6 +10,8 @@ pub mod resources;
 pub mod spec;
 pub mod template;
 
+pub use prompts::{Suggestion, SUGGESTION_PLACEHOLDERS};
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path};
 
@@ -363,6 +365,33 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
         diagnostics: ctx.diagnostics,
         resources: resource_counts,
     }
+}
+
+/// A Recipe's suggestions: the prompt templates its `pi.prompts` (or
+/// `prompts/` by convention) selects that are marked `suggest: true`, in file
+/// order. Empty when none are marked or the package can't be read; run
+/// [`check_recipe_files`] for the reasons.
+pub fn list_recipe_suggestions(input: &RecipeFiles) -> Vec<Suggestion> {
+    let mut ctx = CheckContext::new(input);
+    let Some(package) = read_package(&mut ctx) else {
+        return Vec::new();
+    };
+    let Some(valid) = validate_pi_config(&package, &mut ctx).remove("prompts") else {
+        return Vec::new();
+    };
+    // `valid` is sorted; Pi reads `pi.prompts` in the order it's written
+    // (sorted within a glob), and the first template with a name wins.
+    let pi = package.pi.as_ref().and_then(JsonValue::as_object);
+    let patterns = resource_patterns("prompts", pi.and_then(|pi| pi.get("prompts")), false, &mut ctx);
+    let mut ordered: Vec<String> = Vec::new();
+    for pattern in &patterns.patterns {
+        for path in match_paths(&ctx, pattern) {
+            if valid.contains(&path) && !ordered.contains(&path) {
+                ordered.push(path);
+            }
+        }
+    }
+    prompts::read_suggestions(&ordered, &ctx)
 }
 
 const PACKAGE_JSON: &str = "package.json";

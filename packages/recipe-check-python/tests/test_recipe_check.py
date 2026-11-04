@@ -368,3 +368,32 @@ def test_mission_judges_are_parsed_apart_from_online_ones() -> None:
             "criteria": {"true": "The same trip.", "false": "Anything else."},
         }
     }
+
+
+def test_lists_suggestions() -> None:
+    snapshot: introspection_recipe_check.RecipeFiles = {
+        "files": [
+            {
+                "path": "package.json",
+                "content": '{"name":"s","version":"0.1.0","pi":{"agents":["agents/*.yaml"],"prompts":["./prompts/*.md"]}}',
+            },
+            {"path": "agents/main.yaml", "content": "name: main\n"},
+            {
+                "path": "prompts/redline.md",
+                "content": '---\nsuggest: true\ndescription: Redline a contract\nargument-hint: "[contract]"\n---\nRedline it for {{member.name}}.',
+            },
+            {
+                "path": "prompts/plain.md",
+                "content": "---\ndescription: Not offered\n---\nNo.",
+            },
+        ]
+    }
+    assert introspection_recipe_check.list_recipe_suggestions(snapshot) == (
+        introspection_recipe_check.Suggestion(
+            name="redline",
+            description="Redline a contract",
+            text="Redline it for {{member.name}}.",
+            placeholders=("member.name",),
+            argument_hint="[contract]",
+        ),
+    )

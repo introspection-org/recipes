@@ -7,7 +7,7 @@ use introspection_recipe_check::spec::{
 use introspection_recipe_check::template::{
     ensure_identity, parse_template_manifest, render_template, resolve_variables, VariableValue,
 };
-use introspection_recipe_check::{check_recipe_files, RecipeFiles};
+use introspection_recipe_check::{check_recipe_files, list_recipe_suggestions, RecipeFiles};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -19,6 +19,17 @@ fn check_recipe_files_json(py: Python<'_>, snapshot_json: &str) -> PyResult<Stri
     let report = py.detach(move || check_recipe_files(&snapshot));
     serde_json::to_string(&report)
         .map_err(|error| PyValueError::new_err(format!("failed to encode check report: {error}")))
+}
+
+/// List a serialized Recipe snapshot's suggestions: its prompt templates
+/// marked `suggest: true`.
+#[pyfunction]
+fn list_recipe_suggestions_json(py: Python<'_>, snapshot_json: &str) -> PyResult<String> {
+    let snapshot: RecipeFiles = serde_json::from_str(snapshot_json)
+        .map_err(|error| PyValueError::new_err(format!("invalid recipe snapshot: {error}")))?;
+    let suggestions = py.detach(move || list_recipe_suggestions(&snapshot));
+    serde_json::to_string(&suggestions)
+        .map_err(|error| PyValueError::new_err(format!("failed to encode suggestions: {error}")))
 }
 
 /// Parse a serialized `template.yaml` into its manifest.
@@ -110,6 +121,7 @@ fn judge_definition_schema_json() -> String {
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_function(wrap_pyfunction!(check_recipe_files_json, module)?)?;
+    module.add_function(wrap_pyfunction!(list_recipe_suggestions_json, module)?)?;
     module.add_function(wrap_pyfunction!(parse_template_manifest_json, module)?)?;
     module.add_function(wrap_pyfunction!(resolve_template_variables_json, module)?)?;
     module.add_function(wrap_pyfunction!(render_template_json, module)?)?;

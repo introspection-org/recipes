@@ -352,7 +352,12 @@ Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
   templates as `{ name, description, argumentHint?, text, placeholders }[]`, and
   `fillSuggestion(text, values)` fills placeholders; both are exported from
   `@introspection-ai/recipes/suggestions`.
-  `inspectRecipe` includes the same list as `suggestions`.
+  `inspectRecipe` includes the same list as `suggestions`. A host that holds
+  the Recipe's files rather than a directory, such as the control plane when
+  it validates a version, reads the same list with `list_recipe_suggestions`
+  from `introspection-recipe-check` (Rust or Python).
+- **YAML 1.2.** Only `suggest: true` marks a template. As in Pi, `yes`, `on`
+  and `"true"` are not booleans, so they don't count.
 - **Checks.** For a marked template, the checker warns when it has no
   `description` (`prompts.description_missing`), when the description is over
   ten words (`prompts.description_long`), or when it uses a placeholder outside
