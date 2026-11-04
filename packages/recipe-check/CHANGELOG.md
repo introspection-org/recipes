@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.16.0...introspection-recipe-check-v0.17.0) (2026-11-04)
+
+
+### Features
+
+* offer a Recipe's prompt templates as suggestions ([#411](https://github.com/introspection-org/recipes/issues/411)) ([eb089a7](https://github.com/introspection-org/recipes/commit/eb089a70184436bfc2e0aed166778d23a544b25f))
+
+
+### Bug Fixes
+
+* **release:** keep the companion packages when stamping the MCP client binaries ([#403](https://github.com/introspection-org/recipes/issues/403)) ([427bb43](https://github.com/introspection-org/recipes/commit/427bb43a64e79627147a8cea9887e563830ba063))
+
 ## [0.16.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.15.0...introspection-recipe-check-v0.16.0) (2026-11-03)
 
 
