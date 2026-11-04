@@ -183,7 +183,7 @@ export class ArtifactPanel implements Component {
     }
     const hint = focused
       ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close · ${this.focusKeyLabel} editor`
-      : `${this.focusKeyLabel} to scroll this panel`;
+      : `${this.focusKeyLabel} to activate this panel (scroll, open, close)`;
     lines.push(padToWidth(this.theme.fg("dim", ` ${hint}`), width));
     return lines;
   }

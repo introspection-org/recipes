@@ -416,7 +416,7 @@ export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         content: [
           {
             type: "text",
-            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor and can press ${FOCUS_KEY_LABEL} to scroll the panel.`,
+            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor; ${FOCUS_KEY_LABEL} activates the panel to scroll or close it (q or Esc).`,
           },
         ],
         details: { path: target.relativePath, shown: true },
