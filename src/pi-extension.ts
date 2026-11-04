@@ -92,6 +92,7 @@ import {
   recipeSubcommand,
   recipeSubcommandCompletions,
   recipeSubcommandNames,
+  splitRecipeSubcommand,
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
@@ -1500,10 +1501,10 @@ export function createRecipesExtension(
         const action = args.trim();
         // Optional built-ins (the artifact viewer's `view` and `close`) add
         // subcommands here rather than top-level commands of their own.
-        const [name = "", ...rest] = action.split(/\s+/);
+        const { name, args: rest } = splitRecipeSubcommand(action);
         const subcommand = recipeSubcommand(pi, name);
         if (subcommand) {
-          await subcommand(rest.join(" "), ctx);
+          await subcommand(rest, ctx);
           return;
         }
         if (action === "reload") {

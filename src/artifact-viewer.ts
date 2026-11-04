@@ -45,6 +45,15 @@ export function recipeSubcommand(pi: object, name: string): RecipeSubcommand | u
   return recipeSubcommands.get(pi)?.get(name);
 }
 
+/**
+ * Split `/recipe` arguments into the subcommand name and the rest, which keeps
+ * its own whitespace so a path such as `"a  b.md"` reaches the handler intact.
+ */
+export function splitRecipeSubcommand(action: string): { name: string; args: string } {
+  const name = /^\S*/.exec(action)?.[0] ?? "";
+  return { name, args: action.slice(name.length).trimStart() };
+}
+
 /** The `/recipe` subcommand names registered for this Pi instance. */
 export function recipeSubcommandNames(pi: object): string[] {
   return [...(recipeSubcommands.get(pi)?.keys() ?? [])];

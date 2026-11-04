@@ -17,6 +17,7 @@ import {
   recipeSubcommandCompletions,
   recipeSubcommandNames,
   resolveArtifactPath,
+  splitRecipeSubcommand,
   wantsArtifactViewer,
   type ArtifactViewerOptions,
 } from "../src/artifact-viewer.js";
@@ -642,5 +643,20 @@ describe("default file watcher", () => {
     } finally {
       stop();
     }
+  });
+});
+
+describe("splitRecipeSubcommand", () => {
+  it("keeps the argument's own whitespace", () => {
+    expect(splitRecipeSubcommand('view "a  b.md"')).toEqual({ name: "view", args: '"a  b.md"' });
+    expect(splitRecipeSubcommand("view   notes/a  b.md")).toEqual({
+      name: "view",
+      args: "notes/a  b.md",
+    });
+  });
+
+  it("gives a bare subcommand no arguments", () => {
+    expect(splitRecipeSubcommand("close")).toEqual({ name: "close", args: "" });
+    expect(splitRecipeSubcommand("")).toEqual({ name: "", args: "" });
   });
 });
