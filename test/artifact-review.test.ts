@@ -177,6 +177,25 @@ describe("review_artifacts in the terminal", () => {
     await result;
   });
 
+  it("shows a window of files around the cursor in a long review", async () => {
+    for (let i = 4; i <= 12; i += 1) writeFileSync(join(dir, "evals", "cases", `C${i}.md`), `# C${i}\n`);
+    const fake = fakeCtx(dir, "tui");
+    const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
+    const many = Array.from({ length: 12 }, (_, i) => ({ path: `evals/cases/C${i + 1}.md`, label: `C${i + 1}` }));
+    const result = (tool.execute as any)("call-1", { title: "Cases", items: many }, undefined, undefined, fake.ctx);
+    await flush();
+    const list = fake.components.find((c) => !c.overlay)!.component;
+    const shown = () => list.render(120).join("\n");
+    expect(shown()).toContain("↓ 4 more");
+    expect(shown()).not.toContain("C9");
+    type(list, Array(10).fill("\x1b[B")); // down to C11
+    expect(shown()).toContain("↑ 4 more");
+    expect(shown()).toContain("C12");
+    expect(shown()).toContain("0/12 decided");
+    type(list, ["\x1b"]);
+    await result;
+  });
+
   it("declines when dismissed, approving nothing", async () => {
     const { fake, result } = run("tui");
     await flush();

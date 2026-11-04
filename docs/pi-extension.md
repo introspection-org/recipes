@@ -124,7 +124,7 @@ approve, with an optional comment, or request changes, saying what to change.
 ```ts
 review_artifacts({
   title: "The interview agent's cases",
-  items: [                                       // 1 to 12, in reading order
+  items: [                                       // 1 to 20, in reading order
     { path: "evals/cases/C1.md", label: "C1: four questions" },
     { path: "evals/cases/C2.md", label: "C2: a vague answer" },
   ],
@@ -143,7 +143,7 @@ the cursor, so the user never moves the keyboard between them:
 | `A` | Approve every file not yet decided, and submit |
 | `Enter` | Submit early; files left undecided are `not reviewed` |
 
-The review submits on its own once every file has a decision.
+The review submits on its own once every file has a decision. A long review shows eight files at a time around the cursor, with how many more are above and below.
 | `Esc` | Cancel the review; nothing is approved |
 
 It is an interaction ([Interactions](interactions.md)), so it works on every

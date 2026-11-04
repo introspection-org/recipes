@@ -28,7 +28,10 @@ import { askUser, type AskUserOutcome } from "./interactions.js";
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 
 /** At most this many files in one review, so the user can get through it. */
-export const MAX_REVIEW_ITEMS = 12;
+export const MAX_REVIEW_ITEMS = 20;
+
+/** Files the list shows at once; the rest scroll, with a marker for what's above and below. */
+export const REVIEW_LIST_ROWS = 8;
 
 export type ReviewDecision = "approved" | "changes_requested" | "not_reviewed";
 
@@ -44,7 +47,7 @@ const description = [
   "Ask the user to review several markdown files you wrote (a brief, test cases, a design), one decision per file: approve, with an optional comment, or request changes, saying what to change.",
   "In Pi's terminal the user steps through the files with each one shown in the panel on the right; other hosts render their own review. Prefer it to asking for approval of files in plain text.",
   `Give 1 to ${MAX_REVIEW_ITEMS} files, in reading order, with a short label for each. Paths are relative to the working directory; only markdown files can be reviewed.`,
-  "The result lists each file's decision and comment. Record an approval only for a file the result says was approved, and change any file with changes requested, then review it again.",
+  "The result lists each file's decision and comment. Record an approval only for a file the result says was approved, and change any file with changes requested, then review it again. When a change request doesn't say what to change, ask the user about that file before editing it.",
 ].join("\n");
 
 const parameters = Type.Object(
@@ -195,7 +198,15 @@ export function showReviewTui(
         const heading = ` Review: ${title} `;
         const tally = ` ${decided()}/${items.length} decided `;
         add(theme.fg("accent", `-${heading}${"-".repeat(Math.max(0, width - heading.length - tally.length - 1))}${tally}`));
-        items.forEach((item, index) => {
+        // A window of rows around the cursor, so a long review keeps the conversation on screen.
+        const first = Math.min(
+          Math.max(0, active - Math.floor(REVIEW_LIST_ROWS / 2)),
+          Math.max(0, items.length - REVIEW_LIST_ROWS)
+        );
+        const last = Math.min(items.length, first + REVIEW_LIST_ROWS);
+        if (first > 0) add(theme.fg("dim", `   ↑ ${first} more`));
+        items.slice(first, last).forEach((item, offset) => {
+          const index = first + offset;
           const state = states[index]!;
           const mark =
             state.decision === "approved"
@@ -208,6 +219,7 @@ export function showReviewTui(
           const comment = state.comment ? theme.fg("dim", `  "${state.comment}"`) : "";
           add(`${pointer}${mark} ${name}${comment}`);
         });
+        if (last < items.length) add(theme.fg("dim", `   ↓ ${items.length - last} more`));
         lines.push("");
         if (commenting) {
           const prompt =
