@@ -275,10 +275,16 @@ describe("review_artifacts in the terminal", () => {
       true,
     );
     type(review, [RIGHT]);
-    expect(hint()).toContain("PgUp/PgDn scroll");
+    expect(hint()).toContain("j/k or PgUp/PgDn scroll");
     expect(shown(review)).toContain("line 1");
     type(review, ["\x1b[6~"]); // PgDn
     expect(shown(review)).not.toContain("line 1\n");
+    type(review, ["k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k"]); // back up by line
+    expect(shown(review)).toContain("line 1");
+    // The box takes at most half the terminal (the fake has 20 rows).
+    expect(
+      review.render(80).filter((line) => line.includes("│")).length,
+    ).toBeLessThanOrEqual(10);
     type(review, ["\x1b"]);
     await result;
   });

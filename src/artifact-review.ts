@@ -48,6 +48,9 @@ export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 /** At most this many files in one review, so the user can get through it. */
 export const MAX_REVIEW_ITEMS = 20;
 
+/** The most rows the file's box takes; a longer file scrolls in it. */
+export const REVIEW_BOX_MAX_ROWS = 20;
+
 export type ReviewDecision = "approved" | "changes_requested" | "not_reviewed";
 
 /** One file's outcome. `opened` says whether the user had it on screen. */
@@ -363,7 +366,11 @@ export function showReviewTui(
             scrollable = true;
           }
           const rows = tui.terminal?.rows ?? 24;
-          lastBodyHeight = Math.max(4, Math.min(body.length, rows - 14));
+          // At most half the terminal, so the conversation above stays in view.
+          lastBodyHeight = Math.max(
+            4,
+            Math.min(body.length, REVIEW_BOX_MAX_ROWS, Math.floor(rows / 2)),
+          );
           lastMaxScroll = scrollable
             ? Math.max(0, body.length - lastBodyHeight)
             : 0;
@@ -408,7 +415,7 @@ export function showReviewTui(
             several ? "←→ file" : undefined,
             "Enter choose",
             lastMaxScroll > 0 && !onSubmitTab()
-              ? "PgUp/PgDn scroll"
+              ? "j/k or PgUp/PgDn scroll"
               : undefined,
             "Esc cancel",
           ];
@@ -453,7 +460,15 @@ export function showReviewTui(
             refresh();
             return;
           }
-          const by = panelScrollFor(data);
+          const by =
+            panelScrollFor(data) ??
+            (data === "j"
+              ? "line-down"
+              : data === "k"
+                ? "line-up"
+                : matchesKey(data, Key.space)
+                  ? "page-down"
+                  : undefined);
           if (by) scroll(by);
           else if (
             several &&
