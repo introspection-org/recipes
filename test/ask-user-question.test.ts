@@ -14,6 +14,7 @@ import {
   stripOptionNumbering,
 } from "../src/ask-user-question.js";
 import { createRecipeExtensionRegistrationRegistry } from "../src/extensions.js";
+import { withoutLastCharacter } from "../src/interaction-tui.js";
 import {
   autoResolveInteractions,
   formatInteractionResume,
@@ -382,6 +383,34 @@ describe("ask_user_question tool", () => {
         tui([..."SSO", "\x1b", "1"]).ctx
       );
       expect(cleared.content[0]!.text).toBe("Auth: Passkeys");
+    });
+
+    it("takes a bracketed paste, also split across events, as typed text", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const whole = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui(["\x1b[200~Magic link\x1b[201~", "\r"]).ctx
+      );
+      expect(whole.content[0]!.text).toBe("Auth: Magic link");
+      const split = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui(["\x1b[200~Magic", "\nlink 2", "\x1b[201~", "\r"]).ctx
+      );
+      expect(split.content[0]!.text).toBe("Auth: Magic link 2");
+    });
+
+    it("backspace removes a whole character, emoji included", async () => {
+      const tool = createAskUserQuestionTool({ env: terminalEnv });
+      const result = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui([..."SSO", "😀", "\x7f", "\r"]).ctx
+      );
+      expect(result.content[0]!.text).toBe("Auth: SSO");
+      expect(withoutLastCharacter("ok👍🏽")).toBe("ok");
+      expect(withoutLastCharacter("x😀")).toBe("x");
     });
 
     it("stops the turn when the user presses Esc, so the agent waits for their message", async () => {

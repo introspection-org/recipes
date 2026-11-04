@@ -49,6 +49,7 @@ export function showChoiceTui(
       const itemCount = options.length + (multiple ? 2 : 1);
       let activeIndex = 0;
       let typed = "";
+      let pasting = false;
       let settled = false;
 
       const finish = (result: ChoiceTuiResult | null) => {
@@ -163,9 +164,21 @@ export function showChoiceTui(
             }
             return;
           }
+          if (pasting || data.includes(PASTE_START)) {
+            // A bracketed paste can arrive over several events: take its
+            // text, markers removed and lines joined, until the end marker.
+            pasting = !data.includes(PASTE_END);
+            const text = data
+              .replace(PASTE_START, "")
+              .replace(PASTE_END, "")
+              .replace(/\r\n|\r|\n/g, " ");
+            const clean = printable(text);
+            if (clean) type(clean);
+            return;
+          }
           if (matchesKey(data, Key.backspace)) {
             if (typed) {
-              typed = typed.slice(0, -1);
+              typed = withoutLastCharacter(typed);
               activeIndex = typedIndex;
               refresh();
             }
@@ -222,6 +235,23 @@ export function showMultiSelectTui(
     multiple: true,
     typedLabel: customLabel,
   });
+}
+
+/** Bracketed-paste markers: terminals wrap pasted text in these. */
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/** `text` without its last user-visible character (grapheme cluster). */
+export function withoutLastCharacter(text: string): string {
+  const Segmenter = (Intl as { Segmenter?: typeof Intl.Segmenter }).Segmenter;
+  if (Segmenter) {
+    const graphemes = [...new Segmenter(undefined, { granularity: "grapheme" }).segment(text)];
+    return graphemes
+      .slice(0, -1)
+      .map((part) => part.segment)
+      .join("");
+  }
+  return Array.from(text).slice(0, -1).join("");
 }
 
 /**
