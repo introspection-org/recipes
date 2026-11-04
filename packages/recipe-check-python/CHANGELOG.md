@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.17.0...introspection-recipe-check-python-v0.18.0) (2026-11-04)
+
+
+### Features
+
+* **recipe-check:** list a Recipe's suggestions from a file snapshot ([#413](https://github.com/introspection-org/recipes/issues/413)) ([b8b468f](https://github.com/introspection-org/recipes/commit/b8b468f155d2f02f691fddde5f4ed0900bd2d9de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.17.0 to 0.18.0
+
 ## [0.17.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.16.0...introspection-recipe-check-python-v0.17.0) (2026-11-04)
 
 
