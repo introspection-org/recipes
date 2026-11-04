@@ -12,7 +12,9 @@ import {
   ARTIFACT_PANEL_FOCUS_KEY,
   SHOW_ARTIFACT_TOOL_NAME,
   artifactViewerExtension,
+  markdownFilesFor,
   recipeSubcommand,
+  recipeSubcommandCompletions,
   recipeSubcommandNames,
   resolveArtifactPath,
   wantsArtifactViewer,
@@ -536,6 +538,34 @@ describe("/recipe view and /recipe close", () => {
     expect(overlays[0]!.closed).toBe(false);
     await subcommand("close")("", ctx as never);
     expect(overlays[0]!.closed).toBe(true);
+  });
+});
+
+describe("/recipe completions", () => {
+  it("lists the subcommands, then the workspace's markdown files for view", async () => {
+    const { pi } = await setup();
+    const names = (prefix: string) =>
+      recipeSubcommandCompletions(pi, prefix, workspace).map((item) => item.label);
+    expect(names("")).toEqual(["view", "close"]);
+    expect(names("v")).toEqual(["view"]);
+    const files = recipeSubcommandCompletions(pi, "view ", workspace);
+    // The usual review folders come first; text files are never offered.
+    expect(files.map((item) => item.value)).toEqual(["view evals/cases/refund.md", "view brief.md"]);
+    expect(recipeSubcommandCompletions(pi, "view REF", workspace).map((item) => item.label)).toEqual([
+      "evals/cases/refund.md",
+    ]);
+    expect(recipeSubcommandCompletions(pi, "close x", workspace)).toEqual([]);
+  });
+
+  it("skips hidden folders and build output", () => {
+    mkdirSync(join(workspace, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(workspace, "node_modules", "pkg", "README.md"), "x");
+    mkdirSync(join(workspace, ".pi"), { recursive: true });
+    writeFileSync(join(workspace, ".pi", "notes.md"), "x");
+    expect(markdownFilesFor(workspace, "").map((item) => item.value)).toEqual([
+      "evals/cases/refund.md",
+      "brief.md",
+    ]);
   });
 });
 

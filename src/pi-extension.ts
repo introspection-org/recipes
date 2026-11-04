@@ -90,6 +90,7 @@ import {
 import {
   artifactViewerExtension,
   recipeSubcommand,
+  recipeSubcommandCompletions,
   recipeSubcommandNames,
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
@@ -1486,6 +1487,15 @@ export function createRecipesExtension(
 
     pi.registerCommand("recipe", {
       description: "Inspect or reload the active recipe; view or close an artifact when the agent shows them",
+      getArgumentCompletions: (prefix) => {
+        const items = [
+          ...(!prefix.includes(" ") && "reload".startsWith(prefix.trim())
+            ? [{ value: "reload", label: "reload", description: "Reload the active recipe" }]
+            : []),
+          ...recipeSubcommandCompletions(pi, prefix, process.cwd()),
+        ];
+        return items.length > 0 ? items : null;
+      },
       handler: async (args, ctx) => {
         const action = args.trim();
         // Optional built-ins (the artifact viewer's `view` and `close`) add

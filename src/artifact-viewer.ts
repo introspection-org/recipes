@@ -11,7 +11,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, realpathSync, statSync, watch } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync, watch } from "node:fs";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import type {
@@ -19,7 +19,7 @@ import type {
   ExtensionFactory,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { OverlayHandle } from "@earendil-works/pi-tui";
+import type { AutocompleteItem, OverlayHandle } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
 import {
@@ -50,10 +50,95 @@ export function recipeSubcommandNames(pi: object): string[] {
   return [...(recipeSubcommands.get(pi)?.keys() ?? [])];
 }
 
-function addRecipeSubcommand(pi: object, name: string, handler: RecipeSubcommand): void {
+interface RecipeSubcommandInfo {
+  description: string;
+  /** Completions for the subcommand's argument, given what's typed so far. */
+  complete?: (argument: string, cwd: string) => AutocompleteItem[];
+}
+
+const recipeSubcommandInfo = new WeakMap<object, Map<string, RecipeSubcommandInfo>>();
+
+function addRecipeSubcommand(
+  pi: object,
+  name: string,
+  handler: RecipeSubcommand,
+  info: RecipeSubcommandInfo
+): void {
   const commands = recipeSubcommands.get(pi) ?? new Map<string, RecipeSubcommand>();
   commands.set(name, handler);
   recipeSubcommands.set(pi, commands);
+  const infos = recipeSubcommandInfo.get(pi) ?? new Map<string, RecipeSubcommandInfo>();
+  infos.set(name, info);
+  recipeSubcommandInfo.set(pi, infos);
+}
+
+/**
+ * Completions for `/recipe <prefix>` from the optional built-ins: their
+ * subcommand names while the first word is typed, then the subcommand's own
+ * argument completions (for `view`, the workspace's markdown files).
+ */
+export function recipeSubcommandCompletions(
+  pi: object,
+  prefix: string,
+  cwd: string
+): AutocompleteItem[] {
+  const infos = recipeSubcommandInfo.get(pi);
+  if (!infos) return [];
+  const space = prefix.indexOf(" ");
+  if (space < 0) {
+    return [...infos.entries()]
+      .filter(([name]) => name.startsWith(prefix.trim()))
+      .map(([name, info]) => ({ value: `${name} `, label: name, description: info.description }));
+  }
+  const name = prefix.slice(0, space);
+  const argument = prefix.slice(space + 1);
+  const complete = infos.get(name)?.complete;
+  if (!complete) return [];
+  return complete(argument, cwd).map((item) => ({ ...item, value: `${name} ${item.value}` }));
+}
+
+/** Folders the file list never walks into. */
+const SKIPPED_FOLDERS = new Set(["node_modules", ".git", "dist", "eval-runs", "target"]);
+/** Where an owner's reviewable files usually live, listed first. */
+const PREFERRED_PARTS = ["docs/", "evals/cases/", "prompts/", "outputs/"];
+const MAX_LISTED_FILES = 50;
+
+/**
+ * The markdown files under `cwd` matching `query` (a substring of the path,
+ * case-insensitive), the usual review files first. Bounded in depth and count
+ * so a large workspace stays quick; hidden folders and build output are skipped.
+ */
+export function markdownFilesFor(cwd: string, query: string): AutocompleteItem[] {
+  const found: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 6 || found.length >= 1000) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const path = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIPPED_FOLDERS.has(entry.name)) walk(path, depth + 1);
+      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
+        found.push(relative(cwd, path).split(sep).join("/"));
+      }
+    }
+  };
+  walk(cwd, 0);
+  const needle = query.trim().toLowerCase();
+  const rank = (path: string) => {
+    const index = PREFERRED_PARTS.findIndex((part) => path.includes(part));
+    return index < 0 ? PREFERRED_PARTS.length : index;
+  };
+  return found
+    .filter((path) => path.toLowerCase().includes(needle))
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .slice(0, MAX_LISTED_FILES)
+    .map((path) => ({ value: path, label: path }));
 }
 
 /**
@@ -491,10 +576,18 @@ export function artifactViewerExtension(
       } catch (error) {
         ctx.ui.notify(errorText(error), "warning");
       }
+    }, {
+      description: "Show a markdown file in the panel on the right",
+      complete: (argument, cwd) => markdownFilesFor(cwd, argument),
     });
-    addRecipeSubcommand(pi, "close", async () => {
-      viewer.close();
-    });
+    addRecipeSubcommand(
+      pi,
+      "close",
+      async () => {
+        viewer.close();
+      },
+      { description: "Close the artifact panel" }
+    );
 
     pi.registerShortcut(ARTIFACT_PANEL_FOCUS_KEY, {
       description: "Move the keyboard between the editor and the artifact panel",
