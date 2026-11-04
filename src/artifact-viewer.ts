@@ -29,7 +29,12 @@ import {
 } from "./artifact-viewer-tui.js";
 import { createReviewArtifactsTool, REVIEW_ARTIFACTS_TOOL_NAME } from "./artifact-review.js";
 import type { RecipeExtensionRegistrationRegistry } from "./extensions.js";
-import { artifactPanelScroll, setArtifactPanelScroll } from "./interaction-tui.js";
+import {
+  artifactPanelControl,
+  setArtifactPanelControl,
+  type ArtifactPanelControl,
+  type ArtifactPanelScrollBy,
+} from "./interaction-tui.js";
 
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
@@ -423,7 +428,7 @@ export class ArtifactViewer {
       stopWatching: () => {},
     };
     this.open = state;
-    setArtifactPanelScroll(this.scrollPanel);
+    setArtifactPanelControl(this.panelControl);
     void ctx.ui
       .custom<undefined>(
         (tui, theme, _keybindings, finish) => {
@@ -488,13 +493,17 @@ export class ArtifactViewer {
     }
   }
 
-  /** Scroll the open panel by `lines`, or by a page either way, without taking focus. */
-  scroll(lines: number | "page-up" | "page-down"): void {
+  /** Scroll the open panel without taking focus. */
+  scroll(by: ArtifactPanelScrollBy): void {
     const panel = this.open?.panel;
     if (!panel) return;
-    if (lines === "page-up") panel.scrollBy(-panel.pageLines);
-    else if (lines === "page-down") panel.scrollBy(panel.pageLines);
-    else panel.scrollBy(lines);
+    const lines = { "line-up": -3, "line-down": 3, "page-up": -panel.pageLines, "page-down": panel.pageLines }[by];
+    panel.scrollBy(lines);
+  }
+
+  /** While a dialog holds the keyboard, its keys replace the panel footer's. */
+  setDialogHint(hint: string | undefined): void {
+    this.open?.panel?.setDialogHint(hint);
   }
 
   /** Close the panel, if it is open. */
@@ -545,13 +554,16 @@ export class ArtifactViewer {
     };
   }
 
-  private readonly scrollPanel = (page: "page-up" | "page-down") => this.scroll(page);
+  private readonly panelControl: ArtifactPanelControl = {
+    scroll: (by) => this.scroll(by),
+    setDialogHint: (hint) => this.setDialogHint(hint),
+  };
 
   private release(state: OpenPanel): void {
     state.stopWatching();
     state.stopWatching = () => {};
     if (this.open === state) this.open = undefined;
-    if (!this.open && artifactPanelScroll() === this.scrollPanel) setArtifactPanelScroll(undefined);
+    if (!this.open && artifactPanelControl() === this.panelControl) setArtifactPanelControl(undefined);
   }
 }
 

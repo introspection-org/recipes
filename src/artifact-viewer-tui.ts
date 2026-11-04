@@ -183,7 +183,7 @@ export class ArtifactPanel implements Component {
     }
     const hint = focused
       ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close · ${this.focusKeyLabel} editor`
-      : `/recipe close to close · ${this.focusKeyLabel} to scroll`;
+      : (this.dialogHint ?? `/recipe close to close · ${this.focusKeyLabel} to scroll`);
     lines.push(padToWidth(this.theme.fg("dim", ` ${hint}`), width));
     return lines;
   }
@@ -198,6 +198,15 @@ export class ArtifactPanel implements Component {
 
   dispose(): void {
     this.actions.disposed();
+  }
+
+  private dialogHint: string | undefined;
+
+  /** While a dialog holds the keyboard, its scroll keys replace the footer's. */
+  setDialogHint(hint: string | undefined): void {
+    if (hint === this.dialogHint) return;
+    this.dialogHint = hint;
+    this.tui.requestRender();
   }
 
   /** Lines a page scroll moves: the body's last height, less one for context. */

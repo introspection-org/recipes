@@ -140,8 +140,10 @@ the cursor, so the user never moves the keyboard between them:
 | `j` / `k`, `PgUp` / `PgDn`, `Space` | Scroll the file |
 | `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
 | `c` | Request changes, then what should change (required) |
-| `A` | Approve every file not yet decided |
-| `Enter` | Submit; files left undecided are `not reviewed` |
+| `A` | Approve every file not yet decided, and submit |
+| `Enter` | Submit early; files left undecided are `not reviewed` |
+
+The review submits on its own once every file has a decision.
 | `Esc` | Cancel the review; nothing is approved |
 
 It is an interaction ([Interactions](interactions.md)), so it works on every

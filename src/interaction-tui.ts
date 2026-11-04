@@ -23,21 +23,44 @@ export interface ChoiceTuiResult {
   custom?: boolean;
 }
 
-/** Scrolls the artifact panel by a page, while a dialog has the keyboard. */
-export type ArtifactPanelScroll = (page: "page-up" | "page-down") => void;
+/** How far a dialog scrolls the artifact panel. */
+export type ArtifactPanelScrollBy = "line-up" | "line-down" | "page-up" | "page-down";
+
+/**
+ * The open artifact panel, as a dialog that holds the keyboard drives it: it
+ * scrolls the panel, and says while it is open so the panel's footer gives
+ * the dialog's keys instead of ones that can't reach the panel.
+ */
+export interface ArtifactPanelControl {
+  scroll(by: ArtifactPanelScrollBy): void;
+  /** The footer hint while a dialog holds the keyboard, or undefined when none does. */
+  setDialogHint(hint: string | undefined): void;
+}
 
 // Process-global, since a Recipe and its host may load separate copies of Recipes.
-const PANEL_SCROLL_KEY = Symbol.for("@introspection-ai/recipes/artifact-panel-scroll");
-const panelGlobals = globalThis as typeof globalThis & { [key: symbol]: ArtifactPanelScroll | undefined };
+const PANEL_CONTROL_KEY = Symbol.for("@introspection-ai/recipes/artifact-panel-control");
+const panelGlobals = globalThis as typeof globalThis & { [key: symbol]: ArtifactPanelControl | undefined };
 
-/** Set while the artifact panel is open, so a question can scroll it with PgUp/PgDn. */
-export function setArtifactPanelScroll(scroll: ArtifactPanelScroll | undefined): void {
-  panelGlobals[PANEL_SCROLL_KEY] = scroll;
+/** Set while the artifact panel is open. */
+export function setArtifactPanelControl(control: ArtifactPanelControl | undefined): void {
+  panelGlobals[PANEL_CONTROL_KEY] = control;
 }
 
-export function artifactPanelScroll(): ArtifactPanelScroll | undefined {
-  return panelGlobals[PANEL_SCROLL_KEY];
+export function artifactPanelControl(): ArtifactPanelControl | undefined {
+  return panelGlobals[PANEL_CONTROL_KEY];
 }
+
+/** The scroll a key asks for while a dialog holds the keyboard: Shift+↑/↓ by lines, PgUp/PgDn by pages. */
+export function panelScrollFor(data: string): ArtifactPanelScrollBy | undefined {
+  if (matchesKey(data, Key.shift("up"))) return "line-up";
+  if (matchesKey(data, Key.shift("down"))) return "line-down";
+  if (matchesKey(data, Key.pageUp)) return "page-up";
+  if (matchesKey(data, Key.pageDown)) return "page-down";
+  return undefined;
+}
+
+/** The panel footer a dialog shows while it holds the keyboard. */
+export const DIALOG_PANEL_HINT = "Shift+↑↓ or PgUp/PgDn to scroll";
 
 /** The multi-select list's result, kept for its existing callers. */
 export type MultiSelectTuiResult = ChoiceTuiResult;
@@ -68,10 +91,13 @@ export function showChoiceTui(
       let pasting = false;
       let settled = false;
 
+      const panel = artifactPanelControl();
+      panel?.setDialogHint(DIALOG_PANEL_HINT);
       const finish = (result: ChoiceTuiResult | null) => {
         if (settled) return;
         settled = true;
         signal?.removeEventListener("abort", cancel);
+        panel?.setDialogHint(undefined);
         done(result);
       };
       const cancel = () => finish(null);
@@ -147,7 +173,7 @@ export function showChoiceTui(
             );
           }
           lines.push("");
-          const scrollHint = artifactPanelScroll() ? " - PgUp/PgDn scroll the file" : "";
+          const scrollHint = artifactPanelControl() ? " - Shift+Up/Down scroll the file" : "";
           add(
             theme.fg(
               "dim",
@@ -161,9 +187,10 @@ export function showChoiceTui(
         },
         invalidate() {},
         handleInput(data: string) {
-          const scroll = artifactPanelScroll();
-          if (scroll && (matchesKey(data, Key.pageUp) || matchesKey(data, Key.pageDown))) {
-            scroll(matchesKey(data, Key.pageUp) ? "page-up" : "page-down");
+          const by = panelScrollFor(data);
+          const control = artifactPanelControl();
+          if (by && control) {
+            control.scroll(by);
             return;
           }
           if (matchesKey(data, Key.up)) {

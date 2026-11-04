@@ -22,7 +22,7 @@ import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
 import { type ArtifactViewer, resolveArtifactPath, type ResolvedArtifactPath } from "./artifact-viewer.js";
-import { printable, withoutLastCharacter } from "./interaction-tui.js";
+import { DIALOG_PANEL_HINT, panelScrollFor, printable, withoutLastCharacter } from "./interaction-tui.js";
 import { askUser, type AskUserOutcome } from "./interactions.js";
 
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
@@ -156,6 +156,7 @@ export function showReviewTui(
     const showActive = () => {
       opened.add(active);
       viewer.show(ctx, items[active]!.target);
+      viewer.setDialogHint(`${DIALOG_PANEL_HINT}, or j/k`);
       refresh();
     };
     const move = (delta: number) => {
@@ -217,12 +218,17 @@ export function showReviewTui(
           const needsText = commenting === "changes_requested" && !draft.trim();
           add(theme.fg("dim", needsText ? " Type what should change · Esc back" : " Enter save · Esc back"));
         } else {
-          add(
-            theme.fg(
-              "dim",
-              " ↑↓ file · j/k PgUp/PgDn scroll it · a approve · c request changes · A approve the rest · Enter submit · Esc cancel"
-            )
-          );
+          // Wrapped, never cut off: the keys are the only way to finish.
+          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "a approve", "c request changes", "A approve the rest", "Enter submit", "Esc cancel"];
+          let line = "";
+          for (const key of keys) {
+            const next = line ? `${line} · ${key}` : key;
+            if (line && next.length + 1 > width) {
+              add(theme.fg("dim", ` ${line}`));
+              line = key;
+            } else line = next;
+          }
+          if (line) add(theme.fg("dim", ` ${line}`));
         }
         return lines;
       },
@@ -239,7 +245,9 @@ export function showReviewTui(
             states[active] = { decision: commenting, ...(comment ? { comment } : {}) };
             commenting = undefined;
             draft = "";
-            nextUndecided();
+            // Every file decided: nothing is left to do, so submit.
+            if (decided() === items.length) finish(results());
+            else nextUndecided();
             return;
           } else if (matchesKey(data, Key.backspace)) {
             draft = withoutLastCharacter(draft);
@@ -250,12 +258,13 @@ export function showReviewTui(
           refresh();
           return;
         }
-        if (matchesKey(data, Key.down) || matchesKey(data, Key.tab) || matchesKey(data, Key.ctrl("n"))) move(1);
+        const by = panelScrollFor(data);
+        if (by) viewer.scroll(by);
+        else if (matchesKey(data, Key.down) || matchesKey(data, Key.tab) || matchesKey(data, Key.ctrl("n"))) move(1);
         else if (matchesKey(data, Key.up) || matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.ctrl("p"))) move(-1);
-        else if (data === "j") viewer.scroll(1);
-        else if (data === "k") viewer.scroll(-1);
-        else if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.space)) viewer.scroll("page-down");
-        else if (matchesKey(data, Key.pageUp)) viewer.scroll("page-up");
+        else if (data === "j") viewer.scroll("line-down");
+        else if (data === "k") viewer.scroll("line-up");
+        else if (matchesKey(data, Key.space)) viewer.scroll("page-down");
         else if (data === "a") {
           commenting = "approved";
           refresh();
@@ -264,7 +273,7 @@ export function showReviewTui(
           refresh();
         } else if (data === "A") {
           for (const state of states) if (!state.decision) state.decision = "approved";
-          refresh();
+          finish(results());
         } else if (matchesKey(data, Key.enter)) finish(results());
         else if (matchesKey(data, Key.escape)) finish(null);
       },

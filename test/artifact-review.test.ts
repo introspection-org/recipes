@@ -148,13 +148,33 @@ describe("review_artifacts in the terminal", () => {
     const { fake, result } = run("tui");
     await flush();
     const list = fake.components.find((c) => !c.overlay)!.component;
-    type(list, ["A", "\r"]);
+    type(list, ["A"]); // approves the rest and submits
     const reviews = (await result).details.reviews as ArtifactReview[];
     expect(reviews.map((r) => [r.decision, r.opened])).toEqual([
       ["approved", true],
       ["approved", false],
       ["approved", false],
     ]);
+  });
+
+  it("submits on its own once the last file is decided", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const list = fake.components.find((c) => !c.overlay)!.component;
+    type(list, ["a", "\r", "a", "\r", "c", ..."fix it", "\r"]);
+    const reviews = (await result).details.reviews as ArtifactReview[];
+    expect(reviews.map((r) => r.decision)).toEqual(["approved", "approved", "changes_requested"]);
+  });
+
+  it("wraps its key hint rather than cutting it off", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const list = fake.components.find((c) => !c.overlay)!.component;
+    const lines = list.render(60);
+    expect(lines.every((line) => line.length <= 60)).toBe(true);
+    expect(lines.join("\n")).toContain("Esc cancel");
+    type(list, ["\x1b"]);
+    await result;
   });
 
   it("declines when dismissed, approving nothing", async () => {
@@ -250,10 +270,11 @@ describe("registration", () => {
 });
 
 describe("a question with the artifact panel open", () => {
-  it("scrolls the panel with PgUp/PgDn and says so in its hint", async () => {
-    const { showChoiceTui, setArtifactPanelScroll } = await import("../src/interaction-tui.js");
+  it("scrolls the panel with Shift+Up/Down and PgUp/PgDn, and sets the panel's footer while open", async () => {
+    const { showChoiceTui, setArtifactPanelControl } = await import("../src/interaction-tui.js");
     const scrolled: string[] = [];
-    setArtifactPanelScroll((page) => scrolled.push(page));
+    const hints: Array<string | undefined> = [];
+    setArtifactPanelControl({ scroll: (by) => scrolled.push(by), setDialogHint: (hint) => hints.push(hint) });
     try {
       const fake = fakeCtx(dir, "tui");
       const answer = showChoiceTui("Approve?", [{ label: "Yes" }, { label: "No" }], fake.ctx.ui as any, undefined, {
@@ -261,12 +282,26 @@ describe("a question with the artifact panel open", () => {
         typedLabel: "type",
       });
       const list = fake.components[0]!.component;
-      expect(list.render(120).join("\n")).toContain("PgUp/PgDn scroll the file");
-      type(list, ["\x1b[6~", "\x1b[5~", "1"]);
-      expect(scrolled).toEqual(["page-down", "page-up"]);
+      expect(list.render(120).join("\n")).toContain("Shift+Up/Down scroll the file");
+      type(list, ["\x1b[1;2B", "\x1b[1;2A", "\x1b[6~", "\x1b[5~", "1"]);
+      expect(scrolled).toEqual(["line-down", "line-up", "page-down", "page-up"]);
       expect(await answer).toEqual({ selected: [0] });
+      expect(hints).toEqual(["Shift+↑↓ or PgUp/PgDn to scroll", undefined]);
     } finally {
-      setArtifactPanelScroll(undefined);
+      setArtifactPanelControl(undefined);
     }
+  });
+});
+
+describe("the panel during a review", () => {
+  it("gives the review's scroll keys in its footer, not Alt+R or /recipe close", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const panel = fake.components.filter((c) => c.overlay && !c.closed).at(-1)!.component;
+    const footer = panel.render(80).at(-1)!;
+    expect(footer).toContain("Shift+↑↓");
+    expect(footer).not.toContain("Alt+R");
+    type(fake.components.find((c) => !c.overlay)!.component, ["\x1b"]);
+    await result;
   });
 });
