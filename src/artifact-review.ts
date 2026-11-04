@@ -24,6 +24,7 @@ import {
   Markdown,
   matchesKey,
   truncateToWidth,
+  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
@@ -311,21 +312,41 @@ export function showReviewTui(
             add(` ${title}  ${tabs.join(" ")}`);
           } else add(` ${theme.bold(title)}`);
           add();
+          const inner = Math.max(10, width - 4);
+          const border = (text: string) => theme.fg("dim", text);
+          let body: string[];
+          let scrollable = false;
           if (onSubmitTab()) {
-            add(theme.bold(` ${decided()} of ${items.length} decided`));
-            if (decided() < items.length)
-              add(
+            const count = (decision: ReviewDecision) =>
+              items.filter(
+                (_, index) =>
+                  (states[index]!.decision ?? "not_reviewed") === decision,
+              ).length;
+            add(
+              theme.bold(" Summary") +
                 theme.fg(
                   "dim",
-                  " Files left undecided are sent as not reviewed: they aren't approved.",
+                  `  ${count("approved")} approved · ${count("changes_requested")} changes requested · ${count("not_reviewed")} not reviewed`,
                 ),
-              );
+            );
+            body = [];
             items.forEach((item, index) => {
               const state = states[index]!;
-              const comment = state.comment
-                ? theme.fg("dim", `  "${state.comment}"`)
-                : "";
-              add(`   ${mark(index)} ${item.label}${comment}`);
+              const [icon, word, color] =
+                state.decision === "approved"
+                  ? (["✓", "approved", "success"] as const)
+                  : state.decision === "changes_requested"
+                    ? (["✎", "changes requested", "warning"] as const)
+                    : (["○", "not reviewed, so not approved", "dim"] as const);
+              body.push(
+                `${theme.fg(color, icon)} ${item.label}  ${theme.fg(color, word)}`,
+              );
+              if (state.comment)
+                for (const line of wrapTextWithAnsi(
+                  `"${state.comment}"`,
+                  Math.max(10, inner - 2),
+                ))
+                  body.push(`  ${theme.fg("dim", line)}`);
             });
           } else {
             const item = items[active]!;
@@ -333,26 +354,29 @@ export function showReviewTui(
               theme.bold(` ${item.label}`) +
                 theme.fg("dim", `  ${item.target.relativePath}`),
             );
-            const inner = Math.max(10, width - 4);
-            const body = document(active).render(inner);
-            const rows = tui.terminal?.rows ?? 24;
-            lastBodyHeight = Math.max(4, Math.min(body.length, rows - 14));
-            lastMaxScroll = Math.max(0, body.length - lastBodyHeight);
-            const top = Math.min(scrolls[active]!, lastMaxScroll);
-            const border = (text: string) => theme.fg("dim", text);
-            add(border(` ┌${"─".repeat(inner + 1)}`));
-            for (const line of body.slice(top, top + lastBodyHeight))
-              add(`${border(" │ ")}${line}`);
-            const more =
-              lastMaxScroll > 0
-                ? ` ${top + 1}-${Math.min(body.length, top + lastBodyHeight)} of ${body.length} `
-                : "";
-            add(
-              border(
-                ` └${"─".repeat(Math.max(0, inner + 1 - more.length))}${more}`,
-              ),
-            );
+            body = document(active).render(inner);
+            scrollable = true;
           }
+          const rows = tui.terminal?.rows ?? 24;
+          lastBodyHeight = Math.max(4, Math.min(body.length, rows - 14));
+          lastMaxScroll = scrollable
+            ? Math.max(0, body.length - lastBodyHeight)
+            : 0;
+          const top = scrollable
+            ? Math.min(scrolls[active]!, lastMaxScroll)
+            : 0;
+          add(border(` ┌${"─".repeat(inner + 1)}`));
+          for (const line of body.slice(top, top + lastBodyHeight))
+            add(`${border(" │ ")}${line}`);
+          const more =
+            lastMaxScroll > 0
+              ? ` ${top + 1}-${Math.min(body.length, top + lastBodyHeight)} of ${body.length} `
+              : "";
+          add(
+            border(
+              ` └${"─".repeat(Math.max(0, inner + 1 - more.length))}${more}`,
+            ),
+          );
           add();
           if (commenting) {
             add(

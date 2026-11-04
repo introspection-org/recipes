@@ -230,7 +230,9 @@ describe("review_artifacts in the terminal", () => {
     const review = dialog(fake);
     type(review, ["\x1b[D", "\x1b[Z"]); // left and Shift+Tab on the first file stay there
     type(review, [RIGHT, RIGHT, RIGHT, RIGHT]); // past the last file to Submit, and no further
-    expect(shown(review)).toContain("0 of 3 decided");
+    expect(shown(review)).toContain(
+      "0 approved · 0 changes requested · 3 not reviewed",
+    );
     type(review, [DOWN, "\r"]); // "Approve the rest and submit"
     const reviews = (await result).details.reviews as ArtifactReview[];
     expect(reviews.map((r) => [r.decision, r.opened])).toEqual([
@@ -244,7 +246,12 @@ describe("review_artifacts in the terminal", () => {
     const { fake, result } = run("tui");
     await flush();
     type(dialog(fake), ["1", "\r", "2", ..."fix it", "\r"]);
-    expect(shown(dialog(fake))).toContain("3 of 3 decided");
+    const summary = shown(dialog(fake));
+    expect(summary).toContain(
+      "2 approved · 1 changes requested · 0 not reviewed",
+    );
+    expect(summary).toMatch(/C3: skips a question\s+changes requested/);
+    expect(summary).toContain('"fix it"');
     type(dialog(fake), ["\r"]);
     const reviews = (await result).details.reviews as ArtifactReview[];
     expect(reviews.map((r) => r.decision)).toEqual([
