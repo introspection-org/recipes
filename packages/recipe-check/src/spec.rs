@@ -13,6 +13,11 @@
 //!
 //! Unlike recipe checking, parsing is strict: any invalid definition fails
 //! the whole batch with a [`JudgeSpecError`] instead of a diagnostic report.
+//!
+//! It also types the front matter of an eval case file, `evals/cases/<id>.md`
+//! ([`EvalCase`], [`parse_eval_case`]). That parse is lenient where the
+//! judge parse is strict: unknown keys are allowed, because the other
+//! front-matter fields and the body are for people.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
@@ -754,6 +759,167 @@ fn gate_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     })
 }
 
+/// How a case is checked, from a case file's `check`.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum EvalCaseCheck {
+    /// A verifier scores it; only these cases get an implementation.
+    Code,
+    /// The owner or a reviewer checks it.
+    Person,
+    /// Left for the improve loop.
+    Later,
+}
+
+/// The real conversation a case came from. Provenance only: a run never
+/// fetches it.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct EvalCaseConversation {
+    #[serde(deserialize_with = "required_scalar")]
+    pub id: String,
+    /// Set only when the conversation ran as a platform task.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<u64>,
+}
+
+/// The front matter of a case file, `evals/cases/<id>.md`: the fields
+/// evaluation tooling reads. Every other key, and the body, is for people, so
+/// unknown keys are allowed. A blank scalar (`approved_by:`) reads as `None`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct EvalCase {
+    /// The file name without `.md`, when written.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<EvalCaseCheck>,
+    /// Who approved the case. With `approved_at` and `approved_in` empty too,
+    /// the case is a draft.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approved_by: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approved_at: Option<String>,
+    /// The message the approval was given in.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approved_in: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<EvalCaseConversation>,
+    /// The `/v1/issues` id of the hypothesis the case tests: a UUID.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub issue: Option<String>,
+}
+
+impl EvalCase {
+    /// The approval fields that are empty, in declaration order.
+    pub fn missing_approval(&self) -> Vec<&'static str> {
+        [
+            ("approved_by", &self.approved_by),
+            ("approved_at", &self.approved_at),
+            ("approved_in", &self.approved_in),
+        ]
+        .into_iter()
+        .filter(|(_, value)| value.is_none())
+        .map(|(name, _)| name)
+        .collect()
+    }
+
+    /// Whether every approval field is filled in.
+    pub fn is_approved(&self) -> bool {
+        self.missing_approval().is_empty()
+    }
+}
+
+/// Error from [`parse_eval_case`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvalCaseError(String);
+
+impl fmt::Display for EvalCaseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for EvalCaseError {}
+
+/// Parse a case file's YAML front matter (between `---` lines at the top),
+/// read as YAML 1.2. A file without front matter is an error: a case's
+/// approval lives there.
+pub fn parse_eval_case(content: &str) -> Result<EvalCase, EvalCaseError> {
+    let normalized = content.trim_start_matches('\u{feff}').replace("\r\n", "\n");
+    let yaml = normalized
+        .strip_prefix("---\n")
+        .and_then(|rest| {
+            if rest.starts_with("---") {
+                return Some("");
+            }
+            rest.find("\n---").map(|end| &rest[..end])
+        })
+        .ok_or_else(|| EvalCaseError("has no YAML front matter between '---' lines".into()))?;
+    if yaml.trim().is_empty() {
+        return Ok(EvalCase::default());
+    }
+    serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true })
+        .map_err(|err| EvalCaseError(format!("front matter is not a valid case: {err}")))
+}
+
+/// A YAML scalar read as text, so `approved_at: 2026-11-04` and
+/// `approved_in: 1234` both read; blank reads as `None`.
+fn optional_scalar<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let text = match Value::deserialize(deserializer)? {
+        Value::Null => return Ok(None),
+        Value::String(text) => text,
+        Value::Number(number) => number.to_string(),
+        Value::Bool(value) => value.to_string(),
+        other => {
+            return Err(D::Error::custom(format!(
+                "expected a scalar, found {other}"
+            )))
+        }
+    };
+    let text = text.trim();
+    Ok((!text.is_empty()).then(|| text.to_owned()))
+}
+
+fn required_scalar<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    optional_scalar(deserializer)?.ok_or_else(|| D::Error::custom("must not be empty"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1174,6 +1340,69 @@ questions:
                 parse_mission_judge_definitions(&[source("judges/booking.yaml", &broken)]).is_err(),
                 "{broken}"
             );
+        }
+    }
+
+    #[test]
+    fn eval_case_reads_its_front_matter() {
+        let case = parse_eval_case(
+            "\u{feff}---\r\nid: C3\r\ntitle: The owner's words\r\ncheck: code\r\n\
+             inputs:\r\n  - { name: a.docx, sha256: abc, location: here }\r\n\
+             sources: [documents]\r\napproved_by: owner@example.com\r\n\
+             approved_at: 2026-11-04\r\napproved_in: 1234\r\n\
+             conversation: { id: conv_1, turn: 3, extra: kept out }\r\n\
+             issue: 0b6f2c1e-5a4d-4c3b-9a8e-7f6d5c4b3a21\r\n---\r\n\r\n## Situation\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            case,
+            EvalCase {
+                id: Some("C3".into()),
+                check: Some(EvalCaseCheck::Code),
+                approved_by: Some("owner@example.com".into()),
+                approved_at: Some("2026-11-04".into()),
+                approved_in: Some("1234".into()),
+                conversation: Some(EvalCaseConversation {
+                    id: "conv_1".into(),
+                    task_id: None,
+                    turn: Some(3),
+                }),
+                issue: Some("0b6f2c1e-5a4d-4c3b-9a8e-7f6d5c4b3a21".into()),
+            }
+        );
+        assert!(case.is_approved());
+    }
+
+    #[test]
+    fn eval_case_blank_fields_are_a_draft() {
+        let case = parse_eval_case(
+            "---\nid: C1\ncheck: later\napproved_by:\napproved_at: ''\napproved_in: '  '\n---\n",
+        )
+        .unwrap();
+        assert_eq!(case.check, Some(EvalCaseCheck::Later));
+        assert_eq!(
+            case.missing_approval(),
+            ["approved_by", "approved_at", "approved_in"]
+        );
+        assert!(!case.is_approved());
+        assert_eq!(
+            parse_eval_case("---\n---\nbody\n").unwrap(),
+            EvalCase::default()
+        );
+    }
+
+    #[test]
+    fn eval_case_errors() {
+        for (content, needle) in [
+            ("# just a body\n", "has no YAML front matter"),
+            ("---\nid: C1\n", "has no YAML front matter"),
+            ("---\ncheck: maybe\n---\n", "not a valid case"),
+            ("---\nconversation: { turn: 1 }\n---\n", "not a valid case"),
+            ("---\napproved_by: [a, b]\n---\n", "expected a scalar"),
+            ("---\n- a list\n---\n", "not a valid case"),
+        ] {
+            let err = parse_eval_case(content).unwrap_err().to_string();
+            assert!(err.contains(needle), "{content:?}: {err}");
         }
     }
 }

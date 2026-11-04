@@ -1334,7 +1334,12 @@ const EVALS_TASK_MISSING: &str = "pi.evals_task_missing";
 const EVALS_NOT_IGNORED: &str = "pi.evals_not_ignored";
 const EVALS_IGNORE_UNREADABLE: &str = "pi.evals_recipeignore_unreadable";
 const EVALS_STRAY_CONTENT: &str = "pi.evals_stray_content";
-const EVALS_SHAPE_HELP: &str = "use { suites: [{ type: harbor | vitest, path }], lib, sources, fakes } with package-relative paths";
+const EVALS_CASE_UNKNOWN: &str = "pi.evals_case_unknown";
+const EVALS_CASE_DUPLICATE: &str = "pi.evals_case_duplicate";
+const EVALS_CASE_UNAPPROVED: &str = "pi.evals_case_unapproved";
+const EVALS_CASE_ROW_MISSING_ID: &str = "pi.evals_case_row_missing_id";
+const EVALS_CASE_INVALID: &str = "pi.evals_case_invalid";
+const EVALS_SHAPE_HELP: &str = "use { suites: [{ type: harbor | vitest, path }], lib, sources, fakes, cases } with package-relative paths";
 const EVALS_PATH_HELP: &str =
     "use a package-relative path with / separators, no '..', and no glob characters";
 const EVALS_IGNORE_HELP: &str =
@@ -1343,10 +1348,13 @@ const DEFAULT_EVAL_SUITES: [(EvalSuiteKind, &str); 2] = [
     (EvalSuiteKind::Vitest, "evals/vitest"),
     (EvalSuiteKind::Harbor, "evals/harbor"),
 ];
-const EVAL_SUPPORT_KEYS: [(&str, &str); 3] = [
+/// Support paths and their defaults. `fakes` sits at the Recipe root because
+/// local testing uses the same fakes as evals.
+const EVAL_SUPPORT_KEYS: [(&str, &str); 4] = [
     ("lib", "evals/lib"),
     ("sources", "evals/sources"),
-    ("fakes", "evals/fakes"),
+    ("fakes", "fakes"),
+    ("cases", "evals/cases"),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1368,11 +1376,18 @@ struct EvalSuite {
 #[derive(Debug, Clone, Default)]
 struct EvalLayout {
     suites: Vec<EvalSuite>,
-    /// `(key, path)` for `lib`, `sources` and `fakes`.
+    /// `(key, path)` for `lib`, `sources`, `fakes` and `cases`.
     support: Vec<(&'static str, String)>,
 }
 
 impl EvalLayout {
+    fn support_path(&self, key: &str) -> Option<&str> {
+        self.support
+            .iter()
+            .find(|(existing, _)| *existing == key)
+            .map(|(_, path)| path.as_str())
+    }
+
     /// Every eval path, suites first, deduplicated.
     fn paths(&self) -> Vec<&str> {
         let mut seen = BTreeSet::new();
@@ -1414,6 +1429,7 @@ fn validate_evals_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
     }
     validate_eval_suites(&layout, ctx);
     validate_stray_eval_content(&layout, ctx);
+    validate_eval_cases(&layout, ctx);
 }
 
 fn eval_layout(value: Option<&JsonValue>, ctx: &mut CheckContext) -> Option<EvalLayout> {
@@ -1430,7 +1446,10 @@ fn eval_layout(value: Option<&JsonValue>, ctx: &mut CheckContext) -> Option<Eval
         return None;
     };
     for key in evals.keys() {
-        if !matches!(key.as_str(), "suites" | "lib" | "sources" | "fakes") {
+        if !matches!(
+            key.as_str(),
+            "suites" | "lib" | "sources" | "fakes" | "cases"
+        ) {
             ctx.error(
                 EVALS_INVALID,
                 PACKAGE_JSON,
@@ -1671,11 +1690,16 @@ fn validate_eval_ignore(layout: &EvalLayout, ctx: &mut CheckContext) {
     };
     for path in existing {
         if !recipe_ignore_excludes_dir(&path, &patterns) {
+            let help = if path == "evals" || path.starts_with("evals/") {
+                EVALS_IGNORE_HELP.to_owned()
+            } else {
+                format!("add a '{path}/' line to .recipeignore so eval-only files never reach a deployed runtime")
+            };
             ctx.warning(
                 EVALS_NOT_IGNORED,
                 RECIPE_IGNORE,
                 format!("eval path '{path}' is not excluded by .recipeignore"),
-                Some(EVALS_IGNORE_HELP),
+                Some(help),
             );
         }
     }
@@ -1710,6 +1734,301 @@ fn validate_stray_eval_content(layout: &EvalLayout, ctx: &mut CheckContext) {
             Some("move it under an eval suite (evals/vitest or evals/harbor/<task>) or declare its location in package.json#pi.evals"),
         );
     }
+}
+
+/// One runner's implementation of a case: a Vitest row or a Harbor task.
+struct CaseImplementation {
+    kind: EvalSuiteKind,
+    case: String,
+    /// The file or folder diagnostics point at.
+    path: String,
+    span: Option<Span>,
+    /// How messages name it, such as "row 3 of 'evals/vitest/a.eval.jsonl'".
+    label: String,
+}
+
+/// Link implementations to case files: every implementation names a case
+/// that exists, at most one per runner, and an implemented case is approved.
+/// All of it warns; a draft case is how the improve loop proposes one.
+fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
+    let cases_dir = layout.support_path("cases").unwrap_or("evals/cases");
+    // Case id (the file name) -> its file and, when it parsed, front matter.
+    let mut cases: BTreeMap<String, (String, Option<spec::EvalCase>)> = BTreeMap::new();
+    let files: Vec<String> = ctx
+        .child_files(cases_dir)
+        .into_iter()
+        .filter(|file| file.ends_with(".md"))
+        .map(str::to_owned)
+        .collect();
+    for file in files {
+        let name = file.rsplit('/').next().unwrap_or(&file);
+        let id = name.trim_end_matches(".md").to_owned();
+        let parsed = match ctx.content(&file).map(spec::parse_eval_case) {
+            None => None,
+            Some(Err(err)) => {
+                ctx.warning(
+                    EVALS_CASE_INVALID,
+                    file.clone(),
+                    format!("case file '{file}' {err}"),
+                    Some(EVALS_CASE_HELP),
+                );
+                None
+            }
+            Some(Ok(case)) => {
+                validate_case_fields(&file, &id, &case, ctx);
+                Some(case)
+            }
+        };
+        cases.insert(id, (file, parsed));
+    }
+
+    let mut implementations = vitest_case_rows(layout, ctx);
+    implementations.extend(harbor_case_tasks(layout, ctx));
+
+    for implementation in &implementations {
+        if cases.contains_key(&implementation.case) {
+            continue;
+        }
+        ctx.push(
+            EVALS_CASE_UNKNOWN,
+            Severity::Warning,
+            implementation.path.clone(),
+            implementation.span,
+            format!(
+                "{} names case '{}', which has no {cases_dir}/{}.md",
+                implementation.label, implementation.case, implementation.case
+            ),
+            Some(format!(
+                "write the case file {cases_dir}/{}.md, or name an existing case",
+                implementation.case
+            )),
+        );
+    }
+
+    let mut first: BTreeMap<(String, &'static str), &CaseImplementation> = BTreeMap::new();
+    for implementation in &implementations {
+        let runner = match implementation.kind {
+            EvalSuiteKind::Harbor => "harbor",
+            EvalSuiteKind::Vitest => "vitest",
+        };
+        let key = (implementation.case.clone(), runner);
+        let Some(earlier) = first.get(&key) else {
+            first.insert(key, implementation);
+            continue;
+        };
+        let message = format!(
+            "case '{}' has a second {runner} implementation: {} repeats {}",
+            implementation.case, implementation.label, earlier.label
+        );
+        ctx.push(
+            EVALS_CASE_DUPLICATE,
+            Severity::Warning,
+            implementation.path.clone(),
+            implementation.span,
+            message,
+            Some("give a case at most one implementation per runner, or give the second its own case"),
+        );
+    }
+
+    let implemented: BTreeSet<&str> = implementations
+        .iter()
+        .map(|implementation| implementation.case.as_str())
+        .collect();
+    for (id, (file, case)) in &cases {
+        let Some(case) = case else { continue };
+        let missing = case.missing_approval();
+        if missing.is_empty() || !implemented.contains(id.as_str()) {
+            continue;
+        }
+        ctx.warning(
+            EVALS_CASE_UNAPPROVED,
+            file.clone(),
+            format!(
+                "case '{id}' has an implementation but is not approved: {} empty",
+                missing.join(", ")
+            ),
+            Some(
+                "have the owner approve the case: fill in approved_by, approved_at and approved_in",
+            ),
+        );
+    }
+}
+
+const EVALS_CASE_HELP: &str = "start the case file with YAML front matter: id (the file name without .md), check (code, person or later), approved_by, approved_at, approved_in, and optional conversation and issue";
+
+/// The front-matter rules a case file can break on its own.
+fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut CheckContext) {
+    if let Some(written) = case.id.as_deref().filter(|written| *written != id) {
+        ctx.warning(
+            EVALS_CASE_INVALID,
+            file.to_owned(),
+            format!(
+                "case file '{file}' has id '{written}', but a case's id is its file name, '{id}'"
+            ),
+            Some("set id to the file name without .md, or rename the file"),
+        );
+    }
+    if let Some(issue) = case.issue.as_deref().filter(|issue| !is_uuid(issue)) {
+        ctx.warning(
+            EVALS_CASE_INVALID,
+            file.to_owned(),
+            format!("case file '{file}' has issue '{issue}', which is not a UUID"),
+            Some("set issue to the /v1/issues id of the hypothesis the case tests, or remove it"),
+        );
+    }
+}
+
+/// `8-4-4-4-12` hexadecimal digits, in either case.
+fn is_uuid(value: &str) -> bool {
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(group, len)| group.len() == len && group.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// The `case` of every JSON-object row in each Vitest suite's `*.eval.jsonl`
+/// files, reporting rows without one. Lines that are not JSON objects are
+/// left to the runner, and rows built in a `.eval.ts` are not read. Suite
+/// paths may nest, so each file is read once.
+fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImplementation> {
+    let mut seen = BTreeSet::new();
+    let files: Vec<(String, String)> = layout
+        .suites
+        .iter()
+        .filter(|suite| suite.kind == EvalSuiteKind::Vitest)
+        .flat_map(|suite| {
+            let prefix = format!("{}/", suite.path);
+            ctx.files
+                .range(prefix.clone()..)
+                .take_while(move |(path, _)| path.starts_with(&prefix))
+                .filter(|(path, _)| path.ends_with(".eval.jsonl"))
+                .filter_map(|(path, content)| Some((path.clone(), content.clone()?)))
+        })
+        .filter(|(path, _)| seen.insert(path.clone()))
+        .collect();
+    let mut rows = Vec::new();
+    for (file, content) in files {
+        for (index, line) in content.lines().enumerate() {
+            let Ok(JsonValue::Object(row)) = serde_json::from_str::<JsonValue>(line.trim()) else {
+                continue;
+            };
+            let span = Some(Span {
+                line: index + 1,
+                column: 1,
+            });
+            let label = format!("row {} of '{file}'", index + 1);
+            match row.get("case").and_then(JsonValue::as_str).map(str::trim) {
+                Some(case) if !case.is_empty() => rows.push(CaseImplementation {
+                    kind: EvalSuiteKind::Vitest,
+                    case: case.to_owned(),
+                    path: file.clone(),
+                    span,
+                    label,
+                }),
+                _ => ctx.push(
+                    EVALS_CASE_ROW_MISSING_ID,
+                    Severity::Warning,
+                    file.clone(),
+                    span,
+                    format!("{label} has no case"),
+                    Some("add \"case\": \"<id>\" naming its evals/cases/<id>.md; schema_version 3 requires it"),
+                ),
+            }
+        }
+    }
+    rows
+}
+
+/// Each Harbor task's case: `[metadata] case` in its `task.toml`, or else the
+/// folder name. A task whose `task.toml` content was not supplied is skipped.
+fn harbor_case_tasks(layout: &EvalLayout, ctx: &CheckContext) -> Vec<CaseImplementation> {
+    let mut tasks = Vec::new();
+    let mut seen = BTreeSet::new();
+    for suite in layout
+        .suites
+        .iter()
+        .filter(|suite| suite.kind == EvalSuiteKind::Harbor)
+    {
+        for task in ctx.child_dirs(&suite.path) {
+            if !seen.insert(task.clone()) {
+                continue;
+            }
+            let Some(content) = ctx.content(&format!("{task}/task.toml")) else {
+                continue;
+            };
+            let folder = task.rsplit('/').next().unwrap_or(&task).to_owned();
+            let (case, label) = match toml_metadata_case(content) {
+                Some(case) => (case, format!("Harbor task '{task}' ([metadata] case)")),
+                None => (folder, format!("Harbor task '{task}' (by its folder name)")),
+            };
+            tasks.push(CaseImplementation {
+                kind: EvalSuiteKind::Harbor,
+                case,
+                path: task.clone(),
+                span: None,
+                label,
+            });
+        }
+    }
+    tasks
+}
+
+/// `case` in a `task.toml`'s `[metadata]` table (or a root `metadata.case`),
+/// as a basic or literal string. A line reader, not a TOML parser: it does
+/// not see an inline `metadata = { case = ... }` table.
+fn toml_metadata_case(content: &str) -> Option<String> {
+    let mut table = String::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if let Some(header) = line.strip_prefix('[') {
+            table = header
+                .trim_start_matches('[')
+                .split(']')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_owned();
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key: String = key
+            .split('.')
+            .map(|part| part.trim().trim_matches(|c| c == '"' || c == '\''))
+            .collect::<Vec<_>>()
+            .join(".");
+        let named =
+            (table == "metadata" && key == "case") || (table.is_empty() && key == "metadata.case");
+        if named {
+            return toml_string(value.trim()).filter(|case| !case.trim().is_empty());
+        }
+    }
+    None
+}
+
+/// A one-line TOML basic (`"..."`) or literal (`'...'`) string.
+fn toml_string(value: &str) -> Option<String> {
+    if let Some(rest) = value.strip_prefix('\'') {
+        return rest.split_once('\'').map(|(text, _)| text.to_owned());
+    }
+    let rest = value.strip_prefix('"')?;
+    let mut text = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(text),
+            '\\' => match chars.next()? {
+                'n' => text.push('\n'),
+                't' => text.push('\t'),
+                other => text.push(other),
+            },
+            other => text.push(other),
+        }
+    }
+    None
 }
 
 fn toml_has_verifier_table(content: &str) -> bool {
@@ -6159,6 +6478,7 @@ mod tests {
     }
 
     const HARBOR_TASK_TOML: &str = "version = \"1.0\"\n\n[verifier]\ntimeout_sec = 120\n";
+    const APPROVED_CASE: &str = "---\nid: greet\ntitle: Greets the user\ncheck: code\napproved_by: owner@example.com\napproved_at: 2026-11-04\napproved_in: msg_1\n---\n\n## Situation\nThe user says hello.\n";
 
     /// A Recipe whose `pi` carries `evals` (when given) plus `extra` files.
     fn evals_recipe(evals: Option<JsonValue>, extra: &[(&str, &str)]) -> RecipeFiles {
@@ -6217,7 +6537,9 @@ mod tests {
                 ("evals/vitest-slow/long.eval.ts", "export {};\n"),
                 ("evals/lib/grader.ts", "export {};\n"),
                 ("evals/sources/gen.ts", "export {};\n"),
+                // Fakes kept under evals/ pass by naming the path.
                 ("evals/fakes/hello-mcp/server.ts", "export {};\n"),
+                ("evals/cases/greet.md", APPROVED_CASE),
             ],
         );
         let report = check_recipe_files(&input);
@@ -6412,6 +6734,7 @@ mod tests {
             &[
                 (".recipeignore", "evals/\n"),
                 ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                ("evals/cases/greet.md", APPROVED_CASE),
                 ("evals/harbor/shared/helpers.py", "\n"),
                 ("evals/harbor/README.md", "# Tasks\n"),
             ],
@@ -6441,17 +6764,17 @@ mod tests {
     fn evals_recipeignore_coverage() {
         let tree = [
             ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
-            ("evals/fakes/hello-mcp/server.ts", "export {};\n"),
+            ("fakes/hello-mcp/server.ts", "export {};\n"),
         ];
         let covered = [
-            "evals/\n",
-            "/evals\n",
-            "evals\n",
-            "evals/*\n",
-            "evals/harbor/\nevals/fakes/\n",
+            "evals/\nfakes/\n",
+            "/evals\n/fakes\n",
+            "evals\nfakes\n",
+            "evals/*\nfakes/\n",
+            "evals/harbor/\nfakes/\n",
             // A negation below an excluded directory cannot re-include it.
-            "evals/\n!evals/harbor/greet\n",
-            "evals/\n!evals/fakes/\n",
+            "evals/\nfakes/\n!evals/harbor/greet\n",
+            "evals/\nfakes/\n!fakes/hello-mcp/\n",
         ];
         for ignore in covered {
             let mut files = tree.to_vec();
@@ -6465,9 +6788,9 @@ mod tests {
         }
 
         let partial = [
-            ("evals/harbor/\n", "'evals/fakes'"),
-            ("evals/harbor/*/tests/\nevals/fakes\n", "'evals/harbor'"),
-            ("evals/fakes/hello-mcp\nevals/harbor/\n", "'evals/fakes'"),
+            ("evals/\n", "'fakes'"),
+            ("evals/harbor/*/tests/\nfakes\n", "'evals/harbor'"),
+            ("fakes/hello-mcp\nevals/harbor/\n", "'fakes'"),
         ];
         for (ignore, needle) in partial {
             let mut files = tree.to_vec();
@@ -6507,6 +6830,515 @@ mod tests {
             "pi.evals_not_ignored",
             Severity::Warning,
             "eval path 'evals/harbor' is not excluded by .recipeignore",
+        );
+    }
+
+    /// A case file with `front` as its front matter.
+    fn case_file(front: &str) -> String {
+        format!("---\n{front}---\n\n## Situation\nSomething happens.\n")
+    }
+
+    fn approved(id: &str) -> String {
+        case_file(&format!(
+            "id: {id}\ncheck: code\napproved_by: owner@example.com\napproved_at: 2026-11-04\napproved_in: msg_1\n"
+        ))
+    }
+
+    fn draft(id: &str) -> String {
+        case_file(&format!(
+            "id: {id}\ncheck: code\napproved_by:\napproved_at:\napproved_in:\n"
+        ))
+    }
+
+    /// The `pi.evals_case_*` diagnostics as `(code, path, message)`, sorted.
+    fn case_diagnostics(report: &Report) -> Vec<(String, String, String)> {
+        let mut found: Vec<(String, String, String)> = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code.starts_with("pi.evals_case_"))
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.severity, Severity::Warning, "{diagnostic:?}");
+                (
+                    diagnostic.code.clone(),
+                    diagnostic.path.clone(),
+                    diagnostic.message.clone(),
+                )
+            })
+            .collect();
+        found.sort();
+        found
+    }
+
+    fn cases_report(evals: JsonValue, extra: &[(&str, &str)]) -> Report {
+        let mut files = vec![(".recipeignore", "evals/\nfakes/\n")];
+        files.extend_from_slice(extra);
+        let report = check_recipe_files(&evals_recipe(Some(evals), &files));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        report
+    }
+
+    #[test]
+    fn evals_case_linked_layout_is_clean() {
+        let c1 = approved("C1");
+        let c2 = approved("C2");
+        let report = cases_report(
+            json!({}),
+            &[
+                (
+                    "evals/vitest/greet.eval.jsonl",
+                    "{\"schema_version\":3,\"case\":\"C1\",\"name\":\"greets\"}\n\n{\"schema_version\":3,\"case\":\"C2\"}\n",
+                ),
+                ("evals/vitest/greet.eval.ts", "export {};\n"),
+                // One implementation per runner: C1 also runs on Harbor.
+                ("evals/harbor/C1/task.toml", HARBOR_TASK_TOML),
+                ("evals/cases/C1.md", &c1),
+                ("evals/cases/C2.md", &c2),
+                // A synthetic input beside the case files is not a case.
+                ("evals/cases/inputs/brief.txt", "brief\n"),
+                ("fakes/hello-mcp/server.ts", "export {};\n"),
+            ],
+        );
+        // Case files are no stray eval content, and nothing else fires.
+        assert!(
+            evals_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn evals_case_unknown_warns() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({}),
+            &[
+                (
+                    "evals/vitest/greet.eval.jsonl",
+                    "{\"case\":\"C1\"}\n{\"case\":\"C9\"}\n",
+                ),
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                (
+                    "evals/harbor/renamed/task.toml",
+                    "[metadata]\ncase = \"C7\"\ncontract = 1\n\n[verifier]\ntimeout_sec = 1\n",
+                ),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [
+                (
+                    "pi.evals_case_unknown".into(),
+                    "evals/harbor/greet".into(),
+                    "Harbor task 'evals/harbor/greet' (by its folder name) names case 'greet', which has no evals/cases/greet.md".into(),
+                ),
+                (
+                    "pi.evals_case_unknown".into(),
+                    "evals/harbor/renamed".into(),
+                    "Harbor task 'evals/harbor/renamed' ([metadata] case) names case 'C7', which has no evals/cases/C7.md".into(),
+                ),
+                (
+                    "pi.evals_case_unknown".into(),
+                    "evals/vitest/greet.eval.jsonl".into(),
+                    "row 2 of 'evals/vitest/greet.eval.jsonl' names case 'C9', which has no evals/cases/C9.md".into(),
+                ),
+            ]
+        );
+        let row = report
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.path == "evals/vitest/greet.eval.jsonl")
+            .unwrap();
+        assert_eq!(row.span, Some(Span { line: 2, column: 1 }));
+    }
+
+    #[test]
+    fn evals_case_harbor_folder_name_fallback() {
+        let c3 = approved("C3");
+        let greet = approved("greet");
+        let report = cases_report(
+            json!({}),
+            &[
+                // No [metadata] case: the folder name is the case id.
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                // [metadata] case wins over the folder name, in either form.
+                (
+                    "evals/harbor/hello-mcp/task.toml",
+                    "version = \"1.0\"\n\n[metadata]\n# the owner's case\ncase = 'C3' # literal\n\n[verifier]\ntimeout_sec = 1\n",
+                ),
+                ("evals/cases/C3.md", &c3),
+                ("evals/cases/greet.md", &greet),
+            ],
+        );
+        assert!(
+            case_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
+        assert_eq!(
+            toml_metadata_case("metadata.case = \"C4\"\n").as_deref(),
+            Some("C4")
+        );
+        assert_eq!(toml_metadata_case("[other]\ncase = \"C4\"\n"), None);
+        assert_eq!(
+            toml_metadata_case("[metadata]\ncase = \"a\\\"b\"\n").as_deref(),
+            Some("a\"b")
+        );
+    }
+
+    #[test]
+    fn evals_case_duplicate_warns() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({ "suites": [
+                { "type": "vitest", "path": "evals/vitest" },
+                { "type": "vitest", "path": "evals/vitest-slow" },
+                { "type": "harbor", "path": "evals/harbor" }
+            ] }),
+            &[
+                ("evals/vitest/a.eval.jsonl", "{\"case\":\"C1\"}\n"),
+                ("evals/vitest-slow/b.eval.jsonl", "{\"case\":\"C1\"}\n"),
+                ("evals/harbor/C1/task.toml", HARBOR_TASK_TOML),
+                (
+                    "evals/harbor/c1-again/task.toml",
+                    "[metadata]\ncase = \"C1\"\n[verifier]\n",
+                ),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [
+                (
+                    "pi.evals_case_duplicate".into(),
+                    "evals/harbor/c1-again".into(),
+                    "case 'C1' has a second harbor implementation: Harbor task 'evals/harbor/c1-again' ([metadata] case) repeats Harbor task 'evals/harbor/C1' (by its folder name)".into(),
+                ),
+                (
+                    "pi.evals_case_duplicate".into(),
+                    "evals/vitest-slow/b.eval.jsonl".into(),
+                    "case 'C1' has a second vitest implementation: row 1 of 'evals/vitest-slow/b.eval.jsonl' repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn evals_case_nested_suites_read_each_row_once() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({ "suites": [
+                { "type": "vitest", "path": "evals/vitest" },
+                { "type": "vitest", "path": "evals/vitest/slow" }
+            ] }),
+            &[
+                ("evals/vitest/slow/a.eval.jsonl", "{\"case\":\"C1\"}\n{}\n"),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [(
+                "pi.evals_case_row_missing_id".into(),
+                "evals/vitest/slow/a.eval.jsonl".into(),
+                "row 2 of 'evals/vitest/slow/a.eval.jsonl' has no case".into(),
+            )]
+        );
+    }
+
+    #[test]
+    fn evals_case_unapproved_warns() {
+        let c1 = draft("C1");
+        let c2 = draft("C2");
+        // Partly approved still counts as not approved.
+        let c3 = case_file("id: C3\ncheck: code\napproved_by: owner\n");
+        let report = cases_report(
+            json!({}),
+            &[
+                (
+                    "evals/vitest/a.eval.jsonl",
+                    "{\"case\":\"C1\"}\n{\"case\":\"C3\"}\n",
+                ),
+                ("evals/cases/C1.md", &c1),
+                // A draft without an implementation is just a draft.
+                ("evals/cases/C2.md", &c2),
+                ("evals/cases/C3.md", &c3),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [
+                (
+                    "pi.evals_case_unapproved".into(),
+                    "evals/cases/C1.md".into(),
+                    "case 'C1' has an implementation but is not approved: approved_by, approved_at, approved_in empty".into(),
+                ),
+                (
+                    "pi.evals_case_unapproved".into(),
+                    "evals/cases/C3.md".into(),
+                    "case 'C3' has an implementation but is not approved: approved_at, approved_in empty".into(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn evals_case_row_missing_id_warns() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({}),
+            &[
+                (
+                    "evals/vitest/a.eval.jsonl",
+                    // Blank lines and non-object lines are left to the runner.
+                    "{\"case\":\"C1\"}\n{\"schema_version\":2,\"name\":\"old row\"}\n\nnot json\n{\"case\":\"\"}\n",
+                ),
+                // Only .eval.jsonl files hold rows.
+                ("evals/vitest/fixtures/data.jsonl", "{\"input\":\"hi\"}\n"),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [
+                (
+                    "pi.evals_case_row_missing_id".into(),
+                    "evals/vitest/a.eval.jsonl".into(),
+                    "row 2 of 'evals/vitest/a.eval.jsonl' has no case".into(),
+                ),
+                (
+                    "pi.evals_case_row_missing_id".into(),
+                    "evals/vitest/a.eval.jsonl".into(),
+                    "row 5 of 'evals/vitest/a.eval.jsonl' has no case".into(),
+                ),
+            ]
+        );
+        let lines: Vec<usize> = report
+            .diagnostics
+            .iter()
+            .filter_map(|diagnostic| diagnostic.span.map(|span| span.line))
+            .collect();
+        assert_eq!(lines, [2, 5]);
+    }
+
+    #[test]
+    fn evals_case_rules_need_a_declaration() {
+        // Every case rule would fire here, but no pi.evals means no layout checks.
+        let c1 = draft("C1");
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\nfakes/\n"),
+                (
+                    "evals/vitest/a.eval.jsonl",
+                    "{\"case\":\"C1\"}\n{\"case\":\"C1\"}\n{}\n",
+                ),
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                ("evals/cases/C1.md", &c1),
+                ("evals/cases/bad.md", "no front matter\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn evals_case_file_fields() {
+        let valid_issue = case_file(
+            "id: C1\ncheck: code\nissue: 0b6f2c1e-5a4d-4c3b-9a8e-7f6d5c4b3a21\nconversation: { id: conv_1, task_id: task_1, turn: 2 }\n",
+        );
+        let bad_issue = case_file("id: C2\nissue: ISSUE-12\n");
+        let wrong_id = case_file("id: C4\n");
+        let bad_check = case_file("id: C5\ncheck: maybe\n");
+        let report = cases_report(
+            json!({}),
+            &[
+                ("evals/cases/C1.md", &valid_issue),
+                ("evals/cases/C2.md", &bad_issue),
+                ("evals/cases/C3.md", &wrong_id),
+                ("evals/cases/C5.md", &bad_check),
+                ("evals/cases/C6.md", "# no front matter\n"),
+                // A Harbor task naming the malformed case finds it by file name.
+                ("evals/harbor/C6/task.toml", HARBOR_TASK_TOML),
+            ],
+        );
+        let found = case_diagnostics(&report);
+        let summary: Vec<(&str, &str)> = found
+            .iter()
+            .map(|(code, path, _)| (code.as_str(), path.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("pi.evals_case_invalid", "evals/cases/C2.md"),
+                ("pi.evals_case_invalid", "evals/cases/C3.md"),
+                ("pi.evals_case_invalid", "evals/cases/C5.md"),
+                ("pi.evals_case_invalid", "evals/cases/C6.md"),
+            ]
+        );
+        assert!(
+            found[0].2.contains("issue 'ISSUE-12', which is not a UUID"),
+            "{found:?}"
+        );
+        assert!(
+            found[1]
+                .2
+                .contains("has id 'C4', but a case's id is its file name, 'C3'"),
+            "{found:?}"
+        );
+        assert!(
+            found[2].2.contains("front matter is not a valid case"),
+            "{found:?}"
+        );
+        assert!(found[3].2.contains("has no YAML front matter"), "{found:?}");
+        assert!(is_uuid("0B6F2C1E-5A4D-4C3B-9A8E-7F6D5C4B3A21"));
+        assert!(!is_uuid("0b6f2c1e5a4d4c3b9a8e7f6d5c4b3a21"));
+    }
+
+    #[test]
+    fn evals_cases_path_is_configurable() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({ "cases": "evals/owner-cases" }),
+            &[
+                ("evals/vitest/a.eval.jsonl", "{\"case\":\"C1\"}\n"),
+                ("evals/owner-cases/C1.md", &c1),
+                // The default folder is not read once the path is named.
+                ("evals/cases/C2.md", "not a case\n"),
+            ],
+        );
+        assert!(
+            case_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
+
+        let report = cases_report(
+            json!({ "cases": "evals/owner-cases" }),
+            &[("evals/vitest/a.eval.jsonl", "{\"case\":\"C9\"}\n")],
+        );
+        assert!(
+            case_diagnostics(&report)[0]
+                .2
+                .contains("which has no evals/owner-cases/C9.md"),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn evals_fakes_default_is_the_recipe_root() {
+        // Root fakes/ is an eval path for every Recipe, so .recipeignore must
+        // exclude it.
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\n"),
+                ("fakes/hello-mcp/server.ts", "export {};\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_single(
+            &report,
+            "pi.evals_not_ignored",
+            Severity::Warning,
+            "eval path 'fakes' is not excluded by .recipeignore",
+        );
+        assert_eq!(
+            evals_diagnostics(&report)[0].help.as_deref(),
+            Some("add a 'fakes/' line to .recipeignore so eval-only files never reach a deployed runtime")
+        );
+
+        // Fakes still under evals/ need no override: evals/ covers them, and
+        // they are not eval-looking content.
+        let input = evals_recipe(
+            Some(json!({})),
+            &[
+                (".recipeignore", "evals/\n"),
+                ("evals/fakes/hello-mcp/server.ts", "export {};\n"),
+                ("evals/fakes/hello-mcp/scenarios/a.json", "{}\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    /// recipe-redlining's layout (main after #14): a draft case file per
+    /// Harbor task, named by the task's folder, and no `pi.evals`.
+    fn redlining_layout(case: fn(&str) -> String) -> Vec<(String, String)> {
+        let task = "schema_version = \"1.4\"\n\n[task]\nname = \"introspection-recipes/redlining-ID\"\n\n[verifier]\ntimeout_sec = 1800.0\n\n[verifier.env]\nOPENAI_API_KEY = \"${OPENAI_API_KEY}\"\n";
+        let mut files = vec![(
+            ".recipeignore".to_owned(),
+            "evals/\neval-runs/\neval-artifacts/\ntests/\n".to_owned(),
+        )];
+        for id in [
+            "s1-t1-g01",
+            "s1-t3-g01",
+            "s2-t2-g01",
+            "s3-t1-g01",
+            "s3-t3-g05",
+        ] {
+            files.push((format!("evals/cases/{id}.md"), case(id)));
+            files.push((
+                format!("evals/harbor/{id}/task.toml"),
+                task.replace("ID", id),
+            ));
+            files.push((
+                format!("evals/harbor/{id}/instruction.md"),
+                "Redline it.\n".into(),
+            ));
+            files.push((
+                format!("evals/harbor/{id}/tests/test.sh"),
+                "exit 0\n".into(),
+            ));
+            files.push((
+                format!("evals/harbor/{id}/environment/Dockerfile"),
+                "FROM scratch\n".into(),
+            ));
+        }
+        files.push((
+            "evals/lib/grader/redlining_grader/grading.py".into(),
+            "\n".into(),
+        ));
+        files
+    }
+
+    #[test]
+    fn evals_case_redlining_layout() {
+        let check = |evals: Option<JsonValue>, case: fn(&str) -> String| {
+            let files = redlining_layout(case);
+            let files: Vec<(&str, &str)> = files
+                .iter()
+                .map(|(path, content)| (path.as_str(), content.as_str()))
+                .collect();
+            let report = check_recipe_files(&evals_recipe(evals, &files));
+            assert!(report.valid, "{:?}", report.diagnostics);
+            report
+        };
+        // As it is on main: no pi.evals, so nothing to report.
+        let report = check(None, draft);
+        assert!(
+            evals_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
+
+        // Declaring pi.evals links every task to its case; the drafts warn.
+        let report = check(Some(json!({})), draft);
+        let found = case_diagnostics(&report);
+        assert_eq!(found.len(), 5, "{found:?}");
+        assert!(found
+            .iter()
+            .all(|(code, _, _)| code == "pi.evals_case_unapproved"));
+        assert_eq!(evals_diagnostics(&report).len(), 5);
+
+        // Approved, it is clean.
+        let report = check(Some(json!({})), approved);
+        assert!(
+            evals_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
         );
     }
 
@@ -6555,9 +7387,10 @@ mod tests {
                 { "type": "harbor", "path": "tasks" }
             ] })),
             &[
-                (".recipeignore", "test/\ntasks/\n"),
+                (".recipeignore", "test/\ntasks/\nevals/\n"),
                 ("test/greet.eval.ts", "export {};\n"),
                 ("tasks/greet/task.toml", HARBOR_TASK_TOML),
+                ("evals/cases/greet.md", APPROVED_CASE),
             ],
         );
         let report = check_recipe_files(&input);

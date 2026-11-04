@@ -12,10 +12,14 @@ The checker validates the portable authored contract:
 - direct-child `judges/*.yaml` definitions (`online`, `offline` and `mission`) and their typed authored schema;
 - dependency lockfile presence and npm lockfile identity;
 - the optional `package.json#pi.evals` eval layout (or its `evals/vitest`,
-  `evals/harbor`, `evals/lib`, `evals/sources`, `evals/fakes` defaults): shape
-  and path errors; a warning for eval paths that `.recipeignore` does not
-  exclude; and, once a Recipe declares `pi.evals`, warnings for Harbor task
-  folders without `task.toml` and eval-looking files outside every eval path;
+  `evals/harbor`, `evals/lib`, `evals/sources`, `fakes`, `evals/cases`
+  defaults): shape and path errors; a warning for eval paths that
+  `.recipeignore` does not exclude; and, once a Recipe declares `pi.evals`,
+  warnings for Harbor task folders without `task.toml`, eval-looking files
+  outside every eval path, and case links: a Vitest row or Harbor task naming
+  no `evals/cases/<id>.md`, two implementations of a case on one runner, an
+  implemented case that is not approved, a `.eval.jsonl` row without `case`,
+  and a malformed case file;
 - exclusion of local capability configuration from distributable snapshots,
   accepting a committed `.pi/mcp.local.json` only as an evaluation binding
   (declared ids, each once, at a loopback or single-label compose host).
