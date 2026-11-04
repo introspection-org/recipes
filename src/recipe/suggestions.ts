@@ -88,7 +88,10 @@ function parseTemplate(content: string): {
   };
 }
 
-function readTemplate(path: string): RecipeSuggestion | undefined {
+/** A readable template, and whether it is marked `suggest: true`. */
+function readTemplate(
+  path: string
+): { suggest: boolean; template: RecipeSuggestion } | undefined {
   let frontmatter: Record<string, unknown>;
   let body: string;
   try {
@@ -96,7 +99,6 @@ function readTemplate(path: string): RecipeSuggestion | undefined {
   } catch {
     return undefined;
   }
-  if (frontmatter.suggest !== true) return undefined;
   let description =
     typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
   if (!description) {
@@ -105,11 +107,14 @@ function readTemplate(path: string): RecipeSuggestion | undefined {
   }
   const argumentHint = frontmatter["argument-hint"];
   return {
-    name: basename(path).replace(/\.md$/, ""),
-    description,
-    ...(typeof argumentHint === "string" && argumentHint ? { argumentHint } : {}),
-    text: body,
-    placeholders: findPlaceholders(body),
+    suggest: frontmatter.suggest === true,
+    template: {
+      name: basename(path).replace(/\.md$/, ""),
+      description,
+      ...(typeof argumentHint === "string" && argumentHint ? { argumentHint } : {}),
+      text: body,
+      placeholders: findPlaceholders(body),
+    },
   };
 }
 
@@ -124,7 +129,8 @@ function isFile(path: string): boolean {
 /**
  * Read the templates marked `suggest: true` from resolved prompt paths, as Pi
  * loads them: a directory contributes its direct `.md` children, a file
- * itself. Later duplicates of a name are dropped.
+ * itself. As in Pi, the first template with a name wins, so an unmarked
+ * template hides a later marked one of the same name.
  */
 export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSuggestion[] {
   const files: string[] = [];
@@ -142,12 +148,13 @@ export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSug
       files.push(path);
     }
   }
-  const byName = new Map<string, RecipeSuggestion>();
+  // As in Pi, the first template with a name wins, marked or not.
+  const byName = new Map<string, { suggest: boolean; template: RecipeSuggestion }>();
   for (const file of files) {
-    const template = readTemplate(file);
-    if (template && !byName.has(template.name)) byName.set(template.name, template);
+    const read = readTemplate(file);
+    if (read && !byName.has(read.template.name)) byName.set(read.template.name, read);
   }
-  return [...byName.values()];
+  return [...byName.values()].filter((read) => read.suggest).map((read) => read.template);
 }
 
 /**

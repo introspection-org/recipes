@@ -125,6 +125,21 @@ describe("listRecipeSuggestions", () => {
     expect(listRecipeSuggestions(fixture.recipeDir).map((s) => s.name)).toEqual(["plan"]);
   });
 
+  it("lets the first template with a name win, marked or not, as Pi does", () => {
+    const fixture = writeFixtureRecipe({
+      manifestPi: { prompts: ["./first", "./second"] },
+    });
+    cleanups.push(fixture.cleanup);
+    for (const [dir, content] of [
+      ["first", "---\ndescription: First\n---\nFirst."],
+      ["second", "---\nsuggest: true\ndescription: Second\n---\nSecond."],
+    ] as const) {
+      mkdirSync(join(fixture.recipeDir, dir));
+      writeFileSync(join(fixture.recipeDir, dir, "plan.md"), content);
+    }
+    expect(listRecipeSuggestions(fixture.recipeDir)).toEqual([]);
+  });
+
   it("is part of inspectRecipe", () => {
     const { recipeDir } = recipeWithPrompts();
     const inspection = inspectRecipe(resolveRecipe({ recipeDir }));
