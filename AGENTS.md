@@ -18,6 +18,12 @@
   - `feat!:` or a `BREAKING CHANGE:` footer for breaking changes — which release-please publishes as a **minor** bump while the package is `0.x`, not a major one.
 - Do not manually bump `package.json` for routine releases unless the task is explicitly setting up or correcting release metadata. Let release-please update versions through its release PRs.
 - Keep npm dist-tags aligned with release stability: beta prereleases use `beta`, stable releases use `latest`.
+- **Publishing follows the registries, not the release run.** Every
+  `release-please` workflow run (push or manual dispatch) runs
+  `scripts/release-plan.mjs`, which publishes each manifest version that is
+  tagged but missing from npm, crates.io or PyPI. A failed publish is finished
+  by the next run; to finish it now, dispatch the workflow. Never publish a
+  version by hand that has no tag.
 
 ## Dependencies
 
