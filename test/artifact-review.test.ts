@@ -10,6 +10,7 @@ import {
   createReviewArtifactsTool,
   formatReviews,
   parseReviews,
+  tabName,
   REVIEW_ARTIFACTS_TOOL_NAME,
   wantsArtifactReview,
   type ArtifactReview,
@@ -209,6 +210,18 @@ describe("review_artifacts in the terminal", () => {
     expect(out.content[0].text).toMatch(
       /^Answer: Reviewed 3 files: 1 approved, 1 with changes requested, 1 not reviewed\./,
     );
+  });
+
+  it("names each tab by the label's id, with the full label only under the tabs", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const [tabs, , heading] = dialog(fake).render(200).slice(1);
+    expect(tabs).toContain(" C1 ");
+    expect(tabs).not.toContain("four questions");
+    expect(heading).toContain("C1: four questions");
+    expect(tabName("A brief", 0)).toBe("1");
+    type(dialog(fake), ["\x1b"]);
+    await result;
   });
 
   it("approves the rest from the Submit tab", async () => {

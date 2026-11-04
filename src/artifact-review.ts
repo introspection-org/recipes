@@ -149,6 +149,14 @@ interface ReviewState {
   comment?: string;
 }
 
+/** A tab's name: the label's id before a colon ("C1" from "C1: four questions"), else its number. */
+export function tabName(label: string, index: number): string {
+  const id = label.split(":")[0]!.trim();
+  return label.includes(":") && id.length > 0 && id.length <= 12
+    ? id
+    : String(index + 1);
+}
+
 /**
  * The terminal review, inline in place of the editor: a tab per file (and a
  * Submit tab) when there are several, the file itself in a box, and Approve or
@@ -289,7 +297,7 @@ export function showReviewTui(
           add(rule);
           if (several) {
             const tabs = items.map((item, index) => {
-              const text = ` ${mark(index)} ${item.label} `;
+              const text = ` ${mark(index)} ${tabName(item.label, index)} `;
               return index === active
                 ? theme.inverse(theme.fg("accent", text))
                 : theme.fg(states[index]!.decision ? "success" : "text", text);
