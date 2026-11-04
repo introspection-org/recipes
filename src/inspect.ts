@@ -2,6 +2,10 @@ import { generatedBindingEnvVars } from "./recipe/mcp-config.js";
 import { expectedProviderEnvVars } from "./provider-env.js";
 import type { RecipeAgentConfigField } from "./recipe/agent.js";
 import type { ResolvedRecipe, ResolvedRecipeAgent } from "./recipe/resolve.js";
+import {
+  readRecipeSuggestions,
+  type RecipeSuggestion,
+} from "./recipe/suggestions.js";
 
 export interface RecipeAgentInspection {
   name: string;
@@ -62,6 +66,8 @@ export interface RecipeInspection {
     extensions: string[];
     prompts: string[];
   };
+  /** The prompt templates marked `suggest: true`, which hosts offer as suggestions. */
+  suggestions: RecipeSuggestion[];
   resolvedAgents: RecipeAgentInspection[];
 }
 
@@ -216,6 +222,7 @@ export function inspectRecipe(resolvedRecipe: ResolvedRecipe): RecipeInspection 
       extensions: [...extensionPaths],
       prompts: [...promptPaths],
     },
+    suggestions: readRecipeSuggestions(promptPaths),
     resolvedAgents: uniqueResolvedAgents.map((agent) =>
       inspectAgent(
         resolvedRecipe,
