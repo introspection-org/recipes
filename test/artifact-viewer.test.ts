@@ -241,6 +241,25 @@ describe("show_artifact tool", () => {
     expect(lines.at(-1)).toContain("Alt+R");
   });
 
+  it("shows a file as unreadable once it links outside the working directory", async () => {
+    const watcher = fakeWatcher();
+    const { show, overlays } = await setup({ watchFile: watcher.watchFile, debounceMs: 0 });
+    await show("brief.md");
+    const outside = mkdtempSync(join(tmpdir(), "artifact-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.md"), "# Secret\n");
+      rmSync(join(workspace, "brief.md"));
+      symlinkSync(join(outside, "secret.md"), join(workspace, "brief.md"));
+      watcher.active.get(join(workspace, "brief.md"))!();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const text = overlays[0]!.component.render(60).join("\n");
+      expect(text).not.toContain("Secret");
+      expect(text).toContain("cannot be read");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("replaces the content when another file is shown", async () => {
     const watcher = fakeWatcher();
     const { show, overlays } = await setup({ watchFile: watcher.watchFile });

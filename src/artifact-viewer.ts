@@ -330,9 +330,20 @@ export function watchFileWithFs(absolutePath: string, onChange: () => void): () 
   };
 }
 
+/** The working directory `target` was resolved against. */
+function workspaceRoot(target: ResolvedArtifactPath): string {
+  return resolve(target.absolutePath, ...target.relativePath.split("/").map(() => ".."));
+}
+
+/**
+ * Read an open file for the panel. Every refresh re-runs `resolveArtifactPath`,
+ * since the file may since have become a symlink, or a link may point outside
+ * the working directory; a path that no longer passes reads as unreadable.
+ */
 function readDocument(target: ResolvedArtifactPath): ArtifactDocument {
   let markdown: string | undefined;
   try {
+    resolveArtifactPath(workspaceRoot(target), target.relativePath);
     markdown = readFileSync(target.absolutePath, "utf8");
   } catch {
     markdown = undefined;
