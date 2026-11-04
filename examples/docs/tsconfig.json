@@ -24,7 +24,8 @@
       "@introspection-ai/recipes/python": ["../../src/python.ts"],
       "@introspection-ai/recipes/documents": ["../../src/documents/index.ts"],
       "@introspection-ai/recipes/test-utils": ["../../src/test-utils.ts"],
-      "@introspection-ai/recipes/inspect": ["../../src/inspect.ts"]
+      "@introspection-ai/recipes/inspect": ["../../src/inspect.ts"],
+      "@introspection-ai/recipes/suggestions": ["../../src/recipe/suggestions.ts"]
     }
   },
   "include": ["**/*.ts"],

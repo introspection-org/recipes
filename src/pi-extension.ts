@@ -96,6 +96,7 @@ import {
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
+import { createRecipeSuggestionPicker } from "./suggestion-picker.js";
 import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
@@ -1557,7 +1558,8 @@ export function createRecipesExtension(
     };
     pi.registerTool(agentTool);
 
-    pi.on("session_start", async (_event, ctx) => {
+    const suggestionPicker = createRecipeSuggestionPicker(pi, env);
+    pi.on("session_start", async (event, ctx) => {
       if (!ensureManagedFetch()) {
         const warning = managedFetchMissingWarning(env);
         if (warning !== undefined) ctx.ui.notify(warning, "warning");
@@ -1621,9 +1623,11 @@ export function createRecipesExtension(
         `Recipe: ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version} (${basename(launchState.resolved.recipeDir)})`,
         "info"
       );
+      suggestionPicker.sessionStarted(event, ctx, launchState.resolved.promptPaths);
     });
 
     pi.on("session_shutdown", async () => {
+      suggestionPicker.cancel();
       await closeAllChildRuns();
       await closeRootMcpRuntime();
       clearMcpCatalogPreload(env);
