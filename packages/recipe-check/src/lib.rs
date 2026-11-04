@@ -1890,8 +1890,10 @@ fn is_uuid(value: &str) -> bool {
 
 /// The `case` of every JSON-object row in each Vitest suite's `*.eval.jsonl`
 /// files, reporting rows without one. Lines that are not JSON objects are
-/// left to the runner, and rows built in a `.eval.ts` are not read.
+/// left to the runner, and rows built in a `.eval.ts` are not read. Suite
+/// paths may nest, so each file is read once.
 fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImplementation> {
+    let mut seen = BTreeSet::new();
     let files: Vec<(String, String)> = layout
         .suites
         .iter()
@@ -1904,6 +1906,7 @@ fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImpl
                 .filter(|(path, _)| path.ends_with(".eval.jsonl"))
                 .filter_map(|(path, content)| Some((path.clone(), content.clone()?)))
         })
+        .filter(|(path, _)| seen.insert(path.clone()))
         .collect();
     let mut rows = Vec::new();
     for (file, content) in files {
@@ -1942,12 +1945,16 @@ fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImpl
 /// folder name. A task whose `task.toml` content was not supplied is skipped.
 fn harbor_case_tasks(layout: &EvalLayout, ctx: &CheckContext) -> Vec<CaseImplementation> {
     let mut tasks = Vec::new();
+    let mut seen = BTreeSet::new();
     for suite in layout
         .suites
         .iter()
         .filter(|suite| suite.kind == EvalSuiteKind::Harbor)
     {
         for task in ctx.child_dirs(&suite.path) {
+            if !seen.insert(task.clone()) {
+                continue;
+            }
             let Some(content) = ctx.content(&format!("{task}/task.toml")) else {
                 continue;
             };
@@ -7013,6 +7020,29 @@ mod tests {
                     "case 'C1' has a second vitest implementation: row 1 of 'evals/vitest-slow/b.eval.jsonl' repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn evals_case_nested_suites_read_each_row_once() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({ "suites": [
+                { "type": "vitest", "path": "evals/vitest" },
+                { "type": "vitest", "path": "evals/vitest/slow" }
+            ] }),
+            &[
+                ("evals/vitest/slow/a.eval.jsonl", "{\"case\":\"C1\"}\n{}\n"),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [(
+                "pi.evals_case_row_missing_id".into(),
+                "evals/vitest/slow/a.eval.jsonl".into(),
+                "row 2 of 'evals/vitest/slow/a.eval.jsonl' has no case".into(),
+            )]
         );
     }
 
