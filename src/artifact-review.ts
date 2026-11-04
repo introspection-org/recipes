@@ -4,34 +4,46 @@
  * changes, each with an optional comment.
  *
  * It is a Recipes interaction (docs/interactions.md), so it works on every
- * host. In Pi's terminal a list replaces the editor and the artifact panel on
- * the right shows the file under the cursor; over RPC each file is a select
+ * host. In Pi's terminal it is inline in place of the editor, each file shown
+ * in the dialog itself; over RPC each file is a select
  * and an optional comment; a pause/resume host renders its own review widget
  * from `details.interrupt` (`metadata.kind` is `review_artifacts`) and resumes
  * with `{ answer }` in the text format `formatReviews` writes.
  */
 
 import type {
-  ExtensionContext,
   ExtensionUIContext,
   ExtensionUIDialogOptions,
   Theme,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { readFileSync } from "node:fs";
+
+import {
+  Key,
+  Markdown,
+  matchesKey,
+  truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
-import { type ArtifactViewer, resolveArtifactPath, type ResolvedArtifactPath } from "./artifact-viewer.js";
-import { DIALOG_PANEL_HINT, panelScrollFor, printable, withoutLastCharacter } from "./interaction-tui.js";
+import {
+  resolveArtifactPath,
+  type ResolvedArtifactPath,
+} from "./artifact-viewer.js";
+import { artifactMarkdownTheme } from "./artifact-viewer-tui.js";
+import {
+  type ArtifactPanelScrollBy,
+  panelScrollFor,
+  printable,
+  withoutLastCharacter,
+} from "./interaction-tui.js";
 import { askUser, type AskUserOutcome } from "./interactions.js";
 
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 
 /** At most this many files in one review, so the user can get through it. */
 export const MAX_REVIEW_ITEMS = 20;
-
-/** Files the list shows at once; the rest scroll, with a marker for what's above and below. */
-export const REVIEW_LIST_ROWS = 8;
 
 export type ReviewDecision = "approved" | "changes_requested" | "not_reviewed";
 
@@ -53,22 +65,28 @@ const description = [
 const parameters = Type.Object(
   {
     title: Type.String({
-      description: 'What is being reviewed, e.g. "The interview agent\'s cases".',
+      description:
+        'What is being reviewed, e.g. "The interview agent\'s cases".',
     }),
     items: Type.Array(
       Type.Object(
         {
-          path: Type.String({ description: "A markdown file, relative to the working directory." }),
+          path: Type.String({
+            description: "A markdown file, relative to the working directory.",
+          }),
           label: Type.Optional(
-            Type.String({ description: 'A short label, e.g. "C2: the candidate gives a vague answer".' })
+            Type.String({
+              description:
+                'A short label, e.g. "C2: the candidate gives a vague answer".',
+            }),
           ),
         },
-        { additionalProperties: false }
+        { additionalProperties: false },
       ),
-      { minItems: 1, maxItems: MAX_REVIEW_ITEMS }
+      { minItems: 1, maxItems: MAX_REVIEW_ITEMS },
     ),
   },
-  { additionalProperties: false }
+  { additionalProperties: false },
 );
 
 export type ReviewArtifactsParams = Static<typeof parameters>;
@@ -89,14 +107,17 @@ const DECISION_TEXT: Record<ReviewDecision, string> = {
  * pause/resume host resumes with this same text as `{ answer }`.
  */
 export function formatReviews(reviews: readonly ArtifactReview[]): string {
-  const count = (decision: ReviewDecision) => reviews.filter((r) => r.decision === decision).length;
+  const count = (decision: ReviewDecision) =>
+    reviews.filter((r) => r.decision === decision).length;
   const lines = [
     `Reviewed ${reviews.length} file${reviews.length === 1 ? "" : "s"}: ${count("approved")} approved, ${count("changes_requested")} with changes requested, ${count("not_reviewed")} not reviewed.`,
   ];
   for (const review of reviews) {
     const comment = review.comment ? ` — "${review.comment}"` : "";
     const unopened = review.opened ? "" : " (not opened)";
-    lines.push(`${review.path}: ${DECISION_TEXT[review.decision]}${unopened}${comment}`);
+    lines.push(
+      `${review.path}: ${DECISION_TEXT[review.decision]}${unopened}${comment}`,
+    );
   }
   return lines.join("\n");
 }
@@ -105,9 +126,14 @@ export function formatReviews(reviews: readonly ArtifactReview[]): string {
 export function parseReviews(text: string): ArtifactReview[] {
   const reviews: ArtifactReview[] = [];
   for (const line of text.split("\n").slice(1)) {
-    const match = /^(.+?): (approved|changes requested|not reviewed)( \(not opened\))?(?: — "(.*)")?$/.exec(line);
+    const match =
+      /^(.+?): (approved|changes requested|not reviewed)( \(not opened\))?(?: — "(.*)")?$/.exec(
+        line,
+      );
     if (!match) continue;
-    const decision = (Object.keys(DECISION_TEXT) as ReviewDecision[]).find((d) => DECISION_TEXT[d] === match[2])!;
+    const decision = (Object.keys(DECISION_TEXT) as ReviewDecision[]).find(
+      (d) => DECISION_TEXT[d] === match[2],
+    )!;
     reviews.push({
       path: match[1]!,
       decision,
@@ -124,200 +150,300 @@ interface ReviewState {
 }
 
 /**
- * The terminal review: a list in place of the editor, the file under the
- * cursor in the artifact panel. Resolves with one review per file, or null
- * when the user dismisses it.
+ * The terminal review, inline in place of the editor: a tab per file (and a
+ * Submit tab) when there are several, the file itself in a box, and Approve or
+ * Request changes under it. Resolves with one review per file, or null when the
+ * user dismisses it.
  */
 export function showReviewTui(
   title: string,
   items: readonly ReviewItem[],
   ui: ExtensionUIContext,
-  ctx: ExtensionContext,
-  viewer: ArtifactViewer,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<ArtifactReview[] | null> {
-  return ui.custom<ArtifactReview[] | null>((tui, theme: Theme, _keybindings, done) => {
-    const states: ReviewState[] = items.map(() => ({}));
-    const opened = new Set<number>();
-    let active = 0;
-    let commenting: Exclude<ReviewDecision, "not_reviewed"> | undefined;
-    let draft = "";
-    let settled = false;
+  return ui.custom<ArtifactReview[] | null>(
+    (tui, theme: Theme, _keybindings, done) => {
+      const states: ReviewState[] = items.map(() => ({}));
+      const opened = new Set<number>([0]);
+      const scrolls = items.map(() => 0);
+      const documents = new Map<number, Markdown>();
+      const several = items.length > 1;
+      // The Submit tab sits after the files.
+      let active = 0;
+      let option = 0;
+      let commenting = false;
+      let draft = "";
+      let settled = false;
+      let lastBodyHeight = 1;
+      let lastMaxScroll = 0;
 
-    const finish = (result: ArtifactReview[] | null) => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", cancel);
-      viewer.close();
-      done(result);
-    };
-    const cancel = () => finish(null);
-    signal?.addEventListener("abort", cancel, { once: true });
-    if (signal?.aborted) queueMicrotask(cancel);
+      const finish = (result: ArtifactReview[] | null) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", cancel);
+        done(result);
+      };
+      const cancel = () => finish(null);
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) queueMicrotask(cancel);
 
-    const refresh = () => tui.requestRender();
-    const showActive = () => {
-      opened.add(active);
-      // Moving to another file shows it again, even after `v` hid the panel.
-      if (viewer.isHidden) viewer.toggleHidden();
-      viewer.show(ctx, items[active]!.target);
-      viewer.setDialogHint(`${DIALOG_PANEL_HINT}, or j/k`);
-      refresh();
-    };
-    // Stops at the first and last file rather than wrapping round.
-    const move = (delta: number) => {
-      const next = Math.min(items.length - 1, Math.max(0, active + delta));
-      if (next === active) return;
-      active = next;
-      showActive();
-    };
-    const nextUndecided = () => {
-      for (let step = 1; step <= items.length; step += 1) {
-        const index = (active + step) % items.length;
-        if (!states[index]!.decision) {
-          active = index;
-          showActive();
-          return;
-        }
-      }
-      refresh();
-    };
-    const results = (): ArtifactReview[] =>
-      items.map((item, index) => {
-        const state = states[index]!;
-        return {
-          path: item.target.relativePath,
-          decision: state.decision ?? "not_reviewed",
-          opened: opened.has(index),
-          ...(state.comment ? { comment: state.comment } : {}),
-        };
-      });
-    const decided = () => states.filter((s) => s.decision).length;
-
-    queueMicrotask(showActive);
-
-    return {
-      render(width: number): string[] {
-        const lines: string[] = [];
-        const add = (line: string) => lines.push(truncateToWidth(line, width));
-        const heading = ` Review: ${title} `;
-        const tally = ` ${decided()}/${items.length} decided `;
-        add(theme.fg("accent", `-${heading}${"-".repeat(Math.max(0, width - heading.length - tally.length - 1))}${tally}`));
-        // A window of rows around the cursor, so a long review keeps the conversation on screen.
-        const first = Math.min(
-          Math.max(0, active - Math.floor(REVIEW_LIST_ROWS / 2)),
-          Math.max(0, items.length - REVIEW_LIST_ROWS)
-        );
-        const last = Math.min(items.length, first + REVIEW_LIST_ROWS);
-        if (first > 0) add(theme.fg("dim", `   ↑ ${first} more`));
-        items.slice(first, last).forEach((item, offset) => {
-          const index = first + offset;
+      const refresh = () => tui.requestRender();
+      const onSubmitTab = () => several && active === items.length;
+      const decided = () => states.filter((state) => state.decision).length;
+      const results = (): ArtifactReview[] =>
+        items.map((item, index) => {
           const state = states[index]!;
-          const mark =
-            state.decision === "approved"
-              ? theme.fg("success", "✓")
-              : state.decision === "changes_requested"
-                ? theme.fg("warning", "✎")
-                : theme.fg("dim", "○");
-          const pointer = index === active ? theme.fg("accent", " > ") : "   ";
-          const name = theme.fg(index === active ? "accent" : "text", item.label);
-          const comment = state.comment ? theme.fg("dim", `  "${state.comment}"`) : "";
-          add(`${pointer}${mark} ${name}${comment}`);
+          return {
+            path: item.target.relativePath,
+            decision: state.decision ?? "not_reviewed",
+            opened: opened.has(index),
+            ...(state.comment ? { comment: state.comment } : {}),
+          };
         });
-        if (last < items.length) add(theme.fg("dim", `   ↓ ${items.length - last} more`));
-        lines.push("");
-        if (commenting) {
-          const prompt =
-            commenting === "approved"
-              ? `Approve ${items[active]!.label}. Comment (optional): `
-              : `Request changes on ${items[active]!.label}. What should change? `;
-          add(` ${theme.fg("text", prompt)}${theme.fg("accent", `${draft}█`)}`);
-          const needsText = commenting === "changes_requested" && !draft.trim();
-          add(theme.fg("dim", needsText ? " Type what should change · Esc back" : " Enter save · Esc back"));
-        } else {
-          // Wrapped, never cut off: the keys are the only way to finish.
-          const keys = ["↑↓ file", "Shift+↑↓ or j/k scroll", "v hide/show file", "a approve", "c request changes", "A approve the rest", "Enter submit", "Esc cancel"];
-          let line = "";
-          for (const key of keys) {
-            const next = line ? `${line} · ${key}` : key;
-            if (line && next.length + 1 > width) {
-              add(theme.fg("dim", ` ${line}`));
-              line = key;
-            } else line = next;
-          }
-          if (line) add(theme.fg("dim", ` ${line}`));
+      const go = (index: number) => {
+        active = Math.min(several ? items.length : 0, Math.max(0, index));
+        if (active < items.length) opened.add(active);
+        option = 0;
+        refresh();
+      };
+      const nextUndecided = () => {
+        for (let step = 1; step <= items.length; step += 1) {
+          const index = (active + step) % items.length;
+          if (!states[index]!.decision) return go(index);
         }
-        return lines;
-      },
-      invalidate() {},
-      handleInput(data: string) {
-        if (commenting) {
-          if (matchesKey(data, Key.escape)) {
-            commenting = undefined;
-            draft = "";
-          } else if (matchesKey(data, Key.enter)) {
-            const comment = draft.trim();
-            // A change request says what to change, or the agent has nothing to act on.
-            if (commenting === "changes_requested" && !comment) return;
-            states[active] = { decision: commenting, ...(comment ? { comment } : {}) };
-            commenting = undefined;
-            draft = "";
-            // Every file decided: nothing is left to do, so submit.
-            if (decided() === items.length) finish(results());
-            else nextUndecided();
-            return;
-          } else if (matchesKey(data, Key.backspace)) {
-            draft = withoutLastCharacter(draft);
-          } else {
-            const text = printable(data);
-            if (text) draft += text.replace(/[\r\n\t]+/g, " ");
-          }
-          refresh();
-          return;
-        }
-        const by = panelScrollFor(data);
-        if (by) viewer.scroll(by);
-        else if (matchesKey(data, Key.down) || matchesKey(data, Key.tab) || matchesKey(data, Key.ctrl("n"))) move(1);
-        else if (matchesKey(data, Key.up) || matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.ctrl("p"))) move(-1);
-        else if (data === "j") viewer.scroll("line-down");
-        else if (data === "k") viewer.scroll("line-up");
-        else if (matchesKey(data, Key.space)) viewer.scroll("page-down");
-        else if (data === "v") {
-          viewer.toggleHidden();
-          refresh();
-        }
-        else if (data === "a") {
-          commenting = "approved";
-          refresh();
-        } else if (data === "c" || data === "r") {
-          commenting = "changes_requested";
-          refresh();
-        } else if (data === "A") {
-          for (const state of states) if (!state.decision) state.decision = "approved";
+        go(items.length);
+      };
+      const decide = (
+        decision: Exclude<ReviewDecision, "not_reviewed">,
+        comment?: string,
+      ) => {
+        states[active] = { decision, ...(comment ? { comment } : {}) };
+        // Every file decided: nothing is left to do, so submit.
+        if (decided() === items.length) finish(results());
+        else nextUndecided();
+      };
+      const options = (): string[] =>
+        onSubmitTab()
+          ? decided() < items.length
+            ? ["Submit", "Approve the rest and submit"]
+            : ["Submit"]
+          : ["Approve", "Request changes"];
+      const choose = (index: number) => {
+        if (onSubmitTab()) {
+          if (index === 1)
+            for (const state of states)
+              if (!state.decision) state.decision = "approved";
           finish(results());
-        } else if (matchesKey(data, Key.enter)) finish(results());
-        else if (matchesKey(data, Key.escape)) finish(null);
-      },
-    };
-  });
+        } else if (index === 0) decide("approved");
+        else {
+          commenting = true;
+          draft = states[active]!.comment ?? "";
+          refresh();
+        }
+      };
+      const document = (index: number): Markdown => {
+        let markdown = documents.get(index);
+        if (!markdown) {
+          let source: string;
+          try {
+            source = readFileSync(items[index]!.target.absolutePath, "utf8");
+          } catch {
+            source = "_This file doesn't exist._";
+          }
+          markdown = new Markdown(source, 0, 0, artifactMarkdownTheme(theme));
+          documents.set(index, markdown);
+        }
+        return markdown;
+      };
+      const scroll = (by: ArtifactPanelScrollBy) => {
+        if (onSubmitTab()) return;
+        const page = Math.max(1, lastBodyHeight - 1);
+        const delta =
+          by === "line-up"
+            ? -1
+            : by === "line-down"
+              ? 1
+              : by === "page-up"
+                ? -page
+                : page;
+        scrolls[active] = Math.min(
+          lastMaxScroll,
+          Math.max(0, scrolls[active]! + delta),
+        );
+        refresh();
+      };
+      const mark = (index: number) => {
+        const decision = states[index]!.decision;
+        return decision === "approved"
+          ? "✓"
+          : decision === "changes_requested"
+            ? "✎"
+            : "○";
+      };
+
+      return {
+        render(width: number): string[] {
+          const lines: string[] = [];
+          const add = (line = "") => lines.push(truncateToWidth(line, width));
+          const rule = theme.fg("accent", "─".repeat(Math.max(0, width)));
+          add(rule);
+          if (several) {
+            const tabs = items.map((item, index) => {
+              const text = ` ${mark(index)} ${item.label} `;
+              return index === active
+                ? theme.inverse(theme.fg("accent", text))
+                : theme.fg(states[index]!.decision ? "success" : "text", text);
+            });
+            const submit = ` ✔ Submit `;
+            tabs.push(
+              onSubmitTab()
+                ? theme.inverse(theme.fg("accent", submit))
+                : theme.fg("dim", submit),
+            );
+            add(` ${title}  ${tabs.join(" ")}`);
+          } else add(` ${theme.bold(title)}`);
+          add();
+          if (onSubmitTab()) {
+            add(theme.bold(` ${decided()} of ${items.length} decided`));
+            items.forEach((item, index) => {
+              const state = states[index]!;
+              const comment = state.comment
+                ? theme.fg("dim", `  "${state.comment}"`)
+                : "";
+              add(`   ${mark(index)} ${item.label}${comment}`);
+            });
+          } else {
+            const item = items[active]!;
+            add(
+              theme.bold(` ${item.label}`) +
+                theme.fg("dim", `  ${item.target.relativePath}`),
+            );
+            const inner = Math.max(10, width - 4);
+            const body = document(active).render(inner);
+            const rows = tui.terminal?.rows ?? 24;
+            lastBodyHeight = Math.max(4, Math.min(body.length, rows - 14));
+            lastMaxScroll = Math.max(0, body.length - lastBodyHeight);
+            const top = Math.min(scrolls[active]!, lastMaxScroll);
+            const border = (text: string) => theme.fg("dim", text);
+            add(border(` ┌${"─".repeat(inner + 1)}`));
+            for (const line of body.slice(top, top + lastBodyHeight))
+              add(`${border(" │ ")}${line}`);
+            const more =
+              lastMaxScroll > 0
+                ? ` ${top + 1}-${Math.min(body.length, top + lastBodyHeight)} of ${body.length} `
+                : "";
+            add(
+              border(
+                ` └${"─".repeat(Math.max(0, inner + 1 - more.length))}${more}`,
+              ),
+            );
+          }
+          add();
+          if (commenting) {
+            add(
+              ` ${theme.fg("text", "What should change? ")}${theme.fg("accent", `${draft}█`)}`,
+            );
+            add(
+              theme.fg(
+                "dim",
+                draft.trim()
+                  ? " Enter save · Esc back"
+                  : " Type what should change · Esc back",
+              ),
+            );
+            return lines;
+          }
+          options().forEach((label, index) => {
+            const pointer = index === option ? theme.fg("accent", "❯ ") : "  ";
+            add(
+              ` ${pointer}${theme.fg(index === option ? "accent" : "text", `${index + 1}. ${label}`)}`,
+            );
+          });
+          add();
+          const keys = [
+            several ? "←→ file" : undefined,
+            "Enter choose",
+            lastMaxScroll > 0 && !onSubmitTab()
+              ? "PgUp/PgDn scroll"
+              : undefined,
+            "Esc cancel",
+          ];
+          add(theme.fg("dim", ` ${keys.filter(Boolean).join(" · ")}`));
+          return lines;
+        },
+        invalidate() {
+          for (const markdown of documents.values()) markdown.invalidate();
+        },
+        handleInput(data: string) {
+          if (commenting) {
+            if (matchesKey(data, Key.escape)) {
+              commenting = false;
+              draft = "";
+            } else if (matchesKey(data, Key.enter)) {
+              const comment = draft.trim();
+              // A change request says what to change, or the agent has nothing to act on.
+              if (!comment) return;
+              commenting = false;
+              draft = "";
+              decide("changes_requested", comment);
+              return;
+            } else if (matchesKey(data, Key.backspace)) {
+              draft = withoutLastCharacter(draft);
+            } else {
+              const text = printable(data);
+              if (text) draft += text.replace(/[\r\n\t]+/g, " ");
+            }
+            refresh();
+            return;
+          }
+          const by = panelScrollFor(data);
+          if (by) scroll(by);
+          else if (
+            several &&
+            (matchesKey(data, Key.right) || matchesKey(data, Key.tab))
+          )
+            go(active + 1);
+          else if (
+            several &&
+            (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab")))
+          )
+            go(active - 1);
+          else if (matchesKey(data, Key.down)) {
+            option = Math.min(options().length - 1, option + 1);
+            refresh();
+          } else if (matchesKey(data, Key.up)) {
+            option = Math.max(0, option - 1);
+            refresh();
+          } else if (/^[1-9]$/.test(data) && Number(data) <= options().length)
+            choose(Number(data) - 1);
+          else if (matchesKey(data, Key.enter)) choose(option);
+          else if (matchesKey(data, Key.escape)) finish(null);
+        },
+      };
+    },
+  );
 }
 
 /** The RPC review: per file, a select and an optional comment. */
 async function reviewOverDialogs(
   items: readonly ReviewItem[],
   ui: ExtensionUIContext,
-  dialog: ExtensionUIDialogOptions
+  dialog: ExtensionUIDialogOptions,
 ): Promise<ArtifactReview[] | null> {
   const reviews: ArtifactReview[] = [];
   for (const item of items) {
     const choice = await ui.select(
       `${item.label} (${item.target.relativePath})`,
       ["Approve", "Request changes", "Skip"],
-      dialog
+      dialog,
     );
     if (choice === undefined) return null;
     if (choice === "Skip") {
-      reviews.push({ path: item.target.relativePath, decision: "not_reviewed", opened: true });
+      reviews.push({
+        path: item.target.relativePath,
+        decision: "not_reviewed",
+        opened: true,
+      });
       continue;
     }
     let comment: string | undefined;
@@ -342,16 +468,19 @@ async function reviewOverDialogs(
 }
 
 function answered(reviews: ArtifactReview[] | null): AskUserOutcome {
-  return reviews ? { type: "answered", answer: formatReviews(reviews) } : { type: "declined" };
+  return reviews
+    ? { type: "answered", answer: formatReviews(reviews) }
+    : { type: "declined" };
 }
 
 /** Build the tool over a session's viewer. */
-export function createReviewArtifactsTool(viewer: ArtifactViewer): ToolDefinition {
+export function createReviewArtifactsTool(): ToolDefinition {
   const tool: ToolDefinition<typeof parameters> = {
     name: REVIEW_ARTIFACTS_TOOL_NAME,
     label: "Review artifacts",
     description,
-    promptSnippet: "Ask the user to review files you wrote, one decision per file",
+    promptSnippet:
+      "Ask the user to review files you wrote, one decision per file",
     promptGuidelines: [
       "When the user must approve several markdown files you wrote (cases, a brief), ask with review_artifacts instead of asking in plain text.",
     ],
@@ -368,12 +497,18 @@ export function createReviewArtifactsTool(viewer: ArtifactViewer): ToolDefinitio
           message: params.title,
           metadata: {
             kind: REVIEW_ARTIFACTS_TOOL_NAME,
-            items: items.map((item) => ({ path: item.target.relativePath, label: item.label })),
+            items: items.map((item) => ({
+              path: item.target.relativePath,
+              label: item.label,
+            })),
           },
           display: {
             kind: REVIEW_ARTIFACTS_TOOL_NAME,
             title: params.title,
-            sections: items.map((item) => ({ title: item.label, body: item.target.relativePath })),
+            sections: items.map((item) => ({
+              title: item.label,
+              body: item.target.relativePath,
+            })),
           },
         },
         {
@@ -383,13 +518,19 @@ export function createReviewArtifactsTool(viewer: ArtifactViewer): ToolDefinitio
           interactive: async (ui, dialog) =>
             answered(
               ctx.mode === "tui"
-                ? await showReviewTui(params.title, items, ui, ctx, viewer, signal)
-                : await reviewOverDialogs(items, ui, dialog)
+                ? await showReviewTui(params.title, items, ui, signal)
+                : await reviewOverDialogs(items, ui, dialog),
             ),
-        }
+        },
       );
-      const reviews = result.outcome.type === "answered" && result.outcome.answer ? parseReviews(result.outcome.answer) : [];
-      return { content: result.content, details: { ...result.details, reviews } };
+      const reviews =
+        result.outcome.type === "answered" && result.outcome.answer
+          ? parseReviews(result.outcome.answer)
+          : [];
+      return {
+        content: result.content,
+        details: { ...result.details, reviews },
+      };
     },
   };
   return tool as unknown as ToolDefinition;

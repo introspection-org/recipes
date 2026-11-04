@@ -136,21 +136,21 @@ review_artifacts({
 })
 ```
 
-In Pi's terminal a list replaces the editor and the panel shows the file under
-the cursor, so the user never moves the keyboard between them:
+In Pi's terminal the review is inline, in place of the editor: a tab per file
+and a Submit tab across the top (a single file has none), the file itself in a
+box, and the choices under it. The artifact panel isn't used; `show_artifact`
+is for showing a file without asking for a decision.
 
 | Key | Does |
 | --- | --- |
-| `Up` / `Down`, `Tab` / `Shift+Tab`, `Ctrl+N` / `Ctrl+P` | Next or previous file |
-| `j` / `k`, `Shift+Up` / `Shift+Down`, `PgUp` / `PgDn`, `Space` | Scroll the file |
-| `v` | Hide or show the file, to read the conversation under the panel |
-| `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
-| `c` | Request changes, then what should change (required) |
-| `A` | Approve the rest (every file not yet decided), and submit |
-| `Enter` | Submit early; files left undecided are `not reviewed` |
-
-The review submits on its own once every file has a decision. A long review shows eight files at a time around the cursor, with how many more are above and below.
+| `Left` / `Right`, `Tab` / `Shift+Tab` | Previous or next file, then Submit |
+| `Up` / `Down`, `Enter`, or a number | Pick a choice: `Approve`, or `Request changes` and say what should change (required) |
+| `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down` | Scroll a file longer than the box |
 | `Esc` | Cancel the review; nothing is approved |
+
+After a decision the review moves to the next undecided file, and submits on
+its own once every file has one. The Submit tab lists the decisions and offers
+`Submit` (files left undecided are `not reviewed`) or `Approve the rest and submit`.
 
 It is an interaction ([Interactions](interactions.md)), so it works on every
 host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`),

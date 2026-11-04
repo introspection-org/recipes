@@ -649,7 +649,7 @@ export function artifactViewerExtension(
       !registrations?.owner("tool", REVIEW_ARTIFACTS_TOOL_NAME)
     ) {
       registrations?.claim("tool", REVIEW_ARTIFACTS_TOOL_NAME, BUILTIN_OWNER);
-      pi.registerTool(createReviewArtifactsTool(viewer));
+      pi.registerTool(createReviewArtifactsTool());
     }
     if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;

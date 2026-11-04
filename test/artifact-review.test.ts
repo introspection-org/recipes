@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -14,7 +14,11 @@ import {
   wantsArtifactReview,
   type ArtifactReview,
 } from "../src/artifact-review.js";
-import { ArtifactViewer, artifactViewerExtension, wantsArtifactViewer } from "../src/artifact-viewer.js";
+import {
+  ArtifactViewer,
+  artifactViewerExtension,
+  wantsArtifactViewer,
+} from "../src/artifact-viewer.js";
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -22,6 +26,7 @@ const theme = {
   italic: (text: string) => text,
   underline: (text: string) => text,
   strikethrough: (text: string) => text,
+  inverse: (text: string) => text,
 };
 
 /**
@@ -29,22 +34,46 @@ const theme = {
  * list inline and the artifact panel as an overlay, so a test can type into
  * the list and read what the panel shows.
  */
-function fakeCtx(cwd: string, mode: "tui" | "rpc" | "print", env: NodeJS.ProcessEnv = {}) {
-  const components: Array<{ component: Component; overlay: boolean; closed: boolean }> = [];
+function fakeCtx(
+  cwd: string,
+  mode: "tui" | "rpc" | "print",
+  env: NodeJS.ProcessEnv = {},
+) {
+  const components: Array<{
+    component: Component;
+    overlay: boolean;
+    closed: boolean;
+  }> = [];
   const selects: string[][] = [];
-  const answers: { select: string[]; input: string[] } = { select: [], input: [] };
+  const answers: { select: string[]; input: string[] } = {
+    select: [],
+    input: [],
+  };
   const ui = {
     custom<T>(
-      factory: (tui: object, theme: object, keybindings: object, done: (result: T) => void) => Component,
-      options: Record<string, any> = {}
+      factory: (
+        tui: object,
+        theme: object,
+        keybindings: object,
+        done: (result: T) => void,
+      ) => Component,
+      options: Record<string, any> = {},
     ): Promise<T> {
       return new Promise<T>((resolvePromise) => {
-        const entry = { overlay: Boolean(options.overlay), closed: false } as (typeof components)[number];
-        entry.component = factory({ requestRender() {}, terminal: { rows: 20 } }, theme, {}, (result) => {
-          entry.closed = true;
-          (entry.component as { dispose?: () => void }).dispose?.();
-          resolvePromise(result);
-        });
+        const entry = {
+          overlay: Boolean(options.overlay),
+          closed: false,
+        } as (typeof components)[number];
+        entry.component = factory(
+          { requestRender() {}, terminal: { rows: 20 } },
+          theme,
+          {},
+          (result) => {
+            entry.closed = true;
+            (entry.component as { dispose?: () => void }).dispose?.();
+            resolvePromise(result);
+          },
+        );
         components.push(entry);
         options.onHandle?.({
           focus() {},
@@ -66,7 +95,12 @@ function fakeCtx(cwd: string, mode: "tui" | "rpc" | "print", env: NodeJS.Process
     },
     notify() {},
   };
-  const ctx = { cwd, mode, hasUI: mode !== "print", ui } as unknown as ExtensionContext;
+  const ctx = {
+    cwd,
+    mode,
+    hasUI: mode !== "print",
+    ui,
+  } as unknown as ExtensionContext;
   return { ctx, components, selects, answers, env };
 }
 
@@ -74,7 +108,11 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "review-"));
   mkdirSync(join(dir, "evals", "cases"), { recursive: true });
-  for (const id of ["C1", "C2", "C3"]) writeFileSync(join(dir, "evals", "cases", `${id}.md`), `# ${id}\n\nBody of ${id}.\n`);
+  for (const id of ["C1", "C2", "C3"])
+    writeFileSync(
+      join(dir, "evals", "cases", `${id}.md`),
+      `# ${id}\n\nBody of ${id}.\n`,
+    );
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -92,8 +130,15 @@ async function flush() {
 
 function run(mode: "tui" | "rpc" | "print", env: NodeJS.ProcessEnv = {}) {
   const fake = fakeCtx(dir, mode);
-  const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
-  const result = (tool.execute as any)("call-1", { title: "The cases", items }, undefined, undefined, fake.ctx, env);
+  const tool = createReviewArtifactsTool();
+  const result = (tool.execute as any)(
+    "call-1",
+    { title: "The cases", items },
+    undefined,
+    undefined,
+    fake.ctx,
+    env,
+  );
   return { fake, result: result as Promise<any> };
 }
 
@@ -105,13 +150,22 @@ describe("formatReviews and parseReviews", () => {
   it("round-trip every decision, comment and unopened approval", () => {
     const reviews: ArtifactReview[] = [
       { path: "evals/cases/C1.md", decision: "approved", opened: true },
-      { path: "evals/cases/C2.md", decision: "changes_requested", comment: "make it a code check", opened: true },
+      {
+        path: "evals/cases/C2.md",
+        decision: "changes_requested",
+        comment: "make it a code check",
+        opened: true,
+      },
       { path: "evals/cases/C3.md", decision: "approved", opened: false },
       { path: "docs/DESIGN.md", decision: "not_reviewed", opened: false },
     ];
     const text = formatReviews(reviews);
-    expect(text.split("\n")[0]).toBe("Reviewed 4 files: 2 approved, 1 with changes requested, 1 not reviewed.");
-    expect(text).toContain('evals/cases/C2.md: changes requested — "make it a code check"');
+    expect(text.split("\n")[0]).toBe(
+      "Reviewed 4 files: 2 approved, 1 with changes requested, 1 not reviewed.",
+    );
+    expect(text).toContain(
+      'evals/cases/C2.md: changes requested — "make it a code check"',
+    );
     expect(text).toContain("evals/cases/C3.md: approved (not opened)");
     expect(text).toContain("docs/DESIGN.md: not reviewed (not opened)");
     expect(parseReviews(text)).toEqual(reviews);
@@ -119,103 +173,118 @@ describe("formatReviews and parseReviews", () => {
 });
 
 describe("review_artifacts in the terminal", () => {
-  it("shows each file in the panel and records a decision and comment per file", async () => {
+  const RIGHT = "\x1b[C";
+  const DOWN = "\x1b[B";
+  const dialog = (fake: ReturnType<typeof fakeCtx>) =>
+    fake.components.find((c) => !c.overlay)!.component;
+  const shown = (component: Component, width = 120) =>
+    component.render(width).join("\n");
+
+  it("shows each file inline, with no panel, and records a decision and comment per file", async () => {
     const { fake, result } = run("tui");
     await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    const panel = () => fake.components.filter((c) => c.overlay && !c.closed).at(-1)!.component;
-    expect(panel().render(80).join("\n")).toContain("Body of C1.");
+    const review = dialog(fake);
+    expect(fake.components.some((c) => c.overlay)).toBe(false);
+    expect(shown(review)).toContain("Body of C1.");
+    expect(shown(review)).toContain("1. Approve");
 
-    type(list, ["a", "\r"]); // approve C1, no comment; moves to C2
-    await flush();
-    expect(panel().render(80).join("\n")).toContain("Body of C2.");
-    type(list, ["c", "\r"]); // a change request needs a comment: Enter alone does nothing
-    expect(list.render(120).join("\n")).toContain("What should change?");
-    type(list, [..."code check", "\r"]); // changes on C2
-    type(list, ["\r"]); // submit; C3 left undecided
+    type(review, ["1"]); // approve C1; moves to C2
+    expect(shown(review)).toContain("Body of C2.");
+    type(review, ["2", "\r"]); // a change request needs a comment: Enter alone does nothing
+    expect(shown(review)).toContain("What should change?");
+    type(review, [..."code check", "\r"]); // changes on C2; moves to C3
+    type(review, [RIGHT, "\r"]); // the Submit tab: submit, C3 left undecided
 
     const out = await result;
     expect(out.details.reviews).toEqual([
       { path: "evals/cases/C1.md", decision: "approved", opened: true },
-      { path: "evals/cases/C2.md", decision: "changes_requested", comment: "code check", opened: true },
+      {
+        path: "evals/cases/C2.md",
+        decision: "changes_requested",
+        comment: "code check",
+        opened: true,
+      },
       { path: "evals/cases/C3.md", decision: "not_reviewed", opened: true },
     ]);
-    expect(out.content[0].text).toMatch(/^Answer: Reviewed 3 files: 1 approved, 1 with changes requested, 1 not reviewed\./);
-    expect(fake.components.every((c) => c.closed)).toBe(true);
+    expect(out.content[0].text).toMatch(
+      /^Answer: Reviewed 3 files: 1 approved, 1 with changes requested, 1 not reviewed\./,
+    );
   });
 
-  it("approves the rest with A, saying which files were never opened", async () => {
+  it("approves the rest from the Submit tab", async () => {
     const { fake, result } = run("tui");
     await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    type(list, ["A"]); // approves the rest and submits
+    const review = dialog(fake);
+    type(review, ["\x1b[D", "\x1b[Z"]); // left and Shift+Tab on the first file stay there
+    type(review, [RIGHT, RIGHT, RIGHT, RIGHT]); // past the last file to Submit, and no further
+    expect(shown(review)).toContain("0 of 3 decided");
+    type(review, [DOWN, "\r"]); // "Approve the rest and submit"
     const reviews = (await result).details.reviews as ArtifactReview[];
     expect(reviews.map((r) => [r.decision, r.opened])).toEqual([
       ["approved", true],
-      ["approved", false],
-      ["approved", false],
+      ["approved", true],
+      ["approved", true],
     ]);
   });
 
   it("submits on its own once the last file is decided", async () => {
     const { fake, result } = run("tui");
     await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    type(list, ["a", "\r", "a", "\r", "c", ..."fix it", "\r"]);
+    type(dialog(fake), ["1", "\r", "2", ..."fix it", "\r"]);
     const reviews = (await result).details.reviews as ArtifactReview[];
-    expect(reviews.map((r) => r.decision)).toEqual(["approved", "approved", "changes_requested"]);
+    expect(reviews.map((r) => r.decision)).toEqual([
+      "approved",
+      "approved",
+      "changes_requested",
+    ]);
   });
 
-  it("wraps its key hint rather than cutting it off", async () => {
+  it("keeps its hint short, and offers scrolling only for a file longer than the box", async () => {
+    writeFileSync(
+      join(dir, "evals", "cases", "C2.md"),
+      Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n\n"),
+    );
     const { fake, result } = run("tui");
     await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    const lines = list.render(60);
-    expect(lines.every((line) => line.length <= 60)).toBe(true);
-    expect(lines.join("\n")).toContain("Esc cancel");
-    type(list, ["\x1b"]);
+    const review = dialog(fake);
+    const hint = () => review.render(80).at(-1)!;
+    expect(hint()).toBe(" ←→ file · Enter choose · Esc cancel");
+    expect(review.render(60).every((line) => visibleWidth(line) <= 60)).toBe(
+      true,
+    );
+    type(review, [RIGHT]);
+    expect(hint()).toContain("PgUp/PgDn scroll");
+    expect(shown(review)).toContain("line 1");
+    type(review, ["\x1b[6~"]); // PgDn
+    expect(shown(review)).not.toContain("line 1\n");
+    type(review, ["\x1b"]);
     await result;
   });
 
-  it("shows a window of files around the cursor in a long review", async () => {
-    for (let i = 4; i <= 12; i += 1) writeFileSync(join(dir, "evals", "cases", `C${i}.md`), `# C${i}\n`);
+  it("shows a single file without tabs", async () => {
     const fake = fakeCtx(dir, "tui");
-    const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
-    const many = Array.from({ length: 12 }, (_, i) => ({ path: `evals/cases/C${i + 1}.md`, label: `C${i + 1}` }));
-    const result = (tool.execute as any)("call-1", { title: "Cases", items: many }, undefined, undefined, fake.ctx);
+    const tool = createReviewArtifactsTool();
+    const result = (tool.execute as any)(
+      "call-1",
+      { title: "The brief", items: [items[0]] },
+      undefined,
+      undefined,
+      fake.ctx,
+    );
     await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    const shown = () => list.render(120).join("\n");
-    expect(shown()).toContain("↓ 4 more");
-    expect(shown()).not.toContain("C9");
-    type(list, Array(10).fill("\x1b[B")); // down to C11
-    expect(shown()).toContain("↑ 4 more");
-    expect(shown()).toContain("C12");
-    expect(shown()).toContain("0/12 decided");
-    type(list, ["\x1b"]);
-    await result;
-  });
-
-  it("stops at the first and last file instead of wrapping, and v hides the file", async () => {
-    const { fake, result } = run("tui");
-    await flush();
-    const list = fake.components.find((c) => !c.overlay)!.component;
-    const panel = () => fake.components.filter((c) => c.overlay && !c.closed).at(-1)!.component;
-    type(list, ["\x1b[A"]); // up on the first file stays there
-    expect(panel().render(80).join("\n")).toContain("Body of C1.");
-    type(list, ["\x1b[B", "\x1b[B", "\x1b[B", "\x1b[B"]); // down past the last
-    await flush();
-    expect(panel().render(80).join("\n")).toContain("Body of C3.");
-    type(list, ["v"]);
-    expect(list.render(120).join("\n")).toContain("v hide/show file");
-    type(list, ["\x1b"]);
-    await result;
+    const review = dialog(fake);
+    expect(shown(review)).not.toContain("Submit");
+    expect(review.render(80).at(-1)).toBe(" Enter choose · Esc cancel");
+    type(review, ["\r"]);
+    expect((await result).details.reviews).toEqual([
+      { path: "evals/cases/C1.md", decision: "approved", opened: true },
+    ]);
   });
 
   it("declines when dismissed, approving nothing", async () => {
     const { fake, result } = run("tui");
     await flush();
-    type(fake.components.find((c) => !c.overlay)!.component, ["a", "\x1b", "\x1b"]);
+    type(dialog(fake), ["2", "\x1b", "\x1b"]);
     const out = await result;
     expect(out.details.interrupt.outcome).toEqual({ type: "declined" });
     expect(out.details.reviews).toEqual([]);
@@ -227,9 +296,20 @@ describe("review_artifacts elsewhere", () => {
     const fake = fakeCtx(dir, "rpc");
     fake.answers.select.push("Approve", "Request changes", "Skip");
     fake.answers.input.push("", "", "needs a code check"); // the empty change request is asked again
-    const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
-    const out = await (tool.execute as any)("call-1", { title: "The cases", items }, undefined, undefined, fake.ctx);
-    expect(fake.selects[0]).toEqual(["C1: four questions (evals/cases/C1.md)", "Approve", "Request changes", "Skip"]);
+    const tool = createReviewArtifactsTool();
+    const out = await (tool.execute as any)(
+      "call-1",
+      { title: "The cases", items },
+      undefined,
+      undefined,
+      fake.ctx,
+    );
+    expect(fake.selects[0]).toEqual([
+      "C1: four questions (evals/cases/C1.md)",
+      "Approve",
+      "Request changes",
+      "Skip",
+    ]);
     expect(out.details.reviews.map((r: ArtifactReview) => r.decision)).toEqual([
       "approved",
       "changes_requested",
@@ -242,8 +322,14 @@ describe("review_artifacts elsewhere", () => {
     process.env.PI_ASK_USER_AUTO_APPROVE = "1";
     try {
       const fake = fakeCtx(dir, "print");
-      const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
-      const out = await (tool.execute as any)("call-1", { title: "The cases", items }, undefined, undefined, fake.ctx);
+      const tool = createReviewArtifactsTool();
+      const out = await (tool.execute as any)(
+        "call-1",
+        { title: "The cases", items },
+        undefined,
+        undefined,
+        fake.ctx,
+      );
       expect(out.details.interrupt.outcome).toEqual({ type: "declined" });
     } finally {
       if (previous === undefined) delete process.env.PI_ASK_USER_AUTO_APPROVE;
@@ -256,8 +342,14 @@ describe("review_artifacts elsewhere", () => {
     process.env.PI_INTERRUPT_RESUME = "1";
     try {
       const fake = fakeCtx(dir, "print");
-      const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
-      const out = await (tool.execute as any)("call-1", { title: "The cases", items }, undefined, undefined, fake.ctx);
+      const tool = createReviewArtifactsTool();
+      const out = await (tool.execute as any)(
+        "call-1",
+        { title: "The cases", items },
+        undefined,
+        undefined,
+        fake.ctx,
+      );
       expect(out.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
       expect(out.details.interrupt.metadata).toEqual({
         kind: REVIEW_ARTIFACTS_TOOL_NAME,
@@ -271,9 +363,15 @@ describe("review_artifacts elsewhere", () => {
 
   it("refuses a file outside the working directory", async () => {
     const fake = fakeCtx(dir, "tui");
-    const tool = createReviewArtifactsTool(new ArtifactViewer(viewerOptions));
+    const tool = createReviewArtifactsTool();
     await expect(
-      (tool.execute as any)("call-1", { title: "x", items: [{ path: "../outside.md" }] }, undefined, undefined, fake.ctx)
+      (tool.execute as any)(
+        "call-1",
+        { title: "x", items: [{ path: "../outside.md" }] },
+        undefined,
+        undefined,
+        fake.ctx,
+      ),
     ).rejects.toThrow();
   });
 });
@@ -294,7 +392,10 @@ describe("registration", () => {
   it("registers only the tools the agent lists", () => {
     expect(registered(["review_artifacts"])).toEqual(["review_artifacts"]);
     expect(registered(["show_artifact"])).toEqual(["show_artifact"]);
-    expect(registered(["show_artifact", "review_artifacts"]).sort()).toEqual(["review_artifacts", "show_artifact"]);
+    expect(registered(["show_artifact", "review_artifacts"]).sort()).toEqual([
+      "review_artifacts",
+      "show_artifact",
+    ]);
   });
 
   it("is opted into by listing review_artifacts in tools", () => {
@@ -306,37 +407,41 @@ describe("registration", () => {
 
 describe("a question with the artifact panel open", () => {
   it("scrolls the panel with Shift+Up/Down and PgUp/PgDn, and sets the panel's footer while open", async () => {
-    const { showChoiceTui, setArtifactPanelControl } = await import("../src/interaction-tui.js");
+    const { showChoiceTui, setArtifactPanelControl } =
+      await import("../src/interaction-tui.js");
     const scrolled: string[] = [];
     const hints: Array<string | undefined> = [];
-    setArtifactPanelControl({ scroll: (by) => scrolled.push(by), setDialogHint: (hint) => hints.push(hint) });
+    setArtifactPanelControl({
+      scroll: (by) => scrolled.push(by),
+      setDialogHint: (hint) => hints.push(hint),
+    });
     try {
       const fake = fakeCtx(dir, "tui");
-      const answer = showChoiceTui("Approve?", [{ label: "Yes" }, { label: "No" }], fake.ctx.ui as any, undefined, {
-        multiple: false,
-        typedLabel: "type",
-      });
+      const answer = showChoiceTui(
+        "Approve?",
+        [{ label: "Yes" }, { label: "No" }],
+        fake.ctx.ui as any,
+        undefined,
+        {
+          multiple: false,
+          typedLabel: "type",
+        },
+      );
       const list = fake.components[0]!.component;
-      expect(list.render(120).join("\n")).toContain("Shift+Up/Down scroll the file");
+      expect(list.render(120).join("\n")).toContain(
+        "Shift+Up/Down scroll the file",
+      );
       type(list, ["\x1b[1;2B", "\x1b[1;2A", "\x1b[6~", "\x1b[5~", "1"]);
-      expect(scrolled).toEqual(["line-down", "line-up", "page-down", "page-up"]);
+      expect(scrolled).toEqual([
+        "line-down",
+        "line-up",
+        "page-down",
+        "page-up",
+      ]);
       expect(await answer).toEqual({ selected: [0] });
       expect(hints).toEqual(["Shift+↑↓ or PgUp/PgDn to scroll", undefined]);
     } finally {
       setArtifactPanelControl(undefined);
     }
-  });
-});
-
-describe("the panel during a review", () => {
-  it("gives the review's scroll keys in its footer, not Alt+R or /recipe close", async () => {
-    const { fake, result } = run("tui");
-    await flush();
-    const panel = fake.components.filter((c) => c.overlay && !c.closed).at(-1)!.component;
-    const footer = panel.render(80).at(-1)!;
-    expect(footer).toContain("Shift+↑↓");
-    expect(footer).not.toContain("Alt+R");
-    type(fake.components.find((c) => !c.overlay)!.component, ["\x1b"]);
-    await result;
   });
 });
