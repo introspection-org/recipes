@@ -27,7 +27,9 @@ import {
   ArtifactPanel,
   type ArtifactDocument,
 } from "./artifact-viewer-tui.js";
+import { createReviewArtifactsTool, REVIEW_ARTIFACTS_TOOL_NAME } from "./artifact-review.js";
 import type { RecipeExtensionRegistrationRegistry } from "./extensions.js";
+import { artifactPanelScroll, setArtifactPanelScroll } from "./interaction-tui.js";
 
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
@@ -421,6 +423,7 @@ export class ArtifactViewer {
       stopWatching: () => {},
     };
     this.open = state;
+    setArtifactPanelScroll(this.scrollPanel);
     void ctx.ui
       .custom<undefined>(
         (tui, theme, _keybindings, finish) => {
@@ -485,6 +488,15 @@ export class ArtifactViewer {
     }
   }
 
+  /** Scroll the open panel by `lines`, or by a page either way, without taking focus. */
+  scroll(lines: number | "page-up" | "page-down"): void {
+    const panel = this.open?.panel;
+    if (!panel) return;
+    if (lines === "page-up") panel.scrollBy(-panel.pageLines);
+    else if (lines === "page-down") panel.scrollBy(panel.pageLines);
+    else panel.scrollBy(lines);
+  }
+
   /** Close the panel, if it is open. */
   close(): void {
     this.open?.close();
@@ -533,10 +545,13 @@ export class ArtifactViewer {
     };
   }
 
+  private readonly scrollPanel = (page: "page-up" | "page-down") => this.scroll(page);
+
   private release(state: OpenPanel): void {
     state.stopWatching();
     state.stopWatching = () => {};
     if (this.open === state) this.open = undefined;
+    if (!this.open && artifactPanelScroll() === this.scrollPanel) setArtifactPanelScroll(undefined);
   }
 }
 
@@ -599,12 +614,22 @@ function commandPath(args: string): string {
  */
 export function artifactViewerExtension(
   registrations?: RecipeExtensionRegistrationRegistry,
-  options: ArtifactViewerOptions = {}
+  options: ArtifactViewerOptions = {},
+  agentTools: readonly string[] = [SHOW_ARTIFACT_TOOL_NAME]
 ): ExtensionFactory {
   return (pi) => {
+    const viewer = new ArtifactViewer(options);
+    // review_artifacts shows each file in the same panel, so it shares the viewer.
+    if (
+      agentTools.includes(REVIEW_ARTIFACTS_TOOL_NAME) &&
+      !registrations?.owner("tool", REVIEW_ARTIFACTS_TOOL_NAME)
+    ) {
+      registrations?.claim("tool", REVIEW_ARTIFACTS_TOOL_NAME, BUILTIN_OWNER);
+      pi.registerTool(createReviewArtifactsTool(viewer));
+    }
+    if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;
     registrations?.claim("tool", SHOW_ARTIFACT_TOOL_NAME, BUILTIN_OWNER);
-    const viewer = new ArtifactViewer(options);
     pi.registerTool(createShowArtifactTool(viewer));
 
     addRecipeSubcommand(pi, "view", async (args, ctx) => {
@@ -658,7 +683,7 @@ export function artifactViewerExtension(
   };
 }
 
-/** Whether the agent opted into the built-in viewer. */
+/** Whether the agent opted into the built-in viewer, directly or through review_artifacts. */
 export function wantsArtifactViewer(agentTools: readonly string[]): boolean {
-  return agentTools.includes(SHOW_ARTIFACT_TOOL_NAME);
+  return agentTools.includes(SHOW_ARTIFACT_TOOL_NAME) || agentTools.includes(REVIEW_ARTIFACTS_TOOL_NAME);
 }

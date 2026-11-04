@@ -984,7 +984,11 @@ export function createRecipesExtension(
       }
       // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
       if (wantsArtifactViewer(launchState.resolved.tools)) {
-        await artifactViewerExtension(launchState.extensionRegistrations)(pi);
+        await artifactViewerExtension(
+          launchState.extensionRegistrations,
+          {},
+          launchState.resolved.tools
+        )(pi);
       }
     } catch (error) {
       launchState.extensionFailure =

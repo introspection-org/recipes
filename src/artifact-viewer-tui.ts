@@ -200,7 +200,12 @@ export class ArtifactPanel implements Component {
     this.actions.disposed();
   }
 
-  private scrollBy(lines: number): void {
+  /** Lines a page scroll moves: the body's last height, less one for context. */
+  get pageLines(): number {
+    return Math.max(1, this.lastBodyHeight - 1);
+  }
+
+  scrollBy(lines: number): void {
     const next = Math.min(
       this.lastMaxScroll,
       Math.max(0, this.scrollTop + lines)
@@ -211,7 +216,7 @@ export class ArtifactPanel implements Component {
   }
 
   handleInput(data: string): void {
-    const page = Math.max(1, this.lastBodyHeight - 1);
+    const page = this.pageLines;
     if (matchesKey(data, this.focusKey)) {
       this.actions.unfocus();
     } else if (matchesKey(data, Key.up) || data === "k") {

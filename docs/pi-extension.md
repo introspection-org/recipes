@@ -101,6 +101,7 @@ replaces the content, and the panel re-renders when the file changes on disk.
 | `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
 | `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
 | `Esc` / `q` | panel | Closes the panel |
+| `PgUp` / `PgDn` | a question from `ask_user_question` | Scroll the panel without moving the keyboard to it |
 
 `/recipe view <file>` opens a file the same way; `/recipe view` on its own opens
 the last markdown file the agent showed or wrote with `write` or `edit` in this
@@ -113,6 +114,53 @@ sessions the tool returns `The file is at <path>. The artifact panel is only
 available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
 host keeps it and registers neither the built-in tool nor `/recipe view`.
+
+### Reviewing several files
+
+List `review_artifacts` and the agent can ask the user to review several
+markdown files it wrote, one decision per file, as in a pull request review:
+approve, or request changes, each with an optional comment.
+
+```ts
+review_artifacts({
+  title: "The interview agent's cases",
+  items: [                                       // 1 to 12, in reading order
+    { path: "evals/cases/C1.md", label: "C1: four questions" },
+    { path: "evals/cases/C2.md", label: "C2: a vague answer" },
+  ],
+})
+```
+
+In Pi's terminal a list replaces the editor and the panel shows the file under
+the cursor, so the user never moves the keyboard between them:
+
+| Key | Does |
+| --- | --- |
+| `Up` / `Down`, `Tab` / `Shift+Tab`, `Ctrl+N` / `Ctrl+P` | Next or previous file |
+| `j` / `k`, `PgUp` / `PgDn`, `Space` | Scroll the file |
+| `a` | Approve, then an optional comment (`Enter` saves it, `Esc` goes back) |
+| `c` | Request changes, then an optional comment |
+| `A` | Approve every file not yet decided |
+| `Enter` | Submit; files left undecided are `not reviewed` |
+| `Esc` | Cancel the review; nothing is approved |
+
+It is an interaction ([Interactions](interactions.md)), so it works on every
+host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`)
+and an optional comment; on a pause/resume host it pauses with
+`details.interrupt.metadata` `{ kind: "review_artifacts", items: [{ path, label }] }`
+for the host to render its own review, and resumes with `{ answer }` in the
+format below; headless runs and child agents decline, so nothing is approved
+without a person. The model sees, after `Answer: `:
+
+```text
+Reviewed 2 files: 1 approved, 1 with changes requested, 0 not reviewed.
+evals/cases/C1.md: approved
+evals/cases/C2.md: changes requested — "make the question count a code check"
+```
+
+A file approved with `A` before the user opened it says `(not opened)`, so a
+record of approvals can say so. `details.reviews` holds the same decisions as
+`{ path, decision, comment?, opened }`.
 
 ## Structured child events
 

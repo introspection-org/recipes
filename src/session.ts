@@ -747,7 +747,7 @@ async function createSessionForAgent(
     }
     // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
     if (wantsArtifactViewer(recipe.tools)) {
-      inlineExtensions.push(artifactViewerExtension(recipeRegistrations));
+      inlineExtensions.push(artifactViewerExtension(recipeRegistrations, {}, recipe.tools));
     }
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 

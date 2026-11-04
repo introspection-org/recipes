@@ -23,6 +23,22 @@ export interface ChoiceTuiResult {
   custom?: boolean;
 }
 
+/** Scrolls the artifact panel by a page, while a dialog has the keyboard. */
+export type ArtifactPanelScroll = (page: "page-up" | "page-down") => void;
+
+// Process-global, since a Recipe and its host may load separate copies of Recipes.
+const PANEL_SCROLL_KEY = Symbol.for("@introspection-ai/recipes/artifact-panel-scroll");
+const panelGlobals = globalThis as typeof globalThis & { [key: symbol]: ArtifactPanelScroll | undefined };
+
+/** Set while the artifact panel is open, so a question can scroll it with PgUp/PgDn. */
+export function setArtifactPanelScroll(scroll: ArtifactPanelScroll | undefined): void {
+  panelGlobals[PANEL_SCROLL_KEY] = scroll;
+}
+
+export function artifactPanelScroll(): ArtifactPanelScroll | undefined {
+  return panelGlobals[PANEL_SCROLL_KEY];
+}
+
 /** The multi-select list's result, kept for its existing callers. */
 export type MultiSelectTuiResult = ChoiceTuiResult;
 
@@ -131,12 +147,13 @@ export function showChoiceTui(
             );
           }
           lines.push("");
+          const scrollHint = artifactPanelScroll() ? " - PgUp/PgDn scroll the file" : "";
           add(
             theme.fg(
               "dim",
-              multiple
+              (multiple
                 ? " Up/Down move - Space toggle - type to answer - Enter action - Esc dismiss"
-                : " Up/Down move - Enter choose - type to answer - Esc dismiss"
+                : " Up/Down move - Enter choose - type to answer - Esc dismiss") + scrollHint
             )
           );
           add(theme.fg("accent", "-".repeat(width)));
@@ -144,6 +161,11 @@ export function showChoiceTui(
         },
         invalidate() {},
         handleInput(data: string) {
+          const scroll = artifactPanelScroll();
+          if (scroll && (matchesKey(data, Key.pageUp) || matchesKey(data, Key.pageDown))) {
+            scroll(matchesKey(data, Key.pageUp) ? "page-up" : "page-down");
+            return;
+          }
           if (matchesKey(data, Key.up)) {
             activeIndex = (activeIndex - 1 + itemCount) % itemCount;
             refresh();
@@ -260,7 +282,7 @@ export function withoutLastCharacter(text: string): string {
  * The text a keypress or paste adds: one printable key (also as a Kitty
  * CSI-u sequence), or pasted text without control characters.
  */
-function printable(data: string): string | undefined {
+export function printable(data: string): string | undefined {
   if (isKeyRelease(data)) return undefined;
   const key = decodeKittyPrintable(data);
   if (key) return key;
