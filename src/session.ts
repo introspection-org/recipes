@@ -753,10 +753,10 @@ async function createSessionForAgent(
       ...(opts.materializedSkillPaths ?? recipe.skillPaths),
       ...(opts.additionalSkillPaths ?? []),
     ];
-    const isOfferedSkill = recipeSkillMatcher([
-      ...offeredSkillPaths,
-      ...connectors.skillPaths,
-    ]);
+    const isOfferedSkill = recipeSkillMatcher(
+      [...offeredSkillPaths, ...connectors.skillPaths],
+      cwd
+    );
     const services = await createAgentSessionServices({
       cwd,
       agentDir: recipe.recipeDir,

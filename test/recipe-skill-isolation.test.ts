@@ -8,7 +8,7 @@
 
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
@@ -303,6 +303,15 @@ describe("the session API offers only the Recipe's skills", () => {
   it("keeps a host's explicit additionalSkillPaths", async () => {
     const fixture = world("dependency");
     const handle = await open(fixture, { additionalSkillPaths: [fixture.cliSkill] });
+    expect(handle.session.resourceLoader.getSkills().skills.map((entry) => entry.name)).toContain("cli-skill");
+  });
+
+  it("keeps a relative additionalSkillPaths entry, resolved against the session cwd", async () => {
+    const fixture = world("dependency");
+    // The session's cwd is the project folder, not the process's.
+    expect(process.cwd()).not.toBe(fixture.projectDir);
+    const relativePath = relative(fixture.projectDir, fixture.cliSkill);
+    const handle = await open(fixture, { additionalSkillPaths: [` ${relativePath} `] });
     expect(handle.session.resourceLoader.getSkills().skills.map((entry) => entry.name)).toContain("cli-skill");
   });
 });

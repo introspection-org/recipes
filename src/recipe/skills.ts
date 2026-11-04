@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { assertRecipePathContained, type RecipeSkillResource } from "./package.js";
 
@@ -96,6 +97,18 @@ export function resolveAgentSkillPaths(
     .sort();
 }
 
+/**
+ * A skill path the way Pi's resource loader resolves it: trimmed, `~`
+ * expanded, and a relative path taken against the session's working
+ * directory (`baseDir`), not the process's.
+ */
+export function resolveSkillPath(path: string, baseDir: string): string {
+  let input = path.trim();
+  if (input === "~") input = homedir();
+  else if (input.startsWith("~/")) input = join(homedir(), input.slice(2));
+  return isAbsolute(input) ? resolve(input) : resolve(baseDir, input);
+}
+
 function canonicalPath(path: string): string {
   try {
     return realpathSync(path);
@@ -107,12 +120,14 @@ function canonicalPath(path: string): string {
 /**
  * Match a skill file against the skills a Recipe run may offer. Each path is
  * a `SKILL.md` or a folder of skills; a skill matches when its file is one of
- * them or lies inside one, compared by real path.
+ * them or lies inside one, compared by real path. Relative paths are
+ * resolved against `baseDir`, the session's working directory, as Pi does.
  */
 export function recipeSkillMatcher(
-  paths: readonly string[]
+  paths: readonly string[],
+  baseDir: string = process.cwd()
 ): (filePath: string) => boolean {
-  const roots = paths.map(canonicalPath);
+  const roots = paths.map((path) => canonicalPath(resolveSkillPath(path, baseDir)));
   return (filePath) => {
     const file = canonicalPath(filePath);
     return roots.some((root) => file === root || file.startsWith(root.endsWith(sep) ? root : `${root}${sep}`));
