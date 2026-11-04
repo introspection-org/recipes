@@ -10,6 +10,7 @@ import {
   createReviewArtifactsTool,
   formatReviews,
   parseReviews,
+  reviewSource,
   tabName,
   REVIEW_ARTIFACTS_TOOL_NAME,
   wantsArtifactReview,
@@ -173,6 +174,46 @@ describe("formatReviews and parseReviews", () => {
   });
 });
 
+describe("what the review shows of a file", () => {
+  const caseFile = [
+    "---",
+    "id: C1",
+    "inputs:",
+    "  - name: job-description.txt",
+    "    sha256: abc",
+    "check: person",
+    "approved_by:",
+    "approved_at:",
+    "---",
+    "",
+    "## Situation",
+    "",
+    "Ready to interview.",
+  ].join("\n");
+
+  it("folds a case's front matter into one line", () => {
+    const shown = reviewSource(caseFile);
+    expect(shown).toMatch(
+      /^_check: person · inputs: job-description.txt · not yet approved_/,
+    );
+    expect(shown).not.toContain("sha256");
+    expect(shown).toContain("## Situation");
+    expect(
+      reviewSource(caseFile.replace("approved_by:", "approved_by: owner")),
+    ).toContain("approved by owner");
+  });
+
+  it("shows only the section asked for, to the next heading at its level", () => {
+    const brief =
+      "# Design\n\n## Part A: what it does\n\nThe job.\n\n### Detail\n\nMore.\n\n## Part B: how it is built\n\nTables.";
+    const shown = reviewSource(brief, "Part A");
+    expect(shown).toContain("The job.");
+    expect(shown).toContain("### Detail");
+    expect(shown).not.toContain("Part B");
+    expect(reviewSource(brief, "Part C")).toContain('No heading "Part C"');
+  });
+});
+
 describe("review_artifacts in the terminal", () => {
   const RIGHT = "\x1b[C";
   const DOWN = "\x1b[B";
@@ -275,7 +316,7 @@ describe("review_artifacts in the terminal", () => {
       true,
     );
     type(review, [RIGHT]);
-    expect(hint()).toContain("j/k or PgUp/PgDn scroll");
+    expect(hint()).toContain("j/k scroll");
     expect(shown(review)).toContain("line 1");
     type(review, ["\x1b[6~"]); // PgDn
     expect(shown(review)).not.toContain("line 1\n");

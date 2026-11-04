@@ -86,6 +86,12 @@ const parameters = Type.Object(
                 'A short label, e.g. "C2: the candidate gives a vague answer".',
             }),
           ),
+          section: Type.Optional(
+            Type.String({
+              description:
+                'The heading of the part to approve, e.g. "Part A" for a brief; shown from that heading to the next at its level.',
+            }),
+          ),
         },
         { additionalProperties: false },
       ),
@@ -100,6 +106,62 @@ export type ReviewArtifactsParams = Static<typeof parameters>;
 interface ReviewItem {
   target: ResolvedArtifactPath;
   label: string;
+  section?: string;
+}
+
+/**
+ * What the review shows of a file: its front matter folded into one line (the
+ * case's check, inputs and approval, not the fields themselves), and with a
+ * `section`, only that heading's part.
+ */
+export function reviewSource(source: string, section?: string): string {
+  let text = source;
+  let summary: string | undefined;
+  const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  if (front) {
+    text = text.slice(front[0].length);
+    const field = (name: string) =>
+      new RegExp(`^${name}:[ \\t]*(.*)$`, "m").exec(front[1]!)?.[1]?.trim();
+    const inputs = [...front[1]!.matchAll(/^\s*-\s*name:\s*(.+)$/gm)].map((m) =>
+      m[1]!.trim(),
+    );
+    const by = field("approved_by");
+    const parts = [
+      field("check") ? `check: ${field("check")}` : undefined,
+      inputs.length ? `inputs: ${inputs.join(", ")}` : undefined,
+      by
+        ? `approved by ${by}${field("approved_at") ? ` on ${field("approved_at")}` : ""}`
+        : "not yet approved",
+    ].filter(Boolean);
+    summary = `_${parts.join(" · ")}_`;
+  }
+  if (section?.trim()) {
+    const lines = text.split("\n");
+    const wanted = section.trim().toLowerCase();
+    const start = lines.findIndex(
+      (line) =>
+        /^#{1,6}\s/.test(line) &&
+        line
+          .replace(/^#+\s*/, "")
+          .toLowerCase()
+          .includes(wanted),
+    );
+    if (start >= 0) {
+      const level = /^#+/.exec(lines[start]!)![0].length;
+      let end = lines.length;
+      for (let i = start + 1; i < lines.length; i += 1) {
+        const heading = /^(#{1,6})\s/.exec(lines[i]!);
+        if (heading && heading[1]!.length <= level) {
+          end = i;
+          break;
+        }
+      }
+      text = lines.slice(start, end).join("\n");
+    } else {
+      text = `_No heading "${section.trim()}" in this file, so all of it is shown._\n\n${text}`;
+    }
+  }
+  return summary ? `${summary}\n\n${text}` : text;
 }
 
 const DECISION_TEXT: Record<ReviewDecision, string> = {
@@ -267,7 +329,12 @@ export function showReviewTui(
           } catch {
             source = "_This file doesn't exist._";
           }
-          markdown = new Markdown(source, 0, 0, artifactMarkdownTheme(theme));
+          markdown = new Markdown(
+            reviewSource(source, items[index]!.section),
+            0,
+            0,
+            artifactMarkdownTheme(theme),
+          );
           documents.set(index, markdown);
         }
         return markdown;
@@ -414,9 +481,7 @@ export function showReviewTui(
           const keys = [
             several ? "←→ file" : undefined,
             "Enter choose",
-            lastMaxScroll > 0 && !onSubmitTab()
-              ? "j/k or PgUp/PgDn scroll"
-              : undefined,
+            lastMaxScroll > 0 && !onSubmitTab() ? "j/k scroll" : undefined,
             "Esc cancel",
           ];
           add(theme.fg("dim", ` ${keys.filter(Boolean).join(" · ")}`));
@@ -468,7 +533,9 @@ export function showReviewTui(
                 ? "line-up"
                 : matchesKey(data, Key.space)
                   ? "page-down"
-                  : undefined);
+                  : data === "b"
+                    ? "page-up"
+                    : undefined);
           if (by) scroll(by);
           else if (
             several &&
@@ -563,7 +630,11 @@ export function createReviewArtifactsTool(
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const items: ReviewItem[] = params.items.map((item) => {
         const target = resolveArtifactPath(ctx.cwd, item.path);
-        return { target, label: item.label?.trim() || target.relativePath };
+        return {
+          target,
+          label: item.label?.trim() || target.relativePath,
+          ...(item.section?.trim() ? { section: item.section.trim() } : {}),
+        };
       });
       const result = await askUser(
         {
@@ -574,6 +645,7 @@ export function createReviewArtifactsTool(
             items: items.map((item) => ({
               path: item.target.relativePath,
               label: item.label,
+              ...(item.section ? { section: item.section } : {}),
             })),
           },
           display: {

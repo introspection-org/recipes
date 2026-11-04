@@ -128,9 +128,12 @@ review_artifacts({
   items: [                                       // 1 to 20, in reading order
     { path: "evals/cases/C1.md", label: "C1: four questions" },
     { path: "evals/cases/C2.md", label: "C2: a vague answer" },
+    { path: "docs/DESIGN.md", label: "The brief", section: "Part A" }, // only that part
   ],
 })
 ```
+
+A case's front matter shows as one line (its check, inputs and approval), and `section` shows only the part under that heading, so the review holds what is being approved.
 
 In Pi's terminal the review is inline, in place of the editor: a tab per file
 and a Submit tab across the top (a single file has none), the file itself in a
@@ -141,7 +144,7 @@ is for showing a file without asking for a decision.
 | --- | --- |
 | `Left` / `Right`, `Tab` / `Shift+Tab` | Previous or next file, then Submit |
 | `Up` / `Down`, `Enter`, or a number | Pick a choice: `Approve`, or `Request changes` and say what should change (required) |
-| `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down` | Scroll a file longer than the box |
+| `j` / `k`, `Space` / `b` (also `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down`) | Scroll a file longer than the box, which takes at most half the terminal |
 | `Esc` | Cancel the review; nothing is approved |
 
 After a decision the review moves to the next undecided file, and once every
