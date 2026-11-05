@@ -49,6 +49,16 @@ reads them as its defaults, but an agent name only counts for the Recipe it
 came with: `pi --recipe <another Recipe>` run from a Recipe session's shell
 selects that Recipe's default agent, not the parent's.
 
+## Where the agent is
+
+A Recipe agent's step shows in Pi's footer, with how long the agent has worked:
+
+```text
+⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04
+```
+
+Nothing is declared for it. The step is the agent's skill it last read, among the skills of the phase it lists first (`build-*` for an agent listing `build-brainstorm` first; others it consults, such as `eval-case`, don't move it): a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked, the current one marked and the rest to come; any other skill shows by its name. The clock is the agent's working time from the start of the session, across every step, redrawn every second. It pauses while the person is in the loop, when the agent's turn has ended or a question or review is open, and the current step then shows ⏸ in place of ▸. It's never an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
+
 ## The Recipe a session runs
 
 When the extension starts a Recipe session it records the Recipe in the session file, as a custom entry of type `recipe_session`:

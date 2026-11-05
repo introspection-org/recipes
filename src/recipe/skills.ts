@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { assertRecipePathContained, type RecipeSkillResource } from "./package.js";
 
-function skillName(filePath: string, recipeDir: string): string {
+export function skillName(filePath: string, recipeDir: string): string {
   try {
     const content = readFileSync(filePath, "utf8");
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
