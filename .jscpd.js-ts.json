@@ -1,0 +1,14 @@
+{
+  "path": ["."],
+  "pattern": "**/*.{ts,tsx,js,mjs,cjs}",
+  "format": ["typescript", "tsx", "javascript"],
+  "ignore": ["**/node_modules/**", "**/dist/**", "**/target/**", "**/vendor/**"],
+  "gitignore": true,
+  "minTokens": 50,
+  "minLines": 5,
+  "mode": "weak",
+  "kind": ["exact", "renamed"],
+  "ignoreIdentifiers": true,
+  "threshold": 4.9,
+  "reporters": ["console"]
+}
