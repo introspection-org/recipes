@@ -58,7 +58,6 @@ export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
  * never clash with another extension's or the user's commands. */
 export const VIEW_ARTIFACT_COMMAND = "recipe view";
-export const CLOSE_ARTIFACT_COMMAND = "recipe close";
 
 /** A `/recipe` subcommand an optional built-in adds: `/recipe <name> <args>`. */
 export type RecipeSubcommand = (
@@ -204,15 +203,6 @@ export function markdownFilesFor(
     .slice(0, MAX_LISTED_FILES)
     .map((path) => ({ value: path, label: path }));
 }
-
-/**
- * Moves input between the editor and the panel. Alt+R ("recipe") is unbound
- * in Pi's defaults; plain Ctrl letters are all taken, and Ctrl+Shift letters
- * are indistinguishable from Ctrl letters in terminals without the Kitty
- * keyboard protocol.
- */
-export const ARTIFACT_PANEL_FOCUS_KEY = "alt+r" as const;
-const FOCUS_KEY_LABEL = "Alt+R";
 
 /** File extensions the panel renders. */
 export const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [
@@ -518,8 +508,6 @@ export class ArtifactViewer {
               close: () => state.close(),
               disposed: () => this.release(state),
             },
-            ARTIFACT_PANEL_FOCUS_KEY,
-            FOCUS_KEY_LABEL,
           );
           state.stopWatching = this.watch(state.target);
           return state.panel;
@@ -546,31 +534,6 @@ export class ArtifactViewer {
       );
   }
 
-  /** The shortcut: move input to the panel, or back to the editor. */
-  toggleFocus(ctx: ExtensionContext): void {
-    if (this.open?.handle) {
-      if (this.open.handle.isFocused()) this.unfocus();
-      else this.focus();
-      return;
-    }
-    if (this.open) return;
-    if (!this.last) {
-      ctx.ui.notify(
-        `No artifact to show yet. Use /${VIEW_ARTIFACT_COMMAND} <file.md>.`,
-        "info",
-      );
-      return;
-    }
-    try {
-      this.show(ctx, resolveArtifactPath(ctx.cwd, this.last), true);
-    } catch (error) {
-      ctx.ui.notify(
-        error instanceof Error ? error.message : String(error),
-        "warning",
-      );
-    }
-  }
-
   /** Scroll the open panel without taking focus. */
   scroll(by: ArtifactPanelScrollBy): void {
     const panel = this.open?.panel;
@@ -592,9 +555,10 @@ export class ArtifactViewer {
     return handle.isHidden();
   }
 
-  /** While a dialog holds the keyboard, its keys replace the panel footer's. */
+  /** While a dialog holds the keyboard, its keys replace the panel footer's; when it ends, the panel takes the keyboard back. */
   setDialogHint(hint: string | undefined): void {
     this.open?.panel?.setDialogHint(hint);
+    if (hint === undefined && this.open?.handle) this.focus();
   }
 
   /** Close the panel, if it is open. */
@@ -688,7 +652,8 @@ export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
           details: { path: target.relativePath, shown: false },
         };
       }
-      viewer.show(ctx, target);
+      // It takes the keyboard as it opens, so Esc or q closes it without a shortcut first.
+      viewer.show(ctx, target, true);
       const columns = process.stdout.columns;
       if (
         columns !== undefined &&
@@ -708,7 +673,7 @@ export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         content: [
           {
             type: "text",
-            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor, closes it with /${CLOSE_ARTIFACT_COMMAND}, and can press ${FOCUS_KEY_LABEL} to scroll it.`,
+            text: `Showing ${target.relativePath} in the panel on the right, which has the keyboard: the user scrolls it and closes it with Esc or q, which returns them to the editor; /${VIEW_ARTIFACT_COMMAND} reopens it.`,
           },
         ],
         details: { path: target.relativePath, shown: true },
@@ -772,7 +737,7 @@ export function artifactViewerExtension(
           return;
         }
         try {
-          viewer.show(ctx, resolveArtifactPath(ctx.cwd, path));
+          viewer.show(ctx, resolveArtifactPath(ctx.cwd, path), true);
         } catch (error) {
           ctx.ui.notify(errorText(error), "warning");
         }
@@ -782,22 +747,6 @@ export function artifactViewerExtension(
         complete: (argument, cwd) => markdownFilesFor(cwd, argument),
       },
     );
-    addRecipeSubcommand(
-      pi,
-      "close",
-      async () => {
-        viewer.close();
-      },
-      { description: "Close the artifact panel" },
-    );
-
-    pi.registerShortcut(ARTIFACT_PANEL_FOCUS_KEY, {
-      description:
-        "Move the keyboard between the editor and the artifact panel",
-      handler: (ctx) => {
-        if (ctx.mode === "tui") viewer.toggleFocus(ctx);
-      },
-    });
 
     pi.on("tool_result", (event, ctx) => {
       if (event.isError) return;

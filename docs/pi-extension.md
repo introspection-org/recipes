@@ -98,7 +98,6 @@ replaces the content, and the panel re-renders when the file changes on disk.
 
 | Key | Where | Does |
 | --- | --- | --- |
-| `Alt+R` | editor or panel | Moves the keyboard to the panel and back; with no panel open, reopens the last file |
 | `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
 | `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
 | `Esc` / `q` | panel | Closes the panel |
@@ -106,7 +105,7 @@ replaces the content, and the panel re-renders when the file changes on disk.
 
 `/recipe view <file>` opens a file the same way; `/recipe view` on its own opens
 the last markdown file the agent showed or wrote with `write` or `edit` in this
-session, and `/recipe close` closes the panel from the editor. They are
+session, and `Esc` closes the panel from the editor. They are
 subcommands of `/recipe`, so they never clash with another extension's or your
 own commands.
 

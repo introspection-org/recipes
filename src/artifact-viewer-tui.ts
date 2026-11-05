@@ -103,16 +103,13 @@ export class ArtifactPanel implements Component {
     private readonly theme: Theme,
     document: ArtifactDocument,
     private readonly actions: ArtifactPanelActions,
-    /** The focus shortcut, so pressing it in the panel returns to the editor. */
-    private readonly focusKey: KeyId,
-    private readonly focusKeyLabel: string
   ) {
     this.document = document;
     this.markdown = new Markdown(
       document.markdown ?? "",
       0,
       0,
-      artifactMarkdownTheme(theme)
+      artifactMarkdownTheme(theme),
     );
   }
 
@@ -145,7 +142,9 @@ export class ArtifactPanel implements Component {
 
   private bodyLines(contentWidth: number): string[] {
     if (this.document.markdown === undefined) {
-      return [this.theme.fg("warning", "This file was removed or cannot be read.")];
+      return [
+        this.theme.fg("warning", "This file was removed or cannot be read."),
+      ];
     }
     if (this.document.markdown.trim() === "") {
       return [this.theme.fg("muted", "(empty file)")];
@@ -171,14 +170,14 @@ export class ArtifactPanel implements Component {
     const titleText = ` ${this.document.title} `;
     const fill = Math.max(
       1,
-      width - 1 - visibleWidth(titleText) - visibleWidth(position)
+      width - 1 - visibleWidth(titleText) - visibleWidth(position),
     );
     const title = truncateToWidth(
       border("─") +
         this.theme.fg(focused ? "accent" : "text", this.theme.bold(titleText)) +
         border("─".repeat(fill)) +
         this.theme.fg("muted", position),
-      width
+      width,
     );
 
     const lines = [padToWidth(title, width)];
@@ -187,8 +186,8 @@ export class ArtifactPanel implements Component {
       lines.push(padToWidth(`${border("│")} ${visible[index] ?? ""}`, width));
     }
     const hint = focused
-      ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close · ${this.focusKeyLabel} editor`
-      : (this.dialogHint ?? `/recipe close to close · ${this.focusKeyLabel} to scroll`);
+      ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close`
+      : (this.dialogHint ?? "Esc close");
     lines.push(padToWidth(this.theme.fg("dim", ` ${hint}`), width));
     return lines;
   }
@@ -222,7 +221,7 @@ export class ArtifactPanel implements Component {
   scrollBy(lines: number): void {
     const next = Math.min(
       this.lastMaxScroll,
-      Math.max(0, this.scrollTop + lines)
+      Math.max(0, this.scrollTop + lines),
     );
     if (next === this.scrollTop) return;
     this.scrollTop = next;
@@ -231,9 +230,7 @@ export class ArtifactPanel implements Component {
 
   handleInput(data: string): void {
     const page = this.pageLines;
-    if (matchesKey(data, this.focusKey)) {
-      this.actions.unfocus();
-    } else if (matchesKey(data, Key.up) || data === "k") {
+    if (matchesKey(data, Key.up) || data === "k") {
       this.scrollBy(-1);
     } else if (matchesKey(data, Key.down) || data === "j") {
       this.scrollBy(1);

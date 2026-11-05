@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +15,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import {
-  ARTIFACT_PANEL_FOCUS_KEY,
   SHOW_ARTIFACT_TOOL_NAME,
   artifactViewerExtension,
   markdownFilesFor,
@@ -62,9 +67,9 @@ function fakeCtx(cwd: string, mode: "tui" | "rpc" | "print" = "tui") {
         tui: object,
         theme: object,
         keybindings: object,
-        done: (result: T) => void
+        done: (result: T) => void,
       ) => Component,
-      options: Record<string, any>
+      options: Record<string, any>,
     ): Promise<T> {
       return new Promise<T>((resolvePromise) => {
         const overlay = {
@@ -94,7 +99,7 @@ function fakeCtx(cwd: string, mode: "tui" | "rpc" | "print" = "tui") {
             overlay.focused = false;
             overlay.component.dispose?.();
             resolvePromise(result);
-          }
+          },
         );
         overlays.push(overlay);
         // Pi focuses a new overlay unless it is non-capturing.
@@ -166,7 +171,7 @@ function fakeWatcher() {
   const stopped: string[] = [];
   const watchFile: NonNullable<ArtifactViewerOptions["watchFile"]> = (
     path,
-    onChange
+    onChange,
   ) => {
     active.set(path, onChange);
     return () => {
@@ -177,16 +182,25 @@ function fakeWatcher() {
   return { active, stopped, watchFile };
 }
 
-async function setup(options: ArtifactViewerOptions = {}, mode?: "tui" | "rpc" | "print") {
+async function setup(
+  options: ArtifactViewerOptions = {},
+  mode?: "tui" | "rpc" | "print",
+) {
   const fake = fakePi();
   await artifactViewerExtension(
     createRecipeExtensionRegistrationRegistry(),
-    options
+    options,
   )(fake.pi as never);
   const ui = fakeCtx(workspace, mode);
   const tool = fake.tools[0]!;
   const show = (path: string) =>
-    tool.execute("call-1", { path } as never, undefined, undefined, ui.ctx as never) as Promise<{
+    tool.execute(
+      "call-1",
+      { path } as never,
+      undefined,
+      undefined,
+      ui.ctx as never,
+    ) as Promise<{
       content: Array<{ type: "text"; text: string }>;
       details: Record<string, any>;
     }>;
@@ -201,8 +215,14 @@ let workspace: string;
 beforeEach(() => {
   workspace = mkdtempSync(join(tmpdir(), "artifact-viewer-"));
   mkdirSync(join(workspace, "evals", "cases"), { recursive: true });
-  writeFileSync(join(workspace, "brief.md"), "# Design brief\n\nShip the **first** cut.\n");
-  writeFileSync(join(workspace, "evals", "cases", "refund.md"), "# Refund case\n");
+  writeFileSync(
+    join(workspace, "brief.md"),
+    "# Design brief\n\nShip the **first** cut.\n",
+  );
+  writeFileSync(
+    join(workspace, "evals", "cases", "refund.md"),
+    "# Refund case\n",
+  );
   writeFileSync(join(workspace, "notes.txt"), "plain text\n");
 });
 
@@ -213,7 +233,9 @@ afterEach(() => {
 
 describe("show_artifact tool", () => {
   it("opens a non-capturing overlay in the top-right corner", async () => {
-    const { show, overlays, tool } = await setup({ watchFile: fakeWatcher().watchFile });
+    const { show, overlays, tool } = await setup({
+      watchFile: fakeWatcher().watchFile,
+    });
     expect(tool.name).toBe(SHOW_ARTIFACT_TOOL_NAME);
     expect(tool.description).toContain("instead of only printing its path");
 
@@ -230,7 +252,7 @@ describe("show_artifact tool", () => {
       margin: 1,
       nonCapturing: true,
     });
-    expect(focused).toBe(false);
+    expect(focused).toBe(true);
 
     const lines = component.render(60);
     expect(lines).toHaveLength(10); // 12 rows minus the top and bottom margin
@@ -238,12 +260,15 @@ describe("show_artifact tool", () => {
     expect(lines[0]).toMatch(/1-\d+\/\d+/);
     expect(lines.join("\n")).toContain("Design brief");
     expect(lines.join("\n")).toContain("first");
-    expect(lines.at(-1)).toContain("Alt+R");
+    expect(lines.at(-1)).toContain("q/Esc close");
   });
 
   it("shows a file as unreadable once it links outside the working directory", async () => {
     const watcher = fakeWatcher();
-    const { show, overlays } = await setup({ watchFile: watcher.watchFile, debounceMs: 0 });
+    const { show, overlays } = await setup({
+      watchFile: watcher.watchFile,
+      debounceMs: 0,
+    });
     await show("brief.md");
     const outside = mkdtempSync(join(tmpdir(), "artifact-outside-"));
     try {
@@ -282,7 +307,7 @@ describe("show_artifact tool", () => {
       const { show, overlays } = await setup({}, mode);
       const result = await show("brief.md");
       expect(result.content[0]!.text).toBe(
-        "The file is at brief.md. The artifact panel is only available in Pi's interactive terminal, so tell the user where the file is."
+        "The file is at brief.md. The artifact panel is only available in Pi's interactive terminal, so tell the user where the file is.",
       );
       expect(result.details).toEqual({ path: "brief.md", shown: false });
       expect(overlays).toHaveLength(0);
@@ -297,16 +322,16 @@ describe("path validation", () => {
       relativePath: "evals/cases/refund.md",
     });
     expect(
-      resolveArtifactPath(workspace, join(workspace, "brief.md")).relativePath
+      resolveArtifactPath(workspace, join(workspace, "brief.md")).relativePath,
     ).toBe("brief.md");
   });
 
   it("refuses paths outside the working directory", () => {
     expect(() => resolveArtifactPath(workspace, "../elsewhere.md")).toThrow(
-      /outside the working directory/
+      /outside the working directory/,
     );
     expect(() => resolveArtifactPath(workspace, "/etc/hosts.md")).toThrow(
-      /outside the working directory/
+      /outside the working directory/,
     );
   });
 
@@ -316,7 +341,7 @@ describe("path validation", () => {
       writeFileSync(join(outside, "secret.md"), "# not yours\n");
       symlinkSync(join(outside, "secret.md"), join(workspace, "link.md"));
       expect(() => resolveArtifactPath(workspace, "link.md")).toThrow(
-        /links outside the working directory/
+        /links outside the working directory/,
       );
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -325,77 +350,41 @@ describe("path validation", () => {
 
   it("refuses missing and non-markdown files", () => {
     expect(() => resolveArtifactPath(workspace, "missing.md")).toThrow(
-      "missing.md does not exist. Write the file first, then show it."
+      "missing.md does not exist. Write the file first, then show it.",
     );
     expect(() => resolveArtifactPath(workspace, "notes.txt")).toThrow(
-      "notes.txt is not a markdown file; only .md and .markdown files can be shown for now."
+      "notes.txt is not a markdown file; only .md and .markdown files can be shown for now.",
     );
     mkdirSync(join(workspace, "folder.md"));
     expect(() => resolveArtifactPath(workspace, "folder.md")).toThrow(
-      "folder.md is not a file."
+      "folder.md is not a file.",
     );
     expect(() => resolveArtifactPath(workspace, "  ")).toThrow(
-      "Give the path of a markdown file to show."
+      "Give the path of a markdown file to show.",
     );
   });
 
   it("fails the tool call without opening a panel", async () => {
     const { show, overlays } = await setup();
-    await expect(show("../elsewhere.md")).rejects.toThrow(/outside the working directory/);
+    await expect(show("../elsewhere.md")).rejects.toThrow(
+      /outside the working directory/,
+    );
     await expect(show("notes.txt")).rejects.toThrow(/not a markdown file/);
     expect(overlays).toHaveLength(0);
   });
 });
 
 describe("artifact panel", () => {
-  it("moves focus between the editor and the panel with the shortcut", async () => {
-    const { show, overlays, shortcuts, ctx } = await setup({
-      watchFile: fakeWatcher().watchFile,
-    });
-    expect([...shortcuts.keys()]).toEqual([ARTIFACT_PANEL_FOCUS_KEY]);
-    const toggle = shortcuts.get(ARTIFACT_PANEL_FOCUS_KEY)!.handler;
-    await show("brief.md");
-    const overlay = overlays[0]!;
-
-    toggle(ctx);
-    expect(overlay.focused).toBe(true);
-    expect(overlay.component.render(60).at(-1)).toContain("q/Esc close");
-
-    // Pi only sends keys to the focused overlay, so the panel handles the
-    // shortcut itself to hand input back to the editor.
-    overlay.component.handleInput!(KEYS.altR);
-    expect(overlay.focused).toBe(false);
-    expect(overlay.unfocusCalls).toBe(1);
-
-    toggle(ctx);
-    toggle(ctx);
-    expect(overlay.focused).toBe(false);
-    expect(overlay.focusCalls).toBe(2);
-  });
-
-  it("reopens the last file focused when the shortcut is pressed with no panel", async () => {
-    const { show, overlays, shortcuts, ctx, notices } = await setup({
-      watchFile: fakeWatcher().watchFile,
-    });
-    const toggle = shortcuts.get(ARTIFACT_PANEL_FOCUS_KEY)!.handler;
-    toggle(ctx);
-    expect(overlays).toHaveLength(0);
-    expect(notices[0]!.message).toContain("No artifact to show yet");
-
-    await show("brief.md");
-    overlays[0]!.component.handleInput!("q");
-    toggle(ctx);
-    expect(overlays).toHaveLength(2);
-    expect(overlays[1]!.focused).toBe(true);
-    expect(overlays[1]!.component.render(60)[0]).toContain("brief.md");
-  });
-
   it("scrolls with the arrow and page keys", async () => {
     writeFileSync(
       join(workspace, "long.md"),
-      Array.from({ length: 40 }, (_, index) => `Line ${index + 1}\n`).join("\n")
+      Array.from({ length: 40 }, (_, index) => `Line ${index + 1}\n`).join(
+        "\n",
+      ),
     );
-    const { show, overlays } = await setup({ watchFile: fakeWatcher().watchFile });
+    const { show, overlays } = await setup({
+      watchFile: fakeWatcher().watchFile,
+    });
     await show("long.md");
     const panel = overlays[0]!.component;
     const body = () => panel.render(60).slice(1, -1).join("\n");
@@ -412,7 +401,8 @@ describe("artifact panel", () => {
     panel.handleInput!(KEYS.pageUp);
     panel.handleInput!(KEYS.pageUp);
     expect(panel.render(60)[0]).toContain("1-8/");
-    for (let index = 0; index < 50; index += 1) panel.handleInput!(KEYS.pageDown);
+    for (let index = 0; index < 50; index += 1)
+      panel.handleInput!(KEYS.pageDown);
     const [, , last, total] = /(\d+)-(\d+)\/(\d+)/.exec(panel.render(60)[0]!)!;
     expect(last).toBe(total);
     expect(body()).toContain("Line 40");
@@ -467,7 +457,10 @@ describe("artifact panel", () => {
     vi.useFakeTimers();
     const watcher = fakeWatcher();
     const path = join(workspace, "long.md");
-    const lines = Array.from({ length: 30 }, (_, index) => `Line ${index + 1}\n`);
+    const lines = Array.from(
+      { length: 30 },
+      (_, index) => `Line ${index + 1}\n`,
+    );
     writeFileSync(path, lines.join("\n"));
     const { show, overlays } = await setup({
       watchFile: watcher.watchFile,
@@ -502,8 +495,10 @@ describe("/recipe view and /recipe close", () => {
     });
     await subcommand("view")(" @evals/cases/refund.md ", ctx as never);
     expect(overlays).toHaveLength(1);
-    expect(overlays[0]!.focused).toBe(false);
-    expect(overlays[0]!.component.render(60)[0]).toContain("evals/cases/refund.md");
+    expect(overlays[0]!.focused).toBe(true);
+    expect(overlays[0]!.component.render(60)[0]).toContain(
+      "evals/cases/refund.md",
+    );
   });
 
   it("reports a bad path as a notice", async () => {
@@ -521,7 +516,8 @@ describe("/recipe view and /recipe close", () => {
     const { subcommand, events, ctx, overlays, notices, show } = await setup({
       watchFile: fakeWatcher().watchFile,
     });
-    const view = (args: string, context: unknown) => subcommand("view")(args, context as never);
+    const view = (args: string, context: unknown) =>
+      subcommand("view")(args, context as never);
     await view("", ctx);
     expect(overlays).toHaveLength(0);
     expect(notices[0]!.message).toContain("Usage: /recipe view <file.md>");
@@ -535,7 +531,9 @@ describe("/recipe view and /recipe close", () => {
     toolResult("write", "notes.txt");
     toolResult("edit", "missing.md", true);
     await view("", ctx);
-    expect(overlays[0]!.component.render(60)[0]).toContain("evals/cases/refund.md");
+    expect(overlays[0]!.component.render(60)[0]).toContain(
+      "evals/cases/refund.md",
+    );
 
     overlays[0]!.component.handleInput!("q");
     await show("brief.md");
@@ -548,16 +546,9 @@ describe("/recipe view and /recipe close", () => {
     const { subcommand, ctx, overlays, notices } = await setup({}, "rpc");
     await subcommand("view")("brief.md", ctx as never);
     expect(overlays).toHaveLength(0);
-    expect(notices[0]!.message).toBe("/recipe view needs Pi's interactive terminal.");
-  });
-
-  it("closes the panel from the editor", async () => {
-    const { subcommand, ctx, overlays } = await setup({ watchFile: fakeWatcher().watchFile });
-    await subcommand("view")("brief.md", ctx as never);
-    expect(overlays).toHaveLength(1);
-    expect(overlays[0]!.closed).toBe(false);
-    await subcommand("close")("", ctx as never);
-    expect(overlays[0]!.closed).toBe(true);
+    expect(notices[0]!.message).toBe(
+      "/recipe view needs Pi's interactive terminal.",
+    );
   });
 });
 
@@ -565,15 +556,22 @@ describe("/recipe completions", () => {
   it("lists the subcommands, then the workspace's markdown files for view", async () => {
     const { pi } = await setup();
     const names = (prefix: string) =>
-      recipeSubcommandCompletions(pi, prefix, workspace).map((item) => item.label);
-    expect(names("")).toEqual(["view", "close"]);
+      recipeSubcommandCompletions(pi, prefix, workspace).map(
+        (item) => item.label,
+      );
+    expect(names("")).toEqual(["view"]);
     expect(names("v")).toEqual(["view"]);
     const files = recipeSubcommandCompletions(pi, "view ", workspace);
     // The usual review folders come first; text files are never offered.
-    expect(files.map((item) => item.value)).toEqual(["view evals/cases/refund.md", "view brief.md"]);
-    expect(recipeSubcommandCompletions(pi, "view REF", workspace).map((item) => item.label)).toEqual([
-      "evals/cases/refund.md",
+    expect(files.map((item) => item.value)).toEqual([
+      "view evals/cases/refund.md",
+      "view brief.md",
     ]);
+    expect(
+      recipeSubcommandCompletions(pi, "view REF", workspace).map(
+        (item) => item.label,
+      ),
+    ).toEqual(["evals/cases/refund.md"]);
     expect(recipeSubcommandCompletions(pi, "close x", workspace)).toEqual([]);
   });
 
@@ -590,18 +588,23 @@ describe("/recipe completions", () => {
 });
 
 describe("registration", () => {
-  it("registers the tool, the /recipe subcommands and the shortcut, and no top-level command", async () => {
+  it("registers the tool and /recipe view, no shortcut and no top-level command", async () => {
     const { tools, commands, shortcuts, events, pi } = await setup();
     expect(tools.map((tool) => tool.name)).toEqual(["show_artifact"]);
     expect([...commands.keys()]).toEqual([]);
-    expect(recipeSubcommandNames(pi)).toEqual(["view", "close"]);
-    expect([...shortcuts.keys()]).toEqual(["alt+r"]);
-    expect([...events.keys()].sort()).toEqual(["session_shutdown", "tool_result"]);
+    expect(recipeSubcommandNames(pi)).toEqual(["view"]);
+    expect([...shortcuts.keys()]).toEqual([]);
+    expect([...events.keys()].sort()).toEqual([
+      "session_shutdown",
+      "tool_result",
+    ]);
   });
 
   it("closes the panel when the session shuts down", async () => {
     const watcher = fakeWatcher();
-    const { show, overlays, events } = await setup({ watchFile: watcher.watchFile });
+    const { show, overlays, events } = await setup({
+      watchFile: watcher.watchFile,
+    });
     await show("brief.md");
     for (const handler of events.get("session_shutdown") ?? []) handler({});
     expect(overlays[0]!.closed).toBe(true);
@@ -648,13 +651,22 @@ describe("default file watcher", () => {
   it("sees an edit to the file a symlink points to, in another folder", async () => {
     const { watchFileWithFs } = await import("../src/artifact-viewer.js");
     mkdirSync(join(workspace, "reports"));
-    symlinkSync(join("..", "brief.md"), join(workspace, "reports", "latest.md"));
+    symlinkSync(
+      join("..", "brief.md"),
+      join(workspace, "reports", "latest.md"),
+    );
     let changes = 0;
-    const stop = watchFileWithFs(join(workspace, "reports", "latest.md"), () => {
-      changes += 1;
-    });
+    const stop = watchFileWithFs(
+      join(workspace, "reports", "latest.md"),
+      () => {
+        changes += 1;
+      },
+    );
     try {
-      writeFileSync(join(workspace, "brief.md"), "# Revised through the target\n");
+      writeFileSync(
+        join(workspace, "brief.md"),
+        "# Revised through the target\n",
+      );
       for (let waited = 0; changes === 0 && waited < 2000; waited += 20) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
@@ -667,7 +679,10 @@ describe("default file watcher", () => {
 
 describe("splitRecipeSubcommand", () => {
   it("keeps the argument's own whitespace", () => {
-    expect(splitRecipeSubcommand('view "a  b.md"')).toEqual({ name: "view", args: '"a  b.md"' });
+    expect(splitRecipeSubcommand('view "a  b.md"')).toEqual({
+      name: "view",
+      args: '"a  b.md"',
+    });
     expect(splitRecipeSubcommand("view   notes/a  b.md")).toEqual({
       name: "view",
       args: "notes/a  b.md",
