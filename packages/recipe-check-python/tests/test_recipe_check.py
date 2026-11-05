@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import introspection_recipe_check
-from introspection_recipe_check._api import _normalize_file_url_path
 import pytest
+from introspection_recipe_check._api import _normalize_file_url_path
 
 
 def test_accepts_portable_runtime_requirements() -> None:
