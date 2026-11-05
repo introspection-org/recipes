@@ -6,7 +6,8 @@ import {
   registerSkillProgress,
   skillRead,
   STEP_STATUS_KEY,
-  stepCrumb,
+  stepLine,
+  stepTitle,
 } from "../src/skill-progress.js";
 
 const skills = [
@@ -31,13 +32,20 @@ describe("where the agent is", () => {
     ).toBeUndefined();
   });
 
-  it("shows the phase as a bar and the step", () => {
-    expect(stepCrumb("build-brainstorm", skills)).toBe(
-      "build ▰▱▱ 1/3 brainstorm",
+  it("shows the phase's steps in order, done ticked, the current one with its clock", () => {
+    expect(stepLine("build-brainstorm", skills, "00:17")).toBe(
+      "build ▸ brainstorm · 00:17 → draft → review",
     );
-    expect(stepCrumb("build-review", skills)).toBe("build ▰▰▰ 3/3 review");
-    expect(stepCrumb("build-draft", skills)).toBe("build ▰▰▱ 2/3 draft");
-    expect(stepCrumb("research", ["research"])).toBe("research");
+    expect(stepLine("build-draft", skills, "12:04")).toBe(
+      "build ✓ brainstorm → ▸ draft · 12:04 → review",
+    );
+    expect(stepLine("build-review", skills, "01:00")).toBe(
+      "build ✓ brainstorm → ✓ draft → ▸ review · 01:00",
+    );
+    expect(stepLine("research", ["research"], "00:05")).toBe(
+      "research · 00:05",
+    );
+    expect(stepTitle("build-draft", skills)).toBe("build ▸ draft");
   });
 
   it("gives how long the step has run", () => {
@@ -118,12 +126,12 @@ describe("where the agent is", () => {
     clock = 3 * 60_000 + 17_000;
     tick!();
     expect(titles).toEqual([
-      "⧈ Introspection · interview-8 · build ▰▱▱ 1/3 brainstorm",
-      "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft",
+      "⧈ Introspection · interview-8 · build ▸ brainstorm",
+      "⧈ Introspection · interview-8 · build ▸ draft",
     ]);
     expect(statuses.at(-1)).toEqual([
       STEP_STATUS_KEY,
-      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:17",
+      "⧈ Introspection build ✓ brainstorm → ▸ draft · 03:17 → review",
     ]);
   });
 

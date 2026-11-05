@@ -35,20 +35,47 @@ export function skillRead(
   return undefined;
 }
 
-/**
- * `build ▰▰▱ 2/3 draft` for a `<phase>-<step>` skill the agent lists with
- * others of its phase: a bar of the phase's steps in the agent's order, done
- * and current filled. Any other skill shows by its name.
- */
-export function stepCrumb(skill: string, skills: readonly string[]): string {
+/** A skill's phase and its steps in the agent's order, or undefined when it isn't one of several `<phase>-<step>` skills. */
+function phaseOf(
+  skill: string,
+  skills: readonly string[],
+): { phase: string; steps: string[]; at: number } | undefined {
   const dash = skill.indexOf("-");
-  if (dash <= 0) return skill;
+  if (dash <= 0) return undefined;
   const phase = skill.slice(0, dash);
-  const steps = skills.filter((name) => name.startsWith(`${phase}-`));
-  const at = steps.indexOf(skill);
-  if (steps.length < 2 || at < 0) return skill;
-  const bar = steps.map((_, index) => (index <= at ? "▰" : "▱")).join("");
-  return `${phase} ${bar} ${at + 1}/${steps.length} ${skill.slice(dash + 1)}`;
+  const steps = skills
+    .filter((name) => name.startsWith(`${phase}-`))
+    .map((name) => name.slice(phase.length + 1));
+  const at = steps.indexOf(skill.slice(dash + 1));
+  return steps.length < 2 || at < 0 ? undefined : { phase, steps, at };
+}
+
+/**
+ * The footer's line for a step: `build ✓ brainstorm → ▸ draft · 12:04 → review`,
+ * the phase's steps in the agent's order, done ticked, the current one marked
+ * with how long it has run. Any other skill shows by its name.
+ */
+export function stepLine(
+  skill: string,
+  skills: readonly string[],
+  clock: string,
+): string {
+  const found = phaseOf(skill, skills);
+  if (!found) return `${skill} · ${clock}`;
+  const parts = found.steps.map((step, index) =>
+    index < found.at
+      ? `✓ ${step}`
+      : index === found.at
+        ? `▸ ${step} · ${clock}`
+        : step,
+  );
+  return `${found.phase} ${parts.join(" → ")}`;
+}
+
+/** The title's short form: `build ▸ draft`, or the skill's name. */
+export function stepTitle(skill: string, skills: readonly string[]): string {
+  const found = phaseOf(skill, skills);
+  return found ? `${found.phase} ▸ ${found.steps[found.at]}` : skill;
 }
 
 /** How long a step has run, as a clock: `00:17`, `03:42`, `1:05:09`. */
@@ -110,17 +137,17 @@ export function registerSkillProgress(
     return () => clearInterval(timer);
   },
 ): { resume(ctx: ExtensionContext): void } {
-  let crumb: string | undefined;
+  let current: { skill: string; skills: readonly string[] } | undefined;
   let since = 0;
   // Redrawn every second, so the clock runs during a long call.
   let shown: ExtensionContext | undefined;
   let stop: (() => void) | undefined;
   const show = (ctx: ExtensionContext) => {
-    if (!ctx.hasUI || !crumb) return;
+    if (!ctx.hasUI || !current) return;
     shown = ctx;
     ctx.ui.setStatus(
       STEP_STATUS_KEY,
-      `${BRAND} ${crumb} · ${elapsed(now() - since)}`,
+      `${BRAND} ${stepLine(current.skill, current.skills, elapsed(now() - since))}`,
     );
     stop ??= every(() => {
       if (shown) show(shown);
@@ -137,11 +164,12 @@ export function registerSkillProgress(
     skills: readonly string[],
   ) => {
     if (!skill || !ctx.hasUI) return;
-    const next = stepCrumb(skill, skills);
-    if (next === crumb) return;
-    crumb = next;
+    if (current?.skill === skill) return;
+    current = { skill, skills };
     since = now();
-    ctx.ui.setTitle(`${BRAND} · ${basename(ctx.cwd)} · ${crumb}`);
+    ctx.ui.setTitle(
+      `${BRAND} · ${basename(ctx.cwd)} · ${stepTitle(skill, skills)}`,
+    );
     show(ctx);
   };
   pi.on("tool_result", (event, ctx) => {
