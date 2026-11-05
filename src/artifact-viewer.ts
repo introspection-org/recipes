@@ -525,10 +525,18 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
+    if ((error as { code?: string }).code === "ENOBUFS") {
+      throw new Error(
+        `${target.relativePath} at ${ref} is over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads.`,
+      );
+    }
+    if (git(target, ["rev-parse", "--git-dir"]) === undefined) {
+      throw new Error(
+        `${target.relativePath} isn't in a git repository, so it has no version at ${ref}.`,
+      );
+    }
     throw new Error(
-      (error as { code?: string }).code === "ENOBUFS"
-        ? `${target.relativePath} at ${ref} is over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads.`
-        : `${target.relativePath} has no version at ${ref} in the working directory's git repository.`,
+      `${target.relativePath} has no version at ${ref} in the working directory's git repository.`,
     );
   }
   // The version at the ref gets the checks a working-tree file gets on disk.

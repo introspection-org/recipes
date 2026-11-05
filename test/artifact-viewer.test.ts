@@ -399,6 +399,16 @@ describe("show_artifact tool", () => {
     expect(diffed.at(-1)).toContain("d file");
   });
 
+  it("says so when a ref is asked for outside a git repository", async () => {
+    const { show } = await setup({}, "rpc");
+    await expect(show("notes.txt", { ref: "HEAD" })).rejects.toThrow(
+      "notes.txt isn't in a git repository, so it has no version at HEAD.",
+    );
+    await expect(show("notes.txt", { diff: "HEAD" })).rejects.toThrow(
+      "isn't in a git repository",
+    );
+  });
+
   it("shows a file as of a git commit, or diffs against one", async () => {
     const git = (...args: string[]) =>
       execFileSync("git", args, { cwd: workspace, stdio: "pipe" });
