@@ -105,26 +105,27 @@ tools: [read, write, edit, ask_user_question, show_artifact]
 ```
 
 ```ts
-show_artifact({ path: "evals/cases/refund.md" })  // relative to the working directory
+show_artifact({ path: "evals/cases/refund.md" }); // relative to the working directory
 ```
 
 The tool refuses a path outside the working directory (including a symlink
 that leads out of it), a missing file, and anything that is not `.md` or
 `.markdown`. The panel takes the top-right 45% of the terminal at full height
-and shows the file name and the visible line range. It opens without taking
+and shows the file name and the visible line range. It draws over the
+conversation, so it isn't drawn on a terminal narrower than 100 columns. It opens without taking
 the keyboard, so the user keeps typing in the editor. Showing another file
 replaces the content, and the panel re-renders when the file changes on disk.
 
-| Key | Where | Does |
-| --- | --- | --- |
-| `Alt+R` | editor or panel | Moves the keyboard to the panel and back; with no panel open, reopens the last file |
-| `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
-| `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
-| `Esc` / `q` | panel | Closes the panel |
+| Key                                            | Where                               | Does                                                                         |
+| ---------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
+| `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel                               | Scroll                                                                       |
+| `o`                                            | panel                               | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
+| `Esc` / `q`                                    | panel                               | Closes the panel                                                             |
+| `PgUp` / `PgDn`                                | a question from `ask_user_question` | Scroll the panel without moving the keyboard to it                           |
 
 `/recipe view <file>` opens a file the same way; `/recipe view` on its own opens
 the last markdown file the agent showed or wrote with `write` or `edit` in this
-session, and `/recipe close` closes the panel from the editor. They are
+session, and `Esc` closes the panel from the editor. They are
 subcommands of `/recipe`, so they never clash with another extension's or your
 own commands.
 
@@ -133,6 +134,61 @@ sessions the tool returns `The file is at <path>. The artifact panel is only
 available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
 host keeps it and registers neither the built-in tool nor `/recipe view`.
+
+### Reviewing several files
+
+List `review_artifacts` and the agent can ask the user to review several
+markdown files it wrote, one decision per file, as in a pull request review:
+approve, with an optional comment, or request changes, saying what to change.
+
+```ts
+review_artifacts({
+  title: "The interview agent's cases",
+  items: [
+    // 1 to 20, in reading order
+    { path: "evals/cases/C1.md", label: "C1: four questions" },
+    { path: "evals/cases/C2.md", label: "C2: a vague answer" },
+    { path: "docs/DESIGN.md", label: "The brief", section: "Part A" }, // only that part
+  ],
+});
+```
+
+A case's front matter shows as one line (its check, inputs and approval), and `section` shows only the part under that heading, so the review holds what is being approved.
+
+In Pi's terminal the review is inline, in place of the editor: a tab per file
+and a Submit tab across the top (a single file has none), the file itself in a
+box, and the choices under it. The artifact panel isn't used; `show_artifact`
+is for showing a file without asking for a decision.
+
+| Key                                                                        | Does                                                                                                                      |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Left` / `Right`, `Tab` / `Shift+Tab`                                      | Previous or next file, then Submit                                                                                        |
+| `Up` / `Down`, `Enter`, or a number                                        | Pick a choice: `Approve`, `Approve with a comment` (optional), or `Request changes` and say what should change (required) |
+| `j` / `k`, `Space` / `b` (also `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down`) | Scroll a file longer than the box, which takes at most half the terminal                                                  |
+| `Esc`                                                                      | Cancel the review; nothing is approved                                                                                    |
+
+After a decision the review moves to the next undecided file, and once every
+file has one, to the Submit tab; nothing is sent until the user submits there
+(a single file submits with its decision). The Submit tab lists the decisions and offers
+`Submit` (files left undecided are `not reviewed`) or `Approve the rest and submit`.
+
+It is an interaction ([Interactions](interactions.md)), so it works on every
+host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`),
+then a comment (required for changes); on a pause/resume host it pauses with
+`details.interrupt.metadata` `{ kind: "review_artifacts", items: [{ path, label }] }`
+for the host to render its own review, and resumes with `{ answer }` in the
+format below; headless runs and child agents decline, so nothing is approved
+without a person. The model sees, after `Answer: `:
+
+```text
+Reviewed 2 files: 1 approved, 1 with changes requested, 0 not reviewed.
+evals/cases/C1.md: approved
+evals/cases/C2.md: changes requested — "make the question count a code check"
+```
+
+A file approved with `A` before the user opened it says `(not opened)`, so a
+record of approvals can say so. `details.reviews` holds the same decisions as
+`{ path, decision, comment?, opened }`.
 
 ## Structured child events
 
@@ -203,10 +259,11 @@ introspection check
 
 That command uses the Rust validation core (`introspection-recipe-check`),
 which is also published as a crate and a Python binding so a host can embed it
+
 - the Introspection platform validates there, and blocks task creation on a
-failure. This npm package no longer ships a validator binary: a launch-time
-check was a third run of the same engine in the one place whose failure mode is
-a dead session, including when the binary simply could not be spawned.
+  failure. This npm package no longer ships a validator binary: a launch-time
+  check was a third run of the same engine in the one place whose failure mode is
+  a dead session, including when the binary simply could not be spawned.
 
 ## Host parity
 

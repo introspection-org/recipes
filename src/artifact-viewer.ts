@@ -1,5 +1,5 @@
 /**
- * The first-party artifact viewer: a `show_artifact` tool, `/recipe view` and `/recipe close`
+ * The first-party artifact viewer: a `show_artifact` tool and `/recipe view`
  * and a focus shortcut that show a markdown file the agent wrote in a panel on
  * the right of Pi's terminal, so the user can read it before approving it.
  *
@@ -11,8 +11,22 @@
  */
 
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, realpathSync, statSync, watch } from "node:fs";
-import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  watch,
+} from "node:fs";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import type {
   ExtensionContext,
@@ -23,25 +37,41 @@ import type { AutocompleteItem, OverlayHandle } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
 import {
+  ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS,
   ARTIFACT_PANEL_OVERLAY_OPTIONS,
   ArtifactPanel,
   type ArtifactDocument,
 } from "./artifact-viewer-tui.js";
+import {
+  createReviewArtifactsTool,
+  REVIEW_ARTIFACTS_TOOL_NAME,
+} from "./artifact-review.js";
 import type { RecipeExtensionRegistrationRegistry } from "./extensions.js";
+import {
+  artifactPanelControl,
+  setArtifactPanelControl,
+  type ArtifactPanelControl,
+  type ArtifactPanelScrollBy,
+} from "./interaction-tui.js";
 
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
  * never clash with another extension's or the user's commands. */
 export const VIEW_ARTIFACT_COMMAND = "recipe view";
-export const CLOSE_ARTIFACT_COMMAND = "recipe close";
 
 /** A `/recipe` subcommand an optional built-in adds: `/recipe <name> <args>`. */
-export type RecipeSubcommand = (args: string, ctx: ExtensionContext) => Promise<void>;
+export type RecipeSubcommand = (
+  args: string,
+  ctx: ExtensionContext,
+) => Promise<void>;
 
 const recipeSubcommands = new WeakMap<object, Map<string, RecipeSubcommand>>();
 
 /** The `/recipe` subcommand `name` registered for this Pi instance, if any. */
-export function recipeSubcommand(pi: object, name: string): RecipeSubcommand | undefined {
+export function recipeSubcommand(
+  pi: object,
+  name: string,
+): RecipeSubcommand | undefined {
   return recipeSubcommands.get(pi)?.get(name);
 }
 
@@ -49,7 +79,10 @@ export function recipeSubcommand(pi: object, name: string): RecipeSubcommand | u
  * Split `/recipe` arguments into the subcommand name and the rest, which keeps
  * its own whitespace so a path such as `"a  b.md"` reaches the handler intact.
  */
-export function splitRecipeSubcommand(action: string): { name: string; args: string } {
+export function splitRecipeSubcommand(action: string): {
+  name: string;
+  args: string;
+} {
   const name = /^\S*/.exec(action)?.[0] ?? "";
   return { name, args: action.slice(name.length).trimStart() };
 }
@@ -65,18 +98,23 @@ interface RecipeSubcommandInfo {
   complete?: (argument: string, cwd: string) => AutocompleteItem[];
 }
 
-const recipeSubcommandInfo = new WeakMap<object, Map<string, RecipeSubcommandInfo>>();
+const recipeSubcommandInfo = new WeakMap<
+  object,
+  Map<string, RecipeSubcommandInfo>
+>();
 
 function addRecipeSubcommand(
   pi: object,
   name: string,
   handler: RecipeSubcommand,
-  info: RecipeSubcommandInfo
+  info: RecipeSubcommandInfo,
 ): void {
-  const commands = recipeSubcommands.get(pi) ?? new Map<string, RecipeSubcommand>();
+  const commands =
+    recipeSubcommands.get(pi) ?? new Map<string, RecipeSubcommand>();
   commands.set(name, handler);
   recipeSubcommands.set(pi, commands);
-  const infos = recipeSubcommandInfo.get(pi) ?? new Map<string, RecipeSubcommandInfo>();
+  const infos =
+    recipeSubcommandInfo.get(pi) ?? new Map<string, RecipeSubcommandInfo>();
   infos.set(name, info);
   recipeSubcommandInfo.set(pi, infos);
 }
@@ -89,7 +127,7 @@ function addRecipeSubcommand(
 export function recipeSubcommandCompletions(
   pi: object,
   prefix: string,
-  cwd: string
+  cwd: string,
 ): AutocompleteItem[] {
   const infos = recipeSubcommandInfo.get(pi);
   if (!infos) return [];
@@ -97,17 +135,30 @@ export function recipeSubcommandCompletions(
   if (space < 0) {
     return [...infos.entries()]
       .filter(([name]) => name.startsWith(prefix.trim()))
-      .map(([name, info]) => ({ value: `${name} `, label: name, description: info.description }));
+      .map(([name, info]) => ({
+        value: `${name} `,
+        label: name,
+        description: info.description,
+      }));
   }
   const name = prefix.slice(0, space);
   const argument = prefix.slice(space + 1);
   const complete = infos.get(name)?.complete;
   if (!complete) return [];
-  return complete(argument, cwd).map((item) => ({ ...item, value: `${name} ${item.value}` }));
+  return complete(argument, cwd).map((item) => ({
+    ...item,
+    value: `${name} ${item.value}`,
+  }));
 }
 
 /** Folders the file list never walks into. */
-const SKIPPED_FOLDERS = new Set(["node_modules", ".git", "dist", "eval-runs", "target"]);
+const SKIPPED_FOLDERS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "eval-runs",
+  "target",
+]);
 /** Where an owner's reviewable files usually live, listed first. */
 const PREFERRED_PARTS = ["docs/", "evals/cases/", "prompts/", "outputs/"];
 const MAX_LISTED_FILES = 50;
@@ -117,7 +168,10 @@ const MAX_LISTED_FILES = 50;
  * case-insensitive), the usual review files first. Bounded in depth and count
  * so a large workspace stays quick; hidden folders and build output are skipped.
  */
-export function markdownFilesFor(cwd: string, query: string): AutocompleteItem[] {
+export function markdownFilesFor(
+  cwd: string,
+  query: string,
+): AutocompleteItem[] {
   const found: string[] = [];
   const walk = (dir: string, depth: number) => {
     if (depth > 6 || found.length >= 1000) return;
@@ -150,17 +204,11 @@ export function markdownFilesFor(cwd: string, query: string): AutocompleteItem[]
     .map((path) => ({ value: path, label: path }));
 }
 
-/**
- * Moves input between the editor and the panel. Alt+R ("recipe") is unbound
- * in Pi's defaults; plain Ctrl letters are all taken, and Ctrl+Shift letters
- * are indistinguishable from Ctrl letters in terminals without the Kitty
- * keyboard protocol.
- */
-export const ARTIFACT_PANEL_FOCUS_KEY = "alt+r" as const;
-const FOCUS_KEY_LABEL = "Alt+R";
-
 /** File extensions the panel renders. */
-export const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [".md", ".markdown"];
+export const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [
+  ".md",
+  ".markdown",
+];
 
 const BUILTIN_OWNER = "<builtin:show_artifact>";
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -177,10 +225,10 @@ const parameters = Type.Object(
   {
     path: Type.String({
       description:
-        "The markdown file to show, relative to the working directory (e.g. \"evals/cases/refund.md\").",
+        'The markdown file to show, relative to the working directory (e.g. "evals/cases/refund.md").',
     }),
   },
-  { additionalProperties: false }
+  { additionalProperties: false },
 );
 
 export type ShowArtifactToolParams = Static<typeof parameters>;
@@ -231,32 +279,37 @@ export function isMarkdownPath(path: string): boolean {
  * file inside `cwd`, following symlinks. Throws an error the model or user can
  * act on.
  */
-export function resolveArtifactPath(cwd: string, path: string): ResolvedArtifactPath {
+export function resolveArtifactPath(
+  cwd: string,
+  path: string,
+): ResolvedArtifactPath {
   const input = path.trim();
   if (!input) throw new Error("Give the path of a markdown file to show.");
   const root = resolve(cwd);
   const absolutePath = resolve(root, input);
   if (!isInside(root, absolutePath)) {
     throw new Error(
-      `${input} is outside the working directory; only files under ${root} can be shown.`
+      `${input} is outside the working directory; only files under ${root} can be shown.`,
     );
   }
   if (!isMarkdownPath(absolutePath)) {
     throw new Error(
-      `${input} is not a markdown file; only ${ARTIFACT_MARKDOWN_EXTENSIONS.join(" and ")} files can be shown for now.`
+      `${input} is not a markdown file; only ${ARTIFACT_MARKDOWN_EXTENSIONS.join(" and ")} files can be shown for now.`,
     );
   }
   let stats;
   try {
     stats = statSync(absolutePath);
   } catch {
-    throw new Error(`${input} does not exist. Write the file first, then show it.`);
+    throw new Error(
+      `${input} does not exist. Write the file first, then show it.`,
+    );
   }
   if (!stats.isFile()) throw new Error(`${input} is not a file.`);
   // A symlink inside the working directory may still point outside it.
   if (!isInside(realpathSync(root), realpathSync(absolutePath))) {
     throw new Error(
-      `${input} links outside the working directory; only files under ${root} can be shown.`
+      `${input} links outside the working directory; only files under ${root} can be shown.`,
     );
   }
   return {
@@ -293,7 +346,10 @@ export function openWithSystemApp(absolutePath: string): Promise<void> {
  * so an edit to the target is seen; replacing or retargeting the link is seen
  * through its own folder, which moves the target watch along.
  */
-export function watchFileWithFs(absolutePath: string, onChange: () => void): () => void {
+export function watchFileWithFs(
+  absolutePath: string,
+  onChange: () => void,
+): () => void {
   const watchName = (path: string, changed: () => void): (() => void) => {
     const name = basename(path);
     try {
@@ -314,13 +370,15 @@ export function watchFileWithFs(absolutePath: string, onChange: () => void): () 
     }
   };
   let target = realPath();
-  let stopTarget = target === absolutePath ? () => {} : watchName(target, onChange);
+  let stopTarget =
+    target === absolutePath ? () => {} : watchName(target, onChange);
   const stopLink = watchName(absolutePath, () => {
     const next = realPath();
     if (next !== target) {
       stopTarget();
       target = next;
-      stopTarget = target === absolutePath ? () => {} : watchName(target, onChange);
+      stopTarget =
+        target === absolutePath ? () => {} : watchName(target, onChange);
     }
     onChange();
   });
@@ -332,7 +390,10 @@ export function watchFileWithFs(absolutePath: string, onChange: () => void): () 
 
 /** The working directory `target` was resolved against. */
 function workspaceRoot(target: ResolvedArtifactPath): string {
-  return resolve(target.absolutePath, ...target.relativePath.split("/").map(() => ".."));
+  return resolve(
+    target.absolutePath,
+    ...target.relativePath.split("/").map(() => ".."),
+  );
 }
 
 /**
@@ -367,7 +428,10 @@ export class ArtifactViewer {
   private open: OpenPanel | undefined;
   private last: string | undefined;
   private readonly openExternal: (absolutePath: string) => Promise<void> | void;
-  private readonly watchFile: (absolutePath: string, onChange: () => void) => () => void;
+  private readonly watchFile: (
+    absolutePath: string,
+    onChange: () => void,
+  ) => () => void;
   private readonly debounceMs: number;
 
   constructor(options: ArtifactViewerOptions = {}) {
@@ -385,6 +449,10 @@ export class ArtifactViewer {
     return this.open !== undefined;
   }
 
+  get isHidden(): boolean {
+    return this.open?.handle?.isHidden() ?? false;
+  }
+
   /** Remember a markdown file the agent wrote, for `/recipe view` with no argument. */
   remember(cwd: string, path: string): void {
     if (!isMarkdownPath(path)) return;
@@ -399,7 +467,11 @@ export class ArtifactViewer {
    * Show `target` in the panel, opening it if needed. The panel never takes
    * focus unless `focus` is set.
    */
-  show(ctx: ExtensionContext, target: ResolvedArtifactPath, focus = false): void {
+  show(
+    ctx: ExtensionContext,
+    target: ResolvedArtifactPath,
+    focus = false,
+  ): void {
     this.last = target.relativePath;
     if (this.open) {
       this.open.target = target;
@@ -421,6 +493,7 @@ export class ArtifactViewer {
       stopWatching: () => {},
     };
     this.open = state;
+    setArtifactPanelControl(this.panelControl);
     void ctx.ui
       .custom<undefined>(
         (tui, theme, _keybindings, finish) => {
@@ -435,8 +508,6 @@ export class ArtifactViewer {
               close: () => state.close(),
               disposed: () => this.release(state),
             },
-            ARTIFACT_PANEL_FOCUS_KEY,
-            FOCUS_KEY_LABEL
           );
           state.stopWatching = this.watch(state.target);
           return state.panel;
@@ -449,40 +520,45 @@ export class ArtifactViewer {
             state.panel?.attach(handle);
             if (focus) this.focus();
           },
-        }
+        },
       )
       .then(
         () => this.release(state),
         (error: unknown) => {
-        this.release(state);
-        ctx.ui.notify(
-          `Could not open the artifact panel: ${error instanceof Error ? error.message : String(error)}`,
-          "error"
-        );
-      }
+          this.release(state);
+          ctx.ui.notify(
+            `Could not open the artifact panel: ${error instanceof Error ? error.message : String(error)}`,
+            "error",
+          );
+        },
       );
   }
 
-  /** The shortcut: move input to the panel, or back to the editor. */
-  toggleFocus(ctx: ExtensionContext): void {
-    if (this.open?.handle) {
-      if (this.open.handle.isFocused()) this.unfocus();
-      else this.focus();
-      return;
-    }
-    if (this.open) return;
-    if (!this.last) {
-      ctx.ui.notify(
-        `No artifact to show yet. Use /${VIEW_ARTIFACT_COMMAND} <file.md>.`,
-        "info"
-      );
-      return;
-    }
-    try {
-      this.show(ctx, resolveArtifactPath(ctx.cwd, this.last), true);
-    } catch (error) {
-      ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
-    }
+  /** Scroll the open panel without taking focus. */
+  scroll(by: ArtifactPanelScrollBy): void {
+    const panel = this.open?.panel;
+    if (!panel) return;
+    const lines = {
+      "line-up": -3,
+      "line-down": 3,
+      "page-up": -panel.pageLines,
+      "page-down": panel.pageLines,
+    }[by];
+    panel.scrollBy(lines);
+  }
+
+  /** Hide or show the open panel, so the user can read the conversation under it. Returns whether it is now hidden. */
+  toggleHidden(): boolean {
+    const handle = this.open?.handle;
+    if (!handle) return false;
+    handle.setHidden(!handle.isHidden());
+    return handle.isHidden();
+  }
+
+  /** While a dialog holds the keyboard, its keys replace the panel footer's; when it ends, the panel takes the keyboard back. */
+  setDialogHint(hint: string | undefined): void {
+    this.open?.panel?.setDialogHint(hint);
+    if (hint === undefined && this.open?.handle) this.focus();
   }
 
   /** Close the panel, if it is open. */
@@ -511,7 +587,7 @@ export class ArtifactViewer {
       .catch((error: unknown) => {
         ctx.ui.notify(
           `Could not open ${target.relativePath}: ${error instanceof Error ? error.message : String(error)}`,
-          "error"
+          "error",
         );
       });
   }
@@ -533,10 +609,17 @@ export class ArtifactViewer {
     };
   }
 
+  private readonly panelControl: ArtifactPanelControl = {
+    scroll: (by) => this.scroll(by),
+    setDialogHint: (hint) => this.setDialogHint(hint),
+  };
+
   private release(state: OpenPanel): void {
     state.stopWatching();
     state.stopWatching = () => {};
     if (this.open === state) this.open = undefined;
+    if (!this.open && artifactPanelControl() === this.panelControl)
+      setArtifactPanelControl(undefined);
   }
 }
 
@@ -569,12 +652,28 @@ export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
           details: { path: target.relativePath, shown: false },
         };
       }
-      viewer.show(ctx, target);
+      // It takes the keyboard as it opens, so Esc or q closes it without a shortcut first.
+      viewer.show(ctx, target, true);
+      const columns = process.stdout.columns;
+      if (
+        columns !== undefined &&
+        columns < ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS
+      ) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `The terminal is ${columns} columns wide, too narrow for the panel (it needs ${ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS}), so the user can't see ${target.relativePath}: tell them where the file is, or put what they need in your message. The panel appears if they widen the terminal.`,
+            },
+          ],
+          details: { path: target.relativePath, shown: false },
+        };
+      }
       return {
         content: [
           {
             type: "text",
-            text: `Showing ${target.relativePath} in the panel on the right. The user keeps typing in the editor, closes it with /${CLOSE_ARTIFACT_COMMAND}, and can press ${FOCUS_KEY_LABEL} to scroll it.`,
+            text: `Showing ${target.relativePath} in the panel on the right, which has the keyboard: the user scrolls it and closes it with Esc or q, which returns them to the editor; /${VIEW_ARTIFACT_COMMAND} reopens it.`,
           },
         ],
         details: { path: target.relativePath, shown: true },
@@ -592,58 +691,62 @@ function commandPath(args: string): string {
 }
 
 /**
- * An extension factory registering the tool, `/recipe view` and `/recipe close`, and the focus shortcut,
+ * An extension factory registering the tool and `/recipe view`,
  * unless a Recipe or host extension already registered a `show_artifact`
  * tool. Callers add it only when the agent lists `show_artifact` in `tools`,
  * after the Recipe's own extensions.
  */
 export function artifactViewerExtension(
   registrations?: RecipeExtensionRegistrationRegistry,
-  options: ArtifactViewerOptions = {}
+  options: ArtifactViewerOptions = {},
+  agentTools: readonly string[] = [SHOW_ARTIFACT_TOOL_NAME],
+  env?: NodeJS.ProcessEnv,
 ): ExtensionFactory {
   return (pi) => {
+    const viewer = new ArtifactViewer(options);
+    // review_artifacts shows each file in the same panel, so it shares the viewer.
+    if (
+      agentTools.includes(REVIEW_ARTIFACTS_TOOL_NAME) &&
+      !registrations?.owner("tool", REVIEW_ARTIFACTS_TOOL_NAME)
+    ) {
+      registrations?.claim("tool", REVIEW_ARTIFACTS_TOOL_NAME, BUILTIN_OWNER);
+      pi.registerTool(createReviewArtifactsTool(env, () => viewer.close()));
+    }
+    if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;
     registrations?.claim("tool", SHOW_ARTIFACT_TOOL_NAME, BUILTIN_OWNER);
-    const viewer = new ArtifactViewer(options);
     pi.registerTool(createShowArtifactTool(viewer));
 
-    addRecipeSubcommand(pi, "view", async (args, ctx) => {
-      if (ctx.mode !== "tui") {
-        ctx.ui.notify(`/${VIEW_ARTIFACT_COMMAND} needs Pi's interactive terminal.`, "warning");
-        return;
-      }
-      const path = commandPath(args) || viewer.lastPath;
-      if (!path) {
-        ctx.ui.notify(
-          `Usage: /${VIEW_ARTIFACT_COMMAND} <file.md>. With no file, it shows the last markdown file the agent showed or wrote.`,
-          "info"
-        );
-        return;
-      }
-      try {
-        viewer.show(ctx, resolveArtifactPath(ctx.cwd, path));
-      } catch (error) {
-        ctx.ui.notify(errorText(error), "warning");
-      }
-    }, {
-      description: "Show a markdown file in the panel on the right",
-      complete: (argument, cwd) => markdownFilesFor(cwd, argument),
-    });
     addRecipeSubcommand(
       pi,
-      "close",
-      async () => {
-        viewer.close();
+      "view",
+      async (args, ctx) => {
+        if (ctx.mode !== "tui") {
+          ctx.ui.notify(
+            `/${VIEW_ARTIFACT_COMMAND} needs Pi's interactive terminal.`,
+            "warning",
+          );
+          return;
+        }
+        const path = commandPath(args) || viewer.lastPath;
+        if (!path) {
+          ctx.ui.notify(
+            `Usage: /${VIEW_ARTIFACT_COMMAND} <file.md>. With no file, it shows the last markdown file the agent showed or wrote.`,
+            "info",
+          );
+          return;
+        }
+        try {
+          viewer.show(ctx, resolveArtifactPath(ctx.cwd, path), true);
+        } catch (error) {
+          ctx.ui.notify(errorText(error), "warning");
+        }
       },
-      { description: "Close the artifact panel" }
+      {
+        description: "Show a markdown file in the panel on the right",
+        complete: (argument, cwd) => markdownFilesFor(cwd, argument),
+      },
     );
-
-    pi.registerShortcut(ARTIFACT_PANEL_FOCUS_KEY, {
-      description: "Move the keyboard between the editor and the artifact panel",
-      handler: (ctx) => {
-        if (ctx.mode === "tui") viewer.toggleFocus(ctx);
-      },
-    });
 
     pi.on("tool_result", (event, ctx) => {
       if (event.isError) return;
@@ -658,7 +761,10 @@ export function artifactViewerExtension(
   };
 }
 
-/** Whether the agent opted into the built-in viewer. */
+/** Whether the agent opted into the built-in viewer, directly or through review_artifacts. */
 export function wantsArtifactViewer(agentTools: readonly string[]): boolean {
-  return agentTools.includes(SHOW_ARTIFACT_TOOL_NAME);
+  return (
+    agentTools.includes(SHOW_ARTIFACT_TOOL_NAME) ||
+    agentTools.includes(REVIEW_ARTIFACTS_TOOL_NAME)
+  );
 }

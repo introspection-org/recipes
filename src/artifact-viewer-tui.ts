@@ -21,6 +21,9 @@ import {
 } from "@earendil-works/pi-tui";
 
 /** Where the panel sits: the top-right corner, 45% wide, full height. */
+/** Below this many columns the panel isn't drawn. */
+export const ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS = 100;
+
 export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
   anchor: "top-right",
   width: "45%",
@@ -29,6 +32,8 @@ export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
   margin: 1,
   // Opening the panel never takes input from the editor.
   nonCapturing: true,
+  // It draws over the conversation, so on a narrow terminal it would hide most of it.
+  visible: (termWidth) => termWidth >= ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS,
 };
 
 /** The document the panel shows. */
@@ -98,16 +103,13 @@ export class ArtifactPanel implements Component {
     private readonly theme: Theme,
     document: ArtifactDocument,
     private readonly actions: ArtifactPanelActions,
-    /** The focus shortcut, so pressing it in the panel returns to the editor. */
-    private readonly focusKey: KeyId,
-    private readonly focusKeyLabel: string
   ) {
     this.document = document;
     this.markdown = new Markdown(
       document.markdown ?? "",
       0,
       0,
-      artifactMarkdownTheme(theme)
+      artifactMarkdownTheme(theme),
     );
   }
 
@@ -140,7 +142,9 @@ export class ArtifactPanel implements Component {
 
   private bodyLines(contentWidth: number): string[] {
     if (this.document.markdown === undefined) {
-      return [this.theme.fg("warning", "This file was removed or cannot be read.")];
+      return [
+        this.theme.fg("warning", "This file was removed or cannot be read."),
+      ];
     }
     if (this.document.markdown.trim() === "") {
       return [this.theme.fg("muted", "(empty file)")];
@@ -166,14 +170,14 @@ export class ArtifactPanel implements Component {
     const titleText = ` ${this.document.title} `;
     const fill = Math.max(
       1,
-      width - 1 - visibleWidth(titleText) - visibleWidth(position)
+      width - 1 - visibleWidth(titleText) - visibleWidth(position),
     );
     const title = truncateToWidth(
       border("─") +
         this.theme.fg(focused ? "accent" : "text", this.theme.bold(titleText)) +
         border("─".repeat(fill)) +
         this.theme.fg("muted", position),
-      width
+      width,
     );
 
     const lines = [padToWidth(title, width)];
@@ -182,8 +186,8 @@ export class ArtifactPanel implements Component {
       lines.push(padToWidth(`${border("│")} ${visible[index] ?? ""}`, width));
     }
     const hint = focused
-      ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close · ${this.focusKeyLabel} editor`
-      : `/recipe close to close · ${this.focusKeyLabel} to scroll`;
+      ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close`
+      : (this.dialogHint ?? "Esc close");
     lines.push(padToWidth(this.theme.fg("dim", ` ${hint}`), width));
     return lines;
   }
@@ -200,10 +204,24 @@ export class ArtifactPanel implements Component {
     this.actions.disposed();
   }
 
-  private scrollBy(lines: number): void {
+  private dialogHint: string | undefined;
+
+  /** While a dialog holds the keyboard, its scroll keys replace the footer's. */
+  setDialogHint(hint: string | undefined): void {
+    if (hint === this.dialogHint) return;
+    this.dialogHint = hint;
+    this.tui.requestRender();
+  }
+
+  /** Lines a page scroll moves: the body's last height, less one for context. */
+  get pageLines(): number {
+    return Math.max(1, this.lastBodyHeight - 1);
+  }
+
+  scrollBy(lines: number): void {
     const next = Math.min(
       this.lastMaxScroll,
-      Math.max(0, this.scrollTop + lines)
+      Math.max(0, this.scrollTop + lines),
     );
     if (next === this.scrollTop) return;
     this.scrollTop = next;
@@ -211,10 +229,8 @@ export class ArtifactPanel implements Component {
   }
 
   handleInput(data: string): void {
-    const page = Math.max(1, this.lastBodyHeight - 1);
-    if (matchesKey(data, this.focusKey)) {
-      this.actions.unfocus();
-    } else if (matchesKey(data, Key.up) || data === "k") {
+    const page = this.pageLines;
+    if (matchesKey(data, Key.up) || data === "k") {
       this.scrollBy(-1);
     } else if (matchesKey(data, Key.down) || data === "j") {
       this.scrollBy(1);

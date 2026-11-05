@@ -1646,7 +1646,7 @@ describe("Recipes extension for Pi", () => {
         expect(pi.commands.has("view")).toBe(false);
         const notify = vi.fn();
         await pi.commands.get("recipe")!.handler("bogus", extensionContext(join(root, "project"), notify));
-        expect(String(notify.mock.calls[0]?.[0])).toContain(expected ? "reload|view|close" : "[reload]");
+        expect(String(notify.mock.calls[0]?.[0])).toContain(expected ? "[reload|view]" : "[reload]");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
