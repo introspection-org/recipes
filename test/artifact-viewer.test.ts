@@ -673,6 +673,15 @@ describe("/recipe view and /recipe close", () => {
         "notes.txt  git:(main) ✗  +1 −1 vs HEAD  [diff]",
       );
     }
+    // With no file named, a ref after --diff diffs the last file shown, never opens a file called HEAD.
+    for (const args of ["--diff HEAD", "--diff=HEAD"]) {
+      const before = notices.length;
+      await subcommand("view")(args, ctx as never);
+      expect(notices.length).toBe(before);
+      expect(header()).toContain(
+        "notes.txt  git:(main) ✗  +1 −1 vs HEAD  [diff]",
+      );
+    }
     // An untracked file seen for the first time has nothing to diff against.
     writeFileSync(join(workspace, "fresh.txt"), "new\n");
     await subcommand("view")("fresh.txt --diff", ctx as never);

@@ -15,6 +15,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
+  existsSync,
   openSync,
   readdirSync,
   readFileSync,
@@ -954,23 +955,36 @@ const COMMAND_OPTION = (name: string) =>
  * `/recipe view`'s arguments: a path, `--ref <ref>` and `--diff [<ref|previous>]`.
  * A bare `--diff` (`diff: ""`) opens on the diff `d` would show.
  */
-function commandArgs(args: string): {
+function commandArgs(
+  args: string,
+  cwd: string,
+): {
   path: string;
   ref?: string;
   diff?: string;
 } {
   let rest = args;
+  let spaced = false;
   const option = (name: string) => {
     const match = COMMAND_OPTION(name).exec(rest);
     if (!match) return undefined;
     rest = rest.replace(match[0], " ");
+    if (name === "diff")
+      spaced = match[1] !== undefined && !match[0].includes("=");
     return match[1] ?? "";
   };
   let diff = option("diff");
   const ref = option("ref");
   let path = commandPath(rest);
-  // `--diff file` with nothing else: the word after `--diff` was the file.
-  if (!path && diff) {
+  // `--diff <file>` with no other path, when that names a file: a bare `--diff` on it.
+  // `--diff=<ref>`, and a value naming no file, stay a base for the last file shown.
+  if (
+    !path &&
+    diff &&
+    diff !== DIFF_PREVIOUS &&
+    spaced &&
+    existsSync(resolve(cwd, commandPath(diff)))
+  ) {
     path = commandPath(diff);
     diff = "";
   }
@@ -1109,7 +1123,7 @@ export function artifactViewerExtension(
           );
           return;
         }
-        const parsed = commandArgs(args);
+        const parsed = commandArgs(args, ctx.cwd);
         const path = parsed.path || viewer.lastPath;
         if (!path) {
           ctx.ui.notify(
