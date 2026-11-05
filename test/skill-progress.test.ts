@@ -96,7 +96,7 @@ describe("where the agent is", () => {
       type: "message",
       message: {
         role: "assistant",
-        content: [{ type: "toolCall", arguments: args }],
+        content: [{ type: "toolCall", name: "read", arguments: args }],
       },
     });
     expect(
@@ -119,6 +119,7 @@ describe("where the agent is", () => {
               content: [
                 {
                   type: "toolCall",
+                  name: "read",
                   id: "t2",
                   arguments: { path: "/wrong/build-draft/SKILL.md" },
                 },
@@ -173,6 +174,7 @@ describe("where the agent is", () => {
               content: [
                 {
                   type: "toolCall",
+                  name: "read",
                   arguments: { path: "s/build-brainstorm/SKILL.md" },
                 },
               ],
@@ -202,6 +204,10 @@ describe("where the agent is", () => {
       { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
       ctx,
     );
+    handlers.get("tool_result")!(
+      { toolName: "edit", input: { path: "s/build-review/SKILL.md" } },
+      ctx,
+    ); // editing a skill isn't reading it
     clock = 15 * 60_000 + 30_000; // the clock carries on across steps
     tick!();
     expect(statuses.at(-1)).toBe(

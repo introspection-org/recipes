@@ -33,6 +33,9 @@ export const PERSON_IN_THE_LOOP = new Set([
   "review_artifacts",
 ]);
 
+/** Tools that read a skill; a write or edit of a `SKILL.md` isn't a step. */
+export const SKILL_READ_TOOLS = new Set(["read", "bash"]);
+
 /** The footer status the step shows under. */
 export const STEP_STATUS_KEY = "recipe-step";
 
@@ -192,10 +195,12 @@ export function lastSkillRead(
     for (const block of content as Array<{
       type?: string;
       id?: string;
+      name?: string;
       arguments?: Record<string, unknown>;
     }>) {
       if (
         block.type !== "toolCall" ||
+        !SKILL_READ_TOOLS.has(block.name ?? "") ||
         failed.has(block.id) ||
         !readsWhole(block.arguments ?? {})
       )
@@ -290,7 +295,11 @@ export function registerSkillProgress(
     if (!skills?.names.length) return;
     if (PERSON_IN_THE_LOOP.has(event.toolName)) run();
     const input = (event.input ?? {}) as Record<string, unknown>;
-    if (!event.isError && readsWhole(input)) {
+    if (
+      !event.isError &&
+      SKILL_READ_TOOLS.has(event.toolName) &&
+      readsWhole(input)
+    ) {
       setStep(
         ctx,
         skillRead(input.path, skills) ?? skillRead(input.command, skills),
