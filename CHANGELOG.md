@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/introspection-org/recipes/compare/v0.45.0...v0.46.0) (2026-11-05)
+
+
+### Features
+
+* a pure review core the terminal and the web both import ([#436](https://github.com/introspection-org/recipes/issues/436)) ([7ccc444](https://github.com/introspection-org/recipes/commit/7ccc4444ba76eabbd6fa8cd0b8bb79098136b8ce))
+
 ## [0.45.0](https://github.com/introspection-org/recipes/compare/v0.44.0...v0.45.0) (2026-11-05)
 
 
