@@ -1,3 +1,8 @@
+import {
+  RECIPE_SESSION_ENTRY_TYPE,
+  recipeSessionChanged,
+  type RecipeSessionEntry,
+} from "./recipe-session-entry.js";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -1030,6 +1035,19 @@ export function createRecipesExtension(
       `agent:${launchState.resolved.name}`,
     ].filter(Boolean);
     pi.setSessionName(labelParts.join(" "));
+    const recipeEntry: RecipeSessionEntry = {
+      recipe_dir: launchState.resolved.recipeDir,
+      agent: launchState.resolved.name,
+      package: launchState.resolved.manifest.name,
+      version: launchState.resolved.manifest.version,
+    };
+    try {
+      if (recipeSessionChanged(ctx.sessionManager?.getEntries?.() ?? [], recipeEntry)) {
+        pi.appendEntry(RECIPE_SESSION_ENTRY_TYPE, recipeEntry);
+      }
+    } catch {
+      // A session that can't record its Recipe still runs; continuing it just needs --recipe again.
+    }
 
     const { provider, model } = modelParts(launchState.resolved.modelSpec);
     const lookupProvider = provider === "gemini" ? "google" : provider;
