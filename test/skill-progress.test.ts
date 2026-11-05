@@ -63,9 +63,9 @@ describe("where the agent is", () => {
   });
 
   it("gives how long the step has run", () => {
-    expect(elapsed(45_000)).toBe("45s");
-    expect(elapsed(12 * 60_000)).toBe("12m");
-    expect(elapsed(65 * 60_000)).toBe("1h 5m");
+    expect(elapsed(17_000)).toBe("00:17");
+    expect(elapsed(222_000)).toBe("03:42");
+    expect(elapsed(3_909_000)).toBe("1:05:09");
   });
 
   it("recovers the last step from the session", () => {
@@ -93,10 +93,15 @@ describe("where the agent is", () => {
       on: (name: string, handler: any) => handlers.set(name, handler),
     } as any;
     let clock = 0;
+    let tick: (() => void) | undefined;
     const progress = registerSkillProgress(
       pi,
       () => skills,
       () => clock,
+      (fn) => {
+        tick = fn;
+        return () => {};
+      },
     );
     const working: string[] = [];
     const titles: string[] = [];
@@ -142,7 +147,13 @@ describe("where the agent is", () => {
       "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft · next review",
     ]);
     expect(working.at(-1)).toBe(
-      "⧈ Introspection build ▰▰▱ 2/3 draft · next review (3m) › introspection tasks prompt runs/C1-1 --prompt hi",
+      "⧈ Introspection build ▰▰▱ 2/3 draft · next review 03:00 › introspection tasks prompt runs/C1-1 --prompt hi",
+    );
+    // The clock keeps running during the same call.
+    clock = 3 * 60_000 + 17_000;
+    tick!();
+    expect(working.at(-1)).toBe(
+      "⧈ Introspection build ▰▰▱ 2/3 draft · next review 03:17 › introspection tasks prompt runs/C1-1 --prompt hi",
     );
   });
 

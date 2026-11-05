@@ -1,6 +1,6 @@
 /**
  * Where a Recipe agent is, while it works: Pi's working line reads
- * `build ▰▰▱ 2/3 draft · next review (12m) › introspection tasks prompt runs/C1-1`
+ * `⧈ Introspection build ▰▰▱ 2/3 draft · next review 12:04 › introspection tasks prompt runs/C1-1`
  * in place of "Working", and the terminal title names the folder and the step.
  * The time is how long the step has run; no estimate of what's left is given,
  * since steps vary too much for one to be honest.
@@ -54,13 +54,18 @@ export function stepCrumb(skill: string, skills: readonly string[]): string {
   return `${phase} ${bar} ${at + 1}/${steps.length} ${skill.slice(dash + 1)}${next ? ` · next ${next}` : ""}`;
 }
 
-/** How long a step has run, as the working line shows it: `45s`, `12m`, `1h 5m`. */
+/** How long a step has run, as a clock: `00:17`, `03:42`, `1:05:09`. */
 export function elapsed(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return `${Math.max(0, Math.floor(ms / 1000))}s`;
-  return minutes < 60
-    ? `${minutes}m`
-    : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const two = (n: number) => String(n).padStart(2, "0");
+  const [hours, minutes, seconds] = [
+    Math.floor(total / 3600),
+    Math.floor((total % 3600) / 60),
+    total % 60,
+  ];
+  return hours > 0
+    ? `${hours}:${two(minutes)}:${two(seconds)}`
+    : `${two(minutes)}:${two(seconds)}`;
 }
 
 /** What a tool call is doing, in a few words: a bash command's first line without a leading `cd …&&`, else the tool's name. */
@@ -130,14 +135,32 @@ export function registerSkillProgress(
   pi: ExtensionAPI,
   skillsFor: (ctx: ExtensionContext) => readonly string[] | undefined,
   now: () => number = Date.now,
+  /** Calls `tick` every second until the returned stop is called; injected by tests. */
+  every: (tick: () => void) => () => void = (tick) => {
+    const timer = setInterval(tick, 1000);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  },
 ): { resume(ctx: ExtensionContext): void } {
   let crumb: string | undefined;
   let since = 0;
+  // The last line drawn, redrawn every second so the clock runs during a long call.
+  let shown: { ctx: ExtensionContext; text: string | undefined } | undefined;
+  let stop: (() => void) | undefined;
   const show = (ctx: ExtensionContext, text: string | undefined) => {
     if (!ctx.hasUI || !crumb) return;
-    const line = `${BRAND} ${crumb} (${elapsed(now() - since)})`;
+    shown = { ctx, text };
+    const line = `${BRAND} ${crumb} ${elapsed(now() - since)}`;
     ctx.ui.setWorkingMessage(text ? `${line} › ${text}` : line);
+    stop ??= every(() => {
+      if (shown) show(shown.ctx, shown.text);
+    });
   };
+  pi.on("session_shutdown", () => {
+    stop?.();
+    stop = undefined;
+    shown = undefined;
+  });
   const setStep = (
     ctx: ExtensionContext,
     skill: string | undefined,
