@@ -539,6 +539,32 @@ describe("show_artifact tool", () => {
     );
   });
 
+  it("never reads a commit through a folder that links out of the workspace", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "artifact-outside-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: outside, stdio: "pipe" });
+      writeFileSync(join(outside, "secret.md"), "secret\n");
+      execFileSync("git", ["add", "secret.md"], {
+        cwd: outside,
+        stdio: "pipe",
+      });
+      execFileSync(
+        "git",
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "s"],
+        { cwd: outside, stdio: "pipe" },
+      );
+      symlinkSync(outside, join(workspace, "linked"));
+      const { show } = await setup({}, "rpc");
+      for (const path of ["linked/secret.md", "linked/gone/deleted.md"]) {
+        await expect(show(path, { ref: "HEAD" })).rejects.toThrow(
+          /links outside the working directory/,
+        );
+      }
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("shows a file as of a git commit, or diffs against one", async () => {
     const git = (...args: string[]) =>
       execFileSync("git", args, { cwd: workspace, stdio: "pipe" });

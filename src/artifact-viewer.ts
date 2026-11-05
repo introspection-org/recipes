@@ -363,6 +363,15 @@ export interface ArtifactViewerOptions {
   artifactRepository?: ArtifactRepositoryResolver;
 }
 
+/** The folder holding `path`, or its nearest existing parent, never above `root`. */
+function nearestExistingFolder(path: string, root: string): string {
+  let dir = dirname(path);
+  while (!existsSync(dir) && dir !== root && isInside(root, dirname(dir))) {
+    dir = dirname(dir);
+  }
+  return dir;
+}
+
 function isInside(root: string, target: string): boolean {
   const rel = relative(root, target);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -426,7 +435,20 @@ export function resolveArtifactPath(
     absolutePath,
     relativePath: relative(root, absolutePath).split(sep).join("/"),
   };
-  if (!inWorkingTree) return resolved;
+  if (!inWorkingTree) {
+    // The file need not exist, but git will run from its nearest existing
+    // folder, so that folder must not lead out of the working directory.
+    const existing = nearestExistingFolder(absolutePath, root);
+    if (
+      existsSync(existing) &&
+      !isInside(realpathSync(root), realpathSync(existing))
+    ) {
+      throw new Error(
+        `${input} links outside the working directory; only files under ${root} can be shown.`,
+      );
+    }
+    return resolved;
+  }
   let stats;
   try {
     stats = statSync(absolutePath);
@@ -541,11 +563,7 @@ function gitLocation(target: ResolvedArtifactPath): {
   dir: string;
   path: string;
 } {
-  const root = workspaceRoot(target);
-  let dir = dirname(target.absolutePath);
-  while (!existsSync(dir) && dir !== root && dirname(dir) !== dir) {
-    dir = dirname(dir);
-  }
+  const dir = nearestExistingFolder(target.absolutePath, workspaceRoot(target));
   return {
     dir,
     path: `./${relative(dir, target.absolutePath).split(sep).join("/")}`,
