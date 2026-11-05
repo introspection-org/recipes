@@ -85,7 +85,7 @@ tools: [read, write, edit, ask_user_question, show_artifact]
 ```
 
 ```ts
-show_artifact({ path: "evals/cases/refund.md" })  // relative to the working directory
+show_artifact({ path: "evals/cases/refund.md" }); // relative to the working directory
 ```
 
 The tool refuses a path outside the working directory (including a symlink
@@ -96,12 +96,12 @@ conversation, so it isn't drawn on a terminal narrower than 100 columns. It open
 the keyboard, so the user keeps typing in the editor. Showing another file
 replaces the content, and the panel re-renders when the file changes on disk.
 
-| Key | Where | Does |
-| --- | --- | --- |
-| `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel | Scroll |
-| `o` | panel | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
-| `Esc` / `q` | panel | Closes the panel |
-| `PgUp` / `PgDn` | a question from `ask_user_question` | Scroll the panel without moving the keyboard to it |
+| Key                                            | Where                               | Does                                                                         |
+| ---------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
+| `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | panel                               | Scroll                                                                       |
+| `o`                                            | panel                               | Opens the file with the system's default app (`open`, `xdg-open` or `start`) |
+| `Esc` / `q`                                    | panel                               | Closes the panel                                                             |
+| `PgUp` / `PgDn`                                | a question from `ask_user_question` | Scroll the panel without moving the keyboard to it                           |
 
 `/recipe view <file>` opens a file the same way; `/recipe view` on its own opens
 the last markdown file the agent showed or wrote with `write` or `edit` in this
@@ -124,12 +124,13 @@ approve, with an optional comment, or request changes, saying what to change.
 ```ts
 review_artifacts({
   title: "The interview agent's cases",
-  items: [                                       // 1 to 20, in reading order
+  items: [
+    // 1 to 20, in reading order
     { path: "evals/cases/C1.md", label: "C1: four questions" },
     { path: "evals/cases/C2.md", label: "C2: a vague answer" },
     { path: "docs/DESIGN.md", label: "The brief", section: "Part A" }, // only that part
   ],
-})
+});
 ```
 
 A case's front matter shows as one line (its check, inputs and approval), and `section` shows only the part under that heading, so the review holds what is being approved.
@@ -139,12 +140,12 @@ and a Submit tab across the top (a single file has none), the file itself in a
 box, and the choices under it. The artifact panel isn't used; `show_artifact`
 is for showing a file without asking for a decision.
 
-| Key | Does |
-| --- | --- |
-| `Left` / `Right`, `Tab` / `Shift+Tab` | Previous or next file, then Submit |
-| `Up` / `Down`, `Enter`, or a number | Pick a choice: `Approve`, or `Request changes` and say what should change (required) |
-| `j` / `k`, `Space` / `b` (also `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down`) | Scroll a file longer than the box, which takes at most half the terminal |
-| `Esc` | Cancel the review; nothing is approved |
+| Key                                                                        | Does                                                                                                                      |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Left` / `Right`, `Tab` / `Shift+Tab`                                      | Previous or next file, then Submit                                                                                        |
+| `Up` / `Down`, `Enter`, or a number                                        | Pick a choice: `Approve`, `Approve with a comment` (optional), or `Request changes` and say what should change (required) |
+| `j` / `k`, `Space` / `b` (also `PgUp` / `PgDn`, `Shift+Up` / `Shift+Down`) | Scroll a file longer than the box, which takes at most half the terminal                                                  |
+| `Esc`                                                                      | Cancel the review; nothing is approved                                                                                    |
 
 After a decision the review moves to the next undecided file, and once every
 file has one, to the Submit tab; nothing is sent until the user submits there
@@ -238,10 +239,11 @@ introspection check
 
 That command uses the Rust validation core (`introspection-recipe-check`),
 which is also published as a crate and a Python binding so a host can embed it
+
 - the Introspection platform validates there, and blocks task creation on a
-failure. This npm package no longer ships a validator binary: a launch-time
-check was a third run of the same engine in the one place whose failure mode is
-a dead session, including when the binary simply could not be spawned.
+  failure. This npm package no longer ships a validator binary: a launch-time
+  check was a third run of the same engine in the one place whose failure mode is
+  a dead session, including when the binary simply could not be spawned.
 
 ## Host parity
 

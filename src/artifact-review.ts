@@ -244,8 +244,8 @@ export function tabName(label: string, path: string, index: number): string {
 
 /**
  * The terminal review, inline in place of the editor: a tab per file (and a
- * Submit tab) when there are several, the file itself in a box, and Approve or
- * Request changes under it. Resolves with one review per file, or null when the
+ * Submit tab) when there are several, the file itself in a box, and Approve,
+ * Approve with a comment or Request changes under it. Resolves with one review per file, or null when the
  * user dismisses it.
  */
 export function showReviewTui(
@@ -265,6 +265,8 @@ export function showReviewTui(
       let active = 0;
       let option = 0;
       let commenting = false;
+      let commentDecision: Exclude<ReviewDecision, "not_reviewed"> =
+        "changes_requested";
       let draft = "";
       let pasting = false;
       let settled = false;
@@ -321,7 +323,7 @@ export function showReviewTui(
           ? decided() < items.length
             ? ["Submit", "Approve the rest and submit"]
             : ["Submit"]
-          : ["Approve", "Request changes"];
+          : ["Approve", "Approve with a comment", "Request changes"];
       const choose = (index: number) => {
         if (onSubmitTab()) {
           if (index === 1)
@@ -331,6 +333,7 @@ export function showReviewTui(
         } else if (index === 0) decide("approved");
         else {
           commenting = true;
+          commentDecision = index === 1 ? "approved" : "changes_requested";
           draft = states[active]!.comment ?? "";
           refresh();
         }
@@ -471,12 +474,12 @@ export function showReviewTui(
           add();
           if (commenting) {
             add(
-              ` ${theme.fg("text", "What should change? ")}${theme.fg("accent", `${draft}█`)}`,
+              ` ${theme.fg("text", commentDecision === "approved" ? "Comment: " : "What should change? ")}${theme.fg("accent", `${draft}█`)}`,
             );
             add(
               theme.fg(
                 "dim",
-                draft.trim()
+                draft.trim() || commentDecision === "approved"
                   ? " Enter save · Esc back"
                   : " Type what should change · Esc back",
               ),
@@ -522,10 +525,10 @@ export function showReviewTui(
             } else if (matchesKey(data, Key.enter)) {
               const comment = draft.trim();
               // A change request says what to change, or the agent has nothing to act on.
-              if (!comment) return;
+              if (!comment && commentDecision === "changes_requested") return;
               commenting = false;
               draft = "";
-              decide("changes_requested", comment);
+              decide(commentDecision, comment || undefined);
               return;
             } else if (matchesKey(data, Key.backspace)) {
               draft = withoutLastCharacter(draft);

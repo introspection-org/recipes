@@ -240,7 +240,7 @@ describe("review_artifacts in the terminal", () => {
 
     type(review, ["1"]); // approve C1; moves to C2
     expect(shown(review)).toContain("Body of C2.");
-    type(review, ["2", "\r"]); // a change request needs a comment: Enter alone does nothing
+    type(review, ["3", "\r"]); // a change request needs a comment: Enter alone does nothing
     expect(shown(review)).toContain("What should change?");
     type(review, [..."code check", "\r"]); // changes on C2; moves to C3
     type(review, [RIGHT, "\r"]); // the Submit tab: submit, C3 left undecided
@@ -304,7 +304,7 @@ describe("review_artifacts in the terminal", () => {
   it("goes to the Submit tab once the last file is decided, and submits from there", async () => {
     const { fake, result } = run("tui");
     await flush();
-    type(dialog(fake), ["1", "\r", "2", ..."fix it", "\r"]);
+    type(dialog(fake), ["1", "\r", "3", ..."fix it", "\r"]);
     const summary = shown(dialog(fake));
     expect(summary).toContain(
       "2 approved · 1 changes requested · 0 not reviewed",
@@ -373,7 +373,7 @@ describe("review_artifacts in the terminal", () => {
     await flush();
     const review = dialog(fake);
     type(review, [
-      "2",
+      "3",
       "\x1b[200~Fix the setup\nAdd a",
       " regression test\x1b[201~",
       "\r",
@@ -385,10 +385,27 @@ describe("review_artifacts in the terminal", () => {
     });
   });
 
+  it("approves with an optional comment", async () => {
+    const { fake, result } = run("tui");
+    await flush();
+    const review = dialog(fake);
+    type(review, ["2"]);
+    expect(shown(review)).toContain("Comment: ");
+    type(review, [..."looks good", "\r"]); // C1 approved with a comment
+    type(review, ["2", "\r"]); // C2 approved, the comment left empty
+    type(review, ["1", "\r"]); // C3 approved, then submit
+    const reviews = (await result).details.reviews as ArtifactReview[];
+    expect(reviews.map((r) => [r.decision, r.comment])).toEqual([
+      ["approved", "looks good"],
+      ["approved", undefined],
+      ["approved", undefined],
+    ]);
+  });
+
   it("declines when dismissed, approving nothing", async () => {
     const { fake, result } = run("tui");
     await flush();
-    type(dialog(fake), ["2", "\x1b", "\x1b"]);
+    type(dialog(fake), ["3", "\x1b", "\x1b"]);
     const out = await result;
     expect(out.details.interrupt.outcome).toEqual({ type: "declined" });
     expect(out.details.reviews).toEqual([]);
