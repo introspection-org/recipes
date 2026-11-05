@@ -34,11 +34,13 @@
 		},
 		"./interactions": {
 			"types": "./dist/interactions.d.ts",
-			"import": "./dist/interactions.js"
+			"import": "./dist/interactions.js",
+			"default": "./dist/interactions.js"
 		},
 		"./review": {
 			"types": "./dist/review.d.ts",
-			"import": "./dist/review.js"
+			"import": "./dist/review.js",
+			"default": "./dist/review.js"
 		},
 		"./extensions": {
 			"types": "./dist/api/extensions.d.ts",
