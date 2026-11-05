@@ -1,4 +1,4 @@
-from ._api import (
+from introspection_recipe_check._api import (
     Diagnostic,
     JudgeDefinition,
     JudgeSource,
@@ -17,13 +17,13 @@ from ._api import (
     judge_definition_schema,
     list_recipe_suggestions,
     load_recipe_dir,
-    parse_mission_judge_definitions,
     parse_judge_definitions,
+    parse_mission_judge_definitions,
     parse_template_manifest,
     render_template,
     resolve_template_variables,
 )
-from ._native import __version__
+from introspection_recipe_check._native import __version__
 
 __all__ = [
     "Diagnostic",
