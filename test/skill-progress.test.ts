@@ -97,6 +97,35 @@ describe("where the agent is", () => {
     expect(nextStep(undefined, "write", ["research", "write"])).toBe("write");
   });
 
+  it("shows the improve, optimize and harden phases the same way", () => {
+    const later = [
+      "improve-collect",
+      "improve-classify",
+      "improve-propose",
+      "optimize-quality",
+      "optimize-cost",
+      "optimize-latency",
+      "harden-scan",
+      "harden-spar",
+      "harden-stress",
+    ];
+    expect(stepLine("improve-classify", later, "03:00")).toBe(
+      "improve ✓ collect ▸ classify ○ propose · 03:00",
+    );
+    expect(nextStep("improve-propose", "optimize-quality", later)).toBe(
+      "optimize-quality",
+    );
+    expect(stepLine("optimize-quality", later, "09:30")).toBe(
+      "optimize ▸ quality ○ cost ○ latency · 09:30",
+    );
+    expect(nextStep("optimize-latency", "harden-scan", later)).toBe(
+      "harden-scan",
+    );
+    expect(stepLine("harden-spar", later, "20:00")).toBe(
+      "harden ✓ scan ▸ spar ○ stress · 20:00",
+    );
+  });
+
   it("counts reading a skill, not glancing at its top", () => {
     expect(readsWhole({ path: "s/build-review/SKILL.md", limit: 30 })).toBe(
       false,
