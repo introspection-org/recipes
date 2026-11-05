@@ -15,7 +15,8 @@
 //! the whole batch with a [`JudgeSpecError`] instead of a diagnostic report.
 //!
 //! It also types the front matter of an eval case file, `evals/cases/<id>.md`
-//! ([`EvalCase`], [`parse_eval_case`]). That parse is lenient where the
+//! ([`EvalCase`], [`parse_eval_case`]) and the hash its approval records
+//! ([`case_approval_hash`], [`eval_case_body`]). That parse is lenient where the
 //! judge parse is strict: unknown keys are allowed, because the other
 //! front-matter fields and the body are for people.
 
@@ -25,6 +26,7 @@ use std::fmt;
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 pub const DEFAULT_JUDGE_TIMEOUT_MS: u64 = 60_000;
 pub const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 5_000;
@@ -826,6 +828,16 @@ pub struct EvalCase {
         skip_serializing_if = "Option::is_none"
     )]
     pub approved_in: Option<String>,
+    /// `sha256:<hex>` of the body when the case was approved, from
+    /// [`case_approval_hash`]. A case whose body no longer matches is
+    /// unapproved; one approved before the hash existed has none and stays
+    /// approved.
+    #[serde(
+        default,
+        deserialize_with = "optional_scalar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approved_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation: Option<EvalCaseConversation>,
     /// The `/v1/issues` id of the hypothesis the case tests: a UUID.
@@ -855,6 +867,51 @@ impl EvalCase {
     pub fn is_approved(&self) -> bool {
         self.missing_approval().is_empty()
     }
+
+    /// Whether `approved_hash` matches the case file's `body` (as
+    /// [`eval_case_body`] returns it): `None` without an `approved_hash`.
+    pub fn approved_hash_matches(&self, body: &str) -> Option<bool> {
+        let written = self.approved_hash.as_deref()?;
+        Some(written.eq_ignore_ascii_case(&case_approval_hash(body)))
+    }
+}
+
+/// The hash `approved_hash` records: `sha256:` and the lowercase hex SHA-256
+/// of the case file's body, everything after the front matter's closing
+/// `---` line. Before hashing, CRLF becomes LF, trailing whitespace is removed
+/// from every line, and trailing whitespace at the end of the body is
+/// removed, so line endings, stray spaces and front-matter edits (the
+/// approval itself included) leave it unchanged.
+pub fn case_approval_hash(body: &str) -> String {
+    let normalized = body.replace("\r\n", "\n");
+    let lines: Vec<&str> = normalized.split('\n').map(str::trim_end).collect();
+    let canonical = lines.join("\n");
+    let digest = Sha256::digest(canonical.trim_end().as_bytes());
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("sha256:{hex}")
+}
+
+/// A case file's body: everything after the line that closes its front
+/// matter, with CRLF read as LF. `None` when it has no front matter.
+pub fn eval_case_body(content: &str) -> Option<String> {
+    let normalized = content.trim_start_matches('\u{feff}').replace("\r\n", "\n");
+    split_front_matter(&normalized).map(|(_, body)| body.to_owned())
+}
+
+/// The YAML between the `---` lines at the top, and the body after the
+/// closing line. `content` has LF line endings.
+fn split_front_matter(content: &str) -> Option<(&str, &str)> {
+    let rest = content.strip_prefix("---\n")?;
+    let (yaml, closing) = if rest.starts_with("---") {
+        ("", rest)
+    } else {
+        let end = rest.find("\n---")?;
+        (&rest[..end], &rest[end + 1..])
+    };
+    let body = closing
+        .find('\n')
+        .map_or("", |newline| &closing[newline + 1..]);
+    Some((yaml, body))
 }
 
 /// Error from [`parse_eval_case`].
@@ -874,14 +931,7 @@ impl std::error::Error for EvalCaseError {}
 /// approval lives there.
 pub fn parse_eval_case(content: &str) -> Result<EvalCase, EvalCaseError> {
     let normalized = content.trim_start_matches('\u{feff}').replace("\r\n", "\n");
-    let yaml = normalized
-        .strip_prefix("---\n")
-        .and_then(|rest| {
-            if rest.starts_with("---") {
-                return Some("");
-            }
-            rest.find("\n---").map(|end| &rest[..end])
-        })
+    let (yaml, _) = split_front_matter(&normalized)
         .ok_or_else(|| EvalCaseError("has no YAML front matter between '---' lines".into()))?;
     if yaml.trim().is_empty() {
         return Ok(EvalCase::default());
@@ -1362,6 +1412,7 @@ questions:
                 approved_by: Some("owner@example.com".into()),
                 approved_at: Some("2026-11-04".into()),
                 approved_in: Some("1234".into()),
+                approved_hash: None,
                 conversation: Some(EvalCaseConversation {
                     id: "conv_1".into(),
                     task_id: None,
@@ -1371,6 +1422,58 @@ questions:
             }
         );
         assert!(case.is_approved());
+    }
+
+    #[test]
+    fn case_approval_hash_is_the_sha256_of_the_trimmed_body() {
+        // printf '## Situation\nHello.' | shasum -a 256
+        let hash = "sha256:1ec2603d45fdf6f26035f147fefedcb238336e6ff14f44e11eb146a5c256617b";
+        assert_eq!(case_approval_hash("## Situation\nHello."), hash);
+        for same in [
+            "## Situation\r\nHello.\r\n",
+            "## Situation   \nHello.\t\n\n  \n",
+        ] {
+            assert_eq!(case_approval_hash(same), hash, "{same:?}");
+        }
+        assert_ne!(case_approval_hash("## Situation\nHello!"), hash);
+        assert_ne!(case_approval_hash("## Situation\n\nHello."), hash);
+    }
+
+    #[test]
+    fn eval_case_body_is_what_follows_the_front_matter() {
+        assert_eq!(
+            eval_case_body("\u{feff}---\r\nid: C1\r\n---\r\n\r\n## Situation\r\n").as_deref(),
+            Some("\n## Situation\n")
+        );
+        assert_eq!(eval_case_body("---\n---\nbody").as_deref(), Some("body"));
+        assert_eq!(eval_case_body("---\nid: C1\n---").as_deref(), Some(""));
+        assert_eq!(eval_case_body("no front matter"), None);
+        let draft = "---\nid: C1\n---\n## Situation\nHello.\n";
+        let approved =
+            "---\nid: C1\napproved_by: owner\napproved_hash: x\n---\n## Situation\nHello.\n";
+        assert_eq!(
+            case_approval_hash(&eval_case_body(draft).unwrap()),
+            case_approval_hash(&eval_case_body(approved).unwrap())
+        );
+    }
+
+    #[test]
+    fn eval_case_approved_hash_matches_its_body() {
+        let body = "## Situation\nHello.\n";
+        let case = EvalCase {
+            approved_hash: Some(
+                case_approval_hash(body)
+                    .to_uppercase()
+                    .replace("SHA256", "sha256"),
+            ),
+            ..EvalCase::default()
+        };
+        assert_eq!(case.approved_hash_matches(body), Some(true));
+        assert_eq!(
+            case.approved_hash_matches("## Situation\nBye.\n"),
+            Some(false)
+        );
+        assert_eq!(EvalCase::default().approved_hash_matches(body), None);
     }
 
     #[test]

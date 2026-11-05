@@ -726,6 +726,7 @@ A case file is YAML front matter, then a body. The front matter:
 | `inputs` | A list of `{ name, sha256, location }`: each input by its hash and where it came from. The case file never holds an input; the implementation carries the copy it runs on, such as a Harbor task's `environment/`. |
 | `sources` | What the agent must reach for this case, such as `[documents]`. |
 | `approved_by`, `approved_at`, `approved_in` | Who approved the case, when, and in which message. All empty means a draft. |
+| `approved_hash` | Optional: `sha256:<hex>` of the body when the case was approved, written by `introspection eval approve <id>`. An edited body no longer matches, so the case is unapproved until the owner approves it again. |
 | `conversation` | Optional: `{ id, task_id, turn }` of the real conversation the case came from, `task_id` only when it ran as a platform task. Provenance only: a run never fetches it. |
 | `issue` | Optional: the UUID of the issue recording the hypothesis the case tests. |
 
@@ -733,6 +734,23 @@ Unknown keys are allowed: the other fields and the body are for people. By
 convention the body has the sections Situation, A good result and A bad
 result, and optionally Verification. `evals/cases/inputs/` holds only
 synthetic inputs; real inputs stay where `location` says.
+
+`approved_hash` covers the body, not the front matter, so editing a
+front-matter field (the approval fields included) keeps the approval. It is
+`sha256:` followed by the lowercase hexadecimal SHA-256 of the UTF-8 body,
+computed as follows:
+
+1. The body is everything after the line that closes the front matter.
+2. Each CRLF becomes LF.
+3. Trailing whitespace is removed from every line.
+4. Trailing whitespace at the end of the body is removed.
+
+Line endings and stray trailing spaces therefore never unapprove a case. The
+`introspection-recipe-check` crate exports this algorithm as
+`spec::case_approval_hash(body: &str) -> String`, with `spec::eval_case_body`
+to take the body out of a case file. A case with all three approval fields
+and no `approved_hash` stays approved: cases approved before the hash existed
+keep their approval.
 
 ```markdown
 ---
@@ -805,9 +823,9 @@ eval paths, and the links between cases and implementations, all as warnings:
 | --- | --- |
 | `pi.evals_case_unknown` | A Vitest row or Harbor task names a case with no case file. |
 | `pi.evals_case_duplicate` | A case has more than one implementation on one runner. |
-| `pi.evals_case_unapproved` | A case with an implementation has an empty approval field. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
+| `pi.evals_case_unapproved` | A case with an implementation has an empty approval field, or a body that no longer matches its `approved_hash`; `introspection eval approve <id>` approves it again. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
 | `pi.evals_case_row_missing_id` | A `.eval.jsonl` row has no `case`. |
-| `pi.evals_case_invalid` | A case file has no readable front matter, an `id` other than its file name, or an `issue` that is not a UUID. |
+| `pi.evals_case_invalid` | A case file has no readable front matter, an `id` other than its file name, an `issue` that is not a UUID, or an `approved_hash` that is not `sha256:` and 64 hexadecimal digits. |
 
 ## Conformance
 
