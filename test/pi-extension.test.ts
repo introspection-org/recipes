@@ -39,6 +39,57 @@ function extensionContext(cwd: string, notify = vi.fn()) {
   } as any;
 }
 
+/**
+ * Starts the Recipes extension on `recipeDir`'s `main` agent, as `pi --recipe
+ * <dir> --agent main` would in `projectDir`.
+ */
+async function startMainAgent(
+  recipeDir: string,
+  projectDir: string,
+  env: NodeJS.ProcessEnv,
+) {
+  const notify = vi.fn();
+  const ctx = extensionContext(projectDir, notify);
+  const pi = createMockExtensionAPI();
+  pi.flagValues.set("recipe", recipeDir);
+  pi.flagValues.set("agent", "main");
+
+  createRecipesExtension({ env })(pi);
+  await pi.emitExtensionEvent(
+    { type: "session_start", reason: "startup" } as any,
+    ctx,
+  );
+  return { pi, notify, ctx };
+}
+
+/** Declares the required `partner-mcp` server from `mcp.json`. */
+function writePartnerMcpPackage(recipeDir: string) {
+  writeFileSync(
+    join(recipeDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "demo",
+        version: "1.0.0",
+        pi: {
+          agents: ["defs/*.yaml"],
+          mcp: {
+            manifests: ["mcp.json"],
+            servers: [
+              {
+                id: "partner-mcp",
+                required: true,
+                tools: { include: ["get_value"] },
+              },
+            ],
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 function writeRecipe(root: string) {
   const recipeDir = join(root, "recipe");
   mkdirSync(join(recipeDir, "defs"), { recursive: true });
@@ -938,41 +989,12 @@ describe("Recipes extension for Pi", () => {
           2,
         ),
       );
-      writeFileSync(
-        join(recipeDir, "package.json"),
-        `${JSON.stringify(
-          {
-            name: "demo",
-            version: "1.0.0",
-            pi: {
-              agents: ["defs/*.yaml"],
-              mcp: {
-                manifests: ["mcp.json"],
-                servers: [
-                  {
-                    id: "partner-mcp",
-                    required: true,
-                    tools: { include: ["get_value"] },
-                  },
-                ],
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      writePartnerMcpPackage(recipeDir);
       const env: NodeJS.ProcessEnv = {};
-      const notify = vi.fn();
-      const ctx = extensionContext(projectDir, notify);
-      const pi = createMockExtensionAPI();
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-
-      createRecipesExtension({ env })(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
+      const { pi, notify, ctx } = await startMainAgent(
+        recipeDir,
+        projectDir,
+        env,
       );
 
       expect(pi.activeTools.sort()).toEqual(["bash"]);
@@ -1051,42 +1073,9 @@ describe("Recipes extension for Pi", () => {
           ],
         }),
       );
-      writeFileSync(
-        join(recipeDir, "package.json"),
-        `${JSON.stringify(
-          {
-            name: "demo",
-            version: "1.0.0",
-            pi: {
-              agents: ["defs/*.yaml"],
-              mcp: {
-                manifests: ["mcp.json"],
-                servers: [
-                  {
-                    id: "partner-mcp",
-                    required: true,
-                    tools: { include: ["get_value"] },
-                  },
-                ],
-              },
-            },
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      writePartnerMcpPackage(recipeDir);
       const env: NodeJS.ProcessEnv = {};
-      const notify = vi.fn();
-      const ctx = extensionContext(projectDir, notify);
-      const pi = createMockExtensionAPI();
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-
-      createRecipesExtension({ env })(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
-      );
+      const { notify } = await startMainAgent(recipeDir, projectDir, env);
 
       expect(env.PI_RECIPES_MCP_BIN_DIR).toBeUndefined();
       expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
@@ -1121,17 +1110,7 @@ describe("Recipes extension for Pi", () => {
           ),
       ) as unknown as typeof fetch;
       globalThis.fetch = fetchImpl;
-      const notify = vi.fn();
-      const ctx = extensionContext(projectDir, notify);
-      const pi = createMockExtensionAPI();
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-
-      createRecipesExtension({ env })(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
-      );
+      const { notify } = await startMainAgent(recipeDir, projectDir, env);
 
       expect(fetchImpl).not.toHaveBeenCalled();
       expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
@@ -1198,17 +1177,7 @@ describe("Recipes extension for Pi", () => {
         )}\n`,
       );
       const env: NodeJS.ProcessEnv = {};
-      const notify = vi.fn();
-      const ctx = extensionContext(projectDir, notify);
-      const pi = createMockExtensionAPI();
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-
-      createRecipesExtension({ env })(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
-      );
+      const { pi, notify } = await startMainAgent(recipeDir, projectDir, env);
 
       expect(pi.activeTools.sort()).toEqual(["bash"]);
       expect(env.PI_RECIPES_MCP_BIN_DIR).toBe(join(projectDir, ".pi", "bin"));

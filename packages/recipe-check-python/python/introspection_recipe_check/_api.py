@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, TypedDict, cast
 from urllib.parse import unquote, urlparse
 
-from . import _native
+from introspection_recipe_check import _native
 
 
 class _RecipeFileOptional(TypedDict, total=False):

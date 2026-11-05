@@ -245,6 +245,83 @@ describe("createAgentSession", () => {
     return handle;
   }
 
+  /**
+   * Adds an `explorer` subagent to the fixture, then opens the root agent and
+   * that subagent with the same credentials.
+   */
+  async function openRootAndExplorer(
+    recipeDir: string,
+    workspaceDir: string,
+    credentials: InMemoryCredentialStore,
+  ) {
+    writeFileSync(
+      join(recipeDir, "agents", "explorer.yaml"),
+      ["name: explorer", "from: agent", "tools: []"].join("\n"),
+    );
+    const recipe = resolveRecipe({ recipeDir });
+    const root = await createAgentSession({
+      recipe,
+      cwd: workspaceDir,
+      credentials,
+      env: cleanEnv(),
+      runController: null,
+    });
+    handles.push(root);
+    const child = await createAgentSessionInternal({
+      recipe,
+      agentName: "explorer",
+      cwd: workspaceDir,
+      credentials,
+      env: cleanEnv(),
+      runController: null,
+      sessionRole: "subagent",
+    });
+    handles.push(child);
+    return { root, child };
+  }
+
+  /** A Recipe that requires the `linear` MCP server in CLI mode. */
+  function linearMcpFixture() {
+    return fixture({
+      manifestPi: {
+        mcp: {
+          servers: [
+            { id: "linear", required: true, tools: { include: ["*"] } },
+          ],
+        },
+      },
+      agentExtras: [
+        "mcp:",
+        "  mode: cli",
+        "  servers:",
+        "    linear:",
+        '      include: ["*"]',
+      ],
+    });
+  }
+
+  const linearMcpBindings = {
+    servers: [
+      {
+        id: "linear",
+        transport: "streamable_http" as const,
+        url: "http://127.0.0.1:9/mcp",
+      },
+    ],
+  };
+
+  /** An env whose MCP session and mcporter config belong to the host. */
+  function hostMcpEnv(workspaceDir: string) {
+    const hostSession = join(workspaceDir, "host-session.json");
+    const hostMcporter = join(workspaceDir, "host-mcporter.json");
+    const env = {
+      ...cleanEnv(),
+      PI_RECIPES_MCP_SESSION: hostSession,
+      MCPORTER_CONFIG: hostMcporter,
+    };
+    return { hostSession, hostMcporter, env };
+  }
+
   it("creates a live session from a recipe directory", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const handle = await open({ recipeDir, cwd: workspaceDir });
@@ -615,30 +692,11 @@ describe("createAgentSession", () => {
         "subagents: [explorer]",
       ].join("\n"),
     );
-    writeFileSync(
-      join(recipeDir, "agents", "explorer.yaml"),
-      ["name: explorer", "from: agent", "tools: []"].join("\n"),
+    const { root, child } = await openRootAndExplorer(
+      recipeDir,
+      workspaceDir,
+      await openRouterCredentialStore(),
     );
-    const recipe = resolveRecipe({ recipeDir });
-    const credentials = await openRouterCredentialStore();
-    const root = await createAgentSession({
-      recipe,
-      cwd: workspaceDir,
-      credentials,
-      env: cleanEnv(),
-      runController: null,
-    });
-    handles.push(root);
-    const child = await createAgentSessionInternal({
-      recipe,
-      agentName: "explorer",
-      cwd: workspaceDir,
-      credentials,
-      env: cleanEnv(),
-      runController: null,
-      sessionRole: "subagent",
-    });
-    handles.push(child);
 
     for (const handle of [root, child]) {
       const captured = await captureSerializedPayload(handle);
@@ -687,30 +745,11 @@ describe("createAgentSession", () => {
         "subagents: [explorer]",
       ].join("\n"),
     );
-    writeFileSync(
-      join(recipeDir, "agents", "explorer.yaml"),
-      ["name: explorer", "from: agent", "tools: []"].join("\n"),
+    const { root, child } = await openRootAndExplorer(
+      recipeDir,
+      workspaceDir,
+      await vercelAiGatewayCredentialStore(),
     );
-    const recipe = resolveRecipe({ recipeDir });
-    const credentials = await vercelAiGatewayCredentialStore();
-    const root = await createAgentSession({
-      recipe,
-      cwd: workspaceDir,
-      credentials,
-      env: cleanEnv(),
-      runController: null,
-    });
-    handles.push(root);
-    const child = await createAgentSessionInternal({
-      recipe,
-      agentName: "explorer",
-      cwd: workspaceDir,
-      credentials,
-      env: cleanEnv(),
-      runController: null,
-      sessionRole: "subagent",
-    });
-    handles.push(child);
 
     for (const handle of [root, child]) {
       const captured = await captureSerializedPayload(handle);
@@ -1242,22 +1281,7 @@ describe("createAgentSession", () => {
   });
 
   it("fails closed on an unbound required MCP server, naming it", async () => {
-    const { recipeDir, workspaceDir } = fixture({
-      manifestPi: {
-        mcp: {
-          servers: [
-            { id: "linear", required: true, tools: { include: ["*"] } },
-          ],
-        },
-      },
-      agentExtras: [
-        "mcp:",
-        "  mode: cli",
-        "  servers:",
-        "    linear:",
-        '      include: ["*"]',
-      ],
-    });
+    const { recipeDir, workspaceDir } = linearMcpFixture();
     await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toSatisfy(
       (err: unknown) => {
         expect(err).toBeInstanceOf(McpBindingError);
@@ -1287,36 +1311,13 @@ describe("createAgentSession", () => {
   });
 
   it("materializes inline MCP bindings", async () => {
-    const { recipeDir, workspaceDir } = fixture({
-      manifestPi: {
-        mcp: {
-          servers: [
-            { id: "linear", required: true, tools: { include: ["*"] } },
-          ],
-        },
-      },
-      agentExtras: [
-        "mcp:",
-        "  mode: cli",
-        "  servers:",
-        "    linear:",
-        '      include: ["*"]',
-      ],
-    });
+    const { recipeDir, workspaceDir } = linearMcpFixture();
     const env = cleanEnv();
     const handle = await open({
       recipeDir,
       cwd: workspaceDir,
       env,
-      mcpBindings: {
-        servers: [
-          {
-            id: "linear",
-            transport: "streamable_http",
-            url: "http://127.0.0.1:9/mcp",
-          },
-        ],
-      },
+      mcpBindings: linearMcpBindings,
     });
     expect(env.PI_RECIPES_MCP_SESSION).toBeDefined();
     await handle.dispose();
@@ -1339,42 +1340,13 @@ describe("createAgentSession", () => {
   });
 
   it("leases and restores a host environment for materialized MCP", async () => {
-    const { recipeDir, workspaceDir } = fixture({
-      manifestPi: {
-        mcp: {
-          servers: [
-            { id: "linear", required: true, tools: { include: ["*"] } },
-          ],
-        },
-      },
-      agentExtras: [
-        "mcp:",
-        "  mode: cli",
-        "  servers:",
-        "    linear:",
-        '      include: ["*"]',
-      ],
-    });
-    const hostSession = join(workspaceDir, "host-session.json");
-    const hostMcporter = join(workspaceDir, "host-mcporter.json");
-    const env = {
-      ...cleanEnv(),
-      PI_RECIPES_MCP_SESSION: hostSession,
-      MCPORTER_CONFIG: hostMcporter,
-    };
+    const { recipeDir, workspaceDir } = linearMcpFixture();
+    const { hostSession, hostMcporter, env } = hostMcpEnv(workspaceDir);
     const options = {
       recipeDir,
       cwd: workspaceDir,
       env,
-      mcpBindings: {
-        servers: [
-          {
-            id: "linear",
-            transport: "streamable_http",
-            url: "http://127.0.0.1:9/mcp",
-          },
-        ],
-      },
+      mcpBindings: linearMcpBindings,
     };
     const first = await open(options);
 
@@ -1389,43 +1361,14 @@ describe("createAgentSession", () => {
   });
 
   it("rolls back materialized MCP when session construction fails", async () => {
-    const { recipeDir, workspaceDir } = fixture({
-      manifestPi: {
-        mcp: {
-          servers: [
-            { id: "linear", required: true, tools: { include: ["*"] } },
-          ],
-        },
-      },
-      agentExtras: [
-        "mcp:",
-        "  mode: cli",
-        "  servers:",
-        "    linear:",
-        '      include: ["*"]',
-      ],
-    });
-    const hostSession = join(workspaceDir, "host-session.json");
-    const hostMcporter = join(workspaceDir, "host-mcporter.json");
-    const env = {
-      ...cleanEnv(),
-      PI_RECIPES_MCP_SESSION: hostSession,
-      MCPORTER_CONFIG: hostMcporter,
-    };
+    const { recipeDir, workspaceDir } = linearMcpFixture();
+    const { hostSession, hostMcporter, env } = hostMcpEnv(workspaceDir);
     const baseOptions = {
       recipe: resolveRecipe({ recipeDir }),
       cwd: workspaceDir,
       env,
       credentials: await credentialStore(),
-      mcpBindings: {
-        servers: [
-          {
-            id: "linear",
-            transport: "streamable_http",
-            url: "http://127.0.0.1:9/mcp",
-          },
-        ],
-      },
+      mcpBindings: linearMcpBindings,
     };
 
     await expect(

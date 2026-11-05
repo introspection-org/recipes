@@ -65,6 +65,31 @@ jobs:
 
       - run: pnpm knip
 
+  rust-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - run: cargo fmt --all -- --check
+
+      # Also enforces the complexity ratchet: [workspace.lints.clippy] in
+      # Cargo.toml turns the lints on, clippy.toml holds the thresholds.
+      - run: cargo clippy --all-targets -- -D warnings
+
+      # Pinned to an exact release so a new cargo-machete heuristic cannot
+      # turn main red overnight; bump it deliberately. A false positive goes
+      # in the crate's [package.metadata.cargo-machete] ignored list, with
+      # the reason.
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-machete@0.9.2
+
+      - run: cargo machete
+
   python-bindings:
     runs-on: ubuntu-latest
     steps:
@@ -89,6 +114,12 @@ jobs:
       - run: uv run --project packages/recipe-check-python --locked ruff check packages/recipe-check-python/python packages/recipe-check-python/tests
 
       - run: uv run --project packages/recipe-check-python --locked mypy --strict packages/recipe-check-python/python packages/recipe-check-python/tests
+
+      # Unused, missing, transitive and misplaced dev dependencies, configured
+      # in [tool.deptry] in the package's pyproject.toml.
+      - name: Dependency check
+        working-directory: packages/recipe-check-python
+        run: uv run --locked deptry python
 
       - run: uv run --project packages/recipe-check-python --locked maturin build --release --out dist --manifest-path packages/recipe-check-python/Cargo.toml
 
@@ -157,3 +188,55 @@ jobs:
           MCP_CLIENT_ARCH: arm64
 
       - run: test -x vendor/mcp-client/linux-arm64/mcp-client
+
+  lint-actions:
+    name: Lint GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
+  # Ratchets copy/paste per language: each step fails once that language's
+  # duplicated-line share rises above `threshold` in its config, printing every
+  # clone. One config per language (TypeScript and JavaScript share one), so a
+  # small language's ratchet isn't drowned by the TypeScript line count. The
+  # thresholds start at the duplication measured when the job was added. Lower
+  # a threshold when a refactor removes duplication; never raise it.
+  duplication:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: TypeScript and JavaScript duplicate code stays under the threshold
+        run: npx --yes jscpd@5.4.1 --config .jscpd.js-ts.json
+      - name: Rust duplicate code stays under the threshold
+        if: ${{ !cancelled() }}
+        run: npx --yes jscpd@5.4.1 --config .jscpd.json
+      - name: Python duplicate code stays under the threshold
+        if: ${{ !cancelled() }}
+        run: npx --yes jscpd@5.4.1 --config .jscpd.python.json
+
+  # The one check to require in branch protection: it fails when any job it
+  # needs failed, was cancelled, or was skipped. Add every new job to its
+  # needs, and to allowed-skips when it has an `if:`.
+  all-green:
+    name: All green
+    if: always()
+    needs:
+      - ci
+      - python-bindings
+      - pi-minimum
+      - native-linux-arm64
+      - lint-actions
+      - duplication
+      - rust-lint
+      - lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that every needed job passed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
