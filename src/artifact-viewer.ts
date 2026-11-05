@@ -29,6 +29,7 @@ import {
   dirname,
   extname,
   isAbsolute,
+  join,
   relative,
   resolve,
   sep,
@@ -55,6 +56,8 @@ import {
   artifactKind,
   SHOW_ARTIFACT_TOOL_NAME,
   type ArtifactKind,
+  type ArtifactRepositoryResolver,
+  type ArtifactRepositorySource,
   type ArtifactStore,
   type ShowArtifactDetails,
 } from "./artifact.js";
@@ -351,6 +354,12 @@ export interface ArtifactViewerOptions {
    * content. Pi's terminal has none; its panel reads the file itself.
    */
   storeArtifact?: ArtifactStore;
+  /**
+   * The host's id for a git repository it serves. With it, a file unchanged
+   * against a pushed commit of such a repository is named by repository,
+   * commit and path instead of carried or stored. Pi's terminal has none.
+   */
+  artifactRepository?: ArtifactRepositoryResolver;
 }
 
 function isInside(root: string, target: string): boolean {
@@ -521,7 +530,28 @@ function workspaceRoot(target: ResolvedArtifactPath): string {
   );
 }
 
-/** A file at `ref` in the working directory's git repository. */
+/**
+ * Where git runs for `target`, and how it names the file from there: the
+ * file's own folder (or its nearest existing parent, for a deleted file), so
+ * a repository nested below the working directory, such as a hosted
+ * workspace's `repos/<name>`, is the one asked.
+ */
+function gitLocation(target: ResolvedArtifactPath): {
+  dir: string;
+  path: string;
+} {
+  const root = workspaceRoot(target);
+  let dir = dirname(target.absolutePath);
+  while (!existsSync(dir) && dir !== root && dirname(dir) !== dir) {
+    dir = dirname(dir);
+  }
+  return {
+    dir,
+    path: `./${relative(dir, target.absolutePath).split(sep).join("/")}`,
+  };
+}
+
+/** A file at `ref` in its git repository. */
 function gitVersion(
   target: ResolvedArtifactPath,
   ref: string,
@@ -534,9 +564,10 @@ function gitVersion(
   }
   let text: string;
   try {
-    // `./` resolves the path against the working directory, wherever the repository's root is.
-    text = execFileSync("git", ["show", `${ref}:./${target.relativePath}`], {
-      cwd: workspaceRoot(target),
+    // `./` resolves the path against git's folder, wherever the repository's root is.
+    const at = gitLocation(target);
+    text = execFileSync("git", ["show", `${ref}:${at.path}`], {
+      cwd: at.dir,
       encoding: "utf8",
       maxBuffer: maxBytes,
       stdio: ["ignore", "pipe", "pipe"],
@@ -580,7 +611,7 @@ function gitBaseVersion(target: ResolvedArtifactPath, ref: string): string {
     const inCommit =
       commit === undefined
         ? undefined
-        : git(target, ["cat-file", "-e", `${ref}:./${target.relativePath}`]);
+        : git(target, ["cat-file", "-e", `${ref}:${gitLocation(target).path}`]);
     if (commit !== undefined && inCommit === undefined) return "";
     throw error;
   }
@@ -600,11 +631,11 @@ interface ArtifactSource {
   maxBytes?: number;
 }
 
-/** Run git in the working directory's repository; undefined outside one or on failure. */
+/** Run git in the file's repository; undefined outside one or on failure. */
 function git(target: ResolvedArtifactPath, args: string[]): string | undefined {
   try {
     return execFileSync("git", args, {
-      cwd: workspaceRoot(target),
+      cwd: gitLocation(target).dir,
       encoding: "utf8",
       maxBuffer: ARTIFACT_MAX_BYTES,
       stdio: ["ignore", "pipe", "ignore"],
@@ -612,6 +643,65 @@ function git(target: ResolvedArtifactPath, args: string[]): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Run git in `dir`; undefined outside a repository or on failure (a non-zero exit). */
+function gitIn(dir: string, args: string[]): string | undefined {
+  try {
+    return execFileSync("git", args, {
+      cwd: dir,
+      encoding: "utf8",
+      maxBuffer: ARTIFACT_MAX_BYTES,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Where a host can read the shown file itself: its repository, commit and
+ * path, when the repository is one the host serves (`resolve`), the file is
+ * unchanged against that commit (`ref`, or HEAD for the working tree), and the
+ * commit is on a remote, so the host has it. Undefined otherwise; the result
+ * then carries the file.
+ */
+function repositorySource(
+  target: ResolvedArtifactPath,
+  ref: string | undefined,
+  resolve: ArtifactRepositoryResolver | undefined,
+): ArtifactRepositorySource | undefined {
+  if (!resolve) return undefined;
+  const dir = dirname(target.absolutePath);
+  if (!existsSync(dir)) return undefined;
+  const root = gitIn(dir, ["rev-parse", "--show-toplevel"]);
+  if (!root) return undefined;
+  const repository = resolve(root);
+  if (!repository) return undefined;
+  const path = relative(
+    realpathSync(root),
+    join(realpathSync(dir), basename(target.absolutePath)),
+  )
+    .split(sep)
+    .join("/");
+  if (!path || path.startsWith("..")) return undefined;
+  const commit = gitIn(root, [
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${ref ?? "HEAD"}^{commit}`,
+  ]);
+  if (!commit) return undefined;
+  if (gitIn(root, ["cat-file", "-e", `${commit}:${path}`]) === undefined)
+    return undefined;
+  // The working tree's file must be the committed one, or the host would show another version.
+  if (
+    !ref &&
+    gitIn(root, ["diff", "--quiet", commit, "--", path]) === undefined
+  )
+    return undefined;
+  if (!gitIn(root, ["branch", "-r", "--contains", commit])) return undefined;
+  return { repository_id: repository.id, commit, path };
 }
 
 /** The branch (or short commit when detached) and whether the tree has uncommitted changes, as a zsh git prompt shows them. */
@@ -981,7 +1071,7 @@ function artifactSourceFor(
   } else if (!ref || diff !== undefined) {
     // With no diff named, `d` still offers one: against HEAD for a tracked file, else the version shown before.
     const tracked =
-      git(target, ["cat-file", "-e", `HEAD:./${target.relativePath}`]) !==
+      git(target, ["cat-file", "-e", `HEAD:${gitLocation(target).path}`]) !==
       undefined;
     if (tracked) source.base = { label: "HEAD", ref: "HEAD" };
     else if (previousBase) source.base = previousBase;
@@ -1102,6 +1192,7 @@ const ARTIFACT_MIME_TYPES: Record<ArtifactKind, string> = {
 function createShowArtifactTool(
   viewer: ArtifactViewer,
   store?: ArtifactStore,
+  resolveRepository?: ArtifactRepositoryResolver,
 ): ToolDefinition {
   const tool: ToolDefinition<typeof parameters, ShowArtifactDetails> = {
     name: SHOW_ARTIFACT_TOOL_NAME,
@@ -1115,7 +1206,10 @@ function createShowArtifactTool(
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const ref = params.ref?.trim() || undefined;
-      const maxBytes = store ? STORED_ARTIFACT_MAX_BYTES : ARTIFACT_MAX_BYTES;
+      const maxBytes =
+        store || resolveRepository
+          ? STORED_ARTIFACT_MAX_BYTES
+          : ARTIFACT_MAX_BYTES;
       const { target, deleted } = resolveShownPath(
         ctx.cwd,
         params.path,
@@ -1134,16 +1228,20 @@ function createShowArtifactTool(
       const document = readDocument(source);
       const kind = artifactKind(target.relativePath);
       const bytes = new TextEncoder().encode(current).length;
+      // A committed file the host serves is read from its repository; otherwise it rides along, or is stored.
+      const committed = deleted
+        ? undefined
+        : repositorySource(target, ref, resolveRepository);
       // Stored now, so the recorded result names the file; a host's own sync recognises the same upload.
       const stored =
-        store && bytes > ARTIFACT_DETAILS_MAX_BYTES
+        !committed && store && bytes > ARTIFACT_DETAILS_MAX_BYTES
           ? await store({
               path: target.relativePath,
               content: current,
               mimeType: ARTIFACT_MIME_TYPES[kind],
             })
           : undefined;
-      const content = stored ? { text: "" } : capped(current);
+      const content = stored || committed ? { text: "" } : capped(current);
       const details: ShowArtifactDetails = {
         path: target.relativePath,
         shown: false,
@@ -1155,6 +1253,7 @@ function createShowArtifactTool(
           ? { truncated: true as const }
           : {}),
         ...(stored ? { file: { id: stored.id, bytes } } : {}),
+        ...(committed ? { source: committed } : {}),
         ...(document.git ? { git: document.git } : {}),
         ...(document.diff ? { diff: cappedDiff(document.diff) } : {}),
         ...(document.diffFirst ? { opens: "diff" as const } : {}),
@@ -1236,7 +1335,13 @@ export function artifactViewerExtension(
     if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;
     registrations?.claim("tool", SHOW_ARTIFACT_TOOL_NAME, BUILTIN_OWNER);
-    pi.registerTool(createShowArtifactTool(viewer, options.storeArtifact));
+    pi.registerTool(
+      createShowArtifactTool(
+        viewer,
+        options.storeArtifact,
+        options.artifactRepository,
+      ),
+    );
 
     addRecipeSubcommand(
       pi,

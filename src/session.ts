@@ -32,7 +32,7 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
-import type { ArtifactStore } from "./artifact.js";
+import type { ArtifactRepositoryResolver, ArtifactStore } from "./artifact.js";
 import {
   artifactViewerExtension,
   wantsArtifactViewer,
@@ -211,6 +211,11 @@ export interface CreateAgentSessionOptions {
    * host that renders artifacts from its own store (see `ArtifactViewerOptions`).
    */
   storeArtifact?: ArtifactStore;
+  /**
+   * The host's id for a git repository it serves, so `show_artifact` names a
+   * committed, pushed file by repository instead of carrying it.
+   */
+  artifactRepository?: ArtifactRepositoryResolver;
   /** Host event bus shared with the surrounding application. */
   eventBus?: EventBus;
   /** Host-owned tools. Recipe tool selection still decides which names are live. */
@@ -753,7 +758,10 @@ async function createSessionForAgent(
       inlineExtensions.push(
         artifactViewerExtension(
           recipeRegistrations,
-          { storeArtifact: opts.storeArtifact },
+          {
+            storeArtifact: opts.storeArtifact,
+            artifactRepository: opts.artifactRepository,
+          },
           recipe.tools,
           env,
         ),

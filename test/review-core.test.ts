@@ -141,6 +141,18 @@ describe("the review core", () => {
       hasContent: false,
       file: { id: "file-1", bytes: 1126401 },
     });
+    // A committed file the host reads from its repository.
+    expect(
+      artifactDetails({
+        path: "app/notes.md",
+        shown: false,
+        content: "",
+        source: { repository_id: "repo-1", commit: "abc", path: "notes.md" },
+      }),
+    ).toMatchObject({
+      hasContent: false,
+      source: { repository_id: "repo-1", commit: "abc", path: "notes.md" },
+    });
     expect(artifactDetails({ shown: false })).toBeUndefined();
     expect(artifactDetails("nope")).toBeUndefined();
   });

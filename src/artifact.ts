@@ -35,6 +35,24 @@ export interface ArtifactFile {
   bytes: number;
 }
 
+/** A shown file as it stands at a pushed commit of a repository the host knows. */
+export interface ArtifactRepositorySource {
+  /** The host's id for the repository. */
+  repository_id: string;
+  /** The full commit SHA the file is shown at. */
+  commit: string;
+  /** The file's path from the repository's root. */
+  path: string;
+}
+
+/**
+ * The host's id for the git repository rooted at `root`, if it is one the host
+ * serves (and so can read a pushed commit's files from); undefined otherwise.
+ */
+export type ArtifactRepositoryResolver = (
+  root: string,
+) => { id: string } | undefined;
+
 /**
  * Keeps a shown file too large to carry in a result, for a host that renders
  * artifacts from its own store; resolves to the store's id.
@@ -60,6 +78,8 @@ export interface ShowArtifactDetails {
   content: string;
   /** The file, kept in the host's store because it is too large to carry here. */
   file?: ArtifactFile;
+  /** The file as committed in a repository the host serves: it reads it from there instead. */
+  source?: ArtifactRepositorySource;
   /** The content was cut to the cap. */
   truncated?: true;
   /** The working directory's git branch, and whether its tree has uncommitted changes. */
@@ -89,7 +109,9 @@ function count(value: unknown): number {
  * undefined without a path. A release before the details carried the file
  * sends only `{ path, shown }`: `content` then reads as empty and the host
  * should say the file wasn't included (`hasContent` is false). A file too large
- * to carry is in the host's store instead (`file`), also with `hasContent` false.
+ * to carry is in the host's store instead (`file`), and a committed file in a
+ * repository the host serves is read from there (`source`); both have
+ * `hasContent` false.
  */
 export function artifactDetails(
   value: unknown,
@@ -109,6 +131,11 @@ export function artifactDetails(
   const ref = nonEmpty(details.ref);
   const file = asRecord(details.file);
   const fileId = nonEmpty(file?.id);
+  const source = asRecord(details.source);
+  const repositoryId = nonEmpty(source?.repository_id);
+  const sourceCommit = nonEmpty(source?.commit);
+  const sourcePath = nonEmpty(source?.path);
+  const fromRepository = Boolean(repositoryId && sourceCommit && sourcePath);
   return {
     path,
     shown: details.shown === true,
@@ -116,8 +143,18 @@ export function artifactDetails(
     ...(language ? { language } : {}),
     ...(ref ? { ref } : {}),
     content: typeof details.content === "string" ? details.content : "",
-    hasContent: typeof details.content === "string" && !fileId,
+    hasContent:
+      typeof details.content === "string" && !fileId && !fromRepository,
     ...(fileId ? { file: { id: fileId, bytes: count(file?.bytes) } } : {}),
+    ...(fromRepository
+      ? {
+          source: {
+            repository_id: repositoryId!,
+            commit: sourceCommit!,
+            path: sourcePath!,
+          },
+        }
+      : {}),
     ...(details.truncated === true ? { truncated: true as const } : {}),
     ...(branch ? { git: { branch, dirty: git?.dirty === true } } : {}),
     ...(diff && diffText !== undefined
