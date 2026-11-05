@@ -28,8 +28,6 @@ import {
 
 export { preloadMcpCatalogs } from "./catalog.js";
 export {
-  executableRecipeToolNames,
-  mcpSelectionAllowsTool,
   normalizeMcpServerId,
   resolveAgentMcpSelections,
   type ScopedMcpToolSelection,
@@ -114,7 +112,7 @@ interface McpEndpointBinding {
    * Header values as written in the local config (`${VAR}` refs intact) so
    * they can be re-emitted into the mcporter config without persisting
    * resolved secrets to disk.
-  */
+   */
   rawHeaders: Record<string, string>;
   /** mcporter request implementation; independent of endpoint authentication. */
   httpFetch?: "default" | "node-http1";
@@ -162,7 +160,7 @@ export class McpBindingError extends Error {
      * are only read through a local config entry's `url` and `headers`;
      * setting them alone binds nothing.
      */
-    readonly expectedEnvVars: readonly string[]
+    readonly expectedEnvVars: readonly string[],
   ) {
     super(mcpBindingErrorMessage(servers, expectedEnvVars));
   }
@@ -176,7 +174,7 @@ export class McpBindingError extends Error {
  */
 function mcpBindingErrorMessage(
   servers: readonly string[],
-  expectedEnvVars: readonly string[]
+  expectedEnvVars: readonly string[],
 ): string {
   const missing = `Required MCP server binding(s) missing: ${servers.join(", ")}`;
   if (expectedEnvVars.length === 0) return missing;
@@ -235,13 +233,13 @@ export interface McpEnvironmentSnapshot {
 
 /** Capture every environment entry Recipes may mutate while materializing MCP. */
 export function snapshotMcpEnvironment(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): McpEnvironmentSnapshot {
   const currentPathKey = pathKey(env);
   return {
     pathKey: currentPathKey,
     values: Object.fromEntries(
-      [...MCP_RUNTIME_ENV_KEYS, currentPathKey].map((key) => [key, env[key]])
+      [...MCP_RUNTIME_ENV_KEYS, currentPathKey].map((key) => [key, env[key]]),
     ),
   };
 }
@@ -249,7 +247,7 @@ export function snapshotMcpEnvironment(
 /** Restore a previously captured MCP environment exactly. */
 export function restoreMcpEnvironment(
   env: NodeJS.ProcessEnv,
-  snapshot: McpEnvironmentSnapshot
+  snapshot: McpEnvironmentSnapshot,
 ): void {
   for (const [key, value] of Object.entries(snapshot.values)) {
     if (value === undefined) {
@@ -275,7 +273,7 @@ export function defaultMcpSessionPath(cwd: string): string {
   return join(cwd, ".pi", "mcp-session.json");
 }
 
-export function fallbackMcpSessionPath(): string {
+function fallbackMcpSessionPath(): string {
   return join(tmpdir(), "recipes", "mcp-session.json");
 }
 
@@ -283,11 +281,11 @@ export function defaultMcporterConfigPath(cwd: string): string {
   return join(cwd, ".pi", "mcporter.json");
 }
 
-export function fallbackMcporterConfigPath(): string {
+function fallbackMcporterConfigPath(): string {
   return join(tmpdir(), "recipes", "mcporter.json");
 }
 
-export function defaultMcpLocalConfigPath(cwd: string): string {
+function defaultMcpLocalConfigPath(cwd: string): string {
   return join(cwd, ".pi", "mcp.local.json");
 }
 
@@ -319,7 +317,7 @@ export function configureMcpLocalConfigPath(opts: {
   return path;
 }
 
-export function defaultMcpBinDir(cwd: string): string {
+function defaultMcpBinDir(cwd: string): string {
   return join(cwd, ".pi", "bin");
 }
 
@@ -331,7 +329,7 @@ export function mcporterCliEntrypointPath(): string {
 // files from the installed package, whose layout survives that relocation.
 function compiledEntrypoint(name: string): string {
   return fileURLToPath(
-    new URL(`mcp/${name}`, import.meta.resolve("@introspection-ai/recipes"))
+    new URL(`mcp/${name}`, import.meta.resolve("@introspection-ai/recipes")),
   );
 }
 
@@ -345,7 +343,7 @@ export function mcpClientEntrypointPath(): string {
 
 export function nativeMcpClientPath(
   platform = process.platform,
-  arch = process.arch
+  arch = process.arch,
 ): string | undefined {
   const executable = platform === "win32" ? "mcp-client.exe" : "mcp-client";
   // Anchor every lookup at the recipes package rather than at this module.
@@ -354,7 +352,7 @@ export function nativeMcpClientPath(
   // recipes, never hoisted - are invisible. The package itself stays
   // resolvable there because it is a direct dependency of the host.
   const packageEntrypoint = fileURLToPath(
-    import.meta.resolve("@introspection-ai/recipes")
+    import.meta.resolve("@introspection-ai/recipes"),
   );
   // A published install carries exactly one binary: the platform packages are
   // gated by npm `os`/`cpu`, so only the one this host can execute is ever
@@ -365,7 +363,7 @@ export function nativeMcpClientPath(
   // not expose the binary path, while the manifest always resolves.
   try {
     const manifest = createRequire(packageEntrypoint).resolve(
-      `@introspection-ai/mcp-client-${platform}-${arch}/package.json`
+      `@introspection-ai/mcp-client-${platform}-${arch}/package.json`,
     );
     const packaged = resolve(dirname(manifest), "bin", executable);
     if (existsSync(packaged)) return packaged;
@@ -380,7 +378,7 @@ export function nativeMcpClientPath(
     "vendor",
     "mcp-client",
     `${platform}-${arch}`,
-    executable
+    executable,
   );
   return existsSync(candidate) ? candidate : undefined;
 }
@@ -422,7 +420,7 @@ export async function materializeSessionMcpCli(opts: {
   const nativeClient = nativeMcpClientPath();
   if (process.platform !== "win32" && !nativeClient) {
     throw new Error(
-      `Native MCP client is unavailable for ${process.platform}-${process.arch}.`
+      `Native MCP client is unavailable for ${process.platform}-${process.arch}.`,
     );
   }
   if (nativeClient && process.platform !== "win32") {
@@ -447,10 +445,10 @@ export async function materializeSessionMcpCli(opts: {
       ? [
           `  ${shellQuote(nativeClient)} "$@"`,
           "  native_status=$?",
-          "  if [ \"$native_status\" -ne 75 ]; then exit \"$native_status\"; fi",
+          '  if [ "$native_status" -ne 75 ]; then exit "$native_status"; fi',
           `  ${shellQuote(process.execPath)} ${shellQuote(mcpClientEntrypointPath())} --start-daemon`,
           "  supervisor_status=$?",
-          "  if [ \"$supervisor_status\" -ne 0 ]; then exit \"$supervisor_status\"; fi",
+          '  if [ "$supervisor_status" -ne 0 ]; then exit "$supervisor_status"; fi',
           `  exec ${shellQuote(nativeClient)} "$@"`,
         ]
       : [
@@ -474,20 +472,20 @@ function sessionPath(env: NodeJS.ProcessEnv, cwd = process.cwd()): string {
 
 export function readMcpSessionConfig(
   cwd: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
 ): McpSessionConfig {
   const path = sessionPath(env, cwd);
   const parsed = JSON.parse(readFileSync(path, "utf8")) as McpSessionConfig;
-  if (
-    parsed.version !== 1 ||
-    !Array.isArray(parsed.servers)
-  ) {
+  if (parsed.version !== 1 || !Array.isArray(parsed.servers)) {
     throw new Error(`Unsupported Recipe MCP session at ${path}`);
   }
   return parsed;
 }
 
-function localMcpConfigPath(env: NodeJS.ProcessEnv, cwd = process.cwd()): string {
+function localMcpConfigPath(
+  env: NodeJS.ProcessEnv,
+  cwd = process.cwd(),
+): string {
   return env[MCP_LOCAL_CONFIG_ENV] || defaultMcpLocalConfigPath(cwd);
 }
 
@@ -509,7 +507,10 @@ function hostForUrl(value: string): string {
 }
 
 function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
-  return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, name: string) => env[name] ?? "");
+  return value.replace(
+    /\$\{([A-Z0-9_]+)\}/gi,
+    (_match, name: string) => env[name] ?? "",
+  );
 }
 
 function readJson(path: string): unknown {
@@ -519,7 +520,7 @@ function readJson(path: string): unknown {
 function readLocalMcpServers(
   env: NodeJS.ProcessEnv,
   cwd: string,
-  localConfig?: McpLocalConfig
+  localConfig?: McpLocalConfig,
 ): LocalMcpServer[] {
   if (localConfig) {
     return Array.isArray(localConfig.servers) ? localConfig.servers : [];
@@ -528,7 +529,9 @@ function readLocalMcpServers(
   if (!existsSync(path)) return [];
   try {
     const parsed = readJson(path) as { servers?: unknown };
-    return Array.isArray(parsed.servers) ? (parsed.servers as LocalMcpServer[]) : [];
+    return Array.isArray(parsed.servers)
+      ? (parsed.servers as LocalMcpServer[])
+      : [];
   } catch {
     return [];
   }
@@ -537,7 +540,7 @@ function readLocalMcpServers(
 function localBindings(
   env: NodeJS.ProcessEnv,
   cwd: string,
-  localConfig?: McpLocalConfig
+  localConfig?: McpLocalConfig,
 ): McpEndpointBinding[] {
   return readLocalMcpServers(env, cwd, localConfig).flatMap((server) => {
     if (server.transport && server.transport !== "streamable_http") return [];
@@ -549,14 +552,21 @@ function localBindings(
       server.auth === "oauth"
         ? {
             auth: "oauth",
-            ...(server.tokenCacheDir ? { tokenCacheDir: server.tokenCacheDir } : {}),
+            ...(server.tokenCacheDir
+              ? { tokenCacheDir: server.tokenCacheDir }
+              : {}),
             ...(server.clientName ? { clientName: server.clientName } : {}),
-            ...(server.oauthClientId ? { oauthClientId: server.oauthClientId } : {}),
+            ...(server.oauthClientId
+              ? { oauthClientId: server.oauthClientId }
+              : {}),
             ...(server.oauthClientSecretEnv
               ? { oauthClientSecretEnv: server.oauthClientSecretEnv }
               : {}),
             ...(server.oauthTokenEndpointAuthMethod
-              ? { oauthTokenEndpointAuthMethod: server.oauthTokenEndpointAuthMethod }
+              ? {
+                  oauthTokenEndpointAuthMethod:
+                    server.oauthTokenEndpointAuthMethod,
+                }
               : {}),
             ...(server.oauthRedirectUrl
               ? { oauthRedirectUrl: server.oauthRedirectUrl }
@@ -564,21 +574,23 @@ function localBindings(
             ...(server.oauthScope ? { oauthScope: server.oauthScope } : {}),
           }
         : undefined;
-    return [{
-      id: safeServerId(server.id ?? label),
-      name: label,
-      baseUrl,
-      rawHeaders,
-      ...(server.httpFetch ? { httpFetch: server.httpFetch } : {}),
-      ...(localOAuth ? { localOAuth } : {}),
-    }];
+    return [
+      {
+        id: safeServerId(server.id ?? label),
+        name: label,
+        baseUrl,
+        rawHeaders,
+        ...(server.httpFetch ? { httpFetch: server.httpFetch } : {}),
+        ...(localOAuth ? { localOAuth } : {}),
+      },
+    ];
   });
 }
 
 function endpointBindings(
   env: NodeJS.ProcessEnv,
   cwd: string,
-  localConfig?: McpLocalConfig
+  localConfig?: McpLocalConfig,
 ): McpEndpointBinding[] {
   const candidates = localBindings(env, cwd, localConfig);
   const seen = new Set<string>();
@@ -594,14 +606,15 @@ function endpointBindings(
 
 export function formatMcpConfigurationDiagnostics(
   diagnostics: readonly McpConfigurationDiagnostic[],
-  limit = 3
+  limit = 3,
 ): string {
   const selected = diagnostics.slice(0, limit);
   const lines = selected.map((diagnostic) => {
     return `${diagnostic.serverId} ${diagnostic.stage} [${diagnostic.code}]: ${diagnostic.message}`;
   });
   const remaining = diagnostics.length - selected.length;
-  if (remaining > 0) lines.push(`${remaining} more MCP configuration issue(s).`);
+  if (remaining > 0)
+    lines.push(`${remaining} more MCP configuration issue(s).`);
   return lines.join("\n");
 }
 
@@ -613,22 +626,22 @@ function recipeMcpPolicy(mcp: RecipePackageMcpConfig): {
     required: new Set(
       mcp.servers
         .filter((server) => server.required)
-        .map((server) => safeServerId(server.id))
+        .map((server) => safeServerId(server.id)),
     ),
     tools: new Map(
-      mcp.servers.map((server) => [safeServerId(server.id), server.tools])
+      mcp.servers.map((server) => [safeServerId(server.id), server.tools]),
     ),
   };
 }
 
 export function mcpSessionAllowsTool(
   server: Pick<McpSessionServer, "package_tools" | "agent_tools">,
-  toolName: string
+  toolName: string,
 ): boolean {
   return (
     mcpSelectionAllowsTool(server.package_tools, toolName) &&
     server.agent_tools.some((selection) =>
-      mcpSelectionAllowsTool(selection, toolName)
+      mcpSelectionAllowsTool(selection, toolName),
     )
   );
 }
@@ -639,10 +652,10 @@ function escapeRegExp(value: string): string {
 
 export function filterMcpCatalog(
   server: Pick<McpSessionServer, "package_tools" | "agent_tools">,
-  catalog: readonly McpToolCatalogEntry[]
+  catalog: readonly McpToolCatalogEntry[],
 ): McpToolCatalogEntry[] {
   const allowed = catalog.filter((tool) =>
-    mcpSessionAllowsTool(server, tool.name)
+    mcpSessionAllowsTool(server, tool.name),
   );
   const hiddenNames = catalog
     .filter((tool) => !mcpSessionAllowsTool(server, tool.name))
@@ -659,11 +672,11 @@ export function filterMcpCatalog(
               description.replace(
                 new RegExp(
                   `(^|[^A-Za-z0-9_-])${escapeRegExp(name)}(?=$|[^A-Za-z0-9_-])`,
-                  "g"
+                  "g",
                 ),
-                "$1[unavailable MCP tool]"
+                "$1[unavailable MCP tool]",
               ),
-            tool.description
+            tool.description,
           ),
         }
       : {}),
@@ -682,7 +695,7 @@ interface ConfiguredMcpManifest {
 }
 
 function readConfiguredManifests(
-  manifest: RecipePackageManifest
+  manifest: RecipePackageManifest,
 ): ConfiguredMcpServer[] {
   const servers: ConfiguredMcpServer[] = [];
   for (const path of resolvePiPackageMcpManifestPaths(manifest)) {
@@ -695,7 +708,7 @@ function readConfiguredManifests(
 function explicitAllowedTools(server: McpSessionServer): string[] | undefined {
   const packageIncludes = server.package_tools.include ?? [];
   const agentIncludes = server.agent_tools.flatMap(
-    (selection) => selection.include ?? []
+    (selection) => selection.include ?? [],
   );
   const candidates = !packageIncludes.includes("*")
     ? packageIncludes
@@ -704,7 +717,7 @@ function explicitAllowedTools(server: McpSessionServer): string[] | undefined {
       : undefined;
   if (!candidates) return undefined;
   return [...new Set(candidates)].filter((name) =>
-    mcpSessionAllowsTool(server, name)
+    mcpSessionAllowsTool(server, name),
   );
 }
 
@@ -712,7 +725,7 @@ async function writeWithFallback(
   path: string,
   serialized: string,
   defaultPath: string,
-  fallbackPath: string
+  fallbackPath: string,
 ): Promise<string> {
   try {
     await mkdir(dirname(path), { recursive: true });
@@ -726,7 +739,7 @@ async function writeWithFallback(
   }
 }
 
-export interface McporterServerConfig {
+interface McporterServerConfig {
   baseUrl: string;
   headers: Record<string, string>;
   allowedTools?: string[];
@@ -756,7 +769,7 @@ export interface McporterConfig {
  */
 export function buildMcporterConfig(
   session: McpSessionConfig,
-  opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}
+  opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {},
 ): McporterConfig {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? process.cwd();
@@ -765,13 +778,13 @@ export function buildMcporterConfig(
 
 function projectMcporterConfig(
   session: McpSessionConfig,
-  bindings: readonly McpEndpointBinding[]
+  bindings: readonly McpEndpointBinding[],
 ): McporterConfig {
   const mcpServers: Record<string, McporterServerConfig> = {};
   for (const server of session.servers) {
     const binding = bindings.find(
       (candidate) =>
-        candidate.id === server.id && candidate.baseUrl === server.base_url
+        candidate.id === server.id && candidate.baseUrl === server.base_url,
     );
     const allowedTools = explicitAllowedTools(server);
     mcpServers[server.id] = {
@@ -790,7 +803,7 @@ async function writeMcporterConfig(
   cwd: string,
   session: McpSessionConfig,
   bindings?: readonly McpEndpointBinding[],
-  targetPath?: string
+  targetPath?: string,
 ): Promise<string> {
   const config = bindings
     ? projectMcporterConfig(session, bindings)
@@ -799,7 +812,7 @@ async function writeMcporterConfig(
     targetPath || defaultMcporterConfigPath(cwd),
     `${JSON.stringify(config, null, 2)}\n`,
     defaultMcporterConfigPath(cwd),
-    fallbackMcporterConfigPath()
+    fallbackMcporterConfigPath(),
   );
   env[MCPORTER_CONFIG_ENV] = writtenPath;
   return writtenPath;
@@ -807,7 +820,7 @@ async function writeMcporterConfig(
 
 export async function clearMcpSession(
   env: NodeJS.ProcessEnv,
-  cwd: string
+  cwd: string,
 ): Promise<void> {
   await stopMcpDaemon(env);
   const configuredPath = sessionPath(env, cwd);
@@ -829,7 +842,7 @@ export async function clearMcpSession(
  */
 export async function clearSessionMcpCli(
   env: NodeJS.ProcessEnv,
-  cwd: string
+  cwd: string,
 ): Promise<{ previousMcporterConfig?: string }> {
   const previousMcporterConfig = env[MCPORTER_CONFIG_ENV];
   await stopMcpDaemon(env);
@@ -860,7 +873,7 @@ export async function clearSessionMcpCli(
 }
 
 export async function createIsolatedMcpEnvironment(
-  baseEnv: NodeJS.ProcessEnv
+  baseEnv: NodeJS.ProcessEnv,
 ): Promise<{
   env: NodeJS.ProcessEnv;
   directory: string;
@@ -889,29 +902,29 @@ export async function createIsolatedMcpEnvironment(
 }
 
 export async function materializeMcpSession(
-  opts: MaterializeMcpSessionOptions
+  opts: MaterializeMcpSessionOptions,
 ): Promise<MaterializedMcpSession> {
   const env = opts.env ?? process.env;
   const agentSelections = opts.agentMcp ?? [];
   const endpointBindingList = endpointBindings(env, opts.cwd, opts.localConfig);
   const bindings = new Map(
-    endpointBindingList.map((binding) => [binding.id, binding])
+    endpointBindingList.map((binding) => [binding.id, binding]),
   );
   const configured = new Map(
     readConfiguredManifests(opts.manifest).map((server) => [
       safeServerId(server.id),
       server,
-    ])
+    ]),
   );
   const policy = recipeMcpPolicy(opts.manifest.mcp);
   const available = new Set([...bindings.keys(), ...configured.keys()]);
   const missingRequired = [...policy.required].filter(
-    (serverId) => !available.has(serverId)
+    (serverId) => !available.has(serverId),
   );
   if (missingRequired.length > 0) {
     throw new McpBindingError(
       missingRequired,
-      missingRequired.flatMap((serverId) => generatedBindingEnvVars(serverId))
+      missingRequired.flatMap((serverId) => generatedBindingEnvVars(serverId)),
     );
   }
 
@@ -919,7 +932,7 @@ export async function materializeMcpSession(
     Object.entries(opts.bindingOrigins ?? {}).map(([id, origin]) => [
       safeServerId(id),
       origin,
-    ])
+    ]),
   );
   const diagnostics: McpConfigurationDiagnostic[] = [];
   const servers: McpSessionServer[] = [];
@@ -928,7 +941,10 @@ export async function materializeMcpSession(
     const selected = agentSelections
       .filter((selection) => selection.serverId === id)
       .map((selection) => selection.tools);
-    if (selected.length === 0 || selected.every((entry) => entry.include?.length === 0)) {
+    if (
+      selected.length === 0 ||
+      selected.every((entry) => entry.include?.length === 0)
+    ) {
       continue;
     }
     const binding = bindings.get(id);
@@ -939,17 +955,15 @@ export async function materializeMcpSession(
       package_tools: packageServer.tools,
       agent_tools: selected,
     };
-    const catalog = filterMcpCatalog(
-      catalogPolicy,
-      declared?.tools ?? []
-    );
+    const catalog = filterMcpCatalog(catalogPolicy, declared?.tools ?? []);
     if (declared?.tools && catalog.length === 0) {
       diagnostics.push({
         code: "mcp.tools_filtered",
         serverId: id,
         url: baseUrl,
         stage: "filter",
-        message: "The configured catalog contains no tools allowed by both package and agent policy.",
+        message:
+          "The configured catalog contains no tools allowed by both package and agent policy.",
       });
       continue;
     }
@@ -960,7 +974,9 @@ export async function materializeMcpSession(
       base_url: baseUrl,
       ...(origin ? { binding: origin } : {}),
       ...(packageServer.required ? { required: true } : {}),
-      ...(packageServer.discovery === "defer" ? { discovery: "defer" as const } : {}),
+      ...(packageServer.discovery === "defer"
+        ? { discovery: "defer" as const }
+        : {}),
       package_tools: packageServer.tools,
       agent_tools: selected,
       ...(declared?.tools ? { catalog } : {}),
@@ -974,20 +990,20 @@ export async function materializeMcpSession(
   const defaultPath = defaultMcpSessionPath(opts.cwd);
   const target = sessionPath(env, opts.cwd);
   const serialized = `${JSON.stringify(session, null, 2)}\n`;
-  const fingerprint = createHash("sha256").update(serialized).digest("hex").slice(0, 20);
+  const fingerprint = createHash("sha256")
+    .update(serialized)
+    .digest("hex")
+    .slice(0, 20);
   const previousFingerprint = env[MCP_DAEMON_FINGERPRINT_ENV];
   const previousToken = env[MCP_DAEMON_TOKEN_ENV];
-  if (
-    previousFingerprint &&
-    previousFingerprint !== fingerprint
-  ) {
+  if (previousFingerprint && previousFingerprint !== fingerprint) {
     await stopMcpDaemon(env);
   }
   const writtenPath = await writeWithFallback(
     target,
     serialized,
     defaultPath,
-    fallbackMcpSessionPath()
+    fallbackMcpSessionPath(),
   );
   env[MCP_SESSION_ENV] = writtenPath;
   env[MCP_SESSION_ROOT_ENV] = opts.cwd;
@@ -1000,9 +1016,7 @@ export async function materializeMcpSession(
     env[MCP_DAEMON_GENERATION_ENV] = randomBytes(12).toString("hex");
   }
   const socketKey = createHash("sha256")
-    .update(
-      `${opts.cwd}\0${fingerprint}\0${env[MCP_DAEMON_GENERATION_ENV]}`
-    )
+    .update(`${opts.cwd}\0${fingerprint}\0${env[MCP_DAEMON_GENERATION_ENV]}`)
     .digest("hex")
     .slice(0, 20);
   env[MCP_DAEMON_SOCKET_ENV] =
@@ -1020,7 +1034,7 @@ export async function materializeMcpSession(
     opts.cwd,
     session,
     endpointBindingList,
-    opts.mcporterConfigPath
+    opts.mcporterConfigPath,
   );
   return { ...session, diagnostics };
 }
@@ -1032,6 +1046,8 @@ export async function stopMcpDaemon(env: NodeJS.ProcessEnv): Promise<void> {
     await new Promise<void>((resolve) => {
       const socket = createConnection(socketPath);
       let settled = false;
+      // `finish` reads it, and is defined before the timer it clears.
+      // eslint-disable-next-line prefer-const
       let hardTimeout: NodeJS.Timeout | undefined;
       const finish = () => {
         if (settled) return;
@@ -1047,7 +1063,7 @@ export async function stopMcpDaemon(env: NodeJS.ProcessEnv): Promise<void> {
       socket.setTimeout(500, finish);
       socket.once("connect", () => {
         socket.end(
-          `${JSON.stringify({ type: "stop", id: randomUUID(), token })}\n`
+          `${JSON.stringify({ type: "stop", id: randomUUID(), token })}\n`,
         );
       });
       socket.once("end", finish);

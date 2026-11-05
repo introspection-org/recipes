@@ -33,7 +33,7 @@ import {
 } from "./interaction-tui.js";
 
 /** The most rows the file's box takes; a longer file scrolls in it. */
-export const REVIEW_BOX_MAX_ROWS = 20;
+const REVIEW_BOX_MAX_ROWS = 20;
 
 /** One file as the review shows it. */
 export interface ReviewDocument {

@@ -18,10 +18,14 @@ import { mcpTraceContextFromEnv } from "../trace-context.js";
 const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Exported for the bundled-host tests, which import it from the built tree.
+ * @public
+ */
 export function daemonPath(): string {
   // Launch the package's built daemon even when a host bundles this client.
   return fileURLToPath(
-    new URL("mcp-daemon.js", import.meta.resolve("@introspection-ai/recipes"))
+    new URL("mcp-daemon.js", import.meta.resolve("@introspection-ai/recipes")),
   );
 }
 
@@ -43,7 +47,7 @@ export function exchangeMcpDaemon(
   request: McpDaemonRequest,
   onEnvelope: (envelope: McpDaemonEnvelope, socket: Socket) => void,
   env: NodeJS.ProcessEnv = process.env,
-  onRequestWritten?: () => void
+  onRequestWritten?: () => void,
 ): Promise<void> {
   const { socketPath } = mcpDaemonEnvironment(env);
   return new Promise((resolve, reject) => {
@@ -88,15 +92,16 @@ async function ping(env: NodeJS.ProcessEnv): Promise<boolean> {
   await exchangeMcpDaemon(
     { type: "ping", id: randomUUID(), token, fingerprint },
     (envelope) => {
-      if ("ready" in envelope && envelope.fingerprint === fingerprint) ready = true;
+      if ("ready" in envelope && envelope.fingerprint === fingerprint)
+        ready = true;
     },
-    env
+    env,
   ).catch(() => {});
   return ready;
 }
 
 export async function ensureMcpDaemon(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   if (await ping(env)) return;
   const { socketPath } = mcpDaemonEnvironment(env);
@@ -151,7 +156,9 @@ export async function ensureMcpDaemon(
     await delay(50);
   }
   if (lock) await rm(lockPath, { force: true });
-  throw new Error("MCP daemon did not become ready before the startup deadline.");
+  throw new Error(
+    "MCP daemon did not become ready before the startup deadline.",
+  );
 }
 
 export async function callMcpDaemonTool(
@@ -162,20 +169,20 @@ export async function callMcpDaemonTool(
     env?: NodeJS.ProcessEnv;
     signal?: AbortSignal;
     timeoutMs?: number;
-  } = {}
+  } = {},
 ): Promise<unknown> {
   const env = options.env ?? process.env;
   const traceContext = mcpTraceContextFromEnv(env);
   const signal = options.signal;
   if (signal?.aborted) {
     throw new Error(
-      `MCP tool call '${server}.${tool}' was cancelled before execution.`
+      `MCP tool call '${server}.${tool}' was cancelled before execution.`,
     );
   }
   await ensureMcpDaemon(env);
   if (signal?.aborted) {
     throw new Error(
-      `MCP tool call '${server}.${tool}' was cancelled before execution.`
+      `MCP tool call '${server}.${tool}' was cancelled before execution.`,
     );
   }
   const { token, fingerprint } = mcpDaemonEnvironment(env);
@@ -206,7 +213,7 @@ export async function callMcpDaemonTool(
         requestId: id,
       },
       () => {},
-      env
+      env,
     ).catch(() => {});
   };
   const onAbort = () => {
@@ -247,7 +254,7 @@ export async function callMcpDaemonTool(
     env,
     () => {
       requestWritten = true;
-    }
+    },
   );
   try {
     await Promise.race([exchange, abortPromise]);
@@ -255,7 +262,7 @@ export async function callMcpDaemonTool(
     if (requestWritten) {
       throw new Error(
         `MCP tool call '${server}.${tool}' lost its daemon response after dispatch; remote outcome is unknown; do not retry automatically.`,
-        { cause: error }
+        { cause: error },
       );
     }
     throw error;
@@ -271,7 +278,7 @@ export async function callMcpDaemonTool(
     throw new Error(
       `MCP tool call '${server}.${tool}' ${
         timedOut ? "timed out" : "was cancelled"
-      }; remote outcome is unknown; do not retry automatically.`
+      }; remote outcome is unknown; do not retry automatically.`,
     );
   }
   if (daemonError) throw new Error(`MCP daemon: ${daemonError}`);
@@ -279,7 +286,7 @@ export async function callMcpDaemonTool(
     throw new Error(
       requestWritten
         ? `MCP tool call '${server}.${tool}' returned no daemon result after dispatch; remote outcome is unknown; do not retry automatically.`
-        : "MCP daemon returned no tool result."
+        : "MCP daemon returned no tool result.",
     );
   }
   return result;

@@ -22,17 +22,14 @@ import {
   readPiPackageManifest,
   RecipePackageError,
 } from "./package.js";
-import {
-  mcpSelectionAllowsTool,
-  normalizeMcpServerId,
-} from "../mcp/policy.js";
+import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
 export interface RecipeSystemInstructions {
   mode: "append" | "replace";
   content: string;
 }
 
-export interface RecipeAgentMcpServer {
+interface RecipeAgentMcpServer {
   /** Exact tool names or the reserved whole-toolset `*` sentinel. */
   include?: string[];
   /** Exact tool names removed after inclusion. */
@@ -153,9 +150,7 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
   );
 }
 
-function invalidAgentField(
-  data: Record<string, unknown>
-): string | undefined {
+function invalidAgentField(data: Record<string, unknown>): string | undefined {
   if (!Object.hasOwn(data, "name")) {
     return "name is required";
   }
@@ -192,7 +187,7 @@ function invalidAgentField(
     }
   }
   const reservedTools = stringArray(data.tools).filter(
-    (tool) => tool === "agent"
+    (tool) => tool === "agent",
   );
   if (reservedTools.length > 0) {
     return `tools must not declare session-generated tool(s): ${reservedTools.join(", ")}`;
@@ -204,7 +199,7 @@ function invalidAgentField(
     }
     const instructions = value as Record<string, unknown>;
     const unknown = Object.keys(instructions).filter(
-      (key) => key !== "mode" && key !== "content"
+      (key) => key !== "mode" && key !== "content",
     );
     if (unknown.length > 0) {
       return `system_instructions has unsupported key(s): ${unknown.join(", ")}`;
@@ -238,7 +233,7 @@ function modelProjection(config: RecipeAgentModelConfig | undefined):
 }
 
 function parseSystemInstructions(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): RecipeSystemInstructions | undefined {
   const raw = asRecord(data.system_instructions);
   if (Object.hasOwn(raw, "content") && typeof raw.content === "string") {
@@ -250,7 +245,7 @@ function parseSystemInstructions(
 
 function mergeSystemInstructions(
   base: RecipeSystemInstructions | undefined,
-  child: RecipeSystemInstructions | undefined
+  child: RecipeSystemInstructions | undefined,
 ): RecipeSystemInstructions | undefined {
   if (!base) return child;
   if (!child) return base;
@@ -287,7 +282,7 @@ function validActivationSelectors(selectors: string[] | undefined): boolean {
     selectors.every(
       (selector) =>
         Boolean(selector.trim()) &&
-        (!selector.includes("*") || selector === "*")
+        (!selector.includes("*") || selector === "*"),
     ) &&
     (!selectors.includes("*") || selectors.length === 1)
   );
@@ -296,7 +291,8 @@ function validActivationSelectors(selectors: string[] | undefined): boolean {
 function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
   if (!Object.hasOwn(data, "mcp")) return undefined;
   const value = data.mcp;
-  const validObject = Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  const validObject =
+    Boolean(value) && typeof value === "object" && !Array.isArray(value);
   const raw = asRecord(value);
   const rawServers = asRecord(raw.servers);
   const servers: Record<string, RecipeAgentMcpServer> = {};
@@ -307,14 +303,14 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
       ...(Object.hasOwn(serverRaw, "defer")
         ? {
             defer: stringArray(serverRaw.defer).map((selector) =>
-              selector.trim()
+              selector.trim(),
             ),
           }
         : {}),
       ...(Object.hasOwn(serverRaw, "eager")
         ? {
             eager: stringArray(serverRaw.eager).map((selector) =>
-              selector.trim()
+              selector.trim(),
             ),
           }
         : {}),
@@ -322,7 +318,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
   }
   const mode =
     raw.mode === "cli" || raw.mode === "tools"
-      ? raw.mode as RecipeAgentMcpMode
+      ? (raw.mode as RecipeAgentMcpMode)
       : undefined;
   const mcp: ParsedRecipeAgentMcp = {
     ...(mode ? { mode } : {}),
@@ -336,7 +332,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
         typeof serverValue !== "object" ||
         Array.isArray(serverValue) ||
         Object.keys(server).some(
-          (key) => !["include", "exclude", "defer", "eager"].includes(key)
+          (key) => !["include", "exclude", "defer", "eager"].includes(key),
         ) ||
         ["include", "exclude", "defer", "eager"].some((key) => {
           if (!Object.hasOwn(server, key)) return false;
@@ -348,30 +344,30 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
             Object.hasOwn(server, key) &&
             (!Array.isArray(server[key]) ||
               (server[key] as unknown[]).some(
-                (selector) => typeof selector !== "string"
-              ))
+                (selector) => typeof selector !== "string",
+              )),
         ) ||
         !validActivationSelectors(
           Object.hasOwn(server, "defer")
             ? stringArray(server.defer).map((selector) => selector.trim())
-            : undefined
+            : undefined,
         ) ||
         !validActivationSelectors(
           Object.hasOwn(server, "eager")
             ? stringArray(server.eager).map((selector) => selector.trim())
-            : undefined
+            : undefined,
         ) ||
         (mode === "cli" &&
           (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager")))
       );
-    }
+    },
   );
   const malformedStructured =
     malformedServers ||
     !Object.hasOwn(raw, "servers") ||
     (Object.hasOwn(raw, "mode") &&
-        raw.mode !== "cli" &&
-        raw.mode !== "tools") ||
+      raw.mode !== "cli" &&
+      raw.mode !== "tools") ||
     Object.keys(rawServers).some((serverId) => !serverId.trim()) ||
     hasNormalizedMcpServerCollision(Object.keys(rawServers)) ||
     !raw.servers ||
@@ -389,7 +385,7 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
 
 function mergeMcp(
   base: RecipeAgentMcp | undefined,
-  child: RecipeAgentMcp | undefined
+  child: RecipeAgentMcp | undefined,
 ): RecipeAgentMcp | undefined {
   if (!base) return child;
   if (!child) return base;
@@ -431,23 +427,28 @@ function yamlFilesFromPaths(paths: string[]): string[] {
 
 function recipeAgentFiles(recipeDir: string): string[] {
   const manifest = recipeManifest(recipeDir);
-  if (manifest) return yamlFilesFromPaths(packageResourcePaths(manifest, "agents"));
+  if (manifest)
+    return yamlFilesFromPaths(packageResourcePaths(manifest, "agents"));
   return yamlFilesFromPaths([join(recipeDir, "agents")]);
 }
 
 function readRecipeAgentSources(
   recipeDir: string,
-  opts: { onInvalidFile?: (path: string, error: Error) => void } = {}
+  opts: { onInvalidFile?: (path: string, error: Error) => void } = {},
 ): RecipeAgentSource[] {
   const sources: RecipeAgentSource[] = [];
   for (const path of recipeAgentFiles(recipeDir)) {
     const data = readYaml(path);
 
-    const unknownKeys = Object.keys(data).filter((key) => !AGENT_YAML_KEYS.has(key));
+    const unknownKeys = Object.keys(data).filter(
+      (key) => !AGENT_YAML_KEYS.has(key),
+    );
     if (unknownKeys.length > 0) {
       opts.onInvalidFile?.(
         path,
-        new Error(`Agent YAML at ${path} has unsupported key(s): ${unknownKeys.join(", ")}`)
+        new Error(
+          `Agent YAML at ${path} has unsupported key(s): ${unknownKeys.join(", ")}`,
+        ),
       );
       continue;
     }
@@ -455,7 +456,7 @@ function readRecipeAgentSources(
     if (fieldError) {
       opts.onInvalidFile?.(
         path,
-        new Error(`Agent YAML at ${path}: ${fieldError}`)
+        new Error(`Agent YAML at ${path}: ${fieldError}`),
       );
       continue;
     }
@@ -466,7 +467,7 @@ function readRecipeAgentSources(
     try {
       if (Object.hasOwn(data, "model") && Object.hasOwn(data, "ai")) {
         throw new RecipeModelConfigError(
-          `Agent YAML at ${path} cannot declare both model and ai`
+          `Agent YAML at ${path} cannot declare both model and ai`,
         );
       }
       modelConfig = Object.hasOwn(data, "ai")
@@ -474,13 +475,14 @@ function readRecipeAgentSources(
         : parseRecipeAgentModelConfig(`Agent YAML at ${path}`, data.model);
       sessionConfig = parseRecipeAgentSessionConfig(
         `Agent YAML at ${path}`,
-        data.session
+        data.session,
       );
     } catch (err) {
       if (
         !(err instanceof RecipeModelConfigError) &&
         !(err instanceof RecipeSessionConfigError)
-      ) throw err;
+      )
+        throw err;
       opts.onInvalidFile?.(path, err);
       continue;
     }
@@ -494,10 +496,16 @@ function readRecipeAgentSources(
         model: modelProjection(modelConfig),
         modelConfig,
         sessionConfig,
-        tools: Object.hasOwn(data, "tools") ? stringArray(data.tools) : undefined,
+        tools: Object.hasOwn(data, "tools")
+          ? stringArray(data.tools)
+          : undefined,
         mcp: parseMcp(data),
-        skills: Object.hasOwn(data, "skills") ? stringArray(data.skills) : undefined,
-        subagents: Object.hasOwn(data, "subagents") ? stringArray(data.subagents) : undefined,
+        skills: Object.hasOwn(data, "skills")
+          ? stringArray(data.skills)
+          : undefined,
+        subagents: Object.hasOwn(data, "subagents")
+          ? stringArray(data.subagents)
+          : undefined,
         systemInstructions: parseSystemInstructions(data),
         declaredFields: [
           "description",
@@ -510,7 +518,7 @@ function readRecipeAgentSources(
           "subagents",
           "system_instructions",
         ].filter((key): key is RecipeAgentConfigField =>
-          Object.hasOwn(data, key)
+          Object.hasOwn(data, key),
         ),
       },
     });
@@ -519,7 +527,7 @@ function readRecipeAgentSources(
 }
 
 function definitionsFromSources(
-  sources: RecipeAgentSource[]
+  sources: RecipeAgentSource[],
 ): Map<string, RecipeAgentDefinition> {
   const rawDefinitions = new Map<string, ParsedRecipeAgentDefinition>();
   const resolvedDefinitions = new Map<string, RecipeAgentDefinition>();
@@ -531,7 +539,7 @@ function definitionsFromSources(
 
   function resolveDefinition(
     name: string,
-    stack: string[] = []
+    stack: string[] = [],
   ): RecipeAgentDefinition | undefined {
     if (resolvedDefinitions.has(name)) return resolvedDefinitions.get(name);
     if (stack.length >= MAX_INHERITANCE_DEPTH) return undefined;
@@ -546,11 +554,11 @@ function definitionsFromSources(
 
     const modelConfig = mergeRecipeAgentModelConfig(
       base?.modelConfig,
-      raw.modelConfig
+      raw.modelConfig,
     );
     const sessionConfig = mergeRecipeAgentSessionConfig(
       base?.sessionConfig,
-      raw.sessionConfig
+      raw.sessionConfig,
     );
     const definition: RecipeAgentDefinition = {
       name: raw.name,
@@ -565,7 +573,7 @@ function definitionsFromSources(
       subagents: raw.subagents ?? base?.subagents ?? [],
       systemInstructions: mergeSystemInstructions(
         base?.systemInstructions,
-        raw.systemInstructions
+        raw.systemInstructions,
       ),
       declaredFields: [...(raw.declaredFields ?? [])],
     };
@@ -586,7 +594,7 @@ function validateResolvedRecipeAgentSource(
     recipeDir: string;
     agentName: string;
   },
-  sources: RecipeAgentSource[]
+  sources: RecipeAgentSource[],
 ): RecipeAgentValidationFinding[] {
   const rawDefinitions = new Map<string, ParsedRecipeAgentDefinition>();
   for (const source of sources) {
@@ -595,7 +603,7 @@ function validateResolvedRecipeAgentSource(
 
   function inheritanceFinding(
     name: string,
-    stack: string[] = []
+    stack: string[] = [],
   ): RecipeAgentValidationFinding | undefined {
     if (stack.length >= MAX_INHERITANCE_DEPTH) {
       return {
@@ -636,14 +644,9 @@ function validateResolvedRecipeAgentSource(
     return inheritanceFinding(definition.from, [...stack, name]);
   }
 
-  function resolvedModelProvided(
-    name: string,
-    stack: string[] = []
-  ): boolean {
-    if (
-      stack.includes(name) ||
-      stack.length >= MAX_INHERITANCE_DEPTH
-    ) return false;
+  function resolvedModelProvided(name: string, stack: string[] = []): boolean {
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return false;
     const definition = rawDefinitions.get(name);
     if (!definition) return false;
     if (definition.model?.name) return true;
@@ -652,30 +655,12 @@ function validateResolvedRecipeAgentSource(
       : false;
   }
 
-  function resolvedTools(
-    name: string,
-    stack: string[] = []
-  ): string[] | undefined {
-    if (
-      stack.includes(name) ||
-      stack.length >= MAX_INHERITANCE_DEPTH
-    ) return undefined;
-    const definition = rawDefinitions.get(name);
-    if (!definition) return undefined;
-    if (definition.tools !== undefined) return definition.tools;
-    return definition.from
-      ? resolvedTools(definition.from, [...stack, name])
-      : undefined;
-  }
-
   function resolvedMcp(
     name: string,
-    stack: string[] = []
+    stack: string[] = [],
   ): RecipeAgentMcp | undefined {
-    if (
-      stack.includes(name) ||
-      stack.length >= MAX_INHERITANCE_DEPTH
-    ) return undefined;
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return undefined;
     const definition = rawDefinitions.get(name);
     if (!definition) return undefined;
     const base = definition.from
@@ -685,17 +670,15 @@ function validateResolvedRecipeAgentSource(
   }
 
   function rawMcpChainInvalid(name: string, stack: string[] = []): boolean {
-    if (
-      stack.includes(name) ||
-      stack.length >= MAX_INHERITANCE_DEPTH
-    ) return false;
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return false;
     const definition = rawDefinitions.get(name);
     if (!definition) return false;
     const rawMcp = definition.mcp as ParsedRecipeAgentMcp | undefined;
     if (
       rawMcp?.[INVALID_AGENT_MCP] ||
       Object.values(rawMcp?.servers ?? {}).some(
-        (selection) => !isValidRecipeMcpToolSelection(selection)
+        (selection) => !isValidRecipeMcpToolSelection(selection),
       )
     ) {
       return true;
@@ -726,22 +709,27 @@ function validateResolvedRecipeAgentSource(
         manifest.mcp.servers.map((server) => [
           normalizeMcpServerId(server.id),
           server.tools,
-        ])
+        ]),
       )
     : undefined;
   // The Recipe checker owns detailed authoring diagnostics. This session guard
   // only ensures malformed raw policies fail closed before agent startup.
-  const invalidMcpPolicy = rawMcpChainInvalid(agentName) ||
+  const invalidMcpPolicy =
+    rawMcpChainInvalid(agentName) ||
     Object.entries(mcp?.servers ?? {}).some(([serverId, selection]) => {
       if (!serverId.trim() || !isValidRecipeMcpToolSelection(selection)) {
         return true;
       }
       if (!packageMcpServers) return false;
-      const packageSelection = packageMcpServers.get(normalizeMcpServerId(serverId));
+      const packageSelection = packageMcpServers.get(
+        normalizeMcpServerId(serverId),
+      );
       if (!packageSelection) return true;
       return (selection.include ?? []).some((toolName) => {
         const value = toolName.trim();
-        return value !== "*" && !mcpSelectionAllowsTool(packageSelection, value);
+        return (
+          value !== "*" && !mcpSelectionAllowsTool(packageSelection, value)
+        );
       });
     }) ||
     Object.values(mcp?.servers ?? {}).some(
@@ -752,8 +740,8 @@ function validateResolvedRecipeAgentSource(
         !validActivationSelectors(selection.eager) ||
         [...(selection.defer ?? []), ...(selection.eager ?? [])].some(
           (selector) =>
-            selector !== "*" && !mcpSelectionAllowsTool(selection, selector)
-        )
+            selector !== "*" && !mcpSelectionAllowsTool(selection, selector),
+        ),
     );
   if (invalidMcpPolicy) {
     findings.push({
@@ -767,16 +755,6 @@ function validateResolvedRecipeAgentSource(
   return findings;
 }
 
-export function validateResolvedRecipeAgentDefinition(opts: {
-  recipeDir: string;
-  agentName: string;
-}): RecipeAgentValidationFinding[] {
-  return validateResolvedRecipeAgentSource(
-    opts,
-    readRecipeAgentSources(opts.recipeDir)
-  );
-}
-
 function isValidRecipeModelSpec(spec: string): boolean {
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) return false;
@@ -785,7 +763,7 @@ function isValidRecipeModelSpec(spec: string): boolean {
 }
 
 function validateRecipeAgentModelSpecs(
-  sources: RecipeAgentSource[]
+  sources: RecipeAgentSource[],
 ): RecipeAgentValidationFinding[] {
   const findings: RecipeAgentValidationFinding[] = [];
   for (const source of sources) {
@@ -801,7 +779,7 @@ function validateRecipeAgentModelSpecs(
 }
 
 function validateRecipeAgentNames(
-  sources: RecipeAgentSource[]
+  sources: RecipeAgentSource[],
 ): RecipeAgentValidationFinding[] {
   const findings: RecipeAgentValidationFinding[] = [];
   const nameCounts = new Map<string, number>();
@@ -809,7 +787,7 @@ function validateRecipeAgentNames(
   for (const source of sources) {
     nameCounts.set(
       source.definition.name,
-      (nameCounts.get(source.definition.name) ?? 0) + 1
+      (nameCounts.get(source.definition.name) ?? 0) + 1,
     );
   }
 
@@ -828,7 +806,7 @@ function validateRecipeAgentNames(
 function validateRecipeAgentSources(
   recipeDir: string,
   sources: RecipeAgentSource[],
-  invalidFileFindings: RecipeAgentValidationFinding[]
+  invalidFileFindings: RecipeAgentValidationFinding[],
 ): RecipeAgentValidationFinding[] {
   const agentNames = [
     ...new Set(sources.map((source) => source.definition.name)),
@@ -843,8 +821,8 @@ function validateRecipeAgentSources(
           recipeDir,
           agentName,
         },
-        sources
-      )
+        sources,
+      ),
     ),
   ];
 }
@@ -859,7 +837,7 @@ export interface ValidatedRecipeAgentDefinitions {
  * Recipe snapshot from that exact source.
  */
 export function loadValidatedRecipeAgentDefinitions(
-  recipeDir: string
+  recipeDir: string,
 ): ValidatedRecipeAgentDefinitions {
   const invalidFileFindings: RecipeAgentValidationFinding[] = [];
   const sources = readRecipeAgentSources(recipeDir, {
@@ -877,13 +855,13 @@ export function loadValidatedRecipeAgentDefinitions(
     findings: validateRecipeAgentSources(
       recipeDir,
       sources,
-      invalidFileFindings
+      invalidFileFindings,
     ),
   };
 }
 
 export function validateRecipeAgentDefinitions(
-  recipeDir: string
+  recipeDir: string,
 ): RecipeAgentValidationFinding[] {
   return loadValidatedRecipeAgentDefinitions(recipeDir).findings;
 }

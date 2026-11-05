@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +17,7 @@ const distCli = join(
   "dist",
   "mcp",
   "cli",
-  "index.js"
+  "index.js",
 );
 
 describe("mcp CLI entry", () => {
@@ -19,10 +25,13 @@ describe("mcp CLI entry", () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "recipes-mcp-entry-"));
-    writeFileSync(join(dir, "mcporter.json"), JSON.stringify({ imports: [], mcpServers: {} }));
+    writeFileSync(
+      join(dir, "mcporter.json"),
+      JSON.stringify({ imports: [], mcpServers: {} }),
+    );
     writeFileSync(
       join(dir, "mcp-session.json"),
-      JSON.stringify({ version: 1, servers: [] })
+      JSON.stringify({ version: 1, servers: [] }),
     );
   });
 
@@ -33,7 +42,7 @@ describe("mcp CLI entry", () => {
   function runCli(
     entry: string,
     args: string[],
-    opts: { input?: string; env?: Record<string, string> } = {}
+    opts: { input?: string; env?: Record<string, string> } = {},
   ): {
     status: number | null;
     signal: NodeJS.Signals | null;
@@ -79,7 +88,9 @@ describe("mcp CLI entry", () => {
     expect(run).toBeGreaterThan(call);
     expect(result.stdout).not.toContain("--schema\n");
     expect(result.stdout).toContain("Promise.allSettled");
-    expect(result.stdout).toContain("Batch or compose multiple calls in JavaScript");
+    expect(result.stdout).toContain(
+      "Batch or compose multiple calls in JavaScript",
+    );
     expect(result.stdout).toContain("mcp run <<'JS'");
     expect(result.stdout).not.toContain("mcp run <<'EOF'");
     expect(result.stdout).not.toContain("--save-images");
@@ -108,7 +119,7 @@ describe("mcp CLI entry", () => {
         },
         encoding: "utf8",
         timeout: 30_000,
-      }
+      },
     );
     expect(probe.status).toBe(0);
     expect(probe.stderr).not.toContain("EPIPE");
@@ -172,7 +183,7 @@ describe("mcp CLI entry", () => {
             agent_tools: [{ include: ["lookup"] }],
           },
         ],
-      })
+      }),
     );
     writeFileSync(
       join(dir, "mcporter.json"),
@@ -184,7 +195,7 @@ describe("mcp CLI entry", () => {
             allowedTools: ["lookup"],
           },
         },
-      })
+      }),
     );
 
     const result = runCli(distCli, [
@@ -199,7 +210,13 @@ describe("mcp CLI entry", () => {
     expect(result.stderr).toContain("JSON is reserved for tool results");
     expect(result.stderr).not.toContain(" at ");
 
-    const quiet = runCli(distCli, ["list", "offline", "--quiet", "--timeout", "100"]);
+    const quiet = runCli(distCli, [
+      "list",
+      "offline",
+      "--quiet",
+      "--timeout",
+      "100",
+    ]);
     expect(quiet.status).not.toBe(0);
     expect(quiet.output).toBe("");
   });
@@ -231,7 +248,9 @@ describe("mcp CLI entry", () => {
   });
 
   it("reports unknown servers in run scripts with the available list", () => {
-    const result = runCli(distCli, ["run"], { input: "await tools.ghost.lookup({})" });
+    const result = runCli(distCli, ["run"], {
+      input: "await tools.ghost.lookup({})",
+    });
     expect(result.status).toBe(1);
     expect(result.output).toContain("Unknown MCP server 'ghost'");
     expect(result.output).toContain("No MCP servers are configured.");
@@ -253,14 +272,18 @@ describe("mcp CLI entry", () => {
       env: { PI_RECIPES_MCP_RUN_TIMEOUT_MS: "100" },
     });
     expect(result.status).toBe(1);
-    expect(result.output).toContain("Remote side effects may already have occurred");
+    expect(result.output).toContain(
+      "Remote side effects may already have occurred",
+    );
     expect(result.output).toContain("inspect state before retrying");
   });
 
   it("rejects function-call expressions before the delegated path", () => {
     const result = runCli(distCli, ["call", 'ghost.lookup(q: "x", limit:']);
     expect(result.status).toBe(2);
-    expect(result.output).toContain("function-call expressions are unavailable");
+    expect(result.output).toContain(
+      "function-call expressions are unavailable",
+    );
     expect(result.output).toContain("key=value or --json");
   });
 
@@ -273,7 +296,9 @@ describe("mcp CLI entry", () => {
   it("rejects non-numeric search limits", () => {
     const result = runCli(distCli, ["search", "profile", "--limit", "abc"]);
     expect(result.status).toBe(2);
-    expect(result.output).toContain("--limit expects a positive integer, got 'abc'");
+    expect(result.output).toContain(
+      "--limit expects a positive integer, got 'abc'",
+    );
   });
 
   it("rejects fractional search limits and unknown options", () => {
@@ -309,7 +334,7 @@ describe("mcp CLI entry", () => {
             ],
           },
         ],
-      })
+      }),
     );
 
     const result = runCli(distCli, [
@@ -319,7 +344,9 @@ describe("mcp CLI entry", () => {
       "query=Grace",
     ]);
     expect(result.status).toBe(2);
-    expect(result.output).toContain("argument 'query' was passed more than once");
+    expect(result.output).toContain(
+      "argument 'query' was passed more than once",
+    );
   });
 
   it("rejects invalid run timeout configuration", () => {
@@ -328,6 +355,8 @@ describe("mcp CLI entry", () => {
       env: { PI_RECIPES_MCP_RUN_TIMEOUT_MS: "NaN" },
     });
     expect(result.status).toBe(2);
-    expect(result.output).toContain("PI_RECIPES_MCP_RUN_TIMEOUT_MS expects a positive integer");
+    expect(result.output).toContain(
+      "PI_RECIPES_MCP_RUN_TIMEOUT_MS expects a positive integer",
+    );
   });
 });

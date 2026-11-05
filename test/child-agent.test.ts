@@ -31,7 +31,7 @@ import {
 
 function writeRecipe(
   root: string,
-  extras: string[] = []
+  extras: string[] = [],
 ): { recipeDir: string; workspaceDir: string } {
   const recipeDir = join(root, "recipe");
   const workspaceDir = join(root, "workspace");
@@ -53,7 +53,7 @@ function writeRecipe(
           ],
         },
       },
-    })
+    }),
   );
   writeFileSync(
     join(recipeDir, "agents", "worker.yaml"),
@@ -70,13 +70,13 @@ function writeRecipe(
       "  mode: append",
       "  content: Test worker",
       "",
-    ].join("\n")
+    ].join("\n"),
   );
   return { recipeDir, workspaceDir };
 }
 
 function mockHandle(
-  messages: any[] = [{ role: "assistant", content: "done" }]
+  messages: any[] = [{ role: "assistant", content: "done" }],
 ) {
   const listeners: Array<(event: any) => void> = [];
   const session = {
@@ -93,7 +93,7 @@ function mockHandle(
     async (options: { onEvent?: (event: any) => void }) => {
       if (options.onEvent) listeners.push(options.onEvent);
       return handle;
-    }
+    },
   );
   return {
     handle,
@@ -119,7 +119,7 @@ describe("Recipe child agent runner", () => {
     roots.push(root);
     const { recipeDir, workspaceDir } = writeRecipe(root);
     const recipe = resolveRecipe({ recipeDir });
-    const resolved = recipe.selectAgent("worker");
+    recipe.selectAgent("worker");
     const { handle } = mockHandle();
 
     const runner = createRecipeChildAgentRunner({
@@ -144,7 +144,7 @@ describe("Recipe child agent runner", () => {
         credentialsResolved: true,
         runController: null,
         sessionRole: "subagent",
-      })
+      }),
     );
     expect(sessionOptions.mcpRuntimeDir).not.toBe(workspaceDir);
     expect(existsSync(sessionOptions.mcpRuntimeDir)).toBe(true);
@@ -178,7 +178,7 @@ describe("Recipe child agent runner", () => {
     });
 
     await expect(runner.prompt("inspect")).rejects.toThrow(
-      "413 Payload Too Large"
+      "413 Payload Too Large",
     );
     await runner.shutdown();
   });
@@ -215,9 +215,7 @@ describe("Recipe child agent runner", () => {
     const sessionOptions = mocks.createAgentSession.mock.calls[0]?.[0];
     expect(sessionOptions?.recipe).toBe(recipe);
     expect(sessionOptions?.agentName).toBe("worker");
-    expect(sessionOptions).not.toHaveProperty(
-      "mcpProvisioning"
-    );
+    expect(sessionOptions).not.toHaveProperty("mcpProvisioning");
     await runner.shutdown();
   });
 
@@ -262,7 +260,7 @@ describe("Recipe child agent runner", () => {
     expect(onEvent).toHaveBeenCalledTimes(2);
     expect(onEvent).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ type: "tool_execution_start" })
+      expect.objectContaining({ type: "tool_execution_start" }),
     );
     expect(onAssistantMessage).toHaveBeenCalledWith("working", "delta");
     await runner.shutdown();
@@ -280,14 +278,24 @@ describe("promptResultText", () => {
     // A delegating child said it started runs, then answered a notice with nothing.
     expect(
       promptResultText({
-        messages: [user("plan"), assistant("Started two explorers."), user("<agent_run_completions>"), assistant("")],
-      })
+        messages: [
+          user("plan"),
+          assistant("Started two explorers."),
+          user("<agent_run_completions>"),
+          assistant(""),
+        ],
+      }),
     ).toBe("");
     // Within the turn, text before a trailing empty message still counts.
     expect(
       promptResultText({
-        messages: [user("plan"), assistant("Here it is."), { role: "toolResult", content: "ok" }, assistant("")],
-      })
+        messages: [
+          user("plan"),
+          assistant("Here it is."),
+          { role: "toolResult", content: "ok" },
+          assistant(""),
+        ],
+      }),
     ).toBe("Here it is.");
   });
 });

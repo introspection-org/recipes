@@ -17,7 +17,7 @@ describe("inspectRecipe", () => {
     cleanups.push(fixture.cleanup);
 
     const inspection = inspectRecipe(
-      resolveRecipe({ recipeDir: fixture.recipeDir })
+      resolveRecipe({ recipeDir: fixture.recipeDir }),
     );
     expect(inspection.credentialEnv).toEqual([
       "ANTHROPIC_API_KEY",
@@ -38,9 +38,7 @@ describe("inspectRecipe", () => {
     const fixture = writeFixtureRecipe({
       manifestPi: {
         mcp: {
-          servers: [
-            { id: "crm", required: false, tools: { include: ["*"] } },
-          ],
+          servers: [{ id: "crm", required: false, tools: { include: ["*"] } }],
         },
       },
       agentExtras: [
@@ -65,14 +63,11 @@ describe("inspectRecipe", () => {
             oauthClientSecretEnv: "CRM_CLIENT_SECRET",
           },
         ],
-      })
+      }),
     );
 
     expect(
-      inspectRecipe(resolveRecipe({ recipeDir: fixture.recipeDir })).mcpEnv
-    ).toEqual([
-      "CRM_MCP_TOKEN",
-      "CRM_MCP_URL",
-    ]);
+      inspectRecipe(resolveRecipe({ recipeDir: fixture.recipeDir })).mcpEnv,
+    ).toEqual(["CRM_MCP_TOKEN", "CRM_MCP_URL"]);
   });
 });

@@ -8,13 +8,23 @@ import type {
 export interface MockExtensionAPI extends ExtensionAPI {
   commands: Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>;
   tools: Map<string, ToolDefinition<any, any, any>>;
-  flags: Map<string, { description?: string; type: "boolean" | "string"; default?: boolean | string }>;
+  flags: Map<
+    string,
+    {
+      description?: string;
+      type: "boolean" | "string";
+      default?: boolean | string;
+    }
+  >;
   flagValues: Map<string, boolean | string>;
   handlers: Map<string, Array<(event: any, ctx: any) => unknown>>;
   messages: unknown[];
   entries: Array<{ customType: string; data?: unknown }>;
   sentMessages: Array<{ message: any; options?: any }>;
-  messageRenderers: Map<string, (message: any, options: any, theme: any) => unknown>;
+  messageRenderers: Map<
+    string,
+    (message: any, options: any, theme: any) => unknown
+  >;
   sessionName?: string;
   activeTools: string[];
   thinkingLevel?: string;
@@ -23,15 +33,28 @@ export interface MockExtensionAPI extends ExtensionAPI {
 }
 
 export function createMockExtensionAPI(): MockExtensionAPI {
-  const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const commands = new Map<
+    string,
+    Omit<RegisteredCommand, "name" | "sourceInfo">
+  >();
   const tools = new Map<string, ToolDefinition<any, any, any>>();
-  const flags = new Map<string, { description?: string; type: "boolean" | "string"; default?: boolean | string }>();
+  const flags = new Map<
+    string,
+    {
+      description?: string;
+      type: "boolean" | "string";
+      default?: boolean | string;
+    }
+  >();
   const flagValues = new Map<string, boolean | string>();
   const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
   const messages: unknown[] = [];
   const entries: Array<{ customType: string; data?: unknown }> = [];
   const sentMessages: Array<{ message: any; options?: any }> = [];
-  const messageRenderers = new Map<string, (message: any, options: any, theme: any) => unknown>();
+  const messageRenderers = new Map<
+    string,
+    (message: any, options: any, theme: any) => unknown
+  >();
   const api = {
     commands,
     tools,
@@ -51,11 +74,21 @@ export function createMockExtensionAPI(): MockExtensionAPI {
     registerTool(tool: ToolDefinition<any, any, any>) {
       tools.set(tool.name, tool);
     },
-    registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">) {
+    registerCommand(
+      name: string,
+      options: Omit<RegisteredCommand, "name" | "sourceInfo">,
+    ) {
       commands.set(name, options);
     },
     registerShortcut() {},
-    registerFlag(name: string, options: { description?: string; type: "boolean" | "string"; default?: boolean | string }) {
+    registerFlag(
+      name: string,
+      options: {
+        description?: string;
+        type: "boolean" | "string";
+        default?: boolean | string;
+      },
+    ) {
       flags.set(name, options);
       if (options.default !== undefined && !flagValues.has(name)) {
         flagValues.set(name, options.default);
@@ -64,7 +97,10 @@ export function createMockExtensionAPI(): MockExtensionAPI {
     getFlag(name: string) {
       return flagValues.get(name);
     },
-    registerMessageRenderer(customType: string, renderer: (message: any, options: any, theme: any) => unknown) {
+    registerMessageRenderer(
+      customType: string,
+      renderer: (message: any, options: any, theme: any) => unknown,
+    ) {
       messageRenderers.set(customType, renderer);
     },
     sendMessage(message: unknown, options?: unknown) {
@@ -95,15 +131,28 @@ export function createMockExtensionAPI(): MockExtensionAPI {
           description: `${name} test tool`,
           parameters: {},
           exposure: "direct",
-          sourceInfo: { path: `<builtin:${name}>`, source: "builtin", scope: "temporary", origin: "top-level" },
+          sourceInfo: {
+            path: `<builtin:${name}>`,
+            source: "builtin",
+            scope: "temporary",
+            origin: "top-level",
+          },
         }));
-      return [...builtins, ...[...tools.values()].map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        exposure: tool.exposure ?? "direct",
-        sourceInfo: { path: "<test>", source: "test", scope: "temporary", origin: "top-level" },
-      }))];
+      return [
+        ...builtins,
+        ...[...tools.values()].map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          exposure: tool.exposure ?? "direct",
+          sourceInfo: {
+            path: "<test>",
+            source: "test",
+            scope: "temporary",
+            origin: "top-level",
+          },
+        })),
+      ];
     },
     setThinkingLevel(level: string) {
       api.thinkingLevel = level;

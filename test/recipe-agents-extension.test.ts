@@ -53,7 +53,7 @@ describe("agent completion acknowledgement", () => {
       { action: "close", id: "run-1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     expect(acknowledgeCompletions).toHaveBeenCalledWith(["run-1"]);
@@ -80,7 +80,7 @@ describe("agent completion acknowledgement", () => {
       { action: "interrupt", id: "run-1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     const content = result.content?.[0];
@@ -107,7 +107,7 @@ describe("agent completion acknowledgement", () => {
       { action: "close", id: "run-1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     const status = await tool.execute(
@@ -115,33 +115,31 @@ describe("agent completion acknowledgement", () => {
       { action: "status", id: "run-1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
     const closedAgain = await tool.execute(
       "call-3",
       { action: "close", id: "run-1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     expect((status as any).isError).toBe(true);
     const statusContent = status.content?.[0];
     expect(statusContent?.type === "text" ? statusContent.text : "").toBe(
-      "Agent run already closed: run-1"
+      "Agent run already closed: run-1",
     );
     expect((closedAgain as any).isError).toBe(true);
     const closeContent = closedAgain.content?.[0];
     expect(closeContent?.type === "text" ? closeContent.text : "").toBe(
-      "Agent run already closed: run-1"
+      "Agent run already closed: run-1",
     );
     expect(runs.close).toHaveBeenCalledTimes(1);
   });
 });
 
-function summary(
-  overrides: Partial<AgentRunSummary> = {}
-): AgentRunSummary {
+function summary(overrides: Partial<AgentRunSummary> = {}): AgentRunSummary {
   return {
     agent_run_id: "3f2c9a10-0000-4000-8000-000000000001",
     invocation_name: "explorer:1",
@@ -157,7 +155,7 @@ function summary(
 
 function text(result: { content?: { type: string; text?: string }[] }) {
   const content = result.content?.[0];
-  return content?.type === "text" ? content.text ?? "" : "";
+  return content?.type === "text" ? (content.text ?? "") : "";
 }
 
 describe("agent tool run handles", () => {
@@ -175,25 +173,29 @@ describe("agent tool run handles", () => {
       { name: "explorer", prompt: "Inspect", label: "Explore" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
     const messaged = await tool.execute(
       "call-2",
       { action: "message", id, message: "focus" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
     const closed = await tool.execute(
       "call-3",
       { action: "close", id },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
-    expect(text(started)).toBe(`Started run ${id} (explorer: Explore) [running]`);
-    expect(text(messaged)).toBe(`Sent message to run ${id} (explorer: Explore) [running]`);
+    expect(text(started)).toBe(
+      `Started run ${id} (explorer: Explore) [running]`,
+    );
+    expect(text(messaged)).toBe(
+      `Sent message to run ${id} (explorer: Explore) [running]`,
+    );
     expect(text(closed)).toBe(`Closed run ${id} (explorer: Explore) [closed]`);
     for (const reply of [started, messaged, closed]) {
       expect(text(reply)).not.toContain("explorer:1");
@@ -204,7 +206,7 @@ describe("agent tool run handles", () => {
     const runs = controller();
     vi.mocked(runs.list).mockReturnValue([summary()]);
     vi.mocked(runs.message).mockRejectedValue(
-      new Error("Unknown agent run id: explorer:1")
+      new Error("Unknown agent run id: explorer:1"),
     );
     const tool = createAgentTool(runs, agents());
 
@@ -213,20 +215,20 @@ describe("agent tool run handles", () => {
       { action: "status", id: "explorer:1" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
     const messaged = await tool.execute(
       "call-2",
       { action: "message", id: "explorer:1", message: "focus" },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     for (const reply of [status, messaged]) {
       expect((reply as any).isError).toBe(true);
       expect(text(reply)).toBe(
-        "Unknown agent run explorer:1: use the run id `start` returned."
+        "Unknown agent run explorer:1: use the run id `start` returned.",
       );
     }
   });
@@ -263,11 +265,13 @@ describe("agent tool waiting", () => {
       { name: "explorer", prompt: "Inspect", wait: true },
       signal,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     expect(runs.wait).toHaveBeenCalledWith(id, signal);
-    expect(text(result)).toBe(`run ${id} (explorer: Explore) [completed]\nfound it`);
+    expect(text(result)).toBe(
+      `run ${id} (explorer: Explore) [completed]\nfound it`,
+    );
     expect((result as any).details.agent.status).toBe("completed");
     expect(acknowledgeCompletions).toHaveBeenCalledWith([id]);
   });
@@ -276,7 +280,7 @@ describe("agent tool waiting", () => {
     const runs = controller();
     vi.mocked(runs.start).mockResolvedValue(summary());
     vi.mocked(runs.wait).mockResolvedValue(
-      summary({ status: "failed", completed_at: 2, error: "expired" })
+      summary({ status: "failed", completed_at: 2, error: "expired" }),
     );
     const tool = createAgentTool(runs, agents());
 
@@ -285,10 +289,12 @@ describe("agent tool waiting", () => {
       { name: "explorer", prompt: "Inspect", wait: true },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
-    expect(text(result)).toBe(`run ${id} (explorer: Explore) [failed]\nAgent failed: expired`);
+    expect(text(result)).toBe(
+      `run ${id} (explorer: Explore) [failed]\nAgent failed: expired`,
+    );
   });
 
   it("stops waiting on abort and leaves the run working", async () => {
@@ -299,8 +305,10 @@ describe("agent tool waiting", () => {
     vi.mocked(runs.wait).mockImplementation(
       (_id, signal) =>
         new Promise((_resolve, reject) =>
-          signal?.addEventListener("abort", () => reject(new Error("wait aborted")))
-        )
+          signal?.addEventListener("abort", () =>
+            reject(new Error("wait aborted")),
+          ),
+        ),
     );
     const tool = createAgentTool(runs, agents());
 
@@ -309,7 +317,7 @@ describe("agent tool waiting", () => {
       { name: "explorer", prompt: "Inspect", wait: true },
       abort.signal,
       undefined,
-      undefined as never
+      undefined as never,
     );
     await vi.waitFor(() => expect(runs.wait).toHaveBeenCalled());
     abort.abort();
@@ -317,7 +325,7 @@ describe("agent tool waiting", () => {
 
     expect((result as any).isError).toBeUndefined();
     expect(text(result)).toBe(
-      `Stopped waiting: run ${id} (explorer: Explore) [running] keeps working; its result reaches you when it finishes.`
+      `Stopped waiting: run ${id} (explorer: Explore) [running] keeps working; its result reaches you when it finishes.`,
     );
     expect(runs.interrupt).not.toHaveBeenCalled();
   });
@@ -332,10 +340,12 @@ describe("agent tool waiting", () => {
       { action: "wait", id },
       undefined,
       undefined,
-      undefined as never
+      undefined as never,
     );
 
     expect(runs.wait).toHaveBeenCalledWith(id, undefined);
-    expect(text(result)).toBe(`run ${id} (explorer: Explore) [completed]\nfound it`);
+    expect(text(result)).toBe(
+      `run ${id} (explorer: Explore) [completed]\nfound it`,
+    );
   });
 });

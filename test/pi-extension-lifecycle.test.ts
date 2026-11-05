@@ -4,7 +4,14 @@
  * children, and persisted runs rehydrate read-only after a process restart.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -39,8 +46,8 @@ function writeRecipe(root: string) {
         pi: { agents: ["defs/*.yaml"] },
       },
       null,
-      2
-    )}\n`
+      2,
+    )}\n`,
   );
   writeFileSync(join(recipeDir, "SYSTEM.md"), "Base recipe prompt");
   writeFileSync(
@@ -59,7 +66,7 @@ function writeRecipe(root: string) {
       "  mode: append",
       "  content: Agent-specific prompt",
       "",
-    ].join("\n")
+    ].join("\n"),
   );
   writeFileSync(
     join(recipeDir, "defs", "explorer.yaml"),
@@ -75,12 +82,10 @@ function writeRecipe(root: string) {
       "  mode: append",
       "  content: Explorer prompt",
       "",
-    ].join("\n")
+    ].join("\n"),
   );
   return recipeDir;
 }
-
-type HangingRunner = ReturnType<typeof hangingRunner>;
 
 /** Child runner whose prompt hangs until the test calls finish() (or cancel). */
 function hangingRunner() {
@@ -113,7 +118,7 @@ function hangingRunner() {
 
 async function startSession(
   createChildAgentRunner: (opts?: any) => any,
-  root: string
+  root: string,
 ): Promise<{ pi: MockExtensionAPI; ctx: any; projectDir: string }> {
   const recipeDir = writeRecipe(root);
   const projectDir = join(root, "project");
@@ -122,8 +127,13 @@ async function startSession(
   pi.flagValues.set("recipe", recipeDir);
   pi.flagValues.set("agent", "main");
   const ctx = extensionContext(projectDir);
-  createRecipesExtension({ createChildAgentRunner: createChildAgentRunner as any })(pi);
-  await pi.emitExtensionEvent({ type: "session_start", reason: "startup" } as any, ctx);
+  createRecipesExtension({
+    createChildAgentRunner: createChildAgentRunner as any,
+  })(pi);
+  await pi.emitExtensionEvent(
+    { type: "session_start", reason: "startup" } as any,
+    ctx,
+  );
   return { pi, ctx, projectDir };
 }
 
@@ -138,13 +148,16 @@ describe("background agent run lifecycle", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-lifecycle-"));
     try {
       const runner = hangingRunner();
-      const { pi, ctx } = await startSession(runner.createChildAgentRunner, root);
+      const { pi, ctx } = await startSession(
+        runner.createChildAgentRunner,
+        root,
+      );
       const started = await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = started?.details?.agent?.agent_run_id as string;
 
@@ -153,7 +166,7 @@ describe("background agent run lifecycle", () => {
         { action: "message", id, message: "focus on tests" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
 
       expect(runner.steer).toHaveBeenCalledWith("focus on tests");
@@ -164,7 +177,7 @@ describe("background agent run lifecycle", () => {
         { action: "wait", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -175,7 +188,10 @@ describe("background agent run lifecycle", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-lifecycle-"));
     try {
       const runner = hangingRunner();
-      const { pi, ctx } = await startSession(runner.createChildAgentRunner, root);
+      const { pi, ctx } = await startSession(
+        runner.createChildAgentRunner,
+        root,
+      );
 
       runner.finish("done");
       const result = await agentTool(pi).execute(
@@ -183,7 +199,7 @@ describe("background agent run lifecycle", () => {
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = result?.details?.agent?.agent_run_id as string;
       const waited = await agentTool(pi).execute(
@@ -191,7 +207,7 @@ describe("background agent run lifecycle", () => {
         { action: "wait", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(id).toBe("agent-run-1");
       expect(waited?.details?.agent?.status).toBe("completed");
@@ -201,7 +217,7 @@ describe("background agent run lifecycle", () => {
         { action: "interrupt", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(interrupted?.details?.agent?.status).toBe("completed");
       expect(runner.cancel).not.toHaveBeenCalled();
@@ -214,13 +230,16 @@ describe("background agent run lifecycle", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-lifecycle-"));
     try {
       const runner = hangingRunner();
-      const { pi, ctx } = await startSession(runner.createChildAgentRunner, root);
+      const { pi, ctx } = await startSession(
+        runner.createChildAgentRunner,
+        root,
+      );
       const started = await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = started?.details?.agent?.agent_run_id as string;
 
@@ -229,12 +248,12 @@ describe("background agent run lifecycle", () => {
         { action: "interrupt", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
 
       expect(runner.cancel).toHaveBeenCalledOnce();
       expect(interrupted?.details?.agent).toEqual(
-        expect.objectContaining({ status: "interrupted", error: undefined })
+        expect.objectContaining({ status: "interrupted", error: undefined }),
       );
 
       const status = await agentTool(pi).execute(
@@ -242,10 +261,10 @@ describe("background agent run lifecycle", () => {
         { action: "status", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(status?.details?.agent).toEqual(
-        expect.objectContaining({ status: "interrupted", error: undefined })
+        expect.objectContaining({ status: "interrupted", error: undefined }),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -256,14 +275,17 @@ describe("background agent run lifecycle", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-lifecycle-"));
     try {
       const runner = hangingRunner();
-      const { pi, ctx } = await startSession(runner.createChildAgentRunner, root);
+      const { pi, ctx } = await startSession(
+        runner.createChildAgentRunner,
+        root,
+      );
 
       const result = await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = result?.details?.agent?.agent_run_id as string;
       const closed = await agentTool(pi).execute(
@@ -271,18 +293,20 @@ describe("background agent run lifecycle", () => {
         { action: "close", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(runner.cancel).toHaveBeenCalled();
-      expect(String(closed?.content[0]?.type === "text" ? closed.content[0].text : "")).toContain(
-        `Closed run ${id} (explorer: `
-      );
+      expect(
+        String(
+          closed?.content[0]?.type === "text" ? closed.content[0].text : "",
+        ),
+      ).toContain(`Closed run ${id} (explorer: `);
       const status = await agentTool(pi).execute(
         "call-3",
         { action: "status", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect((status as any)?.isError).toBe(true);
     } finally {
@@ -311,7 +335,7 @@ describe("background agent run lifecycle", () => {
         { name: "explorer", prompt: "first" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = started?.details?.agent?.agent_run_id as string;
       await agentTool(pi).execute(
@@ -319,7 +343,7 @@ describe("background agent run lifecycle", () => {
         { action: "wait", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
 
       await agentTool(pi).execute(
@@ -327,18 +351,21 @@ describe("background agent run lifecycle", () => {
         { action: "message", id, message: "second" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const followedUp = await agentTool(pi).execute(
         "call-4",
         { action: "wait", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
 
       expect(followedUp?.details?.agent).toEqual(
-        expect.objectContaining({ status: "completed", output: "second answer" })
+        expect.objectContaining({
+          status: "completed",
+          output: "second answer",
+        }),
       );
       expect(prompt).toHaveBeenNthCalledWith(1, "first");
       expect(prompt).toHaveBeenNthCalledWith(2, "second");
@@ -349,7 +376,7 @@ describe("background agent run lifecycle", () => {
         { action: "close", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(shutdown).toHaveBeenCalledTimes(1);
     } finally {
@@ -363,7 +390,7 @@ describe("background agent run lifecycle", () => {
       const runner = hangingRunner();
       const { pi, ctx, projectDir } = await startSession(
         runner.createChildAgentRunner,
-        root
+        root,
       );
 
       runner.finish("persisted output");
@@ -375,7 +402,7 @@ describe("background agent run lifecycle", () => {
         },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = result?.details?.agent?.agent_run_id as string;
       await agentTool(pi).execute(
@@ -383,7 +410,7 @@ describe("background agent run lifecycle", () => {
         { action: "wait", id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const statusPath = join(projectDir, ".pi", "agents", id, "status.json");
       await vi.waitFor(() => expect(existsSync(statusPath)).toBe(true));
@@ -395,7 +422,7 @@ describe("background agent run lifecycle", () => {
           prompt: "look around",
           status: "completed",
           output: "persisted output",
-        })
+        }),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -417,18 +444,21 @@ describe("background agent run lifecycle", () => {
           status: "running",
           startedAt: new Date().toISOString(),
           toolCalls: [],
-        })}\n`
+        })}\n`,
       );
 
       const runner = hangingRunner();
-      const { pi, ctx } = await startSession(runner.createChildAgentRunner, root);
+      const { pi, ctx } = await startSession(
+        runner.createChildAgentRunner,
+        root,
+      );
 
       const status = await agentTool(pi).execute(
         "call-1",
         { action: "status", id: "recipe-agent-3" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(status?.details?.agent).toEqual(
         expect.objectContaining({
@@ -436,11 +466,11 @@ describe("background agent run lifecycle", () => {
           prompt: "old task",
           status: "interrupted",
           error: "Pi session restarted while the run was in flight",
-        })
+        }),
       );
 
       const migratedSnapshot = JSON.parse(
-        readFileSync(join(runDir, "status.json"), "utf8")
+        readFileSync(join(runDir, "status.json"), "utf8"),
       );
       expect(migratedSnapshot.prompt).toBe("old task");
       expect(migratedSnapshot).not.toHaveProperty("task");
@@ -451,13 +481,13 @@ describe("background agent run lifecycle", () => {
         { action: "wait", id: "recipe-agent-3" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(waited?.details?.agent).toEqual(
         expect.objectContaining({
           agent_run_id: "recipe-agent-3",
           status: "interrupted",
-        })
+        }),
       );
 
       // Control actions on rehydrated runs fail with a clear error.
@@ -466,12 +496,16 @@ describe("background agent run lifecycle", () => {
         { action: "interrupt", id: "recipe-agent-3" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect((interrupted as any)?.isError).toBe(true);
-      expect(String(interrupted?.content[0]?.type === "text" ? interrupted.content[0].text : "")).toContain(
-        "previous Pi session"
-      );
+      expect(
+        String(
+          interrupted?.content[0]?.type === "text"
+            ? interrupted.content[0].text
+            : "",
+        ),
+      ).toContain("previous Pi session");
 
       // New runs never collide with rehydrated ids.
       runner.finish();
@@ -480,7 +514,7 @@ describe("background agent run lifecycle", () => {
         { name: "explorer", prompt: "new task" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(started?.details?.agent?.agent_run_id).toBe("agent-run-4");
     } finally {

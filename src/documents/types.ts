@@ -145,11 +145,32 @@ export interface DocumentAdapter {
   /** Lower-case file extensions, with the dot, that this adapter opens. */
   readonly extensions: readonly string[];
   readonly capabilities: DocumentCapabilities;
-  read(ctx: DocumentAdapterContext, input: DocumentReadInput): Promise<DocumentResult>;
-  proposeEdits?(ctx: DocumentAdapterContext, input: DocumentProposeEditsInput): Promise<DocumentResult>;
-  revise?(ctx: DocumentAdapterContext, input: DocumentReviseInput): Promise<DocumentResult>;
-  comment?(ctx: DocumentAdapterContext, input: DocumentCommentInput): Promise<DocumentResult>;
-  respond?(ctx: DocumentAdapterContext, input: DocumentRespondInput): Promise<DocumentResult>;
-  removeSection?(ctx: DocumentAdapterContext, input: DocumentRemoveSectionInput): Promise<DocumentResult>;
-  render?(ctx: DocumentAdapterContext, input: DocumentRenderInput): Promise<DocumentResult>;
+  read(
+    ctx: DocumentAdapterContext,
+    input: DocumentReadInput,
+  ): Promise<DocumentResult>;
+  proposeEdits?(
+    ctx: DocumentAdapterContext,
+    input: DocumentProposeEditsInput,
+  ): Promise<DocumentResult>;
+  revise?(
+    ctx: DocumentAdapterContext,
+    input: DocumentReviseInput,
+  ): Promise<DocumentResult>;
+  comment?(
+    ctx: DocumentAdapterContext,
+    input: DocumentCommentInput,
+  ): Promise<DocumentResult>;
+  respond?(
+    ctx: DocumentAdapterContext,
+    input: DocumentRespondInput,
+  ): Promise<DocumentResult>;
+  removeSection?(
+    ctx: DocumentAdapterContext,
+    input: DocumentRemoveSectionInput,
+  ): Promise<DocumentResult>;
+  render?(
+    ctx: DocumentAdapterContext,
+    input: DocumentRenderInput,
+  ): Promise<DocumentResult>;
 }

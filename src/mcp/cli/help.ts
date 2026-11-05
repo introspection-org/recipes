@@ -6,7 +6,7 @@ export function mcpCliHelpText(): string {
     "Use this session-local `mcp` command, not `mcporter` or `npx mcporter`; it enforces the materialized recipe capabilities.",
     "",
     "Flow:",
-    "  mcp search \"what you need\"                Matches with their input and output contracts.",
+    '  mcp search "what you need"                Matches with their input and output contracts.',
     "  mcp call <server>.<tool> --json '{...}'  One call.",
     "  mcp run <<'JS' ... JS                     Two or more calls, in one script.",
     "  Metadata is compact text; actual structured tool results are JSON.",
@@ -15,7 +15,7 @@ export function mcpCliHelpText(): string {
     "  mcp run <<'JS'",
     '  const ids = ["id-1", "id-2", "id-3"]',
     '  const settled = await Promise.allSettled(ids.map(id => tools["server"]["tool"]({ id })))',
-    "  console.log(JSON.stringify(Object.fromEntries(settled.map((s, i) => [ids[i], s.status === \"fulfilled\" ? s.value : { error: String(s.reason) }])), null, 2))",
+    '  console.log(JSON.stringify(Object.fromEntries(settled.map((s, i) => [ids[i], s.status === "fulfilled" ? s.value : { error: String(s.reason) }])), null, 2))',
     "  JS",
     "  Keep the heredoc quoted (<<'JS'). Never chain mcp call in the shell; one script prints one JSON value.",
     "  When a tool declares no output contract and you have not seen its result, print that result whole and read its fields in the next command.",
@@ -115,7 +115,7 @@ export function mcpRunHelpText(): string {
     "  mcp run <<'JS'",
     '  const ids = ["id-1", "id-2", "id-3"]',
     '  const settled = await Promise.allSettled(ids.map(id => tools["server"]["tool"]({ id })))',
-    "  console.log(JSON.stringify(Object.fromEntries(settled.map((s, i) => [ids[i], s.status === \"fulfilled\" ? s.value : { error: String(s.reason) }])), null, 2))",
+    '  console.log(JSON.stringify(Object.fromEntries(settled.map((s, i) => [ids[i], s.status === "fulfilled" ? s.value : { error: String(s.reason) }])), null, 2))',
     "  JS",
   ].join("\n");
 }

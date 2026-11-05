@@ -49,7 +49,13 @@ export interface SlackPostResult {
 }
 
 class SlackBridgeError extends Error {
-  constructor(message: string, readonly retryable: boolean, readonly retryAfterMs = 0) { super(message); }
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly retryAfterMs = 0,
+  ) {
+    super(message);
+  }
 }
 
 function retryAfterMs(value: string | null | undefined): number {
@@ -63,7 +69,10 @@ function retryAfterMs(value: string | null | undefined): number {
 type SlackEncoding = "json" | "form";
 
 export class SlackApiError extends Error {
-  constructor(readonly method: string, readonly code: string) {
+  constructor(
+    readonly method: string,
+    readonly code: string,
+  ) {
     super(`Slack ${method} failed: ${code}`);
   }
 }
@@ -194,14 +203,17 @@ export class SlackBotSession {
    * exactly the kind of second, quieter source of truth the bound tier exists
    * to remove.
    */
-  async sendMessage(input: {
-    text: string;
-    plain_text?: string;
-    to: { channel: string; thread_ts?: string | null };
-    /** Callers can opt out of platform follow-up registration. */
-    record_bridge?: boolean;
-    mode?: "send" | "reply";
-  }, signal?: AbortSignal): Promise<SlackPostResult> {
+  async sendMessage(
+    input: {
+      text: string;
+      plain_text?: string;
+      to: { channel: string; thread_ts?: string | null };
+      /** Callers can opt out of platform follow-up registration. */
+      record_bridge?: boolean;
+      mode?: "send" | "reply";
+    },
+    signal?: AbortSignal,
+  ): Promise<SlackPostResult> {
     const destination = input.to;
     const messageBody = slackMessageBody(input.text, {
       plainText: input.plain_text,
@@ -225,7 +237,13 @@ export class SlackBotSession {
     const postedThread = payload.message?.thread_ts || threadTs || ts;
 
     if (input.record_bridge === false) {
-      return { ok: true, channel, ts, thread_ts: postedThread, bridge_recorded: false };
+      return {
+        ok: true,
+        channel,
+        ts,
+        thread_ts: postedThread,
+        bridge_recorded: false,
+      };
     }
 
     try {
@@ -258,22 +276,32 @@ export class SlackBotSession {
     }
   }
 
-  private async recordPostedMessage(data: {
-    provider: "slack";
-    mode?: "send" | "reply";
-    channel: string;
-    ts: string;
-    thread_ts: string;
-  }, signal?: AbortSignal): Promise<boolean> {
+  private async recordPostedMessage(
+    data: {
+      provider: "slack";
+      mode?: "send" | "reply";
+      channel: string;
+      ts: string;
+      thread_ts: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     // Only bookkeeping is retried. The confirmed Slack post above must never
     // be repeated because the platform registration is temporarily unavailable.
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await this.recordPostedMessageOnce(data, signal);
       } catch (error) {
-        if (attempt >= 2 || signal?.aborted ||
-            (error instanceof SlackBridgeError && !error.retryable)) throw error;
-        const delay = Math.max(100 * (attempt + 1), error instanceof SlackBridgeError ? error.retryAfterMs : 0);
+        if (
+          attempt >= 2 ||
+          signal?.aborted ||
+          (error instanceof SlackBridgeError && !error.retryable)
+        )
+          throw error;
+        const delay = Math.max(
+          100 * (attempt + 1),
+          error instanceof SlackBridgeError ? error.retryAfterMs : 0,
+        );
         // Node timers overflow above this limit and would retry immediately.
         if (delay > 2_147_483_647) throw error;
         await setTimeout(delay, undefined, { signal });
@@ -281,12 +309,15 @@ export class SlackBotSession {
     }
   }
 
-  private async recordPostedMessageOnce(data: {
-    provider: "slack";
-    channel: string;
-    ts: string;
-    thread_ts: string;
-  }, signal?: AbortSignal): Promise<boolean> {
+  private async recordPostedMessageOnce(
+    data: {
+      provider: "slack";
+      channel: string;
+      ts: string;
+      thread_ts: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     const baseUrl = this.env.INTROSPECTION_BASE_API_URL?.trim();
     const taskId = this.env.INTROSPECTION_TASK_ID?.trim();
     const token = this.env.INTROSPECTION_TOKEN?.trim();
@@ -320,9 +351,14 @@ export class SlackBotSession {
         retryAfterMs(response.headers.get("Retry-After")),
       );
     }
-    const payload = await response.json() as { result?: { recorded?: boolean; skipped?: string } };
+    const payload = (await response.json()) as {
+      result?: { recorded?: boolean; skipped?: string };
+    };
     if (payload.result?.skipped) {
-      throw new SlackBridgeError(`Reply routing was not confirmed: ${payload.result.skipped}`, true);
+      throw new SlackBridgeError(
+        `Reply routing was not confirmed: ${payload.result.skipped}`,
+        true,
+      );
     }
     return payload.result?.recorded === true;
   }

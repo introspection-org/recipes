@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
@@ -15,8 +22,7 @@ import {
   SLACK_RECIPE_CHANNEL_PACKAGE,
 } from "./helpers/recipe-connectors.js";
 
-beforeEach(() => {
-});
+beforeEach(() => {});
 
 function extensionContext(cwd: string, notify = vi.fn()) {
   return {
@@ -25,7 +31,10 @@ function extensionContext(cwd: string, notify = vi.fn()) {
     ui: { notify },
     modelRegistry: {
       find: vi.fn((provider: string, id: string) => ({ provider, id })),
-      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "test-key" })),
+      getApiKeyAndHeaders: vi.fn(async () => ({
+        ok: true,
+        apiKey: "test-key",
+      })),
     },
   } as any;
 }
@@ -48,8 +57,8 @@ function writeRecipe(root: string) {
         },
       },
       null,
-      2
-    )}\n`
+      2,
+    )}\n`,
   );
   writeFileSync(join(recipeDir, "SYSTEM.md"), "Base recipe prompt");
   writeFileSync(
@@ -69,7 +78,7 @@ function writeRecipe(root: string) {
       "system_instructions:",
       "  mode: append",
       "  content: Agent-specific prompt",
-    ].join("\n")
+    ].join("\n"),
   );
   writeFileSync(
     join(recipeDir, "defs", "explorer.yaml"),
@@ -83,9 +92,12 @@ function writeRecipe(root: string) {
       "  mode: append",
       "  content: Explorer prompt",
       "",
-    ].join("\n")
+    ].join("\n"),
   );
-  writeFileSync(join(recipeDir, "skills", "repo-index", "SKILL.md"), "---\ndescription: Index repo\n---\n");
+  writeFileSync(
+    join(recipeDir, "skills", "repo-index", "SKILL.md"),
+    "---\ndescription: Index repo\n---\n",
+  );
   writeFileSync(join(recipeDir, "prompts", "review.md"), "Review this\n");
   return recipeDir;
 }
@@ -101,8 +113,12 @@ describe("Recipes extension for Pi", () => {
     expect(pi.flags.has("agent")).toBe(true);
 
     const results = await pi.emitExtensionEvent(
-      { type: "resources_discover", cwd: process.cwd(), reason: "startup" } as any,
-      extensionContext(process.cwd())
+      {
+        type: "resources_discover",
+        cwd: process.cwd(),
+        reason: "startup",
+      } as any,
+      extensionContext(process.cwd()),
     );
     expect(results).toEqual([{}]);
     expect(pi.activeTools).toEqual([]);
@@ -113,11 +129,13 @@ describe("Recipes extension for Pi", () => {
     const notify = vi.fn();
     createRecipesExtension()(pi);
 
-    await pi.commands.get("recipe")?.handler("", extensionContext(process.cwd(), notify));
+    await pi.commands
+      .get("recipe")
+      ?.handler("", extensionContext(process.cwd(), notify));
 
     expect(notify).toHaveBeenCalledWith(
       "No recipe is active. Launch Pi with --recipe <recipe>.",
-      "info"
+      "info",
     );
   });
 
@@ -128,7 +146,10 @@ describe("Recipes extension for Pi", () => {
       // A default agent, which a launch without an agent name selects.
       writeFileSync(
         join(recipeDir, "defs", "agent.yaml"),
-        readFileSync(join(recipeDir, "defs", "main.yaml"), "utf8").replace("name: main", "name: agent")
+        readFileSync(join(recipeDir, "defs", "main.yaml"), "utf8").replace(
+          "name: main",
+          "name: agent",
+        ),
       );
       // What a shell command inherits from a parent session running another Recipe's `build` agent.
       const env: NodeJS.ProcessEnv = {
@@ -142,7 +163,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(root, notify)
+        extensionContext(root, notify),
       );
 
       expect(env.PI_RECIPE_DIR).toBe(recipeDir);
@@ -156,7 +177,10 @@ describe("Recipes extension for Pi", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-same-launch-"));
     try {
       const recipeDir = writeRecipe(root);
-      const env: NodeJS.ProcessEnv = { PI_RECIPE_DIR: recipeDir, PI_AGENT_NAME: "explorer" };
+      const env: NodeJS.ProcessEnv = {
+        PI_RECIPE_DIR: recipeDir,
+        PI_AGENT_NAME: "explorer",
+      };
       const pi = createMockExtensionAPI();
       const notify = vi.fn();
       pi.flagValues.set("recipe", recipeDir);
@@ -164,7 +188,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(root, notify)
+        extensionContext(root, notify),
       );
 
       expect(env.PI_AGENT_NAME).toBe("explorer");
@@ -189,7 +213,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
       expect(env.PI_AGENT_NAME).toBe("main");
 
@@ -197,7 +221,10 @@ describe("Recipes extension for Pi", () => {
       notify.mockClear();
       await pi.commands.get("recipe")?.handler("", ctx);
 
-      expect(notify).toHaveBeenCalledWith(expect.stringContaining("Agent: explorer"), "info");
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining("Agent: explorer"),
+        "info",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -213,12 +240,15 @@ describe("Recipes extension for Pi", () => {
 
       createRecipesExtension()(pi);
       await expect(
-        pi.emitExtensionEvent({ type: "session_start", reason: "startup" } as any, ctx)
+        pi.emitExtensionEvent(
+          { type: "session_start", reason: "startup" } as any,
+          ctx,
+        ),
       ).resolves.toEqual([undefined]);
 
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining('Recipe "missing-recipe" was not found.'),
-        "warning"
+        "warning",
       );
       const message = notify.mock.calls[0]?.[0] as string;
       expect(message).toContain("Pass a local Recipe directory");
@@ -228,15 +258,15 @@ describe("Recipes extension for Pi", () => {
       expect(pi.activeTools).toEqual([]);
 
       const abort = vi.fn();
-      await pi.emitExtensionEvent(
-        { type: "agent_start" } as any,
-        { ...ctx, abort }
-      );
+      await pi.emitExtensionEvent({ type: "agent_start" } as any, {
+        ...ctx,
+        abort,
+      });
       expect(abort).toHaveBeenCalledOnce();
 
       const resourceResults = await pi.emitExtensionEvent(
         { type: "resources_discover", cwd: root, reason: "startup" } as any,
-        ctx
+        ctx,
       );
       expect(resourceResults).toEqual([{}]);
     } finally {
@@ -260,8 +290,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       writeFileSync(
         join(recipeDir, "agents", "agent.yaml"),
@@ -275,7 +305,7 @@ describe("Recipes extension for Pi", () => {
           "  mode: append",
           "  content: Main instructions",
           "",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       const notify = vi.fn();
@@ -283,11 +313,14 @@ describe("Recipes extension for Pi", () => {
       pi.flagValues.set("recipe", recipeDir);
 
       createRecipesExtension({ env: {} })(pi);
-      await pi.emitExtensionEvent({ type: "session_start", reason: "startup" } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
 
       expect(notify).not.toHaveBeenCalledWith(
         expect.stringContaining("has invalid agents"),
-        "warning"
+        "warning",
       );
       expect(pi.sessionName).toBe("invalid-agent-recipe@1.0.0 agent:agent");
       expect(pi.activeTools).toEqual([]);
@@ -309,12 +342,10 @@ describe("Recipes extension for Pi", () => {
           pi: {
             agents: ["agents/*.yaml"],
             mcp: {
-              servers: [
-                { id: "nextplay", tools: { include: ["search"] } },
-              ],
+              servers: [{ id: "nextplay", tools: { include: ["search"] } }],
             },
           },
-        })}\n`
+        })}\n`,
       );
       writeFileSync(
         join(recipeDir, "agents", "agent.yaml"),
@@ -337,7 +368,7 @@ describe("Recipes extension for Pi", () => {
           "  mode: append",
           "  content: Main instructions",
           "",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       const notify = vi.fn();
@@ -351,7 +382,7 @@ describe("Recipes extension for Pi", () => {
           systemPrompt: "Default Pi prompt",
           systemPromptOptions: {},
         } as any,
-        extensionContext(root, notify)
+        extensionContext(root, notify),
       );
 
       expect(promptResults).toEqual([
@@ -379,18 +410,25 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.sessionName).toBe("demo@1.0.0 agent:main");
       expect(pi.model).toEqual({ provider: "openai", id: "gpt-4.1" });
       expect(pi.thinkingLevel).toBe("low");
       expect(pi.activeTools.sort()).toEqual(["agent", "bash", "read"]);
-      expect(notify).toHaveBeenCalledWith(expect.stringContaining("Recipe: demo@1.0.0"), "info");
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining("Recipe: demo@1.0.0"),
+        "info",
+      );
 
       const resourceResults = await pi.emitExtensionEvent(
-        { type: "resources_discover", cwd: projectDir, reason: "startup" } as any,
-        ctx
+        {
+          type: "resources_discover",
+          cwd: projectDir,
+          reason: "startup",
+        } as any,
+        ctx,
       );
       expect(resourceResults).toEqual([
         expect.objectContaining({
@@ -406,7 +444,7 @@ describe("Recipes extension for Pi", () => {
           systemPrompt: "Default Pi prompt",
           systemPromptOptions: {},
         } as any,
-        ctx
+        ctx,
       );
       expect(promptResults).toEqual([
         {
@@ -417,30 +455,33 @@ describe("Recipes extension for Pi", () => {
       await pi.commands.get("recipe")?.handler("", ctx as any);
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("Name: demo@1.0.0"),
-        "info"
+        "info",
       );
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("Agent: main"),
-        "info"
+        "info",
       );
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("Active recipe tools:"),
-        "info"
+        "info",
       );
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("  - bash"),
-        "info"
+        "info",
       );
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("  - read"),
-        "info"
+        "info",
       );
       const recipeMessage = notify.mock.calls
         .map((call) => call[0])
-        .find((message): message is string =>
-          typeof message === "string" && message.includes("Active Recipe")
+        .find(
+          (message): message is string =>
+            typeof message === "string" && message.includes("Active Recipe"),
         );
-      expect(recipeMessage).not.toContain(join(recipeDir, "skills", "repo-index", "SKILL.md"));
+      expect(recipeMessage).not.toContain(
+        join(recipeDir, "skills", "repo-index", "SKILL.md"),
+      );
       expect(recipeMessage).not.toContain(join(recipeDir, "prompts"));
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -452,7 +493,7 @@ describe("Recipes extension for Pi", () => {
     try {
       const recipeDir = writeRecipe(root);
       const pkg = JSON.parse(
-        readFileSync(join(recipeDir, "package.json"), "utf8")
+        readFileSync(join(recipeDir, "package.json"), "utf8"),
       );
       pkg.pi.channels = [{ provider: "slack" }];
       pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" };
@@ -467,7 +508,7 @@ describe("Recipes extension for Pi", () => {
           "tools:",
           "  - channels",
           "",
-        ].join("\n")
+        ].join("\n"),
       );
 
       const pi = createMockExtensionAPI();
@@ -481,16 +522,11 @@ describe("Recipes extension for Pi", () => {
       })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(root)
+        extensionContext(root),
       );
 
-      expect([...pi.tools.keys()].sort()).toEqual([
-        "agent",
-        "channels",
-      ]);
-      expect(pi.activeTools.sort()).toEqual([
-        "channels",
-      ]);
+      expect([...pi.tools.keys()].sort()).toEqual(["agent", "channels"]);
+      expect(pi.activeTools.sort()).toEqual(["channels"]);
       expect(pi.activeTools).toContain("channels");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -506,7 +542,11 @@ describe("Recipes extension for Pi", () => {
       mkdirSync(projectDir, { recursive: true });
       const notify = vi.fn();
       const abort = vi.fn();
-      const ctx = { ...extensionContext(projectDir, notify), abort, mode: "json" };
+      const ctx = {
+        ...extensionContext(projectDir, notify),
+        abort,
+        mode: "json",
+      };
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
@@ -515,13 +555,13 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools).toEqual([]);
       expect(notify).toHaveBeenCalledWith(
         "Recipe session cannot start: Recipe model has no configured API key: openai/gpt-4.1",
-        "warning"
+        "warning",
       );
       expect(process.exitCode).toBe(1);
       await pi.emitExtensionEvent({ type: "agent_start" } as any, ctx);
@@ -536,40 +576,53 @@ describe("Recipes extension for Pi", () => {
     ["json", true],
     ["print", true],
     ["interactive", false],
-  ])("in %s mode, writing the failure reason to stderr is %s", async (mode, written) => {
-    const root = mkdtempSync(join(tmpdir(), "pi-recipe-failure-reason-"));
-    const previousExitCode = process.exitCode;
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      const recipeDir = writeRecipe(root);
-      const projectDir = join(root, "project");
-      mkdirSync(projectDir, { recursive: true });
-      const ctx = { ...extensionContext(projectDir, vi.fn()), abort: vi.fn(), mode };
-      const pi = createMockExtensionAPI();
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-      (pi as any).setModel = vi.fn().mockResolvedValue(false);
+  ])(
+    "in %s mode, writing the failure reason to stderr is %s",
+    async (mode, written) => {
+      const root = mkdtempSync(join(tmpdir(), "pi-recipe-failure-reason-"));
+      const previousExitCode = process.exitCode;
+      const stderr = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+      try {
+        const recipeDir = writeRecipe(root);
+        const projectDir = join(root, "project");
+        mkdirSync(projectDir, { recursive: true });
+        const ctx = {
+          ...extensionContext(projectDir, vi.fn()),
+          abort: vi.fn(),
+          mode,
+        };
+        const pi = createMockExtensionAPI();
+        pi.flagValues.set("recipe", recipeDir);
+        pi.flagValues.set("agent", "main");
+        (pi as any).setModel = vi.fn().mockResolvedValue(false);
 
-      createRecipesExtension()(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx
-      );
+        createRecipesExtension()(pi);
+        await pi.emitExtensionEvent(
+          { type: "session_start", reason: "startup" } as any,
+          ctx,
+        );
 
-      // The agent is aborted at start, so in a headless run this line is the
-      // only place the caller can read why.
-      const reason =
-        "Recipe session cannot start: Recipe model has no configured API key: openai/gpt-4.1\n";
-      expect(stderr.mock.calls.some(([chunk]) => chunk === reason)).toBe(written);
-    } finally {
-      stderr.mockRestore();
-      process.exitCode = previousExitCode;
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+        // The agent is aborted at start, so in a headless run this line is the
+        // only place the caller can read why.
+        const reason =
+          "Recipe session cannot start: Recipe model has no configured API key: openai/gpt-4.1\n";
+        expect(stderr.mock.calls.some(([chunk]) => chunk === reason)).toBe(
+          written,
+        );
+      } finally {
+        stderr.mockRestore();
+        process.exitCode = previousExitCode;
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("fails closed when Pi cannot apply authored request or session configuration", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-recipe-unsupported-ai-session-"));
+    const root = mkdtempSync(
+      join(tmpdir(), "pi-recipe-unsupported-ai-session-"),
+    );
     const previousExitCode = process.exitCode;
     try {
       const recipeDir = writeRecipe(root);
@@ -586,11 +639,15 @@ describe("Recipes extension for Pi", () => {
           "session:",
           "  tool_execution: parallel",
           "tools: [read]",
-        ].join("\n")
+        ].join("\n"),
       );
       const notify = vi.fn();
       const abort = vi.fn();
-      const ctx = { ...extensionContext(projectDir, notify), abort, mode: "json" };
+      const ctx = {
+        ...extensionContext(projectDir, notify),
+        abort,
+        mode: "json",
+      };
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
@@ -598,15 +655,15 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools).toEqual([]);
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining(
-          "Pi's extension API cannot apply Recipe ai.options (or legacy model request options) and session"
+          "Pi's extension API cannot apply Recipe ai.options (or legacy model request options) and session",
         ),
-        "warning"
+        "warning",
       );
       expect(process.exitCode).toBe(1);
       await pi.emitExtensionEvent({ type: "agent_start" } as any, ctx);
@@ -619,7 +676,7 @@ describe("Recipes extension for Pi", () => {
 
   it("applies Anthropic context management through Pi's payload hook", async () => {
     const root = mkdtempSync(
-      join(tmpdir(), "pi-recipe-unsupported-anthropic-context-")
+      join(tmpdir(), "pi-recipe-unsupported-anthropic-context-"),
     );
     const previousExitCode = process.exitCode;
     try {
@@ -637,7 +694,7 @@ describe("Recipes extension for Pi", () => {
           "      context_management:",
           "        edits: []",
           "tools: [read]",
-        ].join("\n")
+        ].join("\n"),
       );
       const notify = vi.fn();
       const ctx = extensionContext(projectDir, notify);
@@ -648,16 +705,19 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools).toEqual(["read"]);
       const results = await pi.emitExtensionEvent(
-        { type: "before_provider_request", payload: { model: "claude" } } as any,
+        {
+          type: "before_provider_request",
+          payload: { model: "claude" },
+        } as any,
         {
           ...ctx,
           model: { provider: "anthropic", api: "anthropic-messages" },
-        }
+        },
       );
       expect(results).toContainEqual({
         model: "claude",
@@ -689,7 +749,7 @@ describe("Recipes extension for Pi", () => {
           "        only: [anthropic, bedrock]",
           "        sort: cost",
           "tools: [read]",
-        ].join("\n")
+        ].join("\n"),
       );
       const ctx = extensionContext(projectDir);
       const pi = createMockExtensionAPI();
@@ -699,7 +759,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools).toEqual(["read"]);
@@ -716,7 +776,7 @@ describe("Recipes extension for Pi", () => {
             provider: "vercel-ai-gateway",
             api: "anthropic-messages",
           },
-        }
+        },
       );
       expect(results).toContainEqual({
         providerOptions: {
@@ -751,7 +811,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Agent-specific prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -760,7 +820,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
 
       expect(pi.activeTools).toEqual(["read"]);
@@ -789,7 +849,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Explorer prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "defs", "researcher.yaml"),
@@ -803,7 +863,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Researcher prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -812,7 +872,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
 
       expect(pi.activeTools.sort()).toEqual(["agent", "read"]);
@@ -847,7 +907,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Agent-specific prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "mcp.json"),
@@ -875,8 +935,8 @@ describe("Recipes extension for Pi", () => {
             ],
           },
           null,
-          2
-        )
+          2,
+        ),
       );
       writeFileSync(
         join(recipeDir, "package.json"),
@@ -899,8 +959,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       const env: NodeJS.ProcessEnv = {};
       const notify = vi.fn();
@@ -912,31 +972,34 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools.sort()).toEqual(["bash"]);
       expect(pi.tools.has("mcp")).toBe(false);
       expect(notify).toHaveBeenCalledWith(
         "Recipe MCP: 1 server(s) configured; runtime warming in background",
-        "info"
+        "info",
       );
       expect(env.PI_RECIPES_MCP_SESSION).toBe(
-        join(projectDir, ".pi", "mcp-session.json")
+        join(projectDir, ".pi", "mcp-session.json"),
       );
       expect(env.PI_RECIPES_MCP_BIN_DIR).toBe(join(projectDir, ".pi", "bin"));
       expect(env.PI_RECIPE_DIR).toBe(recipeDir);
       expect(env.PI_AGENT_NAME).toBe("main");
-      expect(env.PATH?.split(delimiter)[0]).toBe(join(projectDir, ".pi", "bin"));
-      expect(existsSync(join(projectDir, ".pi", "bin", "mcp"))).toBe(true);
-      const materialized = JSON.parse(readFileSync(env.PI_RECIPES_MCP_SESSION!, "utf8"));
-      expect(materialized.servers[0].catalog.map((tool: { name: string }) => tool.name)).toEqual([
-        "get_value",
-      ]);
-      await pi.emitExtensionEvent(
-        { type: "session_shutdown" } as any,
-        ctx
+      expect(env.PATH?.split(delimiter)[0]).toBe(
+        join(projectDir, ".pi", "bin"),
       );
+      expect(existsSync(join(projectDir, ".pi", "bin", "mcp"))).toBe(true);
+      const materialized = JSON.parse(
+        readFileSync(env.PI_RECIPES_MCP_SESSION!, "utf8"),
+      );
+      expect(
+        materialized.servers[0].catalog.map(
+          (tool: { name: string }) => tool.name,
+        ),
+      ).toEqual(["get_value"]);
+      await pi.emitExtensionEvent({ type: "session_shutdown" } as any, ctx);
       expect(env.PI_RECIPE_DIR).toBeUndefined();
       expect(env.PI_AGENT_NAME).toBeUndefined();
     } finally {
@@ -971,7 +1034,7 @@ describe("Recipes extension for Pi", () => {
           "  mode: append",
           "  content: Explorer prompt",
           "",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "mcp.json"),
@@ -986,7 +1049,7 @@ describe("Recipes extension for Pi", () => {
               ],
             },
           ],
-        })
+        }),
       );
       writeFileSync(
         join(recipeDir, "package.json"),
@@ -1009,8 +1072,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       const env: NodeJS.ProcessEnv = {};
       const notify = vi.fn();
@@ -1022,14 +1085,14 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(env.PI_RECIPES_MCP_BIN_DIR).toBeUndefined();
       expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
       expect(notify).not.toHaveBeenCalledWith(
         expect.stringContaining("server(s) configured"),
-        "info"
+        "info",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1048,10 +1111,14 @@ describe("Recipes extension for Pi", () => {
       const env: NodeJS.ProcessEnv = {
         PI_RECIPES_MCP_SESSION: staleManifest,
       };
-      const fetchImpl = vi.fn(async () =>
-        new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }), {
-          headers: { "content-type": "application/json" },
-        })
+      const fetchImpl = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [] } }),
+            {
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ) as unknown as typeof fetch;
       globalThis.fetch = fetchImpl;
       const notify = vi.fn();
@@ -1063,7 +1130,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(fetchImpl).not.toHaveBeenCalled();
@@ -1071,7 +1138,7 @@ describe("Recipes extension for Pi", () => {
       expect(existsSync(staleManifest)).toBe(false);
       expect(notify).not.toHaveBeenCalledWith(
         expect.stringContaining("Recipe MCP:"),
-        expect.any(String)
+        expect.any(String),
       );
     } finally {
       globalThis.fetch = originalFetch;
@@ -1105,7 +1172,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Agent-specific prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "package.json"),
@@ -1127,8 +1194,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       const env: NodeJS.ProcessEnv = {};
       const notify = vi.fn();
@@ -1140,23 +1207,25 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ env })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(pi.activeTools.sort()).toEqual(["bash"]);
       expect(env.PI_RECIPES_MCP_BIN_DIR).toBe(join(projectDir, ".pi", "bin"));
-      expect(env.PATH?.split(delimiter)[0]).toBe(join(projectDir, ".pi", "bin"));
+      expect(env.PATH?.split(delimiter)[0]).toBe(
+        join(projectDir, ".pi", "bin"),
+      );
       expect(existsSync(join(projectDir, ".pi", "bin", "mcp"))).toBe(true);
       expect(env.PI_RECIPES_MCP_SESSION).toBe(
-        join(projectDir, ".pi", "mcp-session.json")
+        join(projectDir, ".pi", "mcp-session.json"),
       );
       expect(notify).not.toHaveBeenCalledWith(
         expect.stringContaining("Recipe MCP:"),
-        "info"
+        "info",
       );
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("Recipe MCP: no servers are available"),
-        "warning"
+        "warning",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1184,11 +1253,14 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       mkdirSync(join(recipeDir, "skills", "new-skill"), { recursive: true });
-      writeFileSync(join(recipeDir, "skills", "new-skill", "SKILL.md"), "---\ndescription: New\n---\n");
+      writeFileSync(
+        join(recipeDir, "skills", "new-skill", "SKILL.md"),
+        "---\ndescription: New\n---\n",
+      );
       writeFileSync(
         join(recipeDir, "package.json"),
         `${JSON.stringify(
@@ -1201,8 +1273,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       writeFileSync(
         join(recipeDir, "defs", "main.yaml"),
@@ -1221,7 +1293,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Agent-specific prompt",
-        ].join("\n")
+        ].join("\n"),
       );
 
       await pi.commands.get("recipe")?.handler("reload", ctx);
@@ -1230,12 +1302,16 @@ describe("Recipes extension for Pi", () => {
       expect(reload).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith(
         "Recipe reload requested: demo@1.0.0",
-        "info"
+        "info",
       );
 
       const resourceResults = await pi.emitExtensionEvent(
-        { type: "resources_discover", cwd: projectDir, reason: "reload" } as any,
-        ctx
+        {
+          type: "resources_discover",
+          cwd: projectDir,
+          reason: "reload",
+        } as any,
+        ctx,
       );
       expect(resourceResults).toEqual([
         expect.objectContaining({
@@ -1266,7 +1342,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: replace",
           "  content: Agent replacement prompt",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -1275,7 +1351,7 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension()(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
 
       const promptResults = await pi.emitExtensionEvent(
@@ -1285,7 +1361,7 @@ describe("Recipes extension for Pi", () => {
           systemPrompt: "Default Pi prompt",
           systemPromptOptions: {},
         } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
       expect(promptResults).toEqual([
         {
@@ -1334,7 +1410,7 @@ describe("Recipes extension for Pi", () => {
             selectedTools: ["read", "bash"],
           },
         } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
 
       const skillsSection = `<skills>\n${formatSkillsForPrompt(skills, "read").trim()}\n</skills>`;
@@ -1387,7 +1463,7 @@ describe("Recipes extension for Pi", () => {
             selectedTools: ["read"],
           },
         } as any,
-        extensionContext(projectDir)
+        extensionContext(projectDir),
       );
 
       expect(promptResults).toEqual([
@@ -1405,7 +1481,9 @@ describe("Recipes extension for Pi", () => {
     try {
       const recipeDir = writeRecipe(root);
       mkdirSync(join(recipeDir, "extensions"), { recursive: true });
-      mkdirSync(join(recipeDir, "node_modules", "recipe-test-dep"), { recursive: true });
+      mkdirSync(join(recipeDir, "node_modules", "recipe-test-dep"), {
+        recursive: true,
+      });
       writeFileSync(
         join(recipeDir, "defs", "main.yaml"),
         [
@@ -1420,7 +1498,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Main instructions",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "extensions", "a-setup-git.ts"),
@@ -1444,19 +1522,23 @@ describe("Recipes extension for Pi", () => {
           "    },",
           "  });",
           "};",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "extensions", "z-optional-runtime.ts"),
-        "export default () => { throw new Error('runtime-only extension unavailable'); };\n"
+        "export default () => { throw new Error('runtime-only extension unavailable'); };\n",
       );
       writeFileSync(
         join(recipeDir, "node_modules", "recipe-test-dep", "package.json"),
-        JSON.stringify({ name: "recipe-test-dep", version: "1.0.0", main: "index.js" })
+        JSON.stringify({
+          name: "recipe-test-dep",
+          version: "1.0.0",
+          main: "index.js",
+        }),
       );
       writeFileSync(
         join(recipeDir, "node_modules", "recipe-test-dep", "index.js"),
-        "module.exports = { value: 'loaded' };\n"
+        "module.exports = { value: 'loaded' };\n",
       );
       writeFileSync(
         join(recipeDir, "package.json"),
@@ -1470,8 +1552,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -1481,22 +1563,22 @@ describe("Recipes extension for Pi", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(join(root, "project"), notify)
+        extensionContext(join(root, "project"), notify),
       );
 
       expect(pi.tools.has("setup_git")).toBe(true);
       expect(pi.activeTools).toEqual([]);
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining("extension startup failed"),
-        "warning"
+        "warning",
       );
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "new" } as any,
-        extensionContext(join(root, "project"), notify)
+        extensionContext(join(root, "project"), notify),
       );
       expect(notify).not.toHaveBeenCalledWith(
         expect.stringContaining('registration "setup_git" conflicts'),
-        "warning"
+        "warning",
       );
       expect(pi.activeTools).toEqual([]);
     } finally {
@@ -1523,7 +1605,7 @@ describe("Recipes extension for Pi", () => {
           "system_instructions:",
           "  mode: append",
           "  content: Main instructions",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "extensions", "setup-git.ts"),
@@ -1539,11 +1621,11 @@ describe("Recipes extension for Pi", () => {
           "    },",
           "  });",
           "};",
-        ].join("\n")
+        ].join("\n"),
       );
       writeFileSync(
         join(recipeDir, "extensions", "optional-runtime.ts"),
-        "export default () => {};\n"
+        "export default () => {};\n",
       );
       writeFileSync(
         join(recipeDir, "package.json"),
@@ -1560,8 +1642,8 @@ describe("Recipes extension for Pi", () => {
             },
           },
           null,
-          2
-        )}\n`
+          2,
+        )}\n`,
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -1571,14 +1653,14 @@ describe("Recipes extension for Pi", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(join(root, "project"), notify)
+        extensionContext(join(root, "project"), notify),
       );
 
       expect(pi.tools.has("setup_git")).toBe(true);
       expect(pi.activeTools.sort()).toEqual(["setup_git"]);
       expect(notify).toHaveBeenCalledWith(
         "Recipe extensions: 2/2 loaded",
-        "info"
+        "info",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1595,9 +1677,12 @@ describe("Recipes extension for Pi", () => {
         const recipeDir = writeRecipe(root);
         writeFileSync(
           join(recipeDir, "defs", "main.yaml"),
-          ["name: main", "model:", "  name: openai/gpt-4.1", `tools: ${tools}`].join(
-            "\n"
-          )
+          [
+            "name: main",
+            "model:",
+            "  name: openai/gpt-4.1",
+            `tools: ${tools}`,
+          ].join("\n"),
         );
         const pi = createMockExtensionAPI();
         pi.flagValues.set("recipe", recipeDir);
@@ -1606,7 +1691,7 @@ describe("Recipes extension for Pi", () => {
 
         await pi.emitExtensionEvent(
           { type: "session_start", reason: "startup" } as any,
-          extensionContext(join(root, "project"), vi.fn())
+          extensionContext(join(root, "project"), vi.fn()),
         );
 
         expect(pi.tools.has("ask_user_question")).toBe(expected);
@@ -1627,9 +1712,12 @@ describe("Recipes extension for Pi", () => {
         const recipeDir = writeRecipe(root);
         writeFileSync(
           join(recipeDir, "defs", "main.yaml"),
-          ["name: main", "model:", "  name: openai/gpt-4.1", `tools: ${tools}`].join(
-            "\n"
-          )
+          [
+            "name: main",
+            "model:",
+            "  name: openai/gpt-4.1",
+            `tools: ${tools}`,
+          ].join("\n"),
         );
         const pi = createMockExtensionAPI();
         pi.flagValues.set("recipe", recipeDir);
@@ -1638,15 +1726,19 @@ describe("Recipes extension for Pi", () => {
 
         await pi.emitExtensionEvent(
           { type: "session_start", reason: "startup" } as any,
-          extensionContext(join(root, "project"), vi.fn())
+          extensionContext(join(root, "project"), vi.fn()),
         );
 
         expect(pi.tools.has("show_artifact")).toBe(expected);
         expect(pi.activeTools.includes("show_artifact")).toBe(expected);
         expect(pi.commands.has("view")).toBe(false);
         const notify = vi.fn();
-        await pi.commands.get("recipe")!.handler("bogus", extensionContext(join(root, "project"), notify));
-        expect(String(notify.mock.calls[0]?.[0])).toContain(expected ? "[reload|view]" : "[reload]");
+        await pi.commands
+          .get("recipe")!
+          .handler("bogus", extensionContext(join(root, "project"), notify));
+        expect(String(notify.mock.calls[0]?.[0])).toContain(
+          expected ? "[reload|view]" : "[reload]",
+        );
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
@@ -1659,7 +1751,12 @@ describe("Recipes extension for Pi", () => {
       const recipeDir = writeRecipe(root);
       writeFileSync(
         join(recipeDir, "defs", "main.yaml"),
-        ["name: main", "model:", "  name: openai/gpt-4.1", "tools: [ask_user_question]"].join("\n")
+        [
+          "name: main",
+          "model:",
+          "  name: openai/gpt-4.1",
+          "tools: [ask_user_question]",
+        ].join("\n"),
       );
       expect(process.env.PI_INTERRUPT_RESUME).toBeUndefined();
       const pi = createMockExtensionAPI();
@@ -1671,7 +1768,7 @@ describe("Recipes extension for Pi", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(join(root, "project"), vi.fn())
+        extensionContext(join(root, "project"), vi.fn()),
       );
 
       const result = await pi.tools.get("ask_user_question")!.execute(
@@ -1687,9 +1784,11 @@ describe("Recipes extension for Pi", () => {
         },
         undefined,
         undefined,
-        { hasUI: false, mode: "print" } as any
+        { hasUI: false, mode: "print" } as any,
       );
-      expect(result.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
+      expect(result.details.interrupt.outcome).toEqual({
+        type: "awaiting_user",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1706,7 +1805,7 @@ describe("Recipes extension for Pi", () => {
           "model:",
           "  name: openai/gpt-4.1",
           "tools: [missing_tool]",
-        ].join("\n")
+        ].join("\n"),
       );
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
@@ -1716,15 +1815,15 @@ describe("Recipes extension for Pi", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        extensionContext(join(root, "project"), notify)
+        extensionContext(join(root, "project"), notify),
       );
 
       expect(pi.activeTools).toEqual([]);
       expect(notify).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Recipe agent "main" declares unavailable tool(s): missing_tool'
+          'Recipe agent "main" declares unavailable tool(s): missing_tool',
         ),
-        "warning"
+        "warning",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1761,7 +1860,10 @@ describe("Recipes extension for Pi", () => {
               id: "read-b",
               name: "read",
               args: { path: "src/b.ts" },
-              result: { content: [{ type: "text", text: "file b" }], details: undefined },
+              result: {
+                content: [{ type: "text", text: "file b" }],
+                details: undefined,
+              },
               isError: false,
             });
             opts.onToolEvent?.({
@@ -1769,7 +1871,10 @@ describe("Recipes extension for Pi", () => {
               id: "read-a",
               name: "read",
               args: { path: "src/a.ts" },
-              result: { content: [{ type: "text", text: "file a" }], details: undefined },
+              result: {
+                content: [{ type: "text", text: "file a" }],
+                details: undefined,
+              },
               isError: false,
             });
             opts.onAssistantMessage?.("streamed output", "delta");
@@ -1788,24 +1893,28 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ createChildAgentRunner })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       const updates: AgentToolResult<any>[] = [];
-      const result = await pi.tools.get("agent")?.execute(
-        "tool-call-1",
-        { name: "explorer", prompt: "inspect auth flow" },
-        undefined,
-        (update) => updates.push(update),
-        ctx
-      );
-      const completed = await pi.tools.get("agent")?.execute(
-        "tool-call-2",
-        { action: "wait", id: result?.details?.agent?.agent_run_id },
-        undefined,
-        undefined,
-        ctx
-      );
+      const result = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-1",
+          { name: "explorer", prompt: "inspect auth flow" },
+          undefined,
+          (update) => updates.push(update),
+          ctx,
+        );
+      const completed = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-2",
+          { action: "wait", id: result?.details?.agent?.agent_run_id },
+          undefined,
+          undefined,
+          ctx,
+        );
 
       expect(createChildAgentRunner).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1813,24 +1922,24 @@ describe("Recipes extension for Pi", () => {
           agentName: "explorer",
           workspaceDir: projectDir,
           modelRegistry: ctx.modelRegistry,
-        })
+        }),
       );
       expect(updates[0]?.details?.subtasks?.[0]).toEqual(
         expect.objectContaining({
           task: "inspect auth flow",
-        })
+        }),
       );
       expect(
         updates.some((update) =>
           update.details?.subtasks?.[0]?.nestedTools?.some(
-            (tool: { toolName: string }) => tool.toolName === "read"
-          )
-        )
+            (tool: { toolName: string }) => tool.toolName === "read",
+          ),
+        ),
       ).toBe(true);
       expect(completed?.content[0]).toEqual(
         expect.objectContaining({
           text: expect.stringContaining("streamed output final"),
-        })
+        }),
       );
       expect(completed?.details?.agent).toEqual(
         expect.objectContaining({
@@ -1846,7 +1955,7 @@ describe("Recipes extension for Pi", () => {
               detail: "file b",
             }),
           ],
-        })
+        }),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1863,7 +1972,10 @@ describe("Recipes extension for Pi", () => {
         async start() {},
         async prompt() {
           // A delegating child takes a turn, then another for its own results.
-          opts.onAssistantMessage?.("Started two explorers to look into it. ", "delta");
+          opts.onAssistantMessage?.(
+            "Started two explorers to look into it. ",
+            "delta",
+          );
           opts.onAssistantMessage?.("Done.", "delta");
           return "Done.";
         },
@@ -1879,22 +1991,26 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ createChildAgentRunner })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
-      const started = await pi.tools.get("agent")?.execute(
-        "tool-call-1",
-        { name: "explorer", prompt: "inspect" },
-        undefined,
-        undefined,
-        ctx
-      );
-      const completed = await pi.tools.get("agent")?.execute(
-        "tool-call-2",
-        { action: "wait", id: started?.details?.agent?.agent_run_id },
-        undefined,
-        undefined,
-        ctx
-      );
+      const started = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-1",
+          { name: "explorer", prompt: "inspect" },
+          undefined,
+          undefined,
+          ctx,
+        );
+      const completed = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-2",
+          { action: "wait", id: started?.details?.agent?.agent_run_id },
+          undefined,
+          undefined,
+          ctx,
+        );
 
       expect(completed?.details?.agent?.status).toBe("completed");
       expect(completed?.details?.agent?.output).toBe("Done.");
@@ -1912,7 +2028,10 @@ describe("Recipes extension for Pi", () => {
         async start() {},
         async prompt() {
           // A delegating child takes a turn, then another for its own results.
-          opts.onAssistantMessage?.("Started two explorers to look into it. ", "delta");
+          opts.onAssistantMessage?.(
+            "Started two explorers to look into it. ",
+            "delta",
+          );
           return "";
         },
         async steer() {},
@@ -1927,22 +2046,26 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ createChildAgentRunner })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
-      const started = await pi.tools.get("agent")?.execute(
-        "tool-call-1",
-        { name: "explorer", prompt: "inspect" },
-        undefined,
-        undefined,
-        ctx
-      );
-      const completed = await pi.tools.get("agent")?.execute(
-        "tool-call-2",
-        { action: "wait", id: started?.details?.agent?.agent_run_id },
-        undefined,
-        undefined,
-        ctx
-      );
+      const started = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-1",
+          { name: "explorer", prompt: "inspect" },
+          undefined,
+          undefined,
+          ctx,
+        );
+      const completed = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-2",
+          { action: "wait", id: started?.details?.agent?.agent_run_id },
+          undefined,
+          undefined,
+          ctx,
+        );
 
       expect(completed?.details?.agent?.status).toBe("completed");
       expect(completed?.details?.agent?.output).toBe("(no final response)");
@@ -2000,22 +2123,26 @@ describe("Recipes extension for Pi", () => {
       createRecipesExtension({ createChildAgentRunner, onAgentRunEvent })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
-      const started = await pi.tools.get("agent")?.execute(
-        "tool-call-1",
-        { name: "explorer", prompt: "inspect" },
-        undefined,
-        undefined,
-        ctx
-      );
-      const completed = await pi.tools.get("agent")?.execute(
-        "tool-call-2",
-        { action: "wait", id: started?.details?.agent?.agent_run_id },
-        undefined,
-        undefined,
-        ctx
-      );
+      const started = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-1",
+          { name: "explorer", prompt: "inspect" },
+          undefined,
+          undefined,
+          ctx,
+        );
+      const completed = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-2",
+          { action: "wait", id: started?.details?.agent?.agent_run_id },
+          undefined,
+          undefined,
+          ctx,
+        );
 
       expect(completed?.details?.agent?.status).toBe("completed");
       const envelope = expect.objectContaining({
@@ -2028,8 +2155,17 @@ describe("Recipes extension for Pi", () => {
         event: childEvent,
       });
       expect(onAgentRunEvent).toHaveBeenCalledWith(envelope);
-      expect(appendEntrySpy.mock.calls.filter(([type]) => type === "agent_run_event")).toHaveLength(2);
-      expect(pi.entries.filter((entry: { customType: string }) => entry.customType === "agent_run_event")).toEqual([
+      expect(
+        appendEntrySpy.mock.calls.filter(
+          ([type]) => type === "agent_run_event",
+        ),
+      ).toHaveLength(2);
+      expect(
+        pi.entries.filter(
+          (entry: { customType: string }) =>
+            entry.customType === "agent_run_event",
+        ),
+      ).toEqual([
         {
           customType: "agent_run_event",
           data: onAgentRunEvent.mock.calls[1]?.[0],

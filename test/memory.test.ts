@@ -46,9 +46,10 @@ describe("memory context", () => {
 
   it("treats a missing or empty memory index as absent", () => {
     const cwd = workspace();
-    expect(
-      loadMemoryIndex({ cwd, indexPath: "missing/MEMORY.md" })
-    ).toEqual({ memory: null, diagnostics: [] });
+    expect(loadMemoryIndex({ cwd, indexPath: "missing/MEMORY.md" })).toEqual({
+      memory: null,
+      diagnostics: [],
+    });
 
     writeFileSync(join(cwd, "MEMORY.md"), "  \n");
     expect(loadMemoryIndex({ cwd, indexPath: "MEMORY.md" })).toEqual({
@@ -61,27 +62,25 @@ describe("memory context", () => {
     const cwd = workspace();
     writeFileSync(
       join(cwd, "MEMORY.md"),
-      Array.from({ length: 250 }, (_, index) => `line ${index + 1}`).join(
-        "\n"
-      )
+      Array.from({ length: 250 }, (_, index) => `line ${index + 1}`).join("\n"),
     );
 
     const lines = loadMemoryIndex({ cwd, indexPath: "MEMORY.md" });
     expect(lines.memory?.content).toContain(
-      `line ${DEFAULT_MEMORY_INDEX_MAX_LINES}`
+      `line ${DEFAULT_MEMORY_INDEX_MAX_LINES}`,
     );
     expect(lines.memory?.content).not.toContain(
-      `line ${DEFAULT_MEMORY_INDEX_MAX_LINES + 1}`
+      `line ${DEFAULT_MEMORY_INDEX_MAX_LINES + 1}`,
     );
     expect(lines.memory?.truncated).toBe(true);
 
     writeFileSync(
       join(cwd, "MEMORY.md"),
-      "x".repeat(DEFAULT_MEMORY_INDEX_MAX_BYTES + 1)
+      "x".repeat(DEFAULT_MEMORY_INDEX_MAX_BYTES + 1),
     );
     const bytes = loadMemoryIndex({ cwd, indexPath: "MEMORY.md" });
     expect(Buffer.byteLength(bytes.memory?.content ?? "", "utf8")).toBe(
-      DEFAULT_MEMORY_INDEX_MAX_BYTES
+      DEFAULT_MEMORY_INDEX_MAX_BYTES,
     );
     expect(bytes.memory?.truncated).toBe(true);
   });
@@ -90,7 +89,7 @@ describe("memory context", () => {
     const cwd = workspace();
     const content = Array.from(
       { length: DEFAULT_MEMORY_INDEX_MAX_LINES },
-      (_, index) => `line ${index + 1}`
+      (_, index) => `line ${index + 1}`,
     ).join("\n");
     writeFileSync(join(cwd, "MEMORY.md"), `${content}\n`);
 
@@ -128,12 +127,12 @@ describe("memory context", () => {
     expect(prompt).toContain("<memories>");
     expect(prompt).toContain("<memory>");
     expect(prompt).toContain(
-      "<location>/tmp/&lt;memory &amp; &quot;notes&quot;&gt;/MEMORY.md</location>"
+      "<location>/tmp/&lt;memory &amp; &quot;notes&quot;&gt;/MEMORY.md</location>",
     );
     expect(prompt).toContain("<content>");
     expect(prompt).toContain("- &lt;fact&gt; &amp; detail");
     expect(prompt).toContain(
-      "The following memories contain durable context and preferences that should inform your work:"
+      "The following memories contain durable context and preferences that should inform your work:",
     );
     expect(prompt).toContain("- &lt;fact&gt; &amp; detail...");
   });
@@ -147,11 +146,11 @@ describe("memory context", () => {
       maxBytes: DEFAULT_MEMORY_INDEX_MAX_BYTES,
       truncated: false,
     });
-    const content = prompt.match(/<content>\n([\s\S]*?)\n    <\/content>/)?.[1];
+    const content = prompt.match(/<content>\n([\s\S]*?)\n {4}<\/content>/)?.[1];
 
     expect(content).toBeDefined();
     expect(Buffer.byteLength(content ?? "", "utf8")).toBeLessThanOrEqual(
-      DEFAULT_MEMORY_INDEX_MAX_BYTES
+      DEFAULT_MEMORY_INDEX_MAX_BYTES,
     );
     expect(content).toMatch(/&amp;\.\.\.$/);
   });
@@ -160,14 +159,15 @@ describe("memory context", () => {
     const prompt = formatMemoryForPrompt({
       filePath: "/tmp/MEMORY.md",
       baseDir: "/tmp",
-      content: Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join(
-        "\r"
-      ),
+      content: Array.from(
+        { length: 20 },
+        (_, index) => `line ${index + 1}`,
+      ).join("\r"),
       maxLines: 5,
       maxBytes: DEFAULT_MEMORY_INDEX_MAX_BYTES,
       truncated: false,
     });
-    const content = prompt.match(/<content>\n([\s\S]*?)\n    <\/content>/)?.[1];
+    const content = prompt.match(/<content>\n([\s\S]*?)\n {4}<\/content>/)?.[1];
 
     expect(content?.split("\n")).toHaveLength(5);
     expect(content).toContain("line 5...");
@@ -181,14 +181,14 @@ describe("memory context", () => {
   it("rejects limits outside the bounded prompt contract", () => {
     const cwd = workspace();
     expect(() =>
-      loadMemoryIndex({ cwd, indexPath: "MEMORY.md", maxLines: 0 })
+      loadMemoryIndex({ cwd, indexPath: "MEMORY.md", maxLines: 0 }),
     ).toThrow(MemoryContextConfigError);
     expect(() =>
       loadMemoryIndex({
         cwd,
         indexPath: "MEMORY.md",
         maxBytes: DEFAULT_MEMORY_INDEX_MAX_BYTES + 1,
-      })
+      }),
     ).toThrow(MemoryContextConfigError);
   });
 });

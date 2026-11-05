@@ -1,8 +1,4 @@
-import {
-  closeSync,
-  openSync,
-  readSync,
-} from "node:fs";
+import { closeSync, openSync, readSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
@@ -44,7 +40,7 @@ export interface LoadMemoryIndexOptions extends MemoryContextSource {
 }
 
 export type MemoryContextOverride = (
-  base: LoadMemoryIndexResult
+  base: LoadMemoryIndexResult,
 ) => LoadMemoryIndexResult;
 
 export class MemoryContextConfigError extends Error {
@@ -57,18 +53,21 @@ export class MemoryContextConfigError extends Error {
 function boundedLimit(
   name: "maxLines" | "maxBytes",
   value: number | undefined,
-  maximum: number
+  maximum: number,
 ): number {
   const resolved = value ?? maximum;
   if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > maximum) {
     throw new MemoryContextConfigError(
-      `${name} must be an integer between 1 and ${maximum}`
+      `${name} must be an integer between 1 and ${maximum}`,
     );
   }
   return resolved;
 }
 
-function readBoundedFile(path: string, maxBytes: number): {
+function readBoundedFile(
+  path: string,
+  maxBytes: number,
+): {
   content: string;
   truncated: boolean;
 } {
@@ -82,14 +81,14 @@ function readBoundedFile(path: string, maxBytes: number): {
         buffer,
         bytesRead,
         buffer.length - bytesRead,
-        bytesRead
+        bytesRead,
       );
       if (read === 0) break;
       bytesRead += read;
     }
     const truncated = bytesRead > maxBytes;
     const content = new StringDecoder("utf8").write(
-      buffer.subarray(0, Math.min(bytesRead, maxBytes))
+      buffer.subarray(0, Math.min(bytesRead, maxBytes)),
     );
     return { content, truncated };
   } finally {
@@ -99,14 +98,14 @@ function readBoundedFile(path: string, maxBytes: number): {
 
 function boundLines(
   content: string,
-  maxLines: number
+  maxLines: number,
 ): { content: string; truncated: boolean } {
   const lines = content.split(/\r\n|\r|\n/);
   // A final line terminator does not introduce another logical line.
   if (lines.at(-1) === "") lines.pop();
   return {
     content: (lines.length > maxLines ? lines.slice(0, maxLines) : lines).join(
-      "\n"
+      "\n",
     ),
     truncated: lines.length > maxLines,
   };
@@ -114,17 +113,17 @@ function boundLines(
 
 /** Load one bounded memory index. A missing or empty index is normal. */
 export function loadMemoryIndex(
-  options: LoadMemoryIndexOptions
+  options: LoadMemoryIndexOptions,
 ): LoadMemoryIndexResult {
   const maxLines = boundedLimit(
     "maxLines",
     options.maxLines,
-    DEFAULT_MEMORY_INDEX_MAX_LINES
+    DEFAULT_MEMORY_INDEX_MAX_LINES,
   );
   const maxBytes = boundedLimit(
     "maxBytes",
     options.maxBytes,
-    DEFAULT_MEMORY_INDEX_MAX_BYTES
+    DEFAULT_MEMORY_INDEX_MAX_BYTES,
   );
   const filePath = resolve(options.cwd, options.indexPath);
 
@@ -185,7 +184,7 @@ function escapeXml(value: string): string {
 
 function escapeXmlWithinBytes(
   value: string,
-  maxBytes: number
+  maxBytes: number,
 ): { content: string; truncated: boolean } {
   const parts: string[] = [];
   let bytes = 0;
@@ -208,12 +207,12 @@ export function formatMemoryForPrompt(memory: MemoryIndex | null): string {
   const maxLines = boundedLimit(
     "maxLines",
     memory.maxLines,
-    DEFAULT_MEMORY_INDEX_MAX_LINES
+    DEFAULT_MEMORY_INDEX_MAX_LINES,
   );
   const maxBytes = boundedLimit(
     "maxBytes",
     memory.maxBytes,
-    DEFAULT_MEMORY_INDEX_MAX_BYTES
+    DEFAULT_MEMORY_INDEX_MAX_BYTES,
   );
   const boundedLines = boundLines(memory.content, maxLines);
   const escaped = escapeXmlWithinBytes(boundedLines.content, maxBytes);
@@ -223,7 +222,7 @@ export function formatMemoryForPrompt(memory: MemoryIndex | null): string {
   const content = truncated
     ? escapeXmlWithinBytes(
         boundedLines.content,
-        maxBytes - Buffer.byteLength(suffix, "utf8")
+        maxBytes - Buffer.byteLength(suffix, "utf8"),
       ).content + suffix
     : escaped.content;
   return [

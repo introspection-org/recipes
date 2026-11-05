@@ -13,7 +13,7 @@ export interface McpDaemonTraceContext {
   tracestate?: string;
 }
 
-export interface McpDaemonExecuteRequest {
+interface McpDaemonExecuteRequest {
   type: "execute";
   id: string;
   token: string;
@@ -23,27 +23,27 @@ export interface McpDaemonExecuteRequest {
   trace?: McpDaemonTraceContext;
 }
 
-export interface McpDaemonCancelRequest {
+interface McpDaemonCancelRequest {
   type: "cancel";
   id: string;
   token: string;
   requestId: string;
 }
 
-export interface McpDaemonStopRequest {
+interface McpDaemonStopRequest {
   type: "stop";
   id: string;
   token: string;
 }
 
-export interface McpDaemonPingRequest {
+interface McpDaemonPingRequest {
   type: "ping";
   id: string;
   token: string;
   fingerprint: string;
 }
 
-export interface McpDaemonCatalogRequest {
+interface McpDaemonCatalogRequest {
   type: "catalog";
   id: string;
   token: string;
@@ -52,7 +52,7 @@ export interface McpDaemonCatalogRequest {
   allowPartial?: boolean;
 }
 
-export interface McpDaemonCallRequest {
+interface McpDaemonCallRequest {
   type: "call";
   id: string;
   token: string;
@@ -89,7 +89,7 @@ export type McpDaemonEnvelope =
 
 export function serializeMcpDaemonEnvelope(
   envelope: McpDaemonEnvelope,
-  maxBytes = MCP_DAEMON_MAX_FRAME_BYTES
+  maxBytes = MCP_DAEMON_MAX_FRAME_BYTES,
 ): string {
   let estimatedBytes = 0;
   const seen = new WeakSet<object>();

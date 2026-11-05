@@ -19,8 +19,18 @@ const header = {
   cwd: "/workspace",
 };
 
-function message(id: string, parentId: string | null, body: Record<string, unknown>) {
-  return { type: "message", id, parentId, timestamp: "2026-10-13T10:00:01.000Z", message: body };
+function message(
+  id: string,
+  parentId: string | null,
+  body: Record<string, unknown>,
+) {
+  return {
+    type: "message",
+    id,
+    parentId,
+    timestamp: "2026-10-13T10:00:01.000Z",
+    message: body,
+  };
 }
 
 const usage = {
@@ -39,7 +49,14 @@ const prompt = message("e1", null, {
 });
 const call = message("e2", "e1", {
   role: "assistant",
-  content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "ls" } }],
+  content: [
+    {
+      type: "toolCall",
+      id: "call-1",
+      name: "bash",
+      arguments: { command: "ls" },
+    },
+  ],
   api: "openai-responses",
   provider: "openai",
   model: "gpt-4.1",
@@ -110,8 +127,12 @@ describe("PI_RECIPE_GENAI_SPANS_FILE", () => {
 
     await pi.emitExtensionEvent({ type: "agent_end" } as any, context(entries));
 
-    const file = [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n");
-    expect(read()).toEqual(JSON.parse(JSON.stringify(piSessionToSpans(file, "session-1"))));
+    const file = [header, ...entries]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+    expect(read()).toEqual(
+      JSON.parse(JSON.stringify(piSessionToSpans(file, "session-1"))),
+    );
   });
 
   it("leaves the run alone when the session cannot be rendered", async () => {
@@ -119,7 +140,10 @@ describe("PI_RECIPE_GENAI_SPANS_FILE", () => {
     registerGenAiSpansFile(pi, { PI_RECIPE_GENAI_SPANS_FILE: path });
 
     await pi.emitExtensionEvent({ type: "turn_end" } as any, context([], null));
-    await pi.emitExtensionEvent({ type: "turn_end" } as any, context([], { type: "other" }));
+    await pi.emitExtensionEvent(
+      { type: "turn_end" } as any,
+      context([], { type: "other" }),
+    );
 
     expect(existsSync(path)).toBe(false);
   });

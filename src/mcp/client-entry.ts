@@ -10,7 +10,8 @@ import {
 import { mcpTraceContextFromEnv } from "./trace-context.js";
 
 function commandNeedsStdin(args: readonly string[]): boolean {
-  if (args.some((arg, index) => arg === "--json" && args[index + 1] === "-")) return true;
+  if (args.some((arg, index) => arg === "--json" && args[index + 1] === "-"))
+    return true;
   if (args[0] !== "run") return false;
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index]!;
@@ -40,7 +41,7 @@ async function sendCancel(requestId: string): Promise<void> {
   const { token } = mcpDaemonEnvironment();
   await exchangeMcpDaemon(
     { type: "cancel", id: randomUUID(), token, requestId },
-    () => {}
+    () => {},
   ).catch(() => {});
 }
 
@@ -82,7 +83,7 @@ async function main(args = process.argv.slice(2)): Promise<number> {
           daemonError = envelope.error;
           socket.end();
         }
-      }
+      },
     );
   } finally {
     process.off("SIGINT", interrupt);

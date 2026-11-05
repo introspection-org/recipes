@@ -12,7 +12,7 @@ function tool(
   name: string,
   description: string,
   exposure: ToolExposure = "deferred",
-  parameters = Type.Object({})
+  parameters = Type.Object({}),
 ): ToolDefinition {
   return {
     name,
@@ -31,7 +31,10 @@ function session(tools: ToolDefinition[], active: string[]) {
   return {
     state,
     getAllTools: () =>
-      tools.map((entry) => ({ ...entry, exposure: entry.exposure ?? "direct" })),
+      tools.map((entry) => ({
+        ...entry,
+        exposure: entry.exposure ?? "direct",
+      })),
     getActiveTools: () => state.active,
     setActiveTools: (names: string[]) => {
       state.active = names;
@@ -39,13 +42,17 @@ function session(tools: ToolDefinition[], active: string[]) {
   } as unknown as ExtensionAPI & { state: { active: string[] } };
 }
 
-async function search(definition: ToolDefinition, query: string, limit?: number) {
+async function search(
+  definition: ToolDefinition,
+  query: string,
+  limit?: number,
+) {
   return definition.execute(
     "call",
     { query, ...(limit ? { limit } : {}) },
     undefined,
     undefined,
-    undefined as never
+    undefined as never,
   );
 }
 
@@ -74,10 +81,12 @@ describe("Recipe tool search", () => {
           "lookup",
           "Look something up.",
           "deferred",
-          Type.Object({ ticker: Type.String({ description: "Stock symbol." }) })
+          Type.Object({
+            ticker: Type.String({ description: "Stock symbol." }),
+          }),
         ),
       ],
-      []
+      [],
     );
     const [toolSearch] = createRecipeToolSearchTools(pi, false);
     expect((await search(toolSearch!, "ticker")).details).toEqual({
@@ -100,10 +109,13 @@ describe("Recipe tool search", () => {
     const pi = {
       registerTool: (definition: ToolDefinition) => registered.push(definition),
     } as unknown as ExtensionAPI;
-    await deferTools((api) => {
-      api.registerTool(tool("later", "Later.", "direct"));
-      api.registerTool(tool("now", "Now.", "direct"));
-    }, ["later"])(pi);
+    await deferTools(
+      (api) => {
+        api.registerTool(tool("later", "Later.", "direct"));
+        api.registerTool(tool("now", "Now.", "direct"));
+      },
+      ["later"],
+    )(pi);
     expect(registered.map((t) => [t.name, t.exposure])).toEqual([
       ["later", "deferred"],
       ["now", "direct"],

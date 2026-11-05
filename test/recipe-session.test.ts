@@ -1,16 +1,8 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  RecipeResolutionError,
-  resolveRecipe,
-} from "../src/recipe/resolve.js";
+import { RecipeResolutionError, resolveRecipe } from "../src/recipe/resolve.js";
 
 const roots: string[] = [];
 
@@ -29,11 +21,14 @@ function makeRecipe(): string {
       version: "1.0.0",
       pi: {
         agents: ["agents"],
-        extensions: ["extensions/operator/index.ts", "extensions/unused/index.ts"],
+        extensions: [
+          "extensions/operator/index.ts",
+          "extensions/unused/index.ts",
+        ],
         skills: ["skills"],
         prompts: ["prompts"],
       },
-    })
+    }),
   );
   writeFileSync(
     join(recipeDir, "agents", "base.yaml"),
@@ -49,26 +44,32 @@ function makeRecipe(): string {
       "system_instructions:",
       "  mode: append",
       "  content: Base instructions",
-    ].join("\n")
+    ].join("\n"),
   );
   writeFileSync(
     join(recipeDir, "agents", "agent.yaml"),
-    [
-      "name: agent",
-      "from: base",
-      "description: Researcher",
-    ].join("\n")
+    ["name: agent", "from: base", "description: Researcher"].join("\n"),
   );
-  writeFileSync(join(recipeDir, "extensions", "operator", "index.ts"), "export default () => {};\n");
-  writeFileSync(join(recipeDir, "extensions", "unused", "index.ts"), "export default () => {};\n");
-  writeFileSync(join(recipeDir, "skills", "research", "SKILL.md"), "---\ndescription: Research\n---\n");
+  writeFileSync(
+    join(recipeDir, "extensions", "operator", "index.ts"),
+    "export default () => {};\n",
+  );
+  writeFileSync(
+    join(recipeDir, "extensions", "unused", "index.ts"),
+    "export default () => {};\n",
+  );
+  writeFileSync(
+    join(recipeDir, "skills", "research", "SKILL.md"),
+    "---\ndescription: Research\n---\n",
+  );
   writeFileSync(join(recipeDir, "prompts", "review.md"), "Review\n");
   writeFileSync(join(recipeDir, "SYSTEM.md"), "Recipe system prompt\n");
   return recipeDir;
 }
 
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true });
 });
 
 describe("resolved Recipe agents", () => {
@@ -89,7 +90,7 @@ describe("resolved Recipe agents", () => {
     ]);
     expect(resolved.promptPaths).toEqual([join(recipeDir, "prompts")]);
     expect(resolved.systemPromptOverride("Pi base prompt")).toBe(
-      "Recipe system prompt\n\nBase instructions"
+      "Recipe system prompt\n\nBase instructions",
     );
   });
 
@@ -97,14 +98,14 @@ describe("resolved Recipe agents", () => {
     const recipeDir = makeRecipe();
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: researcher\nfrom: base\n"
+      "name: researcher\nfrom: base\n",
     );
 
-    expect(() =>
-      resolveRecipe({ recipeDir }).selectAgent("agent")
-    ).toThrow('Recipe agent "agent" was not found');
+    expect(() => resolveRecipe({ recipeDir }).selectAgent("agent")).toThrow(
+      'Recipe agent "agent" was not found',
+    );
     expect(resolveRecipe({ recipeDir }).selectAgent("researcher").name).toBe(
-      "researcher"
+      "researcher",
     );
   });
 
@@ -112,7 +113,7 @@ describe("resolved Recipe agents", () => {
     const recipeDir = makeRecipe();
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nfrom: base\n"
+      "name: agent\nfrom: base\n",
     );
 
     const resolved = resolveRecipe({ recipeDir }).selectAgent();
@@ -131,14 +132,14 @@ describe("resolved Recipe agents", () => {
         "system_instructions:",
         "  mode: append",
         "  content: Child instructions",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(
-      resolveRecipe({ recipeDir }).selectAgent().systemPromptOverride("Pi base prompt")
-    ).toBe(
-      "Recipe system prompt\n\nBase instructions\n\nChild instructions"
-    );
+      resolveRecipe({ recipeDir })
+        .selectAgent()
+        .systemPromptOverride("Pi base prompt"),
+    ).toBe("Recipe system prompt\n\nBase instructions\n\nChild instructions");
   });
 
   it("resolves the Recipe once for root and child sessions", () => {
@@ -150,7 +151,7 @@ describe("resolved Recipe agents", () => {
         "from: base",
         "description: Researcher",
         "subagents: [base]",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const recipe = resolveRecipe({ recipeDir });
@@ -176,13 +177,13 @@ describe("resolved Recipe agents", () => {
     expect(Object.isFrozen(agent.definition)).toBe(true);
     expect(Object.isFrozen(agent.tools)).toBe(true);
     expect(() =>
-      (recipe.agents as Map<string, typeof agent>).set("other", agent)
+      (recipe.agents as Map<string, typeof agent>).set("other", agent),
     ).toThrow("Resolved Recipe maps are immutable");
     recipe.agents.forEach((_value, _key, map) => {
       expect(map).toBe(recipe.agents);
-      expect(() =>
-        (map as Map<string, typeof agent>).clear()
-      ).toThrow("Resolved Recipe maps are immutable");
+      expect(() => (map as Map<string, typeof agent>).clear()).toThrow(
+        "Resolved Recipe maps are immutable",
+      );
     });
     expect(() => (agent.tools as string[]).push("write")).toThrow();
     expect(() => agent.definition.tools.push("write")).toThrow();
@@ -192,7 +193,7 @@ describe("resolved Recipe agents", () => {
     const recipeDir = makeRecipe();
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      ["name: agent", "model:", "  name: openai/gpt-5", ""].join("\n")
+      ["name: agent", "model:", "  name: openai/gpt-5", ""].join("\n"),
     );
     rmSync(join(recipeDir, "agents", "base.yaml"));
 
@@ -202,7 +203,7 @@ describe("resolved Recipe agents", () => {
     expect(resolved.thinkingLevel).toBeUndefined();
     expect(resolved.tools).toEqual([]);
     expect(resolved.systemPromptOverride("Pi base prompt")).toBe(
-      "Recipe system prompt"
+      "Recipe system prompt",
     );
   });
 
@@ -215,7 +216,7 @@ describe("resolved Recipe agents", () => {
         "from: base",
         "description: Researcher",
         "subagents: [base]",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const resolved = resolveRecipe({ recipeDir }).selectAgent();
@@ -237,7 +238,7 @@ describe("resolved Recipe agents", () => {
             servers: [{ id: "contacts", tools: { include: ["*"] } }],
           },
         },
-      })
+      }),
     );
     writeFileSync(
       join(recipeDir, "agents", "base.yaml"),
@@ -254,7 +255,7 @@ describe("resolved Recipe agents", () => {
         '      defer: ["*"]',
         "system_instructions:",
         "  content: Base",
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
@@ -268,7 +269,7 @@ describe("resolved Recipe agents", () => {
         '      include: ["*"]',
         '      defer: ["*"]',
         "      eager: [search_contacts]",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const resolved = resolveRecipe({ recipeDir }).selectAgent();
@@ -301,18 +302,18 @@ describe("resolved Recipe agents", () => {
         '      defer: ["*"]',
         "system_instructions:",
         "  content: Test",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
-      "has an invalid MCP policy"
+      "has an invalid MCP policy",
     );
   });
 
   it("fails before returning a partial session configuration", () => {
     const recipeDir = makeRecipe();
-    expect(() =>
-      resolveRecipe({ recipeDir }).selectAgent("missing")
-    ).toThrow(RecipeResolutionError);
+    expect(() => resolveRecipe({ recipeDir }).selectAgent("missing")).toThrow(
+      RecipeResolutionError,
+    );
   });
 });

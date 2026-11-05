@@ -102,6 +102,10 @@
 		"bench:mcp-client": "pnpm build:ts && cargo build --release -p pi-mcp-client && node scripts/benchmark-mcp-client.mjs",
 		"prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && pnpm --filter './packages/**' --filter './examples/**' typecheck",
+		"lint": "eslint . --max-warnings 0",
+		"format": "prettier --write \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
+		"format:check": "prettier --check \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
+		"knip": "knip",
 		"test": "pnpm build:ts && cargo test -p pi-mcp-client -p introspection-recipe-check && cargo build -p pi-mcp-client && MCP_CLIENT_BIN=target/debug/mcp-client node scripts/package-mcp-client.mjs && vitest run && pnpm --filter './examples/**' test",
 		"pack:check": "pnpm pack --dry-run --json | node scripts/check-npm-pack.mjs && pnpm --filter './packages/**' pack:check",
 		"clean": "rm -rf dist .turbo node_modules target vendor/mcp-client"
@@ -132,11 +136,19 @@
 		"@earendil-works/pi-ai": "1.4.0",
 		"@earendil-works/pi-coding-agent": "1.4.0",
 		"@earendil-works/pi-tui": "1.4.0",
+		"@eslint/js": "9.39.5",
 		"@types/node": "^26.1.2",
 		"@types/semver": "^7.8.0",
+		"@typescript/native": "npm:typescript@^7.0.2",
 		"esbuild": "^0.28.1",
+		"eslint": "9.39.5",
+		"eslint-config-prettier": "10.1.8",
+		"eslint-plugin-only-warn": "1.2.1",
+		"knip": "6.44.0",
+		"prettier": "3.9.10",
 		"typebox": "^1.0.56",
-		"typescript": "^7.0.2",
+		"typescript": "npm:@typescript/typescript6@^6.0.2",
+		"typescript-eslint": "8.72.1",
 		"vitest": "^5.0.1"
 	}
 }

@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Readable, Writable } from "node:stream";
 
-export type McpRuntime = Awaited<ReturnType<typeof import("mcporter").createRuntime>>;
+export type McpRuntime = Awaited<
+  ReturnType<typeof import("mcporter").createRuntime>
+>;
 
 export interface McpCommandContext {
   runtime: McpRuntime;
@@ -19,7 +21,7 @@ export function currentMcpCommandContext(): McpCommandContext | undefined {
 
 export function runWithMcpCommandContext<T>(
   context: McpCommandContext,
-  task: () => Promise<T>
+  task: () => Promise<T>,
 ): Promise<T> {
   return storage.run(context, task);
 }

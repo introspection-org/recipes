@@ -24,7 +24,9 @@ import { resolveDependencyDir } from "./package.js";
 const RECIPES_PACKAGE = "@introspection-ai/recipes";
 
 /** This package's own `package.json`: `src/recipe` and `dist/recipe` both sit two levels below it. */
-const recipesManifestPath = fileURLToPath(new URL("../../package.json", import.meta.url));
+const recipesManifestPath = fileURLToPath(
+  new URL("../../package.json", import.meta.url),
+);
 
 interface RecipesManifest {
   version: string;
@@ -36,7 +38,9 @@ let recipesManifest: RecipesManifest | undefined;
 
 /** Read on first use, so a bundle that never loads a package never looks for it. */
 function readRecipesManifest(): RecipesManifest {
-  recipesManifest ??= JSON.parse(readFileSync(recipesManifestPath, "utf8")) as RecipesManifest;
+  recipesManifest ??= JSON.parse(
+    readFileSync(recipesManifestPath, "utf8"),
+  ) as RecipesManifest;
   return recipesManifest;
 }
 
@@ -54,7 +58,7 @@ export function companionPackages(): Readonly<Record<string, string>> {
   return Object.fromEntries(
     Object.entries(readRecipesManifest().optionalDependencies ?? {})
       .filter(([name]) => isCompanionName(name))
-      .map(([name, range]) => [name, range.replace(/^workspace:/, "")])
+      .map(([name, range]) => [name, range.replace(/^workspace:/, "")]),
   );
 }
 
@@ -71,7 +75,10 @@ const COMPANION_PREFIX = "@introspection-ai/recipe-";
 
 /** Whether Recipes installs `name` alongside itself, so a Recipe may omit it. */
 export function isCompanionPackage(name: string): boolean {
-  return isCompanionName(name) && Object.hasOwn(readRecipesManifest().optionalDependencies ?? {}, name);
+  return (
+    isCompanionName(name) &&
+    Object.hasOwn(readRecipesManifest().optionalDependencies ?? {}, name)
+  );
 }
 
 /**
@@ -79,11 +86,14 @@ export function isCompanionPackage(name: string): boolean {
  * and Recipes' own peers (the Pi packages and typebox).
  */
 export function isHostPeerPackage(name: string): boolean {
-  return name === RECIPES_PACKAGE || Object.hasOwn(readRecipesManifest().peerDependencies ?? {}, name);
+  return (
+    name === RECIPES_PACKAGE ||
+    Object.hasOwn(readRecipesManifest().peerDependencies ?? {}, name)
+  );
 }
 
 /** Where the running `@introspection-ai/recipes` is installed; companion packages resolve from here. */
-export function hostRecipesDir(): string {
+function hostRecipesDir(): string {
   return realpathSync(dirname(recipesManifestPath));
 }
 
@@ -110,14 +120,25 @@ export interface ResolvedRecipePackage {
 export function resolveRecipePackage(
   recipeDir: string,
   name: string,
-  hostDir: string = hostRecipesDir()
+  hostDir: string = hostRecipesDir(),
 ): ResolvedRecipePackage | undefined {
   const fromRecipe = resolveDependencyDir(recipeDir, name);
   const source = fromRecipe ? "recipe" : "host";
-  const packageDir = fromRecipe ?? (isCompanionPackage(name) ? resolveDependencyDir(hostDir, name) : undefined);
+  const packageDir =
+    fromRecipe ??
+    (isCompanionPackage(name)
+      ? resolveDependencyDir(hostDir, name)
+      : undefined);
   if (!packageDir) return undefined;
-  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { version?: unknown };
-  return { name, packageDir, version: typeof manifest.version === "string" ? manifest.version : "0.0.0", source };
+  const manifest = JSON.parse(
+    readFileSync(join(packageDir, "package.json"), "utf8"),
+  ) as { version?: unknown };
+  return {
+    name,
+    packageDir,
+    version: typeof manifest.version === "string" ? manifest.version : "0.0.0",
+    source,
+  };
 }
 
 /**
@@ -126,24 +147,35 @@ export function resolveRecipePackage(
  * version and range, the running version, and the fix. A package declaring no
  * range is not checked; neither is a `workspace:` link that names no range.
  */
-export function assertRecipesCompatible(pkg: ResolvedRecipePackage, running: string = recipesVersion()): void {
-  const manifest = JSON.parse(readFileSync(join(pkg.packageDir, "package.json"), "utf8")) as {
+function assertRecipesCompatible(
+  pkg: ResolvedRecipePackage,
+  running: string = recipesVersion(),
+): void {
+  const manifest = JSON.parse(
+    readFileSync(join(pkg.packageDir, "package.json"), "utf8"),
+  ) as {
     peerDependencies?: Record<string, unknown>;
   };
   const declared = manifest.peerDependencies?.[RECIPES_PACKAGE];
   if (typeof declared !== "string") return;
   // pnpm publishes `workspace:<range>` as `<range>`; `workspace:^` and the like
   // only occur in an unpublished checkout, linked to this very package.
-  const range = declared.startsWith("workspace:") ? declared.slice("workspace:".length) : declared;
-  if (declared.startsWith("workspace:") && semver.validRange(range) === null) return;
+  const range = declared.startsWith("workspace:")
+    ? declared.slice("workspace:".length)
+    : declared;
+  if (declared.startsWith("workspace:") && semver.validRange(range) === null)
+    return;
   if (semver.satisfies(running, range, { includePrerelease: true })) return;
   throw new Error(
-    `${describe(pkg)} requires ${RECIPES_PACKAGE} ${range}, but ${RECIPES_PACKAGE} ${running} is running. ${fix(pkg)}`
+    `${describe(pkg)} requires ${RECIPES_PACKAGE} ${range}, but ${RECIPES_PACKAGE} ${running} is running. ${fix(pkg)}`,
   );
 }
 
 function describe(pkg: ResolvedRecipePackage): string {
-  const copy = pkg.source === "recipe" ? "resolved from the Recipe" : "installed alongside Recipes";
+  const copy =
+    pkg.source === "recipe"
+      ? "resolved from the Recipe"
+      : "installed alongside Recipes";
   return `${pkg.name}@${pkg.version} (${copy}, ${pkg.packageDir})`;
 }
 
@@ -162,12 +194,23 @@ export interface RecipeModuleApi {
  * host implements. A module without one predates the contract version and
  * imports Recipes itself, so `assertRecipesCompatible` covers it.
  */
-export function assertModuleApi(pkg: ResolvedRecipePackage, imported: unknown, api: RecipeModuleApi, running: string = recipesVersion()): void {
-  const module = imported && typeof imported === "object" && "default" in imported ? (imported as { default: unknown }).default : imported;
-  const declared = module && typeof module === "object" ? (module as { apiVersion?: unknown }).apiVersion : undefined;
+function assertModuleApi(
+  pkg: ResolvedRecipePackage,
+  imported: unknown,
+  api: RecipeModuleApi,
+  running: string = recipesVersion(),
+): void {
+  const module =
+    imported && typeof imported === "object" && "default" in imported
+      ? (imported as { default: unknown }).default
+      : imported;
+  const declared =
+    module && typeof module === "object"
+      ? (module as { apiVersion?: unknown }).apiVersion
+      : undefined;
   if (declared === undefined || declared === api.version) return;
   throw new Error(
-    `${describe(pkg)} implements ${api.name} API ${String(declared)}, but ${RECIPES_PACKAGE} ${running} implements ${api.name} API ${api.version}. ${fix(pkg)}`
+    `${describe(pkg)} implements ${api.name} API ${String(declared)}, but ${RECIPES_PACKAGE} ${running} implements ${api.name} API ${api.version}. ${fix(pkg)}`,
   );
 }
 
@@ -181,24 +224,30 @@ export function assertModuleApi(pkg: ResolvedRecipePackage, imported: unknown, a
 export async function loadRecipePackageModule(
   recipeDir: string,
   name: string,
-  options: { what: string; api: RecipeModuleApi; hostDir?: string }
+  options: { what: string; api: RecipeModuleApi; hostDir?: string },
 ): Promise<unknown> {
   const resolved = resolveRecipePackage(recipeDir, name, options.hostDir);
   if (!resolved) {
     throw new Error(
       isCompanionPackage(name)
         ? `${options.what} requires ${name}: add it to the Recipe dependencies, or reinstall Recipes, which installs it alongside itself (\`introspection upgrade\`)`
-        : `${options.what} requires ${name} in the Recipe dependencies`
+        : `${options.what} requires ${name} in the Recipe dependencies`,
     );
   }
   assertRecipesCompatible(resolved);
   const entry = packageEntry(resolved.packageDir);
-  if (!entry) throw new Error(`${options.what}: ${name} at ${resolved.packageDir} has no entry point`);
+  if (!entry)
+    throw new Error(
+      `${options.what}: ${name} at ${resolved.packageDir} has no entry point`,
+    );
   let imported: unknown;
   try {
     imported = await loadRecipeModule(recipeDir, entry);
   } catch (error) {
-    throw new Error(`${options.what}: failed to load ${name} from ${resolved.packageDir}`, { cause: error });
+    throw new Error(
+      `${options.what}: failed to load ${name} from ${resolved.packageDir}`,
+      { cause: error },
+    );
   }
   assertModuleApi(resolved, imported, options.api);
   return imported;

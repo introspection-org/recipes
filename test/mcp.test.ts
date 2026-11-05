@@ -67,7 +67,7 @@ function recipeManifest(
     required?: boolean;
     include: string[];
     exclude?: string[];
-  }>
+  }>,
 ): RecipePackageManifest {
   return {
     name: "demo",
@@ -90,7 +90,7 @@ function recipeManifest(
 
 function writeLocalConfig(
   cwd: string,
-  servers: Array<Record<string, unknown>>
+  servers: Array<Record<string, unknown>>,
 ): string {
   const path = join(cwd, ".pi", "mcp.local.json");
   mkdirSync(join(cwd, ".pi"), { recursive: true });
@@ -100,7 +100,7 @@ function writeLocalConfig(
 
 function catalogLockPath(
   cwd: string,
-  server: McpSessionConfig["servers"][number]
+  server: McpSessionConfig["servers"][number],
 ): string {
   const fingerprint = createHash("sha256")
     .update(
@@ -109,17 +109,22 @@ function catalogLockPath(
         baseUrl: server.base_url,
         packageTools: server.package_tools,
         agentTools: server.agent_tools,
-      })
+      }),
     )
     .digest("hex")
     .slice(0, 20);
-  return join(cwd, ".pi", "mcp-catalogs", `${server.id}-${fingerprint}.json.lock`);
+  return join(
+    cwd,
+    ".pi",
+    "mcp-catalogs",
+    `${server.id}-${fingerprint}.json.lock`,
+  );
 }
 
 function runMcpCli(
   args: string[],
   env: Record<string, string>,
-  stdin?: string
+  stdin?: string,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(
@@ -128,7 +133,7 @@ function runMcpCli(
       {
         env: { ...process.env, ...env },
         stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-      }
+      },
     );
     let stdout = "";
     let stderr = "";
@@ -143,7 +148,7 @@ function runMcpShim(
   shimPath: string,
   args: string[],
   env: Record<string, string>,
-  stdin?: string
+  stdin?: string,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(shimPath, args, {
@@ -164,7 +169,7 @@ function interruptNativeMcp(
   args: string[],
   env: Record<string, string>,
   stdin: string,
-  afterMs = 100
+  afterMs = 100,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(clientPath, args, {
@@ -181,7 +186,9 @@ function interruptNativeMcp(
   });
 }
 
-function startStubMcpServer(options: { failListAttempts?: number } = {}): Promise<{
+function startStubMcpServer(
+  options: { failListAttempts?: number } = {},
+): Promise<{
   server: Server;
   url: string;
   stats: { initialize: number; list: number; call: number };
@@ -226,7 +233,7 @@ function startStubMcpServer(options: { failListAttempts?: number } = {}): Promis
               capabilities: { tools: {} },
               serverInfo: { name: "stub", version: "1.0.0" },
             },
-          })
+          }),
         );
         return;
       }
@@ -296,7 +303,7 @@ function startStubMcpServer(options: { failListAttempts?: number } = {}): Promis
                   },
                 ],
               },
-            })
+            }),
           );
         }, 100);
         return;
@@ -309,7 +316,7 @@ function startStubMcpServer(options: { failListAttempts?: number } = {}): Promis
               jsonrpc: "2.0",
               id: message.id,
               error: { code: -32001, message: "Unauthorized" },
-            })
+            }),
           );
           return;
         }
@@ -328,13 +335,13 @@ function startStubMcpServer(options: { failListAttempts?: number } = {}): Promis
             jsonrpc: "2.0",
             id: message.id,
             result,
-          })
+          }),
         );
         return;
       }
-      res.writeHead(200, headers).end(
-        JSON.stringify({ jsonrpc: "2.0", id: message.id, result: {} })
-      );
+      res
+        .writeHead(200, headers)
+        .end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: {} }));
     });
   });
   return new Promise((resolve) => {
@@ -366,7 +373,7 @@ describe("static MCP session materialization", () => {
         stopMcpDaemon({
           PI_RECIPES_MCP_DAEMON_SOCKET: socketPath,
           PI_RECIPES_MCP_DAEMON_TOKEN: "token",
-        })
+        }),
       ).resolves.toBeUndefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -417,20 +424,25 @@ describe("static MCP session materialization", () => {
       expect(session.servers[0]?.catalog).toBeUndefined();
       expect(session.servers[0]?.binding).toBeUndefined();
       expect(mcpSessionAllowsTool(session.servers[0]!, "search_profiles")).toBe(
-        true
+        true,
       );
-      expect(mcpSessionAllowsTool(session.servers[0]!, "other_tool")).toBe(false);
-      const serializedSession = readFileSync(defaultMcpSessionPath(cwd), "utf8");
+      expect(mcpSessionAllowsTool(session.servers[0]!, "other_tool")).toBe(
+        false,
+      );
+      const serializedSession = readFileSync(
+        defaultMcpSessionPath(cwd),
+        "utf8",
+      );
       const serializedTransport = readFileSync(
         defaultMcporterConfigPath(cwd),
-        "utf8"
+        "utf8",
       );
       expect(serializedSession).not.toContain("secret-value");
       expect(serializedTransport).not.toContain("secret-value");
       expect(serializedTransport).toContain("${SESSION_TOKEN}");
-      expect(JSON.parse(serializedTransport).mcpServers.nextplay.httpFetch).toBe(
-        "default"
-      );
+      expect(
+        JSON.parse(serializedTransport).mcpServers.nextplay.httpFetch,
+      ).toBe("default");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -469,14 +481,14 @@ describe("static MCP session materialization", () => {
       });
 
       expect(
-        session.servers.map((server) => [server.id, server.binding])
+        session.servers.map((server) => [server.id, server.binding]),
       ).toEqual([
         ["attio", "recipe"],
         ["notion", undefined],
       ]);
       expect(
         JSON.parse(readFileSync(defaultMcpSessionPath(cwd), "utf8")).servers[0]
-          .binding
+          .binding,
       ).toBe("recipe");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -495,10 +507,8 @@ describe("static MCP session materialization", () => {
           manifest: recipeManifest(recipeDir, [
             { id: "required", required: true, include: ["*"] },
           ]),
-          agentMcp: [
-            { serverId: "required", tools: { include: ["*"] } },
-          ],
-        })
+          agentMcp: [{ serverId: "required", tools: { include: ["*"] } }],
+        }),
       ).rejects.toThrow("Required MCP server binding(s) missing: required");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -521,7 +531,12 @@ describe("static MCP session materialization", () => {
       };
 
       // The variables alone bind nothing, so the message must not say they do.
-      const message = await materializeMcpSession({ cwd, env, manifest, agentMcp })
+      const message = await materializeMcpSession({
+        cwd,
+        env,
+        manifest,
+        agentMcp,
+      })
         .then(() => "")
         .catch((error: unknown) => (error as Error).message);
       expect(message).toContain("Setting the variables alone does not bind");
@@ -529,10 +544,15 @@ describe("static MCP session materialization", () => {
       // The entry the message prints, written to .pi/mcp.local.json with the
       // same variables exported, binds the server.
       const entry = JSON.parse(
-        message.split("\n").find((line) => line.trim().startsWith("{"))!
+        message.split("\n").find((line) => line.trim().startsWith("{"))!,
       ) as { servers: Array<Record<string, unknown>> };
       writeLocalConfig(cwd, entry.servers);
-      const session = await materializeMcpSession({ cwd, env, manifest, agentMcp });
+      const session = await materializeMcpSession({
+        cwd,
+        env,
+        manifest,
+        agentMcp,
+      });
       expect(session.servers.map((server) => server.id)).toEqual(["linear"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -549,7 +569,7 @@ describe("static MCP session materialization", () => {
       expect(env.PI_RECIPES_MCP_SESSION).toBeUndefined();
       expect(() => readFileSync(defaultMcpSessionPath(root))).toThrow();
       expect(
-        JSON.parse(readFileSync(defaultMcporterConfigPath(root), "utf8"))
+        JSON.parse(readFileSync(defaultMcporterConfigPath(root), "utf8")),
       ).toEqual({ imports: [], mcpServers: {} });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -602,9 +622,10 @@ describe("static MCP session materialization", () => {
 
   it("resolves the native client from the installed package", () => {
     const packageEntrypoint = fileURLToPath(
-      import.meta.resolve("@introspection-ai/recipes")
+      import.meta.resolve("@introspection-ai/recipes"),
     );
-    const executable = process.platform === "win32" ? "mcp-client.exe" : "mcp-client";
+    const executable =
+      process.platform === "win32" ? "mcp-client.exe" : "mcp-client";
 
     expect(nativeMcpClientPath()).toBe(
       join(
@@ -613,8 +634,8 @@ describe("static MCP session materialization", () => {
         "vendor",
         "mcp-client",
         `${process.platform}-${process.arch}`,
-        executable
-      )
+        executable,
+      ),
     );
   });
 });
@@ -661,13 +682,15 @@ describe("lazy MCP CLI discovery", () => {
       });
       await preloadMcpCatalogs({ env });
       const cliEnv = Object.fromEntries(
-        Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+        Object.entries(env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
       );
 
       const plain = await runMcpShim(
         shim.shimPath,
         ["call", "stub.lookup_profile", "id=22688", "limit=5"],
-        cliEnv
+        cliEnv,
       );
       expect(plain).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(plain.stdout)).toMatchObject({
@@ -678,7 +701,7 @@ describe("lazy MCP CLI discovery", () => {
       const quoted = await runMcpShim(
         shim.shimPath,
         ["call", "stub.lookup_profile", 'id="196921652"'],
-        cliEnv
+        cliEnv,
       );
       expect(quoted).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(quoted.stdout)).toMatchObject({
@@ -688,7 +711,7 @@ describe("lazy MCP CLI discovery", () => {
       const json = await runMcpShim(
         shim.shimPath,
         ["call", "stub.lookup_profile", "--json", '{"id":"22688","limit":5}'],
-        cliEnv
+        cliEnv,
       );
       expect(json).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(json.stdout)).toMatchObject({
@@ -699,7 +722,7 @@ describe("lazy MCP CLI discovery", () => {
       const textAsJson = await runMcpShim(
         shim.shimPath,
         ["call", "stub.text_only", "--output", "json"],
-        cliEnv
+        cliEnv,
       );
       expect(textAsJson).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(textAsJson.stdout)).toEqual({
@@ -714,19 +737,21 @@ describe("lazy MCP CLI discovery", () => {
         [
           "const r = await Promise.allSettled([tools.stub.text_only({})]);",
           "console.log(String(r[0].reason));",
-        ].join("\n")
+        ].join("\n"),
       );
       expect(textInRun.code).toBe(0);
-      expect(textInRun.stdout).toContain("stub.text_only returned text, not JSON: plain output");
+      expect(textInRun.stdout).toContain(
+        "stub.text_only returned text, not JSON: plain output",
+      );
 
       const auth = await runMcpShim(
         shim.shimPath,
         ["call", "stub.requires_auth", "--timeout", "1000"],
-        cliEnv
+        cliEnv,
       );
       expect(auth).toMatchObject({ code: 1, stdout: "" });
       expect(auth.stderr).toContain(
-        "Ask the user to authenticate this MCP connection outside the agent session"
+        "Ask the user to authenticate this MCP connection outside the agent session",
       );
       expect(auth.stderr).not.toContain("mcporter auth");
     } finally {
@@ -769,7 +794,9 @@ describe("lazy MCP CLI discovery", () => {
         ],
       });
       const cliEnv = Object.fromEntries(
-        Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+        Object.entries(env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
       );
       const preload = preloadMcpCatalogs({ env });
       for (
@@ -780,7 +807,11 @@ describe("lazy MCP CLI discovery", () => {
         await delay(20);
       }
       expect(existsSync(env.PI_RECIPES_MCP_DAEMON_SOCKET!)).toBe(true);
-      for (let attempt = 0; attempt < 100 && stub.stats.list === 0; attempt += 1) {
+      for (
+        let attempt = 0;
+        attempt < 100 && stub.stats.list === 0;
+        attempt += 1
+      ) {
         await delay(10);
       }
       expect(stub.stats.list).toBeGreaterThanOrEqual(1);
@@ -794,14 +825,14 @@ describe("lazy MCP CLI discovery", () => {
             "const result = await tools.stub.search_profiles({ query: 'must-not-run' });",
             "console.log(JSON.stringify(result));",
           ].join("\n"),
-          50
+          50,
         );
         expect(interruptedDuringPreload.code).toBe(130);
       }
       const racedList = await runMcpShim(
         shim.shimPath,
         ["list", "stub.search_profiles", "--schema"],
-        cliEnv
+        cliEnv,
       );
       await preload;
       expect(racedList).toMatchObject({ code: 0, stderr: "" });
@@ -814,25 +845,29 @@ describe("lazy MCP CLI discovery", () => {
         runMcpShim(
           shim.shimPath,
           ["call", "stub.search_profiles", "--json", '{"query":"engineer"}'],
-          cliEnv
+          cliEnv,
         ),
         runMcpShim(
           shim.shimPath,
           ["call", "stub.search_profiles", "--json", '{"query":"architect"}'],
-          cliEnv
+          cliEnv,
         ),
       ]);
       expect(left).toMatchObject({ code: 0, stderr: "" });
       expect(right).toMatchObject({ code: 0, stderr: "" });
-      expect(JSON.parse(left.stdout)).toMatchObject({ arguments: { query: "engineer" } });
-      expect(JSON.parse(right.stdout)).toMatchObject({ arguments: { query: "architect" } });
+      expect(JSON.parse(left.stdout)).toMatchObject({
+        arguments: { query: "engineer" },
+      });
+      expect(JSON.parse(right.stdout)).toMatchObject({
+        arguments: { query: "architect" },
+      });
       expect(stub.stats.initialize).toBe(2);
       expect(stub.stats.call).toBe(2);
 
       const later = await runMcpShim(
         shim.shimPath,
         ["call", "stub.search_profiles", "query=designer"],
-        cliEnv
+        cliEnv,
       );
       expect(later).toMatchObject({ code: 0, stderr: "" });
       expect(stub.stats.initialize).toBe(2);
@@ -843,7 +878,7 @@ describe("lazy MCP CLI discovery", () => {
         const warmed = await runMcpShim(
           shim.shimPath,
           ["--start-daemon"],
-          cliEnv
+          cliEnv,
         );
         expect(warmed).toMatchObject({ code: 0, stdout: "", stderr: "" });
 
@@ -855,7 +890,7 @@ describe("lazy MCP CLI discovery", () => {
           [
             "const result = await tools.stub.search_profiles({ query: 'recovered' });",
             "console.log(JSON.stringify(result));",
-          ].join("\n")
+          ].join("\n"),
         );
         expect(recovered).toMatchObject({ code: 0, stderr: "" });
         expect(JSON.parse(recovered.stdout)).toMatchObject({
@@ -867,36 +902,36 @@ describe("lazy MCP CLI discovery", () => {
       const oversized = await runMcpShim(
         shim.shimPath,
         ["call", "stub.search_profiles", `query=${"x".repeat(2_000)}`],
-        cliEnv
+        cliEnv,
       );
       expect(oversized.code).toBe(1);
       expect(oversized.stdout).toBe("");
-      expect(oversized.stderr).toContain("exceeding PI_RECIPES_MCP_MAX_OUTPUT_BYTES=1024");
+      expect(oversized.stderr).toContain(
+        "exceeding PI_RECIPES_MCP_MAX_OUTPUT_BYTES=1024",
+      );
       expect(stub.stats.call).toBe(nativeClient ? 5 : 4);
 
       const search = await runMcpShim(
         shim.shimPath,
         ["search", "candidate"],
-        cliEnv
+        cliEnv,
       );
       expect(search).toMatchObject({ code: 0, stderr: "" });
       expect(search.stdout).toContain("stub.search_profiles");
       // The match carries its contract, so no schema lookup precedes the call.
       expect(search.stdout).toMatch(/\ninput\n {2}.*query/);
-      expect(search.stdout).toContain("\ncall\n  mcp call stub.search_profiles");
+      expect(search.stdout).toContain(
+        "\ncall\n  mcp call stub.search_profiles",
+      );
       const serverSchema = await runMcpShim(
         shim.shimPath,
         ["list", "stub", "--schema"],
-        cliEnv
+        cliEnv,
       );
       expect(serverSchema).toMatchObject({ code: 0, stderr: "" });
       expect(serverSchema.stdout).toMatch(/^stub\.search_profiles\n/);
       expect(serverSchema.stdout).toContain("\ninput\n");
-      const list = await runMcpShim(
-        shim.shimPath,
-        ["list", "stub"],
-        cliEnv
-      );
+      const list = await runMcpShim(shim.shimPath, ["list", "stub"], cliEnv);
       expect(list).toMatchObject({ code: 0, stderr: "" });
       expect(list.stdout).toContain("stub.search_profiles(query: string)");
       expect(stub.stats.initialize).toBe(nativeClient ? 3 : 2);
@@ -909,10 +944,12 @@ describe("lazy MCP CLI discovery", () => {
         [
           "const result = await tools.stub.search_profiles({ query: 'principal' });",
           "console.log(JSON.stringify(result));",
-        ].join("\n")
+        ].join("\n"),
       );
       expect(run).toMatchObject({ code: 0, stderr: "" });
-      expect(JSON.parse(run.stdout)).toMatchObject({ arguments: { query: "principal" } });
+      expect(JSON.parse(run.stdout)).toMatchObject({
+        arguments: { query: "principal" },
+      });
       expect(stub.stats.initialize).toBe(nativeClient ? 3 : 2);
       expect(stub.stats.call).toBe(nativeClient ? 6 : 5);
 
@@ -921,7 +958,7 @@ describe("lazy MCP CLI discovery", () => {
           nativeClient,
           ["run"],
           cliEnv,
-          "while (true) {}"
+          "while (true) {}",
         );
         expect(interrupted.code).toBe(130);
       }
@@ -930,14 +967,14 @@ describe("lazy MCP CLI discovery", () => {
         shim.shimPath,
         ["run"],
         cliEnv,
-        "while (true) {}"
+        "while (true) {}",
       );
       expect(busy.code).not.toBe(0);
 
       const afterBusyLoop = await runMcpShim(
         shim.shimPath,
         ["call", "stub.search_profiles", "query=survivor"],
-        cliEnv
+        cliEnv,
       );
       expect(afterBusyLoop).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(afterBusyLoop.stdout)).toMatchObject({
@@ -996,7 +1033,7 @@ describe("lazy MCP CLI discovery", () => {
 
       const call = await runMcpCli(
         ["call", "stub.search_profiles", "query=engineer"],
-        cliEnv
+        cliEnv,
       );
       expect(call.code).toBe(0);
       expect(JSON.parse(call.stdout)).toEqual({
@@ -1012,7 +1049,7 @@ describe("lazy MCP CLI discovery", () => {
         [
           "const result = await tools.stub.search_profiles({ query: 'architect' });",
           "console.log(JSON.stringify(result));",
-        ].join("\n")
+        ].join("\n"),
       );
       expect(run).toMatchObject({ code: 0, stderr: "" });
       expect(JSON.parse(run.stdout)).toEqual({
@@ -1023,13 +1060,13 @@ describe("lazy MCP CLI discovery", () => {
       expect(stub.stats.call).toBe(2);
 
       const persistedSession = JSON.parse(
-        readFileSync(defaultMcpSessionPath(cwd), "utf8")
+        readFileSync(defaultMcpSessionPath(cwd), "utf8"),
       ) as McpSessionConfig;
       const lock = catalogLockPath(cwd, persistedSession.servers[0]!);
       mkdirSync(join(cwd, ".pi", "mcp-catalogs"), { recursive: true });
       writeFileSync(
         lock,
-        `${JSON.stringify({ pid: 2_147_483_647, createdAt: Date.now() })}\n`
+        `${JSON.stringify({ pid: 2_147_483_647, createdAt: Date.now() })}\n`,
       );
 
       const first = await runMcpCli(["search", "candidate"], cliEnv);
@@ -1045,12 +1082,12 @@ describe("lazy MCP CLI discovery", () => {
 
       const cacheDir = join(cwd, ".pi", "mcp-catalogs");
       const cacheFiles = readdirSync(cacheDir).filter((name) =>
-        name.endsWith(".json")
+        name.endsWith(".json"),
       );
       expect(cacheFiles).toHaveLength(1);
-      expect(readFileSync(join(cacheDir, cacheFiles[0]!), "utf8")).not.toContain(
-        "test-token"
-      );
+      expect(
+        readFileSync(join(cacheDir, cacheFiles[0]!), "utf8"),
+      ).not.toContain("test-token");
     } finally {
       stub.server.close();
       rmSync(root, { recursive: true, force: true });
@@ -1093,18 +1130,18 @@ describe("lazy MCP CLI discovery", () => {
         STUB_TOKEN: "test-token",
       };
       const persistedSession = JSON.parse(
-        readFileSync(defaultMcpSessionPath(cwd), "utf8")
+        readFileSync(defaultMcpSessionPath(cwd), "utf8"),
       ) as McpSessionConfig;
       const lock = catalogLockPath(cwd, persistedSession.servers[0]!);
       mkdirSync(join(cwd, ".pi", "mcp-catalogs"), { recursive: true });
       writeFileSync(
         lock,
-        `${JSON.stringify({ pid: process.pid, createdAt: Date.now() })}\n`
+        `${JSON.stringify({ pid: process.pid, createdAt: Date.now() })}\n`,
       );
       const waitStartedAt = Date.now();
       const timedOut = await runMcpCli(
         ["list", "stub", "--timeout", "100"],
-        cliEnv
+        cliEnv,
       );
       expect(timedOut.code).toBe(1);
       expect(Date.now() - waitStartedAt).toBeLessThan(1_000);
@@ -1176,15 +1213,19 @@ describe("lazy MCP CLI discovery", () => {
         timeoutMs: 5_000,
       });
       expect(Date.now() - startedAt).toBeLessThan(1_500);
-      expect(catalogs.find((server) => server.id === "stub")?.error).toBeFalsy();
-      expect(catalogs.find((server) => server.id === "offline")?.error).toBeTruthy();
+      expect(
+        catalogs.find((server) => server.id === "stub")?.error,
+      ).toBeFalsy();
+      expect(
+        catalogs.find((server) => server.id === "offline")?.error,
+      ).toBeTruthy();
       const listAttempts = stub.stats.list;
 
       const result = await callMcpDaemonTool(
         "stub",
         "search_profiles",
         { query: "Ada" },
-        { env, timeoutMs: 1_000 }
+        { env, timeoutMs: 1_000 },
       );
 
       expect(result).toEqual(
@@ -1193,7 +1234,7 @@ describe("lazy MCP CLI discovery", () => {
             tool: "search_profiles",
             arguments: { query: "Ada" },
           },
-        })
+        }),
       );
       expect(stub.stats.list).toBe(listAttempts);
     } finally {
@@ -1230,10 +1271,10 @@ describe("MCP CLI helpers", () => {
       ],
     };
     expect(searchMcpTools(session, "candidate")[0]?.ref).toBe(
-      "nextplay.search_profiles"
+      "nextplay.search_profiles",
     );
     expect(searchMcpTools(session, "query", { regex: true })[0]?.ref).toBe(
-      "nextplay.search_profiles"
+      "nextplay.search_profiles",
     );
   });
 
@@ -1254,7 +1295,7 @@ describe("MCP CLI helpers", () => {
           description: "Read a profile, then use delete_profile if needed.",
         },
         { name: "delete_profile", description: "Delete a profile." },
-      ])
+      ]),
     ).toEqual([
       {
         name: "get_profile",
@@ -1266,15 +1307,15 @@ describe("MCP CLI helpers", () => {
 
   it("keeps concise recovery diagnostics", () => {
     expect(describeUnknownRunServer("nxtplay", ["nextplay"])).toContain(
-      "Did you mean 'tools.nextplay'?"
+      "Did you mean 'tools.nextplay'?",
     );
     expect(
       describeUnavailableRunTool("nextplay", "search_profils", [
         "search_profiles",
-      ])
+      ]),
     ).toContain("Did you mean 'search_profiles'?");
-    expect(callJsonArgumentError(["nextplay.search_profiles", "--json"])).toContain(
-      "expects a JSON object"
-    );
+    expect(
+      callJsonArgumentError(["nextplay.search_profiles", "--json"]),
+    ).toContain("expects a JSON object");
   });
 });

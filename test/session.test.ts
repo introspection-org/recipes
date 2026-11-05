@@ -1,11 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createAssistantMessageEventStream,
   getModel,
   type AssistantMessage,
-  type AssistantMessageEvent,
 } from "@earendil-works/pi-ai/compat";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -13,9 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpBindingError } from "../src/mcp/index.js";
 import { registerChannelTools } from "../src/channels/index.js";
 import type { LoadMemoryIndexOptions } from "../src/memory.js";
-import {
-  resolveRecipe,
-} from "../src/recipe/resolve.js";
+import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
 import { createDelegatedRuns } from "../src/agents.js";
 import { createIsolatedChildSession } from "../src/child/session.js";
@@ -36,7 +32,7 @@ import {
 
 const detachTelemetry = vi.hoisted(() => vi.fn());
 const instrumentSession = vi.hoisted(() =>
-  vi.fn(() => ({ detach: detachTelemetry }))
+  vi.fn(() => ({ detach: detachTelemetry })),
 );
 
 vi.mock("@introspection-sdk/introspection-pi", async (importOriginal) => ({
@@ -48,7 +44,7 @@ vi.mock("@introspection-sdk/introspection-pi", async (importOriginal) => ({
 
 function assistantMessage(
   text: string,
-  stopReason: AssistantMessage["stopReason"] = "stop"
+  stopReason: AssistantMessage["stopReason"] = "stop",
 ): AssistantMessage {
   return {
     role: "assistant",
@@ -74,7 +70,11 @@ function scriptReply(handle: RecipeSessionHandle, text: string): void {
     const stream = createAssistantMessageEventStream();
     queueMicrotask(() => {
       stream.push({ type: "start", partial: assistantMessage("") });
-      stream.push({ type: "done", reason: "stop", message: assistantMessage(text) });
+      stream.push({
+        type: "done",
+        reason: "stop",
+        message: assistantMessage(text),
+      });
     });
     return stream;
   };
@@ -108,7 +108,7 @@ async function vercelAiGatewayCredentialStore(): Promise<InMemoryCredentialStore
 }
 
 async function providerCredentialStore(
-  provider: string
+  provider: string,
 ): Promise<InMemoryCredentialStore> {
   const store = new InMemoryCredentialStore();
   if (provider === "openai-codex") {
@@ -117,7 +117,7 @@ async function providerCredentialStore(
         "https://api.openai.com/auth": {
           chatgpt_account_id: "test-account",
         },
-      })
+      }),
     ).toString("base64url");
     await store.modify(provider, async () => ({
       type: "oauth",
@@ -141,7 +141,7 @@ async function providerCredentialStore(
 
 function nestedValue(
   value: Record<string, unknown>,
-  path: readonly string[]
+  path: readonly string[],
 ): unknown {
   let current: unknown = value;
   for (const key of path) {
@@ -162,9 +162,9 @@ async function captureSerializedPayload(handle: RecipeSessionHandle): Promise<{
     const previousResult = previousOnPayload
       ? await previousOnPayload(nextPayload, model)
       : undefined;
-    payload = (previousResult === undefined
-      ? nextPayload
-      : previousResult) as Record<string, unknown>;
+    payload = (
+      previousResult === undefined ? nextPayload : previousResult
+    ) as Record<string, unknown>;
     throw new Error("request payload captured");
   };
 
@@ -188,14 +188,22 @@ function deferred<T = void>() {
 /** Pi 0.86 folds the `systemPrompt` shorthand into the leading system message. */
 function leadingSystemText(context: { messages: readonly unknown[] }): string {
   const system = context.messages.find(
-    (message): message is { role: "system"; content: string | { text?: string }[]; sections?: Record<string, string | null> } =>
-      (message as { role?: string }).role === "system",
+    (
+      message,
+    ): message is {
+      role: "system";
+      content: string | { text?: string }[];
+      sections?: Record<string, string | null>;
+    } => (message as { role?: string }).role === "system",
   );
   if (!system) return "";
-  const content = typeof system.content === "string"
-    ? system.content
-    : system.content.map((part) => part.text ?? "").join("");
-  return [content, ...Object.values(system.sections ?? {})].filter(Boolean).join("\n");
+  const content =
+    typeof system.content === "string"
+      ? system.content
+      : system.content.map((part) => part.text ?? "").join("");
+  return [content, ...Object.values(system.sections ?? {})]
+    .filter(Boolean)
+    .join("\n");
 }
 
 describe("createAgentSession", () => {
@@ -218,10 +226,13 @@ describe("createAgentSession", () => {
   }
 
   async function open(
-    options: Omit<Partial<Parameters<typeof createAgentSession>[0]>, "recipe"> & {
+    options: Omit<
+      Partial<Parameters<typeof createAgentSession>[0]>,
+      "recipe"
+    > & {
       recipeDir: string;
       cwd: string;
-    }
+    },
   ): Promise<RecipeSessionHandle> {
     const { recipeDir, ...sessionOptions } = options;
     const handle = await createAgentSession({
@@ -246,22 +257,49 @@ describe("createAgentSession", () => {
 
   it("settles only after the required-channel-reply continuation, with a bounded failure", async () => {
     const { recipeDir, workspaceDir } = fixture({ tools: ["channels"] });
-    const handle = await open({ recipeDir, cwd: workspaceDir, extensionFactories: [
-      (pi) => registerChannelTools(pi, {
-        provider: "test",
-        capabilities: { react: false, edit: false, retract: false, read: false,
-          attach: false, fetchFile: false, documents: false, resolveAuthors: false, permalinks: false },
-        reply: async () => ({ ref: "message-1" }),
-      }, { target: { provider: "test", conversation: "C1" }, requireReply: true }),
-    ] });
+    const handle = await open({
+      recipeDir,
+      cwd: workspaceDir,
+      extensionFactories: [
+        (pi) =>
+          registerChannelTools(
+            pi,
+            {
+              provider: "test",
+              capabilities: {
+                react: false,
+                edit: false,
+                retract: false,
+                read: false,
+                attach: false,
+                fetchFile: false,
+                documents: false,
+                resolveAuthors: false,
+                permalinks: false,
+              },
+              reply: async () => ({ ref: "message-1" }),
+            },
+            {
+              target: { provider: "test", conversation: "C1" },
+              requireReply: true,
+            },
+          ),
+      ],
+    });
     scriptReply(handle, "Private answer without a tool call");
     const scripted = handle.session.agent.streamFunction;
     handle.session.agent.streamFunction = (model, context, options) => {
-      const users = context.messages.filter((message) => message.role === "user");
+      const users = context.messages.filter(
+        (message) => message.role === "user",
+      );
       expect(JSON.stringify(users[0])).toContain("hello");
       expect(JSON.stringify(users[0])).not.toContain("<channel_context>");
-      expect(leadingSystemText(context)).toContain('<channel_context>\n{"provider":"test","channel_id":"C1","conversation_scope":"conversation"}\n</channel_context>');
-      for (const reminder of users.filter((message) => JSON.stringify(message).includes("No successful final channel reply"))) {
+      expect(leadingSystemText(context)).toContain(
+        '<channel_context>\n{"provider":"test","channel_id":"C1","conversation_scope":"conversation"}\n</channel_context>',
+      );
+      for (const reminder of users.filter((message) =>
+        JSON.stringify(message).includes("No successful final channel reply"),
+      )) {
         expect(JSON.stringify(reminder)).toContain("<channel_context>");
         expect(JSON.stringify(reminder)).toContain("C1");
       }
@@ -269,48 +307,118 @@ describe("createAgentSession", () => {
     };
     const events: string[] = [];
     const unsubscribe = handle.session.subscribe((event) => {
-      if (event.type === "agent_end" || event.type === "agent_settled") events.push(event.type);
+      if (event.type === "agent_end" || event.type === "agent_settled")
+        events.push(event.type);
     });
     try {
       await handle.session.prompt("hello");
       expect(events).toEqual(["agent_end", "agent_end", "agent_settled"]);
-      expect(handle.session.messages.filter((message) => message.role === "custom" && message.customType === "channel-delivery-failed")).toHaveLength(1);
+      expect(
+        handle.session.messages.filter(
+          (message) =>
+            message.role === "custom" &&
+            message.customType === "channel-delivery-failed",
+        ),
+      ).toHaveLength(1);
       // A new inbound prompt gets its own single corrective attempt.
       await handle.session.prompt("another question");
-      expect(events).toEqual(["agent_end", "agent_end", "agent_settled", "agent_end", "agent_end", "agent_settled"]);
-    } finally { unsubscribe(); }
+      expect(events).toEqual([
+        "agent_end",
+        "agent_end",
+        "agent_settled",
+        "agent_end",
+        "agent_end",
+        "agent_settled",
+      ]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("delivers through the real channels tool during the corrective continuation", async () => {
     const { recipeDir, workspaceDir } = fixture({ tools: ["channels"] });
     const reply = vi.fn(async () => ({ ref: "message-1" }));
-    const handle = await open({ recipeDir, cwd: workspaceDir, extensionFactories: [
-      (pi) => registerChannelTools(pi, {
-        provider: "test",
-        capabilities: { react: false, edit: false, retract: false, read: false,
-          attach: false, fetchFile: false, documents: false, resolveAuthors: false, permalinks: false },
-        reply,
-      }, { target: { provider: "test", conversation: "C1" }, requireReply: true }),
-    ] });
+    const handle = await open({
+      recipeDir,
+      cwd: workspaceDir,
+      extensionFactories: [
+        (pi) =>
+          registerChannelTools(
+            pi,
+            {
+              provider: "test",
+              capabilities: {
+                react: false,
+                edit: false,
+                retract: false,
+                read: false,
+                attach: false,
+                fetchFile: false,
+                documents: false,
+                resolveAuthors: false,
+                permalinks: false,
+              },
+              reply,
+            },
+            {
+              target: { provider: "test", conversation: "C1" },
+              requireReply: true,
+            },
+          ),
+      ],
+    });
     let calls = 0;
     handle.session.agent.streamFunction = () => {
       const stream = createAssistantMessageEventStream();
       const message = assistantMessage("Private answer");
       if (++calls === 2) {
-        message.content = [{ type: "toolCall", id: "reply-1", name: "channels", arguments: { command: "reply", text: "Delivered answer", final: true } }];
+        message.content = [
+          {
+            type: "toolCall",
+            id: "reply-1",
+            name: "channels",
+            arguments: {
+              command: "reply",
+              text: "Delivered answer",
+              final: true,
+            },
+          },
+        ];
         message.stopReason = "toolUse";
       }
       queueMicrotask(() => {
         stream.push({ type: "start", partial: assistantMessage("") });
-        stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+        stream.push({
+          type: "done",
+          reason: message.stopReason as "stop" | "toolUse",
+          message,
+        });
       });
       return stream;
     };
     await handle.session.prompt("hello");
     expect(calls).toBe(3);
-    expect(reply, JSON.stringify(handle.session.messages.filter((message) => message.role === "toolResult"))).toHaveBeenCalledOnce();
-    expect(reply).toHaveBeenCalledWith(expect.objectContaining({ target: { provider: "test", conversation: "C1" } }), { text: "Delivered answer" });
-    expect(handle.session.messages.some((message) => message.role === "custom" && message.customType === "channel-delivery-failed")).toBe(false);
+    expect(
+      reply,
+      JSON.stringify(
+        handle.session.messages.filter(
+          (message) => message.role === "toolResult",
+        ),
+      ),
+    ).toHaveBeenCalledOnce();
+    expect(reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { provider: "test", conversation: "C1" },
+      }),
+      { text: "Delivered answer" },
+    );
+    expect(
+      handle.session.messages.some(
+        (message) =>
+          message.role === "custom" &&
+          message.customType === "channel-delivery-failed",
+      ),
+    ).toBe(false);
   });
 
   it("loads memory before the host transforms the resolved prompt", async () => {
@@ -319,7 +427,7 @@ describe("createAgentSession", () => {
     mkdirSync(memoriesDir);
     writeFileSync(
       join(memoriesDir, "MEMORY.md"),
-      "- [Testing preferences](testing.md)"
+      "- [Testing preferences](testing.md)",
     );
     let transformed = "";
 
@@ -389,9 +497,7 @@ describe("createAgentSession", () => {
     const handle = await open({ recipeDir, cwd: workspaceDir });
 
     expect(handle.session.getActiveToolNames()).toEqual(
-      expect.arrayContaining([
-        "channels",
-      ])
+      expect.arrayContaining(["channels"]),
     );
     expect(handle.session.getActiveToolNames()).not.toContain("tool_search");
   });
@@ -407,7 +513,7 @@ describe("createAgentSession", () => {
     installSlackRecipeConnector(recipeDir);
 
     await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
-      /declares unavailable tool\(s\): channel_delete_workspace/
+      /declares unavailable tool\(s\): channel_delete_workspace/,
     );
   });
 
@@ -438,7 +544,7 @@ describe("createAgentSession", () => {
         "  images:",
         "    auto_resize: false",
         "    block_images: true",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const handle = await open({ recipeDir, cwd: workspaceDir });
@@ -507,15 +613,11 @@ describe("createAgentSession", () => {
         "          mode: strict",
         "tools: []",
         "subagents: [explorer]",
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "explorer.yaml"),
-      [
-        "name: explorer",
-        "from: agent",
-        "tools: []",
-      ].join("\n")
+      ["name: explorer", "from: agent", "tools: []"].join("\n"),
     );
     const recipe = resolveRecipe({ recipeDir });
     const credentials = await openRouterCredentialStore();
@@ -583,11 +685,11 @@ describe("createAgentSession", () => {
         "          mode: strict",
         "tools: []",
         "subagents: [explorer]",
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "explorer.yaml"),
-      ["name: explorer", "from: agent", "tools: []"].join("\n")
+      ["name: explorer", "from: agent", "tools: []"].join("\n"),
     );
     const recipe = resolveRecipe({ recipeDir });
     const credentials = await vercelAiGatewayCredentialStore();
@@ -676,7 +778,7 @@ describe("createAgentSession", () => {
           "  options:",
           "    max_tokens: 321",
           "tools: []",
-        ].join("\n")
+        ].join("\n"),
       );
       const handle = await createAgentSession({
         recipe: resolveRecipe({ recipeDir }),
@@ -689,7 +791,7 @@ describe("createAgentSession", () => {
 
       const captured = await captureSerializedPayload(handle);
       expect(nestedValue(captured.payload, maxTokensPath)).toBe(321);
-    }
+    },
   );
 
   it("serializes supported portable AI options through the OpenAI Codex adapter", async () => {
@@ -704,7 +806,7 @@ describe("createAgentSession", () => {
         "  options:",
         "    temperature: 0.4",
         "tools: []",
-      ].join("\n")
+      ].join("\n"),
     );
     const handle = await createAgentSession({
       recipe: resolveRecipe({ recipeDir }),
@@ -727,12 +829,12 @@ describe("createAgentSession", () => {
     mkdirSync(join(recipeDir, "extensions"), { recursive: true });
     writeFileSync(
       join(recipeDir, "extensions", "fail.ts"),
-      "export default () => { throw new Error('extension exploded'); };\n"
+      "export default () => { throw new Error('extension exploded'); };\n",
     );
 
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toThrow("extension exploded");
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
+      "extension exploded",
+    );
   });
 
   it("fails closed when an agent declares an unavailable tool", async () => {
@@ -740,10 +842,8 @@ describe("createAgentSession", () => {
       tools: ["missing_tool"],
     });
 
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toThrow(
-      'Recipe agent "agent" declares unavailable tool(s): missing_tool'
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
+      'Recipe agent "agent" declares unavailable tool(s): missing_tool',
     );
   });
 
@@ -753,7 +853,9 @@ describe("createAgentSession", () => {
       recipeDir: listed.recipeDir,
       cwd: listed.workspaceDir,
     });
-    expect(withTool.session.getActiveToolNames()).toContain("ask_user_question");
+    expect(withTool.session.getActiveToolNames()).toContain(
+      "ask_user_question",
+    );
     const definition = withTool.session
       .getAllTools()
       .find((tool) => tool.name === "ask_user_question");
@@ -765,7 +867,7 @@ describe("createAgentSession", () => {
       cwd: unlisted.workspaceDir,
     });
     expect(
-      withoutTool.session.getAllTools().map((tool) => tool.name)
+      withoutTool.session.getAllTools().map((tool) => tool.name),
     ).not.toContain("ask_user_question");
   });
 
@@ -792,7 +894,7 @@ describe("createAgentSession", () => {
       cwd: unlisted.workspaceDir,
     });
     expect(
-      withoutTool.session.getAllTools().map((tool) => tool.name)
+      withoutTool.session.getAllTools().map((tool) => tool.name),
     ).not.toContain("show_artifact");
   });
 
@@ -816,14 +918,15 @@ describe("createAgentSession", () => {
       cwd: paused.workspaceDir,
       env: { ...cleanEnv(), PI_INTERRUPT_RESUME: "1" },
     });
-    const pauseTool = pauseHandle.session.getToolDefinition("ask_user_question")!;
+    const pauseTool =
+      pauseHandle.session.getToolDefinition("ask_user_question")!;
     expect((pauseTool.parameters as any).properties.questions.maxItems).toBe(1);
     const pausedResult = await pauseTool.execute(
       "call-1",
       question as never,
       undefined,
       undefined,
-      noUi
+      noUi,
     );
     expect(pausedResult.content).toEqual([
       { type: "text", text: "Awaiting user response." },
@@ -866,7 +969,7 @@ describe("createAgentSession", () => {
         "    async execute() { return { content: [], details: {} }; }",
         "  });",
         "};",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const handle = await open({ recipeDir, cwd: workspaceDir });
@@ -875,7 +978,7 @@ describe("createAgentSession", () => {
     expect(
       handle.session
         .getAllTools()
-        .find((tool) => tool.name === "ask_user_question")?.description
+        .find((tool) => tool.name === "ask_user_question")?.description,
     ).toBe("The Recipe-owned question tool.");
   });
 
@@ -887,17 +990,13 @@ describe("createAgentSession", () => {
     mkdirSync(join(recipeDir, "extensions"), { recursive: true });
     writeFileSync(
       join(recipeDir, "extensions", "policy.ts"),
-      [
-        "export default (pi) => {",
-        '  pi.setActiveTools(["bash"]);',
-        "};",
-      ].join("\n")
+      ["export default (pi) => {", '  pi.setActiveTools(["bash"]);', "};"].join(
+        "\n",
+      ),
     );
 
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toThrow(
-      "Recipe extension attempted to activate undeclared tool(s): bash"
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
+      "Recipe extension attempted to activate undeclared tool(s): bash",
     );
   });
 
@@ -919,7 +1018,7 @@ describe("createAgentSession", () => {
         "    async execute() { return { content: [], details: {} }; }",
         "  });",
         "};",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const handle = await open({ recipeDir, cwd: workspaceDir });
@@ -943,12 +1042,12 @@ describe("createAgentSession", () => {
         "    async execute() { return { content: [], details: {} }; }",
         "  });",
         "};",
-      ].join("\n")
+      ].join("\n"),
     );
 
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toThrow("declares unavailable tool(s): ambient_tool");
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toThrow(
+      "declares unavailable tool(s): ambient_tool",
+    );
   });
 
   it("creates the exact Recipe definition already inspected by the host", async () => {
@@ -985,7 +1084,7 @@ describe("createAgentSession", () => {
     });
 
     expect(handle.session.model?.baseUrl).toBe(
-      "https://managed-gateway.example/v1"
+      "https://managed-gateway.example/v1",
     );
     expect(onDiagnostics).toHaveBeenCalledOnce();
   });
@@ -1008,7 +1107,7 @@ describe("createAgentSession", () => {
     handles.push(handle);
 
     expect(handle.session.model?.baseUrl).toBe(
-      "https://managed-gateway.example/v1"
+      "https://managed-gateway.example/v1",
     );
   });
 
@@ -1020,7 +1119,7 @@ describe("createAgentSession", () => {
     };
 
     await expect(
-      open({ recipeDir, cwd: workspaceDir, modelOverride })
+      open({ recipeDir, cwd: workspaceDir, modelOverride }),
     ).rejects.toBeInstanceOf(RecipeModelTransportError);
   });
 
@@ -1034,7 +1133,7 @@ describe("createAgentSession", () => {
         "  name: anthropic/gemini-2.5-flash",
         "tools: [read]",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
     const base = getModel("anthropic", "claude-sonnet-4-5");
     expect(base).toBeDefined();
@@ -1044,7 +1143,7 @@ describe("createAgentSession", () => {
       literal: Type.Optional(
         Type.Unknown({
           default: { additionalProperties: "kept" },
-        })
+        }),
       ),
     });
     const symbolMetadata = Symbol("schema-metadata");
@@ -1071,7 +1170,7 @@ describe("createAgentSession", () => {
     });
 
     const tool = handle.session.agent.state.tools.find(
-      (candidate) => candidate.name === "read"
+      (candidate) => candidate.name === "read",
     );
     expect(tool?.parameters).toEqual({
       type: "object",
@@ -1088,14 +1187,14 @@ describe("createAgentSession", () => {
       required: ["nested", "additionalProperties"],
     });
     expect(Object.getPrototypeOf(tool?.parameters)).toBe(
-      Object.getPrototypeOf(parameters)
+      Object.getPrototypeOf(parameters),
     );
     expect(
-      (tool?.parameters as Record<PropertyKey, unknown>)[symbolMetadata]
+      (tool?.parameters as Record<PropertyKey, unknown>)[symbolMetadata],
     ).toBe("preserved");
     expect(
       Object.getOwnPropertyDescriptor(tool?.parameters, symbolMetadata)
-        ?.enumerable
+        ?.enumerable,
     ).toBe(false);
   });
 
@@ -1117,7 +1216,7 @@ describe("createAgentSession", () => {
         recipe: resolveRecipe({ recipeDir }),
         cwd: workspaceDir,
         env: cleanEnv(),
-      })
+      }),
     ).rejects.toSatisfy((err: unknown) => {
       expect(err).toBeInstanceOf(RecipeCredentialError);
       expect((err as Error).message).toContain("ANTHROPIC_API_KEY");
@@ -1135,18 +1234,20 @@ describe("createAgentSession", () => {
         "  name: anthropic/not-a-model",
         "tools: [read]",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toBeInstanceOf(RecipeModelError);
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toBeInstanceOf(
+      RecipeModelError,
+    );
   });
 
   it("fails closed on an unbound required MCP server, naming it", async () => {
     const { recipeDir, workspaceDir } = fixture({
       manifestPi: {
         mcp: {
-          servers: [{ id: "linear", required: true, tools: { include: ["*"] } }],
+          servers: [
+            { id: "linear", required: true, tools: { include: ["*"] } },
+          ],
         },
       },
       agentExtras: [
@@ -1157,39 +1258,41 @@ describe("createAgentSession", () => {
         '      include: ["*"]',
       ],
     });
-    await expect(
-      open({ recipeDir, cwd: workspaceDir })
-    ).rejects.toSatisfy((err: unknown) => {
-      expect(err).toBeInstanceOf(McpBindingError);
-      expect((err as McpBindingError).servers).toEqual(["linear"]);
-      const message = (err as Error).message;
-      // The variables are only read through a local config entry, so the
-      // message shows that entry rather than offering the variables alone.
-      expect(message).toContain(".pi/mcp.local.json");
-      expect(message).toContain("PI_RECIPES_MCP_LOCAL_CONFIG");
-      expect(message).toContain(
-        JSON.stringify({
-          servers: [
-            {
-              id: "linear",
-              transport: "streamable_http",
-              url: "${LINEAR_MCP_URL}",
-              headers: { Authorization: "Bearer ${LINEAR_MCP_TOKEN}" },
-            },
-          ],
-        })
-      );
-      expect(message).toContain("export LINEAR_MCP_URL, LINEAR_MCP_TOKEN");
-      expect(message).not.toContain("or env:");
-      return true;
-    });
+    await expect(open({ recipeDir, cwd: workspaceDir })).rejects.toSatisfy(
+      (err: unknown) => {
+        expect(err).toBeInstanceOf(McpBindingError);
+        expect((err as McpBindingError).servers).toEqual(["linear"]);
+        const message = (err as Error).message;
+        // The variables are only read through a local config entry, so the
+        // message shows that entry rather than offering the variables alone.
+        expect(message).toContain(".pi/mcp.local.json");
+        expect(message).toContain("PI_RECIPES_MCP_LOCAL_CONFIG");
+        expect(message).toContain(
+          JSON.stringify({
+            servers: [
+              {
+                id: "linear",
+                transport: "streamable_http",
+                url: "${LINEAR_MCP_URL}",
+                headers: { Authorization: "Bearer ${LINEAR_MCP_TOKEN}" },
+              },
+            ],
+          }),
+        );
+        expect(message).toContain("export LINEAR_MCP_URL, LINEAR_MCP_TOKEN");
+        expect(message).not.toContain("or env:");
+        return true;
+      },
+    );
   });
 
   it("materializes inline MCP bindings", async () => {
     const { recipeDir, workspaceDir } = fixture({
       manifestPi: {
         mcp: {
-          servers: [{ id: "linear", required: true, tools: { include: ["*"] } }],
+          servers: [
+            { id: "linear", required: true, tools: { include: ["*"] } },
+          ],
         },
       },
       agentExtras: [
@@ -1276,7 +1379,7 @@ describe("createAgentSession", () => {
     const first = await open(options);
 
     await expect(open(options)).rejects.toBeInstanceOf(
-      RecipeMcpEnvironmentInUseError
+      RecipeMcpEnvironmentInUseError,
     );
     expect(env.PI_RECIPES_MCP_SESSION).not.toBe(hostSession);
 
@@ -1331,7 +1434,7 @@ describe("createAgentSession", () => {
         transformSystemPrompt: () => {
           throw new Error("prompt construction failed");
         },
-      })
+      }),
     ).rejects.toThrow("prompt construction failed");
     expect(env.PI_RECIPES_MCP_SESSION).toBe(hostSession);
     expect(env.MCPORTER_CONFIG).toBe(hostMcporter);
@@ -1419,7 +1522,7 @@ describe("createAgentSession", () => {
     expect(instrumentSession).toHaveBeenCalledOnce();
     // Without MCP tools there is no origin lookup to pass.
     expect(
-      (instrumentSession.mock.calls[0] as unknown[] | undefined)?.[1]
+      (instrumentSession.mock.calls[0] as unknown[] | undefined)?.[1],
     ).not.toHaveProperty("mcpTool");
     expect(instrumentSession).toHaveBeenCalledWith(
       handle.session,
@@ -1431,7 +1534,7 @@ describe("createAgentSession", () => {
           agentId: "conformance-fixture/agent",
           agentName: "agent",
         },
-      })
+      }),
     );
 
     await handle.dispose();
@@ -1474,8 +1577,7 @@ describe("in-process run controller", () => {
     const memoryOverride = vi.fn((current) => current);
     let scripted: RecipeSessionHandle | null = null;
     let childOptions:
-      | Parameters<typeof createAgentSessionInternal>[0]
-      | undefined;
+      Parameters<typeof createAgentSessionInternal>[0] | undefined;
     const tracer = {} as never;
     const onAgentRunEvent = vi.fn(() => {
       throw new Error("observer failed");
@@ -1527,7 +1629,7 @@ describe("in-process run controller", () => {
         parent_agent_run_id: "root",
         agent_name: "helper",
         depth: 1,
-      })
+      }),
     );
     expect(childOptions?.env).not.toBe(parentEnv);
     expect(childOptions?.env).toEqual(parentEnv);
@@ -1586,7 +1688,11 @@ describe("in-process run controller", () => {
           setTimeout(() => {
             live -= 1;
             stream.push({ type: "start", partial: assistantMessage("") });
-            stream.push({ type: "done", reason: "stop", message: assistantMessage("done") });
+            stream.push({
+              type: "done",
+              reason: "stop",
+              message: assistantMessage("done"),
+            });
           }, 50);
           return stream;
         };
@@ -1718,7 +1824,7 @@ describe("in-process run controller", () => {
     signal.abort(new Error("stop waiting"));
 
     await expect(
-      controller.wait(run.agent_run_id, signal.signal)
+      controller.wait(run.agent_run_id, signal.signal),
     ).rejects.toThrow("stop waiting");
     await controller.interrupt(run.agent_run_id);
     factoryGate.resolve();
@@ -1727,11 +1833,7 @@ describe("in-process run controller", () => {
   it("clears terminal output and tool state before a follow-up", async () => {
     const { recipeDir, workspaceDir } = fixture();
     let onEvent:
-      | ((event: {
-          type: string;
-          toolName?: string;
-        }) => void)
-      | undefined;
+      ((event: { type: string; toolName?: string }) => void) | undefined;
     const controller = createInProcessRunController({
       recipe: resolveRecipe({ recipeDir }),
       cwd: workspaceDir,
@@ -1775,9 +1877,13 @@ describe("nested delegation", () => {
   });
 
   /** agent -> [background, explorer]; background -> [explorer]. */
-  function fixture(delegation: Record<string, string[]> = { background: ["explorer"] }) {
+  function fixture(
+    delegation: Record<string, string[]> = { background: ["explorer"] },
+  ) {
     const created = writeFixtureRecipe({
-      subagents: [...new Set(["background", "explorer", ...Object.keys(delegation)])],
+      subagents: [
+        ...new Set(["background", "explorer", ...Object.keys(delegation)]),
+      ],
     });
     cleanups.push(created.cleanup);
     for (const [name, subagents] of Object.entries(delegation)) {
@@ -1790,7 +1896,7 @@ describe("nested delegation", () => {
           "tools: [read]",
           `subagents: [${subagents.join(", ")}]`,
           "",
-        ].join("\n")
+        ].join("\n"),
       );
     }
     return created;
@@ -1815,12 +1921,25 @@ describe("nested delegation", () => {
       const stream = createAssistantMessageEventStream();
       const last = context.messages.at(-1)!;
       let message: AssistantMessage;
-      if (last.role === "user" && !messageText(last).includes("<agent_run_completions>")) {
+      if (
+        last.role === "user" &&
+        !messageText(last).includes("<agent_run_completions>")
+      ) {
         turns.push("fan-out");
         message = assistantMessage("");
         message.content = [
-          { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A", label: "a" } },
-          { type: "toolCall", id: "start-b", name: "agent", arguments: { name: "explorer", prompt: "find B", label: "b" } },
+          {
+            type: "toolCall",
+            id: "start-a",
+            name: "agent",
+            arguments: { name: "explorer", prompt: "find A", label: "a" },
+          },
+          {
+            type: "toolCall",
+            id: "start-b",
+            name: "agent",
+            arguments: { name: "explorer", prompt: "find B", label: "b" },
+          },
         ];
         message.stopReason = "toolUse";
       } else if (last.role === "toolResult") {
@@ -1829,19 +1948,28 @@ describe("nested delegation", () => {
       } else {
         turns.push("notice");
         const notice = messageText(last);
-        const found = ["found A", "found B"].filter((text) => notice.includes(text));
+        const found = ["found A", "found B"].filter((text) =>
+          notice.includes(text),
+        );
         message = assistantMessage(`Final: ${found.join(" + ")}`);
       }
       queueMicrotask(() => {
         stream.push({ type: "start", partial: assistantMessage("") });
-        stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+        stream.push({
+          type: "done",
+          reason: message.stopReason as "stop" | "toolUse",
+          message,
+        });
       });
       return stream;
     };
   }
 
   /** A fake explorer whose reply waits for its gate (or its abort). */
-  function fakeExplorer(options: Options, gates: Map<string, ReturnType<typeof deferred<void>>>) {
+  function fakeExplorer(
+    options: Options,
+    gates: Map<string, ReturnType<typeof deferred<void>>>,
+  ) {
     const messages: unknown[] = [];
     let release: (() => void) | undefined;
     const handle = {
@@ -1870,7 +1998,7 @@ describe("nested delegation", () => {
     recipeDir: string,
     workspaceDir: string,
     extra: Partial<Parameters<typeof createInProcessRunController>[0]> = {},
-    background: typeof scriptBackground = scriptBackground
+    background: typeof scriptBackground = scriptBackground,
   ) {
     const options = new Map<string, Options>();
     const handles = new Map<string, RecipeSessionHandle>();
@@ -1905,7 +2033,10 @@ describe("nested delegation", () => {
   it("gives a child with subagents the agent tool and its children none", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const { controller, options, handles } = tree(recipeDir, workspaceDir);
-    const background = await controller.start({ name: "background", prompt: "plan" });
+    const background = await controller.start({
+      name: "background",
+      prompt: "plan",
+    });
     await vi.waitFor(() => expect(handles.get("background")).toBeDefined());
     const handle = handles.get("background")!;
     expect(handle.session.getActiveToolNames()).toContain("agent");
@@ -1927,7 +2058,9 @@ describe("nested delegation", () => {
     });
     try {
       expect(grandchild.session.getActiveToolNames()).not.toContain("agent");
-      expect(grandchild.session.getAllTools().map((tool) => tool.name)).not.toContain("agent");
+      expect(
+        grandchild.session.getAllTools().map((tool) => tool.name),
+      ).not.toContain("agent");
     } finally {
       await grandchild.dispose();
     }
@@ -1937,8 +2070,15 @@ describe("nested delegation", () => {
   it("finishes a child only after its parallel runs settle, with their results", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const onAgentRunEvent = vi.fn();
-    const { controller, gates, turns, options } = tree(recipeDir, workspaceDir, { onAgentRunEvent });
-    const background = await controller.start({ name: "background", prompt: "plan" });
+    const { controller, gates, turns, options } = tree(
+      recipeDir,
+      workspaceDir,
+      { onAgentRunEvent },
+    );
+    const background = await controller.start({
+      name: "background",
+      prompt: "plan",
+    });
 
     await vi.waitFor(() => expect(gates.size).toBe(2));
     await vi.waitFor(() => expect(turns).toEqual(["fan-out", "yield"]));
@@ -1946,7 +2086,7 @@ describe("nested delegation", () => {
 
     gates.get("find A")!.resolve(undefined);
     await vi.waitFor(() =>
-      expect(options.get("explorer")?.agentRun).toBeUndefined()
+      expect(options.get("explorer")?.agentRun).toBeUndefined(),
     );
     expect(controller.get(background.agent_run_id)?.status).toBe("running");
     gates.get("find B")!.resolve(undefined);
@@ -1963,14 +2103,14 @@ describe("nested delegation", () => {
         agent_name: "explorer",
         parent_agent_run_id: background.agent_run_id,
         depth: 2,
-      })
+      }),
     );
     expect(onAgentRunEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         agent_run_id: background.agent_run_id,
         parent_agent_run_id: "root",
         depth: 1,
-      })
+      }),
     );
     await controller.shutdown();
   });
@@ -1983,35 +2123,70 @@ describe("nested delegation", () => {
         const stream = createAssistantMessageEventStream();
         const last = context.messages.at(-1)!;
         let message = assistantMessage("");
-        const results = context.messages.filter((entry) => entry.role === "toolResult");
+        const results = context.messages.filter(
+          (entry) => entry.role === "toolResult",
+        );
         if (last.role === "user") {
-          turns.push(messageText(last).includes("<agent_run_completions>") ? "notice" : "fan-out");
+          turns.push(
+            messageText(last).includes("<agent_run_completions>")
+              ? "notice"
+              : "fan-out",
+          );
           message.content = [
-            { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A" } },
-            { type: "toolCall", id: "start-b", name: "agent", arguments: { name: "explorer", prompt: "find B" } },
+            {
+              type: "toolCall",
+              id: "start-a",
+              name: "agent",
+              arguments: { name: "explorer", prompt: "find A" },
+            },
+            {
+              type: "toolCall",
+              id: "start-b",
+              name: "agent",
+              arguments: { name: "explorer", prompt: "find B" },
+            },
           ];
           message.stopReason = "toolUse";
         } else if (results.length === 2) {
           turns.push("wait");
-          const ids = results.map((entry) => /\brun (agent-run-\S+)/.exec(messageText(entry))![1]);
+          const ids = results.map(
+            (entry) => /\brun (agent-run-\S+)/.exec(messageText(entry))![1],
+          );
           message.content = ids.map((id, index) => ({
-            type: "toolCall" as const, id: `wait-${index}`, name: "agent", arguments: { action: "wait", id },
+            type: "toolCall" as const,
+            id: `wait-${index}`,
+            name: "agent",
+            arguments: { action: "wait", id },
           }));
           message.stopReason = "toolUse";
         } else {
           turns.push("answer");
           const found = results.slice(2).map(messageText).join(" ");
-          message = assistantMessage(`Waited: ${["found A", "found B"].filter((text) => found.includes(text)).join(" + ")}`);
+          message = assistantMessage(
+            `Waited: ${["found A", "found B"].filter((text) => found.includes(text)).join(" + ")}`,
+          );
         }
         queueMicrotask(() => {
           stream.push({ type: "start", partial: assistantMessage("") });
-          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+          stream.push({
+            type: "done",
+            reason: message.stopReason as "stop" | "toolUse",
+            message,
+          });
         });
         return stream;
       };
     };
-    const { controller, gates, turns } = tree(recipeDir, workspaceDir, {}, waitInTurn);
-    const background = await controller.start({ name: "background", prompt: "plan" });
+    const { controller, gates, turns } = tree(
+      recipeDir,
+      workspaceDir,
+      {},
+      waitInTurn,
+    );
+    const background = await controller.start({
+      name: "background",
+      prompt: "plan",
+    });
     await vi.waitFor(() => expect(gates.size).toBe(2));
     for (const gate of gates.values()) gate.resolve(undefined);
 
@@ -2052,7 +2227,9 @@ describe("nested delegation", () => {
       for (const gate of gates.values()) gate.resolve(undefined);
       await settled;
       expect(turns).toEqual(["fan-out", "yield", "notice"]);
-      expect(messageText(child.session.messages.at(-1))).toBe("Final: found A + found B");
+      expect(messageText(child.session.messages.at(-1))).toBe(
+        "Final: found A + found B",
+      );
     } finally {
       await child.dispose();
     }
@@ -2063,11 +2240,18 @@ describe("nested delegation", () => {
     // The explorer runs on another provider than the background that starts it.
     writeFileSync(
       join(recipeDir, "agents", "explorer.yaml"),
-      ["name: explorer", "model:", "  name: openai/gpt-5.5", "tools: [read]", ""].join("\n")
+      [
+        "name: explorer",
+        "model:",
+        "  name: openai/gpt-5.5",
+        "tools: [read]",
+        "",
+      ].join("\n"),
     );
     const recipe = resolveRecipe({ recipeDir });
     const registry = {
-      find: (provider: string, id: string) => getModel(provider as never, id as never),
+      find: (provider: string, id: string) =>
+        getModel(provider as never, id as never),
       getApiKeyAndHeaders: async (model: { provider: string }) => ({
         ok: true,
         apiKey: `pi-managed-${model.provider}`,
@@ -2115,7 +2299,12 @@ describe("nested delegation", () => {
         if (last.role === "user" && !text.includes("<agent_run_completions>")) {
           turns.push("fan-out");
           message.content = [
-            { type: "toolCall", id: "start-a", name: "agent", arguments: { name: "explorer", prompt: "find A" } },
+            {
+              type: "toolCall",
+              id: "start-a",
+              name: "agent",
+              arguments: { name: "explorer", prompt: "find A" },
+            },
           ];
           message.stopReason = "toolUse";
         } else if (last.role === "toolResult") {
@@ -2125,22 +2314,41 @@ describe("nested delegation", () => {
           turns.push("resume");
           const id = /\brun (agent-run-\S+)/.exec(text)![1];
           message.content = [
-            { type: "toolCall", id: "more", name: "agent", arguments: { action: "message", id, message: "find C" } },
+            {
+              type: "toolCall",
+              id: "more",
+              name: "agent",
+              arguments: { action: "message", id, message: "find C" },
+            },
           ];
           message.stopReason = "toolUse";
         } else {
           turns.push("answer");
-          message = assistantMessage(text.includes("found C") ? "Final: found C" : "Final: nothing new");
+          message = assistantMessage(
+            text.includes("found C") ? "Final: found C" : "Final: nothing new",
+          );
         }
         queueMicrotask(() => {
           stream.push({ type: "start", partial: assistantMessage("") });
-          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+          stream.push({
+            type: "done",
+            reason: message.stopReason as "stop" | "toolUse",
+            message,
+          });
         });
         return stream;
       };
     };
-    const { controller, gates, turns } = tree(recipeDir, workspaceDir, {}, resume);
-    const background = await controller.start({ name: "background", prompt: "plan" });
+    const { controller, gates, turns } = tree(
+      recipeDir,
+      workspaceDir,
+      {},
+      resume,
+    );
+    const background = await controller.start({
+      name: "background",
+      prompt: "plan",
+    });
     await vi.waitFor(() => expect(gates.has("find A")).toBe(true));
     gates.get("find A")!.resolve(undefined);
     await vi.waitFor(() => expect(gates.has("find C")).toBe(true));
@@ -2156,8 +2364,14 @@ describe("nested delegation", () => {
   it("interrupts and closes a child's runs with the child", async () => {
     const { recipeDir, workspaceDir } = fixture();
     for (const action of ["interrupt", "close"] as const) {
-      const { controller, handles, gates, explorers, turns } = tree(recipeDir, workspaceDir);
-      const background = await controller.start({ name: "background", prompt: "plan" });
+      const { controller, handles, gates, explorers, turns } = tree(
+        recipeDir,
+        workspaceDir,
+      );
+      const background = await controller.start({
+        name: "background",
+        prompt: "plan",
+      });
       await vi.waitFor(() => expect(gates.size).toBe(2));
       await vi.waitFor(() => expect(turns).toEqual(["fan-out", "yield"]));
       const nested = handles.get("background")!.agentRuns;
@@ -2167,14 +2381,16 @@ describe("nested delegation", () => {
       expect(nested.list().map((run) => run.status)).toEqual(
         action === "interrupt"
           ? ["interrupted", "interrupted"]
-          : ["closed", "closed"]
+          : ["closed", "closed"],
       );
       for (const explorer of explorers) {
         expect(explorer.session.abort).toHaveBeenCalled();
         if (action === "close") expect(explorer.dispose).toHaveBeenCalled();
       }
       const settled = await controller.wait(background.agent_run_id);
-      expect(settled.status).toBe(action === "interrupt" ? "interrupted" : "closed");
+      expect(settled.status).toBe(
+        action === "interrupt" ? "interrupted" : "closed",
+      );
       expect(turns).toEqual(["fan-out", "yield"]);
       await controller.shutdown();
       expect(nested.list().every((run) => run.status === "closed")).toBe(true);
@@ -2209,10 +2425,12 @@ describe("nested delegation", () => {
     expect(settled.status).toBe("completed");
     expect(options[1]).toMatchObject({ agentName: "b", runController: null });
     expect(options[1]?.agentRun).toBeUndefined();
-    expect(handles[1]!.session.getAllTools().map((tool) => tool.name)).not.toContain("agent");
+    expect(
+      handles[1]!.session.getAllTools().map((tool) => tool.name),
+    ).not.toContain("agent");
     expect(handles[1]!.agentRuns.list()).toEqual([]);
     await expect(
-      handles[1]!.agentRuns.start({ name: "a", prompt: "again" })
+      handles[1]!.agentRuns.start({ name: "a", prompt: "again" }),
     ).rejects.toThrow();
     await controller.shutdown();
   });

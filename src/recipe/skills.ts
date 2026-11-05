@@ -1,8 +1,17 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse } from "yaml";
-import { assertRecipePathContained, type RecipeSkillResource } from "./package.js";
+import {
+  assertRecipePathContained,
+  type RecipeSkillResource,
+} from "./package.js";
 
 export function skillName(filePath: string, recipeDir: string): string {
   try {
@@ -54,18 +63,20 @@ export interface PackagedSkill {
  */
 export function packagedSkills(
   recipeDir: string,
-  resources: readonly (string | RecipeSkillResource)[]
+  resources: readonly (string | RecipeSkillResource)[],
 ): PackagedSkill[] {
   const skills = new Map<string, PackagedSkill>();
   for (const resource of resources) {
     const { path, packageDir, dependency } =
-      typeof resource === "string" ? { path: resource, packageDir: recipeDir } : resource;
+      typeof resource === "string"
+        ? { path: resource, packageDir: recipeDir }
+        : resource;
     for (const file of discoverSkillFiles(path)) {
       assertRecipePathContained(
         packageDir,
         file,
         "skill resource",
-        dependency ? `Dependency ${dependency}` : "Recipe"
+        dependency ? `Dependency ${dependency}` : "Recipe",
       );
       if (skills.has(file)) continue;
       skills.set(file, {
@@ -86,7 +97,7 @@ export function packagedSkills(
 export function resolveAgentSkillPaths(
   recipeDir: string,
   resourcePaths: readonly (string | RecipeSkillResource)[],
-  selectedNames: readonly string[]
+  selectedNames: readonly string[],
 ): string[] {
   if (selectedNames.length === 0 || resourcePaths.length === 0) return [];
 
@@ -102,7 +113,7 @@ export function resolveAgentSkillPaths(
  * expanded, and a relative path taken against the session's working
  * directory (`baseDir`), not the process's.
  */
-export function resolveSkillPath(path: string, baseDir: string): string {
+function resolveSkillPath(path: string, baseDir: string): string {
   let input = path.trim();
   if (input === "~") input = homedir();
   else if (input.startsWith("~/")) input = join(homedir(), input.slice(2));
@@ -125,11 +136,17 @@ function canonicalPath(path: string): string {
  */
 export function recipeSkillMatcher(
   paths: readonly string[],
-  baseDir: string = process.cwd()
+  baseDir: string = process.cwd(),
 ): (filePath: string) => boolean {
-  const roots = paths.map((path) => canonicalPath(resolveSkillPath(path, baseDir)));
+  const roots = paths.map((path) =>
+    canonicalPath(resolveSkillPath(path, baseDir)),
+  );
   return (filePath) => {
     const file = canonicalPath(filePath);
-    return roots.some((root) => file === root || file.startsWith(root.endsWith(sep) ? root : `${root}${sep}`));
+    return roots.some(
+      (root) =>
+        file === root ||
+        file.startsWith(root.endsWith(sep) ? root : `${root}${sep}`),
+    );
   };
 }

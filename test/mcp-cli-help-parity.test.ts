@@ -27,7 +27,9 @@ import {
 function documentedFlags(help: string): string[] {
   const lines = help
     .split("\n")
-    .filter((line) => line.startsWith("Usage:") || line.trim().startsWith("--"));
+    .filter(
+      (line) => line.startsWith("Usage:") || line.trim().startsWith("--"),
+    );
   return [...new Set(lines.join("\n").match(/--[a-z][a-z-]+/g) ?? [])];
 }
 
@@ -69,9 +71,9 @@ describe("documented flags are accepted", () => {
       expect(
         validateDelegatedMcpCommand(
           ["call", "contacts.search_contacts", flag, value],
-          policy()
+          policy(),
         ).error,
-        flag
+        flag,
       ).toBeUndefined();
     }
   });

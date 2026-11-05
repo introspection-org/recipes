@@ -22,25 +22,22 @@ import type {
 import { skillName } from "./recipe/skills.js";
 
 /** Introspection's mark (two concentric squares) and name, at the front of the footer line. */
-export const BRAND = "⧈ Introspection";
+const BRAND = "⧈ Introspection";
 
 /** The current step's mark while the clock is paused for the person, in place of ▸. */
-export const PAUSED_MARK = "⏸";
+const PAUSED_MARK = "⏸";
 
 /** Tools that wait for the person: the step's clock stops while one is open. */
-export const PERSON_IN_THE_LOOP = new Set([
-  "ask_user_question",
-  "review_artifacts",
-]);
+const PERSON_IN_THE_LOOP = new Set(["ask_user_question", "review_artifacts"]);
 
 /** Tools that read a skill; a write or edit of a `SKILL.md` isn't a step. */
-export const SKILL_READ_TOOLS = new Set(["read", "bash"]);
+const SKILL_READ_TOOLS = new Set(["read", "bash"]);
 
 /** The footer status the step shows under. */
-export const STEP_STATUS_KEY = "recipe-step";
+const STEP_STATUS_KEY = "recipe-step";
 
 /** Lines a read must cover to count as reading a skill; fewer is a glance at it, not the step. */
-export const SKILL_READ_MIN_LINES = 100;
+const SKILL_READ_MIN_LINES = 100;
 
 /** Whether a tool call's input reads a whole file rather than glancing at its top. */
 export function readsWhole(input: Record<string, unknown>): boolean {

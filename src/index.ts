@@ -1,7 +1,4 @@
-export {
-  resolveRecipe,
-  RecipeResolutionError,
-} from "./recipe/resolve.js";
+export { resolveRecipe, RecipeResolutionError } from "./recipe/resolve.js";
 export type {
   ResolvedRecipe,
   ResolvedRecipeAgent,

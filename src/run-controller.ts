@@ -18,14 +18,11 @@ import type {
   RecipeSessionOtelOptions,
   RecipeSessionHandle,
 } from "./session.js";
-import type {
-  MemoryContextOverride,
-  MemoryContextSource,
-} from "./memory.js";
+import type { MemoryContextOverride, MemoryContextSource } from "./memory.js";
 import type { ResolvedRecipe } from "./recipe/resolve.js";
 
 /** Default in-process child concurrency. */
-export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
+const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 
 export interface InProcessRunControllerOptions {
   recipe: ResolvedRecipe;
@@ -50,7 +47,7 @@ export interface InProcessRunControllerOptions {
   parentAgentRunId?: string;
   /** Child session factory; defaults to `createAgentSession`. Test/DI seam. */
   sessionFactory?: (
-    options: CreateAgentSessionInternalOptions
+    options: CreateAgentSessionInternalOptions,
   ) => Promise<RecipeSessionHandle>;
 }
 
@@ -84,10 +81,13 @@ class RunNotFoundError extends Error {
  * resolve with that failure.
  */
 export function createInProcessRunController(
-  opts: InProcessRunControllerOptions
+  opts: InProcessRunControllerOptions,
 ): AgentRunController {
   const env = opts.env ?? process.env;
-  const concurrency = Math.max(1, opts.concurrency ?? DEFAULT_SUBAGENT_CONCURRENCY);
+  const concurrency = Math.max(
+    1,
+    opts.concurrency ?? DEFAULT_SUBAGENT_CONCURRENCY,
+  );
   const runs = new Map<string, ChildRun>();
   const depth = opts.depth ?? 1;
   const parentAgentRunId = opts.parentAgentRunId ?? "root";
@@ -166,7 +166,9 @@ export function createInProcessRunController(
                 },
               }
             : {}),
-          ...(opts.sessionFactory ? { sessionFactory: opts.sessionFactory } : {}),
+          ...(opts.sessionFactory
+            ? { sessionFactory: opts.sessionFactory }
+            : {}),
           agentRunId: run.summary.agent_run_id,
           depth,
           ...(opts.onAgentRunEvent
@@ -337,7 +339,9 @@ export function createInProcessRunController(
       await Promise.all(
         [...runs.values()]
           .filter((run) => run.summary.status !== "closed")
-          .map((run) => this.close(run.summary.agent_run_id).then(() => undefined))
+          .map((run) =>
+            this.close(run.summary.agent_run_id).then(() => undefined),
+          ),
       );
     },
   };

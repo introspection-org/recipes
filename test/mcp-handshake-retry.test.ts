@@ -18,21 +18,27 @@ function runtimeFailing(errors: Error[]) {
 }
 
 const refused = () =>
-  new Error("Version negotiation failed: the server answered the probe with HTTP 503");
+  new Error(
+    "Version negotiation failed: the server answered the probe with HTTP 503",
+  );
 
 describe("handshake retry", () => {
   it("retries a refused version probe, which never reached the tool", async () => {
     const { runtime, calls } = runtimeFailing([refused(), refused()]);
     await expect(
-      callToolWithHandshakeRetry(runtime, "mail", "find", () => ({ args: {} }))
+      callToolWithHandshakeRetry(runtime, "mail", "find", () => ({ args: {} })),
     ).resolves.toMatchObject({ content: [{ text: "{}" }] });
     expect(calls()).toBe(3);
   });
 
   it("gives up after two retries", async () => {
-    const { runtime, calls } = runtimeFailing([refused(), refused(), refused()]);
+    const { runtime, calls } = runtimeFailing([
+      refused(),
+      refused(),
+      refused(),
+    ]);
     await expect(
-      callToolWithHandshakeRetry(runtime, "mail", "find", () => ({ args: {} }))
+      callToolWithHandshakeRetry(runtime, "mail", "find", () => ({ args: {} })),
     ).rejects.toThrow("HTTP 503");
     expect(calls()).toBe(3);
   });
@@ -42,7 +48,7 @@ describe("handshake retry", () => {
       new Error("Error POSTing to endpoint: upstream request timeout"),
     ]);
     await expect(
-      callToolWithHandshakeRetry(runtime, "mail", "send", () => ({ args: {} }))
+      callToolWithHandshakeRetry(runtime, "mail", "send", () => ({ args: {} })),
     ).rejects.toThrow("upstream request timeout");
     expect(calls()).toBe(1);
   });
@@ -50,7 +56,13 @@ describe("handshake retry", () => {
   it("stops at the deadline", async () => {
     const { runtime, calls } = runtimeFailing([refused()]);
     await expect(
-      callToolWithHandshakeRetry(runtime, "mail", "find", () => ({ args: {} }), Date.now() + 100)
+      callToolWithHandshakeRetry(
+        runtime,
+        "mail",
+        "find",
+        () => ({ args: {} }),
+        Date.now() + 100,
+      ),
     ).rejects.toThrow("HTTP 503");
     expect(calls()).toBe(1);
   });

@@ -9,8 +9,9 @@ import { describe, expect, it } from "vitest";
  */
 describe("the Pi floor", () => {
   const root = join(import.meta.dirname, "..");
-  const declared: string = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
-    .peerDependencies["@earendil-works/pi-coding-agent"];
+  const declared: string = JSON.parse(
+    readFileSync(join(root, "package.json"), "utf8"),
+  ).peerDependencies["@earendil-works/pi-coding-agent"];
   const floor = declared.split(" ")[0].replace(/[^0-9.]/g, "");
 
   it("is a lower bound capped at the next major", () => {

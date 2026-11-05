@@ -32,12 +32,19 @@ function handle(prefix: string): string {
 export class ChannelRefStore implements ChannelRefResolver {
   private readonly messages = new Map<MessageRef, ChannelMessageIdentity>();
   private readonly byIdentity = new Map<string, MessageRef>();
-  private readonly cursors = new Map<ChannelCursor, { value: string; scope?: string }>();
+  private readonly cursors = new Map<
+    ChannelCursor,
+    { value: string; scope?: string }
+  >();
   private readonly files = new Map<FileRef, ChannelFileIdentity>();
   private readonly byFileIdentity = new Map<string, FileRef>();
 
   message(identity: ChannelMessageIdentity): MessageRef {
-    const key = JSON.stringify([identity.conversation, identity.thread ?? null, identity.id]);
+    const key = JSON.stringify([
+      identity.conversation,
+      identity.thread ?? null,
+      identity.id,
+    ]);
     const existing = this.byIdentity.get(key);
     if (existing) {
       const previous = this.messages.get(existing)!;
@@ -89,13 +96,19 @@ export class ChannelRefStore implements ChannelRefResolver {
       );
     }
     if (providerCursor.scope !== scope) {
-      throw new Error("Cursor belongs to another channel or thread. Repeat the original read target.");
+      throw new Error(
+        "Cursor belongs to another channel or thread. Repeat the original read target.",
+      );
     }
     return providerCursor.value;
   }
 
   file(identity: ChannelFileIdentity): FileRef {
-    const key = JSON.stringify([identity.conversation, identity.thread ?? null, identity.id]);
+    const key = JSON.stringify([
+      identity.conversation,
+      identity.thread ?? null,
+      identity.id,
+    ]);
     const existing = this.byFileIdentity.get(key);
     if (existing) return existing;
     const ref = handle(FILE_PREFIX);

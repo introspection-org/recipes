@@ -15,11 +15,13 @@ function preloadKey(env: NodeJS.ProcessEnv, allowPartial = false): string {
   return `${socketPath}\0${fingerprint}\0${allowPartial ? "partial" : "strict"}`;
 }
 
-export function preloadMcpCatalogs(options: {
-  env?: NodeJS.ProcessEnv;
-  timeoutMs?: number;
-  allowPartial?: boolean;
-} = {}): Promise<McpCatalogServer[]> {
+export function preloadMcpCatalogs(
+  options: {
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    allowPartial?: boolean;
+  } = {},
+): Promise<McpCatalogServer[]> {
   const env = options.env ?? process.env;
   const timeoutMs = options.timeoutMs ?? DEFAULT_CATALOG_ATTEMPT_TIMEOUT_MS;
   const key = preloadKey(env, options.allowPartial);
@@ -50,7 +52,7 @@ export function preloadMcpCatalogs(options: {
           socket.end();
         }
       },
-      env
+      env,
     );
     if (daemonError) throw new Error(`MCP daemon: ${daemonError}`);
     if (!catalogs) throw new Error("MCP daemon returned no catalog result.");
@@ -59,7 +61,7 @@ export function preloadMcpCatalogs(options: {
       throw new Error(
         `MCP catalog preload failed for ${failures
           .map((server) => `${server.id}: ${server.error}`)
-          .join("; ")}`
+          .join("; ")}`,
       );
     }
     return catalogs;
@@ -72,16 +74,15 @@ export function preloadMcpCatalogs(options: {
   // Only a fully discovered result outlives its request: a partial one would
   // hand a later session a server's failure after it recovered. The cost is
   // one more discovery, bounded by `timeoutMs`, per session while it is down.
-  void preload.then(
-    (catalogs) => {
-      if (catalogs.some((server) => server.error)) forget();
-    },
-    forget
-  );
+  void preload.then((catalogs) => {
+    if (catalogs.some((server) => server.error)) forget();
+  }, forget);
   return preload;
 }
 
-export function clearMcpCatalogPreload(env: NodeJS.ProcessEnv = process.env): void {
+export function clearMcpCatalogPreload(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   try {
     catalogPreloads.delete(preloadKey(env, false));
     catalogPreloads.delete(preloadKey(env, true));

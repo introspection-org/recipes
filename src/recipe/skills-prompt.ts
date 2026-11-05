@@ -37,14 +37,17 @@ export interface SystemPromptLaunchState {
  */
 export function createSystemPrompt(
   event: SystemPromptEvent,
-  launchState: SystemPromptLaunchState
+  launchState: SystemPromptLaunchState,
 ): string | undefined {
-  const recipePrompt = launchState.resolved.systemPromptOverride(event.systemPrompt);
-  if (!launchState.resolvedRecipe.resources.hasSystemPrompt) return recipePrompt;
+  const recipePrompt = launchState.resolved.systemPromptOverride(
+    event.systemPrompt,
+  );
+  if (!launchState.resolvedRecipe.resources.hasSystemPrompt)
+    return recipePrompt;
   const selectedTools = event.systemPromptOptions.selectedTools ?? [];
   const skills = event.systemPromptOptions.skills ?? [];
   const fileReadTool = SKILL_FILE_READ_TOOLS.find((tool) =>
-    selectedTools.includes(tool)
+    selectedTools.includes(tool),
   );
   const skillsPrompt = fileReadTool
     ? formatSkillsForPrompt([...skills], fileReadTool).trim()
@@ -64,11 +67,16 @@ export function createSystemPrompt(
 export function loadRecipeSkills(
   recipeDir: string,
   cwd: string,
-  paths: readonly string[]
+  paths: readonly string[],
 ): Skill[] {
   if (paths.length === 0) return [];
   // The Recipe stands in for Pi's agent folder, as in embedded sessions.
-  return loadSkills({ cwd, agentDir: recipeDir, skillPaths: [...paths], includeDefaults: false }).skills;
+  return loadSkills({
+    cwd,
+    agentDir: recipeDir,
+    skillPaths: [...paths],
+    includeDefaults: false,
+  }).skills;
 }
 
 /**
@@ -78,7 +86,7 @@ export function loadRecipeSkills(
  */
 export function offerOnlyRecipeSkills(
   event: SystemPromptEvent,
-  skills: readonly Skill[]
+  skills: readonly Skill[],
 ): void {
   event.systemPromptOptions.skills = [...skills];
 }
@@ -95,7 +103,7 @@ export type RecipeSkillCommand =
  */
 export function resolveRecipeSkillCommand(
   text: string,
-  skills: readonly Skill[]
+  skills: readonly Skill[],
 ): RecipeSkillCommand | undefined {
   if (!text.startsWith("/skill:")) return undefined;
   const spaceIndex = text.indexOf(" ");

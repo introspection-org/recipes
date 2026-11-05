@@ -71,7 +71,9 @@ it("starts MCP from a relocated host bundle and its generated session shim", asy
       platform: "node",
       format: "esm",
       external: ["@introspection-ai/recipes"],
-      banner: { js: 'import { createRequire as __testCreateRequire } from "node:module"; const require = __testCreateRequire(import.meta.url);' },
+      banner: {
+        js: 'import { createRequire as __testCreateRequire } from "node:module"; const require = __testCreateRequire(import.meta.url);',
+      },
     });
     const child = spawnSync(process.execPath, [outfile], {
       cwd: host,

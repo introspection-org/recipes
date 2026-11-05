@@ -1,19 +1,21 @@
-import { registerSkillProgress, skillFolders, type RecipeSkills } from "./skill-progress.js";
+import {
+  registerSkillProgress,
+  skillFolders,
+  type RecipeSkills,
+} from "./skill-progress.js";
 import {
   RECIPE_SESSION_ENTRY_TYPE,
   recipeSessionChanged,
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
-import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { basename, resolve } from "node:path";
 import {
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
-  type ModelRegistry,
+  type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
@@ -29,7 +31,6 @@ import {
   bindRecipeExtensionFactory,
   createRecipeExtensionSessionContext,
   createRecipeExtensionRegistrationRegistry,
-  recipeExtensionToolAllowlist,
   type RecipeExtensionRegistrationRegistry,
 } from "./extensions.js";
 import {
@@ -60,10 +61,7 @@ import {
   resolveAgentMcpSelections,
   stopMcpDaemon,
 } from "./mcp/index.js";
-import {
-  clearMcpCatalogPreload,
-  preloadMcpCatalogs,
-} from "./mcp/catalog.js";
+import { clearMcpCatalogPreload, preloadMcpCatalogs } from "./mcp/catalog.js";
 import { type RecipeAgentDefinition } from "./recipe/agent.js";
 import type { RecipeAgentMcpMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
@@ -132,7 +130,7 @@ interface AgentCallParams {
 const COMPLETION_DELIVERY_RETRY_MS = 100;
 /** Published by the Runtime's proxy-preload.js (introspection-cloud managed-fetch.ts). */
 const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
-  "introspection.installManagedFetch"
+  "introspection.installManagedFetch",
 );
 const MANAGED_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL";
 const EGRESS_PROXY_NATIVE_ENV = "INTROSPECTION_EGRESS_PROXY_NATIVE";
@@ -154,7 +152,7 @@ function ensureManagedFetch(): boolean {
  * injects, and Pi's dispatcher already follows it.
  */
 function managedFetchMissingWarning(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): string | undefined {
   if (env[EGRESS_PROXY_NATIVE_ENV]?.trim() === "1") return undefined;
   if (!env[MANAGED_EGRESS_URL_ENV]) return undefined;
@@ -197,8 +195,6 @@ interface RecipeLaunchState {
   pythonFailure?: string;
 }
 
-const require = createRequire(import.meta.url);
-
 class RecipeLaunchError extends Error {
   constructor(message: string) {
     super(message);
@@ -213,7 +209,9 @@ function stringFlag(value: boolean | string | undefined): string | undefined {
 function recipeNotFoundMessage(input: string, resolvedPath: string): string {
   const lines = [`Recipe "${input}" was not found.`];
   lines.push(`Resolved path: ${resolvedPath}`);
-  lines.push("Pass a local Recipe directory containing package.json with a pi block.");
+  lines.push(
+    "Pass a local Recipe directory containing package.json with a pi block.",
+  );
   lines.push("Then launch again with `pi --recipe <recipe>`.");
   return lines.join("\n");
 }
@@ -230,7 +228,7 @@ function modelParts(spec: string): { provider: string; model: string } {
   const index = spec.indexOf("/");
   if (index < 0) {
     throw new Error(
-      `Invalid recipe model "${spec}" - expected "<provider>/<model_id>"`
+      `Invalid recipe model "${spec}" - expected "<provider>/<model_id>"`,
     );
   }
   return {
@@ -249,13 +247,6 @@ function mcpSelectionsForAgent(agent: RecipeAgentDefinition) {
 
 function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentMcpMode {
   return state.resolved.mcp?.mode ?? "cli";
-}
-
-function textResult<TDetails>(text: string, details: TDetails) {
-  return {
-    content: [{ type: "text" as const, text }],
-    details,
-  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -283,26 +274,42 @@ function resultText(result: unknown): string {
   return contentText(record?.content).trim();
 }
 
-function themeFg(theme: { fg?: (name: any, text: string) => string } | undefined, name: string, text: string): string {
+function themeFg(
+  theme: { fg?: (name: ThemeColor, text: string) => string } | undefined,
+  name: ThemeColor,
+  text: string,
+): string {
   return theme?.fg ? theme.fg(name, text) : text;
 }
 
-function themeBold(theme: { bold?: (text: string) => string } | undefined, text: string): string {
+function themeBold(
+  theme: { bold?: (text: string) => string } | undefined,
+  text: string,
+): string {
   return theme?.bold ? theme.bold(text) : text;
 }
 
 function truncateLine(text: string, max = 120): string {
   const singleLine = text.replace(/\s+/g, " ").trim();
-  return singleLine.length > max ? `${singleLine.slice(0, max - 3)}...` : singleLine;
+  return singleLine.length > max
+    ? `${singleLine.slice(0, max - 3)}...`
+    : singleLine;
 }
 
 function formatAgentCall(
   args: AgentCallParams,
-  theme: { fg?: (name: any, text: string) => string; bold?: (text: string) => string } | undefined
+  theme:
+    | {
+        fg?: (name: ThemeColor, text: string) => string;
+        bold?: (text: string) => string;
+      }
+    | undefined,
 ): string {
   const action = args.action ?? "start";
   const agent = args.name ?? args.id ?? "agent";
-  const label = args.label ? ` ${themeFg(theme, "muted", `(${args.label})`)}` : "";
+  const label = args.label
+    ? ` ${themeFg(theme, "muted", `(${args.label})`)}`
+    : "";
   return `${themeFg(theme, "toolTitle", themeBold(theme, `agent ${action}`))} ${themeFg(theme, "accent", agent)}${label}`;
 }
 
@@ -325,7 +332,12 @@ function formatDurationMs(ms: number): string {
 function formatCompletionMessage(
   batch: readonly ChildCompletionEnvelope[],
   options: { expanded: boolean },
-  theme: { fg?: (name: any, text: string) => string; bold?: (text: string) => string } | undefined
+  theme:
+    | {
+        fg?: (name: ThemeColor, text: string) => string;
+        bold?: (text: string) => string;
+      }
+    | undefined,
 ): string {
   const blocks = batch.map((envelope) => {
     const icon =
@@ -342,7 +354,7 @@ function formatCompletionMessage(
     let text = `${icon} ${themeBold(theme, envelope.agent)} ${themeFg(theme, "muted", envelope.id)}${label} ${themeFg(theme, "muted", envelope.status)}${duration}`;
     const preview =
       (envelope.status === "failed"
-        ? envelope.error ?? envelope.output_preview
+        ? (envelope.error ?? envelope.output_preview)
         : envelope.output_preview
       )?.trim() ?? "";
     const lines = preview.split("\n").filter((line) => line.trim());
@@ -375,7 +387,7 @@ function snapshotOf(run: ChildRunSnapshot): ChildRunSnapshot {
 
 function controllerSummary(
   run: ChildRunSnapshot,
-  status: AgentRunSummary["status"] = run.status
+  status: AgentRunSummary["status"] = run.status,
 ): AgentRunSummary {
   const startedAt = Date.parse(run.startedAt);
   const completedAt = run.completedAt ? Date.parse(run.completedAt) : undefined;
@@ -422,24 +434,27 @@ function bulletList(items: string[]): string[] {
 
 function activeRecipeTools(
   state: RecipeLaunchState,
-  activeTools: string[]
+  activeTools: string[],
 ): string[] {
   const active = new Set(activeTools);
   const recipeTools = new Set([
     ...state.resolved.tools,
     ...(state.resolved.subagents.size > 0 ? ["agent"] : []),
   ]);
-  return [...recipeTools]
-    .filter((tool) => active.has(tool))
-    .sort();
+  return [...recipeTools].filter((tool) => active.has(tool)).sort();
 }
 
-function recipeSummary(state: RecipeLaunchState, activeTools: string[]): string {
+function recipeSummary(
+  state: RecipeLaunchState,
+  activeTools: string[],
+): string {
   const subagents = visibleSubagents(state).map((agent) => agent.name);
   return [
     "Active Recipe",
     `Name: ${state.resolved.manifest.name}@${state.resolved.manifest.version}`,
-    state.resolved.manifest.description ? `Description: ${state.resolved.manifest.description}` : undefined,
+    state.resolved.manifest.description
+      ? `Description: ${state.resolved.manifest.description}`
+      : undefined,
     `Agent: ${state.resolved.name}`,
     `Model: ${state.resolved.definition.model?.name ?? "(session default)"}`,
     `Thinking level: ${state.resolved.definition.model?.thinkingLevel ?? "(session default)"}`,
@@ -454,7 +469,9 @@ function recipeSummary(state: RecipeLaunchState, activeTools: string[]): string 
     "",
     `Directory: ${state.resolved.recipeDir}`,
     `Workspace: ${state.cwd}`,
-  ].filter((line): line is string => line !== undefined).join("\n");
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n");
 }
 
 function applyChildToolEvent(run: ChildRun, event: RecipeChildToolEvent): void {
@@ -509,7 +526,7 @@ function applyChildToolEvent(run: ChildRun, event: RecipeChildToolEvent): void {
 }
 
 export function createRecipesExtension(
-  opts: RecipesExtensionOptions = {}
+  opts: RecipesExtensionOptions = {},
 ): ExtensionFactory {
   const env = opts.env ?? process.env;
   const createChildAgentRunner =
@@ -589,7 +606,7 @@ export function createRecipesExtension(
       return [
         ...childRuns.values(),
         ...[...archivedRuns.values()].filter(
-          (snapshot) => !childRuns.has(snapshot.id)
+          (snapshot) => !childRuns.has(snapshot.id),
         ),
       ].map((run) => controllerSummary(run));
     },
@@ -607,7 +624,7 @@ export function createRecipesExtension(
         input.prompt,
         input.label,
         localAgentContext,
-        input.onUpdate
+        input.onUpdate,
       );
       return controllerSummary(run);
     },
@@ -623,7 +640,7 @@ export function createRecipesExtension(
     async message(id, message) {
       if (archivedRuns.has(id) && !childRuns.has(id)) {
         throw new Error(
-          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`
+          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`,
         );
       }
       const run = childRuns.get(id);
@@ -636,14 +653,18 @@ export function createRecipesExtension(
       run.completedAt = undefined;
       run.error = undefined;
       run.output = undefined;
-      run.promise = executeChildPrompt(run, message, state?.cwd ?? process.cwd());
+      run.promise = executeChildPrompt(
+        run,
+        message,
+        state?.cwd ?? process.cwd(),
+      );
       void persistRun(state?.cwd ?? process.cwd(), run);
       return controllerSummary(run);
     },
     async interrupt(id) {
       if (archivedRuns.has(id) && !childRuns.has(id)) {
         throw new Error(
-          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`
+          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`,
         );
       }
       const run = childRuns.get(id);
@@ -659,7 +680,7 @@ export function createRecipesExtension(
     async close(id) {
       if (archivedRuns.has(id) && !childRuns.has(id)) {
         throw new Error(
-          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`
+          `Agent run ${id} belongs to a previous Pi session and cannot be controlled`,
         );
       }
       const run = childRuns.get(id);
@@ -680,7 +701,7 @@ export function createRecipesExtension(
 
   async function closeAllChildRuns(): Promise<void> {
     await Promise.all(
-      [...childRuns.keys()].map((id) => localRunController.close(id))
+      [...childRuns.keys()].map((id) => localRunController.close(id)),
     );
   }
 
@@ -704,16 +725,6 @@ export function createRecipesExtension(
     }
   }
 
-  function archivedControlError(id: string) {
-    return {
-      ...textResult(
-        `Agent run ${id} belongs to a previous Pi session and cannot be controlled; only status and wait are available.`,
-        { id }
-      ),
-      isError: true,
-    };
-  }
-
   // Launch selection is immutable for the lifetime of this extension. Resolved
   // values are exported below for shell tools, but must not become inputs to a
   // later session load in the same process.
@@ -733,15 +744,19 @@ export function createRecipesExtension(
   function selectedAgentName(
     pi: Parameters<ExtensionFactory>[0],
     cwd: string,
-    recipeDir: string
+    recipeDir: string,
   ): string | undefined {
     const flag = stringFlag(pi.getFlag("agent"));
     if (flag) return flag;
-    if (launchRecipeDir && resolve(cwd, launchRecipeDir) !== recipeDir) return undefined;
+    if (launchRecipeDir && resolve(cwd, launchRecipeDir) !== recipeDir)
+      return undefined;
     return launchAgentName;
   }
 
-  function loadState(pi: Parameters<ExtensionFactory>[0], cwd: string): RecipeLaunchState | null {
+  function loadState(
+    pi: Parameters<ExtensionFactory>[0],
+    cwd: string,
+  ): RecipeLaunchState | null {
     const flag = recipeFlag(pi);
     if (!flag) return null;
 
@@ -760,7 +775,10 @@ export function createRecipesExtension(
       resolved = resolvedRecipe.selectAgent(requestedAgentName);
     } catch (err) {
       throw new RecipeLaunchError(
-        recipeLoadErrorMessage(flag, err instanceof Error ? err.message : String(err))
+        recipeLoadErrorMessage(
+          flag,
+          err instanceof Error ? err.message : String(err),
+        ),
       );
     }
     // Keep the recipe selected by CLI flags visible to shell commands and
@@ -797,7 +815,7 @@ export function createRecipesExtension(
   function safeLoadState(
     pi: Parameters<ExtensionFactory>[0],
     cwd: string,
-    ctx?: Pick<ExtensionContext, "ui" | "mode">
+    ctx?: Pick<ExtensionContext, "ui" | "mode">,
   ): RecipeLaunchState | null {
     try {
       return loadState(pi, cwd);
@@ -818,7 +836,7 @@ export function createRecipesExtension(
   function failRecipeSession(
     pi: Parameters<ExtensionFactory>[0],
     message: string,
-    ctx?: Pick<ExtensionContext, "ui" | "mode">
+    ctx?: Pick<ExtensionContext, "ui" | "mode">,
   ): void {
     sessionConfigurationError = message;
     pi.setActiveTools([]);
@@ -830,7 +848,7 @@ export function createRecipesExtension(
   // aborted". Stdout stays reserved for the mode's own output.
   function reportSessionFailure(
     text: string,
-    ctx?: Pick<ExtensionContext, "ui" | "mode">
+    ctx?: Pick<ExtensionContext, "ui" | "mode">,
   ): void {
     ctx?.ui.notify(text, "warning");
     if (ctx?.mode === "json" || ctx?.mode === "print") {
@@ -851,28 +869,32 @@ export function createRecipesExtension(
    */
   async function prepareRecipePythonEnvironments(
     ctx: Pick<ExtensionContext, "ui">,
-    launchState: RecipeLaunchState
+    launchState: RecipeLaunchState,
   ): Promise<void> {
     if (launchState.pythonFailure) throw new Error(launchState.pythonFailure);
     if (!launchState.python) {
       try {
-        launchState.python = await prepareRecipePython(launchState.resolved.recipeDir, {
-          mode: "sync",
-          allowPythonDownloads: true,
-          env,
-          ...(stringFlag(env[RECIPE_PYTHON_ROOT_ENV])
-            ? { environmentRoot: stringFlag(env[RECIPE_PYTHON_ROOT_ENV]) }
-            : {}),
-          onSync: (event) =>
-            ctx.ui.notify(
-              event.firstBuild
-                ? `Python: downloading packages for ${event.owner} (first build, this can take a minute)`
-                : `Python: updating packages for ${event.owner} to match its uv.lock`,
-              "info"
-            ),
-        });
+        launchState.python = await prepareRecipePython(
+          launchState.resolved.recipeDir,
+          {
+            mode: "sync",
+            allowPythonDownloads: true,
+            env,
+            ...(stringFlag(env[RECIPE_PYTHON_ROOT_ENV])
+              ? { environmentRoot: stringFlag(env[RECIPE_PYTHON_ROOT_ENV]) }
+              : {}),
+            onSync: (event) =>
+              ctx.ui.notify(
+                event.firstBuild
+                  ? `Python: downloading packages for ${event.owner} (first build, this can take a minute)`
+                  : `Python: updating packages for ${event.owner} to match its uv.lock`,
+                "info",
+              ),
+          },
+        );
       } catch (error) {
-        launchState.pythonFailure = error instanceof Error ? error.message : String(error);
+        launchState.pythonFailure =
+          error instanceof Error ? error.message : String(error);
         throw error;
       }
     }
@@ -884,7 +906,9 @@ export function createRecipesExtension(
         ...activation.unset,
         Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH",
       ]);
-      pythonEnvBeforeActivation = new Map([...keys].map((key) => [key, env[key]]));
+      pythonEnvBeforeActivation = new Map(
+        [...keys].map((key) => [key, env[key]]),
+      );
     }
     activateRecipePython(env, activation);
   }
@@ -901,7 +925,7 @@ export function createRecipesExtension(
   async function loadRecipeExtensions(
     pi: ExtensionAPI,
     ctx: ExtensionContext,
-    launchState: RecipeLaunchState
+    launchState: RecipeLaunchState,
   ): Promise<void> {
     if (launchState.extensionFailure) {
       throw new Error(launchState.extensionFailure);
@@ -912,11 +936,7 @@ export function createRecipesExtension(
     // live runner never retries a partially installed closure.
     launchState.extensionsLoaded = true;
     for (const tool of pi.getAllTools()) {
-      launchState.extensionRegistrations.claim(
-        "tool",
-        tool.name,
-        "<host>"
-      );
+      launchState.extensionRegistrations.claim("tool", tool.name, "<host>");
     }
     let loadedCount = 0;
     try {
@@ -927,8 +947,10 @@ export function createRecipesExtension(
           recipeDir: launchState.resolved.recipeDir,
           env,
           cwd: launchState.cwd,
-          ...(launchState.python ? { python: launchState.python.packages } : {}),
-        }
+          ...(launchState.python
+            ? { python: launchState.python.packages }
+            : {}),
+        },
       );
       launchState.initialConnectorToolNames =
         connectors.loadout.initialActiveToolNames;
@@ -940,7 +962,7 @@ export function createRecipesExtension(
         launchState.extensionRegistrations.claim(
           "tool",
           RECIPE_TOOL_SEARCH_NAME,
-          "<host>"
+          "<host>",
         );
       }
       for (const toolName of connectors.loadout.toolNames) {
@@ -953,11 +975,13 @@ export function createRecipesExtension(
             recipe: launchState.resolved.manifest.name,
             agent: launchState.resolved.name,
             role: "root",
-            ...(launchState.python ? { python: launchState.python.packages } : {}),
+            ...(launchState.python
+              ? { python: launchState.python.packages }
+              : {}),
           }),
           launchState.extensionRegistrations,
           connector.owner,
-          launchState.extensionAllowedToolNames
+          launchState.extensionAllowedToolNames,
         );
         await factory(pi);
       }
@@ -965,17 +989,19 @@ export function createRecipesExtension(
         const factory = bindRecipeExtensionFactory(
           await loadRecipeExtensionFactory(
             launchState.resolved.recipeDir,
-            extensionPath
+            extensionPath,
           ),
           createRecipeExtensionSessionContext({
             recipe: launchState.resolved.manifest.name,
             agent: launchState.resolved.name,
             role: "root",
-            ...(launchState.python ? { python: launchState.python.packages } : {}),
+            ...(launchState.python
+              ? { python: launchState.python.packages }
+              : {}),
           }),
           launchState.extensionRegistrations,
           extensionPath,
-          launchState.extensionAllowedToolNames
+          launchState.extensionAllowedToolNames,
         );
         await factory(pi);
         loadedCount += 1;
@@ -985,7 +1011,7 @@ export function createRecipesExtension(
       if (wantsAskUserQuestion(launchState.resolved.tools)) {
         await askUserQuestionExtension(
           launchState.extensionRegistrations,
-          env
+          env,
         )(pi);
       }
       // Likewise the first-party artifact viewer (show_artifact and /recipe view).
@@ -994,7 +1020,7 @@ export function createRecipesExtension(
           launchState.extensionRegistrations,
           {},
           launchState.resolved.tools,
-          env
+          env,
         )(pi);
       }
     } catch (error) {
@@ -1005,7 +1031,7 @@ export function createRecipesExtension(
     if (launchState.resolved.extensionPaths.length > 0) {
       ctx.ui.notify(
         `Recipe extensions: ${loadedCount}/${launchState.resolved.extensionPaths.length} loaded`,
-        "info"
+        "info",
       );
     }
   }
@@ -1013,7 +1039,7 @@ export function createRecipesExtension(
   async function configureSession(
     pi: ExtensionAPI,
     ctx: ExtensionContext,
-    launchState: RecipeLaunchState
+    launchState: RecipeLaunchState,
   ): Promise<void> {
     if (launchState.configured) return;
 
@@ -1026,8 +1052,8 @@ export function createRecipesExtension(
     if (unsupportedPortableConfig.length > 0) {
       throw new Error(
         `Pi's extension API cannot apply Recipe ${unsupportedPortableConfig.join(
-          " and "
-        )}; use the embedded Recipe session API until Pi exposes request-default and session-policy setters`
+          " and ",
+        )}; use the embedded Recipe session API until Pi exposes request-default and session-policy setters`,
       );
     }
 
@@ -1043,7 +1069,12 @@ export function createRecipesExtension(
       version: launchState.resolved.manifest.version,
     };
     try {
-      if (recipeSessionChanged(ctx.sessionManager?.getEntries?.() ?? [], recipeEntry)) {
+      if (
+        recipeSessionChanged(
+          ctx.sessionManager?.getEntries?.() ?? [],
+          recipeEntry,
+        )
+      ) {
         pi.appendEntry(RECIPE_SESSION_ENTRY_TYPE, recipeEntry);
       }
     } catch {
@@ -1055,18 +1086,18 @@ export function createRecipesExtension(
     const registeredModel = ctx.modelRegistry.find(lookupProvider, model);
     if (!registeredModel) {
       throw new Error(
-        `Recipe model is not available: ${launchState.resolved.modelSpec}`
+        `Recipe model is not available: ${launchState.resolved.modelSpec}`,
       );
     }
     const resolvedModel = cloneModelForRecipe(registeredModel);
     applyRecipeAgentModelConfigToModel(
       resolvedModel,
-      launchState.resolved.modelConfig
+      launchState.resolved.modelConfig,
     );
     const ok = await pi.setModel(resolvedModel);
     if (!ok) {
       throw new Error(
-        `Recipe model has no configured API key: ${launchState.resolved.modelSpec}`
+        `Recipe model has no configured API key: ${launchState.resolved.modelSpec}`,
       );
     }
 
@@ -1081,7 +1112,7 @@ export function createRecipesExtension(
     if (deferredToolNames.length > 0 && !launchState.toolSearchRegistered) {
       const toolSearchTools = createRecipeToolSearchTools(
         pi,
-        launchState.mcpDeferredToolNames.length > 0
+        launchState.mcpDeferredToolNames.length > 0,
       );
       for (const toolSearch of toolSearchTools) {
         launchState.extensionAllowedToolNames.add(toolSearch.name);
@@ -1091,7 +1122,7 @@ export function createRecipesExtension(
     }
     const activeTools = new Set([
       ...launchState.resolved.tools.filter(
-        (tool) => !launchState.connectorToolNames.includes(tool)
+        (tool) => !launchState.connectorToolNames.includes(tool),
       ),
       ...launchState.initialConnectorToolNames,
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),
@@ -1101,15 +1132,13 @@ export function createRecipesExtension(
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
     ]);
-    const registeredTools = new Set(
-      pi.getAllTools().map((tool) => tool.name)
-    );
+    const registeredTools = new Set(pi.getAllTools().map((tool) => tool.name));
     const missingTools = [...activeTools].filter(
-      (name) => !registeredTools.has(name)
+      (name) => !registeredTools.has(name),
     );
     if (missingTools.length > 0) {
       throw new Error(
-        `Recipe agent "${launchState.resolved.name}" declares unavailable tool(s): ${missingTools.join(", ")}`
+        `Recipe agent "${launchState.resolved.name}" declares unavailable tool(s): ${missingTools.join(", ")}`,
       );
     }
     pi.setActiveTools([...activeTools]);
@@ -1120,7 +1149,7 @@ export function createRecipesExtension(
   async function configureMcp(
     pi: ExtensionAPI,
     launchState: RecipeLaunchState,
-    ctx: Pick<ExtensionContext, "ui">
+    ctx: Pick<ExtensionContext, "ui">,
   ): Promise<void> {
     if (launchState.mcpConfigured) return;
     launchState.agentMcpMode = resolvedMcpMode(launchState);
@@ -1133,9 +1162,7 @@ export function createRecipesExtension(
     });
 
     if (launchState.agentMcpMode === "cli") {
-      const mcpSelections = resolveAgentMcpSelections(
-        launchState.resolved.mcp
-      );
+      const mcpSelections = resolveAgentMcpSelections(launchState.resolved.mcp);
       if (mcpSelections.length === 0) {
         await clearMcpSession(env, launchState.cwd);
         launchState.mcpConfigured = true;
@@ -1156,27 +1183,27 @@ export function createRecipesExtension(
       if (session.servers.length > 0) {
         void preloadMcpCatalogs({ env }).catch((error) => {
           console.warn(
-            `Recipe MCP catalog preload failed: ${error instanceof Error ? error.message : String(error)}`
+            `Recipe MCP catalog preload failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         });
         ctx.ui.notify(
           `Recipe MCP: ${session.servers.length} server(s) configured; runtime warming in background`,
-          "info"
+          "info",
         );
       } else {
         const detail = formatMcpConfigurationDiagnostics(
-          session.diagnostics ?? []
+          session.diagnostics ?? [],
         );
         ctx.ui.notify(
           [
             "Recipe MCP: no servers are available to this agent. Check package policy and .pi/mcp.local.json.",
             ...(detail ? ["", detail] : []),
           ].join("\n"),
-          "warning"
+          "warning",
         );
       }
       const detail = formatMcpConfigurationDiagnostics(
-        session.diagnostics ?? []
+        session.diagnostics ?? [],
       );
       if (session.servers.length > 0 && detail) {
         ctx.ui.notify(
@@ -1185,7 +1212,7 @@ export function createRecipesExtension(
             "",
             detail,
           ].join("\n"),
-          "warning"
+          "warning",
         );
       }
       launchState.mcpConfigured = true;
@@ -1193,11 +1220,10 @@ export function createRecipesExtension(
     }
 
     const clearedCli = await clearSessionMcpCli(env, launchState.cwd);
-    launchState.mcpAmbientMcporterConfig =
-      clearedCli.previousMcporterConfig;
+    launchState.mcpAmbientMcporterConfig = clearedCli.previousMcporterConfig;
     const rootMcp = launchState.resolved.mcp;
     const rootSelections = mcpSelectionsForAgent(
-      launchState.resolved.definition
+      launchState.resolved.definition,
     );
     if (!rootMcp || rootSelections.length === 0) {
       launchState.mcpConfigured = true;
@@ -1217,14 +1243,14 @@ export function createRecipesExtension(
       });
       if (session.servers.length === 0) {
         const detail = formatMcpConfigurationDiagnostics(
-          session.diagnostics ?? []
+          session.diagnostics ?? [],
         );
         ctx.ui.notify(
           [
             "Recipe MCP tools: no servers are available to the root agent.",
             ...(detail ? ["", detail] : []),
           ].join("\n"),
-          "warning"
+          "warning",
         );
         launchState.mcpConfigured = true;
         return;
@@ -1243,7 +1269,7 @@ export function createRecipesExtension(
       for (const tool of materialized.tools) {
         if (existing.has(tool.name)) {
           throw new Error(
-            `Cannot register MCP tool '${tool.name}': the Pi tool name is already in use.`
+            `Cannot register MCP tool '${tool.name}': the Pi tool name is already in use.`,
           );
         }
       }
@@ -1254,11 +1280,10 @@ export function createRecipesExtension(
         .filter((name) => !registered.has(name));
       if (missing.length > 0) {
         throw new Error(
-          `Pi did not register MCP tool(s): ${missing.join(", ")}`
+          `Pi did not register MCP tool(s): ${missing.join(", ")}`,
         );
       }
-      launchState.initialMcpToolNames =
-        materialized.initialActiveToolNames;
+      launchState.initialMcpToolNames = materialized.initialActiveToolNames;
       launchState.mcpDeferredToolNames = materialized.deferredToolNames;
       for (const toolName of materialized.toolNames) {
         launchState.extensionAllowedToolNames.add(toolName);
@@ -1269,7 +1294,7 @@ export function createRecipesExtension(
             ? `, ${materialized.deferredToolNames.length} deferred`
             : ""
         }`,
-        "info"
+        "info",
       );
       const diagnostics = [
         ...formatMcpConfigurationDiagnostics(session.diagnostics ?? [])
@@ -1284,7 +1309,7 @@ export function createRecipesExtension(
             "",
             ...diagnostics,
           ].join("\n"),
-          "warning"
+          "warning",
         );
       }
       launchState.mcpConfigured = true;
@@ -1304,9 +1329,11 @@ export function createRecipesExtension(
     prompt: string,
     label: string | undefined,
     ctx: ExtensionContext,
-    onUpdate?: (summary: AgentRunSummary) => void | Promise<void>
+    onUpdate?: (summary: AgentRunSummary) => void | Promise<void>,
   ): Promise<ChildRun> {
     const id = nextChildRunId();
+    // `notifyUpdate` reads it and can run before the run record exists.
+    // eslint-disable-next-line prefer-const
     let run: ChildRun | undefined;
     const notifyUpdate = () => {
       if (!run || !onUpdate) return;
@@ -1387,7 +1414,7 @@ export function createRecipesExtension(
   function executeChildPrompt(
     run: ChildRun,
     prompt: string,
-    cwd: string
+    cwd: string,
   ): Promise<ChildRun> {
     return (async () => {
       try {
@@ -1422,7 +1449,10 @@ export function createRecipesExtension(
     })();
   }
 
-  async function waitForRun(run: ChildRun, signal?: AbortSignal): Promise<void> {
+  async function waitForRun(
+    run: ChildRun,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (!signal) {
       await run.promise;
       return;
@@ -1459,7 +1489,10 @@ export function createRecipesExtension(
       // the reload rebuilds run state and drops the batch with it.
       try {
         if (!(sessionCtx?.isIdle?.() ?? true)) {
-          deliveryRetryTimer = setTimeout(deliverCompletions, COMPLETION_DELIVERY_RETRY_MS);
+          deliveryRetryTimer = setTimeout(
+            deliverCompletions,
+            COMPLETION_DELIVERY_RETRY_MS,
+          );
           deliveryRetryTimer.unref?.();
           return;
         }
@@ -1474,7 +1507,7 @@ export function createRecipesExtension(
           },
           // followUp keeps a wake race-safe: if a user turn started between
           // the idle check and here, the notice queues behind it.
-          { triggerTurn: true, deliverAs: "followUp" }
+          { triggerTurn: true, deliverAs: "followUp" },
         );
       } catch {
         // swallow — see above
@@ -1497,7 +1530,7 @@ export function createRecipesExtension(
       return applyRecipeAgentPayloadPolicy(
         event.payload,
         ctx.model,
-        state.resolved.modelConfig
+        state.resolved.modelConfig,
       );
     });
 
@@ -1508,11 +1541,12 @@ export function createRecipesExtension(
           ?.completions;
         if (!batch?.length) return undefined;
         return new Text(formatCompletionMessage(batch, options, theme), 0, 0);
-      }
+      },
     );
 
     pi.registerFlag("recipe", {
-      description: "Recipe folder, installed recipe name, or installed recipe source to use for this Pi session",
+      description:
+        "Recipe folder, installed recipe name, or installed recipe source to use for this Pi session",
       type: "string",
     });
     pi.registerFlag("agent", {
@@ -1521,11 +1555,18 @@ export function createRecipesExtension(
     });
 
     pi.registerCommand("recipe", {
-      description: "Inspect or reload the active recipe; view or close an artifact when the agent shows them",
+      description:
+        "Inspect or reload the active recipe; view or close an artifact when the agent shows them",
       getArgumentCompletions: (prefix) => {
         const items = [
           ...(!prefix.includes(" ") && "reload".startsWith(prefix.trim())
-            ? [{ value: "reload", label: "reload", description: "Reload the active recipe" }]
+            ? [
+                {
+                  value: "reload",
+                  label: "reload",
+                  description: "Reload the active recipe",
+                },
+              ]
             : []),
           ...recipeSubcommandCompletions(pi, prefix, process.cwd()),
         ];
@@ -1545,7 +1586,10 @@ export function createRecipesExtension(
           const launchState = safeLoadState(pi, ctx.cwd, ctx);
           if (!launchState) {
             if (!recipeFlag(pi)) {
-              ctx.ui.notify("No recipe is active. Launch Pi with --recipe <recipe>.", "info");
+              ctx.ui.notify(
+                "No recipe is active. Launch Pi with --recipe <recipe>.",
+                "info",
+              );
             }
             return;
           }
@@ -1556,7 +1600,10 @@ export function createRecipesExtension(
           completions.clear();
           await ctx.waitForIdle();
           await ctx.reload();
-          ctx.ui.notify(`Recipe reload requested: ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version}`, "info");
+          ctx.ui.notify(
+            `Recipe reload requested: ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version}`,
+            "info",
+          );
           return;
         }
         if (action) {
@@ -1567,7 +1614,10 @@ export function createRecipesExtension(
         const launchState = safeLoadState(pi, ctx.cwd, ctx);
         if (!launchState) {
           if (!recipeFlag(pi)) {
-            ctx.ui.notify("No recipe is active. Launch Pi with --recipe <recipe>.", "info");
+            ctx.ui.notify(
+              "No recipe is active. Launch Pi with --recipe <recipe>.",
+              "info",
+            );
           }
           return;
         }
@@ -1580,7 +1630,7 @@ export function createRecipesExtension(
       visibleAgentDefinitions,
       {
         acknowledgeCompletions: (ids) => completions.acknowledge(ids),
-      }
+      },
     );
     agentTool.label = "Agent";
     agentTool.renderCall = (params, theme, context) => {
@@ -1627,7 +1677,11 @@ export function createRecipesExtension(
         await prepareRecipePythonEnvironments(ctx, launchState);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        failRecipeSession(pi, `Python environment could not be prepared\n${message}`, ctx);
+        failRecipeSession(
+          pi,
+          `Python environment could not be prepared\n${message}`,
+          ctx,
+        );
         return;
       }
       try {
@@ -1663,7 +1717,7 @@ export function createRecipesExtension(
         if (restored > 0) {
           ctx.ui.notify(
             `Agents: rehydrated ${restored} previous run(s) (read-only)`,
-            "info"
+            "info",
           );
         }
       } catch {
@@ -1671,9 +1725,13 @@ export function createRecipesExtension(
       }
       ctx.ui.notify(
         `Recipe: ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version} (${basename(launchState.resolved.recipeDir)})`,
-        "info"
+        "info",
       );
-      suggestionPicker.sessionStarted(event, ctx, launchState.resolved.promptPaths);
+      suggestionPicker.sessionStarted(
+        event,
+        ctx,
+        launchState.resolved.promptPaths,
+      );
     });
 
     pi.on("session_shutdown", async () => {
@@ -1727,7 +1785,10 @@ export function createRecipesExtension(
       if (!event.text.startsWith("/skill:")) return { action: "continue" };
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return { action: "continue" };
-      const command = resolveRecipeSkillCommand(event.text, recipeSkills(launchState));
+      const command = resolveRecipeSkillCommand(
+        event.text,
+        recipeSkills(launchState),
+      );
       if (!command) return { action: "continue" };
       if (command.kind === "expanded") {
         return {
@@ -1738,7 +1799,7 @@ export function createRecipesExtension(
       }
       ctx.ui.notify(
         `Skill '${command.name}' is not one of this Recipe's skills.`,
-        "error"
+        "error",
       );
       return { action: "handled" };
     });
