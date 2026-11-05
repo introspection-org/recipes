@@ -934,23 +934,30 @@ function artifactSourceFor(
     // Fails here, with the reason, when the ref has no such version.
     gitVersion(target, against);
     source.base = { label: against, ref: against };
-  } else if (!ref) {
-    // With no diff asked for, `d` still offers one: against HEAD for a tracked file, else the version shown before.
+  } else if (!ref || diff !== undefined) {
+    // With no diff named, `d` still offers one: against HEAD for a tracked file, else the version shown before.
     const tracked =
       git(target, ["cat-file", "-e", `HEAD:./${target.relativePath}`]) !==
       undefined;
     if (tracked) source.base = { label: "HEAD", ref: "HEAD" };
     else if (previousBase) source.base = previousBase;
   }
-  if (against && source.base) source.diffFirst = true;
+  // A bare `diff` (`""`) opens on the diff `d` would show.
+  if (diff !== undefined && source.base) source.diffFirst = true;
+  else if (diff !== undefined && !against && !source.base)
+    note = ` ${target.relativePath} isn't tracked by git and wasn't shown earlier in this session, so there is nothing to diff against.`;
   viewer.recordShown(target.relativePath, current);
   return { source, current, note };
 }
 
+/** `--name value`, `--name=value`, or a bare `--name` (value undefined). */
 const COMMAND_OPTION = (name: string) =>
-  new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(\\S+)`);
+  new RegExp(`(?:^|\\s)--${name}(?:(?:=|\\s+)(?!--)(\\S+))?(?=\\s|$)`);
 
-/** `/recipe view`'s arguments: a path, `--diff <ref|previous>` and `--ref <ref>`. */
+/**
+ * `/recipe view`'s arguments: a path, `--ref <ref>` and `--diff [<ref|previous>]`.
+ * A bare `--diff` (`diff: ""`) opens on the diff `d` would show.
+ */
 function commandArgs(args: string): {
   path: string;
   ref?: string;
@@ -961,14 +968,20 @@ function commandArgs(args: string): {
     const match = COMMAND_OPTION(name).exec(rest);
     if (!match) return undefined;
     rest = rest.replace(match[0], " ");
-    return match[1];
+    return match[1] ?? "";
   };
-  const diff = option("diff");
+  let diff = option("diff");
   const ref = option("ref");
+  let path = commandPath(rest);
+  // `--diff file` with nothing else: the word after `--diff` was the file.
+  if (!path && diff) {
+    path = commandPath(diff);
+    diff = "";
+  }
   return {
-    path: commandPath(rest),
+    path,
     ...(ref ? { ref } : {}),
-    ...(diff ? { diff } : {}),
+    ...(diff !== undefined ? { diff } : {}),
   };
 }
 
@@ -1103,7 +1116,7 @@ export function artifactViewerExtension(
         const path = parsed.path || viewer.lastPath;
         if (!path) {
           ctx.ui.notify(
-            `Usage: /${VIEW_ARTIFACT_COMMAND} <file> [--diff <ref|previous>] [--ref <ref>]. With no file, it shows the last file the agent showed or wrote.`,
+            `Usage: /${VIEW_ARTIFACT_COMMAND} <file> [--diff [<ref|previous>]] [--ref <ref>]. With no file, it shows the last file the agent showed or wrote.`,
             "info",
           );
           return;
@@ -1124,7 +1137,7 @@ export function artifactViewerExtension(
       },
       {
         description:
-          "Show a file in the panel on the right (--diff <ref|previous> for what changed, --ref <ref> for a commit's version)",
+          "Show a file in the panel on the right (--diff for what changed since HEAD, or --diff <ref|previous>; --ref <ref> for a commit's version)",
         complete: (argument, cwd) => artifactFilesFor(cwd, argument),
       },
     );

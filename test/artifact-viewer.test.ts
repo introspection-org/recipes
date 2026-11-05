@@ -632,6 +632,30 @@ describe("/recipe view and /recipe close", () => {
     });
   });
 
+  it("opens a bare --diff on the diff against HEAD, the file before or after it", async () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, stdio: "pipe" });
+    git("init", "-q", "-b", "main");
+    git("add", "notes.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(workspace, "notes.txt"), "changed\n");
+    const { subcommand, ctx, overlays, notices } = await setup({
+      watchFile: fakeWatcher().watchFile,
+    });
+    const header = () =>
+      overlays.at(-1)!.component.render(100)[0]!.replace(ANSI_STYLE, "");
+    for (const args of ["notes.txt --diff", "--diff notes.txt"]) {
+      await subcommand("view")(args, ctx as never);
+      expect(header()).toContain(
+        "notes.txt  git:(main) ✗  +1 −1 vs HEAD  [diff]",
+      );
+    }
+    // An untracked file seen for the first time has nothing to diff against.
+    writeFileSync(join(workspace, "fresh.txt"), "new\n");
+    await subcommand("view")("fresh.txt --diff", ctx as never);
+    expect(notices.at(-1)!.message).toContain("nothing to diff against");
+  });
+
   it("reports a bad path as a notice", async () => {
     const { subcommand, ctx, overlays, notices } = await setup();
     await subcommand("view")("photo.png", ctx as never);
