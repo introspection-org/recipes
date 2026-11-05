@@ -2451,6 +2451,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         "tools",
         "mcp",
         "skills",
+        "phases",
         "subagents",
         "system_instructions",
     ];
@@ -2562,6 +2563,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     }
     let mcp = validate_agent_mcp(map, path, ctx);
     let skills = validate_agent_string_array(map, "skills", path, ctx);
+    validate_agent_string_array(map, "phases", path, ctx);
     let subagents = validate_agent_string_array(map, "subagents", path, ctx);
     validate_agent_system_instructions(map, path, ctx);
 
@@ -5501,6 +5503,42 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn checks_agent_phases_as_a_list_of_names() {
+        let package = json!({ "name": "phased", "pi": {} });
+        let manifest = serde_json::to_string_pretty(&package).expect("serialize package");
+        let agent = |phases: &str| {
+            recipe_files(&[
+                ("package.json", &manifest),
+                (
+                    "agents/agent.yaml",
+                    &format!(
+                        "name: agent\nmodel:\n  name: test/provider-model\nphases: {phases}\n"
+                    ),
+                ),
+            ])
+        };
+
+        let report = check_recipe_files(&agent("[build, improve]"));
+        assert!(report.valid, "{:?}", report.diagnostics);
+
+        for (phases, code) in [
+            ("build", "agent.phases_invalid"),
+            ("[build, \"\"]", "agent.phases_invalid"),
+            ("[build, build]", "agent.phases_duplicate"),
+        ] {
+            let report = check_recipe_files(&agent(phases));
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == code),
+                "{phases}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

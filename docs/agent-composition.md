@@ -94,6 +94,7 @@ Omission means "inherit" for a derived agent. Declaring a field means
 | `session` | Merges by key; nested settings objects merge recursively |
 | `tools` | Child array replaces the inherited allowlist; `[]` clears it |
 | `skills` | Child array replaces the inherited selection; `[]` clears it |
+| `phases` | Child array replaces the inherited phases; omission inherits them |
 | `subagents` | Child array replaces inherited visibility; `[]` clears it |
 | `mcp` | Omission inherits; a declared block replaces the complete inherited policy |
 | `system_instructions` | Omission inherits; `append` composes after inherited instructions; `replace` replaces the complete inherited prompt |
