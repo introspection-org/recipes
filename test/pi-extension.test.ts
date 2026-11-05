@@ -1270,8 +1270,12 @@ describe("Recipes extension for Pi", () => {
       expect(waitForIdle).toHaveBeenCalled();
       expect(reload).toHaveBeenCalled();
       expect(notify).toHaveBeenCalledWith(
-        "Recipe reload requested: demo@1.0.0",
+        "Reloading recipe demo@1.0.0",
         "info",
+      );
+      // The ctx is stale once the reload resolves: the notice comes first.
+      expect(notify.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+        reload.mock.invocationCallOrder[0]!,
       );
 
       const resourceResults = await pi.emitExtensionEvent(
