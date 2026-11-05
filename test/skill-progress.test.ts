@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activity,
   elapsed,
   lastSkillRead,
   registerSkillProgress,
   skillRead,
+  STEP_STATUS_KEY,
   stepCrumb,
 } from "../src/skill-progress.js";
 
@@ -31,35 +31,13 @@ describe("where the agent is", () => {
     ).toBeUndefined();
   });
 
-  it("shows the phase as a bar, the step and what's next", () => {
+  it("shows the phase as a bar and the step", () => {
     expect(stepCrumb("build-brainstorm", skills)).toBe(
-      "build ▰▱▱ 1/3 brainstorm · next draft",
+      "build ▰▱▱ 1/3 brainstorm",
     );
     expect(stepCrumb("build-review", skills)).toBe("build ▰▰▰ 3/3 review");
+    expect(stepCrumb("build-draft", skills)).toBe("build ▰▰▱ 2/3 draft");
     expect(stepCrumb("research", ["research"])).toBe("research");
-  });
-
-  it("says what a tool call is doing in a few words", () => {
-    expect(
-      activity("bash", {
-        command: "cd interview-agent && introspection eval run -p x.ts",
-      }),
-    ).toBe("introspection eval run -p x.ts");
-    expect(
-      activity("bash", { command: `echo ${"x".repeat(100)}` }),
-    ).toHaveLength(60);
-    expect(activity("review_artifacts", {})).toBe("waiting for you");
-    expect(activity("read", { path: "a.md" })).toBe("read");
-    expect(
-      activity("agent", {
-        action: "start",
-        name: "case-runner",
-        label: "hello-1",
-      }),
-    ).toBe("start case-runner hello-1");
-    expect(activity("agent", { action: "wait", id: "agent-run-2" })).toBe(
-      "wait agent-run-2",
-    );
   });
 
   it("gives how long the step has run", () => {
@@ -87,7 +65,7 @@ describe("where the agent is", () => {
     ).toBe("build-draft");
   });
 
-  it("sets the working line and title as the agent moves, and on resume", () => {
+  it("sets the footer status and title as the agent moves, with a running clock, and on resume", () => {
     const handlers = new Map<string, (event: any, ctx: any) => void>();
     const pi = {
       on: (name: string, handler: any) => handlers.set(name, handler),
@@ -103,14 +81,17 @@ describe("where the agent is", () => {
         return () => {};
       },
     );
-    const working: string[] = [];
+    const statuses: Array<[string, string]> = [];
     const titles: string[] = [];
     const ctx = {
       hasUI: true,
       cwd: "/home/u/interview-8",
       ui: {
-        setWorkingMessage: (m: string) => working.push(m),
+        setStatus: (key: string, text: string) => statuses.push([key, text]),
         setTitle: (t: string) => titles.push(t),
+        setWorkingMessage: () => {
+          throw new Error("the working line is Pi's");
+        },
       },
       sessionManager: {
         getEntries: () => [
@@ -134,27 +115,16 @@ describe("where the agent is", () => {
       { input: { path: "s/build-draft/SKILL.md" } },
       ctx,
     );
-    clock = 3 * 60_000;
-    handlers.get("tool_execution_start")!(
-      {
-        toolName: "bash",
-        args: { command: "introspection tasks prompt runs/C1-1 --prompt hi" },
-      },
-      ctx,
-    );
-    expect(titles).toEqual([
-      "⧈ Introspection · interview-8 · build ▰▱▱ 1/3 brainstorm · next draft",
-      "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft · next review",
-    ]);
-    expect(working.at(-1)).toBe(
-      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:00 · next review › introspection tasks prompt runs/C1-1 --prompt hi",
-    );
-    // The clock keeps running during the same call.
     clock = 3 * 60_000 + 17_000;
     tick!();
-    expect(working.at(-1)).toBe(
-      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:17 · next review › introspection tasks prompt runs/C1-1 --prompt hi",
-    );
+    expect(titles).toEqual([
+      "⧈ Introspection · interview-8 · build ▰▱▱ 1/3 brainstorm",
+      "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft",
+    ]);
+    expect(statuses.at(-1)).toEqual([
+      STEP_STATUS_KEY,
+      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:17",
+    ]);
   });
 
   it("does nothing outside a Recipe session", () => {
@@ -167,15 +137,15 @@ describe("where the agent is", () => {
       hasUI: true,
       cwd: "/x",
       ui: {
-        setWorkingMessage: () => {
+        setStatus: () => {
           throw new Error("called");
         },
         setTitle: () => {},
       },
     };
     expect(() =>
-      handlers.get("tool_execution_start")!(
-        { toolName: "bash", args: { command: "ls" } },
+      handlers.get("tool_result")!(
+        { input: { path: "s/build-draft/SKILL.md" } },
         ctx,
       ),
     ).not.toThrow();

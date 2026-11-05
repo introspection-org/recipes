@@ -1,15 +1,13 @@
 /**
- * Where a Recipe agent is, while it works: Pi's working line reads
- * `⧈ Introspection build ▰▰▱ 2/3 draft · 12:04 · next review › introspection tasks prompt runs/C1-1`
- * in place of "Working", and the terminal title names the folder and the step.
- * The time is how long the step has run; no estimate of what's left is given,
+ * Where a Recipe agent is: Pi's footer reads
+ * `⧈ Introspection build ▰▰▱ 2/3 draft · 12:04`, the terminal title names the
+ * folder and the step; Pi's own "Working" line is left as it is. The clock is how long the step has run; no estimate of what's left is given,
  * since steps vary too much for one to be honest.
  *
  * Nothing is declared for it. The step is the agent's skill it last read: a
- * skill named `<phase>-<step>` (the Operator's `build-draft`) shows as
- * `build › draft`, any other by its name. The last part is the tool call in
- * progress: a bash command, shortened, or the tool's name. On resume the step
- * is recovered from the session's earlier reads.
+ * skill named `<phase>-<step>` (the Operator's `build-draft`) shows its phase
+ * as a bar of its steps in the agent's order, any other by its name. On resume
+ * the step is recovered from the session's earlier reads.
  */
 
 import { basename } from "node:path";
@@ -22,11 +20,8 @@ import type {
 /** Introspection's mark (two concentric squares) and name, at the front of the working line and the title. */
 export const BRAND = "⧈ Introspection";
 
-/** Between a step and the one after it: `draft · next review`. */
-const NEXT_SEPARATOR = " · next ";
-
-/** The longest a command shows in the working line. */
-export const ACTIVITY_MAX_CHARS = 60;
+/** The footer status the step shows under. */
+export const STEP_STATUS_KEY = "recipe-step";
 
 /** The agent's skill whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
@@ -41,9 +36,9 @@ export function skillRead(
 }
 
 /**
- * `build ▰▰▱ 2/3 draft · next review` for a `<phase>-<step>` skill the agent
- * lists with others of its phase: a bar of the phase's steps in the agent's
- * order, done and current filled. Any other skill shows by its name.
+ * `build ▰▰▱ 2/3 draft` for a `<phase>-<step>` skill the agent lists with
+ * others of its phase: a bar of the phase's steps in the agent's order, done
+ * and current filled. Any other skill shows by its name.
  */
 export function stepCrumb(skill: string, skills: readonly string[]): string {
   const dash = skill.indexOf("-");
@@ -53,8 +48,7 @@ export function stepCrumb(skill: string, skills: readonly string[]): string {
   const at = steps.indexOf(skill);
   if (steps.length < 2 || at < 0) return skill;
   const bar = steps.map((_, index) => (index <= at ? "▰" : "▱")).join("");
-  const next = steps[at + 1]?.slice(phase.length + 1);
-  return `${phase} ${bar} ${at + 1}/${steps.length} ${skill.slice(dash + 1)}${next ? ` · next ${next}` : ""}`;
+  return `${phase} ${bar} ${at + 1}/${steps.length} ${skill.slice(dash + 1)}`;
 }
 
 /** How long a step has run, as a clock: `00:17`, `03:42`, `1:05:09`. */
@@ -69,35 +63,6 @@ export function elapsed(ms: number): string {
   return hours > 0
     ? `${hours}:${two(minutes)}:${two(seconds)}`
     : `${two(minutes)}:${two(seconds)}`;
-}
-
-/** What a tool call is doing, in a few words: a bash command's first line without a leading `cd …&&`, else the tool's name. */
-export function activity(toolName: string, args: unknown): string {
-  const input = (args ?? {}) as Record<string, unknown>;
-  if (toolName === "bash" && typeof input.command === "string") {
-    const command = input.command
-      .split("\n")[0]!
-      .replace(/^\s*cd\s+[^&;]+(&&|;)\s*/, "")
-      .trim();
-    return command.length > ACTIVITY_MAX_CHARS
-      ? `${command.slice(0, ACTIVITY_MAX_CHARS - 1)}…`
-      : command;
-  }
-  if (toolName === "ask_user_question" || toolName === "review_artifacts")
-    return "waiting for you";
-  if (toolName === "agent") {
-    // A subagent call by what it names: `case-runner hello-1`, `waiting for agent-run-2`.
-    const action = typeof input.action === "string" ? input.action : "start";
-    const who = [input.name, input.label]
-      .filter((part) => typeof part === "string" && part)
-      .join(" ");
-    if (action === "start" || action === "message")
-      return who ? `${action} ${who}` : `${action} subagent`;
-    return typeof input.id === "string"
-      ? `${action} ${input.id}`
-      : `${action} subagents`;
-  }
-  return toolName;
 }
 
 type Entry = { type?: string; message?: { role?: string; content?: unknown } };
@@ -147,18 +112,18 @@ export function registerSkillProgress(
 ): { resume(ctx: ExtensionContext): void } {
   let crumb: string | undefined;
   let since = 0;
-  // The last line drawn, redrawn every second so the clock runs during a long call.
-  let shown: { ctx: ExtensionContext; text: string | undefined } | undefined;
+  // Redrawn every second, so the clock runs during a long call.
+  let shown: ExtensionContext | undefined;
   let stop: (() => void) | undefined;
-  const show = (ctx: ExtensionContext, text: string | undefined) => {
+  const show = (ctx: ExtensionContext) => {
     if (!ctx.hasUI || !crumb) return;
-    shown = { ctx, text };
-    // The clock goes with the step it measures, before what comes next.
-    const [step, next] = crumb.split(NEXT_SEPARATOR);
-    const line = `${BRAND} ${step} · ${elapsed(now() - since)}${next ? `${NEXT_SEPARATOR}${next}` : ""}`;
-    ctx.ui.setWorkingMessage(text ? `${line} › ${text}` : line);
+    shown = ctx;
+    ctx.ui.setStatus(
+      STEP_STATUS_KEY,
+      `${BRAND} ${crumb} · ${elapsed(now() - since)}`,
+    );
     stop ??= every(() => {
-      if (shown) show(shown.ctx, shown.text);
+      if (shown) show(shown);
     });
   };
   pi.on("session_shutdown", () => {
@@ -177,12 +142,8 @@ export function registerSkillProgress(
     crumb = next;
     since = now();
     ctx.ui.setTitle(`${BRAND} · ${basename(ctx.cwd)} · ${crumb}`);
-    show(ctx, undefined);
+    show(ctx);
   };
-  pi.on("tool_execution_start", (event, ctx) => {
-    if (!skillsFor(ctx)?.length) return;
-    show(ctx, activity(event.toolName, event.args));
-  });
   pi.on("tool_result", (event, ctx) => {
     const skills = skillsFor(ctx);
     if (!skills?.length) return;
@@ -192,7 +153,7 @@ export function registerSkillProgress(
       skillRead(input.path, skills) ?? skillRead(input.command, skills),
       skills,
     );
-    show(ctx, undefined);
+    show(ctx);
   });
   return {
     resume(ctx) {
