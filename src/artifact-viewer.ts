@@ -170,12 +170,56 @@ const SKIPPED_FOLDERS = new Set([
 const PREFERRED_PARTS = ["docs/", "evals/cases/", "prompts/", "outputs/"];
 const MAX_LISTED_FILES = 50;
 
+/** Extensions of files that are never text, left out of the file list without reading them. */
+const BINARY_EXTENSIONS = new Set(
+  [
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "ico",
+    "bmp",
+    "tiff",
+    "pdf",
+    "zip",
+    "gz",
+    "tgz",
+    "bz2",
+    "xz",
+    "7z",
+    "tar",
+    "jar",
+    "wasm",
+    "so",
+    "dylib",
+    "dll",
+    "exe",
+    "bin",
+    "woff",
+    "woff2",
+    "ttf",
+    "otf",
+    "mp3",
+    "mp4",
+    "mov",
+    "wav",
+    "parquet",
+    "sqlite",
+    "db",
+    "docx",
+    "xlsx",
+    "pptx",
+  ].map((extension) => `.${extension}`),
+);
+
 /**
- * The markdown files under `cwd` matching `query` (a substring of the path,
- * case-insensitive), the usual review files first. Bounded in depth and count
- * so a large workspace stays quick; hidden folders and build output are skipped.
+ * The text files under `cwd` matching `query` (a substring of the path,
+ * case-insensitive): the usual review folders first, then markdown, then the
+ * rest. Bounded in depth and count so a large workspace stays quick; hidden
+ * folders, build output and binary file types are skipped.
  */
-export function markdownFilesFor(
+export function artifactFilesFor(
   cwd: string,
   query: string,
 ): AutocompleteItem[] {
@@ -193,7 +237,10 @@ export function markdownFilesFor(
       const path = resolve(dir, entry.name);
       if (entry.isDirectory()) {
         if (!SKIPPED_FOLDERS.has(entry.name)) walk(path, depth + 1);
-      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
+      } else if (
+        entry.isFile() &&
+        !BINARY_EXTENSIONS.has(extname(entry.name).toLowerCase())
+      ) {
         found.push(relative(cwd, path).split(sep).join("/"));
       }
     }
@@ -206,7 +253,12 @@ export function markdownFilesFor(
   };
   return found
     .filter((path) => path.toLowerCase().includes(needle))
-    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        Number(!isMarkdownPath(a)) - Number(!isMarkdownPath(b)) ||
+        a.localeCompare(b),
+    )
     .slice(0, MAX_LISTED_FILES)
     .map((path) => ({ value: path, label: path }));
 }
@@ -576,7 +628,7 @@ class ArtifactViewer {
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   }
 
-  /** The last markdown file shown or written, relative to the working directory. */
+  /** The last file shown or written, relative to the working directory. */
   get lastPath(): string | undefined {
     return this.last;
   }
@@ -599,11 +651,12 @@ class ArtifactViewer {
     this.shownVersions.set(path, text);
   }
 
-  /** Remember a markdown file the agent wrote, for `/recipe view` with no argument. */
+  /** Remember a file the agent wrote, for `/recipe view` with no argument. */
   remember(cwd: string, path: string): void {
-    if (!isMarkdownPath(path)) return;
     try {
-      this.last = resolveArtifactPath(cwd, path).relativePath;
+      this.last = resolveArtifactPath(cwd, path, {
+        anyText: true,
+      }).relativePath;
     } catch {
       // Not a file we could show; keep the previous one.
     }
@@ -985,7 +1038,7 @@ export function artifactViewerExtension(
       {
         description:
           "Show a file in the panel on the right (--diff <ref|previous> for what changed, --ref <ref> for a commit's version)",
-        complete: (argument, cwd) => markdownFilesFor(cwd, argument),
+        complete: (argument, cwd) => artifactFilesFor(cwd, argument),
       },
     );
 

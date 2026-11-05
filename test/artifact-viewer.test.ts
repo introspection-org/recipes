@@ -9,7 +9,16 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type {
   ExtensionContext,
   ToolDefinition,
@@ -18,7 +27,7 @@ import type {
 import {
   SHOW_ARTIFACT_TOOL_NAME,
   artifactViewerExtension,
-  markdownFilesFor,
+  artifactFilesFor,
   recipeSubcommand,
   recipeSubcommandCompletions,
   recipeSubcommandNames,
@@ -212,6 +221,9 @@ async function setup(
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 let workspace: string;
+
+// The panel highlights code with Pi's theme, which Pi loads before any extension runs.
+beforeAll(() => initTheme("dark"));
 
 beforeEach(() => {
   workspace = mkdtempSync(join(tmpdir(), "artifact-viewer-"));
@@ -597,7 +609,7 @@ describe("/recipe view and /recipe close", () => {
     });
   });
 
-  it("with no argument, opens the last markdown file the agent wrote or showed", async () => {
+  it("with no argument, opens the last file the agent wrote or showed", async () => {
     const { subcommand, events, ctx, overlays, notices, show } = await setup({
       watchFile: fakeWatcher().watchFile,
     });
@@ -614,11 +626,11 @@ describe("/recipe view and /recipe close", () => {
     };
     toolResult("write", "evals/cases/refund.md");
     toolResult("write", "notes.txt");
+    toolResult("write", "photo.png");
     toolResult("edit", "missing.md", true);
+    // A binary file and a failed edit leave the last text file in place.
     await view("", ctx);
-    expect(overlays[0]!.component.render(60)[0]).toContain(
-      "evals/cases/refund.md",
-    );
+    expect(overlays[0]!.component.render(60)[0]).toContain("notes.txt");
 
     overlays[0]!.component.handleInput!("q");
     await show("brief.md");
@@ -638,7 +650,7 @@ describe("/recipe view and /recipe close", () => {
 });
 
 describe("/recipe completions", () => {
-  it("lists the subcommands, then the workspace's markdown files for view", async () => {
+  it("lists the subcommands, then the workspace's text files for view", async () => {
     const { pi } = await setup();
     const names = (prefix: string) =>
       recipeSubcommandCompletions(pi, prefix, workspace).map(
@@ -647,10 +659,11 @@ describe("/recipe completions", () => {
     expect(names("")).toEqual(["view"]);
     expect(names("v")).toEqual(["view"]);
     const files = recipeSubcommandCompletions(pi, "view ", workspace);
-    // The usual review folders come first; text files are never offered.
+    // The usual review folders first, then markdown, then other text; binary files are never offered.
     expect(files.map((item) => item.value)).toEqual([
       "view evals/cases/refund.md",
       "view brief.md",
+      "view notes.txt",
     ]);
     expect(
       recipeSubcommandCompletions(pi, "view REF", workspace).map(
@@ -665,9 +678,11 @@ describe("/recipe completions", () => {
     writeFileSync(join(workspace, "node_modules", "pkg", "README.md"), "x");
     mkdirSync(join(workspace, ".pi"), { recursive: true });
     writeFileSync(join(workspace, ".pi", "notes.md"), "x");
-    expect(markdownFilesFor(workspace, "").map((item) => item.value)).toEqual([
+    // Review folders first, then markdown, then other text; binary files are left out.
+    expect(artifactFilesFor(workspace, "").map((item) => item.value)).toEqual([
       "evals/cases/refund.md",
       "brief.md",
+      "notes.txt",
     ]);
   });
 });
