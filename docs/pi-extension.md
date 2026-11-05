@@ -57,7 +57,28 @@ A Recipe agent's step shows in Pi's footer, with how long the agent has worked:
 ⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04
 ```
 
-Nothing is declared for it. The step is the agent's skill it last read, among the skills of the phase it lists first (`build-*` for an agent listing `build-brainstorm` first; others it consults, such as `eval-case`, don't move it): a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked, the current one marked and the rest to come; any other skill shows by its name. The clock is the agent's working time from the start of the session, across every step, redrawn every second. It pauses while the person is in the loop, when the agent's turn has ended or a question or review is open, and the current step then shows ⏸ in place of ▸. It's never an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
+Nothing need be declared for it. The step is the agent's skill it last read, among the skills of the phase it lists first (`build-*` for an agent listing `build-brainstorm` first; others it consults, such as `eval-case`, don't move it): a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked, the current one marked and the rest to come; any other skill shows by its name. The clock is the agent's working time from the start of the session, across every step, redrawn every second. It pauses while the person is in the loop, when the agent's turn has ended or a question or review is open, and the current step then shows ⏸ in place of ▸. It's never an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
+
+An agent that moves through several phases declares them in its agent file, in order:
+
+```yaml
+skills: [build-brainstorm, build-draft, build-review, build-deploy, improve-collect, improve-classify, improve-propose, eval-run]
+phases: [build, improve]
+```
+
+The phase is then that of the last step skill it read, a skill named `<phase>-<step>` of a declared phase, and its steps and ticks are that phase's skills in the order listed. Reading `improve-classify` shows:
+
+```text
+⧈ Introspection improve ✓ collect ▸ classify ○ propose · 31:40
+```
+
+Any other of the agent's skills is a helper: reading it never changes the phase, and it shows after the current step, its first dash as a space (`eval-run` as `eval run`, a name without a dash as it is), until the agent next reads a step:
+
+```text
+⧈ Introspection build ✓ brainstorm ▸ draft · eval run ○ review ○ deploy · 12:04
+```
+
+A helper read counts the same way a step read does: a glance at its top (fewer than 100 lines, or `head`) doesn't. While the clock is paused the step shows ⏸ as before, and a resumed session restores phase, step and helper from its earlier reads. Without `phases`, the footer works as described above.
 
 A host that draws its own line (the platform's task chat) passes `onRecipeStep` to `createAgentSession`, with or without a UI. It receives the same step as data, `{ skill, phase?, steps: [{ name, state: "done" | "current" | "todo" }], paused, worked_ms }`, whenever the step changes or the clock starts or stops, not every second; the host runs the clock on from `worked_ms` while `paused` is false. A skill outside a phase has no `steps` and shows by `skill`.
 

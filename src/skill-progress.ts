@@ -6,10 +6,14 @@
  * while the person is in the loop, when the current step shows ⏸ in place of ▸; no estimate of what's left is given, since
  * steps vary too much for one to be honest.
  *
- * Nothing is declared for it. The step is the agent's skill it last read: a
+ * Nothing need be declared for it. The step is the agent's skill it last read: a
  * skill named `<phase>-<step>` (the Operator's `build-draft`) shows its phase's
- * steps in the agent's order, any other by its name. On resume the step is
- * recovered from the session's earlier reads.
+ * steps in the agent's order, any other by its name. An agent that declares
+ * `phases: [build, improve]` moves between them: the phase is that of the last
+ * step it read, and any other of its skills is a helper, shown after the
+ * current step until it next reads a step:
+ * `build ✓ brainstorm ▸ draft · eval run ○ review · 12:04`. On resume the step
+ * is recovered from the session's earlier reads.
  */
 
 import { basename, dirname } from "node:path";
@@ -68,11 +72,46 @@ export function stepSkills(skills: readonly string[]): readonly string[] {
   return steps.length > 1 ? steps : skills;
 }
 
-/** The agent's skills in their listed order, and the name of each by its folder where the two differ. */
+/**
+ * The agent's skills in their listed order, the name of each by its folder
+ * where the two differ, and the phases its agent file declares, if any.
+ */
 export type RecipeSkills = {
   names: readonly string[];
   folders?: ReadonlyMap<string, string>;
+  phases?: readonly string[];
 };
+
+/** Where the agent is: the step it last read and, with declared phases, the helper it read since. */
+export type Position = { step?: string; helper?: string };
+
+/** The declared phase a skill is a step of (`improve` for `improve-classify`), if any; the longest prefix wins. */
+function declaredPhase(
+  skill: string,
+  phases: readonly string[],
+): string | undefined {
+  return phases
+    .filter((phase) => skill.startsWith(`${phase}-`))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
+/** Where the agent is after reading `skill`: a step of a declared phase moves the step and clears the helper; any other skill is a helper, and the step stays. */
+export function advance(
+  at: Position,
+  skill: string,
+  skills: RecipeSkills,
+): Position {
+  if (!skills.phases?.length) return { step: skill };
+  return declaredPhase(skill, skills.phases)
+    ? { step: skill }
+    : { ...at, helper: skill };
+}
+
+/** A helper as the footer shows it: `eval-run` as `eval run`, a name without a dash as it is. */
+function helperLabel(skill: string): string {
+  const dash = skill.indexOf("-");
+  return dash <= 0 ? skill : `${skill.slice(0, dash)} ${skill.slice(dash + 1)}`;
+}
 
 /** Each skill's name by its folder, for the skills whose `name` isn't their folder's. */
 export function skillFolders(
@@ -94,7 +133,8 @@ export function skillRead(
   skills: RecipeSkills,
 ): string | undefined {
   if (typeof text !== "string") return undefined;
-  const steps = stepSkills(skills.names);
+  // With declared phases every one of the agent's skills counts: steps move the phase, the rest are helpers.
+  const steps = skills.phases?.length ? skills.names : stepSkills(skills.names);
   for (const match of text.matchAll(/([A-Za-z0-9_-]+)\/SKILL\.md\b/g)) {
     const name = skills.folders?.get(match[1]!) ?? match[1]!;
     if (steps.includes(name)) return name;
@@ -102,36 +142,52 @@ export function skillRead(
   return undefined;
 }
 
-/** A skill's phase and its steps in the agent's order, or undefined when it isn't one of several `<phase>-<step>` skills. */
+/**
+ * A skill's phase and its steps in the agent's order, or undefined when it
+ * isn't one of several `<phase>-<step>` skills. A declared phase is a phase
+ * even with a single step.
+ */
 function phaseOf(
   skill: string,
   skills: readonly string[],
+  phases?: readonly string[],
 ): { phase: string; steps: string[]; at: number } | undefined {
-  const dash = skill.indexOf("-");
+  const declared = phases?.length ? declaredPhase(skill, phases) : undefined;
+  const dash = declared ? declared.length : skill.indexOf("-");
   if (dash <= 0) return undefined;
   const phase = skill.slice(0, dash);
   const steps = skills
-    .filter((name) => name.startsWith(`${phase}-`))
+    .filter((name) =>
+      phases?.length
+        ? declaredPhase(name, phases) === phase
+        : name.startsWith(`${phase}-`),
+    )
     .map((name) => name.slice(phase.length + 1));
   const at = steps.indexOf(skill.slice(dash + 1));
-  return steps.length < 2 || at < 0 ? undefined : { phase, steps, at };
+  return at < 0 || (steps.length < 2 && !declared)
+    ? undefined
+    : { phase, steps, at };
 }
 
 /**
  * The footer's line for a step: `build ✓ brainstorm ▸ draft ○ review · 12:04`,
  * the phase's steps in the agent's order (done ticked,
  * the current one marked, the rest to come), then how long the current one has
- * run. Any other skill shows by its name.
+ * run. Any other skill shows by its name. With declared phases, a helper the
+ * agent read since its step shows right after it:
+ * `build ✓ brainstorm ▸ draft · eval run ○ review · 12:04`.
  */
 export function stepLine(
   skill: string,
   skills: readonly string[],
   clock: string,
   paused = false,
+  { phases, helper }: { phases?: readonly string[]; helper?: string } = {},
 ): string {
-  const found = phaseOf(skill, skills);
+  const found = phaseOf(skill, skills, phases);
   const mark = paused ? PAUSED_MARK : "▸";
-  if (!found) return `${mark} ${skill} · ${clock}`;
+  const aside = helper ? ` · ${helperLabel(helper)}` : "";
+  if (!found) return `${mark} ${skill}${aside} · ${clock}`;
   const done = found.steps
     .slice(0, found.at)
     .map((step) => `✓ ${step}`)
@@ -140,7 +196,7 @@ export function stepLine(
     .slice(found.at + 1)
     .map((step) => `○ ${step}`)
     .join(" ");
-  const line = [done, `${mark} ${found.steps[found.at]}`, rest]
+  const line = [done, `${mark} ${found.steps[found.at]}${aside}`, rest]
     .filter(Boolean)
     .join(" ");
   return `${found.phase} ${line} · ${clock}`;
@@ -155,32 +211,37 @@ export interface RecipeStepItem {
 /**
  * Where a Recipe agent is, for a host that draws its own line (a browser): what
  * the footer shows, as data. `steps` is empty for a skill that isn't one of a
- * phase's steps, which a host shows by `skill`. The clock is `worked_ms` as of
- * this report, running on from it while `paused` is false.
+ * phase's steps, which a host shows by `skill`; `helper` is a skill read since
+ * the step, shown beside it. The clock is `worked_ms` as of this report,
+ * running on from it while `paused` is false.
  */
 export interface RecipeStep {
-  skill: string;
+  skill?: string;
   phase?: string;
   steps: RecipeStepItem[];
+  helper?: string;
   paused: boolean;
   worked_ms: number;
 }
 
-/** A skill's place among the agent's steps, without the clock. */
+/** Where the agent is among its steps, without the clock. */
 export function stepState(
-  skill: string,
-  skills: readonly string[],
-): Pick<RecipeStep, "skill" | "phase" | "steps"> {
-  const found = phaseOf(skill, skills);
-  if (!found) return { skill, steps: [] };
+  at: Position,
+  skills: RecipeSkills,
+): Pick<RecipeStep, "skill" | "phase" | "steps" | "helper"> {
+  const helper = at.helper ? { helper: helperLabel(at.helper) } : {};
+  if (!at.step) return { steps: [], ...helper };
+  const found = phaseOf(at.step, skills.names, skills.phases);
+  if (!found) return { skill: at.step, steps: [], ...helper };
   return {
-    skill,
+    skill: at.step,
     phase: found.phase,
     steps: found.steps.map((name, index) => ({
       name,
       state:
         index < found.at ? "done" : index === found.at ? "current" : "todo",
     })),
+    ...helper,
   };
 }
 
@@ -208,11 +269,46 @@ type Entry = {
   };
 };
 
+/** The footer's line for where the agent is: its step, or a helper read before any step. */
+export function positionLine(
+  at: Position,
+  skills: RecipeSkills,
+  clock: string,
+  paused = false,
+): string {
+  const mark = paused ? PAUSED_MARK : "▸";
+  if (!at.step) return `${mark} ${helperLabel(at.helper ?? "")} · ${clock}`;
+  return stepLine(at.step, skills.names, clock, paused, {
+    phases: skills.phases,
+    helper: at.helper,
+  });
+}
+
+/** Where the session's reads of the agent's skills leave it, from its entries; a read that failed doesn't count. */
+export function lastPosition(
+  entries: readonly unknown[],
+  skills: RecipeSkills,
+): Position | undefined {
+  let at: Position | undefined;
+  for (const skill of skillReads(entries, skills)) {
+    at = advance(at ?? {}, skill, skills);
+  }
+  return at;
+}
+
 /** The last of the agent's skills the session read, from its entries; a read that failed doesn't count. */
 export function lastSkillRead(
   entries: readonly unknown[],
   skills: RecipeSkills,
 ): string | undefined {
+  return skillReads(entries, skills).at(-1);
+}
+
+/** The agent's skills the session read, in order. */
+function skillReads(
+  entries: readonly unknown[],
+  skills: RecipeSkills,
+): string[] {
   const failed = new Set(
     (entries as Entry[])
       .filter(
@@ -221,7 +317,7 @@ export function lastSkillRead(
       )
       .map((entry) => entry.message!.toolCallId),
   );
-  let last: string | undefined;
+  const reads: string[] = [];
   for (const entry of entries as Entry[]) {
     if (entry.type !== "message" || entry.message?.role !== "assistant")
       continue;
@@ -241,13 +337,13 @@ export function lastSkillRead(
         !readsWhole(block.arguments ?? {})
       )
         continue;
-      last =
+      const read =
         skillRead(block.arguments?.path, skills) ??
-        skillRead(block.arguments?.command, skills) ??
-        last;
+        skillRead(block.arguments?.command, skills);
+      if (read) reads.push(read);
     }
   }
-  return last;
+  return reads;
 }
 
 /**
@@ -271,7 +367,7 @@ export function registerSkillProgress(
   },
   report?: (step: RecipeStep) => void,
 ): { resume(ctx: ExtensionContext): void } {
-  let current: { skill: string; skills: readonly string[] } | undefined;
+  let current: { at: Position; skills: RecipeSkills } | undefined;
   // The agent's working time this session, across every step: what's banked, plus the run in
   // progress. It pauses while the person is in the loop (the agent's turn has ended, or a question
   // or review is open).
@@ -295,11 +391,11 @@ export function registerSkillProgress(
   const tell = () => {
     if (!report || !current) return;
     const paused = runningSince === undefined;
-    const key = `${current.skill}\u0000${paused}`;
+    const key = `${current.at.step}\u0000${current.at.helper}\u0000${paused}`;
     if (key === reported) return;
     reported = key;
     report({
-      ...stepState(current.skill, current.skills),
+      ...stepState(current.at, current.skills),
       paused,
       worked_ms: worked(),
     });
@@ -310,7 +406,7 @@ export function registerSkillProgress(
     shown = ctx;
     ctx.ui.setStatus(
       STEP_STATUS_KEY,
-      `${BRAND} ${stepLine(current.skill, current.skills, elapsed(worked()), runningSince === undefined)}`,
+      `${BRAND} ${positionLine(current.at, current.skills, elapsed(worked()), runningSince === undefined)}`,
     );
     stop ??= every(() => {
       if (shown) show(shown);
@@ -321,14 +417,15 @@ export function registerSkillProgress(
     stop = undefined;
     shown = undefined;
   });
-  const setStep = (
+  const moveTo = (
     ctx: ExtensionContext,
-    skill: string | undefined,
-    skills: readonly string[],
+    at: Position | undefined,
+    skills: RecipeSkills,
   ) => {
-    if (!skill || (!ctx.hasUI && !report)) return;
-    if (current?.skill === skill) return;
-    current = { skill, skills };
+    if (!at || (!ctx.hasUI && !report)) return;
+    if (current?.at.step === at.step && current?.at.helper === at.helper)
+      return;
+    current = { at, skills };
     show(ctx);
   };
   pi.on("agent_start", (_event, ctx) => {
@@ -354,11 +451,9 @@ export function registerSkillProgress(
       SKILL_READ_TOOLS.has(event.toolName) &&
       readsWhole(input)
     ) {
-      setStep(
-        ctx,
-        skillRead(input.path, skills) ?? skillRead(input.command, skills),
-        skills.names,
-      );
+      const read =
+        skillRead(input.path, skills) ?? skillRead(input.command, skills);
+      if (read) moveTo(ctx, advance(current?.at ?? {}, read, skills), skills);
     }
     show(ctx);
   });
@@ -372,10 +467,10 @@ export function registerSkillProgress(
       runningSince = undefined;
       const skills = skillsFor(ctx);
       if (!skills?.names.length) return;
-      setStep(
+      moveTo(
         ctx,
-        lastSkillRead(ctx.sessionManager?.getEntries?.() ?? [], skills),
-        skills.names,
+        lastPosition(ctx.sessionManager?.getEntries?.() ?? [], skills),
+        skills,
       );
     },
   };
@@ -387,7 +482,10 @@ export function registerSkillProgress(
  */
 export function recipeStepExtensions(
   agent: {
-    readonly definition: { readonly skills: readonly string[] };
+    readonly definition: {
+      readonly skills: readonly string[];
+      readonly phases?: readonly string[];
+    };
     readonly skillPaths: readonly string[];
     readonly recipeDir: string;
   },
@@ -397,6 +495,9 @@ export function recipeStepExtensions(
   const skills: RecipeSkills = {
     names: agent.definition.skills,
     folders: skillFolders(agent.skillPaths, agent.recipeDir),
+    ...(agent.definition.phases?.length
+      ? { phases: agent.definition.phases }
+      : {}),
   };
   return [
     (pi) => {

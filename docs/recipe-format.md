@@ -132,6 +132,12 @@ All remaining agent fields are optional. Omitted `tools`, `skills`, and
 provider or session default. Omitted agent instructions preserve `SYSTEM.md`
 when present, or Pi's normal base prompt otherwise.
 
+`phases` MAY list, in order, the phases the agent moves through, each the
+prefix of its step skills (`build` for `build-draft`). It changes only what
+Pi's footer shows: the phase of the step skill last read, with the agent's
+other skills shown as helpers. See
+[Where the agent is](pi-extension.md#where-the-agent-is).
+
 Recipe-authored configuration uses `snake_case`. `ai.options` is normalized at
 the Pi boundary to Pi's camelCase portable `streamSimple` request options, so
 newly added portable Pi options do not require a Recipe schema release. It is
