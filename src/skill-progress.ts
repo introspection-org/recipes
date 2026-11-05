@@ -8,8 +8,11 @@
  *
  * Nothing is declared for it. The step is the agent's skill it last read: a
  * skill named `<phase>-<step>` (the Operator's `build-draft`) shows its phase's
- * steps in the agent's order, any other by its name. On resume the step is
- * recovered from the session's earlier reads.
+ * steps in the agent's order, any other by its name. The footer shows one
+ * phase at a time, like a section of a site, and moves on to the next phase the
+ * agent lists (`deploy` after `build`) when it reads that phase's first step
+ * after the last step of this one. On resume the step is recovered from the
+ * session's earlier reads.
  */
 
 import { basename, dirname } from "node:path";
@@ -54,20 +57,39 @@ export function readsWhole(input: Record<string, unknown>): boolean {
   return true;
 }
 
+/** The agent's phases in listed order, each with its skills: `build` with `build-brainstorm`, `build-draft`, `build-review`. A phase has at least two `<phase>-<step>` skills. */
+export function phases(skills: readonly string[]): string[][] {
+  const byPhase = new Map<string, string[]>();
+  for (const name of skills) {
+    const dash = name.indexOf("-");
+    if (dash <= 0) continue;
+    const phase = name.slice(0, dash);
+    byPhase.set(phase, [...(byPhase.get(phase) ?? []), name]);
+  }
+  return [...byPhase.values()].filter((steps) => steps.length > 1);
+}
+
 /**
- * The skills that are the agent's steps: those of the phase its first skill
- * belongs to (`build-*` for an agent listing `build-brainstorm` first). Others
- * it lists (`eval-case`, read while writing cases) are consulted, not stepped
- * into, so they don't move the footer. An agent whose first skill has no phase
- * steps through all of them.
+ * The step after reading `read`, from `current`. A read in the current phase
+ * moves within it; the next phase's first step moves on to that phase once
+ * the current phase's last step is reached; anything else (a skill consulted
+ * along the way, such as `eval-case` during build) leaves the step as it is.
+ * With no step yet, the first phase's skills start it; an agent with no phases
+ * steps through all its skills.
  */
-export function stepSkills(skills: readonly string[]): readonly string[] {
-  const first = skills[0];
-  const dash = first ? first.indexOf("-") : -1;
-  if (!first || dash <= 0) return skills;
-  const phase = first.slice(0, dash + 1);
-  const steps = skills.filter((name) => name.startsWith(phase));
-  return steps.length > 1 ? steps : skills;
+export function nextStep(
+  current: string | undefined,
+  read: string | undefined,
+  skills: readonly string[],
+): string | undefined {
+  if (!read || read === current) return current;
+  const all = phases(skills);
+  if (all.length === 0) return skills.includes(read) ? read : current;
+  const at = current ? all.findIndex((steps) => steps.includes(current)) : -1;
+  if (at < 0) return all[0]!.includes(read) ? read : current;
+  if (all[at]!.includes(read)) return read;
+  const next = all[at + 1];
+  return next?.[0] === read && all[at]!.at(-1) === current ? read : current;
 }
 
 /** The agent's skills in their listed order, and the name of each by its folder where the two differ. */
@@ -90,16 +112,15 @@ export function skillFolders(
   return folders;
 }
 
-/** The agent's step whose `SKILL.md` a tool call's path or command reads, if any. */
+/** The agent's skill whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
   text: unknown,
   skills: RecipeSkills,
 ): string | undefined {
   if (typeof text !== "string") return undefined;
-  const steps = stepSkills(skills.names);
   for (const match of text.matchAll(/([A-Za-z0-9_-]+)\/SKILL\.md\b/g)) {
     const name = skills.folders?.get(match[1]!) ?? match[1]!;
-    if (steps.includes(name)) return name;
+    if (skills.names.includes(name)) return name;
   }
   return undefined;
 }
@@ -172,7 +193,7 @@ type Entry = {
   };
 };
 
-/** The last of the agent's skills the session read, from its entries; a read that failed doesn't count. */
+/** The step the session's skill reads reached, from its entries; a read that failed doesn't count. */
 export function lastSkillRead(
   entries: readonly unknown[],
   skills: RecipeSkills,
@@ -205,10 +226,12 @@ export function lastSkillRead(
         !readsWhole(block.arguments ?? {})
       )
         continue;
-      last =
+      last = nextStep(
+        last,
         skillRead(block.arguments?.path, skills) ??
-        skillRead(block.arguments?.command, skills) ??
-        last;
+          skillRead(block.arguments?.command, skills),
+        skills.names,
+      );
     }
   }
   return last;
@@ -272,9 +295,9 @@ export function registerSkillProgress(
     skill: string | undefined,
     skills: readonly string[],
   ) => {
-    if (!skill || !ctx.hasUI) return;
-    if (current?.skill === skill) return;
-    current = { skill, skills };
+    const next = nextStep(current?.skill, skill, skills);
+    if (!next || !ctx.hasUI || current?.skill === next) return;
+    current = { skill: next, skills };
     show(ctx);
   };
   pi.on("agent_start", (_event, ctx) => {

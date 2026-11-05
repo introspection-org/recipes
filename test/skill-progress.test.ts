@@ -5,8 +5,9 @@ import {
   lastSkillRead,
   readsWhole,
   registerSkillProgress,
+  nextStep,
+  phases,
   skillRead,
-  stepSkills,
   stepLine,
 } from "../src/skill-progress.js";
 
@@ -58,17 +59,42 @@ describe("where the agent is", () => {
     );
   });
 
-  it("steps only through the phase the agent lists first, not skills it consults", () => {
-    expect(stepSkills(names)).toEqual([
+  it("steps through one phase at a time, moving on only from its last step", () => {
+    const flow = [
       "build-brainstorm",
       "build-draft",
       "build-review",
+      "deploy-runtime",
+      "deploy-test",
+      "eval-case",
+      "eval-run",
+    ];
+    expect(phases(flow).map((steps) => steps[0])).toEqual([
+      "build-brainstorm",
+      "deploy-runtime",
+      "eval-case",
     ]);
-    expect(skillRead("/x/skills/eval-case/SKILL.md", skills)).toBeUndefined();
-    expect(skillRead("/x/skills/build-draft/SKILL.md", skills)).toBe(
-      "build-draft",
+    expect(nextStep(undefined, "build-brainstorm", flow)).toBe(
+      "build-brainstorm",
     );
-    expect(stepSkills(["research", "write"])).toEqual(["research", "write"]);
+    expect(nextStep(undefined, "deploy-runtime", flow)).toBeUndefined();
+    // A skill consulted along the way doesn't move the step.
+    expect(nextStep("build-draft", "eval-case", flow)).toBe("build-draft");
+    // The next phase waits for this one's last step.
+    expect(nextStep("build-draft", "deploy-runtime", flow)).toBe("build-draft");
+    expect(nextStep("build-review", "deploy-runtime", flow)).toBe(
+      "deploy-runtime",
+    );
+    // Only the next phase's first step moves on to it.
+    expect(nextStep("build-review", "deploy-test", flow)).toBe("build-review");
+    // Never back to an earlier phase.
+    expect(nextStep("deploy-runtime", "build-review", flow)).toBe(
+      "deploy-runtime",
+    );
+    expect(stepLine("deploy-test", flow, "14:40")).toBe(
+      "deploy ✓ runtime ▸ test · 14:40",
+    );
+    expect(nextStep(undefined, "write", ["research", "write"])).toBe("write");
   });
 
   it("counts reading a skill, not glancing at its top", () => {
