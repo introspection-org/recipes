@@ -8,3 +8,4 @@ CHANGELOG.md
 **/CHANGELOG.md
 # pnpm owns this generated file's canonical formatting.
 pnpm-lock.yaml
+src/recipe/manifest.generated.ts

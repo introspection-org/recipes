@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import semver from "semver";
 
 import { loadRecipeModule, packageEntry } from "./extensions.js";
+import { RECIPES_MANIFEST } from "./manifest.generated.js";
 import { resolveDependencyDir } from "./package.js";
 
 /**
@@ -23,62 +24,33 @@ import { resolveDependencyDir } from "./package.js";
 
 const RECIPES_PACKAGE = "@introspection-ai/recipes";
 
-/** This package's own `package.json`: `src/recipe` and `dist/recipe` both sit two levels below it. */
+/**
+ * This package's own `package.json`: `src/recipe` and `dist/recipe` both sit
+ * two levels below it. Only finding the companions installed beside Recipes
+ * reads it; a host that bundles Recipes passes `hostDir` instead.
+ */
 const recipesManifestPath = fileURLToPath(
   new URL("../../package.json", import.meta.url),
 );
 
-interface RecipesManifest {
-  version: string;
-  peerDependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-}
-
-let recipesManifest: RecipesManifest | undefined;
-
-/** Read on first use, so a bundle that never loads a package never looks for it. */
-function readRecipesManifest(): RecipesManifest {
-  recipesManifest ??= JSON.parse(
-    readFileSync(recipesManifestPath, "utf8"),
-  ) as RecipesManifest;
-  return recipesManifest;
-}
-
 /** The version of the running `@introspection-ai/recipes`. */
 export function recipesVersion(): string {
-  return readRecipesManifest().version;
+  return RECIPES_MANIFEST.version;
 }
 
 /**
  * Companion package name to compatible version range, from
- * `package.json#optionalDependencies`. Inside this repository a range reads
- * `workspace:<range>`; the published manifest carries `<range>`.
+ * `package.json#optionalDependencies`: the tool packages
+ * (`@introspection-ai/recipe-*`), not the MCP client's platform binaries the
+ * release also stamps in there.
  */
 export function companionPackages(): Readonly<Record<string, string>> {
-  return Object.fromEntries(
-    Object.entries(readRecipesManifest().optionalDependencies ?? {})
-      .filter(([name]) => isCompanionName(name))
-      .map(([name, range]) => [name, range.replace(/^workspace:/, "")]),
-  );
+  return RECIPES_MANIFEST.companions;
 }
-
-/**
- * The published manifest's `optionalDependencies` also names the MCP client's
- * platform binaries, which the release stamps in; only the tool packages
- * (`@introspection-ai/recipe-*`) are companions.
- */
-function isCompanionName(name: string): boolean {
-  return name.startsWith(COMPANION_PREFIX);
-}
-
-const COMPANION_PREFIX = "@introspection-ai/recipe-";
 
 /** Whether Recipes installs `name` alongside itself, so a Recipe may omit it. */
 export function isCompanionPackage(name: string): boolean {
-  return (
-    isCompanionName(name) &&
-    Object.hasOwn(readRecipesManifest().optionalDependencies ?? {}, name)
-  );
+  return Object.hasOwn(RECIPES_MANIFEST.companions, name);
 }
 
 /**
@@ -88,7 +60,7 @@ export function isCompanionPackage(name: string): boolean {
 export function isHostPeerPackage(name: string): boolean {
   return (
     name === RECIPES_PACKAGE ||
-    Object.hasOwn(readRecipesManifest().peerDependencies ?? {}, name)
+    Object.hasOwn(RECIPES_MANIFEST.peerDependencies, name)
   );
 }
 
@@ -120,14 +92,14 @@ export interface ResolvedRecipePackage {
 export function resolveRecipePackage(
   recipeDir: string,
   name: string,
-  hostDir: string = hostRecipesDir(),
+  hostDir?: string,
 ): ResolvedRecipePackage | undefined {
   const fromRecipe = resolveDependencyDir(recipeDir, name);
   const source = fromRecipe ? "recipe" : "host";
   const packageDir =
     fromRecipe ??
     (isCompanionPackage(name)
-      ? resolveDependencyDir(hostDir, name)
+      ? resolveDependencyDir(hostDir ?? hostRecipesDir(), name)
       : undefined);
   if (!packageDir) return undefined;
   const manifest = JSON.parse(

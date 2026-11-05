@@ -27,3 +27,4 @@ __pycache__/
 *.py[cod]
 .venv/
 *.egg-info/
+src/recipe/manifest.generated.ts
