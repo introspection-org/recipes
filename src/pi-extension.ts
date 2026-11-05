@@ -1599,11 +1599,12 @@ export function createRecipesExtension(
           archivedRuns.clear();
           completions.clear();
           await ctx.waitForIdle();
-          await ctx.reload();
+          // Pi makes this ctx stale once the reload resolves, so nothing may use it after.
           ctx.ui.notify(
-            `Recipe reload requested: ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version}`,
+            `Reloading recipe ${launchState.resolved.manifest.name}@${launchState.resolved.manifest.version}`,
             "info",
           );
+          await ctx.reload();
           return;
         }
         if (action) {

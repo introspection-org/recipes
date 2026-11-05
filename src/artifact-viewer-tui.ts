@@ -1,12 +1,17 @@
 /**
  * The right-hand artifact panel: a non-capturing Pi overlay that renders one
- * markdown file with a title line, a scroll position and a key hint.
+ * file (markdown rendered, other text highlighted) or a diff, with a title
+ * line, a scroll position and a key hint.
  *
  * The panel owns no file access. `./artifact-viewer.ts` reads and watches the
  * file and calls `setDocument()`; the panel only draws and handles keys.
  */
 
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import {
+  highlightCode,
+  renderDiff,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import {
   Key,
   Markdown,
@@ -39,8 +44,18 @@ export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
 export interface ArtifactDocument {
   /** The path shown in the title, relative to the working directory. */
   title: string;
-  /** Markdown source, or undefined when the file is gone. */
-  markdown: string | undefined;
+  /** Markdown renders; HTML and text are highlighted. */
+  kind: "markdown" | "html" | "text";
+  /** The file, or undefined when it is gone. */
+  text: string | undefined;
+  /** The highlighting language. */
+  language?: string;
+  /** The working directory's git branch, and whether its tree has uncommitted changes. */
+  git?: { branch: string; dirty: boolean };
+  /** How the file differs from its base, which `d` shows, drawn as Pi's edit tool draws a diff. */
+  diff?: { against: string; text: string; added: number; removed: number };
+  /** Open on the diff rather than the file. */
+  diffFirst?: boolean;
 }
 
 /** What the panel asks its owner to do in response to a key. */
@@ -93,6 +108,9 @@ export class ArtifactPanel implements Component {
   private document: ArtifactDocument;
   private readonly markdown: Markdown;
   private scrollTop = 0;
+  /** Showing the diff rather than the file; each keeps its own scroll. */
+  private showingDiff = false;
+  private otherScrollTop = 0;
   private lastBodyHeight = 1;
   private lastMaxScroll = 0;
   private handle: OverlayHandle | undefined;
@@ -104,8 +122,9 @@ export class ArtifactPanel implements Component {
     private readonly actions: ArtifactPanelActions,
   ) {
     this.document = document;
+    this.showingDiff = Boolean(document.diffFirst && document.diff);
     this.markdown = new Markdown(
-      document.markdown ?? "",
+      document.kind === "markdown" ? (document.text ?? "") : "",
       0,
       0,
       artifactMarkdownTheme(theme),
@@ -124,8 +143,14 @@ export class ArtifactPanel implements Component {
   /** Replace what the panel shows; `keepScroll` holds the position on a re-render of the same file. */
   setDocument(document: ArtifactDocument, keepScroll = false): void {
     this.document = document;
-    this.markdown.setText(document.markdown ?? "");
-    if (!keepScroll) this.scrollTop = 0;
+    this.markdown.setText(
+      document.kind === "markdown" ? (document.text ?? "") : "",
+    );
+    if (!keepScroll) {
+      this.scrollTop = 0;
+      this.otherScrollTop = 0;
+      this.showingDiff = Boolean(document.diffFirst && document.diff);
+    } else if (!document.diff) this.showingDiff = false;
     this.tui.requestRender();
   }
 
@@ -140,15 +165,26 @@ export class ArtifactPanel implements Component {
   }
 
   private bodyLines(contentWidth: number): string[] {
-    if (this.document.markdown === undefined) {
+    const { kind, text, language, diff } = this.document;
+    if (this.showingDiff && diff) {
+      return diff.text.trim() === ""
+        ? [this.theme.fg("muted", `(no changes against ${diff.against})`)]
+        : renderDiff(diff.text).split("\n");
+    }
+    if (text === undefined) {
       return [
         this.theme.fg("warning", "This file was removed or cannot be read."),
       ];
     }
-    if (this.document.markdown.trim() === "") {
+    if (text.trim() === "") {
       return [this.theme.fg("muted", "(empty file)")];
     }
-    return this.markdown.render(contentWidth);
+    if (kind === "markdown") return this.markdown.render(contentWidth);
+    // Long lines are cut at the panel's edge rather than wrapped, as an editor shows code.
+    return highlightCode(
+      text,
+      language ?? (kind === "html" ? "html" : undefined),
+    );
   }
 
   render(width: number): string[] {
@@ -166,14 +202,28 @@ export class ArtifactPanel implements Component {
     const position = ` ${first}-${last}/${body.length} `;
 
     const focused = this.isFocused();
-    const titleText = ` ${this.document.title} `;
+    // A zsh-style git prompt after the path: `git:(main) ✗`, then `+2 −0 vs HEAD`.
+    const { git, diff } = this.document;
+    const titleText =
+      ` ${this.theme.fg(focused ? "accent" : "text", this.theme.bold(this.document.title))}` +
+      (git
+        ? `  ${this.theme.fg("muted", "git:(")}${this.theme.fg("accent", git.branch)}${this.theme.fg("muted", ")")}` +
+          (git.dirty ? ` ${this.theme.fg("warning", "✗")}` : "")
+        : "") +
+      (diff
+        ? diff.added + diff.removed === 0
+          ? `  ${this.theme.fg("muted", `no changes vs ${diff.against}`)}`
+          : `  ${this.theme.fg("success", `+${diff.added}`)} ${this.theme.fg("error", `−${diff.removed}`)} ${this.theme.fg("muted", `vs ${diff.against}`)}`
+        : "") +
+      (this.showingDiff ? `  ${this.theme.fg("accent", "[diff]")}` : "") +
+      " ";
     const fill = Math.max(
       1,
       width - 1 - visibleWidth(titleText) - visibleWidth(position),
     );
     const title = truncateToWidth(
       border("─") +
-        this.theme.fg(focused ? "accent" : "text", this.theme.bold(titleText)) +
+        titleText +
         border("─".repeat(fill)) +
         this.theme.fg("muted", position),
       width,
@@ -184,8 +234,9 @@ export class ArtifactPanel implements Component {
     for (let index = 0; index < bodyHeight; index += 1) {
       lines.push(padToWidth(`${border("│")} ${visible[index] ?? ""}`, width));
     }
+    const toggle = diff ? ` · d ${this.showingDiff ? "file" : "diff"}` : "";
     const hint = focused
-      ? `↑↓ PgUp/PgDn scroll · o open · q/Esc close`
+      ? `↑↓ PgUp/PgDn scroll${toggle} · o open · q/Esc close`
       : (this.dialogHint ?? "Esc close");
     lines.push(padToWidth(this.theme.fg("dim", ` ${hint}`), width));
     return lines;
@@ -217,6 +268,17 @@ export class ArtifactPanel implements Component {
     return Math.max(1, this.lastBodyHeight - 1);
   }
 
+  /** Switch between the file and its diff, each keeping its own scroll. */
+  toggleDiff(): void {
+    if (!this.document.diff) return;
+    this.showingDiff = !this.showingDiff;
+    [this.scrollTop, this.otherScrollTop] = [
+      this.otherScrollTop,
+      this.scrollTop,
+    ];
+    this.tui.requestRender();
+  }
+
   scrollBy(lines: number): void {
     const next = Math.min(
       this.lastMaxScroll,
@@ -241,6 +303,8 @@ export class ArtifactPanel implements Component {
       this.scrollBy(-this.scrollTop);
     } else if (matchesKey(data, Key.end) || data === "G") {
       this.scrollBy(this.lastMaxScroll - this.scrollTop);
+    } else if (data === "d" && this.document.diff) {
+      this.toggleDiff();
     } else if (data === "o") {
       this.actions.openExternal();
     } else if (matchesKey(data, Key.escape) || data === "q") {
