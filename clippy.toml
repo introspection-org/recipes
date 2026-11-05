@@ -1,0 +1,14 @@
+# Complexity ratchet, copied from introspection-rust-sdk. The lints are enabled
+# in [workspace.lints.clippy] in Cargo.toml; CI's
+# `cargo clippy --all-targets -- -D warnings` makes them blocking.
+#
+# Each threshold is today's worst measured value, so main starts green. They
+# are a ratchet: never raise one, only lower it, whenever a refactor brings the
+# worst offender down. Targets (rust-sdk's): cognitive 15, lines 100,
+# arguments 5, nesting 4.
+# A function that already carried `#[allow(clippy::too_many_arguments)]` keeps
+# it; the arguments threshold counts the rest.
+cognitive-complexity-threshold = 24
+too-many-lines-threshold = 195
+too-many-arguments-threshold = 7
+excessive-nesting-threshold = 7

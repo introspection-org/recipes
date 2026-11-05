@@ -90,33 +90,6 @@ mod platform {
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::fs;
-        use std::os::unix::net::UnixListener;
-
-        #[test]
-        fn connect_waits_for_background_daemon_startup() {
-            let socket_path = env::temp_dir().join(format!(
-                "pmc-{}-{}.sock",
-                process::id(),
-                REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-            ));
-            let server_path = socket_path.clone();
-            let server = thread::spawn(move || {
-                thread::sleep(Duration::from_millis(50));
-                let listener = UnixListener::bind(&server_path).unwrap();
-                listener.accept().unwrap();
-                fs::remove_file(server_path).unwrap();
-            });
-
-            let stream = connect(socket_path.to_str().unwrap()).unwrap();
-            drop(stream);
-            server.join().unwrap();
-        }
-    }
-
     fn send_line(stream: &mut UnixStream, value: &Value) -> io::Result<()> {
         serde_json::to_writer(&mut *stream, value)?;
         stream.write_all(b"\n")?;
@@ -309,6 +282,33 @@ mod platform {
                 eprintln!("MCP daemon: {error}");
                 return 1;
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::fs;
+        use std::os::unix::net::UnixListener;
+
+        #[test]
+        fn connect_waits_for_background_daemon_startup() {
+            let socket_path = env::temp_dir().join(format!(
+                "pmc-{}-{}.sock",
+                process::id(),
+                REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            let server_path = socket_path.clone();
+            let server = thread::spawn(move || {
+                thread::sleep(Duration::from_millis(50));
+                let listener = UnixListener::bind(&server_path).unwrap();
+                listener.accept().unwrap();
+                fs::remove_file(server_path).unwrap();
+            });
+
+            let stream = connect(socket_path.to_str().unwrap()).unwrap();
+            drop(stream);
+            server.join().unwrap();
         }
     }
 }

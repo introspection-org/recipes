@@ -1,3 +1,11 @@
 [workspace]
 members = ["packages/mcp-client", "packages/recipe-check", "packages/recipe-check-python"]
 resolver = "2"
+
+# Complexity ratchet: thresholds live in clippy.toml. CI runs clippy with
+# -D warnings, so these warnings block a merge.
+[workspace.lints.clippy]
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+too_many_arguments = "warn"
+excessive_nesting = "warn"
