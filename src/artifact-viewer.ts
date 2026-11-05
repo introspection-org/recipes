@@ -577,6 +577,8 @@ interface ArtifactSource {
   base?: { label: string; text?: string; ref?: string };
   /** Open on the diff rather than the file (`diff` was asked for). */
   diffFirst?: boolean;
+  /** Gone from the working tree, shown as a diff against a base that has it: its content reads as empty. */
+  deleted?: boolean;
 }
 
 /** Run git in the working directory's repository; undefined outside one or on failure. */
@@ -610,6 +612,7 @@ function gitState(
 /** The file as `source` names it: at its ref, or as it is now. */
 function readSource(source: ArtifactSource): string {
   if (source.ref) return gitVersion(source.target, source.ref);
+  if (source.deleted && !existsSync(source.target.absolutePath)) return "";
   // A re-read re-checks the path: the file may since have become a link out of the working directory.
   resolveArtifactPath(
     workspaceRoot(source.target),
@@ -921,8 +924,13 @@ function artifactSourceFor(
   target: ResolvedArtifactPath,
   ref: string | undefined,
   diff: string | undefined,
+  deleted = false,
 ): { source: ArtifactSource; current: string; note: string } {
-  const source: ArtifactSource = { target, ...(ref ? { ref } : {}) };
+  const source: ArtifactSource = {
+    target,
+    ...(ref ? { ref } : {}),
+    ...(deleted ? { deleted } : {}),
+  };
   const current = readSource(source);
   const against = diff?.trim();
   const previous = viewer.shownVersion(target.relativePath);
@@ -937,7 +945,12 @@ function artifactSourceFor(
       note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
   } else if (against) {
     // Fails here, with the reason, when the ref names no commit.
-    gitBaseVersion(target, against);
+    const base = gitBaseVersion(target, against);
+    if (deleted && base === "") {
+      throw new Error(
+        `${target.relativePath} does not exist, and isn't in ${against} either.`,
+      );
+    }
     source.base = { label: against, ref: against };
   } else if (!ref || diff !== undefined) {
     // With no diff named, `d` still offers one: against HEAD for a tracked file, else the version shown before.
@@ -946,6 +959,11 @@ function artifactSourceFor(
       undefined;
     if (tracked) source.base = { label: "HEAD", ref: "HEAD" };
     else if (previousBase) source.base = previousBase;
+    if (deleted && !tracked) {
+      throw new Error(
+        `${target.relativePath} does not exist, and isn't in HEAD either.`,
+      );
+    }
   }
   // A bare `diff` (`""`) opens on the diff `d` would show.
   if (diff !== undefined && source.base) source.diffFirst = true;
@@ -958,6 +976,44 @@ function artifactSourceFor(
 /** `--name value`, `--name=value`, or a bare `--name` (value undefined). */
 const COMMAND_OPTION = (name: string) =>
   new RegExp(`(?:^|\\s)--${name}(?:(?:=|\\s+)(?!--)(\\S+))?(?=\\s|$)`);
+
+/**
+ * Resolve a path to show. A file gone from the working tree passes only when
+ * a git base is asked for (`diff` other than `previous`, or a bare one, which
+ * diffs against HEAD): it then shows as removed, as `git diff <ref> -- path` does.
+ */
+function resolveShownPath(
+  cwd: string,
+  path: string,
+  ref: string | undefined,
+  diff: string | undefined,
+): { target: ResolvedArtifactPath; deleted: boolean } {
+  if (ref) {
+    return {
+      target: resolveArtifactPath(cwd, path, {
+        anyText: true,
+        inWorkingTree: false,
+      }),
+      deleted: false,
+    };
+  }
+  try {
+    return {
+      target: resolveArtifactPath(cwd, path, { anyText: true }),
+      deleted: false,
+    };
+  } catch (error) {
+    const gitBase = diff !== undefined && diff.trim() !== DIFF_PREVIOUS;
+    if (!gitBase) throw error;
+    const target = resolveArtifactPath(cwd, path, {
+      anyText: true,
+      inWorkingTree: false,
+    });
+    // A file that exists but fails a check (binary, too large) still fails.
+    if (existsSync(target.absolutePath)) throw error;
+    return { target, deleted: true };
+  }
+}
 
 /**
  * `/recipe view`'s arguments: a path, `--ref <ref>` and `--diff [<ref|previous>]`.
@@ -1017,15 +1073,18 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const ref = params.ref?.trim() || undefined;
-      const target = resolveArtifactPath(ctx.cwd, params.path, {
-        anyText: true,
-        inWorkingTree: !ref,
-      });
+      const { target, deleted } = resolveShownPath(
+        ctx.cwd,
+        params.path,
+        ref,
+        params.diff,
+      );
       const { source, current, note } = artifactSourceFor(
         viewer,
         target,
         ref,
         params.diff,
+        deleted,
       );
       const document = readDocument(source);
       const content = capped(current);
@@ -1141,15 +1200,18 @@ export function artifactViewerExtension(
           return;
         }
         try {
-          const target = resolveArtifactPath(ctx.cwd, path, {
-            anyText: true,
-            inWorkingTree: !parsed.ref,
-          });
+          const { target, deleted } = resolveShownPath(
+            ctx.cwd,
+            path,
+            parsed.ref,
+            parsed.diff,
+          );
           const { source, note } = artifactSourceFor(
             viewer,
             target,
             parsed.ref,
             parsed.diff,
+            deleted,
           );
           viewer.show(ctx, source, true);
           if (note) ctx.ui.notify(note.trim(), "info");

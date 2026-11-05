@@ -435,6 +435,17 @@ describe("show_artifact tool", () => {
     await expect(show("fresh.txt", { diff: "nope" })).rejects.toThrow(
       /has no version at nope/,
     );
+    // A deleted file diffs as all removed against a base that has it.
+    git("add", "fresh.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fresh");
+    rmSync(join(workspace, "fresh.txt"));
+    const removed = await show("fresh.txt", { diff: "HEAD" });
+    expect(removed.details.content).toBe("");
+    expect(removed.details.diff).toMatchObject({ added: 0, removed: 1 });
+    await expect(show("fresh.txt", { diff: "HEAD~1" })).rejects.toThrow(
+      "fresh.txt does not exist, and isn't in HEAD~1 either.",
+    );
+    await expect(show("fresh.txt")).rejects.toThrow(/does not exist/);
     // A ref reads git's version, whatever the working tree now holds there.
     rmSync(join(workspace, "notes.txt"));
     expect((await show("notes.txt", { ref: "HEAD" })).details).toMatchObject({
