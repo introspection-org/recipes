@@ -12,9 +12,7 @@ vi.mock("../src/mcp/catalog.js", () => ({
 }));
 
 import { piMcpToolName } from "../src/mcp/tools.js";
-import {
-  resolveRecipe,
-} from "../src/recipe/resolve.js";
+import { resolveRecipe } from "../src/recipe/resolve.js";
 import {
   createAgentSession,
   materializeRecipeSessionMcp,
@@ -107,31 +105,31 @@ describe("canonical Recipe session MCP tools mode", () => {
     handles.push(handle);
 
     const registered = new Set(
-      handle.session.getAllTools().map((tool) => tool.name)
+      handle.session.getAllTools().map((tool) => tool.name),
     );
-    expect(registered).toContain(
-      piMcpToolName("contacts", "search_contacts")
-    );
+    expect(registered).toContain(piMcpToolName("contacts", "search_contacts"));
     expect(registered).toContain(piMcpToolName("contacts", "get_contact"));
     expect(registered).toContain("tool_search");
     expect(registered).toContain("mcp_search");
     expect(handle.session.getActiveToolNames()).toContain("tool_search");
     expect(handle.session.getActiveToolNames()).toContain("mcp_search");
     expect(handle.session.getActiveToolNames()).not.toContain(
-      piMcpToolName("contacts", "search_contacts")
+      piMcpToolName("contacts", "search_contacts"),
     );
 
     const declared = () =>
       handle.session.agent.state.tools.map((tool) => tool.name);
     expect(declared()).not.toContain(
-      piMcpToolName("contacts", "search_contacts")
+      piMcpToolName("contacts", "search_contacts"),
     );
     const search = handle.session.agent.state.tools.find(
-      (tool) => tool.name === "tool_search"
+      (tool) => tool.name === "tool_search",
     )!;
-    const result = await search.execute("search-1", { query: "search contacts" });
+    const result = await search.execute("search-1", {
+      query: "search contacts",
+    });
     expect((result.details as { loaded: string[] }).loaded).toContain(
-      piMcpToolName("contacts", "search_contacts")
+      piMcpToolName("contacts", "search_contacts"),
     );
     expect(declared()).toContain(piMcpToolName("contacts", "search_contacts"));
 
@@ -188,7 +186,7 @@ describe("canonical Recipe session MCP tools mode", () => {
     };
     const open = async (
       opts: Partial<Parameters<typeof createAgentSession>[0]>,
-      recipe = fixture
+      recipe = fixture,
     ) =>
       createAgentSession({
         recipe: resolveRecipe({ recipeDir: recipe.recipeDir }),
@@ -200,11 +198,11 @@ describe("canonical Recipe session MCP tools mode", () => {
 
     // A working session never defers, whatever the package says.
     await expect(open({ mcpBindings: bound })).rejects.toThrow(
-      "Required MCP catalog discovery failed: contacts"
+      "Required MCP catalog discovery failed: contacts",
     );
     // A preparing host does not defer a server its package does not defer.
     await expect(
-      open({ mcpBindings: bound, mcpDiscovery: "defer" }, strict)
+      open({ mcpBindings: bound, mcpDiscovery: "defer" }, strict),
     ).rejects.toThrow("Required MCP catalog discovery failed: contacts");
 
     const prepared = await open({
@@ -213,12 +211,12 @@ describe("canonical Recipe session MCP tools mode", () => {
     });
     handles.push(prepared);
     expect(
-      prepared.session.getAllTools().map((tool) => tool.name)
+      prepared.session.getAllTools().map((tool) => tool.name),
     ).not.toContain(piMcpToolName("contacts", "search_contacts"));
 
     // Deferring discovery never lifts the binding requirement.
     await expect(
-      open({ mcpBindings: { servers: [] }, mcpDiscovery: "defer" })
+      open({ mcpBindings: { servers: [] }, mcpDiscovery: "defer" }),
     ).rejects.toThrow("Required MCP server binding(s) missing: contacts");
   });
 
@@ -263,7 +261,7 @@ describe("canonical Recipe session MCP tools mode", () => {
     handles.push(handle);
 
     const bash = handle.session.agent.state.tools.find(
-      (tool) => tool.name === "bash"
+      (tool) => tool.name === "bash",
     );
     expect(bash).toBeDefined();
     const result = await (bash!.execute as any)(
@@ -273,7 +271,7 @@ describe("canonical Recipe session MCP tools mode", () => {
           'test -n "$PI_RECIPES_MCP_SESSION" && test "$RECIPE_CHILD_MARKER" = isolated && printf private-cli-env',
       },
       undefined,
-      undefined
+      undefined,
     );
     expect(result.content[0]?.text).toContain("private-cli-env");
   });
@@ -314,7 +312,7 @@ describe("canonical Recipe session MCP tools mode", () => {
       resolveRecipe({ recipeDir: fixture.recipeDir }).selectAgent(),
       fixture.workspaceDir,
       env,
-      { mcpBindings }
+      { mcpBindings },
     );
     const handle = await createAgentSession({
       recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
@@ -326,7 +324,7 @@ describe("canonical Recipe session MCP tools mode", () => {
     handles.push(handle);
 
     const bash = handle.session.agent.state.tools.find(
-      (tool) => tool.name === "bash"
+      (tool) => tool.name === "bash",
     );
     expect(bash).toBeDefined();
     const result = await (bash!.execute as any)(
@@ -336,7 +334,7 @@ describe("canonical Recipe session MCP tools mode", () => {
           'test -n "$PI_RECIPES_MCP_SESSION" && test "$HOST_MCP_MARKER" = host-owned && printf host-cli-env',
       },
       undefined,
-      undefined
+      undefined,
     );
     expect(result.content[0]?.text).toContain("host-cli-env");
   });

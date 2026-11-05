@@ -30,7 +30,11 @@ kind of work, so the Recipe's own skills decide how changes should read.
 redline.
 
 ```json
-{ "pi": { "documents": [{ "format": "docx", "profile": "legal-redlining-en-US" }] } }
+{
+  "pi": {
+    "documents": [{ "format": "docx", "profile": "legal-redlining-en-US" }]
+  }
+}
 ```
 
 The agent also gets `profiles/legal-redlining-en-us/SKILL.md`, which covers:
@@ -50,7 +54,13 @@ write a profile in the Recipe: a folder holding a `SKILL.md` whose frontmatter `
 the folder's name, and point `profile` at it.
 
 ```json
-{ "pi": { "documents": [{ "format": "docx", "profile": "./profiles/house-style-en-gb" }] } }
+{
+  "pi": {
+    "documents": [
+      { "format": "docx", "profile": "./profiles/house-style-en-gb" }
+    ]
+  }
+}
 ```
 
 [Write your own profile](../../../docs/documents.md#write-your-own-profile) has the

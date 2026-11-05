@@ -1,10 +1,13 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { piSessionToSpans } from "@introspection-sdk/introspection-pi";
 
 /** Path of the file a standalone Pi run keeps its GenAI span list in. */
-export const GENAI_SPANS_FILE_ENV = "PI_RECIPE_GENAI_SPANS_FILE";
+const GENAI_SPANS_FILE_ENV = "PI_RECIPE_GENAI_SPANS_FILE";
 
 type SessionReader = Pick<
   ExtensionContext["sessionManager"],
@@ -19,10 +22,12 @@ type SessionReader = Pick<
  * once the model has answered. Replaced atomically, so a reader never sees a
  * partial list.
  */
-export function writeGenAiSpansFile(path: string, session: SessionReader): void {
+function writeGenAiSpansFile(path: string, session: SessionReader): void {
   const header = session.getHeader();
   if (!header) return;
-  const content = [header, ...session.getEntries()].map((entry) => JSON.stringify(entry)).join("\n");
+  const content = [header, ...session.getEntries()]
+    .map((entry) => JSON.stringify(entry))
+    .join("\n");
   const spans = piSessionToSpans(content, session.getSessionId());
   mkdirSync(dirname(path), { recursive: true });
   const partial = `${path}.tmp`;
@@ -37,7 +42,10 @@ export function writeGenAiSpansFile(path: string, session: SessionReader): void 
  * ends: a run that is killed on a timeout still leaves the turns it finished,
  * and a resumed one never leaves the file of an earlier session behind.
  */
-export function registerGenAiSpansFile(pi: ExtensionAPI, env: NodeJS.ProcessEnv): void {
+export function registerGenAiSpansFile(
+  pi: ExtensionAPI,
+  env: NodeJS.ProcessEnv,
+): void {
   const path = env[GENAI_SPANS_FILE_ENV]?.trim();
   if (!path) return;
   const write = (_event: unknown, ctx: ExtensionContext) => {
@@ -45,7 +53,9 @@ export function registerGenAiSpansFile(pi: ExtensionAPI, env: NodeJS.ProcessEnv)
       writeGenAiSpansFile(path, ctx.sessionManager);
     } catch (error) {
       // An observer of the run: it must not end the run it describes.
-      process.stderr.write(`${GENAI_SPANS_FILE_ENV}: ${(error as Error).message}\n`);
+      process.stderr.write(
+        `${GENAI_SPANS_FILE_ENV}: ${(error as Error).message}\n`,
+      );
     }
   };
   pi.on("session_start", write);

@@ -48,7 +48,8 @@ const persistGate = vi.hoisted(() => {
 // Replace ChildAgentRunStore with an in-memory store whose *terminal* write
 // blocks on the gate; the initial "running" write and reads pass through.
 vi.mock("../src/child/agent-store.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/child/agent-store.js")>();
+  const actual =
+    await importOriginal<typeof import("../src/child/agent-store.js")>();
   class GatedStore {
     constructor(_workspaceDir: string) {}
     async writeStatus(snapshot: { status: string }): Promise<void> {
@@ -82,7 +83,7 @@ function writeRecipe(root: string) {
   mkdirSync(join(recipeDir, "defs"), { recursive: true });
   writeFileSync(
     join(recipeDir, "package.json"),
-    `${JSON.stringify({ name: "demo", version: "1.0.0", pi: { agents: ["defs/*.yaml"] } }, null, 2)}\n`
+    `${JSON.stringify({ name: "demo", version: "1.0.0", pi: { agents: ["defs/*.yaml"] } }, null, 2)}\n`,
   );
   writeFileSync(join(recipeDir, "SYSTEM.md"), "Base recipe prompt");
   const agentYaml = (name: string, subagents: string[]) =>
@@ -100,8 +101,14 @@ function writeRecipe(root: string) {
       "  content: prompt",
       "",
     ].join("\n");
-  writeFileSync(join(recipeDir, "defs", "main.yaml"), agentYaml("main", ["explorer"]));
-  writeFileSync(join(recipeDir, "defs", "explorer.yaml"), agentYaml("explorer", []));
+  writeFileSync(
+    join(recipeDir, "defs", "main.yaml"),
+    agentYaml("main", ["explorer"]),
+  );
+  writeFileSync(
+    join(recipeDir, "defs", "explorer.yaml"),
+    agentYaml("explorer", []),
+  );
   return recipeDir;
 }
 
@@ -127,7 +134,7 @@ function runnerPool() {
 
 function completionMessages(pi: MockExtensionAPI) {
   return pi.sentMessages.filter(
-    (entry) => entry.message?.customType === "recipe-agent-completions"
+    (entry) => entry.message?.customType === "recipe-agent-completions",
   );
 }
 
@@ -144,15 +151,20 @@ describe("child completion ordering vs persistence", () => {
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
       const ctx = extensionContext(projectDir);
-      createRecipesExtension({ createChildAgentRunner: pool.createChildAgentRunner as any })(pi);
-      await pi.emitExtensionEvent({ type: "session_start", reason: "startup" } as any, ctx);
+      createRecipesExtension({
+        createChildAgentRunner: pool.createChildAgentRunner as any,
+      })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
 
       const started = await (pi.tools.get("agent") as any).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const id = started?.details?.agent?.agent_run_id as string;
 
@@ -165,13 +177,20 @@ describe("child completion ordering vs persistence", () => {
       // is mid-flight. With enqueue-before-persist the envelope is already
       // queued and this delivers; with persist-before-enqueue the queue is
       // empty here and poke() is a silent no-op.
-      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
 
       await vi.waitFor(() => {
         expect(completionMessages(pi)).toHaveLength(1);
       });
-      expect(completionMessages(pi)[0]!.message.content).toContain(`run ${id} (explorer`);
-      expect(completionMessages(pi)[0]!.message.content).toContain("background result");
+      expect(completionMessages(pi)[0]!.message.content).toContain(
+        `run ${id} (explorer`,
+      );
+      expect(completionMessages(pi)[0]!.message.content).toContain(
+        "background result",
+      );
     } finally {
       persistGate.release();
       rmSync(root, { recursive: true, force: true });

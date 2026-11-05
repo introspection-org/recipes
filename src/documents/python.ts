@@ -17,9 +17,14 @@ export const RECIPE_DOCUMENTS_PYTHON_ENV = "RECIPE_DOCUMENTS_PYTHON";
 export function documentPythonExecutable(
   env: NodeJS.ProcessEnv = process.env,
   python?: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
 ): string {
-  return pythonExecutable({ env, ...(python ? { python } : {}), override: RECIPE_DOCUMENTS_PYTHON_ENV, platform });
+  return pythonExecutable({
+    env,
+    ...(python ? { python } : {}),
+    override: RECIPE_DOCUMENTS_PYTHON_ENV,
+    platform,
+  });
 }
 
 export interface DocumentHelperOptions {
@@ -40,7 +45,7 @@ export interface DocumentHelperOptions {
 export async function runDocumentHelper(
   script: string,
   request: Record<string, unknown>,
-  options: DocumentHelperOptions
+  options: DocumentHelperOptions,
 ): Promise<DocumentResult> {
   const started = performance.now();
   let output: unknown;
@@ -50,18 +55,24 @@ export async function runDocumentHelper(
       env: options.env,
       cwd: options.cwd,
       ...(options.signal ? { signal: options.signal } : {}),
-      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.timeoutMs !== undefined
+        ? { timeoutMs: options.timeoutMs }
+        : {}),
     });
   } catch (error) {
     if (!(error instanceof PythonJsonError)) throw error;
     const reported = helperError(error.output);
     if (reported !== undefined) throw new Error(reported);
-    const cause = error.cause instanceof Error ? error.cause.message : "no output";
-    throw new Error(`document helper failed: ${(error.stderr || cause).slice(-600)}`);
+    const cause =
+      error.cause instanceof Error ? error.cause.message : "no output";
+    throw new Error(
+      `document helper failed: ${(error.stderr || cause).slice(-600)}`,
+    );
   }
   const reported = helperError(output);
   if (reported !== undefined) throw new Error(reported);
-  const result = output as (DocumentResult & { details?: Record<string, unknown> }) | null;
+  const result = output as
+    (DocumentResult & { details?: Record<string, unknown> }) | null;
   if (!result || typeof result.text !== "string") {
     throw new Error("document helper failed: no output");
   }
@@ -74,7 +85,11 @@ export async function runDocumentHelper(
 }
 
 function helperError(output: unknown): string | undefined {
-  if (output && typeof output === "object" && typeof (output as { error?: unknown }).error === "string") {
+  if (
+    output &&
+    typeof output === "object" &&
+    typeof (output as { error?: unknown }).error === "string"
+  ) {
     return (output as { error: string }).error;
   }
   return undefined;

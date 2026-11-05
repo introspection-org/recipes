@@ -1,8 +1,13 @@
 import {
   InMemoryCredentialStore,
+  type Api,
   type CredentialStore,
 } from "@earendil-works/pi-ai";
-import { getEnvApiKey, getModel, type Model } from "@earendil-works/pi-ai/compat";
+import {
+  getEnvApiKey,
+  getModel,
+  type Model,
+} from "@earendil-works/pi-ai/compat";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { expectedProviderEnvVars } from "./provider-env.js";
 
@@ -19,10 +24,10 @@ export class RecipeCredentialError extends Error {
 
   constructor(
     readonly provider: string,
-    readonly expectedEnvVars: readonly string[]
+    readonly expectedEnvVars: readonly string[],
   ) {
     super(
-      `No credential for model provider "${provider}": set ${expectedEnvVars.join(" or ")}, or pass a CredentialStore via credentials`
+      `No credential for model provider "${provider}": set ${expectedEnvVars.join(" or ")}, or pass a CredentialStore via credentials`,
     );
   }
 }
@@ -40,16 +45,16 @@ export class RecipeModelTransportError extends Error {
 
   constructor(recipeModel: string, provider: string, modelId: string) {
     super(
-      `Host model transport "${provider}/${modelId}" does not match Recipe model "${recipeModel}"`
+      `Host model transport "${provider}/${modelId}" does not match Recipe model "${recipeModel}"`,
     );
   }
 }
 
-export function parseRecipeModelSpec(spec: string): RecipeModelIdentity {
+function parseRecipeModelSpec(spec: string): RecipeModelIdentity {
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) {
     throw new Error(
-      `Invalid recipe model "${spec}" - expected "<provider>/<model_id>"`
+      `Invalid recipe model "${spec}" - expected "<provider>/<model_id>"`,
     );
   }
   const provider = spec.slice(0, slash);
@@ -60,12 +65,13 @@ export function parseRecipeModelSpec(spec: string): RecipeModelIdentity {
 
 export function assertRecipeModelTransport(
   modelSpec: string,
-  model: Model<any> | undefined
+  model: Model<Api> | undefined,
 ): RecipeModelIdentity {
   const identity = parseRecipeModelSpec(modelSpec);
   if (
     model &&
-    (model.provider !== identity.lookupProvider || model.id !== identity.modelId)
+    (model.provider !== identity.lookupProvider ||
+      model.id !== identity.modelId)
   ) {
     throw new RecipeModelTransportError(modelSpec, model.provider, model.id);
   }
@@ -74,8 +80,8 @@ export function assertRecipeModelTransport(
 
 export function resolveRecipeModel(
   modelSpec: string,
-  modelRegistry?: ModelRegistry
-): Model<any> {
+  modelRegistry?: ModelRegistry,
+): Model<Api> {
   const { modelId, lookupProvider } = parseRecipeModelSpec(modelSpec);
   const model =
     modelRegistry?.find(lookupProvider, modelId) ??
@@ -93,7 +99,7 @@ export async function resolveRecipeCredentials(opts: {
   provider: string;
   env: NodeJS.ProcessEnv;
   credentials?: CredentialStore;
-  model?: Model<any>;
+  model?: Model<Api>;
   modelRegistry?: ModelRegistry;
 }): Promise<CredentialStore> {
   if (opts.credentials) {
@@ -101,7 +107,7 @@ export async function resolveRecipeCredentials(opts: {
     if (!stored) {
       throw new RecipeCredentialError(
         opts.provider,
-        expectedProviderEnvVars(opts.provider)
+        expectedProviderEnvVars(opts.provider),
       );
     }
     return opts.credentials;
@@ -134,13 +140,10 @@ export async function resolveRecipeCredentials(opts: {
   if (!apiKey && !hasTransportHeaders) {
     throw new RecipeCredentialError(
       opts.provider,
-      expectedProviderEnvVars(opts.provider)
+      expectedProviderEnvVars(opts.provider),
     );
   }
-  if (
-    (apiKey && apiKey !== AMBIENT_CREDENTIAL_SENTINEL) ||
-    credentialEnv
-  ) {
+  if ((apiKey && apiKey !== AMBIENT_CREDENTIAL_SENTINEL) || credentialEnv) {
     await store.modify(opts.provider, async () => ({
       type: "api_key",
       ...(apiKey && apiKey !== AMBIENT_CREDENTIAL_SENTINEL

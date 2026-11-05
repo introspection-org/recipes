@@ -44,7 +44,7 @@ describe("the bundled daemon and its run worker", () => {
     "emits %s at the dist root",
     (name) => {
       expect(existsSync(join(dist, name)), name).toBe(true);
-    }
+    },
   );
 
   it("resolves the worker as its own sibling", () => {

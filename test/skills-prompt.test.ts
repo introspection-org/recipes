@@ -1,4 +1,7 @@
-import { formatSkillsForPrompt, type Skill } from "@earendil-works/pi-coding-agent";
+import {
+  formatSkillsForPrompt,
+  type Skill,
+} from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import {
   createSystemPrompt,
@@ -68,7 +71,9 @@ describe("createSystemPrompt", () => {
 
     expect(result).toBe(`${recipePrompt}\n\n${skillsSection(skills, "read")}`);
     expect(result?.match(/<skills>/g)).toEqual(["<skills>"]);
-    expect(result).toContain("<location>/recipe/skills/crm-operations/SKILL.md</location>");
+    expect(result).toContain(
+      "<location>/recipe/skills/crm-operations/SKILL.md</location>",
+    );
     expect(result).toContain("Use the read tool");
     expect(result).not.toContain("Default Pi prompt");
   });
@@ -81,7 +86,7 @@ describe("createSystemPrompt", () => {
         recipePrompt,
         skills,
         selectedTools: ["bash"],
-      })
+      }),
     ).toBe(`${recipePrompt}\n\n${skillsSection(skills, "bash")}`);
   });
 
@@ -92,7 +97,7 @@ describe("createSystemPrompt", () => {
         recipePrompt,
         skills: [skill({ disableModelInvocation: true })],
         selectedTools: ["read"],
-      })
+      }),
     ).toBe(recipePrompt);
     expect(
       prompt({
@@ -100,7 +105,7 @@ describe("createSystemPrompt", () => {
         recipePrompt,
         skills: [skill()],
         selectedTools: ["write"],
-      })
+      }),
     ).toBe(recipePrompt);
     expect(
       prompt({
@@ -108,7 +113,7 @@ describe("createSystemPrompt", () => {
         recipePrompt,
         skills: [],
         selectedTools: ["read"],
-      })
+      }),
     ).toBe(recipePrompt);
   });
 
@@ -120,7 +125,7 @@ describe("createSystemPrompt", () => {
         skills: [skill()],
         selectedTools: ["read"],
         forwarded,
-      })
+      }),
     ).toBe(forwarded);
   });
 });

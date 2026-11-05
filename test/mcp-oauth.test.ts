@@ -1,4 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,7 +36,7 @@ describe("MCP OAuth session configuration", () => {
               oauthClientSecretEnv: "CRM_CLIENT_SECRET",
             },
           ],
-        })
+        }),
       );
       const manifest: RecipePackageManifest = {
         name: "oauth-recipe",
@@ -59,7 +65,7 @@ describe("MCP OAuth session configuration", () => {
       expect(session.servers).toHaveLength(1);
       expect(session.servers[0]?.catalog).toBeUndefined();
       const config = JSON.parse(
-        readFileSync(defaultMcporterConfigPath(cwd), "utf8")
+        readFileSync(defaultMcporterConfigPath(cwd), "utf8"),
       ) as { mcpServers: Record<string, Record<string, unknown>> };
       expect(config.mcpServers.crm).toMatchObject({
         baseUrl: "https://mcp.example.test/mcp",

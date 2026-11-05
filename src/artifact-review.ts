@@ -18,7 +18,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 
 import { showReviewTui, type ReviewDocument } from "./artifact-review-tui.js";
 import {
@@ -30,7 +30,7 @@ import { askUser, type AskUserOutcome } from "./interactions.js";
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 
 /** At most this many files in one review, so the user can get through it. */
-export const MAX_REVIEW_ITEMS = 20;
+const MAX_REVIEW_ITEMS = 20;
 
 export type ReviewDecision = "approved" | "changes_requested" | "not_reviewed";
 
@@ -81,8 +81,6 @@ const parameters = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export type ReviewArtifactsParams = Static<typeof parameters>;
 
 interface ReviewItem {
   target: ResolvedArtifactPath;

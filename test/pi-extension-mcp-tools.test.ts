@@ -57,7 +57,7 @@ describe("Pi extension MCP tools mode", () => {
             ],
           },
         },
-      })
+      }),
     );
     writeFileSync(
       join(recipeDir, "mcp.json"),
@@ -67,13 +67,10 @@ describe("Pi extension MCP tools mode", () => {
             id: "contacts",
             name: "Contacts",
             base_url: "https://example.test/mcp",
-            tools: [
-              { name: "search_contacts" },
-              { name: "get_contact" },
-            ],
+            tools: [{ name: "search_contacts" }, { name: "get_contact" }],
           },
         ],
-      })
+      }),
     );
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
@@ -90,15 +87,15 @@ describe("Pi extension MCP tools mode", () => {
         "  mode: tools",
         "  servers:",
         "    contacts:",
-        "      include: [\"*\"]",
-        "      defer: [\"*\"]",
+        '      include: ["*"]',
+        '      defer: ["*"]',
         "      eager:",
         "        - get_contact",
         "system_instructions:",
         "  mode: append",
         "  content: Test agent",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
     mocks.preloadMcpCatalogs.mockResolvedValue([
       {
@@ -141,7 +138,7 @@ describe("Pi extension MCP tools mode", () => {
         modelRegistry: {
           find: vi.fn((provider: string, id: string) => ({ provider, id })),
         },
-      } as any
+      } as any,
     );
 
     const searchContacts = piMcpToolName("contacts", "search_contacts");
@@ -151,7 +148,7 @@ describe("Pi extension MCP tools mode", () => {
     expect(pi.tools.has("tool_search")).toBe(true);
     expect(pi.tools.has("mcp_search")).toBe(true);
     expect(pi.activeTools).toEqual(
-      expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"])
+      expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"]),
     );
     expect(pi.activeTools).not.toContain(searchContacts);
     expect(env.PATH).toBe(initialPath);
@@ -166,7 +163,7 @@ describe("Pi extension MCP tools mode", () => {
       "search-1",
       { query: "search people", limit: 3 },
       undefined,
-      undefined
+      undefined,
     );
     expect(pi.activeTools).toContain(searchContacts);
 
@@ -180,21 +177,18 @@ describe("Pi extension MCP tools mode", () => {
         modelRegistry: {
           find: vi.fn((provider: string, id: string) => ({ provider, id })),
         },
-      } as any
+      } as any,
     );
     expect(pi.activeTools).not.toContain(searchContacts);
     expect(pi.activeTools).toEqual(
-      expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"])
+      expect.arrayContaining(["bash", getContact, "tool_search", "mcp_search"]),
     );
     expect(notify).not.toHaveBeenCalledWith(
       expect.stringContaining("already in use"),
-      "warning"
+      "warning",
     );
 
-    await pi.emitExtensionEvent(
-      { type: "session_shutdown" } as any,
-      {} as any
-    );
+    await pi.emitExtensionEvent({ type: "session_shutdown" } as any, {} as any);
     expect(env.MCPORTER_CONFIG).toBe(hostMcporterConfig);
   });
 });

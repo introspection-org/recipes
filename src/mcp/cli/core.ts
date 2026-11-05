@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { stdin as input, stderr, stdout } from "node:process";
@@ -88,7 +96,7 @@ async function acquireRuntime(): Promise<{
 
 async function closeOwnedRuntime(
   runtime: Awaited<ReturnType<typeof createRuntime>>,
-  owned: boolean
+  owned: boolean,
 ): Promise<void> {
   if (owned) await runtime.close();
 }
@@ -134,9 +142,9 @@ interface McpRunToolFunction {
   raw(args?: Record<string, unknown>): Promise<unknown>;
 }
 
-export class McpRunUsageError extends Error {}
+class McpRunUsageError extends Error {}
 
-export class McpRunTimeoutError extends Error {
+class McpRunTimeoutError extends Error {
   readonly outcome = "unknown";
   constructor(message: string) {
     super(message);
@@ -144,7 +152,7 @@ export class McpRunTimeoutError extends Error {
   }
 }
 
-export interface McpRunRemoteErrorDetails extends Record<string, unknown> {
+interface McpRunRemoteErrorDetails extends Record<string, unknown> {
   code?: string;
   message: string;
   retryable?: boolean;
@@ -159,7 +167,7 @@ class McpRemoteToolResultError extends Error {
   }
 }
 
-export class McpRunToolError extends Error {
+class McpRunToolError extends Error {
   readonly kind = "tool_execution";
   readonly details?: McpRunRemoteErrorDetails;
   readonly code?: string;
@@ -171,7 +179,7 @@ export class McpRunToolError extends Error {
     readonly server: string,
     readonly tool: string,
     message: string,
-    options?: ErrorOptions & { details?: McpRunRemoteErrorDetails }
+    options?: ErrorOptions & { details?: McpRunRemoteErrorDetails },
   ) {
     super(message, options);
     this.name = "McpRunToolError";
@@ -208,14 +216,17 @@ function readStdin(): Promise<string> {
 }
 
 function checkedCallResult(
-  callResult: ReturnType<typeof createCallResult>
+  callResult: ReturnType<typeof createCallResult>,
 ): ReturnType<typeof createCallResult> {
   if (asRecord(callResult.raw).isError === true) {
     // Fail loudly in code mode so a bad call rejects instead of flowing an
     // error string into downstream logic.
     const parsed = callResult.json();
     const parsedRecord = asRecord(parsed);
-    const parsedError = Object.prototype.hasOwnProperty.call(parsedRecord, "error")
+    const parsedError = Object.prototype.hasOwnProperty.call(
+      parsedRecord,
+      "error",
+    )
       ? parsedRecord.error
       : parsedRecord;
     const errorObject = asRecord(parsedError);
@@ -224,7 +235,7 @@ function checkedCallResult(
         ? parsedError
         : typeof errorObject.message === "string"
           ? errorObject.message
-          : callResult.text() ?? "MCP tool call failed.";
+          : (callResult.text() ?? "MCP tool call failed.");
     throw new McpRemoteToolResultError({ ...errorObject, message });
   }
   return callResult;
@@ -233,12 +244,16 @@ function checkedCallResult(
 function decodeCallResult(
   callResult: ReturnType<typeof createCallResult>,
   format: McpRunResultFormat,
-  ref: string
+  ref: string,
 ): unknown {
   switch (format) {
     case "json": {
       const decoded = callResult.json();
-      if (decoded === null && callResult.structuredContent() == null && callResult.text() != null) {
+      if (
+        decoded === null &&
+        callResult.structuredContent() == null &&
+        callResult.text() != null
+      ) {
         // The text is usually the reason (not connected, an upstream error), so
         // it travels with the error instead of being hidden behind a format hint.
         const text = callResult.text()!.trim();
@@ -246,7 +261,7 @@ function decodeCallResult(
         throw new McpRunUsageError(
           `${ref} returned text, not JSON: ${shown} ` +
             `If plain text is this tool's documented response, call tools[${JSON.stringify(ref.split(".")[0])}]` +
-            `[${JSON.stringify(ref.slice(ref.indexOf(".") + 1))}].text(args).`
+            `[${JSON.stringify(ref.slice(ref.indexOf(".") + 1))}].text(args).`,
         );
       }
       return decoded;
@@ -266,14 +281,20 @@ function decodeCallResult(
   }
 }
 
-function validateRunToolArgs(server: string, tool: string, args: Record<string, unknown>): void {
-  const cliStyleKey = Object.keys(args).find((key) => key.includes(":=") || key.includes("="));
+function validateRunToolArgs(
+  server: string,
+  tool: string,
+  args: Record<string, unknown>,
+): void {
+  const cliStyleKey = Object.keys(args).find(
+    (key) => key.includes(":=") || key.includes("="),
+  );
   if (!cliStyleKey) return;
   const suggestedKey = cliStyleKey.split(/:=|=/, 1)[0];
   throw new McpRunUsageError(
     `Invalid JavaScript argument key '${cliStyleKey}' for ${server}.${tool}. ` +
       `mcp run uses normal JavaScript objects: write { ${suggestedKey}: value }, ` +
-      `not mcporter CLI key=value or key:=value syntax.`
+      `not mcporter CLI key=value or key:=value syntax.`,
   );
 }
 
@@ -293,7 +314,9 @@ class ToolCallQueue {
       this.active += 1;
       return Promise.resolve(this.releaseHandle());
     }
-    return new Promise((resolve, reject) => this.waiting.push({ resolve, reject }));
+    return new Promise((resolve, reject) =>
+      this.waiting.push({ resolve, reject }),
+    );
   }
 
   cancel(error: unknown): void {
@@ -331,7 +354,9 @@ function words(value: string): string[] {
     .filter(Boolean);
 }
 
-function toolProperties(tool: McpToolCatalogEntry): Array<{ name: string; description: string }> {
+function toolProperties(
+  tool: McpToolCatalogEntry,
+): Array<{ name: string; description: string }> {
   const schema = asRecord(tool.input_schema);
   const properties = asRecord(schema.properties);
   return Object.entries(properties).map(([name, value]) => {
@@ -369,7 +394,9 @@ function scoreTool(opts: {
   const description = opts.tool.description ?? "";
   const properties = toolProperties(opts.tool);
   const propertyNames = properties.map((property) => property.name).join(" ");
-  const propertyDescriptions = properties.map((property) => property.description).join(" ");
+  const propertyDescriptions = properties
+    .map((property) => property.description)
+    .join(" ");
   const searchable = [
     ref,
     opts.serverId,
@@ -420,14 +447,16 @@ function exampleValue(name: string): string {
 
 function callExample(serverId: string, tool: McpToolCatalogEntry): string {
   const required = toolRequired(tool);
-  const args = required.slice(0, 4).map((name) => `${name}${exampleValue(name)}`);
+  const args = required
+    .slice(0, 4)
+    .map((name) => `${name}${exampleValue(name)}`);
   return ["mcp call", `${serverId}.${tool.name}`, ...args].join(" ");
 }
 
 export function searchMcpTools(
   session: McpSessionConfig,
   query: string,
-  opts: { limit?: number; regex?: boolean } = {}
+  opts: { limit?: number; regex?: boolean } = {},
 ): ToolSearchMatch[] {
   const trimmed = query.trim();
   if (!trimmed) return [];
@@ -511,7 +540,7 @@ function catalogFingerprint(server: McpSessionServer): string {
         baseUrl: server.base_url,
         packageTools: server.package_tools,
         agentTools: server.agent_tools,
-      })
+      }),
     )
     .digest("hex")
     .slice(0, 20);
@@ -522,17 +551,17 @@ function catalogCachePath(server: McpSessionServer): string {
     sessionRoot(),
     ".pi",
     "mcp-catalogs",
-    `${server.id}-${catalogFingerprint(server)}.json`
+    `${server.id}-${catalogFingerprint(server)}.json`,
   );
 }
 
 async function readCachedCatalog(
-  server: McpSessionServer
+  server: McpSessionServer,
 ): Promise<McpToolCatalogEntry[] | null> {
   if (server.catalog) return server.catalog;
   try {
     const parsed = JSON.parse(
-      await readFile(catalogCachePath(server), "utf8")
+      await readFile(catalogCachePath(server), "utf8"),
     ) as { tools?: McpToolCatalogEntry[] };
     return Array.isArray(parsed.tools) ? parsed.tools : null;
   } catch {
@@ -542,7 +571,7 @@ async function readCachedCatalog(
 
 async function writeCachedCatalog(
   server: McpSessionServer,
-  tools: McpToolCatalogEntry[]
+  tools: McpToolCatalogEntry[],
 ): Promise<void> {
   const directory = join(sessionRoot(), ".pi", "mcp-catalogs");
   await mkdir(directory, { recursive: true });
@@ -563,7 +592,7 @@ function processExists(pid: number): boolean {
 
 async function catalogLockIsStale(
   path: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<boolean> {
   try {
     const owner = JSON.parse(await readFile(path, "utf8")) as {
@@ -579,7 +608,8 @@ async function catalogLockIsStale(
     ) {
       return (
         !processExists(owner.pid) ||
-        Date.now() - owner.createdAt > timeoutMs + CATALOG_LOCK_INCOMPLETE_GRACE_MS
+        Date.now() - owner.createdAt >
+          timeoutMs + CATALOG_LOCK_INCOMPLETE_GRACE_MS
       );
     }
   } catch (error) {
@@ -603,7 +633,7 @@ async function acquireCatalogLock(path: string): Promise<boolean> {
   }
   try {
     await handle.writeFile(
-      `${JSON.stringify({ pid: process.pid, createdAt: Date.now() })}\n`
+      `${JSON.stringify({ pid: process.pid, createdAt: Date.now() })}\n`,
     );
   } catch (error) {
     await handle.close();
@@ -634,7 +664,7 @@ function catalogEntry(tool: ContractTool): McpToolCatalogEntry {
 async function discoverServerCatalog(
   runtime: Awaited<ReturnType<typeof createRuntime>>,
   server: McpSessionServer,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<McpToolCatalogEntry[]> {
   const cached = await readCachedCatalog(server);
   if (cached) return cached;
@@ -660,7 +690,7 @@ async function discoverServerCatalog(
     const populated = await readCachedCatalog(server);
     if (populated) return populated;
     throw new Error(
-      `timed out after ${timeoutMs}ms waiting for MCP catalog discovery for '${server.id}'`
+      `timed out after ${timeoutMs}ms waiting for MCP catalog discovery for '${server.id}'`,
     );
   }
   try {
@@ -671,7 +701,7 @@ async function discoverServerCatalog(
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       throw new Error(
-        `timed out after ${timeoutMs}ms before MCP catalog discovery for '${server.id}' started`
+        `timed out after ${timeoutMs}ms before MCP catalog discovery for '${server.id}' started`,
       );
     }
     const discovered = (await withListTimeout(
@@ -681,7 +711,7 @@ async function discoverServerCatalog(
         allowCachedAuth: true,
         disableOAuth: true,
       }),
-      remainingMs
+      remainingMs,
     )) as ContractTool[];
     const tools = filterMcpCatalog(server, discovered.map(catalogEntry));
     await writeCachedCatalog(server, tools);
@@ -693,7 +723,7 @@ async function discoverServerCatalog(
 
 export async function discoverMcpCatalogs(
   runtime: McpRuntime,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<McpCatalogServer[]> {
   const session = await readSession();
   return await Promise.all(
@@ -712,7 +742,7 @@ export async function discoverMcpCatalogs(
           error: error instanceof Error ? error.message : String(error),
         };
       }
-    })
+    }),
   );
 }
 
@@ -727,20 +757,32 @@ function optionName(value: string): string {
 }
 
 export function parseSearchArgs(
-  args: string[]
+  args: string[],
 ):
   | { query: string; limit: number; regex: boolean; error?: undefined }
   | { error: string } {
   if (args.some((arg) => optionName(arg) === "--json")) {
-    return { error: "mcp search metadata is compact text; JSON is reserved for tool results." };
+    return {
+      error:
+        "mcp search metadata is compact text; JSON is reserved for tool results.",
+    };
   }
-  let parsed: ReturnType<typeof parseArgs<{ options: typeof SEARCH_OPTIONS; allowPositionals: true }>>;
+  let parsed: ReturnType<
+    typeof parseArgs<{ options: typeof SEARCH_OPTIONS; allowPositionals: true }>
+  >;
   try {
-    parsed = parseArgs({ args, options: SEARCH_OPTIONS, allowPositionals: true });
+    parsed = parseArgs({
+      args,
+      options: SEARCH_OPTIONS,
+      allowPositionals: true,
+    });
   } catch (error) {
     // An agent reads these and decides what to try next, so the wording stays
     // ours rather than Node's.
-    if ((error as NodeJS.ErrnoException).code === "ERR_PARSE_ARGS_INVALID_OPTION_VALUE") {
+    if (
+      (error as NodeJS.ErrnoException).code ===
+      "ERR_PARSE_ARGS_INVALID_OPTION_VALUE"
+    ) {
       // parseArgs rejects an option-shaped value (`--limit -1`) before it is
       // read, so the value has to be recovered to name it back.
       const index = args.findIndex((arg) => optionName(arg) === "--limit");
@@ -751,7 +793,8 @@ export function parseSearchArgs(
       return { error: `--limit expects a positive integer, got '${raw}'.` };
     }
     const unknown = args.find(
-      (arg) => arg.startsWith("-") && !(optionName(arg).slice(2) in SEARCH_OPTIONS)
+      (arg) =>
+        arg.startsWith("-") && !(optionName(arg).slice(2) in SEARCH_OPTIONS),
     );
     return { error: `Unknown mcp search option '${unknown}'.` };
   }
@@ -760,7 +803,9 @@ export function parseSearchArgs(
   if (values.limit !== undefined) {
     const value = Number(values.limit);
     if (!Number.isInteger(value) || value <= 0) {
-      return { error: `--limit expects a positive integer, got '${values.limit}'.` };
+      return {
+        error: `--limit expects a positive integer, got '${values.limit}'.`,
+      };
     }
     limit = value;
   }
@@ -774,13 +819,16 @@ export function parseSearchArgs(
  */
 export function renderSearchResults(
   matches: readonly ToolSearchMatch[],
-  catalogs: ReadonlyMap<string, readonly McpToolCatalogEntry[]>
+  catalogs: ReadonlyMap<string, readonly McpToolCatalogEntry[]>,
 ): string {
   let budget = MAX_SEARCH_CONTRACT_CHARS;
   let shortened = false;
   const blocks = matches.map((match, index) => {
-    const entry = catalogs.get(match.server)?.find((tool) => tool.name === match.tool);
-    if (!entry) return `${match.ref}${match.description ? ` — ${match.description}` : ""}\n`;
+    const entry = catalogs
+      .get(match.server)
+      ?.find((tool) => tool.name === match.tool);
+    if (!entry)
+      return `${match.ref}${match.description ? ` — ${match.description}` : ""}\n`;
     const tool = {
       name: entry.name,
       description: entry.description,
@@ -812,7 +860,7 @@ async function searchCatalog(args: string[]): Promise<number> {
   }
   const { query, limit, regex } = parsed;
   if (!query.trim()) {
-    stderr.write("Usage: mcp search \"what you need\" [--limit N] [--regex]\n");
+    stderr.write('Usage: mcp search "what you need" [--limit N] [--regex]\n');
     return 2;
   }
   let matches: ToolSearchMatch[];
@@ -827,35 +875,35 @@ async function searchCatalog(args: string[]): Promise<number> {
             catalog: await discoverServerCatalog(
               runtime,
               server,
-              DEFAULT_LIST_TIMEOUT_MS
+              DEFAULT_LIST_TIMEOUT_MS,
             ),
           } as const;
         } catch (error) {
           return { error } as const;
         }
-      })
+      }),
     );
     const failed = results.filter((result) => "error" in result).length;
     if (failed > 0) {
       stderr.write(
-        `mcp search: ${failed} of ${results.length} server(s) unavailable; searched the remaining catalogs.\n`
+        `mcp search: ${failed} of ${results.length} server(s) unavailable; searched the remaining catalogs.\n`,
       );
     }
     session.servers.forEach((server, index) => {
       const result = results[index]!;
-      if ("catalog" in result && result.catalog) catalogs.set(server.id, result.catalog);
+      if ("catalog" in result && result.catalog)
+        catalogs.set(server.id, result.catalog);
     });
     matches = searchMcpTools(
       {
         ...session,
         servers: session.servers.map((server, index) => ({
           ...server,
-          catalog:
-            "catalog" in results[index]! ? results[index]!.catalog : [],
+          catalog: "catalog" in results[index]! ? results[index]!.catalog : [],
         })),
       },
       query,
-      { limit, regex }
+      { limit, regex },
     );
   } catch (err) {
     if (regex && err instanceof SyntaxError) {
@@ -870,7 +918,7 @@ async function searchCatalog(args: string[]): Promise<number> {
     stdout.write(`No matching tools found for "${query}".\n`);
     stdout.write("Try broader or alternate terms.\n");
     stdout.write(
-      "`mcp list <server> --schema` shows every tool on one server.\n"
+      "`mcp list <server> --schema` shows every tool on one server.\n",
     );
     return 0;
   }
@@ -878,7 +926,9 @@ async function searchCatalog(args: string[]): Promise<number> {
   return 0;
 }
 
-function exactToolTarget(value: string | undefined): { server: string; tool: string } | null {
+function exactToolTarget(
+  value: string | undefined,
+): { server: string; tool: string } | null {
   if (!value) return null;
   const dot = value.indexOf(".");
   if (dot < 1 || dot === value.length - 1) return null;
@@ -888,7 +938,7 @@ function exactToolTarget(value: string | undefined): { server: string; tool: str
 function catalogTool(
   session: McpSessionConfig,
   server: string,
-  tool: string
+  tool: string,
 ): McpToolCatalogEntry | undefined {
   return session.servers
     ?.find((entry) => entry.id === server)
@@ -901,7 +951,10 @@ function toolCount(count: number): string {
 
 export function parseListTimeoutMs(args: readonly string[]): number | string {
   const configured = process.env.MCPORTER_LIST_TIMEOUT;
-  let raw = configured && /^[1-9]\d*$/.test(configured) ? configured : String(DEFAULT_LIST_TIMEOUT_MS);
+  let raw =
+    configured && /^[1-9]\d*$/.test(configured)
+      ? configured
+      : String(DEFAULT_LIST_TIMEOUT_MS);
   // Non-strict: every other option on this line belongs to mcporter.
   const { values } = parseArgs({
     args: [...args.slice(1)],
@@ -925,11 +978,14 @@ export function parseListTimeoutMs(args: readonly string[]): number | string {
     : "mcp list: --timeout must be a positive integer (milliseconds).";
 }
 
-export function withListTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withListTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`timed out after ${timeoutMs}ms`)),
-      timeoutMs
+      timeoutMs,
     );
     promise.then(
       (value) => {
@@ -939,23 +995,25 @@ export function withListTimeout<T>(promise: Promise<T>, timeoutMs: number): Prom
       (error) => {
         clearTimeout(timer);
         reject(error);
-      }
+      },
     );
   });
 }
 
-export function aggregateListExitCode(
+function aggregateListExitCode(
   hadFailure: boolean,
-  args: readonly string[]
+  args: readonly string[],
 ): number {
-  return hadFailure && (args.includes("--quiet") || args.includes("--exit-code"))
+  return hadFailure &&
+    (args.includes("--quiet") || args.includes("--exit-code"))
     ? 1
     : 0;
 }
 
 function writeCompactListError(error: unknown): void {
   const filter = createDelegatedErrorFilter((text) => stderr.write(text));
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const message =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
   filter.push(`mcp list: ${message.endsWith("\n") ? message : `${message}\n`}`);
   filter.flush();
 }
@@ -974,7 +1032,7 @@ const LIST_OPTIONS = {
 const LIST_BOOLEAN_FLAGS = new Set(
   Object.entries(LIST_OPTIONS)
     .filter(([, spec]) => spec.type === "boolean")
-    .map(([name]) => name)
+    .map(([name]) => name),
 );
 
 /**
@@ -988,7 +1046,9 @@ function isValidListOption(arg: string): boolean {
   return !(arg.includes("=") && LIST_BOOLEAN_FLAGS.has(name));
 }
 
-export function compactListArgumentError(args: readonly string[]): string | undefined {
+export function compactListArgumentError(
+  args: readonly string[],
+): string | undefined {
   const rest = args.slice(1);
   // The target has to lead, because that is where the policy and `compactList`
   // both look for it. One parsed out from behind a flag would be accepted here
@@ -1007,7 +1067,7 @@ export function compactListArgumentError(args: readonly string[]): string | unde
     return undefined;
   } catch {
     const offending = options.find(
-      (arg) => arg.startsWith("-") && !isValidListOption(arg)
+      (arg) => arg.startsWith("-") && !isValidListOption(arg),
     );
     // Nothing invalid means a trailing `--timeout`, which parseListTimeoutMs
     // reports with the message that names the value it wanted.
@@ -1017,7 +1077,9 @@ export function compactListArgumentError(args: readonly string[]): string | unde
 
 async function compactList(args: string[]): Promise<number> {
   if (args.includes("--json")) {
-    stderr.write("mcp list metadata is compact text; JSON is reserved for tool results.\n");
+    stderr.write(
+      "mcp list metadata is compact text; JSON is reserved for tool results.\n",
+    );
     return 2;
   }
   const argumentError = compactListArgumentError(args);
@@ -1037,7 +1099,9 @@ async function compactList(args: string[]): Promise<number> {
     return 2;
   }
   if (schema && !target) {
-    stderr.write("mcp list --schema requires a server or one exact tool: mcp list <server>[.<tool>] --schema\n");
+    stderr.write(
+      "mcp list --schema requires a server or one exact tool: mcp list <server>[.<tool>] --schema\n",
+    );
     return 2;
   }
   const session = await readSession();
@@ -1052,7 +1116,7 @@ async function compactList(args: string[]): Promise<number> {
           } catch (error) {
             return { server, error } as const;
           }
-        })
+        }),
       );
       let hadFailure = false;
       for (const result of results) {
@@ -1061,7 +1125,7 @@ async function compactList(args: string[]): Promise<number> {
           if (!quiet) stdout.write(`${result.server.id} — unavailable\n`);
         } else if (!quiet) {
           stdout.write(
-            `${result.server.id} — ${toolCount(result.tools.length)}\n`
+            `${result.server.id} — ${toolCount(result.tools.length)}\n`,
           );
         }
       }
@@ -1076,10 +1140,16 @@ async function compactList(args: string[]): Promise<number> {
   try {
     const sessionServer = session.servers.find((entry) => entry.id === server);
     if (!sessionServer) {
-      stderr.write(`MCP server '${server}' is not available in this session.\n`);
+      stderr.write(
+        `MCP server '${server}' is not available in this session.\n`,
+      );
       return 1;
     }
-    const catalog = await discoverServerCatalog(runtime, sessionServer, timeout);
+    const catalog = await discoverServerCatalog(
+      runtime,
+      sessionServer,
+      timeout,
+    );
     const tools = catalog.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -1092,16 +1162,20 @@ async function compactList(args: string[]): Promise<number> {
       stdout.write(`${server} ok — ${toolCount(tools.length)}\n`);
       return 0;
     }
-    const selected = exact ? tools.filter((tool) => tool.name === exact.tool) : tools;
+    const selected = exact
+      ? tools.filter((tool) => tool.name === exact.tool)
+      : tools;
     if (exact && selected.length === 0) {
-      stderr.write(`Tool '${exact.tool}' is not available on server '${server}'.\n`);
+      stderr.write(
+        `Tool '${exact.tool}' is not available on server '${server}'.\n`,
+      );
       return 1;
     }
     if (schema) {
       const withCatalog = {
         ...session,
         servers: session.servers.map((entry) =>
-          entry.id === server ? { ...entry, catalog } : entry
+          entry.id === server ? { ...entry, catalog } : entry,
         ),
       };
       stdout.write(
@@ -1113,12 +1187,14 @@ async function compactList(args: string[]): Promise<number> {
                 ...tool,
                 outputSchema:
                   tool.outputSchema ??
-                  catalogOutputSchema(catalogTool(withCatalog, server, tool.name)),
+                  catalogOutputSchema(
+                    catalogTool(withCatalog, server, tool.name),
+                  ),
               },
-              { verboseDescriptions: verbose }
-            )
+              { verboseDescriptions: verbose },
+            ),
           )
-          .join("\n")
+          .join("\n"),
       );
       return 0;
     }
@@ -1156,7 +1232,7 @@ function levenshtein(a: string, b: string): number {
       current[j] = Math.min(
         current[j - 1] + 1,
         previous[j] + 1,
-        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
       );
     }
     previous = current;
@@ -1164,7 +1240,10 @@ function levenshtein(a: string, b: string): number {
   return previous[b.length];
 }
 
-function closestName(input: string, candidates: Iterable<string>): string | undefined {
+function closestName(
+  input: string,
+  candidates: Iterable<string>,
+): string | undefined {
   const normalizedInput = normalizeName(input);
   let best: string | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
@@ -1176,18 +1255,25 @@ function closestName(input: string, candidates: Iterable<string>): string | unde
     }
   }
   if (best === undefined) return undefined;
-  const baseline = Math.max(normalizedInput.length, normalizeName(best).length, 1);
+  const baseline = Math.max(
+    normalizedInput.length,
+    normalizeName(best).length,
+    1,
+  );
   return bestScore <= Math.max(2, Math.floor(baseline / 3)) ? best : undefined;
 }
 
-export function describeUnknownRunServer(server: string, servers: string[]): string {
+export function describeUnknownRunServer(
+  server: string,
+  servers: string[],
+): string {
   const suggestion = closestName(server, servers);
   const parts = [`Unknown MCP server '${server}'.`];
   if (suggestion) parts.push(`Did you mean 'tools.${suggestion}'?`);
   parts.push(
     servers.length > 0
       ? `Available servers: ${servers.join(", ")}.`
-      : "No MCP servers are configured."
+      : "No MCP servers are configured.",
   );
   return parts.join(" ");
 }
@@ -1196,14 +1282,15 @@ const RUN_TOOL_REJECTED_PATTERNS = [
   /\btool\s+[\w.-]+\s+not found\b/i,
   /\bunknown tool\b/i,
 ];
-const RUN_TOOL_BLOCKED_PATTERN = /is not accessible on server '[^']+' \(blocked by configuration\)/;
+const RUN_TOOL_BLOCKED_PATTERN =
+  /is not accessible on server '[^']+' \(blocked by configuration\)/;
 const RUN_AUTH_REQUIRED_PATTERN =
   /\b(?:authentication required|unauthenticated|HTTP 401|missing (?:access )?token|invalid (?:access )?token|failed to resolve header ['"]Authorization)/i;
 
 export function describeUnavailableRunTool(
   server: string,
   tool: string,
-  knownTools: string[]
+  knownTools: string[],
 ): string {
   const suggestion = closestName(tool, knownTools);
   const parts = [`Tool '${tool}' is not available on server '${server}'.`];
@@ -1216,7 +1303,7 @@ function improveRunToolError(
   error: unknown,
   server: string,
   tool: string,
-  knownTools: string[]
+  knownTools: string[],
 ): unknown {
   const message = error instanceof Error ? error.message : String(error);
   if (RUN_AUTH_REQUIRED_PATTERN.test(message)) {
@@ -1233,11 +1320,14 @@ function improveRunToolError(
     return new Error(
       `Tool '${tool}' is not enabled for server '${server}' in this session. ` +
         `Run \`mcp list ${server}\` to inspect the allowlist; if absent, the recipe configuration must grant it.`,
-      { cause: error }
+      { cause: error },
     );
   }
-  if (!RUN_TOOL_REJECTED_PATTERNS.some((pattern) => pattern.test(message))) return error;
-  return new Error(describeUnavailableRunTool(server, tool, knownTools), { cause: error });
+  if (!RUN_TOOL_REJECTED_PATTERNS.some((pattern) => pattern.test(message)))
+    return error;
+  return new Error(describeUnavailableRunTool(server, tool, knownTools), {
+    cause: error,
+  });
 }
 
 type McpCallOptions = NonNullable<Parameters<McpRuntime["callTool"]>[2]>;
@@ -1250,7 +1340,11 @@ const HANDSHAKE_RETRY_DELAYS_MS = [500, 1500];
 function refusedHandshake(error: unknown): boolean {
   let current = error;
   for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    if (/Version negotiation failed: the server answered the probe with HTTP 5\d\d/.test(current.message)) {
+    if (
+      /Version negotiation failed: the server answered the probe with HTTP 5\d\d/.test(
+        current.message,
+      )
+    ) {
       return true;
     }
     current = (current as { cause?: unknown }).cause;
@@ -1263,14 +1357,18 @@ export async function callToolWithHandshakeRetry(
   server: string,
   tool: string,
   options: () => McpCallOptions,
-  deadlineMs = Number.POSITIVE_INFINITY
+  deadlineMs = Number.POSITIVE_INFINITY,
 ): Promise<unknown> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await runtime.callTool(server, tool, options());
     } catch (error) {
       const wait = HANDSHAKE_RETRY_DELAYS_MS[attempt];
-      if (wait === undefined || !refusedHandshake(error) || Date.now() + wait >= deadlineMs) {
+      if (
+        wait === undefined ||
+        !refusedHandshake(error) ||
+        Date.now() + wait >= deadlineMs
+      ) {
         throw error;
       }
       await delay(wait);
@@ -1291,16 +1389,16 @@ async function createTools(opts: {
     session.servers.map(async (server) => {
       knownTools.set(
         server.id,
-        (await readCachedCatalog(server))?.map((tool) => tool.name) ?? []
+        (await readCachedCatalog(server))?.map((tool) => tool.name) ?? [],
       );
-    })
+    }),
   );
   // The static session policy is the authority. The mcporter config is a
   // transport projection, not another capability source, so extra config
   // entries must never appear on the run proxy.
   const configuredServers = new Set(runtime.listServers());
   const servers = session.servers.filter((server) =>
-    configuredServers.has(server.id)
+    configuredServers.has(server.id),
   );
   const calls: ToolCallRecord[] = [];
   let callCount = 0;
@@ -1313,10 +1411,11 @@ async function createTools(opts: {
     const server = serverPolicy.id;
     toolsByServer[server] = new Proxy(Object.create(null), {
       get(_target, property) {
-        if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property)) return undefined;
+        if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property))
+          return undefined;
         const startCall = (
           args: Record<string, unknown>,
-          format: McpRunResultFormat
+          format: McpRunResultFormat,
         ): Promise<unknown> => {
           validateRunToolArgs(server, property, args);
           const allowedToolNames = knownTools.get(server) ?? [];
@@ -1324,12 +1423,12 @@ async function createTools(opts: {
             throw new McpRunToolError(
               server,
               property,
-              describeUnavailableRunTool(server, property, allowedToolNames)
+              describeUnavailableRunTool(server, property, allowedToolNames),
             );
           }
           if (callCount >= opts.maxCalls) {
             throw new McpRunUsageError(
-              `mcp run tool-call limit exceeded (${opts.maxCalls}). Split the workflow or raise PI_RECIPES_MCP_RUN_MAX_CALLS.`
+              `mcp run tool-call limit exceeded (${opts.maxCalls}). Split the workflow or raise PI_RECIPES_MCP_RUN_MAX_CALLS.`,
             );
           }
           callCount += 1;
@@ -1340,7 +1439,7 @@ async function createTools(opts: {
               const remainingMs = opts.deadlineMs - Date.now();
               if (remainingMs <= 0) {
                 throw new McpRunTimeoutError(
-                  `mcp run deadline reached before ${server}.${property} started.`
+                  `mcp run deadline reached before ${server}.${property} started.`,
                 );
               }
               const result = checkedCallResult(
@@ -1354,12 +1453,15 @@ async function createTools(opts: {
                       // A queued call must never outlive the workflow that owns
                       // it. mcporter forwards this timeout to the MCP SDK and
                       // resets the transport when it fires.
-                      timeoutMs: Math.min(opts.callTimeoutMs, opts.deadlineMs - Date.now()),
+                      timeoutMs: Math.min(
+                        opts.callTimeoutMs,
+                        opts.deadlineMs - Date.now(),
+                      ),
                       disableOAuth: true,
                     }),
-                    opts.deadlineMs
-                  )) as Parameters<typeof createCallResult>[0]
-                )
+                    opts.deadlineMs,
+                  )) as Parameters<typeof createCallResult>[0],
+                ),
               );
               return decodeCallResult(result, format, `${server}.${property}`);
             } catch (error) {
@@ -1367,10 +1469,11 @@ async function createTools(opts: {
                 error,
                 server,
                 property,
-                allowedToolNames ?? []
+                allowedToolNames ?? [],
               );
               if (improved instanceof McpRunUsageError) throw improved;
-              const message = improved instanceof Error ? improved.message : String(improved);
+              const message =
+                improved instanceof Error ? improved.message : String(improved);
               const remoteDetails =
                 improved instanceof McpRemoteToolResultError
                   ? improved.details
@@ -1390,14 +1493,16 @@ async function createTools(opts: {
                       retryable: true,
                       action: "inspect_state",
                       outcome:
-                        improved instanceof McpRunTimeoutError ? "not_started" : "unknown",
+                        improved instanceof McpRunTimeoutError
+                          ? "not_started"
+                          : "unknown",
                     }
                   : undefined;
               throw new McpRunToolError(
                 server,
                 property,
                 remoteDetails?.message ?? timeoutDetails?.message ?? message,
-                { cause: improved, details: remoteDetails ?? timeoutDetails }
+                { cause: improved, details: remoteDetails ?? timeoutDetails },
               );
             } finally {
               release?.();
@@ -1416,15 +1521,17 @@ async function createTools(opts: {
             },
             (error: unknown) => {
               record.outcome = "failed";
-              record.error = error instanceof Error ? error.message : String(error);
-            }
+              record.error =
+                error instanceof Error ? error.message : String(error);
+            },
           );
           // JSON.stringify(promise) is "{}" — the classic missing-await
           // symptom. Make it print a diagnosis instead.
           return new Proxy(rawCall, {
             get(target, key) {
               if (key === "toJSON") {
-                return () => `[pending tool call ${server}.${property} — did you forget await?]`;
+                return () =>
+                  `[pending tool call ${server}.${property} — did you forget await?]`;
               }
               if (key === "then" || key === "catch" || key === "finally") {
                 record.observed = true;
@@ -1437,13 +1544,18 @@ async function createTools(opts: {
 
         const tool = ((args: Record<string, unknown> = {}) =>
           startCall(args, "json")) as McpRunToolFunction;
-        tool.text = (args: Record<string, unknown> = {}) => startCall(args, "text");
-        tool.markdown = (args: Record<string, unknown> = {}) => startCall(args, "markdown");
-        tool.images = (args: Record<string, unknown> = {}) => startCall(args, "images");
-        tool.content = (args: Record<string, unknown> = {}) => startCall(args, "content");
+        tool.text = (args: Record<string, unknown> = {}) =>
+          startCall(args, "text");
+        tool.markdown = (args: Record<string, unknown> = {}) =>
+          startCall(args, "markdown");
+        tool.images = (args: Record<string, unknown> = {}) =>
+          startCall(args, "images");
+        tool.content = (args: Record<string, unknown> = {}) =>
+          startCall(args, "content");
         tool.structuredContent = (args: Record<string, unknown> = {}) =>
           startCall(args, "structuredContent");
-        tool.raw = (args: Record<string, unknown> = {}) => startCall(args, "raw");
+        tool.raw = (args: Record<string, unknown> = {}) =>
+          startCall(args, "raw");
         return tool;
       },
     }) as Record<string, McpRunToolFunction>;
@@ -1452,13 +1564,14 @@ async function createTools(opts: {
   // exist, instead of "Cannot read properties of undefined".
   const tools = new Proxy(toolsByServer, {
     get(target, property) {
-      if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property)) return undefined;
+      if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property))
+        return undefined;
       if (property in target) return target[property];
       throw new Error(
         describeUnknownRunServer(
           property,
-          servers.map((server) => server.id)
-        )
+          servers.map((server) => server.id),
+        ),
       );
     },
   });
@@ -1474,18 +1587,24 @@ async function createTools(opts: {
 // vars.TYPO silently becomes undefined, which strips the argument it feeds
 // and can turn a targeted query into a match-everything one. Throw instead.
 function createVars(vars: Record<string, string>): Record<string, string> {
-  return new Proxy({ ...vars }, {
-    get(target, property) {
-      if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property)) return undefined;
-      if (property in target) return target[property as keyof typeof target];
-      const defined = Object.keys(target);
-      throw new Error(
-        `vars.${property} is not defined. Pass it with --var ${property}=value` +
-          (defined.length > 0 ? ` (defined vars: ${defined.join(", ")}).` : " (no vars were passed).") +
-          ` Use \`"${property}" in vars\` to test for optional vars.`
-      );
+  return new Proxy(
+    { ...vars },
+    {
+      get(target, property) {
+        if (typeof property !== "string" || PROXY_PROBE_PROPS.has(property))
+          return undefined;
+        if (property in target) return target[property as keyof typeof target];
+        const defined = Object.keys(target);
+        throw new Error(
+          `vars.${property} is not defined. Pass it with --var ${property}=value` +
+            (defined.length > 0
+              ? ` (defined vars: ${defined.join(", ")}).`
+              : " (no vars were passed).") +
+            ` Use \`"${property}" in vars\` to test for optional vars.`,
+        );
+      },
     },
-  });
+  );
 }
 
 function createRunProcess(): NodeJS.Process {
@@ -1493,7 +1612,7 @@ function createRunProcess(): NodeJS.Process {
     get(target, property) {
       if (property === "argv") {
         throw new McpRunUsageError(
-          "process.argv is unavailable in mcp run. Pass dynamic values with --var KEY=value and read them as vars.KEY."
+          "process.argv is unavailable in mcp run. Pass dynamic values with --var KEY=value and read them as vars.KEY.",
         );
       }
       const value = Reflect.get(target, property, target);
@@ -1504,7 +1623,7 @@ function createRunProcess(): NodeJS.Process {
 
 function concurrentOutcomeError(
   error: McpRunToolError,
-  calls: ToolCallRecord[]
+  calls: ToolCallRecord[],
 ): McpRunToolError {
   if (calls.length < 2) return error;
   const outcomes = calls.map((call) => ({
@@ -1512,7 +1631,9 @@ function concurrentOutcomeError(
     outcome: call.outcome,
     ...(call.error ? { error: call.error } : {}),
   }));
-  const summary = outcomes.map((call) => `${call.ref}=${call.outcome}`).join(", ");
+  const summary = outcomes
+    .map((call) => `${call.ref}=${call.outcome}`)
+    .join(", ");
   const message = `${error.message} Workflow call outcomes: ${summary}. Inspect state before retrying side-effecting calls.`;
   return new McpRunToolError(error.server, error.tool, message, {
     cause: error,
@@ -1523,16 +1644,18 @@ function concurrentOutcomeError(
 function positiveInteger(
   value: number | string | undefined,
   label: string,
-  fallback: number
+  fallback: number,
 ): number {
   const parsed = value === undefined ? fallback : Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new McpRunUsageError(`${label} expects a positive integer, got '${value ?? ""}'.`);
+    throw new McpRunUsageError(
+      `${label} expects a positive integer, got '${value ?? ""}'.`,
+    );
   }
   return parsed;
 }
 
-export async function runMcpJavaScript(
+async function runMcpJavaScript(
   code: string,
   opts: {
     timeoutMs?: number;
@@ -1540,27 +1663,27 @@ export async function runMcpJavaScript(
     maxCalls?: number;
     maxConcurrentCalls?: number;
     vars?: Record<string, string>;
-  } = {}
+  } = {},
 ): Promise<void> {
   const timeoutMs = positiveInteger(
     opts.timeoutMs ?? process.env.PI_RECIPES_MCP_RUN_TIMEOUT_MS,
     "PI_RECIPES_MCP_RUN_TIMEOUT_MS",
-    DEFAULT_RUN_TIMEOUT_MS
+    DEFAULT_RUN_TIMEOUT_MS,
   );
   const callTimeoutMs = positiveInteger(
     opts.callTimeoutMs ?? process.env.PI_RECIPES_MCP_RUN_CALL_TIMEOUT_MS,
     "PI_RECIPES_MCP_RUN_CALL_TIMEOUT_MS",
-    Math.min(DEFAULT_TOOL_CALL_TIMEOUT_MS, timeoutMs)
+    Math.min(DEFAULT_TOOL_CALL_TIMEOUT_MS, timeoutMs),
   );
   const maxCalls = positiveInteger(
     opts.maxCalls ?? process.env.PI_RECIPES_MCP_RUN_MAX_CALLS,
     "PI_RECIPES_MCP_RUN_MAX_CALLS",
-    DEFAULT_MAX_RUN_TOOL_CALLS
+    DEFAULT_MAX_RUN_TOOL_CALLS,
   );
   const maxConcurrentCalls = positiveInteger(
     opts.maxConcurrentCalls ?? process.env.PI_RECIPES_MCP_RUN_MAX_CONCURRENCY,
     "PI_RECIPES_MCP_RUN_MAX_CONCURRENCY",
-    DEFAULT_MAX_CONCURRENT_TOOL_CALLS
+    DEFAULT_MAX_CONCURRENT_TOOL_CALLS,
   );
   const deadlineMs = Date.now() + timeoutMs;
   const { runtime, owned, tools, calls, cancelQueued } = await createTools({
@@ -1569,9 +1692,14 @@ export async function runMcpJavaScript(
     maxConcurrentCalls,
     deadlineMs,
   });
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+  const AsyncFunction = Object.getPrototypeOf(async function () {})
+    .constructor as new (
     ...args: string[]
-  ) => (tools: unknown, vars: Record<string, string>, process: NodeJS.Process) => Promise<unknown>;
+  ) => (
+    tools: unknown,
+    vars: Record<string, string>,
+    process: NodeJS.Process,
+  ) => Promise<unknown>;
   const run = new AsyncFunction("tools", "vars", "process", code);
   let timeout: NodeJS.Timeout | undefined;
   let primaryError: unknown;
@@ -1584,8 +1712,8 @@ export async function runMcpJavaScript(
           timeout = setTimeout(() => {
             reject(
               new McpRunTimeoutError(
-                `mcp run timed out after ${timeoutMs}ms. Remote side effects may already have occurred; inspect state before retrying.`
-              )
+                `mcp run timed out after ${timeoutMs}ms. Remote side effects may already have occurred; inspect state before retrying.`,
+              ),
             );
           }, timeoutMs);
         }),
@@ -1610,10 +1738,13 @@ export async function runMcpJavaScript(
     // Anything still pending when the script returns is unsafe even if a
     // handler was attached, because closing the runtime can cut it off.
     const unsafeAtExit = calls.filter(
-      (call) => !call.observed || call.outcome === "pending"
+      (call) => !call.observed || call.outcome === "pending",
     );
     if (unsafeAtExit.length > 0) {
-      const remainingSettleMs = Math.max(0, Math.min(15_000, deadlineMs - Date.now()));
+      const remainingSettleMs = Math.max(
+        0,
+        Math.min(15_000, deadlineMs - Date.now()),
+      );
       if (remainingSettleMs > 0) {
         let settleTimer: NodeJS.Timeout | undefined;
         try {
@@ -1635,7 +1766,7 @@ export async function runMcpJavaScript(
       // closing the transport. Once they have settled, do not misreport them
       // as detached calls; surface the original tool error instead.
       const remainingUnsafe = unsafeAtExit.filter(
-        (call) => !call.observed || call.outcome === "outcome_unknown"
+        (call) => !call.observed || call.outcome === "outcome_unknown",
       );
       if (
         scriptError instanceof McpRunToolError &&
@@ -1647,7 +1778,7 @@ export async function runMcpJavaScript(
         .map(
           (call) =>
             `${call.ref}=${call.outcome}` +
-            (call.error ? ` (${call.error})` : "")
+            (call.error ? ` (${call.error})` : ""),
         )
         .join(", ");
       throw new McpRunUsageError(
@@ -1657,7 +1788,7 @@ export async function runMcpJavaScript(
           "Remote side effects may already have occurred." +
           (scriptError
             ? ` The script also failed: ${scriptError instanceof Error ? scriptError.message : String(scriptError)}.`
-            : "")
+            : ""),
       );
     }
     if (scriptError) throw scriptError;
@@ -1672,6 +1803,7 @@ export async function runMcpJavaScript(
       // Transport cleanup must not replace the typed tool/script error that
       // tells the agent what actually failed. A close-only failure still
       // surfaces normally.
+      // eslint-disable-next-line no-unsafe-finally -- only when nothing else failed
       if (primaryError === undefined) throw closeError;
     }
   }
@@ -1697,7 +1829,7 @@ function startRunWatchdog(timeoutMs: number): () => void {
        );
        process.kill(process.pid, "SIGKILL");
      }, workerData.limitMs);`,
-    { eval: true, workerData: { limitMs: timeoutMs + RUN_WATCHDOG_GRACE_MS } }
+    { eval: true, workerData: { limitMs: timeoutMs + RUN_WATCHDOG_GRACE_MS } },
   );
   worker.unref();
   return () => void worker.terminate();
@@ -1713,7 +1845,9 @@ async function runCode(args: string[]): Promise<number> {
       jsonErrors = true;
       continue;
     }
-    const inline = arg.startsWith("--var=") ? arg.slice("--var=".length) : undefined;
+    const inline = arg.startsWith("--var=")
+      ? arg.slice("--var=".length)
+      : undefined;
     const value = inline ?? (arg === "--var" ? args[++index] : undefined);
     if (arg === "--var" || inline !== undefined) {
       const eq = value?.indexOf("=") ?? -1;
@@ -1734,7 +1868,7 @@ async function runCode(args: string[]): Promise<number> {
   const code = file ? await readFile(file, "utf8") : await readStdin();
   if (!code.trim()) {
     stderr.write(
-      "mcp run: empty script. Pass a file path or pipe JavaScript on stdin (see `mcp run --help`).\n"
+      "mcp run: empty script. Pass a file path or pipe JavaScript on stdin (see `mcp run --help`).\n",
     );
     return 2;
   }
@@ -1743,7 +1877,7 @@ async function runCode(args: string[]): Promise<number> {
     timeoutMs = positiveInteger(
       process.env.PI_RECIPES_MCP_RUN_TIMEOUT_MS,
       "PI_RECIPES_MCP_RUN_TIMEOUT_MS",
-      DEFAULT_RUN_TIMEOUT_MS
+      DEFAULT_RUN_TIMEOUT_MS,
     );
   } catch (error) {
     stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -1764,10 +1898,13 @@ async function runCode(args: string[]): Promise<number> {
           ? error.message
           : `${error.name}: ${error.message}`
         : String(error);
-    const prefixed = message.startsWith("mcp run") ? message : `mcp run: ${message}`;
+    const prefixed = message.startsWith("mcp run")
+      ? message
+      : `mcp run: ${message}`;
     const code = error instanceof McpRunUsageError ? 2 : 1;
     if (jsonErrors) {
-      const remoteDetails = error instanceof McpRunToolError ? error.details : undefined;
+      const remoteDetails =
+        error instanceof McpRunToolError ? error.details : undefined;
       stderr.write(
         `${JSON.stringify({
           error: {
@@ -1797,7 +1934,7 @@ async function runCode(args: string[]): Promise<number> {
               ? { server: error.server, tool: error.tool }
               : {}),
           },
-        })}\n`
+        })}\n`,
       );
     } else {
       stderr.write(`${prefixed}\n`);
@@ -1809,7 +1946,7 @@ async function runCode(args: string[]): Promise<number> {
   return 0;
 }
 
-export function createDelegatedErrorFilter(write: (text: string) => void): {
+function createDelegatedErrorFilter(write: (text: string) => void): {
   push(chunk: string): void;
   flush(): void;
 } {
@@ -1819,19 +1956,20 @@ export function createDelegatedErrorFilter(write: (text: string) => void): {
     // Keep mcporter's message, but omit implementation stack frames that do
     // not help an agent recover.
     if (/^\s+at\s\S/.test(line)) return;
-    if (/trying to load OAuth metadata/.test(line)) sawOAuthMetadataError = true;
+    if (/trying to load OAuth metadata/.test(line))
+      sawOAuthMetadataError = true;
     const safe = line
       .replace(
         /Tool '([^']+)' is not accessible on server '([^']+)' \(blocked by configuration\)/g,
-        "Tool '$1' is not enabled on server '$2' in this recipe session"
+        "Tool '$1' is not enabled on server '$2' in this recipe session",
       )
       .replace(
         /Failed to resolve header 'Authorization' for server '([^']+)': Environment variable\(s\) [A-Z0-9_, ]+ must be set for MCP header substitution\./g,
-        "Authentication is required for MCP server '$1'. Ask the user to authenticate this MCP connection outside the agent session, then retry."
+        "Authentication is required for MCP server '$1'. Ask the user to authenticate this MCP connection outside the agent session, then retry.",
       )
       .replace(
         /Next: run ['`]mcporter auth [^'`]+['`] to finish authentication\.?/gi,
-        "Authentication is required. Ask the user to authenticate this MCP connection outside the agent session, then retry."
+        "Authentication is required. Ask the user to authenticate this MCP connection outside the agent session, then retry.",
       );
     write(safe);
   };
@@ -1850,7 +1988,7 @@ export function createDelegatedErrorFilter(write: (text: string) => void): {
       buffer = "";
       if (sawOAuthMetadataError) {
         write(
-          "Hint: this server is called with a configured bearer token; the token may be invalid or expired.\n"
+          "Hint: this server is called with a configured bearer token; the token may be invalid or expired.\n",
         );
         sawOAuthMetadataError = false;
       }
@@ -1858,15 +1996,14 @@ export function createDelegatedErrorFilter(write: (text: string) => void): {
   };
 }
 
-export function duplicateCallArgumentKeys(args: string[]): string[] {
+function duplicateCallArgumentKeys(args: string[]): string[] {
   const seen = new Set<string>();
   const duplicates = new Set<string>();
   for (const token of args.slice(1)) {
     const rawKey = token.match(/^([A-Za-z_][A-Za-z0-9_.-]*)=/)?.[1];
     if (!rawKey) continue;
-    const key = rawKey.replace(
-      /-([a-zA-Z0-9])/g,
-      (_match, char: string) => char.toUpperCase()
+    const key = rawKey.replace(/-([a-zA-Z0-9])/g, (_match, char: string) =>
+      char.toUpperCase(),
     );
     if (seen.has(key)) duplicates.add(key);
     seen.add(key);
@@ -1892,7 +2029,7 @@ export function callJsonArgumentError(args: readonly string[]): string | null {
   return null;
 }
 
-export function malformedCallExpression(args: string[]): string | null {
+function malformedCallExpression(args: string[]): string | null {
   const ref = args.find((arg) => !arg.startsWith("-"));
   if (!ref || !/[()]/.test(ref)) return null;
   return (
@@ -1929,7 +2066,7 @@ async function callWithMcporter(args: string[]): Promise<number> {
 
 async function callWithSharedRuntime(
   runtime: Awaited<ReturnType<typeof createRuntime>>,
-  args: string[]
+  args: string[],
 ): Promise<number> {
   const selector = args[0];
   const separator = selector?.indexOf(".") ?? -1;
@@ -1961,7 +2098,10 @@ async function callWithSharedRuntime(
         break;
       }
     }
-    if (normalizedArgs[index] === "--json" && normalizedArgs[index + 1] === "-") {
+    if (
+      normalizedArgs[index] === "--json" &&
+      normalizedArgs[index + 1] === "-"
+    ) {
       normalizedArgs[index + 1] = await readStdin();
     }
   }
@@ -1976,7 +2116,7 @@ async function callWithSharedRuntime(
       tool,
       parsed.args,
       parsed.schemaStringCoercionCandidates,
-      timeoutMs
+      timeoutMs,
     );
     const call = callToolWithHandshakeRetry(runtime, server, tool, () => ({
       args: values,
@@ -2004,14 +2144,16 @@ async function callWithSharedRuntime(
     if (configuredLimit !== undefined) {
       const limit = Number(configuredLimit);
       if (!Number.isSafeInteger(limit) || limit <= 0) {
-        stderr.write("PI_RECIPES_MCP_MAX_OUTPUT_BYTES must be a positive integer.\n");
+        stderr.write(
+          "PI_RECIPES_MCP_MAX_OUTPUT_BYTES must be a positive integer.\n",
+        );
         return 2;
       }
       const size = Buffer.byteLength(serialized, "utf8");
       if (size > limit) {
         stderr.write(
           `MCP result is ${size} bytes, exceeding PI_RECIPES_MCP_MAX_OUTPUT_BYTES=${limit}. ` +
-            "Use tool pagination or a narrower field projection.\n"
+            "Use tool pagination or a narrower field projection.\n",
         );
         return 1;
       }
@@ -2035,7 +2177,7 @@ interface SelectedCallOutput {
 function selectCallOutput(
   result: CallResult,
   raw: unknown,
-  format: CallOutputFormat
+  format: CallOutputFormat,
 ): SelectedCallOutput {
   const preferred: Record<CallOutputFormat, CallOutputKind[]> = {
     auto: ["json", "markdown", "text", "raw"],
@@ -2071,7 +2213,7 @@ function jsonString(value: unknown): string | undefined {
 
 function serializeCallOutput(
   selected: SelectedCallOutput,
-  requested: CallOutputFormat
+  requested: CallOutputFormat,
 ): string {
   if (selected.kind === "markdown" || selected.kind === "text") {
     return String(selected.value);
@@ -2102,7 +2244,7 @@ function serializeCallOutput(
 function describeSharedCallError(
   error: unknown,
   server: string,
-  tool: string
+  tool: string,
 ): string {
   const issue = describeConnectionIssue(error);
   if (issue.kind === "auth") {
@@ -2128,7 +2270,9 @@ function describeSharedCallError(
     const signal = issue.stdioSignal ? ` (signal ${issue.stdioSignal})` : "";
     return `MCP server '${server}' exited with ${exit}${signal}.`;
   }
-  return issue.rawMessage || (error instanceof Error ? error.message : String(error));
+  return (
+    issue.rawMessage || (error instanceof Error ? error.message : String(error))
+  );
 }
 
 function schemaAllowsString(value: unknown): boolean {
@@ -2146,7 +2290,7 @@ async function loadCallInputSchema(
   runtime: McpRuntime,
   server: string,
   tool: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<Record<string, unknown> | undefined> {
   let cache = callCatalogCache.get(runtime);
   if (!cache) {
@@ -2157,13 +2301,13 @@ async function loadCallInputSchema(
   if (!pending) {
     pending = (async () => {
       const sessionServer = (await readSession()).servers.find(
-        (entry) => entry.id === server
+        (entry) => entry.id === server,
       );
       if (!sessionServer) return [];
       return discoverServerCatalog(
         runtime,
         sessionServer,
-        DEFAULT_LIST_TIMEOUT_MS
+        DEFAULT_LIST_TIMEOUT_MS,
       );
     })();
     cache.set(server, pending);
@@ -2172,7 +2316,7 @@ async function loadCallInputSchema(
     });
   }
   const catalog = await withListTimeout(pending, timeoutMs).catch(
-    () => undefined
+    () => undefined,
   );
   return catalog?.find((entry) => entry.name === tool)?.input_schema;
 }
@@ -2183,21 +2327,24 @@ async function restoreSchemaStringArguments(
   tool: string,
   values: Record<string, unknown>,
   candidates: Record<string, string> | undefined,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<Record<string, unknown>> {
   if (!candidates || Object.keys(candidates).length === 0) return values;
   const inputSchema = await loadCallInputSchema(
     runtime,
     server,
     tool,
-    timeoutMs
+    timeoutMs,
   );
   const properties = asRecord(inputSchema?.properties);
   if (!properties) return values;
 
   let corrected: Record<string, unknown> | undefined;
   for (const [key, rawValue] of Object.entries(candidates)) {
-    if (typeof values[key] !== "number" || !schemaAllowsString(properties[key])) {
+    if (
+      typeof values[key] !== "number" ||
+      !schemaAllowsString(properties[key])
+    ) {
       continue;
     }
     corrected ??= { ...values };
@@ -2251,7 +2398,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   try {
     validated = validateDelegatedMcpCommand(args, await sessionCliPolicy());
   } catch (error) {
-    stderr.write(`mcp: failed to load the session MCP policy: ${error instanceof Error ? error.message : String(error)}\n`);
+    stderr.write(
+      `mcp: failed to load the session MCP policy: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 1;
   }
   if (validated.error) {
@@ -2264,14 +2413,16 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   }
   if (args[0] === "call") {
     const duplicates = duplicateCallArgumentKeys(
-      validated.command.args.slice(1)
+      validated.command.args.slice(1),
     );
     if (duplicates.length > 0) {
       stderr.write(
         `mcp call: argument${duplicates.length === 1 ? "" : "s"} ${duplicates
           .map((key) => `'${key}'`)
-          .join(", ")} ${duplicates.length === 1 ? "was" : "were"} passed more than once. ` +
-          "Pass each argument exactly once.\n"
+          .join(
+            ", ",
+          )} ${duplicates.length === 1 ? "was" : "were"} passed more than once. ` +
+          "Pass each argument exactly once.\n",
       );
       return 2;
     }
@@ -2281,7 +2432,9 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   if (delegatedArgs[0] === "call") {
     return callWithMcporter(delegatedArgs.slice(1));
   }
-  stderr.write(`mcp: command '${delegatedArgs[0]}' is unavailable in recipe sessions.\n`);
+  stderr.write(
+    `mcp: command '${delegatedArgs[0]}' is unavailable in recipe sessions.\n`,
+  );
   return 2;
 }
 

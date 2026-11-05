@@ -70,5 +70,5 @@ executeMcpCommand({
     port.postMessage({
       type: "failed",
       message: error instanceof Error ? error.message : String(error),
-    })
+    }),
   );

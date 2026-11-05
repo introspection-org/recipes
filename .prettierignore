@@ -1,0 +1,10 @@
+dist
+node_modules
+coverage
+target
+vendor
+# release-please generates these; their style is the bot's, not prettier's
+CHANGELOG.md
+**/CHANGELOG.md
+# pnpm owns this generated file's canonical formatting.
+pnpm-lock.yaml

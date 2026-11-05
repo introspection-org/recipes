@@ -1,7 +1,15 @@
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
@@ -36,7 +44,9 @@ const WRITE_COMMANDS = new Set<DocumentCommand>([
 ]);
 
 /** Which commands a capability descriptor supports. */
-export function documentCommandsFor(capabilities: DocumentCapabilities): DocumentCommand[] {
+export function documentCommandsFor(
+  capabilities: DocumentCapabilities,
+): DocumentCommand[] {
   const supported: DocumentCommand[] = ["read"];
   if (capabilities.revise) supported.push("revise");
   if (capabilities.proposeEdits) supported.push("propose_edits");
@@ -101,12 +111,18 @@ const real = (path: string): string => {
 
 const inside = (root: string, path: string): boolean => {
   const local = relative(root, path);
-  return Boolean(local) && local !== ".." && !local.startsWith(`..${sep}`) && !local.startsWith(sep);
+  return (
+    Boolean(local) &&
+    local !== ".." &&
+    !local.startsWith(`..${sep}`) &&
+    !local.startsWith(sep)
+  );
 };
 
 /** The workspace file a path names, refusing anything outside the workspace, through a symlink too. */
 export function workspacePath(path: unknown, cwd: string): string {
-  if (typeof path !== "string" || !path.trim()) throw new Error("Pass the path of a document");
+  if (typeof path !== "string" || !path.trim())
+    throw new Error("Pass the path of a document");
   const workspace = resolve(cwd);
   const full = resolve(workspace, path.trim());
   if (!inside(workspace, full) || !inside(real(workspace), real(full))) {
@@ -122,10 +138,24 @@ const quoteFields = {
       "Text copied from the read output of the paragraph. Whitespace, curly quotes, dashes and soft hyphens are forgiven; words are not.",
   }),
   paragraph: Type.Optional(
-    Type.String({ minLength: 1, description: "Paragraph id from read, such as p-031, that holds the quote" }),
+    Type.String({
+      minLength: 1,
+      description:
+        "Paragraph id from read, such as p-031, that holds the quote",
+    }),
   ),
-  near: Type.Optional(Type.String({ minLength: 1, description: "Nearby text that picks one match" })),
-  occurrence: Type.Optional(Type.Integer({ minimum: 1, description: "1-based match number when the quote repeats" })),
+  near: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description: "Nearby text that picks one match",
+    }),
+  ),
+  occurrence: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      description: "1-based match number when the quote repeats",
+    }),
+  ),
 };
 
 const writeFields = {
@@ -137,15 +167,30 @@ const writeFields = {
         "Where to save the result, under outputs/. Omit to keep editing a result this tool already saved at path.",
     }),
   ),
-  author: Type.String({ minLength: 1, description: "Name every change and comment is signed with" }),
+  author: Type.String({
+    minLength: 1,
+    description: "Name every change and comment is signed with",
+  }),
 };
 
 const editSchema = Type.Object(
   {
-    op: Type.Union([Type.Literal("replace"), Type.Literal("delete"), Type.Literal("insert_after")]),
+    op: Type.Union([
+      Type.Literal("replace"),
+      Type.Literal("delete"),
+      Type.Literal("insert_after"),
+    ]),
     ...quoteFields,
-    new: Type.Optional(Type.String({ description: "Replacement text (replace) or inserted text (insert_after)" })),
-    rationale: Type.String({ minLength: 1, description: "Margin comment giving the reason" }),
+    new: Type.Optional(
+      Type.String({
+        description:
+          "Replacement text (replace) or inserted text (insert_after)",
+      }),
+    ),
+    rationale: Type.String({
+      minLength: 1,
+      description: "Margin comment giving the reason",
+    }),
   },
   { additionalProperties: false },
 );
@@ -154,7 +199,10 @@ const responseSchema = Type.Union([
   Type.Object(
     {
       action: Type.Union([Type.Literal("accept"), Type.Literal("reject")]),
-      changes: Type.String({ minLength: 1, description: "Change numbers from read, like 12-19 or 30,34" }),
+      changes: Type.String({
+        minLength: 1,
+        description: "Change numbers from read, like 12-19 or 30,34",
+      }),
     },
     { additionalProperties: false },
   ),
@@ -172,7 +220,12 @@ const responseSchema = Type.Union([
       ...quoteFields,
       new: Type.String(),
       rationale: Type.String({ minLength: 1 }),
-      thread: Type.Optional(Type.Integer({ minimum: 0, description: "Thread to put the rationale on" })),
+      thread: Type.Optional(
+        Type.Integer({
+          minimum: 0,
+          description: "Thread to put the rationale on",
+        }),
+      ),
     },
     { additionalProperties: false },
   ),
@@ -190,9 +243,26 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
     parameters: Type.Object(
       {
         path: Type.String({ minLength: 1 }),
-        offset: Type.Optional(Type.Integer({ minimum: 0, description: "Where to continue, as given by the previous part: a paragraph, or the tracked-change and comment listings after the last one" })),
-        budget: Type.Optional(Type.Integer({ minimum: 2000, maximum: 80000, description: "Characters per part (default 30000)" })),
-        pages: Type.Optional(Type.String({ maxLength: 100, description: "Pages to read, like 2-4,9 (paged formats)" })),
+        offset: Type.Optional(
+          Type.Integer({
+            minimum: 0,
+            description:
+              "Where to continue, as given by the previous part: a paragraph, or the tracked-change and comment listings after the last one",
+          }),
+        ),
+        budget: Type.Optional(
+          Type.Integer({
+            minimum: 2000,
+            maximum: 80000,
+            description: "Characters per part (default 30000)",
+          }),
+        ),
+        pages: Type.Optional(
+          Type.String({
+            maxLength: 100,
+            description: "Pages to read, like 2-4,9 (paged formats)",
+          }),
+        ),
         tables: Type.Optional(
           Type.Boolean({
             description:
@@ -212,10 +282,20 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
         revisions: Type.Array(
           Type.Object(
             {
-              paragraph: Type.String({ minLength: 1, description: "Paragraph id from read, such as p-031" }),
-              text: Type.String({ description: "The paragraph's full revised text (empty to strike it all; unchanged to comment on it)" }),
+              paragraph: Type.String({
+                minLength: 1,
+                description: "Paragraph id from read, such as p-031",
+              }),
+              text: Type.String({
+                description:
+                  "The paragraph's full revised text (empty to strike it all; unchanged to comment on it)",
+              }),
               // Optional in the schema so one missing rationale fails that revision, not the batch.
-              rationale: Type.Optional(Type.String({ description: "Margin comment giving the reason (required)" })),
+              rationale: Type.Optional(
+                Type.String({
+                  description: "Margin comment giving the reason (required)",
+                }),
+              ),
             },
             { additionalProperties: false },
           ),
@@ -229,7 +309,10 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
     description:
       "Make a batch of tracked edits (replace, delete, insert_after), each anchored to a quote and carrying its rationale as a margin comment, signed by author. Saves to output (a copy; never the original). Returns per-edit applied or failed; a failed edit lists the closest paragraphs. Resubmit only failed edits.",
     parameters: Type.Object(
-      { ...writeFields, edits: Type.Array(editSchema, { minItems: 1, maxItems: 60 }) },
+      {
+        ...writeFields,
+        edits: Type.Array(editSchema, { minItems: 1, maxItems: 60 }),
+      },
       { additionalProperties: false },
     ),
   },
@@ -253,7 +336,10 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
     description:
       "Respond to markup already in the document: accept or reject tracked changes by number, reply on a thread, or counter with your own tracked change. Accepts and rejects run first, so numbers refer to the file as read; each accept or reject applies whole or not at all.",
     parameters: Type.Object(
-      { ...writeFields, responses: Type.Array(responseSchema, { minItems: 1, maxItems: 60 }) },
+      {
+        ...writeFields,
+        responses: Type.Array(responseSchema, { minItems: 1, maxItems: 60 }),
+      },
       { additionalProperties: false },
     ),
   },
@@ -264,8 +350,17 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
       {
         ...writeFields,
         from: Type.String({ minLength: 1, description: "First paragraph id" }),
-        through: Type.String({ minLength: 1, description: "Last paragraph id" }),
-        keep: Type.Optional(Type.String({ minLength: 1, description: "Leading text of the first paragraph to keep, such as its heading" })),
+        through: Type.String({
+          minLength: 1,
+          description: "Last paragraph id",
+        }),
+        keep: Type.Optional(
+          Type.String({
+            minLength: 1,
+            description:
+              "Leading text of the first paragraph to keep, such as its heading",
+          }),
+        ),
         rationale: Type.String({ minLength: 1 }),
       },
       { additionalProperties: false },
@@ -277,7 +372,12 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
     parameters: Type.Object(
       {
         path: Type.String({ minLength: 1 }),
-        pages: Type.Optional(Type.String({ maxLength: 100, description: "Pages to render, like 2-4,9 (default: from page 1)" })),
+        pages: Type.Optional(
+          Type.String({
+            maxLength: 100,
+            description: "Pages to render, like 2-4,9 (default: from page 1)",
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -285,7 +385,10 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
 };
 
 function toolResult(result: DocumentResult) {
-  const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
+  const content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  > = [];
   for (const image of result.images ?? []) {
     content.push({ type: "text", text: image.label });
     content.push({ type: "image", data: image.data, mimeType: image.mimeType });
@@ -314,17 +417,24 @@ export function registerDocumentTools(
     for (const extension of adapter.extensions) {
       const key = extension.toLowerCase();
       if (byExtension.has(key)) {
-        throw new Error(`Document formats '${byExtension.get(key)!.format}' and '${adapter.format}' both open ${key}`);
+        throw new Error(
+          `Document formats '${byExtension.get(key)!.format}' and '${adapter.format}' both open ${key}`,
+        );
       }
       byExtension.set(key, adapter);
     }
   }
-  const supported = new Set(adapters.flatMap((adapter) => documentCommandsFor(adapter.capabilities)));
+  const supported = new Set(
+    adapters.flatMap((adapter) => documentCommandsFor(adapter.capabilities)),
+  );
   for (const command of options.commands ?? []) {
-    if (!supported.has(command)) throw new Error(`Unsupported documents command: ${command}`);
+    if (!supported.has(command))
+      throw new Error(`Unsupported documents command: ${command}`);
   }
   const selected = DOCUMENT_COMMANDS.filter(
-    (command) => supported.has(command) && (options.commands ?? [...supported]).includes(command),
+    (command) =>
+      supported.has(command) &&
+      (options.commands ?? [...supported]).includes(command),
   );
   if (selected.length === 0) return;
 
@@ -332,7 +442,9 @@ export function registerDocumentTools(
   const outputsDir = resolve(options.outputsDir ?? join(cwd, "outputs"));
   /** Files this tool saved in this session: the only existing files it may write over. */
   const written = new Set<string>();
-  let pagesDir: string | undefined = options.pagesDir ? resolve(options.pagesDir) : undefined;
+  let pagesDir: string | undefined = options.pagesDir
+    ? resolve(options.pagesDir)
+    : undefined;
   /** A fresh directory per render call, so pages of two documents with the same name never collide. */
   const renderDir = async (source: string): Promise<string> => {
     pagesDir ??= await mkdtemp(join(tmpdir(), "recipe-documents-pages-"));
@@ -340,7 +452,10 @@ export function registerDocumentTools(
     return mkdtemp(join(pagesDir, `${basename(source, extname(source))}-`));
   };
 
-  const adapterFor = (path: string, command: DocumentCommand): DocumentAdapter => {
+  const adapterFor = (
+    path: string,
+    command: DocumentCommand,
+  ): DocumentAdapter => {
     const extension = extname(path).toLowerCase();
     const adapter = byExtension.get(extension);
     if (!adapter) {
@@ -349,7 +464,9 @@ export function registerDocumentTools(
       );
     }
     if (!documentCommandsFor(adapter.capabilities).includes(command)) {
-      const formats = adapters.filter((other) => documentCommandsFor(other.capabilities).includes(command));
+      const formats = adapters.filter((other) =>
+        documentCommandsFor(other.capabilities).includes(command),
+      );
       throw new Error(
         `${command} is not supported for ${adapter.format} files${formats.length ? `; it is for ${formats.map((other) => other.format).join(", ")}` : ""}`,
       );
@@ -357,7 +474,10 @@ export function registerDocumentTools(
     return adapter;
   };
 
-  const outputFor = async (source: string, output: unknown): Promise<string> => {
+  const outputFor = async (
+    source: string,
+    output: unknown,
+  ): Promise<string> => {
     const target = output === undefined ? source : workspacePath(output, cwd);
     // An in-place write may only target a file this tool saved in this session,
     // wherever it lives: never a source document, an upload, or an earlier result.
@@ -368,8 +488,13 @@ export function registerDocumentTools(
       );
     }
     // Both must hold: the path as written, and where it really resolves (a link inside outputs/ can point elsewhere).
-    if (!inside(outputsDir, target) || !inside(real(outputsDir), real(target))) {
-      throw new Error(`output must be under ${relative(cwd, outputsDir) || outputsDir}/`);
+    if (
+      !inside(outputsDir, target) ||
+      !inside(real(outputsDir), real(target))
+    ) {
+      throw new Error(
+        `output must be under ${relative(cwd, outputsDir) || outputsDir}/`,
+      );
     }
     if (extname(target).toLowerCase() !== extname(source).toLowerCase()) {
       throw new Error(`output must keep the ${extname(source)} extension`);
@@ -377,7 +502,9 @@ export function registerDocumentTools(
     if (!written.has(target)) {
       try {
         realpathSync(target);
-        throw new Error(`${relative(cwd, target)} already exists and this tool didn't write it: choose a new output`);
+        throw new Error(
+          `${relative(cwd, target)} already exists and this tool didn't write it: choose a new output`,
+        );
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -398,7 +525,10 @@ export function registerDocumentTools(
   for (const variant of variants) {
     for (const [key, schema] of Object.entries(variant.properties)) {
       const known = fields.get(key) ?? [];
-      if (!known.some((other) => JSON.stringify(other) === JSON.stringify(schema))) known.push(schema);
+      if (
+        !known.some((other) => JSON.stringify(other) === JSON.stringify(schema))
+      )
+        known.push(schema);
       fields.set(key, known);
     }
   }
@@ -408,7 +538,10 @@ export function registerDocumentTools(
       return [key, key === "command" ? union : Type.Optional(union)];
     }),
   );
-  const parameters = Type.Object(properties, { additionalProperties: false, anyOf: variants });
+  const parameters = Type.Object(properties, {
+    additionalProperties: false,
+    anyOf: variants,
+  });
 
   pi.registerTool({
     name: "documents",
@@ -416,12 +549,20 @@ export function registerDocumentTools(
     description:
       `Read and mark up documents (${adapters.map((adapter) => `${adapter.format}: ${adapter.extensions.join(", ")}`).join("; ")}). ` +
       "Choose a command. Results are compact; read the document again after changing it. " +
-      selected.map((command) => `${command}: ${DEFINITIONS[command].description}`).join("\n"),
+      selected
+        .map((command) => `${command}: ${DEFINITIONS[command].description}`)
+        .join("\n"),
     parameters,
     executionMode: "sequential",
-    async execute(_toolCallId: string, params: { command: DocumentCommand } & Record<string, unknown>, signal?: AbortSignal) {
+    async execute(
+      _toolCallId: string,
+      params: { command: DocumentCommand } & Record<string, unknown>,
+      signal?: AbortSignal,
+    ) {
       if (!Check(parameters, params)) {
-        throw new Error("Invalid documents command or arguments; follow the command schema.");
+        throw new Error(
+          "Invalid documents command or arguments; follow the command schema.",
+        );
       }
       const { command, ...input } = params;
       const source = workspacePath(input.path, cwd);
@@ -431,13 +572,28 @@ export function registerDocumentTools(
       if (WRITE_COMMANDS.has(command)) {
         const output = await outputFor(source, input.output);
         const call = { ...input, source, output } as never;
-        result = await (adapter[METHOD[command]] as (ctx: DocumentAdapterContext, input: never) => Promise<DocumentResult>)(ctx, call);
+        result = await (
+          adapter[METHOD[command]] as (
+            ctx: DocumentAdapterContext,
+            input: never,
+          ) => Promise<DocumentResult>
+        )(ctx, call);
         written.add(output);
-        result = { ...result, details: { ...result.details, output: relative(cwd, output) } };
+        result = {
+          ...result,
+          details: { ...result.details, output: relative(cwd, output) },
+        };
       } else {
-        result = await (adapter[METHOD[command]] as (ctx: DocumentAdapterContext, input: never) => Promise<DocumentResult>)(
+        result = await (
+          adapter[METHOD[command]] as (
+            ctx: DocumentAdapterContext,
+            input: never,
+          ) => Promise<DocumentResult>
+        )(
           ctx,
-          (command === "render" ? { ...input, path: source, outputDir: await renderDir(source) } : { ...input, path: source }) as never,
+          (command === "render"
+            ? { ...input, path: source, outputDir: await renderDir(source) }
+            : { ...input, path: source }) as never,
         );
       }
       return toolResult(result);

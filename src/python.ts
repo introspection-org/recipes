@@ -30,7 +30,9 @@ export interface PythonExecutableOptions {
  *    `Scripts\\python.exe` on Windows.
  * 4. `python3` from `PATH`.
  */
-export function pythonExecutable(options: PythonExecutableOptions = {}): string {
+export function pythonExecutable(
+  options: PythonExecutableOptions = {},
+): string {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const overridden = options.override ? env[options.override] : undefined;
@@ -65,7 +67,7 @@ export class PythonJsonError extends Error {
     message: string,
     readonly output: unknown,
     readonly stderr: string,
-    options?: { cause?: unknown }
+    options?: { cause?: unknown },
   ) {
     super(message, options);
     this.name = "PythonJsonError";
@@ -88,7 +90,7 @@ export const PYTHON_JSON_TIMEOUT_MS = 300_000;
 export function runPythonJson<T = unknown>(
   script: string,
   request: unknown,
-  options: RunPythonJsonOptions = {}
+  options: RunPythonJsonOptions = {},
 ): Promise<T> {
   const env = options.env ?? process.env;
   const python = options.python ?? pythonExecutable({ env });
@@ -98,7 +100,11 @@ export function runPythonJson<T = unknown>(
       ["-I", script],
       {
         ...(options.cwd ? { cwd: options.cwd } : {}),
-        env: { ...env, PYTHONDONTWRITEBYTECODE: "1", PYTHONIOENCODING: "utf-8" },
+        env: {
+          ...env,
+          PYTHONDONTWRITEBYTECODE: "1",
+          PYTHONIOENCODING: "utf-8",
+        },
         timeout: options.timeoutMs ?? PYTHON_JSON_TIMEOUT_MS,
         maxBuffer: PYTHON_JSON_MAX_BUFFER,
         ...(options.signal ? { signal: options.signal } : {}),
@@ -115,14 +121,27 @@ export function runPythonJson<T = unknown>(
         }
         if (error) {
           const detail = (errorText || error.message).slice(-600);
-          return reject(new PythonJsonError(`${script} failed: ${detail}`, output, errorText, { cause: error }));
+          return reject(
+            new PythonJsonError(
+              `${script} failed: ${detail}`,
+              output,
+              errorText,
+              { cause: error },
+            ),
+          );
         }
         if (!parsed) {
           const detail = (errorText || "no JSON on stdout").slice(-600);
-          return reject(new PythonJsonError(`${script} did not answer with JSON: ${detail}`, undefined, errorText));
+          return reject(
+            new PythonJsonError(
+              `${script} did not answer with JSON: ${detail}`,
+              undefined,
+              errorText,
+            ),
+          );
         }
         resolvePromise(output as T);
-      }
+      },
     );
     child.stdin?.on("error", () => {
       // The child exited before reading its request; the exit callback reports it.

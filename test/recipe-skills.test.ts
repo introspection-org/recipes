@@ -15,11 +15,14 @@ describe("recipe agent skills", () => {
       mkdirSync(join(skillsDir, "parent-only"), { recursive: true });
       mkdirSync(join(skillsDir, "explorer-only"), { recursive: true });
       writeFileSync(parentSkill, "---\ndescription: Parent guidance\n---\n");
-      writeFileSync(explorerSkill, "---\ndescription: Explorer guidance\n---\n");
-
-      expect(resolveAgentSkillPaths(root, [skillsDir], ["explorer-only"])).toEqual([
+      writeFileSync(
         explorerSkill,
-      ]);
+        "---\ndescription: Explorer guidance\n---\n",
+      );
+
+      expect(
+        resolveAgentSkillPaths(root, [skillsDir], ["explorer-only"]),
+      ).toEqual([explorerSkill]);
       expect(resolveAgentSkillPaths(root, [skillsDir], [])).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -33,11 +36,11 @@ describe("recipe agent skills", () => {
       mkdirSync(join(root, "skills", "folder-name"), { recursive: true });
       writeFileSync(
         skillPath,
-        "---\nname: public-name\ndescription: Named guidance\n---\n"
+        "---\nname: public-name\ndescription: Named guidance\n---\n",
       );
 
       expect(
-        resolveAgentSkillPaths(root, [join(root, "skills")], ["public-name"])
+        resolveAgentSkillPaths(root, [join(root, "skills")], ["public-name"]),
       ).toEqual([skillPath]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -71,7 +74,7 @@ describe("recipe agent skills", () => {
       const selectedPaths = resolveAgentSkillPaths(
         root,
         [join(root, "skills")],
-        ["public-name"]
+        ["public-name"],
       );
       expect(selectedPaths).toEqual([selectedPath]);
 
@@ -102,17 +105,17 @@ describe("recipe agent skills", () => {
       mkdirSync(join(skillsDir, "directory-name"), { recursive: true });
       writeFileSync(
         named,
-        "---\nname: public-name\ndescription: Named guidance\n---\n"
+        "---\nname: public-name\ndescription: Named guidance\n---\n",
       );
       writeFileSync(
         directoryNamed,
-        "---\ndescription: Directory guidance\n---\n"
+        "---\ndescription: Directory guidance\n---\n",
       );
 
       const selectedPaths = resolveAgentSkillPaths(
         root,
         [skillsDir],
-        ["public-name", "directory-name"]
+        ["public-name", "directory-name"],
       );
       const pi = loadSkills({
         cwd: root,

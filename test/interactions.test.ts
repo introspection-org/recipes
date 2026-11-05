@@ -41,7 +41,7 @@ function fakeCtx(opts: {
       async select(
         title: string,
         options: string[],
-        dialog?: ExtensionUIDialogOptions
+        dialog?: ExtensionUIDialogOptions,
       ) {
         calls.push({ kind: "select", title, options, dialog });
         return selectResults.shift();
@@ -49,7 +49,7 @@ function fakeCtx(opts: {
       async input(
         title: string,
         _placeholder?: string,
-        dialog?: ExtensionUIDialogOptions
+        dialog?: ExtensionUIDialogOptions,
       ) {
         calls.push({ kind: "input", title, dialog });
         return inputResults.shift();
@@ -68,7 +68,7 @@ function fakeCtx(opts: {
                   bold(text: string): string;
                 },
                 keybindings: object,
-                done: (result: T) => void
+                done: (result: T) => void,
               ) =>
                 | {
                     handleInput?(data: string): void;
@@ -77,7 +77,7 @@ function fakeCtx(opts: {
                 | Promise<{
                     handleInput?(data: string): void;
                     dispose?(): void;
-                  }>
+                  }>,
             ) {
               calls.push({ kind: "custom", title: "" });
               let result: T | undefined;
@@ -90,7 +90,7 @@ function fakeCtx(opts: {
                 {},
                 (value) => {
                   result = value;
-                }
+                },
               );
               for (const input of opts.customInputs ?? []) {
                 component.handleInput?.(input);
@@ -132,7 +132,7 @@ describe("askUser", () => {
 
     const approved = await askUser(
       { reason: ASK_USER_REASON_CONFIRMATION, message: "Ship the plan?" },
-      { toolCallId: "tool-2", ctx, signal: undefined, env }
+      { toolCallId: "tool-2", ctx, signal: undefined, env },
     );
     expect(approved.outcome).toEqual({ type: "approved" });
     expect(approved.content[0].text).toBe("Approved.");
@@ -143,7 +143,7 @@ describe("askUser", () => {
     const { ctx, calls } = fakeCtx({ hasUI: true, selectResults: ["Tea"] });
     const result = await askUser(
       { ...question, options: ["Tea", "Coffee"] },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
     expect(result.outcome).toEqual({ type: "answered", answer: "Tea" });
     expect(result.content).toEqual([{ type: "text", text: "Answer: Tea" }]);
@@ -164,7 +164,7 @@ describe("askUser", () => {
     });
     const result = await askUser(
       { ...question, options: ["Tea", "Coffee"] },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
     expect(result.outcome).toEqual({
       type: "answered",
@@ -200,7 +200,7 @@ describe("askUser", () => {
           { label: "Water", value: "water" },
         ],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({
@@ -231,7 +231,7 @@ describe("askUser", () => {
           { label: "Coffee", value: "coffee", description: "Energizing" },
         ],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({
@@ -253,7 +253,7 @@ describe("askUser", () => {
         selection: "multiple",
         options: ["Tea", "Coffee"],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({
@@ -274,7 +274,7 @@ describe("askUser", () => {
         selection: "multiple",
         options: ["Tea", "Coffee"],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({
@@ -295,7 +295,7 @@ describe("askUser", () => {
         selection: "multiple",
         options: ["Tea"],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({
@@ -309,8 +309,8 @@ describe("askUser", () => {
     await expect(
       askUser(
         { ...question, selection: "multiple", options: ["  "] },
-        { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
-      )
+        { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
+      ),
     ).rejects.toThrow("Multiple selection requires at least one option");
   });
 
@@ -328,7 +328,7 @@ describe("askUser", () => {
           { label: "Coffee", value: "coffee" },
         ],
       },
-      { toolCallId: "tool-1", ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx, signal: undefined, env: {} },
     );
     expect(result.outcome).toEqual({ type: "answered", answer: "tea" });
     expect(result.details.interrupt.options).toEqual([
@@ -364,7 +364,7 @@ describe("askUser", () => {
       });
       expect(result.outcome).toEqual({ type: "declined" });
       expect(result.content[0].text).toBe(
-        "User declined to answer. Proceed with your best judgment."
+        "User declined to answer. Proceed with your best judgment.",
       );
     }
   });
@@ -376,8 +376,8 @@ describe("askUser", () => {
     await expect(
       askUser(
         { ...question, options: ["Tea", "Coffee"] },
-        { toolCallId: "tool-1", ctx, signal: controller.signal, env: {} }
-      )
+        { toolCallId: "tool-1", ctx, signal: controller.signal, env: {} },
+      ),
     ).rejects.toThrow("User interaction aborted");
   });
 
@@ -385,7 +385,7 @@ describe("askUser", () => {
     const approve = fakeCtx({ hasUI: true, selectResults: ["Approve"] });
     const approved = await askUser(
       { reason: ASK_USER_REASON_CONFIRMATION, message: "Ship the plan?" },
-      { toolCallId: "tool-1", ctx: approve.ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx: approve.ctx, signal: undefined, env: {} },
     );
     expect(approved.outcome).toEqual({ type: "approved" });
     expect(approved.content[0].text).toBe("Approved.");
@@ -403,14 +403,14 @@ describe("askUser", () => {
     });
     const revision = await askUser(
       { reason: ASK_USER_REASON_CONFIRMATION, message: "Ship the plan?" },
-      { toolCallId: "tool-2", ctx: revise.ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-2", ctx: revise.ctx, signal: undefined, env: {} },
     );
     expect(revision.outcome).toEqual({
       type: "revision_requested",
       feedback: "Rename the flag",
     });
     expect(revision.content[0].text).toBe(
-      "Revision requested. Feedback: Rename the flag"
+      "Revision requested. Feedback: Rename the flag",
     );
 
     const reviseNoFeedback = fakeCtx({
@@ -425,7 +425,7 @@ describe("askUser", () => {
         ctx: reviseNoFeedback.ctx,
         signal: undefined,
         env: {},
-      }
+      },
     );
     expect(bare.outcome).toEqual({ type: "revision_requested" });
     expect(bare.content[0].text).toBe("Revision requested.");
@@ -452,7 +452,7 @@ describe("askUser", () => {
           ],
         },
       },
-      { toolCallId: "tool-1", ctx: approve.ctx, signal: undefined, env: {} }
+      { toolCallId: "tool-1", ctx: approve.ctx, signal: undefined, env: {} },
     );
 
     expect(result.outcome).toEqual({ type: "approved" });
@@ -466,7 +466,7 @@ describe("askUser", () => {
           "- Product leaders in Sydney\n" +
           "- Growth product leaders in Sydney",
         options: ["Approve", "Request changes"],
-      })
+      }),
     );
     expect(result.details.interrupt.display?.kind).toBe("search_proposal");
   });
@@ -538,7 +538,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
     expect(result.outcome).toEqual({ type: "awaiting_user" });
     expect(result.content).toEqual([
@@ -581,7 +581,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
 
     expect(result.details.interrupt).toEqual({
@@ -621,7 +621,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
 
     expect(result.details.interrupt).toEqual({
@@ -660,7 +660,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
 
     expect(result.details.interrupt).toEqual({
@@ -702,7 +702,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
     expect(result.details.interrupt).toEqual({
       reason: "confirmation",
@@ -737,7 +737,7 @@ describe("askUser", () => {
         ctx,
         signal: undefined,
         env: { PI_INTERRUPT_RESUME: "1" },
-      }
+      },
     );
 
     expect(result.details.interrupt).toEqual({
@@ -757,7 +757,7 @@ describe("askUser", () => {
     const env = { PI_INTERRUPT_RESUME: "1" };
 
     const questionResult = await autoResolveInteractions(() =>
-      askUser(question, { toolCallId: "tool-1", ctx, signal: undefined, env })
+      askUser(question, { toolCallId: "tool-1", ctx, signal: undefined, env }),
     );
     expect(questionResult.outcome).toEqual({ type: "declined" });
 
@@ -768,8 +768,8 @@ describe("askUser", () => {
           message: "Approve the plan?",
           title: "Search plan",
         },
-        { toolCallId: "tool-2", ctx, signal: undefined, env }
-      )
+        { toolCallId: "tool-2", ctx, signal: undefined, env },
+      ),
     );
     expect(approvalResult.outcome).toEqual({ type: "approved" });
     expect(calls).toEqual([]);
@@ -797,8 +797,8 @@ describe("askUser", () => {
           ctx,
           signal: undefined,
           env: { PI_INTERRUPT_RESUME: "1" },
-        }
-      )
+        },
+      ),
     );
 
     expect(result.outcome).toEqual({ type: "approved" });
@@ -865,31 +865,31 @@ describe("askUser", () => {
       formatInteractionResume({
         status: "resolved",
         payload: { answer: "  Tea  " },
-      })
+      }),
     ).toBe("Answer: Tea");
     expect(
       formatInteractionResume({
         status: "resolved",
         payload: { answers: ["  Tea  ", "Water", "Tea", "", 42] },
-      })
+      }),
     ).toBe('Answers: ["Tea","Water"]');
     expect(
       formatInteractionResume({
         status: "resolved",
         payload: { approved: true, feedback: "  Ship it  " },
-      })
+      }),
     ).toBe("Approved. Feedback: Ship it");
     expect(
       formatInteractionResume({
         status: "resolved",
         payload: { approved: false },
-      })
+      }),
     ).toBe("Revision requested.");
     expect(formatInteractionResume({ status: "cancelled" })).toBe(
-      "User declined to answer. Proceed with your best judgment."
+      "User declined to answer. Proceed with your best judgment.",
     );
     expect(formatInteractionResume({ status: "expired" })).toBe(
-      "Interrupt response: expired"
+      "Interrupt response: expired",
     );
   });
 });

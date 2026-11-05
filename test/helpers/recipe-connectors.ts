@@ -8,12 +8,12 @@ export function installSlackRecipeConnector(recipeDir: string): void {
   const scopeDir = join(recipeDir, "node_modules", "@introspection-ai");
   const packageDir = resolve(
     import.meta.dirname,
-    "../../packages/channels/slack"
+    "../../packages/channels/slack",
   );
   mkdirSync(scopeDir, { recursive: true });
   symlinkSync(
     packageDir,
     join(scopeDir, "recipe-channel-slack"),
-    process.platform === "win32" ? "junction" : "dir"
+    process.platform === "win32" ? "junction" : "dir",
   );
 }

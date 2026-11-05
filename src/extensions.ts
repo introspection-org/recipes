@@ -35,7 +35,9 @@ export function createRecipeExtensionSessionContext(options: {
     agent: Object.freeze({ name: options.agent }),
     session: Object.freeze({ role: options.role }),
     packagePython(name: string): string | undefined {
-      return python && Object.hasOwn(python, name) ? python[name]?.interpreter : undefined;
+      return python && Object.hasOwn(python, name)
+        ? python[name]?.interpreter
+        : undefined;
     },
   });
 }
@@ -43,7 +45,7 @@ export function createRecipeExtensionSessionContext(options: {
 // Embedded hosts may bundle Recipes while extensions resolve their own copy.
 // A process-wide symbol keeps their context registry shared across instances.
 const recipeExtensionContextsKey = Symbol.for(
-  "@introspection-ai/recipes.extension-contexts.v1"
+  "@introspection-ai/recipes.extension-contexts.v1",
 );
 
 function sharedRecipeExtensionContexts(): WeakMap<
@@ -54,15 +56,14 @@ function sharedRecipeExtensionContexts(): WeakMap<
   const existing = shared[recipeExtensionContextsKey];
   if (existing !== undefined) {
     if (!(existing instanceof WeakMap)) {
-      throw new Error("The shared Recipe extension context registry is invalid");
+      throw new Error(
+        "The shared Recipe extension context registry is invalid",
+      );
     }
     return existing as WeakMap<ExtensionAPI, RecipeExtensionSessionContext>;
   }
 
-  const contexts = new WeakMap<
-    ExtensionAPI,
-    RecipeExtensionSessionContext
-  >();
+  const contexts = new WeakMap<ExtensionAPI, RecipeExtensionSessionContext>();
   Object.defineProperty(shared, recipeExtensionContextsKey, {
     configurable: false,
     enumerable: false,
@@ -85,7 +86,7 @@ export interface RecipeExtensionRegistrationRegistry {
 export function recipeExtensionToolAllowlist(
   declaredTools: readonly string[],
   hasAgentTool: boolean,
-  additionalToolNames: readonly string[] = []
+  additionalToolNames: readonly string[] = [],
 ): ReadonlySet<string> {
   return new Set([
     ...declaredTools,
@@ -104,7 +105,7 @@ export function createRecipeExtensionRegistrationRegistry(): RecipeExtensionRegi
       if (existing === owner) return;
       if (existing) {
         throw new Error(
-          `Recipe extension ${kind} registration "${name}" conflicts between ${existing} and ${owner}`
+          `Recipe extension ${kind} registration "${name}" conflicts between ${existing} and ${owner}`,
         );
       }
       owners.set(key, owner);
@@ -114,7 +115,7 @@ export function createRecipeExtensionRegistrationRegistry(): RecipeExtensionRegi
       const existing = owners.get(key);
       if (existing !== owner) {
         throw new Error(
-          `Recipe extension ${owner} cannot unregister ${kind} "${name}" owned by ${existing ?? "<host>"}`
+          `Recipe extension ${owner} cannot unregister ${kind} "${name}" owned by ${existing ?? "<host>"}`,
         );
       }
       owners.delete(key);
@@ -127,12 +128,12 @@ export function createRecipeExtensionRegistrationRegistry(): RecipeExtensionRegi
 
 /** Return the immutable Recipe identity bound to this extension instance. */
 export function getRecipeSessionContext(
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
 ): RecipeExtensionSessionContext {
   const context = contexts.get(pi);
   if (!context) {
     throw new Error(
-      "This extension is not running inside a Recipe-owned session"
+      "This extension is not running inside a Recipe-owned session",
     );
   }
   return context;
@@ -142,7 +143,7 @@ export function getRecipeSessionContext(
 export function forAgent(
   pi: ExtensionAPI,
   agentName: string,
-  register: (context: RecipeExtensionSessionContext) => void
+  register: (context: RecipeExtensionSessionContext) => void,
 ): void {
   const context = getRecipeSessionContext(pi);
   if (context.agent.name === agentName) register(context);
@@ -152,7 +153,7 @@ export function forAgent(
 export function forRecipeSession(
   pi: ExtensionAPI,
   predicate: (context: RecipeExtensionSessionContext) => boolean,
-  register: (context: RecipeExtensionSessionContext) => void
+  register: (context: RecipeExtensionSessionContext) => void,
 ): void {
   const context = getRecipeSessionContext(pi);
   if (predicate(context)) register(context);
@@ -164,7 +165,7 @@ export function bindRecipeExtensionFactory(
   context: RecipeExtensionSessionContext,
   registrationRegistry?: RecipeExtensionRegistrationRegistry,
   owner = "<recipe-extension>",
-  allowedToolNames?: ReadonlySet<string>
+  allowedToolNames?: ReadonlySet<string>,
 ): ExtensionFactory {
   return async (pi) => {
     const registrationKinds: Record<string, string> = {
@@ -176,74 +177,79 @@ export function bindRecipeExtensionFactory(
       registerEntryRenderer: "entry renderer",
       registerProvider: "provider",
     };
-    const guarded = registrationRegistry || allowedToolNames
-      ? new Proxy(pi, {
-          get(target, property, receiver) {
-            const value = Reflect.get(target, property, receiver);
-            const kind =
-              typeof property === "string"
-                ? registrationKinds[property]
-                : undefined;
-            if (!kind || !registrationRegistry || typeof value !== "function") {
+    const guarded =
+      registrationRegistry || allowedToolNames
+        ? new Proxy(pi, {
+            get(target, property, receiver) {
+              const value = Reflect.get(target, property, receiver);
+              const kind =
+                typeof property === "string"
+                  ? registrationKinds[property]
+                  : undefined;
               if (
-                property === "setActiveTools" &&
-                typeof value === "function" &&
-                allowedToolNames
+                !kind ||
+                !registrationRegistry ||
+                typeof value !== "function"
               ) {
-                return (names: string[]) => {
-                  const undeclared = names.filter(
-                    (name) => !allowedToolNames.has(name)
+                if (
+                  property === "setActiveTools" &&
+                  typeof value === "function" &&
+                  allowedToolNames
+                ) {
+                  return (names: string[]) => {
+                    const undeclared = names.filter(
+                      (name) => !allowedToolNames.has(name),
+                    );
+                    if (undeclared.length > 0) {
+                      throw new Error(
+                        `Recipe extension attempted to activate undeclared tool(s): ${undeclared.join(", ")}`,
+                      );
+                    }
+                    return value.call(target, names);
+                  };
+                }
+                if (
+                  property === "unregisterProvider" &&
+                  typeof value === "function" &&
+                  registrationRegistry
+                ) {
+                  return (name: string | { id?: string }) => {
+                    const providerName =
+                      typeof name === "string" ? name : name.id;
+                    if (providerName) {
+                      registrationRegistry.release(
+                        "provider",
+                        providerName,
+                        owner,
+                      );
+                    }
+                    return value.call(target, name);
+                  };
+                }
+                return typeof value === "function" ? value.bind(target) : value;
+              }
+              return (...args: unknown[]) => {
+                const registrationName =
+                  property === "registerTool"
+                    ? (args[0] as { name?: unknown } | undefined)?.name
+                    : property === "registerProvider" &&
+                        typeof args[0] === "object"
+                      ? (args[0] as { id?: unknown } | undefined)?.id
+                      : args[0];
+                if (typeof registrationName === "string") {
+                  registrationRegistry.claim(
+                    kind,
+                    property === "registerShortcut"
+                      ? registrationName.toLowerCase()
+                      : registrationName,
+                    owner,
                   );
-                  if (undeclared.length > 0) {
-                    throw new Error(
-                      `Recipe extension attempted to activate undeclared tool(s): ${undeclared.join(", ")}`
-                    );
-                  }
-                  return value.call(target, names);
-                };
-              }
-              if (
-                property === "unregisterProvider" &&
-                typeof value === "function" &&
-                registrationRegistry
-              ) {
-                return (name: string | { id?: string }) => {
-                  const providerName =
-                    typeof name === "string" ? name : name.id;
-                  if (providerName) {
-                    registrationRegistry.release(
-                      "provider",
-                      providerName,
-                      owner
-                    );
-                  }
-                  return value.call(target, name);
-                };
-              }
-              return typeof value === "function" ? value.bind(target) : value;
-            }
-            return (...args: unknown[]) => {
-              const registrationName =
-                property === "registerTool"
-                  ? (args[0] as { name?: unknown } | undefined)?.name
-                  : property === "registerProvider" &&
-                      typeof args[0] === "object"
-                    ? (args[0] as { id?: unknown } | undefined)?.id
-                  : args[0];
-              if (typeof registrationName === "string") {
-                registrationRegistry.claim(
-                  kind,
-                  property === "registerShortcut"
-                    ? registrationName.toLowerCase()
-                    : registrationName,
-                  owner
-                );
-              }
-              return value.apply(target, args);
-            };
-          },
-        })
-      : pi;
+                }
+                return value.apply(target, args);
+              };
+            },
+          })
+        : pi;
     contexts.set(guarded, context);
     await factory(guarded);
   };

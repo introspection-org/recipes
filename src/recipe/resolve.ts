@@ -1,13 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { realpathSync, readdirSync, statSync } from "node:fs";
-import {
-  basename,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { executableRecipeToolNames } from "../mcp/policy.js";
 import {
   loadValidatedRecipeAgentDefinitions,
@@ -54,8 +47,7 @@ export type {
 } from "./python.js";
 export { validateRecipePythonPackage } from "./package.js";
 
-export interface ResolvedRecipeAgentMcp
-  extends Omit<RecipeAgentMcp, "mode"> {
+export interface ResolvedRecipeAgentMcp extends Omit<RecipeAgentMcp, "mode"> {
   mode: RecipeAgentMcpMode;
 }
 
@@ -116,7 +108,7 @@ const LOADABLE_EXTENSION_SUFFIXES = [
 
 function isLoadableExtensionPath(path: string): boolean {
   return LOADABLE_EXTENSION_SUFFIXES.some((suffix) =>
-    path.toLowerCase().endsWith(suffix)
+    path.toLowerCase().endsWith(suffix),
   );
 }
 
@@ -130,7 +122,7 @@ function assertPackagePath(recipeDir: string, path: string): string {
     isAbsolute(relativePath)
   ) {
     throw new RecipeResolutionError(
-      `Recipe extension resolves outside the package: ${path}`
+      `Recipe extension resolves outside the package: ${path}`,
     );
   }
   return realPath;
@@ -155,7 +147,7 @@ function directoryIndex(directory: string): string | undefined {
  */
 function resolvePackageExtensionPaths(
   recipeDir: string,
-  paths: readonly string[]
+  paths: readonly string[],
 ): string[] {
   const resolved: string[] = [];
   const seen = new Set<string>();
@@ -163,7 +155,7 @@ function resolvePackageExtensionPaths(
     const realPath = assertPackagePath(recipeDir, path);
     if (!statSync(realPath).isFile() || !isLoadableExtensionPath(realPath)) {
       throw new RecipeResolutionError(
-        `Recipe extension is not a loadable module: ${path}`
+        `Recipe extension is not a loadable module: ${path}`,
       );
     }
     if (!seen.has(realPath)) {
@@ -180,7 +172,7 @@ function resolvePackageExtensionPaths(
     }
     if (!statSync(realPath).isDirectory()) {
       throw new RecipeResolutionError(
-        `Recipe extension is neither a file nor directory: ${path}`
+        `Recipe extension is neither a file nor directory: ${path}`,
       );
     }
 
@@ -193,7 +185,7 @@ function resolvePackageExtensionPaths(
 
     const entries = readdirSync(directory, { withFileTypes: true }).sort(
       (left, right) =>
-        left.name < right.name ? -1 : left.name > right.name ? 1 : 0
+        left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
     );
     let discovered = false;
     for (const entry of entries) {
@@ -211,7 +203,7 @@ function resolvePackageExtensionPaths(
     }
     if (!discovered) {
       throw new RecipeResolutionError(
-        `Recipe extension directory has no loadable modules: ${path}`
+        `Recipe extension directory has no loadable modules: ${path}`,
       );
     }
   }
@@ -238,14 +230,9 @@ function deepFreeze<T>(value: T, seen = new Set<object>()): T {
 
 function readonlyMap<K, V>(source: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
   const map = new Map(source);
-  let facade: ReadonlyMap<K, V>;
-  facade = new Proxy(map, {
+  const facade: ReadonlyMap<K, V> = new Proxy(map, {
     get(target, property) {
-      if (
-        property === "set" ||
-        property === "delete" ||
-        property === "clear"
-      ) {
+      if (property === "set" || property === "delete" || property === "clear") {
         return () => {
           throw new TypeError("Resolved Recipe maps are immutable");
         };
@@ -253,10 +240,10 @@ function readonlyMap<K, V>(source: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
       if (property === "forEach") {
         return (
           callback: (value: V, key: K, map: ReadonlyMap<K, V>) => void,
-          thisArg?: unknown
+          thisArg?: unknown,
         ) => {
           target.forEach((value, key) =>
-            callback.call(thisArg, value, key, facade)
+            callback.call(thisArg, value, key, facade),
           );
         };
       }
@@ -269,7 +256,7 @@ function readonlyMap<K, V>(source: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
 
 function applySystemInstructions(
   base: string | undefined,
-  instructions: RecipeSystemInstructions | undefined
+  instructions: RecipeSystemInstructions | undefined,
 ): string | undefined {
   if (!instructions) return base;
   if (instructions.mode === "replace") return instructions.content;
@@ -278,19 +265,20 @@ function applySystemInstructions(
 
 function selectAgent(
   definitions: ReadonlyMap<string, RecipeAgentDefinition>,
-  requestedName: string | undefined
+  requestedName: string | undefined,
 ): { agentName: string; agent: RecipeAgentDefinition } {
   const selectedName = requestedName?.trim();
   if (selectedName) {
     const agent = definitions.get(selectedName);
     if (agent) return { agentName: agent.name, agent };
     throw new RecipeResolutionError(
-      `Recipe agent "${selectedName}" was not found`
+      `Recipe agent "${selectedName}" was not found`,
     );
   }
 
   const defaultAgent = definitions.get("agent");
-  if (defaultAgent) return { agentName: defaultAgent.name, agent: defaultAgent };
+  if (defaultAgent)
+    return { agentName: defaultAgent.name, agent: defaultAgent };
 
   const uniqueAgents = new Map<string, RecipeAgentDefinition>();
   for (const definition of definitions.values()) {
@@ -304,20 +292,20 @@ function selectAgent(
     throw new RecipeResolutionError("Recipe has no agents");
   }
   throw new RecipeResolutionError(
-    'Recipe has multiple agents and no default entrypoint; declare an agent named "agent" or select one explicitly'
+    'Recipe has multiple agents and no default entrypoint; declare an agent named "agent" or select one explicitly',
   );
 }
 
 function selectSubagents(
   definitions: ReadonlyMap<string, RecipeAgentDefinition>,
-  agent: RecipeAgentDefinition
+  agent: RecipeAgentDefinition,
 ): Map<string, RecipeAgentDefinition> {
   const selected = new Map<string, RecipeAgentDefinition>();
   for (const name of agent.subagents) {
     const definition = definitions.get(name);
     if (!definition) {
       throw new RecipeResolutionError(
-        `Recipe agent "${agent.name}" references missing subagent "${name}"`
+        `Recipe agent "${agent.name}" references missing subagent "${name}"`,
       );
     }
     selected.set(definition.name, definition);
@@ -333,21 +321,21 @@ function buildResolvedRecipeAgent(
   recipeSystemPrompt: string | undefined,
   skillResources: readonly (string | RecipeSkillResource)[],
   promptPaths: string[],
-  extensionPaths: string[]
+  extensionPaths: string[],
 ): ResolvedRecipeAgent {
   const agentName = agent.name;
   const subagents = readonlyMap(selectSubagents(definitions, agent));
   const modelSpec = agent.model?.name;
   if (!modelSpec) {
     throw new RecipeResolutionError(
-      `Recipe agent "${agentName}" must declare ai.model (or legacy model.name)`
+      `Recipe agent "${agentName}" must declare ai.model (or legacy model.name)`,
     );
   }
 
   const skillPaths = resolveAgentSkillPaths(
     recipeDir,
     skillResources,
-    agent.skills
+    agent.skills,
   );
   if (agent.skills.length > 0) {
     const skills = packagedSkills(recipeDir, skillResources);
@@ -355,7 +343,7 @@ function buildResolvedRecipeAgent(
       const matches = skills.filter((candidate) => candidate.name === skill);
       if (matches.length === 0) {
         throw new RecipeResolutionError(
-          `Recipe agent "${agentName}" references missing packaged skill "${skill}"`
+          `Recipe agent "${agentName}" references missing packaged skill "${skill}"`,
         );
       }
       if (matches.length > 1) {
@@ -363,11 +351,11 @@ function buildResolvedRecipeAgent(
           .map((match) =>
             match.dependency
               ? `dependency ${match.dependency} (${match.path})`
-              : `the Recipe (${relative(recipeDir, match.path)})`
+              : `the Recipe (${relative(recipeDir, match.path)})`,
           )
           .join(", ");
         throw new RecipeResolutionError(
-          `Recipe agent "${agentName}" skill "${skill}" resolves to multiple packaged SKILL.md files: ${sources}. Give each skill a unique frontmatter name.`
+          `Recipe agent "${agentName}" skill "${skill}" resolves to multiple packaged SKILL.md files: ${sources}. Give each skill a unique frontmatter name.`,
         );
       }
     }
@@ -385,9 +373,7 @@ function buildResolvedRecipeAgent(
     ...(agent.model?.thinkingLevel
       ? { thinkingLevel: agent.model.thinkingLevel as ThinkingLevel }
       : {}),
-    tools: [
-      ...new Set(executableRecipeToolNames(agent.tools)),
-    ],
+    tools: [...new Set(executableRecipeToolNames(agent.tools))],
     ...(agent.mcp
       ? { mcp: { ...agent.mcp, mode: agent.mcp.mode ?? "cli" } }
       : {}),
@@ -397,22 +383,22 @@ function buildResolvedRecipeAgent(
     systemPromptOverride(base) {
       return applySystemInstructions(
         recipeSystemPrompt ?? base,
-        agent.systemInstructions
+        agent.systemInstructions,
       );
     },
   });
 }
 
 /** Parse and resolve every agent in a Recipe package exactly once. */
-export function resolveRecipe(
-  opts: { recipeDir: string }
-): ResolvedRecipe {
+export function resolveRecipe(opts: { recipeDir: string }): ResolvedRecipe {
   const recipeDir = resolve(opts.recipeDir);
   const manifest = deepFreeze(readPiPackageManifest(recipeDir));
-  const packageErrors = recipeValidationErrors(validatePiPackageManifest(manifest).findings);
+  const packageErrors = recipeValidationErrors(
+    validatePiPackageManifest(manifest).findings,
+  );
   if (packageErrors.length > 0) {
     throw new RecipeResolutionError(
-      packageErrors.map((finding) => finding.message).join("\n")
+      packageErrors.map((finding) => finding.message).join("\n"),
     );
   }
 
@@ -424,14 +410,14 @@ export function resolveRecipe(
         `Recipe "${manifest.name}" has invalid agents.`,
         ...agentErrors.map((finding) => `- ${finding.message}`),
         "Fix the invalid agent definitions.",
-      ].join("\n")
+      ].join("\n"),
     );
   }
 
   const definitions = resolvedAgents.definitions;
   if (definitions.size === 0) {
     throw new RecipeResolutionError(
-      `Recipe "${manifest.name}" does not define any agents`
+      `Recipe "${manifest.name}" does not define any agents`,
     );
   }
   for (const definition of definitions.values()) {
@@ -447,7 +433,7 @@ export function resolveRecipe(
   const promptPaths = packageResourcePaths(manifest, "prompts");
   const extensionPaths = resolvePackageExtensionPaths(
     recipeDir,
-    packageResourcePaths(manifest, "extensions")
+    packageResourcePaths(manifest, "extensions"),
   );
   const agents = new Map<string, ResolvedRecipeAgent>();
   for (const definition of definitions.values()) {
@@ -461,8 +447,8 @@ export function resolveRecipe(
         recipeSystemPrompt,
         skillResources,
         promptPaths,
-        extensionPaths
-      )
+        extensionPaths,
+      ),
     );
   }
 

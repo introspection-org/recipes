@@ -49,12 +49,12 @@ const SHUTDOWN_GRACE_MS = 1_000;
 const CATALOG_PRELOAD_BACKOFF_MS = [100, 250, 500, 1_000, 2_000] as const;
 
 function runtime(): Promise<McpRuntime> {
-  runtimePromise ??= createRuntime({ configPath: process.env.MCPORTER_CONFIG }).catch(
-    (error) => {
-      runtimePromise = undefined;
-      throw error;
-    }
-  );
+  runtimePromise ??= createRuntime({
+    configPath: process.env.MCPORTER_CONFIG,
+  }).catch((error) => {
+    runtimePromise = undefined;
+    throw error;
+  });
   return runtimePromise;
 }
 
@@ -72,9 +72,7 @@ async function catalogRetryDelay(timeoutMs: number): Promise<void> {
   wakeCatalogRetry = undefined;
 }
 
-function preloadCatalogs(
-  timeoutMs: number
-): Promise<McpCatalogServer[]> {
+function preloadCatalogs(timeoutMs: number): Promise<McpCatalogServer[]> {
   if (catalogPreloadResult && catalogHealthy(catalogPreloadResult)) {
     return Promise.resolve(catalogPreloadResult);
   }
@@ -120,7 +118,7 @@ function preloadCatalogs(
     },
     () => {
       if (catalogPreloadPromise === preload) catalogPreloadPromise = undefined;
-    }
+    },
   );
   return preload;
 }
@@ -136,7 +134,7 @@ async function joinCatalogPreload(): Promise<void> {
 function send(
   socket: Socket,
   envelope: McpDaemonEnvelope,
-  serializationError = "response_too_large"
+  serializationError = "response_too_large",
 ): void {
   if (!socket.destroyed && !socket.writableEnded) {
     try {
@@ -147,13 +145,17 @@ function send(
           id: envelope.id,
           error: serializationError,
         })}\n`,
-        () => {}
+        () => {},
       );
     }
   }
 }
 
-function stream(id: string, name: "stdout" | "stderr", socket: Socket): Writable {
+function stream(
+  id: string,
+  name: "stdout" | "stderr",
+  socket: Socket,
+): Writable {
   return new Writable({
     write(chunk, _encoding, callback) {
       send(socket, { id, stream: name, data: String(chunk) });
@@ -183,22 +185,19 @@ function runWorkerPath(): string {
 async function executeRun(
   request: Extract<McpDaemonRequest, { type: "execute" }>,
   socket: Socket,
-  controller: AbortController
+  controller: AbortController,
 ): Promise<number> {
   const sharedRuntime = await runtime();
-  const worker = new Worker(
-    runWorkerPath(),
-    {
-      workerData: {
-        args: request.args,
-        stdin: request.stdin,
-        servers: sharedRuntime.listServers(),
-      },
-    }
-  );
+  const worker = new Worker(runWorkerPath(), {
+    workerData: {
+      args: request.args,
+      stdin: request.stdin,
+      servers: sharedRuntime.listServers(),
+    },
+  });
   const hardTimeout = setTimeout(
     () => void worker.terminate(),
-    runTimeoutMs() + 2_000
+    runTimeoutMs() + 2_000,
   );
   const abort = () => void worker.terminate();
   controller.signal.addEventListener("abort", abort, { once: true });
@@ -221,15 +220,25 @@ async function executeRun(
         }
         if (message.type === "toolCall") {
           void sharedRuntime
-            .callTool(String(message.server), String(message.tool), message.options as never)
+            .callTool(
+              String(message.server),
+              String(message.tool),
+              message.options as never,
+            )
             .then(
-              (result) => worker.postMessage({ type: "toolResult", id: message.id, result }),
+              (result) =>
+                worker.postMessage({
+                  type: "toolResult",
+                  id: message.id,
+                  result,
+                }),
               (error) =>
                 worker.postMessage({
                   type: "toolError",
                   id: message.id,
-                  message: error instanceof Error ? error.message : String(error),
-                })
+                  message:
+                    error instanceof Error ? error.message : String(error),
+                }),
             );
           return;
         }
@@ -243,7 +252,12 @@ async function executeRun(
       worker.once("exit", (code) => {
         if (settled) return;
         if (controller.signal.aborted) finish(() => resolve(130));
-        else finish(() => reject(new Error(`mcp run worker exited before completion (${code}).`)));
+        else
+          finish(() =>
+            reject(
+              new Error(`mcp run worker exited before completion (${code}).`),
+            ),
+          );
       });
     });
   } finally {
@@ -253,15 +267,18 @@ async function executeRun(
   }
 }
 
-async function execute(request: Extract<McpDaemonRequest, { type: "execute" }>, socket: Socket) {
+async function execute(
+  request: Extract<McpDaemonRequest, { type: "execute" }>,
+  socket: Socket,
+) {
   return context.with(mcpDaemonRequestContext(request.trace), () =>
-    executeRequest(request, socket)
+    executeRequest(request, socket),
   );
 }
 
 async function executeRequest(
   request: Extract<McpDaemonRequest, { type: "execute" }>,
-  socket: Socket
+  socket: Socket,
 ) {
   const controller = new AbortController();
   active.set(request.id, controller);
@@ -299,16 +316,16 @@ async function executeRequest(
 
 async function callTool(
   request: Extract<McpDaemonRequest, { type: "call" }>,
-  socket: Socket
+  socket: Socket,
 ): Promise<void> {
   return context.with(mcpDaemonRequestContext(request.trace), () =>
-    callToolRequest(request, socket)
+    callToolRequest(request, socket),
   );
 }
 
 async function callToolRequest(
   request: Extract<McpDaemonRequest, { type: "call" }>,
-  socket: Socket
+  socket: Socket,
 ): Promise<void> {
   const controller = new AbortController();
   let dispatched = false;
@@ -319,23 +336,22 @@ async function callToolRequest(
       (server) =>
         server.id === request.server &&
         !server.error &&
-        server.tools.some((tool) => tool.name === request.tool)
+        server.tools.some((tool) => tool.name === request.tool),
     );
     const catalogs = cachedCatalog
       ? catalogPreloadResult!
       : await preloadCatalogs(request.timeoutMs);
     const catalog =
-      cachedCatalog ??
-      catalogs.find((server) => server.id === request.server);
+      cachedCatalog ?? catalogs.find((server) => server.id === request.server);
     const allowed = catalog?.tools.some((tool) => tool.name === request.tool);
     if (!catalog || catalog.error || !allowed) {
       throw new Error(
-        `MCP tool '${request.server}.${request.tool}' is not authorized in this daemon generation.`
+        `MCP tool '${request.server}.${request.tool}' is not authorized in this daemon generation.`,
       );
     }
     if (controller.signal.aborted) {
       throw new Error(
-        `MCP tool call '${request.server}.${request.tool}' was cancelled before execution.`
+        `MCP tool call '${request.server}.${request.tool}' was cancelled before execution.`,
       );
     }
     const result = await runtime().then((value) => {
@@ -348,13 +364,13 @@ async function callToolRequest(
     });
     if (controller.signal.aborted) {
       throw new Error(
-        `MCP tool call '${request.server}.${request.tool}' was cancelled; remote outcome is unknown.`
+        `MCP tool call '${request.server}.${request.tool}' was cancelled; remote outcome is unknown.`,
       );
     }
     send(
       socket,
       { id: request.id, result },
-      `MCP tool call '${request.server}.${request.tool}' completed but its response could not be returned; remote outcome is unknown; do not retry automatically.`
+      `MCP tool call '${request.server}.${request.tool}' completed but its response could not be returned; remote outcome is unknown; do not retry automatically.`,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -449,7 +465,7 @@ function handle(request: McpDaemonRequest, socket: Socket): void {
           send(socket, {
             id: request.id,
             error: error instanceof Error ? error.message : String(error),
-          })
+          }),
       )
       .finally(() => socket.end());
     return;

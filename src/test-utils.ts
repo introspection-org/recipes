@@ -30,7 +30,7 @@ export interface RecipeHost {
    * here layer the suite's fixture on top.
    */
   createSession(
-    options: CreateAgentSessionOptions
+    options: CreateAgentSessionOptions,
   ): Promise<RecipeSessionHandle>;
 }
 
@@ -66,9 +66,12 @@ export function writeFixtureRecipe(options: FixtureOptions = {}): {
       type: "module",
       ...(options.dependencies ? { dependencies: options.dependencies } : {}),
       pi: { agents: ["agents/*.yaml"], ...(options.manifestPi ?? {}) },
-    })
+    }),
   );
-  writeFileSync(join(recipeDir, "SYSTEM.md"), "You are a conformance fixture.\n");
+  writeFileSync(
+    join(recipeDir, "SYSTEM.md"),
+    "You are a conformance fixture.\n",
+  );
   writeFileSync(
     join(recipeDir, "agents", "agent.yaml"),
     [
@@ -85,7 +88,7 @@ export function writeFixtureRecipe(options: FixtureOptions = {}): {
       "  content: Conformance agent",
       ...(options.agentExtras ?? []),
       "",
-    ].join("\n")
+    ].join("\n"),
   );
   for (const name of options.subagents ?? []) {
     writeFileSync(
@@ -100,7 +103,7 @@ export function writeFixtureRecipe(options: FixtureOptions = {}): {
         "  mode: append",
         `  content: Subagent ${name}`,
         "",
-      ].join("\n")
+      ].join("\n"),
     );
   }
   return {
@@ -116,7 +119,7 @@ function assert(condition: unknown, message: string): asserts condition {
 
 async function expectRejection(
   promise: Promise<unknown>,
-  message: string
+  message: string,
 ): Promise<Error> {
   try {
     await promise;
@@ -135,9 +138,7 @@ async function testCredentialStore(): Promise<InMemoryCredentialStore> {
   return store;
 }
 
-export function hostConformanceCases(
-  host: RecipeHost
-): HostConformanceCase[] {
+export function hostConformanceCases(host: RecipeHost): HostConformanceCase[] {
   return [
     {
       name: "constructs a session from a resolved recipe with an injected credential store",
@@ -154,7 +155,7 @@ export function hostConformanceCases(
             assert(handle.agent.name === "agent", "agentName resolves");
             assert(
               handle.session.systemPrompt.includes("conformance fixture"),
-              "SYSTEM.md reaches the system prompt"
+              "SYSTEM.md reaches the system prompt",
             );
             assert(handle.agentRuns, "handle exposes an agent run controller");
           } finally {
@@ -176,11 +177,11 @@ export function hostConformanceCases(
               cwd: fixture.workspaceDir,
               env: { ...cleanEnv() },
             }),
-            "session construction without credentials"
+            "session construction without credentials",
           );
           assert(
             /ANTHROPIC_API_KEY/.test(err.message),
-            `error names the expected env var (got: ${err.message})`
+            `error names the expected env var (got: ${err.message})`,
           );
         } finally {
           fixture.cleanup();
@@ -214,11 +215,11 @@ export function hostConformanceCases(
               credentials: await testCredentialStore(),
               env: { ...cleanEnv() },
             }),
-            "session construction with an unbound required MCP server"
+            "session construction with an unbound required MCP server",
           );
           assert(
             err.message.includes("linear"),
-            `error names the unbound server (got: ${err.message})`
+            `error names the unbound server (got: ${err.message})`,
           );
         } finally {
           fixture.cleanup();
@@ -266,7 +267,7 @@ export function hostConformanceCases(
           await handle.dispose();
           assert(
             env.MCPORTER_CONFIG === undefined,
-            "dispose restores an absent MCPORTER_CONFIG"
+            "dispose restores an absent MCPORTER_CONFIG",
           );
           assert(env.PATH === originalPath, "dispose restores PATH");
         } finally {
@@ -311,16 +312,16 @@ export function hostConformanceCases(
                   () =>
                     reject(
                       new Error(
-                        "Conformance failure: ghost subagent start wedged (no settlement in 15s)"
-                      )
+                        "Conformance failure: ghost subagent start wedged (no settlement in 15s)",
+                      ),
                     ),
-                  15_000
-                )
+                  15_000,
+                ),
               ),
             ]);
             assert(
               settled.status === "failed",
-              `ghost run settles as failed (got: ${settled.status})`
+              `ghost run settles as failed (got: ${settled.status})`,
             );
           } finally {
             await handle.dispose();

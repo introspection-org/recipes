@@ -9,8 +9,8 @@ const SESSION_KEYS = new Set([
 
 const SNAKE_CASE_KEY = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
-export type RecipeQueueMode = "all" | "one-at-a-time";
-export type RecipeToolExecutionMode = "parallel" | "sequential";
+type RecipeQueueMode = "all" | "one-at-a-time";
+type RecipeToolExecutionMode = "parallel" | "sequential";
 
 export interface RecipeAgentSessionConfig {
   steeringMode?: RecipeQueueMode;
@@ -33,19 +33,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function assertKnownKeys(
   context: string,
   value: Record<string, unknown>,
-  allowed: readonly string[]
+  allowed: readonly string[],
 ): void {
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) {
     throw new RecipeSessionConfigError(
-      `${context} has unsupported key(s): ${unknown.join(", ")}`
+      `${context} has unsupported key(s): ${unknown.join(", ")}`,
     );
   }
 }
 
 function sessionObject(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new RecipeSessionConfigError(`${context}: expected object`);
@@ -61,13 +61,11 @@ function sessionObject(
 function optionalBoolean(
   context: string,
   key: string,
-  value: unknown
+  value: unknown,
 ): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
-    throw new RecipeSessionConfigError(
-      `${context}.${key}: expected boolean`
-    );
+    throw new RecipeSessionConfigError(`${context}.${key}: expected boolean`);
   }
   return value;
 }
@@ -76,7 +74,7 @@ function optionalInteger(
   context: string,
   key: string,
   value: unknown,
-  min: number
+  min: number,
 ): number | undefined {
   if (value === undefined) return undefined;
   if (
@@ -85,24 +83,24 @@ function optionalInteger(
     value < min
   ) {
     throw new RecipeSessionConfigError(
-      `${context}.${key}: expected integer >= ${min}`
+      `${context}.${key}: expected integer >= ${min}`,
     );
   }
   return value;
 }
 
 function definedObject(
-  entries: Record<string, unknown>
+  entries: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const defined = Object.fromEntries(
-    Object.entries(entries).filter(([, value]) => value !== undefined)
+    Object.entries(entries).filter(([, value]) => value !== undefined),
   );
   return Object.keys(defined).length > 0 ? defined : undefined;
 }
 
 function parseProviderRetry(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> | undefined {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
@@ -117,14 +115,14 @@ function parseProviderRetry(
       context,
       "max_retry_delay_ms",
       data.max_retry_delay_ms,
-      0
+      0,
     ),
   });
 }
 
 function parseRetry(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> | undefined {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
@@ -141,13 +139,13 @@ function parseRetry(
       context,
       "base_delay_ms",
       data.base_delay_ms,
-      0
+      0,
     ),
     maxAgentDelayMs: optionalInteger(
       context,
       "max_agent_delay_ms",
       data.max_agent_delay_ms,
-      0
+      0,
     ),
     provider:
       data.provider === undefined
@@ -158,7 +156,7 @@ function parseRetry(
 
 function parseCompaction(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> | undefined {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
@@ -172,20 +170,20 @@ function parseCompaction(
       context,
       "reserve_tokens",
       data.reserve_tokens,
-      0
+      0,
     ),
     keepRecentTokens: optionalInteger(
       context,
       "keep_recent_tokens",
       data.keep_recent_tokens,
-      0
+      0,
     ),
   });
 }
 
 function parseImages(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> | undefined {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, ["auto_resize", "block_images"]);
@@ -198,12 +196,12 @@ function parseImages(
 function parseQueueMode(
   context: string,
   key: string,
-  value: unknown
+  value: unknown,
 ): RecipeQueueMode | undefined {
   if (value === undefined) return undefined;
   if (value !== "all" && value !== "one-at-a-time") {
     throw new RecipeSessionConfigError(
-      `${context} has invalid session.${key}: expected all or one-at-a-time`
+      `${context} has invalid session.${key}: expected all or one-at-a-time`,
     );
   }
   return value;
@@ -211,30 +209,30 @@ function parseQueueMode(
 
 export function parseRecipeAgentSessionConfig(
   context: string,
-  value: unknown
+  value: unknown,
 ): RecipeAgentSessionConfig | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeSessionConfigError(
-      `${context} has invalid session: expected object`
+      `${context} has invalid session: expected object`,
     );
   }
   const unknown = Object.keys(value).filter((key) => !SESSION_KEYS.has(key));
   if (unknown.length > 0) {
     throw new RecipeSessionConfigError(
-      `${context} has unsupported session key(s): ${unknown.join(", ")}`
+      `${context} has unsupported session key(s): ${unknown.join(", ")}`,
     );
   }
 
   const steeringMode = parseQueueMode(
     context,
     "steering_mode",
-    value.steering_mode
+    value.steering_mode,
   );
   const followUpMode = parseQueueMode(
     context,
     "follow_up_mode",
-    value.follow_up_mode
+    value.follow_up_mode,
   );
   const toolExecution = value.tool_execution;
   if (
@@ -243,12 +241,11 @@ export function parseRecipeAgentSessionConfig(
     toolExecution !== "sequential"
   ) {
     throw new RecipeSessionConfigError(
-      `${context} has invalid session.tool_execution: expected parallel or sequential`
+      `${context} has invalid session.tool_execution: expected parallel or sequential`,
     );
   }
   const parsedToolExecution = toolExecution as
-    | RecipeToolExecutionMode
-    | undefined;
+    RecipeToolExecutionMode | undefined;
 
   const settings: Record<string, unknown> = {
     ...(steeringMode ? { steeringMode } : {}),
@@ -281,7 +278,7 @@ export function parseRecipeAgentSessionConfig(
 
 export function mergeRecipeAgentSessionConfig(
   base: RecipeAgentSessionConfig | undefined,
-  overlay: RecipeAgentSessionConfig | undefined
+  overlay: RecipeAgentSessionConfig | undefined,
 ): RecipeAgentSessionConfig | undefined {
   if (!base) return overlay;
   if (!overlay) return base;
@@ -295,13 +292,14 @@ export function mergeRecipeAgentSessionConfig(
 
 function mergeObjects(
   base: Record<string, unknown>,
-  overlay: Record<string, unknown>
+  overlay: Record<string, unknown>,
 ): Record<string, unknown> {
   const merged = { ...base };
   for (const [key, value] of Object.entries(overlay)) {
-    merged[key] = isRecord(merged[key]) && isRecord(value)
-      ? mergeObjects(merged[key], value)
-      : value;
+    merged[key] =
+      isRecord(merged[key]) && isRecord(value)
+        ? mergeObjects(merged[key], value)
+        : value;
   }
   return merged;
 }

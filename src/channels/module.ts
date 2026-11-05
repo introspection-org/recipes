@@ -21,7 +21,10 @@ export interface ChannelConnectorSession {
   /** Resolved lazily so a task with no channel origin still starts. */
   readonly target: ChannelTarget | (() => ChannelTarget);
   /** Optional tool-layer target policy, not a sandbox egress boundary. */
-  readonly validateTarget?: (target: ChannelTarget, operation: ChannelToolId) => void | Promise<void>;
+  readonly validateTarget?: (
+    target: ChannelTarget,
+    operation: ChannelToolId,
+  ) => void | Promise<void>;
 }
 
 export interface ChannelConnectorModuleOptions {
@@ -74,8 +77,16 @@ function sameCapabilities(
   left: ChannelCapabilities,
   right: ChannelCapabilities,
 ): boolean {
-  left = { ...left, targeting: left.targeting ?? false, list: left.list ?? false };
-  right = { ...right, targeting: right.targeting ?? false, list: right.list ?? false };
+  left = {
+    ...left,
+    targeting: left.targeting ?? false,
+    list: left.list ?? false,
+  };
+  right = {
+    ...right,
+    targeting: right.targeting ?? false,
+    list: right.list ?? false,
+  };
   const keys = Object.keys(right) as (keyof ChannelCapabilities)[];
   return (
     Object.keys(left).length === keys.length &&
@@ -104,19 +115,24 @@ export function createChannelConnectorModule(
     provider: options.provider,
     tools: connectorTools,
     createExtension(moduleOptions): ExtensionFactory {
-      const unknown = moduleOptions.tools.filter(
-        (tool) => tool !== "channels",
-      );
+      const unknown = moduleOptions.tools.filter((tool) => tool !== "channels");
       if (unknown.length > 0) {
         throw new Error(
           `Unknown ${options.provider} channel tool(s): ${unknown.join(", ")}`,
         );
       }
       const commands = moduleOptions.commands;
-      const requireReply = moduleOptions.requireReply ?? (moduleOptions.tools.includes("channels") && commands?.length !== 0);
-      if (requireReply && (!moduleOptions.tools.includes("channels") ||
-          (commands !== undefined && !commands.includes("reply")))) {
-        throw new Error("requireReply needs the channels tool with the reply command enabled");
+      const requireReply =
+        moduleOptions.requireReply ??
+        (moduleOptions.tools.includes("channels") && commands?.length !== 0);
+      if (
+        requireReply &&
+        (!moduleOptions.tools.includes("channels") ||
+          (commands !== undefined && !commands.includes("reply")))
+      ) {
+        throw new Error(
+          "requireReply needs the channels tool with the reply command enabled",
+        );
       }
       if (commands?.some((command) => !channelToolIds.has(command))) {
         throw new Error("Unknown channels command in connector allowlist");
@@ -133,7 +149,9 @@ export function createChannelConnectorModule(
             `Channel adapter for '${options.provider}' returned provider '${session.adapter.provider}'`,
           );
         }
-        if (!sameCapabilities(session.adapter.capabilities, options.capabilities)) {
+        if (
+          !sameCapabilities(session.adapter.capabilities, options.capabilities)
+        ) {
           // The loader selected tools from the declared catalog. An adapter
           // with a different capability set would register a different tool
           // surface. Compare values so an adapter may rebuild the descriptor.

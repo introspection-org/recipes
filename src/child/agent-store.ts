@@ -13,8 +13,8 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type ChildRunStatus = "running" | "completed" | "failed" | "interrupted";
-export type ChildToolStatus = "running" | "completed" | "failed";
+type ChildRunStatus = "running" | "completed" | "failed" | "interrupted";
+type ChildToolStatus = "running" | "completed" | "failed";
 
 export interface ChildToolActivity {
   id: string;
@@ -58,17 +58,15 @@ function normalizeChildRunSnapshot(value: unknown): ChildRunSnapshot | null {
         : undefined;
   const record: Record<string, unknown> = { ...original, prompt };
   delete record.task;
-  if (
-    !(
-      typeof record.id === "string" &&
-      typeof record.agent === "string" &&
-      typeof record.prompt === "string" &&
-      typeof record.status === "string" &&
-      RUN_STATUSES.includes(record.status) &&
-      typeof record.startedAt === "string" &&
-      Array.isArray(record.toolCalls)
-    )
-  ) {
+  if (!(
+    typeof record.id === "string" &&
+    typeof record.agent === "string" &&
+    typeof record.prompt === "string" &&
+    typeof record.status === "string" &&
+    RUN_STATUSES.includes(record.status) &&
+    typeof record.startedAt === "string" &&
+    Array.isArray(record.toolCalls)
+  )) {
     return null;
   }
   return record as unknown as ChildRunSnapshot;
@@ -94,7 +92,7 @@ export class ChildAgentRunStore {
         await writeFile(
           join(runDir, "status.json"),
           `${JSON.stringify(snapshot, null, 2)}\n`,
-          "utf8"
+          "utf8",
         );
       });
     this.pendingWrites.set(snapshot.id, write);
@@ -124,7 +122,7 @@ export class ChildAgentRunStore {
       try {
         const raw = await readFile(
           join(this.root, runId, "status.json"),
-          "utf8"
+          "utf8",
         );
         const parsed = normalizeChildRunSnapshot(JSON.parse(raw));
         if (parsed?.id === runId) {

@@ -36,13 +36,15 @@ export interface ChildCompletionEnvelope {
 }
 
 export function envelopeFromRun(
-  run: ChildRunSnapshot
+  run: ChildRunSnapshot,
 ): ChildCompletionEnvelope | null {
   if (run.status !== "completed" && run.status !== "failed") return null;
   const started = Date.parse(run.startedAt);
   const completed = run.completedAt ? Date.parse(run.completedAt) : NaN;
   const duration =
-    Number.isFinite(started) && Number.isFinite(completed) && completed >= started
+    Number.isFinite(started) &&
+    Number.isFinite(completed) &&
+    completed >= started
       ? completed - started
       : undefined;
   return {
@@ -61,7 +63,7 @@ export function envelopeFromRun(
  * runtime notification rather than user input.
  */
 export function renderCompletionNotice(
-  batch: readonly ChildCompletionEnvelope[]
+  batch: readonly ChildCompletionEnvelope[],
 ): string {
   const blocks = batch.map((envelope) => {
     const label = envelope.label ? `: ${envelope.label}` : "";
@@ -101,7 +103,7 @@ export class ChildCompletionQueue {
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(
         () => this.flushNow(),
-        COMPLETION_BATCH_WINDOW_MS
+        COMPLETION_BATCH_WINDOW_MS,
       );
       this.flushTimer.unref?.();
     }
@@ -129,7 +131,7 @@ export class ChildCompletionQueue {
     if (ids.length === 0 || this.pending.length === 0) return;
     const acknowledged = new Set(ids);
     this.pending = this.pending.filter(
-      (envelope) => !acknowledged.has(envelope.id)
+      (envelope) => !acknowledged.has(envelope.id),
     );
   }
 

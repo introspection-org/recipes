@@ -3,7 +3,7 @@ import { createRecipesExtension } from "../src/pi-extension.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
-  "introspection.installManagedFetch"
+  "introspection.installManagedFetch",
 );
 const MANAGED_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL";
 
@@ -23,7 +23,7 @@ afterEach(() => {
 describe("Recipes managed fetch integration", () => {
   it("spells the installer key the Runtime's proxy-preload publishes", () => {
     expect(Symbol.keyFor(MANAGED_FETCH_INSTALLER_SYMBOL)).toBe(
-      "introspection.installManagedFetch"
+      "introspection.installManagedFetch",
     );
   });
 
@@ -35,7 +35,7 @@ describe("Recipes managed fetch integration", () => {
 
     await pi.emitExtensionEvent(
       { type: "session_start", reason: "startup" } as any,
-      context()
+      context(),
     );
 
     expect(install).toHaveBeenCalledOnce();
@@ -49,7 +49,7 @@ describe("Recipes managed fetch integration", () => {
 
     await pi.emitExtensionEvent(
       { type: "before_provider_request", payload: {} } as any,
-      context()
+      context(),
     );
 
     expect(install).toHaveBeenCalledOnce();
@@ -63,13 +63,13 @@ describe("Recipes managed fetch integration", () => {
     await expect(
       pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
-      )
+        ctx,
+      ),
     ).resolves.toBeDefined();
 
     expect(ctx.ui.notify).not.toHaveBeenCalledWith(
       expect.stringContaining("managed fetch"),
-      expect.anything()
+      expect.anything(),
     );
   });
 
@@ -81,8 +81,8 @@ describe("Recipes managed fetch integration", () => {
     await expect(
       pi.emitExtensionEvent(
         { type: "before_provider_request", payload: {} } as any,
-        context()
-      )
+        context(),
+      ),
     ).resolves.toBeDefined();
   });
 
@@ -95,24 +95,27 @@ describe("Recipes managed fetch integration", () => {
 
     await pi.emitExtensionEvent(
       { type: "session_start", reason: "startup" } as any,
-      ctx
+      ctx,
     );
 
     expect(ctx.ui.notify).toHaveBeenCalledWith(
       expect.stringContaining(
-        `${MANAGED_EGRESS_URL_ENV} is set but the Runtime's managed fetch is not installed`
+        `${MANAGED_EGRESS_URL_ENV} is set but the Runtime's managed fetch is not installed`,
       ),
-      "warning"
+      "warning",
     );
     expect(ctx.ui.notify).not.toHaveBeenCalledWith(
       expect.stringContaining("cannot start"),
-      expect.anything()
+      expect.anything(),
     );
   });
 
   it("does not warn in a proxy-native sandbox, whose env proxy injects", async () => {
     for (const env of [
-      { INTROSPECTION_EGRESS_PROXY_NATIVE: "1", INTROSPECTION_TASK_ID: "task-1" },
+      {
+        INTROSPECTION_EGRESS_PROXY_NATIVE: "1",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
       {
         INTROSPECTION_EGRESS_PROXY_NATIVE: "1",
         [MANAGED_EGRESS_URL_ENV]: "http://egress.internal:8081",
@@ -124,12 +127,12 @@ describe("Recipes managed fetch integration", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(ctx.ui.notify).not.toHaveBeenCalledWith(
         expect.stringContaining("managed fetch"),
-        expect.anything()
+        expect.anything(),
       );
     }
   });
@@ -144,7 +147,7 @@ describe("Recipes managed fetch integration", () => {
 
     await pi.emitExtensionEvent(
       { type: "before_provider_request", payload: {} } as any,
-      context()
+      context(),
     );
 
     expect(install).toHaveBeenCalledOnce();
@@ -160,7 +163,7 @@ describe("Recipes managed fetch integration", () => {
 
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
-        ctx
+        ctx,
       );
 
       expect(ctx.ui.notify).not.toHaveBeenCalled();

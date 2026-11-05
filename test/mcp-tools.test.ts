@@ -8,10 +8,7 @@ vi.mock("../src/mcp/daemon/client.js", () => ({
   callMcpDaemonTool: mocks.callMcpDaemonTool,
 }));
 
-import {
-  createMcpToolSet,
-  piMcpToolName,
-} from "../src/mcp/tools.js";
+import { createMcpToolSet, piMcpToolName } from "../src/mcp/tools.js";
 import type { McpSessionConfig } from "../src/mcp/index.js";
 import type { RecipeAgentMcp } from "../src/recipe/agent.js";
 
@@ -79,12 +76,12 @@ describe("MCP tools mode", () => {
   it("uses stable provider-safe names no longer than 64 characters", () => {
     const first = piMcpToolName(
       "server with spaces",
-      "a very long tool name ".repeat(10)
+      "a very long tool name ".repeat(10),
     );
     expect(first).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(first.length).toBeLessThanOrEqual(64);
     expect(first).toBe(
-      piMcpToolName("server with spaces", "a very long tool name ".repeat(10))
+      piMcpToolName("server with spaces", "a very long tool name ".repeat(10)),
     );
   });
 
@@ -94,9 +91,7 @@ describe("MCP tools mode", () => {
       servers: { nextplay: { include: ["*"] } },
     });
     expect(materialized.toolNames).toHaveLength(2);
-    expect(materialized.initialActiveToolNames).toEqual(
-      materialized.toolNames
-    );
+    expect(materialized.initialActiveToolNames).toEqual(materialized.toolNames);
     expect(materialized.deferredToolNames).toEqual([]);
   });
 
@@ -110,7 +105,7 @@ describe("MCP tools mode", () => {
       piMcpToolName("nextplay", "get_profiles"),
     ]);
     expect(materialized.canonicalToPiName.has("nextplay.search_talent")).toBe(
-      false
+      false,
     );
   });
 
@@ -144,7 +139,7 @@ describe("MCP tools mode", () => {
       materialized.canonicalToPiName.get("nextplay.search_talent"),
     ]);
     expect(materialized.tools.map((tool) => tool.name)).not.toContain(
-      "tool_search"
+      "tool_search",
     );
   });
 
@@ -163,13 +158,13 @@ describe("MCP tools mode", () => {
     const tool = materialized.tools.find(
       (entry) =>
         entry.name ===
-        materialized.canonicalToPiName.get("nextplay.search_talent")
+        materialized.canonicalToPiName.get("nextplay.search_talent"),
     )!;
     const result = await (tool.execute as any)(
       "call-2",
       { query: "engineer" },
       undefined,
-      undefined
+      undefined,
     );
     expect(result.content).toEqual([
       { type: "text", text: '{"count":2}' },
@@ -185,8 +180,8 @@ describe("MCP tools mode", () => {
         "call-3",
         { query: "engineer" },
         undefined,
-        undefined
-      )
+        undefined,
+      ),
     ).rejects.toThrow("does not match outputSchema");
 
     mocks.callMcpDaemonTool.mockResolvedValueOnce({
@@ -197,8 +192,8 @@ describe("MCP tools mode", () => {
         "call-3b",
         { query: "engineer" },
         undefined,
-        undefined
-      )
+        undefined,
+      ),
     ).rejects.toThrow("returned no structuredContent");
   });
 
@@ -242,7 +237,7 @@ describe("MCP tools mode", () => {
           },
         },
         env: {},
-      })
+      }),
     ).toThrow("includes unusable tool 'nextplay.broken'");
 
     const materialized = createMcpToolSet({
@@ -315,8 +310,7 @@ describe("MCP tools mode", () => {
     });
     expect(materialized.diagnostics).toEqual([]);
     const schema = materialized.tools[0]?.parameters as any;
-    const items =
-      schema.properties.values.additionalProperties.anyOf[1].items;
+    const items = schema.properties.values.additionalProperties.anyOf[1].items;
     expect(items.$ref).toBeUndefined();
     expect(items.anyOf[0].type).toBe("object");
     expect(items.anyOf[1].type).toEqual(["string", "number", "boolean"]);
@@ -387,7 +381,7 @@ describe("MCP tools mode", () => {
       expect(materialized.tools, `token ${JSON.stringify(token)}`).toEqual([]);
       expect(
         materialized.diagnostics[0],
-        `token ${JSON.stringify(token)}`
+        `token ${JSON.stringify(token)}`,
       ).toMatch(/unresolved JSON Schema reference/);
     }
   });
@@ -401,19 +395,19 @@ describe("MCP tools mode", () => {
       {
         PI_RECIPES_MCP_MAX_OUTPUT_BYTES: "64",
         PI_RECIPES_MCP_MAX_OUTPUT_LINES: "2",
-      }
+      },
     );
     const tool = materialized.tools.find(
       (entry) =>
         entry.name ===
-        materialized.canonicalToPiName.get("nextplay.get_profiles")
+        materialized.canonicalToPiName.get("nextplay.get_profiles"),
     )!;
     mocks.callMcpDaemonTool.mockResolvedValueOnce({
       isError: true,
       content: [{ type: "text", text: "upstream denied access" }],
     });
     await expect(
-      (tool.execute as any)("call-4", {}, undefined, undefined)
+      (tool.execute as any)("call-4", {}, undefined, undefined),
     ).rejects.toThrow("upstream denied access");
 
     mocks.callMcpDaemonTool.mockResolvedValueOnce({
@@ -421,7 +415,7 @@ describe("MCP tools mode", () => {
       content: [{ type: "text", text: "error line\n".repeat(100) }],
     });
     await expect(
-      (tool.execute as any)("call-4-large", {}, undefined, undefined)
+      (tool.execute as any)("call-4-large", {}, undefined, undefined),
     ).rejects.toThrow("[Output truncated:");
 
     mocks.callMcpDaemonTool.mockResolvedValueOnce({
@@ -431,7 +425,7 @@ describe("MCP tools mode", () => {
       "call-5",
       {},
       undefined,
-      undefined
+      undefined,
     );
     expect(result.content[0].text).toContain("[Output truncated:");
     expect(result.details.truncated.originalLines).toBeGreaterThan(2);
@@ -486,7 +480,7 @@ describe("MCP tools mode", () => {
           },
         },
         env: {},
-      })
+      }),
     ).toThrow("requires a healthy catalog");
 
     expect(() =>
@@ -494,7 +488,7 @@ describe("MCP tools mode", () => {
         session: {
           ...mixedSession,
           servers: mixedSession.servers.map((server) =>
-            server.id === "optional" ? { ...server, required: true } : server
+            server.id === "optional" ? { ...server, required: true } : server,
           ),
         },
         catalogs: mixedCatalogs,
@@ -506,7 +500,7 @@ describe("MCP tools mode", () => {
           },
         },
         env: {},
-      })
+      }),
     ).toThrow("Required MCP catalog discovery failed");
 
     // A host preparing the session does not lift `required` on its own: a
@@ -516,7 +510,7 @@ describe("MCP tools mode", () => {
         session: {
           ...mixedSession,
           servers: mixedSession.servers.map((server) =>
-            server.id === "optional" ? { ...server, required: true } : server
+            server.id === "optional" ? { ...server, required: true } : server,
           ),
         },
         catalogs: mixedCatalogs,
@@ -529,7 +523,7 @@ describe("MCP tools mode", () => {
         },
         env: {},
         discovery: "defer",
-      })
+      }),
     ).toThrow("Required MCP catalog discovery failed: optional");
 
     // When the package also defers that server, the preparing session starts:
@@ -540,7 +534,7 @@ describe("MCP tools mode", () => {
       servers: mixedSession.servers.map((server) =>
         server.id === "optional"
           ? { ...server, required: true, discovery: "defer" as const }
-          : server
+          : server,
       ),
     };
     const prepared = createMcpToolSet({
@@ -571,7 +565,7 @@ describe("MCP tools mode", () => {
         },
         env: {},
         discovery: "require",
-      })
+      }),
     ).toThrow("Required MCP catalog discovery failed");
   });
 
@@ -595,7 +589,12 @@ describe("MCP tools mode", () => {
         },
         catalogs: [
           ...catalogs,
-          { id: "optional", name: "Optional", tools: [], error: "connection refused" },
+          {
+            id: "optional",
+            name: "Optional",
+            tools: [],
+            error: "connection refused",
+          },
         ],
         mcp: {
           mode: "tools",
@@ -606,7 +605,7 @@ describe("MCP tools mode", () => {
         },
         env: {},
         discovery: "defer",
-      })
+      }),
     ).toThrow("requires a healthy catalog");
   });
 
@@ -623,7 +622,7 @@ describe("MCP tools mode", () => {
         },
         env: {},
         discovery: "defer",
-      })
+      }),
     ).toThrow("Eager MCP tool 'nextplay.missing_tool' is not authorized");
   });
 });

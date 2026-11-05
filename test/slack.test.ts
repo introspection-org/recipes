@@ -13,7 +13,6 @@ import {
   createSlackChannelSession,
   slackDownloadRoot,
   slackMessageBody,
-  toPlainText,
   type SlackFetch,
 } from "../packages/channels/slack/src/index.js";
 import { writeAll } from "../packages/channels/slack/src/files.js";
@@ -62,8 +61,11 @@ function fakeFile(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function authorization(call: { init: Record<string, unknown> }): string | undefined {
-  return (call.init.headers as Record<string, string> | undefined)?.Authorization;
+function authorization(call: {
+  init: Record<string, unknown>;
+}): string | undefined {
+  return (call.init.headers as Record<string, string> | undefined)
+    ?.Authorization;
 }
 
 function fakeFetch(options: FakeFetchOptions = {}) {
@@ -73,16 +75,28 @@ function fakeFetch(options: FakeFetchOptions = {}) {
   const impl = (async (url: string, init: Record<string, unknown> = {}) => {
     calls.push({ url: String(url), init });
     const parsed = new URL(String(url));
-    if (parsed.pathname.startsWith("/api/reactions.") && options.reactionError) {
+    if (
+      parsed.pathname.startsWith("/api/reactions.") &&
+      options.reactionError
+    ) {
       return response({ payload: { ok: false, error: options.reactionError } });
     }
     if (parsed.hostname === "dp.example") {
-      const status = options.bridgeStatuses?.shift() ?? options.bridgeStatus ?? 200;
+      const status =
+        options.bridgeStatuses?.shift() ?? options.bridgeStatus ?? 200;
       return response({
         ok: status < 400,
         status,
         retryAfter: options.bridgeRetryAfter,
-        payload: { acknowledged: true, result: { recorded: options.bridgeRecorded ?? true, ...(options.bridgeSkipped ? { skipped: options.bridgeSkipped } : {}) } },
+        payload: {
+          acknowledged: true,
+          result: {
+            recorded: options.bridgeRecorded ?? true,
+            ...(options.bridgeSkipped
+              ? { skipped: options.bridgeSkipped }
+              : {}),
+          },
+        },
       });
     }
     if (parsed.pathname.endsWith("/api/chat.postMessage")) {
@@ -127,10 +141,15 @@ function fakeFetch(options: FakeFetchOptions = {}) {
         payload: { ok: true, ...(permalink ? { permalink } : {}) },
       });
     }
-    if (parsed.pathname.endsWith("/api/conversations.replies") && options.threadPages) {
+    if (
+      parsed.pathname.endsWith("/api/conversations.replies") &&
+      options.threadPages
+    ) {
       const form = new URLSearchParams(String(init.body));
       const oldest = form.get("oldest");
-      const page = options.threadPages[oldest === form.get("ts") ? "" : oldest ?? ""] ?? {
+      const page = options.threadPages[
+        oldest === form.get("ts") ? "" : (oldest ?? "")
+      ] ?? {
         messages: [],
       };
       return response({
@@ -165,10 +184,12 @@ function response(options: {
     status: options.status ?? 200,
     headers: {
       get: (name: string) =>
-        name.toLowerCase() === "retry-after" ? options.retryAfter ?? null :
-        name.toLowerCase() === "content-length" && options.body !== undefined
-          ? String(bytes.length)
-          : null,
+        name.toLowerCase() === "retry-after"
+          ? (options.retryAfter ?? null)
+          : name.toLowerCase() === "content-length" &&
+              options.body !== undefined
+            ? String(bytes.length)
+            : null,
     },
     json: async () => options.payload,
     body:
@@ -186,10 +207,17 @@ describe("channel configuration", () => {
       INTROSPECTION_TASK_CHANNEL_PROVIDER: "slack",
       INTROSPECTION_TASK_CHANNEL_ID: "C_NEW",
     };
-    const session = createSlackChannelSession({ env, config: resolveChannelConfig(env) });
+    const session = createSlackChannelSession({
+      env,
+      config: resolveChannelConfig(env),
+    });
     const target =
       typeof session.target === "function" ? session.target() : session.target;
-    expect(target).toEqual({ provider: "slack", conversation: "C_NEW", thread: null });
+    expect(target).toEqual({
+      provider: "slack",
+      conversation: "C_NEW",
+      thread: null,
+    });
   });
 
   it("resolves the provider-neutral task channel", () => {
@@ -291,24 +319,23 @@ describe("SlackBotSession transport", () => {
       fetchImpl,
     });
     await session.call("conversations.history", { channel: "C1" });
-    expect(authorization(fetchImpl.calls[0]!)).not.toContain(
-      "session-locator",
-    );
+    expect(authorization(fetchImpl.calls[0]!)).not.toContain("session-locator");
   });
 
   it("treats a cloud task with no provider egress URL as proxy-native", async () => {
     const fetchImpl = fakeFetch();
     const session = new SlackBotSession({
-      env: { INTROSPECTION_TOKEN: "session-locator", INTROSPECTION_TASK_ID: "task-1" },
+      env: {
+        INTROSPECTION_TOKEN: "session-locator",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
       fetchImpl,
     });
     await session.call("conversations.history", { channel: "C1" });
     expect(fetchImpl.calls[0]!.url).toBe(
       "https://slack.com/api/conversations.history",
     );
-    expect(authorization(fetchImpl.calls[0]!)).not.toContain(
-      "session-locator",
-    );
+    expect(authorization(fetchImpl.calls[0]!)).not.toContain("session-locator");
   });
 
   it("records the reply bridge with the locator when proxy-native", async () => {
@@ -327,8 +354,12 @@ describe("SlackBotSession transport", () => {
       to: { channel: "C1", thread_ts: "100.1" },
     });
     expect(result.bridge_recorded).toBe(true);
-    const slackCall = fetchImpl.calls.find((call) => call.url.startsWith("https://slack.com/"));
-    const bridgeCall = fetchImpl.calls.find((call) => call.url.startsWith("https://dp.example/"));
+    const slackCall = fetchImpl.calls.find((call) =>
+      call.url.startsWith("https://slack.com/"),
+    );
+    const bridgeCall = fetchImpl.calls.find((call) =>
+      call.url.startsWith("https://dp.example/"),
+    );
     expect(authorization(slackCall!)).not.toContain("session-locator");
     expect(authorization(bridgeCall!)).toBe("Bearer session-locator");
   });
@@ -410,88 +441,185 @@ describe("SlackBotSession transport", () => {
   it("retries transient routing registration without posting the Slack message again", async () => {
     const fetchImpl = fakeFetch({ bridgeStatuses: [503, 200] });
     const session = new SlackBotSession({
-      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1", INTROSPECTION_TASK_RUN_ID: "run-1" },
+      env: {
+        ...cloudEnv,
+        INTROSPECTION_BASE_API_URL: "https://dp.example",
+        INTROSPECTION_TASK_ID: "task-1",
+        INTROSPECTION_TASK_RUN_ID: "run-1",
+      },
       fetchImpl,
     });
-    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" }, mode: "send" });
+    const result = await session.sendMessage({
+      text: "hello",
+      to: { channel: "C1" },
+      mode: "send",
+    });
     expect(result).toMatchObject({ ts: "200.2", bridge_recorded: true });
-    expect(fetchImpl.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
-    expect(fetchImpl.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(2);
+    expect(
+      fetchImpl.calls.filter((call) => call.url.includes("chat.postMessage")),
+    ).toHaveLength(1);
+    expect(
+      fetchImpl.calls.filter((call) => call.url.includes("dp.example")),
+    ).toHaveLength(2);
   });
 
-  it.each(["seconds", "date", "invalid"])("honors registration Retry-After (%s) without reposting", async (kind) => {
-    const retryAt = Math.ceil(Date.now() / 1000) * 1000 + 1000;
-    const header = kind === "seconds" ? "1" : kind === "date" ? new Date(retryAt).toUTCString() : "invalid";
-    const fake = fakeFetch({ bridgeStatuses: [429, 200], bridgeRetryAfter: header });
-    const attempts: number[] = [];
-    const session = new SlackBotSession({
-      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" },
-      fetchImpl: async (url, init) => {
-        if (String(url).includes("dp.example")) attempts.push(Date.now());
-        return fake(url, init);
-      },
-    });
-    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" }, mode: "send" });
-    expect(result.bridge_recorded).toBe(true);
-    expect(attempts).toHaveLength(2);
-    if (kind === "seconds") expect(attempts[1]! - attempts[0]!).toBeGreaterThanOrEqual(1000);
-    if (kind === "date") expect(attempts[1]!).toBeGreaterThanOrEqual(retryAt);
-    expect(fake.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
-  });
+  it.each(["seconds", "date", "invalid"])(
+    "honors registration Retry-After (%s) without reposting",
+    async (kind) => {
+      const retryAt = Math.ceil(Date.now() / 1000) * 1000 + 1000;
+      const header =
+        kind === "seconds"
+          ? "1"
+          : kind === "date"
+            ? new Date(retryAt).toUTCString()
+            : "invalid";
+      const fake = fakeFetch({
+        bridgeStatuses: [429, 200],
+        bridgeRetryAfter: header,
+      });
+      const attempts: number[] = [];
+      const session = new SlackBotSession({
+        env: {
+          ...cloudEnv,
+          INTROSPECTION_BASE_API_URL: "https://dp.example",
+          INTROSPECTION_TASK_ID: "task-1",
+        },
+        fetchImpl: async (url, init) => {
+          if (String(url).includes("dp.example")) attempts.push(Date.now());
+          return fake(url, init);
+        },
+      });
+      const result = await session.sendMessage({
+        text: "hello",
+        to: { channel: "C1" },
+        mode: "send",
+      });
+      expect(result.bridge_recorded).toBe(true);
+      expect(attempts).toHaveLength(2);
+      if (kind === "seconds")
+        expect(attempts[1]! - attempts[0]!).toBeGreaterThanOrEqual(1000);
+      if (kind === "date") expect(attempts[1]!).toBeGreaterThanOrEqual(retryAt);
+      expect(
+        fake.calls.filter((call) => call.url.includes("chat.postMessage")),
+      ).toHaveLength(1);
+    },
+  );
 
   it("cancels a throttled registration without losing the confirmed post", async () => {
     const controller = new AbortController();
     const fake = fakeFetch({ bridgeStatus: 429, bridgeRetryAfter: "60" });
     const session = new SlackBotSession({
-      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" },
+      env: {
+        ...cloudEnv,
+        INTROSPECTION_BASE_API_URL: "https://dp.example",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
       fetchImpl: async (url, init) => {
-        if (String(url).includes("dp.example")) setTimeout(() => controller.abort(), 20);
+        if (String(url).includes("dp.example"))
+          setTimeout(() => controller.abort(), 20);
         return fake(url, init);
       },
     });
-    const result = await session.sendMessage({ text: "hello", to: { channel: "C1" } }, controller.signal);
+    const result = await session.sendMessage(
+      { text: "hello", to: { channel: "C1" } },
+      controller.signal,
+    );
     expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
     expect(result.bridge_error).toMatch(/abort/i);
-    expect(fake.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(1);
-    expect(fake.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
+    expect(
+      fake.calls.filter((call) => call.url.includes("dp.example")),
+    ).toHaveLength(1);
+    expect(
+      fake.calls.filter((call) => call.url.includes("chat.postMessage")),
+    ).toHaveLength(1);
   });
 
   it("does not claim routing when cloud intentionally declines registration", async () => {
     const fetchImpl = fakeFetch({ bridgeRecorded: false });
     const session = new SlackBotSession({
-      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" }, fetchImpl,
+      env: {
+        ...cloudEnv,
+        INTROSPECTION_BASE_API_URL: "https://dp.example",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
+      fetchImpl,
     });
-    const result = await session.sendMessage({ text: "hello", to: { channel: "C2" }, mode: "send" });
+    const result = await session.sendMessage({
+      text: "hello",
+      to: { channel: "C2" },
+      mode: "send",
+    });
     expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
     expect(result.bridge_error).toBeUndefined();
     expect(fetchImpl.calls).toHaveLength(2);
   });
 
   it("retains the posted reference when routing is stale or permanently rejected", async () => {
-    for (const options of [{ bridgeStatus: 409 }, { bridgeSkipped: "stale_run" }]) {
+    for (const options of [
+      { bridgeStatus: 409 },
+      { bridgeSkipped: "stale_run" },
+    ]) {
       const fetchImpl = fakeFetch(options);
       const session = new SlackBotSession({
-        env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task-1" }, fetchImpl,
+        env: {
+          ...cloudEnv,
+          INTROSPECTION_BASE_API_URL: "https://dp.example",
+          INTROSPECTION_TASK_ID: "task-1",
+        },
+        fetchImpl,
       });
-      const result = await session.sendMessage({ text: "hello", to: { channel: "C2" }, mode: "send" });
+      const result = await session.sendMessage({
+        text: "hello",
+        to: { channel: "C2" },
+        mode: "send",
+      });
       expect(result).toMatchObject({ ts: "200.2", bridge_recorded: false });
       expect(result.bridge_error).toBeTruthy();
-      expect(fetchImpl.calls.filter(call => call.url.includes("chat.postMessage"))).toHaveLength(1);
-      expect(fetchImpl.calls.filter(call => call.url.includes("dp.example"))).toHaveLength(options.bridgeStatus ? 1 : 3);
+      expect(
+        fetchImpl.calls.filter((call) => call.url.includes("chat.postMessage")),
+      ).toHaveLength(1);
+      expect(
+        fetchImpl.calls.filter((call) => call.url.includes("dp.example")),
+      ).toHaveLength(options.bridgeStatus ? 1 : 3);
     }
   });
 
   it("sends and registers a new issue thread without an inbound Slack origin", async () => {
     const pi = createMockExtensionAPI();
     const fetchImpl = fakeFetch();
-    const adapter = new SlackChannelAdapter(new SlackFileSession({
-      env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "worker", INTROSPECTION_TASK_RUN_ID: "run" }, fetchImpl,
-    }));
-    registerChannelTools(pi, adapter, { target: () => { throw new Error("No inbound origin"); } });
-    const sent = await channelCommand(pi, "send").execute("send-test", { channel_id: "C2", text: "Need guidance" });
-    expect(sent!.details).toMatchObject({ bridge_recorded: true, target: { conversation: "C2", thread: "200.2" } });
-    const registration = fetchImpl.calls.find(request => request.url.includes("dp.example"))!;
-    expect(JSON.parse(String(registration.init.body)).data).toMatchObject({ mode: "send", channel: "C2", ts: "200.2", thread_ts: "200.2" });
+    const adapter = new SlackChannelAdapter(
+      new SlackFileSession({
+        env: {
+          ...cloudEnv,
+          INTROSPECTION_BASE_API_URL: "https://dp.example",
+          INTROSPECTION_TASK_ID: "worker",
+          INTROSPECTION_TASK_RUN_ID: "run",
+        },
+        fetchImpl,
+      }),
+    );
+    registerChannelTools(pi, adapter, {
+      target: () => {
+        throw new Error("No inbound origin");
+      },
+    });
+    const sent = await channelCommand(pi, "send").execute("send-test", {
+      channel_id: "C2",
+      text: "Need guidance",
+    });
+    expect(sent!.details).toMatchObject({
+      bridge_recorded: true,
+      target: { conversation: "C2", thread: "200.2" },
+    });
+    const registration = fetchImpl.calls.find((request) =>
+      request.url.includes("dp.example"),
+    )!;
+    expect(JSON.parse(String(registration.init.body)).data).toMatchObject({
+      mode: "send",
+      channel: "C2",
+      ts: "200.2",
+      thread_ts: "200.2",
+    });
   });
 
   it("returns a bridge warning without retrying a successful Slack post", async () => {
@@ -665,10 +793,21 @@ describe("Slack channel tools", () => {
     return { pi, fetchImpl };
   }
 
-  const call = (pi: ReturnType<typeof createMockExtensionAPI>, name: string, params: unknown) =>
-    pi.tools
-      .get("channels")
-      ?.execute("tool-call", { ...(params as object), command: name.replace("channel_", "") } as never, undefined, undefined, undefined as never);
+  const call = (
+    pi: ReturnType<typeof createMockExtensionAPI>,
+    name: string,
+    params: unknown,
+  ) =>
+    pi.tools.get("channels")?.execute(
+      "tool-call",
+      {
+        ...(params as object),
+        command: name.replace("channel_", ""),
+      } as never,
+      undefined,
+      undefined,
+      undefined as never,
+    );
 
   it("lists every accessible channel across Slack pages", async () => {
     const { pi, fetchImpl } = slackTools({
@@ -716,45 +855,113 @@ describe("Slack channel tools", () => {
   it("sends to another channel and asks cloud to register follow-up routing", async () => {
     const pi = createMockExtensionAPI();
     const fetchImpl = fakeFetch();
-    const adapter = new SlackChannelAdapter(new SlackFileSession({ env: { ...cloudEnv, INTROSPECTION_BASE_API_URL: "https://dp.example", INTROSPECTION_TASK_ID: "task", INTROSPECTION_TOKEN: "locator" }, fetchImpl }));
-    registerChannelTools(pi, adapter, { target: { provider: "slack", conversation: "C1", thread: "100.1" } });
-    const sent = await call(pi, "channel_send", { channel_id: "C2", text: "hello" });
+    const adapter = new SlackChannelAdapter(
+      new SlackFileSession({
+        env: {
+          ...cloudEnv,
+          INTROSPECTION_BASE_API_URL: "https://dp.example",
+          INTROSPECTION_TASK_ID: "task",
+          INTROSPECTION_TOKEN: "locator",
+        },
+        fetchImpl,
+      }),
+    );
+    registerChannelTools(pi, adapter, {
+      target: { provider: "slack", conversation: "C1", thread: "100.1" },
+    });
+    const sent = await call(pi, "channel_send", {
+      channel_id: "C2",
+      text: "hello",
+    });
     const details = sent!.details as { ref: string };
-    expect(sent!.details).toMatchObject({ target: { conversation: "C2", thread: "200.2" }, bridge_recorded: true });
-    const post = fetchImpl.calls.find((request) => request.url.includes("chat.postMessage"))!;
+    expect(sent!.details).toMatchObject({
+      target: { conversation: "C2", thread: "200.2" },
+      bridge_recorded: true,
+    });
+    const post = fetchImpl.calls.find((request) =>
+      request.url.includes("chat.postMessage"),
+    )!;
     expect(JSON.parse(String(post.init.body))).toMatchObject({ channel: "C2" });
     expect(JSON.parse(String(post.init.body))).not.toHaveProperty("thread_ts");
-    expect(fetchImpl.calls.some((request) => request.url.includes("dp.example"))).toBe(true);
-    const registration = fetchImpl.calls.find((request) => request.url.includes("dp.example"))!;
+    expect(
+      fetchImpl.calls.some((request) => request.url.includes("dp.example")),
+    ).toBe(true);
+    const registration = fetchImpl.calls.find((request) =>
+      request.url.includes("dp.example"),
+    )!;
     expect(JSON.parse(String(registration.init.body)).data.mode).toBe("send");
     await call(pi, "channel_edit", { message: details.ref, text: "updated" });
-    const edit = fetchImpl.calls.find((request) => request.url.includes("chat.update"))!;
-    expect(JSON.parse(String(edit.init.body))).toMatchObject({ channel: "C2", ts: "200.2" });
+    const edit = fetchImpl.calls.find((request) =>
+      request.url.includes("chat.update"),
+    )!;
+    expect(JSON.parse(String(edit.init.body))).toMatchObject({
+      channel: "C2",
+      ts: "200.2",
+    });
     await call(pi, "channel_reply", { text: "origin" });
-    const posts = fetchImpl.calls.filter((request) => request.url.includes("chat.postMessage"));
-    expect(JSON.parse(String(posts[1]!.init.body))).toMatchObject({ channel: "C1", thread_ts: "100.1" });
+    const posts = fetchImpl.calls.filter((request) =>
+      request.url.includes("chat.postMessage"),
+    );
+    expect(JSON.parse(String(posts[1]!.init.body))).toMatchObject({
+      channel: "C1",
+      thread_ts: "100.1",
+    });
   });
 
-  it.each([0, 3])("returns usable thread references from a channel with %i replies", async (replyCount) => {
-    const { pi, fetchImpl } = slackTools({ messages: [{ ts: "900.1", text: "root", reply_count: replyCount }] });
-    const read = await call(pi, "channel_read", { channel_id: "C2" });
-    expect(read!.details).toMatchObject({ target: { conversation: "C2", thread: null }, next_direction: "older", messages: [{ thread_id: "900.1", reply_count: replyCount }] });
-    const history = fetchImpl.calls.find((request) => request.url.includes("conversations.history"))!;
-    expect(new URLSearchParams(String(history.init.body)).get("channel")).toBe("C2");
-    await call(pi, "channel_read", { channel_id: "C2", thread_id: "900.1" });
-    const thread = fetchImpl.calls.find((request) => request.url.includes("conversations.replies"))!;
-    expect(new URLSearchParams(String(thread.init.body)).get("ts")).toBe("900.1");
-    await call(pi, "channel_send", { channel_id: "C2", thread_id: "900.1", text: "thread reply" });
-    const post = fetchImpl.calls.find((request) => request.url.includes("chat.postMessage"))!;
-    expect(JSON.parse(String(post.init.body))).toMatchObject({ channel: "C2", thread_ts: "900.1" });
-  });
+  it.each([0, 3])(
+    "returns usable thread references from a channel with %i replies",
+    async (replyCount) => {
+      const { pi, fetchImpl } = slackTools({
+        messages: [{ ts: "900.1", text: "root", reply_count: replyCount }],
+      });
+      const read = await call(pi, "channel_read", { channel_id: "C2" });
+      expect(read!.details).toMatchObject({
+        target: { conversation: "C2", thread: null },
+        next_direction: "older",
+        messages: [{ thread_id: "900.1", reply_count: replyCount }],
+      });
+      const history = fetchImpl.calls.find((request) =>
+        request.url.includes("conversations.history"),
+      )!;
+      expect(
+        new URLSearchParams(String(history.init.body)).get("channel"),
+      ).toBe("C2");
+      await call(pi, "channel_read", { channel_id: "C2", thread_id: "900.1" });
+      const thread = fetchImpl.calls.find((request) =>
+        request.url.includes("conversations.replies"),
+      )!;
+      expect(new URLSearchParams(String(thread.init.body)).get("ts")).toBe(
+        "900.1",
+      );
+      await call(pi, "channel_send", {
+        channel_id: "C2",
+        thread_id: "900.1",
+        text: "thread reply",
+      });
+      const post = fetchImpl.calls.find((request) =>
+        request.url.includes("chat.postMessage"),
+      )!;
+      expect(JSON.parse(String(post.init.body))).toMatchObject({
+        channel: "C2",
+        thread_ts: "900.1",
+      });
+    },
+  );
 
   it("does not reuse channel metadata for a different target", async () => {
     const fetchImpl = fakeFetch();
-    const adapter = new SlackChannelAdapter(new SlackFileSession({ env: cloudEnv, fetchImpl }));
+    const adapter = new SlackChannelAdapter(
+      new SlackFileSession({ env: cloudEnv, fetchImpl }),
+    );
     const refs = new ChannelRefStore();
-    const a = await adapter.enrichTarget({ refs, target: { provider: "slack", conversation: "C1", name: "first" } });
-    const b = await adapter.enrichTarget({ refs, target: { provider: "slack", conversation: "C2", name: "second" } });
+    const a = await adapter.enrichTarget({
+      refs,
+      target: { provider: "slack", conversation: "C1", name: "first" },
+    });
+    const b = await adapter.enrichTarget({
+      refs,
+      target: { provider: "slack", conversation: "C2", name: "second" },
+    });
     expect(a.name).toBe("first");
     expect(b.name).toBe("second");
   });
@@ -768,12 +975,18 @@ describe("Slack channel tools", () => {
     const fetchImpl = fakeFetch();
     registerChannelTools(
       pi,
-      new SlackChannelAdapter(new SlackFileSession({ env: cloudEnv, fetchImpl })),
-      { target: { provider: "slack", conversation: "C-OTHER", thread: "900.9" } },
+      new SlackChannelAdapter(
+        new SlackFileSession({ env: cloudEnv, fetchImpl }),
+      ),
+      {
+        target: { provider: "slack", conversation: "C-OTHER", thread: "900.9" },
+      },
     );
     await call(pi, "channel_reply", { text: "hi" });
 
-    const post = fetchImpl.calls.find((c) => c.url.includes("chat.postMessage"))!;
+    const post = fetchImpl.calls.find((c) =>
+      c.url.includes("chat.postMessage"),
+    )!;
     expect(JSON.parse(String(post.init.body))).toMatchObject({
       channel: "C-OTHER",
       thread_ts: "900.9",
@@ -794,7 +1007,9 @@ describe("Slack channel tools", () => {
     });
     registerChannelTools(
       pi,
-      new SlackChannelAdapter(new SlackFileSession({ env: cloudEnv, fetchImpl })),
+      new SlackChannelAdapter(
+        new SlackFileSession({ env: cloudEnv, fetchImpl }),
+      ),
       { target: { provider: "slack", conversation: "C1", thread: null } },
     );
     const result = (await call(pi, "channel_read", {})) as {
@@ -850,10 +1065,14 @@ describe("Slack channel tools", () => {
     const firstRequest = fetchImpl.calls.find((request) =>
       request.url.includes("conversations.replies"),
     )!;
-    expect(new URLSearchParams(String(firstRequest.init.body)).get("limit")).toBe(
-      "15",
-    );
-    expect(fetchImpl.calls.filter((request) => request.url.includes("conversations.replies"))).toHaveLength(1);
+    expect(
+      new URLSearchParams(String(firstRequest.init.body)).get("limit"),
+    ).toBe("15");
+    expect(
+      fetchImpl.calls.filter((request) =>
+        request.url.includes("conversations.replies"),
+      ),
+    ).toHaveLength(1);
     expect(first.details).toMatchObject({ next_direction: "newer" });
 
     const second = (await call(pi, "channel_read", {
@@ -875,11 +1094,19 @@ describe("Slack channel tools", () => {
 
   it("bounds pages and includes Slack's repeated root only once", async () => {
     const root = { ts: "100.1", text: "root" };
-    const { pi, fetchImpl } = slackTools({ threadPages: {
-      "": { messages: [root, { ts: "101.1", text: "one" }], nextCursor: "next" },
-      "101.1": { messages: [root, { ts: "102.1", text: "two" }], nextCursor: "last" },
-      "102.1": { messages: [root, { ts: "103.1", text: "three" }] },
-    } });
+    const { pi, fetchImpl } = slackTools({
+      threadPages: {
+        "": {
+          messages: [root, { ts: "101.1", text: "one" }],
+          nextCursor: "next",
+        },
+        "101.1": {
+          messages: [root, { ts: "102.1", text: "two" }],
+          nextCursor: "last",
+        },
+        "102.1": { messages: [root, { ts: "103.1", text: "three" }] },
+      },
+    });
     let cursor: string | undefined;
     const texts: string[] = [];
     for (let index = 0; index < 4; index++) {
@@ -892,9 +1119,15 @@ describe("Slack channel tools", () => {
     }
     expect(texts).toEqual(["root", "one", "two", "three"]);
     expect(cursor).toBeUndefined();
-    const requests = fetchImpl.calls.filter(request => request.url.includes("conversations.replies"));
+    const requests = fetchImpl.calls.filter((request) =>
+      request.url.includes("conversations.replies"),
+    );
     expect(requests).toHaveLength(3);
-    expect(requests.map(request => new URLSearchParams(String(request.init.body)).get("oldest"))).toEqual(["100.1", "101.1", "102.1"]);
+    expect(
+      requests.map((request) =>
+        new URLSearchParams(String(request.init.body)).get("oldest"),
+      ),
+    ).toEqual(["100.1", "101.1", "102.1"]);
   });
 
   it("passes the current limit when requesting the next thread page", async () => {
@@ -903,10 +1136,12 @@ describe("Slack channel tools", () => {
       text: `message ${index + 1}`,
       user: "U1",
     }));
-    const { pi, fetchImpl } = slackTools({ threadPages: {
-      "": { messages: messages.slice(0, 1), nextCursor: "next" },
-      "1.1": { messages: messages.slice(1, 16), nextCursor: "last" },
-    } });
+    const { pi, fetchImpl } = slackTools({
+      threadPages: {
+        "": { messages: messages.slice(0, 1), nextCursor: "next" },
+        "1.1": { messages: messages.slice(1, 16), nextCursor: "last" },
+      },
+    });
 
     const first = (await call(pi, "channel_read", { limit: 1 })) as {
       details: { messages: Array<{ text: string }>; cursor?: string };
@@ -925,7 +1160,13 @@ describe("Slack channel tools", () => {
       messages.slice(1, 16).map((message) => message.text),
     );
     expect(second.details.cursor).toBeDefined();
-    expect(fetchImpl.calls.filter((request) => request.url.includes("conversations.replies")).map((request) => new URLSearchParams(String(request.init.body)).get("limit"))).toEqual(["1", "15"]);
+    expect(
+      fetchImpl.calls
+        .filter((request) => request.url.includes("conversations.replies"))
+        .map((request) =>
+          new URLSearchParams(String(request.init.body)).get("limit"),
+        ),
+    ).toEqual(["1", "15"]);
   });
 
   it("uses Slack bot profile names for bot-authored messages", async () => {
@@ -952,18 +1193,18 @@ describe("Slack channel tools", () => {
       id: "B1",
       display_name: "Release Bot",
     });
-    expect(fetchImpl.calls.some((call) => call.url.includes("users.info"))).toBe(
-      false,
-    );
+    expect(
+      fetchImpl.calls.some((call) => call.url.includes("users.info")),
+    ).toBe(false);
   });
 
   it("refuses a file id the model supplied rather than saw", async () => {
     const { pi } = slackTools();
     // The P1 this closes: a bot can read files in every conversation it is in,
     // so a raw Slack file id is an addressing argument by another name.
-    await expect(call(pi, "channel_fetch_file", { file: "F123" })).rejects.toThrow(
-      /Unknown file reference/,
-    );
+    await expect(
+      call(pi, "channel_fetch_file", { file: "F123" }),
+    ).rejects.toThrow(/Unknown file reference/);
   });
 
   it("downloads a file it handed out a reference for", async () => {
@@ -976,9 +1217,7 @@ describe("Slack channel tools", () => {
               ts: "100.1",
               text: "see this",
               user: "U1",
-              files: [
-                { id: "F123", name: "crash.png", mimetype: "image/png" },
-              ],
+              files: [{ id: "F123", name: "crash.png", mimetype: "image/png" }],
             },
           ],
         },
@@ -1015,7 +1254,8 @@ describe("Slack channel tools", () => {
 
     const post = JSON.parse(
       String(
-        fetchImpl.calls.find((c) => c.url.includes("chat.postMessage"))!.init.body,
+        fetchImpl.calls.find((c) => c.url.includes("chat.postMessage"))!.init
+          .body,
       ),
     );
     expect(post).toMatchObject({ channel: "C1", thread_ts: "100.1" });
@@ -1059,12 +1299,12 @@ describe("Slack channel tools", () => {
     )) as { details: { ref: string } };
 
     expect(result.details.ref).toMatch(/^msg_/);
-    expect(calls.filter((url) => url.includes("chat.postMessage"))).toHaveLength(
-      1,
-    );
-    expect(calls.filter((url) => url.includes("chat.getPermalink"))).toHaveLength(
-      1,
-    );
+    expect(
+      calls.filter((url) => url.includes("chat.postMessage")),
+    ).toHaveLength(1);
+    expect(
+      calls.filter((url) => url.includes("chat.getPermalink")),
+    ).toHaveLength(1);
   });
 
   it("rejects a reference the session never minted", async () => {
@@ -1111,16 +1351,31 @@ describe("Slack channel tools", () => {
   it.each([
     ["add", "already_reacted"],
     ["remove", "no_reaction"],
-  ])("treats repeated reaction %s as success", async (action, reactionError) => {
-    const { pi } = slackTools({ reactionError });
-    const posted = (await call(pi, "channel_reply", { text: "first" })) as { details: { ref: string } };
-    await expect(call(pi, "channel_react", { message: posted.details.ref, emoji: "eyes", action })).resolves.toBeDefined();
-  });
+  ])(
+    "treats repeated reaction %s as success",
+    async (action, reactionError) => {
+      const { pi } = slackTools({ reactionError });
+      const posted = (await call(pi, "channel_reply", { text: "first" })) as {
+        details: { ref: string };
+      };
+      await expect(
+        call(pi, "channel_react", {
+          message: posted.details.ref,
+          emoji: "eyes",
+          action,
+        }),
+      ).resolves.toBeDefined();
+    },
+  );
 
   it("does not swallow other reaction errors", async () => {
     const { pi } = slackTools({ reactionError: "missing_scope" });
-    const posted = (await call(pi, "channel_reply", { text: "first" })) as { details: { ref: string } };
-    await expect(call(pi, "channel_react", { message: posted.details.ref, emoji: "eyes" })).rejects.toThrow("missing_scope");
+    const posted = (await call(pi, "channel_reply", { text: "first" })) as {
+      details: { ref: string };
+    };
+    await expect(
+      call(pi, "channel_react", { message: posted.details.ref, emoji: "eyes" }),
+    ).rejects.toThrow("missing_scope");
   });
 
   it("rejects a Slack reaction without a normalized emoji name", async () => {
@@ -1150,9 +1405,9 @@ describe("Slack channel tools", () => {
     await expect(
       call(pi, "channel_edit", { message: theirs, text: "rewritten" }),
     ).rejects.toThrow(/not sent by this agent/);
-    await expect(call(pi, "channel_retract", { message: theirs })).rejects.toThrow(
-      /not sent by this agent/,
-    );
+    await expect(
+      call(pi, "channel_retract", { message: theirs }),
+    ).rejects.toThrow(/not sent by this agent/);
   });
 
   it("edits and retracts a message the agent posted", async () => {
@@ -1168,12 +1423,16 @@ describe("Slack channel tools", () => {
     await call(pi, "channel_retract", { message: posted.details.ref });
 
     const update = JSON.parse(
-      String(fetchImpl.calls.find((c) => c.url.includes("chat.update"))!.init.body),
+      String(
+        fetchImpl.calls.find((c) => c.url.includes("chat.update"))!.init.body,
+      ),
     );
     expect(update).toMatchObject({ channel: "C1", ts: "200.2" });
 
     const deletion = new URLSearchParams(
-      String(fetchImpl.calls.find((c) => c.url.includes("chat.delete"))!.init.body),
+      String(
+        fetchImpl.calls.find((c) => c.url.includes("chat.delete"))!.init.body,
+      ),
     );
     expect(Object.fromEntries(deletion)).toMatchObject({
       channel: "C1",
@@ -1213,7 +1472,9 @@ describe("Slack channel tools", () => {
     });
 
     const update = JSON.parse(
-      String(fetchImpl.calls.find((c) => c.url.includes("chat.update"))!.init.body),
+      String(
+        fetchImpl.calls.find((c) => c.url.includes("chat.update"))!.init.body,
+      ),
     );
     expect(update.blocks).toEqual([
       { type: "markdown", text: "a".repeat(12_000) },

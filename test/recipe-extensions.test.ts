@@ -33,7 +33,7 @@ describe("recipe extension package resolution", () => {
       "node_modules",
       "pi-host",
       "dist",
-      "cli.js"
+      "cli.js",
     );
     const hostEntry = join(root, "bin", "pi");
     const peerEntry = join(
@@ -42,7 +42,7 @@ describe("recipe extension package resolution", () => {
       "node_modules",
       "@earendil-works",
       "pi-coding-agent",
-      "index.js"
+      "index.js",
     );
     mkdirSync(join(realHostEntry, ".."), { recursive: true });
     mkdirSync(join(hostEntry, ".."), { recursive: true });
@@ -57,16 +57,14 @@ describe("recipe extension package resolution", () => {
         version: "0.82.1",
         type: "module",
         exports: { ".": { import: "./index.js" } },
-      })
+      }),
     );
 
     expect(
       realpathSync(
-        resolvePackageFromHost(
-          "@earendil-works/pi-coding-agent",
-          hostEntry
-        ) ?? ""
-      )
+        resolvePackageFromHost("@earendil-works/pi-coding-agent", hostEntry) ??
+          "",
+      ),
     ).toBe(realpathSync(peerEntry));
   });
 
@@ -77,7 +75,7 @@ describe("recipe extension package resolution", () => {
       root,
       "node_modules",
       "@introspection-ai",
-      "recipes"
+      "recipes",
     );
     mkdirSync(packageRoot, { recursive: true });
     writeFileSync(
@@ -87,11 +85,11 @@ describe("recipe extension package resolution", () => {
         version: "999.0.0",
         type: "module",
         exports: { "./interactions": "./interactions.js" },
-      })
+      }),
     );
     writeFileSync(
       join(packageRoot, "interactions.js"),
-      "export const source = 'recipe-local';"
+      "export const source = 'recipe-local';",
     );
     const extensionPath = join(root, "extension.mjs");
     writeFileSync(
@@ -99,7 +97,7 @@ describe("recipe extension package resolution", () => {
       [
         "import { source } from '@introspection-ai/recipes/interactions';",
         "export default function extension() { return source; }",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const factory = await loadRecipeExtensionFactory(root, extensionPath);
@@ -115,11 +113,14 @@ describe("recipe extension package resolution", () => {
       root,
       "node_modules",
       "@introspection-ai",
-      "recipes"
+      "recipes",
     );
     mkdirSync(recipeDir, { recursive: true });
     mkdirSync(packageRoot, { recursive: true });
-    writeFileSync(join(recipeDir, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(
+      join(recipeDir, "package.json"),
+      JSON.stringify({ type: "module" }),
+    );
     writeFileSync(
       join(packageRoot, "package.json"),
       JSON.stringify({
@@ -127,11 +128,11 @@ describe("recipe extension package resolution", () => {
         version: "999.0.0",
         type: "module",
         exports: { "./interactions": "./interactions.js" },
-      })
+      }),
     );
     writeFileSync(
       join(packageRoot, "interactions.js"),
-      "export const source = 'workspace-root';"
+      "export const source = 'workspace-root';",
     );
     const extensionPath = join(recipeDir, "extension.mjs");
     writeFileSync(
@@ -139,7 +140,7 @@ describe("recipe extension package resolution", () => {
       [
         "import { source } from '@introspection-ai/recipes/interactions';",
         "export default function extension() { return source; }",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const factory = await loadRecipeExtensionFactory(recipeDir, extensionPath);

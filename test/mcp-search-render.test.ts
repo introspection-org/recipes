@@ -8,7 +8,10 @@ const tool = (name: string, fields: number) => ({
   input_schema: {
     type: "object",
     properties: Object.fromEntries(
-      Array.from({ length: fields }, (_, i) => [`field_${i}`, { type: "string", description: "x".repeat(80) }])
+      Array.from({ length: fields }, (_, i) => [
+        `field_${i}`,
+        { type: "string", description: "x".repeat(80) },
+      ]),
     ),
   },
 });
@@ -27,7 +30,7 @@ describe("search results", () => {
   it("show every contract while they fit", () => {
     const out = renderSearchResults(
       [match("a"), match("b")],
-      new Map([["mail", [tool("a", 2), tool("b", 2)]]])
+      new Map([["mail", [tool("a", 2), tool("b", 2)]]]),
     );
     expect(out.match(/\ninput\n/g)).toHaveLength(2);
     expect(out).not.toContain("The rest are signatures");
@@ -37,7 +40,7 @@ describe("search results", () => {
     const names = ["a", "b", "c", "d", "e"];
     const out = renderSearchResults(
       names.map(match),
-      new Map([["mail", names.map((name) => tool(name, 30))]])
+      new Map([["mail", names.map((name) => tool(name, 30))]]),
     );
     expect(out.startsWith("mail.a\n")).toBe(true);
     expect(out).toContain("\nmail.e(");

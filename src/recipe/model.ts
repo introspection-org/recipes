@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type {
+  Api,
   CacheRetention,
   Model,
   OpenRouterRouting,
@@ -91,7 +92,7 @@ const VERCEL_AI_GATEWAY_KEYS = new Set(["routing"]);
 
 const BLOCKED_VERCEL_AI_GATEWAY_ROUTING_KEYS = new Set(["byok"]);
 
-export interface RecipeAgentModelStreamOptions extends Record<string, unknown> {
+interface RecipeAgentModelStreamOptions extends Record<string, unknown> {
   temperature?: number;
   maxTokens?: number;
   cacheRetention?: CacheRetention;
@@ -100,12 +101,12 @@ export interface RecipeAgentModelStreamOptions extends Record<string, unknown> {
   maxRetryDelayMs?: number;
 }
 
-export interface RecipeAgentModelAnthropicOptions {
+interface RecipeAgentModelAnthropicOptions {
   betas?: string[];
   contextManagement?: unknown;
 }
 
-export type RecipeAgentVercelAiGatewayRouting = Record<string, unknown>;
+type RecipeAgentVercelAiGatewayRouting = Record<string, unknown>;
 
 export interface RecipeAgentModelConfig {
   name?: string;
@@ -133,13 +134,13 @@ function hasKeys(value: object | undefined): boolean {
 
 function snakeToCamel(key: string): string {
   return key.replace(/_([a-z0-9])/g, (_, character: string) =>
-    character.toUpperCase()
+    character.toUpperCase(),
   );
 }
 
 function normalizeSnakeCaseObject(
   context: string,
-  value: unknown
+  value: unknown,
 ): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(`${context}: expected object`);
@@ -148,13 +149,13 @@ function normalizeSnakeCaseObject(
   for (const [key, child] of Object.entries(value)) {
     if (!SNAKE_CASE_KEY.test(key)) {
       throw new RecipeModelConfigError(
-        `${context} has non-snake_case key "${key}"`
+        `${context} has non-snake_case key "${key}"`,
       );
     }
     const normalizedKey = snakeToCamel(key);
     if (BLOCKED_AI_OPTION_KEYS.has(normalizedKey)) {
       throw new RecipeModelConfigError(
-        `${context} cannot configure host-owned option "${key}"`
+        `${context} cannot configure host-owned option "${key}"`,
       );
     }
     normalized[normalizedKey] = child;
@@ -165,12 +166,12 @@ function normalizeSnakeCaseObject(
 function optionalString(
   context: string,
   key: string,
-  value: unknown
+  value: unknown,
 ): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected string`
+      `${context} has invalid ${key}: expected string`,
     );
   }
   return value.trim() || undefined;
@@ -180,12 +181,12 @@ function optionalNumber(
   context: string,
   key: string,
   value: unknown,
-  min: number
+  min: number,
 ): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value < min) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected number >= ${min}`
+      `${context} has invalid ${key}: expected number >= ${min}`,
     );
   }
   return value;
@@ -195,13 +196,13 @@ function optionalInteger(
   context: string,
   key: string,
   value: unknown,
-  min: number
+  min: number,
 ): number | undefined {
   const parsed = optionalNumber(context, key, value, min);
   if (parsed === undefined) return undefined;
   if (!Number.isInteger(parsed)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected integer`
+      `${context} has invalid ${key}: expected integer`,
     );
   }
   return parsed;
@@ -210,7 +211,7 @@ function optionalInteger(
 function optionalStringArray(
   context: string,
   key: string,
-  value: unknown
+  value: unknown,
 ): string[] | undefined {
   if (value === undefined) return undefined;
   if (
@@ -218,7 +219,7 @@ function optionalStringArray(
     !value.every((item) => typeof item === "string" && item.trim())
   ) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected string array`
+      `${context} has invalid ${key}: expected string array`,
     );
   }
   return value.map((item) => item.trim());
@@ -227,12 +228,12 @@ function optionalStringArray(
 function parseThinkingLevel(
   context: string,
   key: string,
-  value: unknown
+  value: unknown,
 ): ThinkingLevel | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !THINKING_LEVELS.has(value)) {
     throw new RecipeModelConfigError(
-      `${context} has unsupported ${key} "${value}"`
+      `${context} has unsupported ${key} "${value}"`,
     );
   }
   return value as ThinkingLevel;
@@ -242,12 +243,12 @@ function assertKnownKeys(
   context: string,
   keyPrefix: string,
   data: Record<string, unknown>,
-  allowed: Set<string>
+  allowed: Set<string>,
 ): void {
   const unknown = Object.keys(data).filter((key) => !allowed.has(key));
   if (unknown.length > 0) {
     throw new RecipeModelConfigError(
-      `${context} has unsupported ${keyPrefix} key(s): ${unknown.join(", ")}`
+      `${context} has unsupported ${keyPrefix} key(s): ${unknown.join(", ")}`,
     );
   }
 }
@@ -255,12 +256,12 @@ function assertKnownKeys(
 function parseOpenRouterRouting(
   context: string,
   value: unknown,
-  prefix: "ai" | "model"
+  prefix: "ai" | "model",
 ): OpenRouterRouting | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.openrouter.routing: expected object`
+      `${context} has invalid ${prefix}.providers.openrouter.routing: expected object`,
     );
   }
   // `ai:` is the forward-compatible Pi boundary. OpenRouter owns this payload
@@ -272,7 +273,7 @@ function parseOpenRouterRouting(
       context,
       `${prefix}.providers.openrouter.routing`,
       value,
-      LEGACY_OPENROUTER_KEYS
+      LEGACY_OPENROUTER_KEYS,
     );
   }
   return { ...value } as OpenRouterRouting;
@@ -281,19 +282,19 @@ function parseOpenRouterRouting(
 function parseOpenRouterProvider(
   context: string,
   value: unknown,
-  prefix: "ai" | "model"
+  prefix: "ai" | "model",
 ): OpenRouterRouting | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.openrouter: expected object`
+      `${context} has invalid ${prefix}.providers.openrouter: expected object`,
     );
   }
   assertKnownKeys(
     context,
     `${prefix}.providers.openrouter`,
     value,
-    OPENROUTER_PROVIDER_KEYS
+    OPENROUTER_PROVIDER_KEYS,
   );
   return parseOpenRouterRouting(context, value.routing, prefix);
 }
@@ -301,50 +302,53 @@ function parseOpenRouterProvider(
 function parseAnthropic(
   context: string,
   value: unknown,
-  prefix: "ai" | "model"
+  prefix: "ai" | "model",
 ): RecipeAgentModelAnthropicOptions | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.anthropic: expected object`
+      `${context} has invalid ${prefix}.providers.anthropic: expected object`,
     );
   }
-  assertKnownKeys(context, `${prefix}.providers.anthropic`, value, ANTHROPIC_KEYS);
+  assertKnownKeys(
+    context,
+    `${prefix}.providers.anthropic`,
+    value,
+    ANTHROPIC_KEYS,
+  );
   const betas = optionalStringArray(
     context,
     `${prefix}.providers.anthropic.betas`,
-    value.betas
+    value.betas,
   );
   const contextManagement = value.context_management;
   if (contextManagement !== undefined && !isRecord(contextManagement)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.anthropic.context_management: expected object`
+      `${context} has invalid ${prefix}.providers.anthropic.context_management: expected object`,
     );
   }
   return {
     ...(betas ? { betas } : {}),
-    ...(contextManagement !== undefined
-      ? { contextManagement }
-      : {}),
+    ...(contextManagement !== undefined ? { contextManagement } : {}),
   };
 }
 
 function parseVercelAiGatewayRouting(
   context: string,
-  value: unknown
+  value: unknown,
 ): RecipeAgentVercelAiGatewayRouting | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ai.providers.vercel_ai_gateway.routing: expected object`
+      `${context} has invalid ai.providers.vercel_ai_gateway.routing: expected object`,
     );
   }
   const blocked = Object.keys(value).filter((key) =>
-    BLOCKED_VERCEL_AI_GATEWAY_ROUTING_KEYS.has(key)
+    BLOCKED_VERCEL_AI_GATEWAY_ROUTING_KEYS.has(key),
   );
   if (blocked.length > 0) {
     throw new RecipeModelConfigError(
-      `${context} cannot configure host-owned ai.providers.vercel_ai_gateway.routing field(s): ${blocked.join(", ")}`
+      `${context} cannot configure host-owned ai.providers.vercel_ai_gateway.routing field(s): ${blocked.join(", ")}`,
     );
   }
   return { ...value };
@@ -352,19 +356,19 @@ function parseVercelAiGatewayRouting(
 
 function parseVercelAiGateway(
   context: string,
-  value: unknown
+  value: unknown,
 ): RecipeAgentVercelAiGatewayRouting | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ai.providers.vercel_ai_gateway: expected object`
+      `${context} has invalid ai.providers.vercel_ai_gateway: expected object`,
     );
   }
   assertKnownKeys(
     context,
     "ai.providers.vercel_ai_gateway",
     value,
-    VERCEL_AI_GATEWAY_KEYS
+    VERCEL_AI_GATEWAY_KEYS,
   );
   return parseVercelAiGatewayRouting(context, value.routing);
 }
@@ -372,22 +376,21 @@ function parseVercelAiGateway(
 function parseProviders(
   context: string,
   value: unknown,
-  prefix: "ai" | "model"
-): Pick<
-  RecipeAgentModelConfig,
-  "openrouter" | "anthropic" | "vercelAiGateway"
-> | undefined {
+  prefix: "ai" | "model",
+):
+  | Pick<RecipeAgentModelConfig, "openrouter" | "anthropic" | "vercelAiGateway">
+  | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers: expected object`
+      `${context} has invalid ${prefix}.providers: expected object`,
     );
   }
   assertKnownKeys(
     context,
     `${prefix}.providers`,
     value,
-    prefix === "ai" ? AI_PROVIDER_KEYS : LEGACY_PROVIDER_KEYS
+    prefix === "ai" ? AI_PROVIDER_KEYS : LEGACY_PROVIDER_KEYS,
   );
   const openrouter = parseOpenRouterProvider(context, value.openrouter, prefix);
   const anthropic = parseAnthropic(context, value.anthropic, prefix);
@@ -412,12 +415,12 @@ function parseProviders(
  */
 export function parseRecipeAgentModelConfig(
   context: string,
-  value: unknown
+  value: unknown,
 ): RecipeAgentModelConfig | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
     throw new RecipeModelConfigError(
-      `${context} has invalid model: expected object`
+      `${context} has invalid model: expected object`,
     );
   }
   assertKnownKeys(context, "model", value, MODEL_KEYS);
@@ -425,17 +428,17 @@ export function parseRecipeAgentModelConfig(
   const thinkingLevel = parseThinkingLevel(
     context,
     "model.thinking_level",
-    value.thinking_level
+    value.thinking_level,
   );
 
   const cacheRetention = optionalString(
     context,
     "model.cache_retention",
-    value.cache_retention
+    value.cache_retention,
   );
   if (cacheRetention !== undefined && !CACHE_RETENTIONS.has(cacheRetention)) {
     throw new RecipeModelConfigError(
-      `${context} has unsupported model.cache_retention "${cacheRetention}"`
+      `${context} has unsupported model.cache_retention "${cacheRetention}"`,
     );
   }
 
@@ -443,31 +446,31 @@ export function parseRecipeAgentModelConfig(
     context,
     "model.temperature",
     value.temperature,
-    0
+    0,
   );
   const maxTokens = optionalInteger(
     context,
     "model.max_tokens",
     value.max_tokens,
-    1
+    1,
   );
   const timeoutMs = optionalInteger(
     context,
     "model.timeout_ms",
     value.timeout_ms,
-    1
+    1,
   );
   const maxRetries = optionalInteger(
     context,
     "model.max_retries",
     value.max_retries,
-    0
+    0,
   );
   const maxRetryDelayMs = optionalInteger(
     context,
     "model.max_retry_delay_ms",
     value.max_retry_delay_ms,
-    0
+    0,
   );
   const streamOptions: RecipeAgentModelStreamOptions = {
     ...(temperature !== undefined ? { temperature } : {}),
@@ -484,9 +487,7 @@ export function parseRecipeAgentModelConfig(
   const providers = parseProviders(context, value.providers, "model");
   return {
     ...(name ? { name } : {}),
-    ...(thinkingLevel
-      ? { thinkingLevel: thinkingLevel as ThinkingLevel }
-      : {}),
+    ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
     ...(hasKeys(streamOptions) ? { streamOptions } : {}),
     ...(providers ?? {}),
   };
@@ -499,11 +500,13 @@ export function parseRecipeAgentModelConfig(
  */
 export function parseRecipeAgentAiConfig(
   context: string,
-  value: unknown
+  value: unknown,
 ): RecipeAgentModelConfig | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
-    throw new RecipeModelConfigError(`${context} has invalid ai: expected object`);
+    throw new RecipeModelConfigError(
+      `${context} has invalid ai: expected object`,
+    );
   }
   assertKnownKeys(context, "ai", value, AI_KEYS);
 
@@ -511,7 +514,7 @@ export function parseRecipeAgentAiConfig(
   const thinkingLevel = parseThinkingLevel(
     context,
     "ai.thinking_level",
-    value.thinking_level
+    value.thinking_level,
   );
   const streamOptions =
     value.options === undefined
@@ -533,7 +536,7 @@ export function parseRecipeAgentAiConfig(
  */
 export function mergeRecipeAgentModelConfig(
   base: RecipeAgentModelConfig | undefined,
-  overlay: RecipeAgentModelConfig | undefined
+  overlay: RecipeAgentModelConfig | undefined,
 ): RecipeAgentModelConfig | undefined {
   if (!base) return overlay;
   if (!overlay) return base;
@@ -567,7 +570,7 @@ export function mergeRecipeAgentModelConfig(
 }
 
 /** Clone mutable model metadata before applying Recipe-local configuration. */
-export function cloneModelForRecipe<T extends Model<any>>(model: T): T {
+export function cloneModelForRecipe<T extends Model<Api>>(model: T): T {
   return {
     ...model,
     ...(model.headers ? { headers: { ...model.headers } } : {}),
@@ -576,7 +579,7 @@ export function cloneModelForRecipe<T extends Model<any>>(model: T): T {
 }
 
 /** The Anthropic betas pi-ai adds from a model's own compat flags when no `anthropic-beta` header is set. */
-function modelBetas(model: Model<any>): string[] {
+function modelBetas(model: Model<Api>): string[] {
   const compat = (model.compat ?? {}) as {
     supportsMidConvoEffort?: boolean;
     supportsMidConvoSystemMessages?: boolean;
@@ -601,9 +604,9 @@ function modelBetas(model: Model<any>): string[] {
 }
 
 /** Apply provider routing and header options onto a pi-ai model instance. */
-export function applyRecipeAgentModelConfigToModel<T extends Model<any>>(
+export function applyRecipeAgentModelConfigToModel<T extends Model<Api>>(
   model: T,
-  config: RecipeAgentModelConfig | undefined
+  config: RecipeAgentModelConfig | undefined,
 ): T {
   if (!config) return model;
   if (config.openrouter) {
@@ -635,7 +638,7 @@ export function applyRecipeAgentModelConfigToModel<T extends Model<any>>(
 
 function mergeStreamOptions(
   current: SimpleStreamOptions | undefined,
-  configured: RecipeAgentModelStreamOptions | undefined
+  configured: RecipeAgentModelStreamOptions | undefined,
 ): SimpleStreamOptions | undefined {
   if (!configured || Object.keys(configured).length === 0) return current;
   return {
@@ -646,8 +649,8 @@ function mergeStreamOptions(
 
 function withAnthropicContextManagement(
   payload: unknown,
-  model: Pick<Model<any>, "api">,
-  config: RecipeAgentModelConfig
+  model: Pick<Model<Api>, "api">,
+  config: RecipeAgentModelConfig,
 ): unknown {
   const contextManagement = config.anthropic?.contextManagement;
   if (contextManagement === undefined) return payload;
@@ -661,8 +664,8 @@ function withAnthropicContextManagement(
 
 function withVercelAiGatewayRouting(
   payload: unknown,
-  model: Pick<Model<any>, "provider">,
-  config: RecipeAgentModelConfig
+  model: Pick<Model<Api>, "provider">,
+  config: RecipeAgentModelConfig,
 ): unknown {
   const routing = config.vercelAiGateway;
   if (
@@ -693,14 +696,14 @@ function withVercelAiGatewayRouting(
 /** Apply Recipe-owned provider payload policy after Pi serializes a request. */
 export function applyRecipeAgentPayloadPolicy(
   payload: unknown,
-  model: Pick<Model<any>, "provider" | "api">,
-  config: RecipeAgentModelConfig | undefined
+  model: Pick<Model<Api>, "provider" | "api">,
+  config: RecipeAgentModelConfig | undefined,
 ): unknown {
   if (!config) return payload;
   const withAnthropicPolicy = withAnthropicContextManagement(
     payload,
     model,
-    config
+    config,
   );
   return withVercelAiGatewayRouting(withAnthropicPolicy, model, config);
 }
@@ -712,7 +715,7 @@ export function applyRecipeAgentPayloadPolicy(
  */
 export function applyRecipeAgentModelConfigToSession(
   session: AgentSession,
-  config: RecipeAgentModelConfig | undefined
+  config: RecipeAgentModelConfig | undefined,
 ): void {
   if (!config) return;
 
@@ -722,7 +725,7 @@ export function applyRecipeAgentModelConfigToSession(
       baseStreamFn(
         model,
         context,
-        mergeStreamOptions(options, config.streamOptions)
+        mergeStreamOptions(options, config.streamOptions),
       );
   }
 

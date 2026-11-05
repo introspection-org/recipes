@@ -16,7 +16,7 @@ export function normalizeMcpServerId(value: string): string {
 }
 
 export function resolveAgentMcpSelections(
-  mcp: RecipeAgentMcp | undefined
+  mcp: RecipeAgentMcp | undefined,
 ): ScopedMcpToolSelection[] {
   return Object.entries(mcp?.servers ?? {}).map(([serverId, selection]) => ({
     serverId: normalizeMcpServerId(serverId),
@@ -30,7 +30,7 @@ export function executableRecipeToolNames(tools: readonly string[]): string[] {
 
 export function mcpSelectionAllowsTool(
   selection: RecipeMcpToolSelection,
-  toolName: string
+  toolName: string,
 ): boolean {
   const included =
     selection.include?.some((selector) => {
@@ -39,6 +39,6 @@ export function mcpSelectionAllowsTool(
     }) ?? false;
   if (!included) return false;
   return !(selection.exclude ?? []).some(
-    (selector) => selector.trim() === toolName
+    (selector) => selector.trim() === toolName,
   );
 }

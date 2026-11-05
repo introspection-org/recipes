@@ -73,7 +73,7 @@ export interface RecipeInspection {
 
 function agentChain(
   recipe: ResolvedRecipe,
-  agent: ResolvedRecipeAgent
+  agent: ResolvedRecipeAgent,
 ): ResolvedRecipeAgent[] {
   const chain: ResolvedRecipeAgent[] = [];
   const seen = new Set<string>();
@@ -91,7 +91,7 @@ function agentChain(
 function inspectAgent(
   recipe: ResolvedRecipe,
   agent: ResolvedRecipeAgent,
-  hasSystemPrompt: boolean
+  hasSystemPrompt: boolean,
 ): RecipeAgentInspection {
   const chain = agentChain(recipe, agent);
   const fields: RecipeAgentConfigField[] = [
@@ -109,12 +109,10 @@ function inspectAgent(
   const provenance = Object.fromEntries(
     fields.flatMap((field) => {
       const sources = chain
-        .filter((entry) =>
-          entry.definition.declaredFields?.includes(field)
-        )
+        .filter((entry) => entry.definition.declaredFields?.includes(field))
         .map((entry) => entry.name);
       return sources.length > 0 ? [[field, sources]] : [];
-    })
+    }),
   ) as Partial<Record<RecipeAgentConfigField, string[]>>;
   const instructionSource = provenance.system_instructions?.at(-1);
   const rootTools = [
@@ -128,9 +126,7 @@ function inspectAgent(
     provenance,
     model: {
       name: agent.modelSpec,
-      ...(agent.thinkingLevel
-        ? { thinkingLevel: agent.thinkingLevel }
-        : {}),
+      ...(agent.thinkingLevel ? { thinkingLevel: agent.thinkingLevel } : {}),
       ...(agent.modelConfig ? { config: agent.modelConfig } : {}),
     },
     ...(agent.sessionConfig ? { session: agent.sessionConfig } : {}),
@@ -156,15 +152,17 @@ function inspectAgent(
   };
 }
 
-export function inspectRecipe(resolvedRecipe: ResolvedRecipe): RecipeInspection {
+export function inspectRecipe(
+  resolvedRecipe: ResolvedRecipe,
+): RecipeInspection {
   const manifest = resolvedRecipe.manifest;
   const definitions = [...resolvedRecipe.agents.values()].map(
-    (agent) => agent.definition
+    (agent) => agent.definition,
   );
   const agents = [...new Set(definitions.map((agent) => agent.name))];
   const uniqueResolvedAgents = [
     ...new Map(
-      [...resolvedRecipe.agents.values()].map((agent) => [agent.name, agent])
+      [...resolvedRecipe.agents.values()].map((agent) => [agent.name, agent]),
     ).values(),
   ];
   const extensionPaths = resolvedRecipe.resources.extensions;
@@ -176,16 +174,14 @@ export function inspectRecipe(resolvedRecipe: ResolvedRecipe): RecipeInspection 
         const spec = agent.model?.name;
         const slash = spec?.indexOf("/") ?? -1;
         return spec && slash > 0 ? [spec.slice(0, slash)] : [];
-      })
+      }),
     ),
   ];
   const credentialEnv = [
     ...new Set(
       providers.flatMap((provider) =>
-        expectedProviderEnvVars(
-          provider === "gemini" ? "google" : provider
-        )
-      )
+        expectedProviderEnvVars(provider === "gemini" ? "google" : provider),
+      ),
     ),
   ].sort();
 
@@ -199,8 +195,8 @@ export function inspectRecipe(resolvedRecipe: ResolvedRecipe): RecipeInspection 
   const mcpEnv = [
     ...new Set(
       manifest.mcp.servers.flatMap((server) =>
-        generatedBindingEnvVars(server.id)
-      )
+        generatedBindingEnvVars(server.id),
+      ),
     ),
   ].sort();
 
@@ -228,8 +224,8 @@ export function inspectRecipe(resolvedRecipe: ResolvedRecipe): RecipeInspection 
       inspectAgent(
         resolvedRecipe,
         agent,
-        resolvedRecipe.resources.hasSystemPrompt
-      )
+        resolvedRecipe.resources.hasSystemPrompt,
+      ),
     ),
   };
 }

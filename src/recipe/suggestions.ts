@@ -48,7 +48,9 @@ const ALLOWED = new Set<string>(SUGGESTION_PLACEHOLDERS);
 
 /** Every `{{name}}` in `text`, allowlisted or not, in order without duplicates. */
 export function findPlaceholders(text: string): string[] {
-  return [...new Set([...text.matchAll(PLACEHOLDER)].map((match) => match[1]!))];
+  return [
+    ...new Set([...text.matchAll(PLACEHOLDER)].map((match) => match[1]!)),
+  ];
 }
 
 /**
@@ -67,8 +69,11 @@ export function fillSuggestion(text: string, values: SuggestionValues): string {
 export function expandWithoutArguments(text: string): string {
   return text.replace(
     /\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g,
-    (_match, defaultTarget: string | undefined, defaultValue: string | undefined) =>
-      defaultTarget ? (defaultValue ?? "") : ""
+    (
+      _match,
+      defaultTarget: string | undefined,
+      defaultValue: string | undefined,
+    ) => (defaultTarget ? (defaultValue ?? "") : ""),
   );
 }
 
@@ -78,19 +83,23 @@ function parseTemplate(content: string): {
   body: string;
 } {
   const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
-  const end = normalized.startsWith("---") ? normalized.indexOf("\n---", 3) : -1;
+  const end = normalized.startsWith("---")
+    ? normalized.indexOf("\n---", 3)
+    : -1;
   if (end === -1) return { frontmatter: {}, body: normalized };
   const parsed: unknown = parse(normalized.slice(4, end));
   return {
     frontmatter:
-      parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {},
+      parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : {},
     body: normalized.slice(end + 4).trim(),
   };
 }
 
 /** A readable template, and whether it is marked `suggest: true`. */
 function readTemplate(
-  path: string
+  path: string,
 ): { suggest: boolean; template: RecipeSuggestion } | undefined {
   let frontmatter: Record<string, unknown>;
   let body: string;
@@ -100,10 +109,13 @@ function readTemplate(
     return undefined;
   }
   let description =
-    typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
+    typeof frontmatter.description === "string"
+      ? frontmatter.description.trim()
+      : "";
   if (!description) {
     const firstLine = body.split("\n").find((line) => line.trim()) ?? "";
-    description = firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine;
+    description =
+      firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine;
   }
   const argumentHint = frontmatter["argument-hint"];
   return {
@@ -111,7 +123,9 @@ function readTemplate(
     template: {
       name: basename(path).replace(/\.md$/, ""),
       description,
-      ...(typeof argumentHint === "string" && argumentHint ? { argumentHint } : {}),
+      ...(typeof argumentHint === "string" && argumentHint
+        ? { argumentHint }
+        : {}),
       text: body,
       placeholders: findPlaceholders(body),
     },
@@ -132,7 +146,9 @@ function isFile(path: string): boolean {
  * itself. As in Pi, the first template with a name wins, so an unmarked
  * template hides a later marked one of the same name.
  */
-export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSuggestion[] {
+export function readRecipeSuggestions(
+  promptPaths: readonly string[],
+): RecipeSuggestion[] {
   const files: string[] = [];
   for (const path of promptPaths) {
     if (!existsSync(path)) continue;
@@ -142,19 +158,25 @@ export function readRecipeSuggestions(promptPaths: readonly string[]): RecipeSug
           .filter((name) => name.endsWith(".md"))
           .sort()
           .map((name) => join(path, name))
-          .filter(isFile)
+          .filter(isFile),
       );
     } else if (path.endsWith(".md")) {
       files.push(path);
     }
   }
   // As in Pi, the first template with a name wins, marked or not.
-  const byName = new Map<string, { suggest: boolean; template: RecipeSuggestion }>();
+  const byName = new Map<
+    string,
+    { suggest: boolean; template: RecipeSuggestion }
+  >();
   for (const file of files) {
     const read = readTemplate(file);
-    if (read && !byName.has(read.template.name)) byName.set(read.template.name, read);
+    if (read && !byName.has(read.template.name))
+      byName.set(read.template.name, read);
   }
-  return [...byName.values()].filter((read) => read.suggest).map((read) => read.template);
+  return [...byName.values()]
+    .filter((read) => read.suggest)
+    .map((read) => read.template);
 }
 
 /**
@@ -169,7 +191,8 @@ export function listRecipeSuggestions(recipeDir: string): RecipeSuggestion[] {
 /** A small seeded generator (mulberry32), so a seed pins the choice. */
 export function seededRandom(seed: string): () => number {
   let state = 0;
-  for (const char of seed) state = (Math.imul(state, 31) + char.charCodeAt(0)) | 0;
+  for (const char of seed)
+    state = (Math.imul(state, 31) + char.charCodeAt(0)) | 0;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
     let t = Math.imul(state ^ (state >>> 15), 1 | state);
@@ -185,7 +208,7 @@ export function seededRandom(seed: string): () => number {
 export function pickSuggestions<T>(
   suggestions: readonly T[],
   count = 3,
-  random: () => number = Math.random
+  random: () => number = Math.random,
 ): T[] {
   if (suggestions.length <= count) return [...suggestions];
   const pool = suggestions.map((_, index) => index);

@@ -19,7 +19,7 @@ import { packageEntry } from "../src/recipe/extensions.js";
 
 function context(
   agent = "reviewer",
-  role: "root" | "subagent" = "root"
+  role: "root" | "subagent" = "root",
 ): RecipeExtensionSessionContext {
   return createRecipeExtensionSessionContext({ recipe: "demo", agent, role });
 }
@@ -38,9 +38,13 @@ describe("Recipe extension context", () => {
       recipe: "demo",
       agent: "reviewer",
       role: "root",
-      python: { "@acme/tables": { interpreter: "/envs/acme-tables/bin/python" } },
+      python: {
+        "@acme/tables": { interpreter: "/envs/acme-tables/bin/python" },
+      },
     });
-    expect(bound.packagePython("@acme/tables")).toBe("/envs/acme-tables/bin/python");
+    expect(bound.packagePython("@acme/tables")).toBe(
+      "/envs/acme-tables/bin/python",
+    );
     expect(bound.packagePython("@acme/other")).toBeUndefined();
     expect(bound.packagePython("toString")).toBeUndefined();
     expect(context().packagePython("@acme/tables")).toBeUndefined();
@@ -56,7 +60,7 @@ describe("Recipe extension context", () => {
       (extensionApi) => {
         consumingModule.forAgent(extensionApi, "reviewer", matched);
       },
-      context("reviewer", "root")
+      context("reviewer", "root"),
     );
 
     expect(bindingModule).not.toBe(consumingModule);
@@ -72,7 +76,7 @@ describe("Recipe extension context", () => {
       (extensionApi) => {
         seen.push(getRecipeSessionContext(extensionApi));
       },
-      context("researcher", "subagent")
+      context("researcher", "subagent"),
     );
 
     await factory(pi);
@@ -101,10 +105,10 @@ describe("Recipe extension context", () => {
         forRecipeSession(
           extensionApi,
           ({ session }) => session.role === "subagent",
-          child
+          child,
         );
       },
-      context("reviewer", "root")
+      context("reviewer", "root"),
     );
 
     await factory(pi);
@@ -125,7 +129,7 @@ describe("Recipe extension context", () => {
         }),
       context(),
       registrations,
-      "extensions/first.ts"
+      "extensions/first.ts",
     );
     const second = bindRecipeExtensionFactory(
       (extensionApi) =>
@@ -135,12 +139,12 @@ describe("Recipe extension context", () => {
         }),
       context(),
       registrations,
-      "extensions/second.ts"
+      "extensions/second.ts",
     );
 
     await first(pi);
     await expect(second(pi)).rejects.toThrow(
-      'command registration "review" conflicts'
+      'command registration "review" conflicts',
     );
   });
 
@@ -151,11 +155,11 @@ describe("Recipe extension context", () => {
       context(),
       undefined,
       "extensions/policy.ts",
-      new Set(["read"])
+      new Set(["read"]),
     );
 
     await expect(factory(pi)).rejects.toThrow(
-      "attempted to activate undeclared tool(s): bash"
+      "attempted to activate undeclared tool(s): bash",
     );
     expect(pi.setActiveTools).not.toHaveBeenCalled();
   });
@@ -171,7 +175,7 @@ describe("Recipe extension context", () => {
       context(),
       undefined,
       "extensions/mcp-policy.ts",
-      allowed
+      allowed,
     );
     await factory(pi);
 
@@ -192,21 +196,15 @@ describe("Recipe extension context", () => {
 
   it("permits the session-generated agent tool only for delegated sessions", () => {
     expect(
-      recipeExtensionToolAllowlist(
-        ["read"],
-        true,
-        ["mcp_google_drive_search", "tool_search"]
-      )
-    ).toEqual(
-      new Set([
-        "read",
-        "agent",
+      recipeExtensionToolAllowlist(["read"], true, [
         "mcp_google_drive_search",
         "tool_search",
-      ])
+      ]),
+    ).toEqual(
+      new Set(["read", "agent", "mcp_google_drive_search", "tool_search"]),
     );
     expect(recipeExtensionToolAllowlist(["read"], false)).toEqual(
-      new Set(["read"])
+      new Set(["read"]),
     );
   });
 });
@@ -214,7 +212,10 @@ describe("Recipe extension context", () => {
 describe("packageEntry", () => {
   function pkg(manifest: object, files: string[] = []): string {
     const dir = mkdtempSync(join(tmpdir(), "package-entry-"));
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", type: "module", ...manifest }));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "p", type: "module", ...manifest }),
+    );
     for (const file of files) {
       mkdirSync(dirname(join(dir, file)), { recursive: true });
       writeFileSync(join(dir, file), "export default 1;\n");
@@ -224,11 +225,36 @@ describe("packageEntry", () => {
 
   it.each([
     ["a string export", { exports: "./dist/a.js" }, "dist/a.js"],
-    ["root conditions", { exports: { import: "./dist/a.js", require: "./dist/a.cjs" } }, "dist/a.js"],
-    ["root conditions in order, require first", { exports: { require: "./dist/a.cjs", default: "./dist/a.js" } }, "dist/a.js"],
-    ["nested conditions", { exports: { node: { import: "./dist/a.js" }, default: "./dist/b.js" } }, "dist/a.js"],
-    ["an array of targets", { exports: [{ import: "./dist/a.js" }, "./dist/b.js"] }, "dist/a.js"],
-    ["a subpath map", { exports: { ".": { import: "./dist/a.js" }, "./package.json": "./package.json" } }, "dist/a.js"],
+    [
+      "root conditions",
+      { exports: { import: "./dist/a.js", require: "./dist/a.cjs" } },
+      "dist/a.js",
+    ],
+    [
+      "root conditions in order, require first",
+      { exports: { require: "./dist/a.cjs", default: "./dist/a.js" } },
+      "dist/a.js",
+    ],
+    [
+      "nested conditions",
+      { exports: { node: { import: "./dist/a.js" }, default: "./dist/b.js" } },
+      "dist/a.js",
+    ],
+    [
+      "an array of targets",
+      { exports: [{ import: "./dist/a.js" }, "./dist/b.js"] },
+      "dist/a.js",
+    ],
+    [
+      "a subpath map",
+      {
+        exports: {
+          ".": { import: "./dist/a.js" },
+          "./package.json": "./package.json",
+        },
+      },
+      "dist/a.js",
+    ],
     ["main without exports", { main: "./dist/a.js" }, "dist/a.js"],
   ])("finds the entry of %s", async (_, manifest, expected) => {
     const dir = pkg(manifest, ["dist/a.js", "dist/b.js"]);
@@ -239,10 +265,24 @@ describe("packageEntry", () => {
     const root = mkdtempSync(join(tmpdir(), "package-entry-node-"));
     const dir = join(root, "node_modules", "p");
     mkdirSync(join(dir, "dist"), { recursive: true });
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", type: "module", exports: { import: "./dist/a.js" } }));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "p",
+        type: "module",
+        exports: { import: "./dist/a.js" },
+      }),
+    );
     writeFileSync(join(dir, "dist", "a.js"), "export default 1;\n");
-    writeFileSync(join(root, "probe.mjs"), "export default import.meta.resolve('p');\n");
-    const { default: resolved } = await import(pathToFileURL(join(root, "probe.mjs")).href);
-    expect(packageEntry(dir)).toBe(realpathSync(fileURLToPath(resolved)).replace(realpathSync(dir), dir));
+    writeFileSync(
+      join(root, "probe.mjs"),
+      "export default import.meta.resolve('p');\n",
+    );
+    const { default: resolved } = await import(
+      pathToFileURL(join(root, "probe.mjs")).href
+    );
+    expect(packageEntry(dir)).toBe(
+      realpathSync(fileURLToPath(resolved)).replace(realpathSync(dir), dir),
+    );
   });
 });

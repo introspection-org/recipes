@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CredentialStore, Model } from "@earendil-works/pi-ai";
+import type { Api, CredentialStore, Model } from "@earendil-works/pi-ai";
 import type {
   AgentSessionEvent,
   ModelRegistry,
@@ -20,10 +20,7 @@ import {
 import { autoResolveInteractions } from "../interactions.js";
 import { promptResultError } from "./agent.js";
 import type { ResolvedRecipe } from "../recipe/resolve.js";
-import type {
-  MemoryContextOverride,
-  MemoryContextSource,
-} from "../memory.js";
+import type { MemoryContextOverride, MemoryContextSource } from "../memory.js";
 import {
   createAgentSessionInternal,
   type CreateAgentSessionInternalOptions,
@@ -44,7 +41,7 @@ export interface CreateIsolatedChildSessionOptions {
   memory?: MemoryContextSource;
   memoryOverride?: MemoryContextOverride;
   credentialsResolved?: boolean;
-  modelOverride?: Model<any>;
+  modelOverride?: Model<Api>;
   otel?: RecipeSessionOtelOptions;
   onEvent?: (event: AgentSessionEvent) => void;
   /** The run this child serves; its own runs are attributed to it. */
@@ -62,7 +59,7 @@ export interface CreateIsolatedChildSessionOptions {
   /** Concurrency of the controller serving this child's own runs. */
   concurrency?: number;
   sessionFactory?: (
-    options: CreateAgentSessionInternalOptions
+    options: CreateAgentSessionInternalOptions,
   ) => Promise<RecipeSessionHandle>;
 }
 
@@ -85,7 +82,7 @@ export interface IsolatedChildSessionHandle extends RecipeSessionHandle {
  * tool backed by an in-process controller; deeper children never delegate.
  */
 export async function createIsolatedChildSession(
-  opts: CreateIsolatedChildSessionOptions
+  opts: CreateIsolatedChildSessionOptions,
 ): Promise<IsolatedChildSessionHandle> {
   const depth = opts.depth ?? 1;
   const delegates =
@@ -99,7 +96,7 @@ export async function createIsolatedChildSession(
           const agent = options.recipe.selectAgent(options.agentName);
           const model = applyRecipeAgentModelConfigToModel(
             resolveRecipeModel(agent.modelSpec, registry),
-            agent.modelConfig
+            agent.modelConfig,
           );
           const env = options.env ?? process.env;
           const credentials = await resolveRecipeCredentials({
@@ -131,9 +128,7 @@ export async function createIsolatedChildSession(
         ? { settingsManager: opts.settingsManager }
         : {}),
       ...(opts.memory ? { memory: opts.memory } : {}),
-      ...(opts.memoryOverride
-        ? { memoryOverride: opts.memoryOverride }
-        : {}),
+      ...(opts.memoryOverride ? { memoryOverride: opts.memoryOverride } : {}),
       ...(opts.credentialsResolved ? { credentialsResolved: true } : {}),
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
       ...(opts.otel ? { otel: opts.otel } : {}),

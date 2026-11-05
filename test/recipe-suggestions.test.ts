@@ -4,7 +4,13 @@
  * a new terminal session.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,7 +72,9 @@ afterEach(() => {
 });
 
 function recipeWithPrompts(templates: Record<string, string> = TEMPLATES) {
-  const fixture = writeFixtureRecipe({ manifestPi: { prompts: ["./prompts/*.md"] } });
+  const fixture = writeFixtureRecipe({
+    manifestPi: { prompts: ["./prompts/*.md"] },
+  });
   cleanups.push(fixture.cleanup);
   mkdirSync(join(fixture.recipeDir, "prompts"));
   for (const [name, content] of Object.entries(templates)) {
@@ -80,8 +88,15 @@ describe("listRecipeSuggestions", () => {
   // (packages/recipe-check/src/prompts.rs), so the control plane reads
   // suggestions exactly as Pi does.
   const conformance = JSON.parse(
-    readFileSync(join(import.meta.dirname, "fixtures", "suggestions-conformance.json"), "utf8")
-  ) as Array<{ name: string; files: Record<string, string>; suggestions: unknown[] }>;
+    readFileSync(
+      join(import.meta.dirname, "fixtures", "suggestions-conformance.json"),
+      "utf8",
+    ),
+  ) as Array<{
+    name: string;
+    files: Record<string, string>;
+    suggestions: unknown[];
+  }>;
   it.each(conformance.map((entry) => [entry.name, entry] as const))(
     "matches the shared fixture: %s",
     (_name, entry) => {
@@ -92,7 +107,7 @@ describe("listRecipeSuggestions", () => {
         writeFileSync(join(recipeDir, path), content);
       }
       expect(listRecipeSuggestions(recipeDir)).toEqual(entry.suggestions);
-    }
+    },
   );
 
   it("reads each marked template's name, description, hint, text and placeholders", () => {
@@ -135,14 +150,16 @@ describe("listRecipeSuggestions", () => {
     mkdirSync(join(fixture.recipeDir, "prompts"));
     writeFileSync(
       join(fixture.recipeDir, "prompts", "plan.md"),
-      "---\ndescription: Plan the week\n---\nPlan it."
+      "---\ndescription: Plan the week\n---\nPlan it.",
     );
     expect(listRecipeSuggestions(fixture.recipeDir)).toEqual([]);
     writeFileSync(
       join(fixture.recipeDir, "prompts", "plan.md"),
-      "---\nsuggest: true\ndescription: Plan the week\n---\nPlan it."
+      "---\nsuggest: true\ndescription: Plan the week\n---\nPlan it.",
     );
-    expect(listRecipeSuggestions(fixture.recipeDir).map((s) => s.name)).toEqual(["plan"]);
+    expect(listRecipeSuggestions(fixture.recipeDir).map((s) => s.name)).toEqual(
+      ["plan"],
+    );
   });
 
   it("lets the first template with a name win, marked or not, as Pi does", () => {
@@ -177,10 +194,19 @@ describe("placeholders", () => {
     const text =
       "{{member.name}} <{{member.email}}> at {{org.name}} on {{today}}; {{deal.id}} {{ today }}";
     expect(
-      fillSuggestion(text, { "member.name": "Ada", today: "2026-11-03", "org.name": "" })
-    ).toBe("Ada <{{member.email}}> at {{org.name}} on 2026-11-03; {{deal.id}} {{ today }}");
+      fillSuggestion(text, {
+        "member.name": "Ada",
+        today: "2026-11-03",
+        "org.name": "",
+      }),
+    ).toBe(
+      "Ada <{{member.email}}> at {{org.name}} on 2026-11-03; {{deal.id}} {{ today }}",
+    );
     expect(
-      fillSuggestion("{{deal.id}}", { "deal.id": "x" } as Record<string, string>)
+      fillSuggestion("{{deal.id}}", { "deal.id": "x" } as Record<
+        string,
+        string
+      >),
     ).toBe("{{deal.id}}");
     expect(findPlaceholders(text)).toEqual([
       "member.name",
@@ -192,9 +218,11 @@ describe("placeholders", () => {
   });
 
   it("expands Pi arguments with none given, keeping defaults", () => {
-    expect(expandWithoutArguments("a ${1:-x} b $1 c ${@:-all} d $@ e ${@:2} f $ARGUMENTS")).toBe(
-      "a x b  c all d  e  f "
-    );
+    expect(
+      expandWithoutArguments(
+        "a ${1:-x} b $1 c ${@:-all} d $@ e ${@:2} f $ARGUMENTS",
+      ),
+    ).toBe("a x b  c all d  e  f ");
   });
 });
 
@@ -212,8 +240,8 @@ describe("pickSuggestions", () => {
     expect([...first].sort()).toEqual(first);
     const seen = new Set(
       ["1", "2", "3", "4", "5", "6", "7", "8"].map((seed) =>
-        pickSuggestions(items, 3, seededRandom(seed)).join()
-      )
+        pickSuggestions(items, 3, seededRandom(seed)).join(),
+      ),
     );
     expect(seen.size).toBeGreaterThan(1);
   });
@@ -223,12 +251,21 @@ interface PickerOptions {
   mode?: string;
   reason?: string;
   entries?: Array<{ type: string }>;
-  select?: (title: string, options: string[], dialog?: { signal?: AbortSignal }) => Promise<string | undefined>;
+  select?: (
+    title: string,
+    options: string[],
+    dialog?: { signal?: AbortSignal },
+  ) => Promise<string | undefined>;
   input?: string;
   templates?: Record<string, string>;
   seed?: string;
   gitName?: string;
-  exec?: () => Promise<{ stdout: string; stderr: string; code: number; killed: boolean }>;
+  exec?: () => Promise<{
+    stdout: string;
+    stderr: string;
+    code: number;
+    killed: boolean;
+  }>;
 }
 
 async function startPicker(options: PickerOptions = {}) {
@@ -244,7 +281,7 @@ async function startPicker(options: PickerOptions = {}) {
         stderr: "",
         code: options.gitName ? 0 : 1,
         killed: false,
-      }))
+      })),
   );
   const select = vi.fn(options.select ?? (async () => undefined));
   const ui = {
@@ -265,11 +302,14 @@ async function startPicker(options: PickerOptions = {}) {
       find: vi.fn((provider: string, id: string) => ({ provider, id })),
     },
   } as any;
-  const env = { ...process.env, [SUGGESTIONS_SEED_ENV]: options.seed ?? "test" };
+  const env = {
+    ...process.env,
+    [SUGGESTIONS_SEED_ENV]: options.seed ?? "test",
+  };
   createRecipesExtension({ env })(pi);
   await pi.emitExtensionEvent(
     { type: "session_start", reason: options.reason ?? "startup" } as any,
-    ctx
+    ctx,
   );
   const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
   return { pi, ctx, ui, select, sendUserMessage, settle };
@@ -284,7 +324,8 @@ describe("first-run picker", () => {
     expect(title).toBe(SUGGESTIONS_QUESTION);
     expect(choices).toHaveLength(4);
     expect(choices[3]).toBe(`4. ${ASK_USER_TYPED_ANSWER_OPTION}`);
-    for (const choice of choices.slice(0, 3)) expect(choice).toMatch(/^\d\. .+/);
+    for (const choice of choices.slice(0, 3))
+      expect(choice).toMatch(/^\d\. .+/);
   });
 
   it("offers only marked templates, a random three in file order", async () => {
@@ -297,7 +338,9 @@ describe("first-run picker", () => {
         .map((choice) => /\/(\w+)$/.exec(choice)?.[1]);
       expect(shown).toHaveLength(3);
       for (const name of shown) expect(order).toContain(name);
-      expect([...shown].sort((a, b) => order.indexOf(a!) - order.indexOf(b!))).toEqual(shown);
+      expect(
+        [...shown].sort((a, b) => order.indexOf(a!) - order.indexOf(b!)),
+      ).toEqual(shown);
     }
   });
 
@@ -306,12 +349,17 @@ describe("first-run picker", () => {
     await first.settle();
     const second = await startPicker({ seed: "pin" });
     await second.settle();
-    expect(second.select.mock.calls[0]![1]).toEqual(first.select.mock.calls[0]![1]);
+    expect(second.select.mock.calls[0]![1]).toEqual(
+      first.select.mock.calls[0]![1],
+    );
   });
 
   it("labels each option with its description and command", async () => {
     const { select, settle } = await startPicker({
-      templates: { "redline.md": TEMPLATES["redline.md"]!, "risks.md": "---\nsuggest: true\n---\n" },
+      templates: {
+        "redline.md": TEMPLATES["redline.md"]!,
+        "risks.md": "---\nsuggest: true\n---\n",
+      },
     });
     await settle();
     expect(select.mock.calls[0]![1]).toEqual([
@@ -330,9 +378,13 @@ describe("first-run picker", () => {
       gitName: "Ada Lovelace",
     });
     await settle();
-    expect((pi as any).exec).toHaveBeenCalledWith("git", ["config", "user.name"], expect.anything());
+    expect((pi as any).exec).toHaveBeenCalledWith(
+      "git",
+      ["config", "user.name"],
+      expect.anything(),
+    );
     expect(sendUserMessage).toHaveBeenCalledWith(
-      "Redline the attached contract for Ada Lovelace on 2026-11-03."
+      "Redline the attached contract for Ada Lovelace on 2026-11-03.",
     );
   });
 
@@ -343,7 +395,7 @@ describe("first-run picker", () => {
     });
     await settle();
     expect(sendUserMessage.mock.calls[0]![0]).toMatch(
-      /^Redline the attached contract for \{\{member\.name\}\} on \d{4}-\d\d-\d\d\.$/
+      /^Redline the attached contract for \{\{member\.name\}\} on \d{4}-\d\d-\d\d\.$/,
     );
   });
 
@@ -385,7 +437,12 @@ describe("first-run picker", () => {
     ["without prompt templates", { templates: {} }],
     [
       "when no template is marked",
-      { templates: { "notes.md": TEMPLATES["notes.md"]!, "off.md": TEMPLATES["off.md"]! } },
+      {
+        templates: {
+          "notes.md": TEMPLATES["notes.md"]!,
+          "off.md": TEMPLATES["off.md"]!,
+        },
+      },
     ],
   ])("does not ask %s", async (_name, options) => {
     const { select, settle } = await startPicker(options as PickerOptions);
@@ -397,7 +454,7 @@ describe("first-run picker", () => {
     const { pi, ctx, select, settle } = await startPicker();
     await pi.emitExtensionEvent(
       { type: "input", text: "/redline", source: "interactive" } as any,
-      ctx
+      ctx,
     );
     await settle();
     expect(select).not.toHaveBeenCalled();
@@ -418,7 +475,7 @@ describe("first-run picker", () => {
     expect(select).toHaveBeenCalled();
     await pi.emitExtensionEvent(
       { type: "input", text: "/redline", source: "interactive" } as any,
-      ctx
+      ctx,
     );
     await settle();
     expect(dismissed).toBe(true);
@@ -426,8 +483,12 @@ describe("first-run picker", () => {
   });
 
   it("sends nothing when an initial message arrives while the git name is read", async () => {
-    let finishGit: (value: { stdout: string; stderr: string; code: number; killed: boolean }) => void =
-      () => {};
+    let finishGit: (value: {
+      stdout: string;
+      stderr: string;
+      code: number;
+      killed: boolean;
+    }) => void = () => {};
     const { pi, ctx, sendUserMessage, settle } = await startPicker({
       templates: { "redline.md": TEMPLATES["redline.md"]! },
       select: async (_title, choices) => choices[0],
@@ -437,7 +498,7 @@ describe("first-run picker", () => {
     expect((pi as any).exec).toHaveBeenCalled();
     await pi.emitExtensionEvent(
       { type: "input", text: "/redline", source: "interactive" } as any,
-      ctx
+      ctx,
     );
     finishGit({ stdout: "Ada Lovelace\n", stderr: "", code: 0, killed: false });
     await settle();
@@ -457,7 +518,7 @@ describe("first-run picker", () => {
     await settle();
     await pi.emitExtensionEvent(
       { type: "input", text: "hello", source: "extension" } as any,
-      ctx
+      ctx,
     );
     expect(dismissed).toBe(false);
   });

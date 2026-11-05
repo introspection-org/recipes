@@ -14,9 +14,7 @@ import {
   resolveRecipeModel,
 } from "../model-binding.js";
 import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
-import {
-  type ResolvedRecipe,
-} from "../recipe/resolve.js";
+import { type ResolvedRecipe } from "../recipe/resolve.js";
 
 export interface CreateRecipeChildAgentRunnerOptions {
   /** Immutable Recipe graph shared with the root Pi session. */
@@ -45,7 +43,7 @@ export interface RecipeChildAgentRunner {
 }
 
 export type CreateRecipeChildAgentRunner = (
-  opts: CreateRecipeChildAgentRunnerOptions
+  opts: CreateRecipeChildAgentRunnerOptions,
 ) => RecipeChildAgentRunner;
 
 export type RecipeChildToolEvent =
@@ -92,7 +90,7 @@ function contentText(content: unknown): string {
 }
 
 function latestAssistantMessage(
-  result: unknown
+  result: unknown,
 ): Record<string, unknown> | null {
   if (!result || typeof result !== "object") return null;
   const record = result as Record<string, unknown>;
@@ -138,7 +136,9 @@ export function promptResultText(result: unknown): string {
   return "";
 }
 
-function messageFromEvent(event: AgentSessionEvent): Record<string, unknown> | null {
+function messageFromEvent(
+  event: AgentSessionEvent,
+): Record<string, unknown> | null {
   const record = asRecord(event);
   const direct = asRecord(record?.message);
   if (direct) return direct;
@@ -229,15 +229,13 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
     const resolved = this.opts.recipe.selectAgent(this.opts.agentName);
     const model = applyRecipeAgentModelConfigToModel(
       resolveRecipeModel(resolved.modelSpec, this.opts.modelRegistry),
-      resolved.modelConfig
+      resolved.modelConfig,
     );
     const credentials = await resolveRecipeCredentials({
       provider: model.provider,
       env: this.opts.env ?? process.env,
       model,
-      ...(this.opts.credentials
-        ? { credentials: this.opts.credentials }
-        : {}),
+      ...(this.opts.credentials ? { credentials: this.opts.credentials } : {}),
       ...(this.opts.modelRegistry
         ? { modelRegistry: this.opts.modelRegistry }
         : {}),
@@ -295,7 +293,7 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
 }
 
 export function createRecipeChildAgentRunner(
-  opts: CreateRecipeChildAgentRunnerOptions
+  opts: CreateRecipeChildAgentRunnerOptions,
 ): RecipeChildAgentRunner {
   return new RecipeChildAgentSessionRunner(opts);
 }

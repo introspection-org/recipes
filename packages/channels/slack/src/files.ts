@@ -131,10 +131,13 @@ export class SlackFileSession extends SlackBotSession {
     this.cwd = options.cwd ?? process.cwd();
   }
 
-  async downloadFile(input: {
-    file_id: string;
-    variant?: string;
-  }, signal?: AbortSignal): Promise<SlackDownloadResult> {
+  async downloadFile(
+    input: {
+      file_id: string;
+      variant?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<SlackDownloadResult> {
     const fileId = requiredFileId(input.file_id);
     const variant = fileVariant(input.variant);
     const timeoutSignal = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);

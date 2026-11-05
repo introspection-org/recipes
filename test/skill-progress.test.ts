@@ -277,7 +277,10 @@ describe("where the agent is", () => {
       const result = (event: unknown) =>
         f.handlers.get("tool_result")!(event, ctx);
       const read = (name: string) =>
-        result({ toolName: "read", input: { path: `/x/skills/${name}/SKILL.md` } });
+        result({
+          toolName: "read",
+          input: { path: `/x/skills/${name}/SKILL.md` },
+        });
       reads.forEach(read);
       return { ...f, ctx, read, result };
     };
@@ -370,14 +373,22 @@ describe("where the agent is", () => {
         helper: "eval-run",
       });
       expect(
-        advance({ step: "build-draft", helper: "eval-run" }, "improve-collect", phased),
+        advance(
+          { step: "build-draft", helper: "eval-run" },
+          "improve-collect",
+          phased,
+        ),
       ).toEqual({ step: "improve-collect" });
       expect(positionLine({ helper: "eval-run" }, phased, "00:05")).toBe(
         "▸ eval run · 00:05",
       );
       // A declared phase with a single step is still a phase.
       expect(
-        positionLine({ step: "ship-it" }, { names: ["ship-it"], phases: ["ship"] }, "00:01"),
+        positionLine(
+          { step: "ship-it" },
+          { names: ["ship-it"], phases: ["ship"] },
+          "00:01",
+        ),
       ).toBe("ship ▸ it · 00:01");
     });
 
@@ -387,13 +398,19 @@ describe("where the agent is", () => {
         step: "build-review",
       });
       expect(skillRead("/x/skills/eval-run/SKILL.md", plain)).toBeUndefined();
-      expect(skillRead("/x/skills/improve-collect/SKILL.md", plain)).toBeUndefined();
+      expect(
+        skillRead("/x/skills/improve-collect/SKILL.md", plain),
+      ).toBeUndefined();
       expect(positionLine({ step: "build-draft" }, plain, "12:04")).toBe(
         "build ✓ brainstorm ▸ draft ○ review ○ deploy · 12:04",
       );
-      expect(positionLine({ step: "build-draft" }, { ...plain, phases: [] }, "12:04")).toBe(
-        "build ✓ brainstorm ▸ draft ○ review ○ deploy · 12:04",
-      );
+      expect(
+        positionLine(
+          { step: "build-draft" },
+          { ...plain, phases: [] },
+          "12:04",
+        ),
+      ).toBe("build ✓ brainstorm ▸ draft ○ review ○ deploy · 12:04");
     });
   });
 

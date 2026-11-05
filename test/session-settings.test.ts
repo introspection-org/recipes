@@ -5,7 +5,6 @@ import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
-  type AssistantMessageEvent,
 } from "@earendil-works/pi-ai/compat";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
@@ -159,7 +158,7 @@ const HOST_VALUES: Record<string, unknown> = {
 
 function piSettingsReference(): string {
   let dir = dirname(
-    fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))
+    fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")),
   );
   while (!dir.endsWith("pi-coding-agent")) dir = dirname(dir);
   return readFileSync(join(dir, "docs", "settings.md"), "utf8");
@@ -183,13 +182,16 @@ function leaf(settings: object, path: string): unknown {
     .split(".")
     .reduce<unknown>(
       (node, key) => (node as Record<string, unknown> | undefined)?.[key],
-      settings
+      settings,
     );
 }
 
 function sessionYaml(values: Record<string, unknown>): string[] {
   const authored = Object.fromEntries(
-    Object.entries(values).map(([path, value]) => [RECIPE_SESSION[path], value])
+    Object.entries(values).map(([path, value]) => [
+      RECIPE_SESSION[path],
+      value,
+    ]),
   );
   const lines = ["session:"];
   const write = (node: Record<string, unknown>, indent: string) => {
@@ -214,7 +216,7 @@ function effectiveSettings(manager: SettingsManager): object {
 function hostSettings(): SettingsManager {
   const manager = SettingsManager.inMemory();
   manager.applyOverrides(
-    nest(HOST_VALUES) as Parameters<SettingsManager["applyOverrides"]>[0]
+    nest(HOST_VALUES) as Parameters<SettingsManager["applyOverrides"]>[0],
   );
   return manager;
 }
@@ -272,20 +274,16 @@ describe("Pi settings coverage", () => {
       ...HOST_OWNED,
     ];
     expect(new Set(classified).size).toBe(classified.length);
-    expect(
-      documented.filter((key) => !classified.includes(key))
-    ).toEqual([]);
-    expect(
-      classified.filter((key) => !documented.includes(key))
-    ).toEqual([]);
+    expect(documented.filter((key) => !classified.includes(key))).toEqual([]);
+    expect(classified.filter((key) => !documented.includes(key))).toEqual([]);
   });
 
   it("has a test value for every Recipe session leaf", () => {
     expect(Object.keys(RECIPE_VALUES).sort()).toEqual(
-      Object.keys(RECIPE_SESSION).sort()
+      Object.keys(RECIPE_SESSION).sort(),
     );
     expect(Object.keys(HOST_VALUES).sort()).toEqual(
-      Object.keys(RECIPE_SESSION).sort()
+      Object.keys(RECIPE_SESSION).sort(),
     );
   });
 
@@ -294,9 +292,9 @@ describe("Pi settings coverage", () => {
     (_piPath, recipePath) => {
       const session = nest({ [recipePath]: "not-a-valid-value" });
       expect(() =>
-        parseRecipeAgentSessionConfig("Agent YAML", session)
+        parseRecipeAgentSessionConfig("Agent YAML", session),
       ).toThrow(RecipeSessionConfigError);
-    }
+    },
   );
 });
 
@@ -321,7 +319,7 @@ describe("Recipe session policy over host settings", () => {
         "tools: []",
         "subagents: [helper]",
         ...agentLines,
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(created.recipeDir, "agents", "helper.yaml"),
@@ -331,7 +329,7 @@ describe("Recipe session policy over host settings", () => {
         "  model: anthropic/claude-sonnet-4-5",
         "tools: []",
         ...helperLines,
-      ].join("\n")
+      ].join("\n"),
     );
     return created;
   }
@@ -339,7 +337,7 @@ describe("Recipe session policy over host settings", () => {
   async function open(
     recipeDir: string,
     cwd: string,
-    settingsManager?: SettingsManager
+    settingsManager?: SettingsManager,
   ): Promise<RecipeSessionHandle> {
     const handle = await createAgentSession({
       recipe: resolveRecipe({ recipeDir }),
@@ -386,7 +384,7 @@ describe("Recipe session policy over host settings", () => {
     "keeps every host override beside an authored %s",
     async (path) => {
       const { recipeDir, workspaceDir } = fixture(
-        sessionYaml({ [path]: RECIPE_VALUES[path] })
+        sessionYaml({ [path]: RECIPE_VALUES[path] }),
       );
 
       const handle = await open(recipeDir, workspaceDir, hostSettings());
@@ -394,10 +392,10 @@ describe("Recipe session policy over host settings", () => {
       const effective = effectiveSettings(handle.session.settingsManager);
       for (const [other, value] of Object.entries(HOST_VALUES)) {
         expect(leaf(effective, other), other).toEqual(
-          other === path ? RECIPE_VALUES[path] : value
+          other === path ? RECIPE_VALUES[path] : value,
         );
       }
-    }
+    },
   );
 
   it("uses the host's settings when the agent authors no session policy", async () => {
@@ -415,7 +413,7 @@ describe("Recipe session policy over host settings", () => {
 
   it("keeps host and Recipe values across a Pi settings reload", async () => {
     const { recipeDir, workspaceDir } = fixture(
-      sessionYaml({ "compaction.reserveTokens": 7001 })
+      sessionYaml({ "compaction.reserveTokens": 7001 }),
     );
 
     const handle = await open(recipeDir, workspaceDir, hostSettings());
@@ -439,7 +437,7 @@ describe("Recipe session policy over host settings", () => {
         "    thinking_budgets:",
         "      medium: 4321",
         "tools: []",
-      ].join("\n")
+      ].join("\n"),
     );
     const handle = await open(recipeDir, workspaceDir);
     let payload: Record<string, unknown> | undefined;
@@ -462,21 +460,21 @@ describe("Recipe session policy over host settings", () => {
     const handle = await open(
       recipeDir,
       workspaceDir,
-      SettingsManager.inMemory()
+      SettingsManager.inMemory(),
     );
 
     expect(handle.session.settingsManager.getCompactionSettings()).toEqual(
-      SettingsManager.inMemory().getCompactionSettings()
+      SettingsManager.inMemory().getCompactionSettings(),
     );
     expect(handle.session.settingsManager.getRetrySettings()).toEqual(
-      SettingsManager.inMemory().getRetrySettings()
+      SettingsManager.inMemory().getRetrySettings(),
     );
   });
 
   it("gives an in-process child the host's settings under its own policy", async () => {
     const { recipeDir, workspaceDir } = fixture(
       sessionYaml({ "compaction.reserveTokens": 7001 }),
-      sessionYaml({ "retry.maxRetries": 7 })
+      sessionYaml({ "retry.maxRetries": 7 }),
     );
     let child: RecipeSessionHandle | undefined;
     const controller = createInProcessRunController({
@@ -500,7 +498,7 @@ describe("Recipe session policy over host settings", () => {
     const effective = effectiveSettings(child!.session.settingsManager);
     for (const [path, value] of Object.entries(HOST_VALUES)) {
       expect(leaf(effective, path), path).toEqual(
-        path === "retry.maxRetries" ? 7 : value
+        path === "retry.maxRetries" ? 7 : value,
       );
     }
     await controller.close(run.agent_run_id);

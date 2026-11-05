@@ -17,7 +17,6 @@ import {
 } from "../src/artifact-review.js";
 import { tabName } from "../src/artifact-review-tui.js";
 import {
-  ArtifactViewer,
   artifactViewerExtension,
   wantsArtifactViewer,
 } from "../src/artifact-viewer.js";

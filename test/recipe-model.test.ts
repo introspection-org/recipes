@@ -31,7 +31,7 @@ describe("parseRecipeAgentAiConfig", () => {
           sampling_params: { min_p: 0.1 },
           websocket_connect_timeout_ms: 5000,
         },
-      })
+      }),
     ).toEqual({
       name: "openrouter/anthropic/claude-sonnet-4",
       thinkingLevel: "max",
@@ -45,13 +45,13 @@ describe("parseRecipeAgentAiConfig", () => {
 
   it("rejects mixed casing and host-owned request controls", () => {
     expect(() =>
-      parseRecipeAgentAiConfig("test", { options: { maxTokens: 1 } })
+      parseRecipeAgentAiConfig("test", { options: { maxTokens: 1 } }),
     ).toThrow(/non-snake_case/);
     expect(() =>
-      parseRecipeAgentAiConfig("test", { options: { api_key: "secret" } })
+      parseRecipeAgentAiConfig("test", { options: { api_key: "secret" } }),
     ).toThrow(/host-owned/);
     expect(() =>
-      parseRecipeAgentAiConfig("test", { options: { on_payload: true } })
+      parseRecipeAgentAiConfig("test", { options: { on_payload: true } }),
     ).toThrow(/host-owned/);
     for (const option of [
       "client",
@@ -69,7 +69,7 @@ describe("parseRecipeAgentAiConfig", () => {
       expect(() =>
         parseRecipeAgentAiConfig("test", {
           options: { [option]: "host binding" },
-        })
+        }),
       ).toThrow(/host-owned/);
     }
   });
@@ -86,7 +86,7 @@ describe("parseRecipeAgentAiConfig", () => {
             },
           },
         },
-      })
+      }),
     ).toMatchObject({
       openrouter: {
         order: ["anthropic"],
@@ -107,7 +107,7 @@ describe("parseRecipeAgentAiConfig", () => {
             },
           },
         },
-      })
+      }),
     ).toMatchObject({
       anthropic: {
         contextManagement: {
@@ -120,7 +120,7 @@ describe("parseRecipeAgentAiConfig", () => {
     expect(() =>
       parseRecipeAgentAiConfig("test", {
         providers: { anthropic: { context_management: "invalid" } },
-      })
+      }),
     ).toThrow(/context_management: expected object/);
   });
 
@@ -138,7 +138,7 @@ describe("parseRecipeAgentAiConfig", () => {
             },
           },
         },
-      })
+      }),
     ).toMatchObject({
       vercelAiGateway: {
         order: ["anthropic", "bedrock"],
@@ -155,7 +155,7 @@ describe("parseRecipeAgentAiConfig", () => {
             routing: { byok: { anthropic: [{ apiKey: "secret" }] } },
           },
         },
-      })
+      }),
     ).toThrow(/host-owned.*byok/);
   });
 });
@@ -169,7 +169,7 @@ describe("parseRecipeAgentSessionConfig", () => {
         tool_execution: "sequential",
         retry: { max_retries: 4, base_delay_ms: 250 },
         compaction: { reserve_tokens: 2048 },
-      })
+      }),
     ).toEqual({
       steeringMode: "one-at-a-time",
       followUpMode: "all",
@@ -187,8 +187,11 @@ describe("parseRecipeAgentSessionConfig", () => {
     expect(
       mergeRecipeAgentSessionConfig(
         { steeringMode: "all", settings: { retry: { maxRetries: 2 } } },
-        { toolExecution: "sequential", settings: { images: { autoResize: false } } }
-      )
+        {
+          toolExecution: "sequential",
+          settings: { images: { autoResize: false } },
+        },
+      ),
     ).toEqual({
       steeringMode: "all",
       toolExecution: "sequential",
@@ -206,7 +209,7 @@ describe("parseRecipeAgentSessionConfig", () => {
         retry: {},
         compaction: {},
         images: {},
-      })
+      }),
     ).toBeUndefined();
   });
 
@@ -218,9 +221,14 @@ describe("parseRecipeAgentSessionConfig", () => {
     [{ compaction: { reserve_tokens: -1 } }, /integer >= 0/],
     [{ branch_summary: {} }, /unsupported session key/],
     [{ images: { block_images: null } }, /expected boolean/],
-  ] as const)("rejects invalid portable session policy %#", (session, error) => {
-    expect(() => parseRecipeAgentSessionConfig("test", session)).toThrow(error);
-  });
+  ] as const)(
+    "rejects invalid portable session policy %#",
+    (session, error) => {
+      expect(() => parseRecipeAgentSessionConfig("test", session)).toThrow(
+        error,
+      );
+    },
+  );
 });
 
 describe("parseRecipeAgentModelConfig", () => {
@@ -258,21 +266,23 @@ describe("parseRecipeAgentModelConfig", () => {
 
   it("rejects non-canonical thinking-level aliases", () => {
     expect(() =>
-      parseRecipeAgentModelConfig("test", { thinkingLevel: "low" })
+      parseRecipeAgentModelConfig("test", { thinkingLevel: "low" }),
     ).toThrow(/unsupported model key/);
     expect(() =>
-      parseRecipeAgentModelConfig("test", { reasoning_effort: "high" })
+      parseRecipeAgentModelConfig("test", { reasoning_effort: "high" }),
     ).toThrow(/unsupported model key/);
   });
 
   it("rejects unknown keys and invalid values", () => {
-    expect(() => parseRecipeAgentModelConfig("test", { cache_rention: "long" })).toThrow(
-      RecipeModelConfigError
+    expect(() =>
+      parseRecipeAgentModelConfig("test", { cache_rention: "long" }),
+    ).toThrow(RecipeModelConfigError);
+    expect(() =>
+      parseRecipeAgentModelConfig("test", { temperature: "hot" }),
+    ).toThrow(/temperature/);
+    expect(() => parseRecipeAgentModelConfig("test", "gpt")).toThrow(
+      /expected object/,
     );
-    expect(() => parseRecipeAgentModelConfig("test", { temperature: "hot" })).toThrow(
-      /temperature/
-    );
-    expect(() => parseRecipeAgentModelConfig("test", "gpt")).toThrow(/expected object/);
   });
 
   it("returns undefined for an absent block", () => {
@@ -292,7 +302,7 @@ describe("mergeRecipeAgentModelConfig", () => {
         name: "anthropic/claude-fable-5",
         streamOptions: { temperature: 0.7 },
         openrouter: { sort: "price" },
-      }
+      },
     );
 
     expect(merged).toEqual({
@@ -309,8 +319,8 @@ describe("mergeRecipeAgentModelConfig", () => {
           name: "anthropic/claude-fable-5",
           streamOptions: { temperature: 0.2, maxTokens: 1024 },
         },
-        { streamOptions: { temperature: 0.7 } }
-      )
+        { streamOptions: { temperature: 0.7 } },
+      ),
     ).toEqual({
       name: "anthropic/claude-fable-5",
       streamOptions: { temperature: 0.7, maxTokens: 1024 },
@@ -350,7 +360,10 @@ describe("applyRecipeAgentModelConfigToModel", () => {
     const applied = applyRecipeAgentModelConfigToModel(model, {
       openrouter: { sort: "throughput" },
       anthropic: { betas: ["new-beta"] },
-    }) as { compat?: Record<string, unknown>; headers?: Record<string, string> };
+    }) as {
+      compat?: Record<string, unknown>;
+      headers?: Record<string, string>;
+    };
 
     expect(applied.compat?.openRouterRouting).toEqual({ sort: "throughput" });
     expect(applied.headers?.["anthropic-beta"]).toBe("existing,new-beta");
@@ -393,7 +406,7 @@ describe("applyRecipeAgentModelConfigToSession", () => {
     const model = {} as any;
     const context = {} as any;
     expect(
-      session.agent.streamFunction(model, context, { temperature: 0.2 })
+      session.agent.streamFunction(model, context, { temperature: 0.2 }),
     ).toBe("stream");
     expect(baseStreamFunction).toHaveBeenCalledWith(model, context, {
       temperature: 0.2,
@@ -425,7 +438,7 @@ describe("applyRecipeAgentModelConfigToSession", () => {
       providerOptions: { gateway: { caching: "auto" }, existing: true },
     };
     await expect(
-      session.agent.onPayload(original, { provider: "vercel-ai-gateway" })
+      session.agent.onPayload(original, { provider: "vercel-ai-gateway" }),
     ).resolves.toEqual({
       providerOptions: {
         existing: true,
@@ -441,7 +454,7 @@ describe("applyRecipeAgentModelConfigToSession", () => {
     expect(previousOnPayload).toHaveBeenCalledOnce();
 
     await expect(
-      session.agent.onPayload(original, { provider: "anthropic" })
+      session.agent.onPayload(original, { provider: "anthropic" }),
     ).resolves.toEqual({ ...original, extensionApplied: true });
   });
 });
@@ -453,7 +466,11 @@ describe("recipe agent model config loading", () => {
     recipeDir = mkdtempSync(join(tmpdir(), "recipes-model-"));
     writeFileSync(
       join(recipeDir, "package.json"),
-      JSON.stringify({ name: "model-recipe", version: "0.0.1", pi: { agents: ["agents/*.yaml"] } })
+      JSON.stringify({
+        name: "model-recipe",
+        version: "0.0.1",
+        pi: { agents: ["agents/*.yaml"] },
+      }),
     );
     mkdirSync(join(recipeDir, "agents"));
   });
@@ -474,7 +491,7 @@ describe("recipe agent model config loading", () => {
         "  providers:",
         "    anthropic:",
         "      betas: [interleaved-thinking]",
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "sweep.yaml"),
@@ -485,13 +502,17 @@ describe("recipe agent model config loading", () => {
         "model:",
         "  name: anthropic/claude-fable-5",
         "  thinking_level: high",
-      ].join("\n")
+      ].join("\n"),
     );
 
-    const definitions = loadValidatedRecipeAgentDefinitions(recipeDir).definitions;
+    const definitions =
+      loadValidatedRecipeAgentDefinitions(recipeDir).definitions;
     const sweep = definitions.get("sweep");
 
-    expect(sweep?.model).toEqual({ name: "anthropic/claude-fable-5", thinkingLevel: "high" });
+    expect(sweep?.model).toEqual({
+      name: "anthropic/claude-fable-5",
+      thinkingLevel: "high",
+    });
     expect(sweep?.modelConfig).toEqual({
       name: "anthropic/claude-fable-5",
       thinkingLevel: "high",
@@ -501,36 +522,41 @@ describe("recipe agent model config loading", () => {
   it("reads phases, inherits them through from, and rejects a malformed list", () => {
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: openai/gpt-5.5\nphases: [build, improve]\n"
+      "name: agent\nmodel:\n  name: openai/gpt-5.5\nphases: [build, improve]\n",
     );
     writeFileSync(
       join(recipeDir, "agents", "child.yaml"),
-      "name: child\nfrom: agent\n"
+      "name: child\nfrom: agent\n",
     );
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([]);
-    const definitions = loadValidatedRecipeAgentDefinitions(recipeDir).definitions;
+    const definitions =
+      loadValidatedRecipeAgentDefinitions(recipeDir).definitions;
     expect(definitions.get("agent")?.phases).toEqual(["build", "improve"]);
     expect(definitions.get("agent")?.declaredFields).toContain("phases");
     expect(definitions.get("child")?.phases).toEqual(["build", "improve"]);
 
     writeFileSync(
       join(recipeDir, "agents", "child.yaml"),
-      "name: child\nfrom: agent\nphases: [build, build]\n"
+      "name: child\nfrom: agent\nphases: [build, build]\n",
     );
     expect(
-      validateRecipeAgentDefinitions(recipeDir).map((finding) => finding.message)
-    ).toEqual([expect.stringContaining("phases must not contain duplicate entries")]);
+      validateRecipeAgentDefinitions(recipeDir).map(
+        (finding) => finding.message,
+      ),
+    ).toEqual([
+      expect.stringContaining("phases must not contain duplicate entries"),
+    ]);
   });
 
   it("accepts the minimal explicitly named agent", () => {
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      "name: agent\nmodel:\n  name: openai/gpt-5.5\n"
+      "name: agent\nmodel:\n  name: openai/gpt-5.5\n",
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([]);
     expect(
-      loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get("agent")
+      loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get("agent"),
     ).toMatchObject({
       name: "agent",
       tools: [],
@@ -552,12 +578,12 @@ describe("recipe agent model config loading", () => {
         "session:",
         "  steering_mode: all",
         "  tool_execution: sequential",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([]);
     expect(
-      loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get("agent")
+      loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get("agent"),
     ).toMatchObject({
       model: { name: "openai/gpt-5.5", thinkingLevel: "high" },
       modelConfig: { streamOptions: { maxTokens: 2048 } },
@@ -581,7 +607,7 @@ describe("recipe agent model config loading", () => {
         "  retry:",
         "    enabled: true",
         "    max_retries: 2",
-      ].join("\n")
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "reviewer.yaml"),
@@ -594,12 +620,13 @@ describe("recipe agent model config loading", () => {
         "  retry:",
         "    max_retries: 5",
         "  tool_execution: sequential",
-      ].join("\n")
+      ].join("\n"),
     );
 
-    const reviewer = loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get(
-      "reviewer"
-    );
+    const reviewer =
+      loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get(
+        "reviewer",
+      );
     expect(reviewer).toMatchObject({
       modelConfig: {
         name: "anthropic/claude-sonnet-4-6",
@@ -622,11 +649,13 @@ describe("recipe agent model config loading", () => {
         "  name: openai/gpt-5.5",
         "ai:",
         "  model: openai/gpt-5.5",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([
-      expect.objectContaining({ message: expect.stringMatching(/both model and ai/) }),
+      expect.objectContaining({
+        message: expect.stringMatching(/both model and ai/),
+      }),
     ]);
   });
 
@@ -639,7 +668,7 @@ describe("recipe agent model config loading", () => {
         "  model: openai/gpt-5.5",
         "runtime:",
         "  tool_execution: parallel",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([
@@ -659,15 +688,15 @@ describe("recipe agent model config loading", () => {
           "system_instructions:",
           `  mode: ${mode}`,
           "  content: '   '",
-        ].join("\n")
+        ].join("\n"),
       );
 
       expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([]);
       expect(
         loadValidatedRecipeAgentDefinitions(recipeDir).definitions.get("agent")
-          ?.systemInstructions
+          ?.systemInstructions,
       ).toEqual({ mode, content: "" });
-    }
+    },
   );
 
   it("rejects legacy agent instruction keys", () => {
@@ -680,14 +709,16 @@ describe("recipe agent model config loading", () => {
         "systemInstructions:",
         "  content: legacy",
         "prompt: legacy",
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([
       expect.objectContaining({
         agentName: "agent",
         field: "file",
-        message: expect.stringMatching(/unsupported key\(s\): .*prompt.*systemInstructions|unsupported key\(s\): .*systemInstructions.*prompt/),
+        message: expect.stringMatching(
+          /unsupported key\(s\): .*prompt.*systemInstructions|unsupported key\(s\): .*systemInstructions.*prompt/,
+        ),
       }),
     ]);
   });
@@ -712,7 +743,7 @@ describe("recipe agent model config loading", () => {
         "model:",
         "  name: openai/gpt-5.5",
         fieldYaml,
-      ].join("\n")
+      ].join("\n"),
     );
 
     expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([
@@ -726,11 +757,18 @@ describe("recipe agent model config loading", () => {
   it("excludes invalid files from the parsed graph and returns their diagnostics", () => {
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),
-      ["name: agent", "description: ok", "model:", "  name: openai/gpt-5.5"].join("\n")
+      [
+        "name: agent",
+        "description: ok",
+        "model:",
+        "  name: openai/gpt-5.5",
+      ].join("\n"),
     );
     writeFileSync(
       join(recipeDir, "agents", "broken.yaml"),
-      ["name: broken", "description: bad", "model:", "  temprature: 1"].join("\n")
+      ["name: broken", "description: bad", "model:", "  temprature: 1"].join(
+        "\n",
+      ),
     );
 
     const result = loadValidatedRecipeAgentDefinitions(recipeDir);
@@ -740,8 +778,8 @@ describe("recipe agent model config loading", () => {
     expect(definitions.has("broken")).toBe(false);
     expect(
       result.findings.some(
-        (finding) => finding.field === "file" && finding.agentName === "broken"
-      )
+        (finding) => finding.field === "file" && finding.agentName === "broken",
+      ),
     ).toBe(true);
   });
 });

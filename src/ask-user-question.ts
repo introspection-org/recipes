@@ -48,7 +48,7 @@ const MAX_QUESTIONS = 4;
 const description = [
   "Ask the user one to four multiple-choice questions and wait for the answers.",
   "Prefer this over asking in plain text whenever you need the user to decide something.",
-  "Each question gets 2 to 4 options; the user can always give their own answer instead, so never add an \"Other\" option.",
+  'Each question gets 2 to 4 options; the user can always give their own answer instead, so never add an "Other" option.',
   "",
   "How to ask well:",
   "- One decision per question.",
@@ -56,7 +56,7 @@ const description = [
   "- Give enough context in the question that a bare option label still makes sense.",
   "- Don't list the options inside the question text; put them in `options`.",
   "- Option labels are short and unnumbered (the tool numbers them); use `description` for the trade-off.",
-  "- For an approval, offer the approval itself; don't add a \"change it\" option, the user can type the changes.",
+  '- For an approval, offer the approval itself; don\'t add a "change it" option, the user can type the changes.',
   "- Set `multiSelect` only when several options can be true at once.",
 ].join("\n");
 
@@ -89,26 +89,26 @@ function parametersSchema(maxQuestions: number) {
                     Type.String({
                       description:
                         "What picking this option means, or its trade-off.",
-                    })
+                    }),
                   ),
                 },
-                { additionalProperties: false }
+                { additionalProperties: false },
               ),
               {
                 minItems: 2,
                 maxItems: 4,
                 description:
                   'Two to four choices. Do not add an "Other" option; the user can always type their own answer.',
-              }
+              },
             ),
             multiSelect: Type.Optional(
               Type.Boolean({
                 description:
                   "Allow the user to pick several options. Defaults to false.",
-              })
+              }),
             ),
           },
-          { additionalProperties: false }
+          { additionalProperties: false },
         ),
         {
           minItems: 1,
@@ -117,20 +117,18 @@ function parametersSchema(maxQuestions: number) {
             maxQuestions === 1
               ? "Exactly one question per call in this session."
               : "One to four questions, asked in order.",
-        }
+        },
       ),
     },
-    { additionalProperties: false }
+    { additionalProperties: false },
   );
 }
 
-export type AskUserQuestionToolParams = Static<
-  ReturnType<typeof parametersSchema>
->;
-export type AskUserQuestionInput = AskUserQuestionToolParams["questions"][number];
+type AskUserQuestionToolParams = Static<ReturnType<typeof parametersSchema>>;
+type AskUserQuestionInput = AskUserQuestionToolParams["questions"][number];
 
 /** How one question settled. */
-export interface AskUserQuestionAnswer {
+interface AskUserQuestionAnswer {
   question: string;
   header: string;
   multiSelect: boolean;
@@ -140,7 +138,7 @@ export interface AskUserQuestionAnswer {
 }
 
 /** Structured `details` of a finished `ask_user_question` result. */
-export interface AskUserQuestionDetails {
+interface AskUserQuestionDetails {
   questions: AskUserQuestionAnswer[];
   /** Claude Code-style map from question text to its answer (several joined with ", "). */
   answers: Record<string, string>;
@@ -199,7 +197,7 @@ async function typedAnswer(
   question: string,
   ui: ExtensionUIContext,
   dialog: ExtensionUIDialogOptions,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<string | undefined> {
   const text = await ui.input(question, "Type your answer", dialog);
   throwIfAborted(signal);
@@ -218,7 +216,7 @@ export async function askInTerminal(
   dialog: ExtensionUIDialogOptions,
   signal: AbortSignal | undefined,
   preferCustomTui: boolean,
-  onDismiss?: () => void
+  onDismiss?: () => void,
 ): Promise<AskUserOutcome> {
   const typedIndex = options.length;
   // In the terminal, typing answers straight away; Esc dismisses the list.
@@ -238,7 +236,9 @@ export async function askInTerminal(
       .map((option) => option.label);
     const typed =
       result.typed ??
-      (result.custom ? await typedAnswer(question, ui, dialog, signal) : undefined);
+      (result.custom
+        ? await typedAnswer(question, ui, dialog, signal)
+        : undefined);
     if (typed && !answers.includes(typed)) answers.push(typed);
     if (answers.length === 0) return { type: "declined" };
     return multiSelect
@@ -263,7 +263,7 @@ export async function askInTerminal(
 
   const finish = async (
     selected: ReadonlySet<number>,
-    typed: boolean
+    typed: boolean,
   ): Promise<AskUserOutcome> => {
     const answers = options
       .filter((_, index) => selected.has(index))
@@ -283,7 +283,7 @@ export async function askInTerminal(
     const choices = [
       ...options.map(
         (option, index) =>
-          `${selected.has(index) ? "[x]" : "[ ]"} ${numbered(index, option)}`
+          `${selected.has(index) ? "[x]" : "[ ]"} ${numbered(index, option)}`,
       ),
       `${typedIndex + 1}. ${ASK_USER_TYPED_ANSWER_OPTION}`,
       DONE_OPTION,
@@ -306,8 +306,8 @@ function answerLine(answer: AskUserQuestionAnswer): string {
 }
 
 /** The text summary the model sees for finished answers. */
-export function formatAskUserQuestionAnswers(
-  answers: readonly AskUserQuestionAnswer[]
+function formatAskUserQuestionAnswers(
+  answers: readonly AskUserQuestionAnswer[],
 ): string {
   const lines = answers.map(answerLine);
   if (answers.some((answer) => answer.outcome === "declined")) {
@@ -315,7 +315,7 @@ export function formatAskUserQuestionAnswers(
       "",
       answers.length === 1
         ? formatInteractionOutcome({ type: "declined" })
-        : "The user did not answer every question. Proceed with your best judgment for those."
+        : "The user did not answer every question. Proceed with your best judgment for those.",
     );
   }
   return lines.join("\n");
@@ -323,7 +323,7 @@ export function formatAskUserQuestionAnswers(
 
 function answerFrom(
   input: AskUserQuestionInput,
-  outcome: AskUserOutcome
+  outcome: AskUserOutcome,
 ): AskUserQuestionAnswer {
   const answers =
     outcome.type === "answered"
@@ -344,7 +344,7 @@ function answerFrom(
  * per call, since a host pause carries one interrupt per tool call.
  */
 export function createAskUserQuestionTool(
-  options: AskUserQuestionToolOptions = {}
+  options: AskUserQuestionToolOptions = {},
 ): ToolDefinition {
   const env = () => options.env ?? process.env;
   const pauseHost = flagEnabled(env().PI_INTERRUPT_RESUME);
@@ -352,7 +352,9 @@ export function createAskUserQuestionTool(
   const tool: ToolDefinition<typeof parameters> = {
     name: ASK_USER_QUESTION_TOOL_NAME,
     label: "Ask the user",
-    description: pauseHost ? `${description}\n\n${PAUSE_HOST_NOTE}` : description,
+    description: pauseHost
+      ? `${description}\n\n${PAUSE_HOST_NOTE}`
+      : description,
     promptSnippet:
       "Ask the user multiple-choice questions and wait for their answers",
     promptGuidelines: [
@@ -383,11 +385,14 @@ interface RunOptions {
 
 async function runAskUserQuestion(
   params: AskUserQuestionToolParams,
-  opts: RunOptions
-): Promise<AskUserResult | {
-  content: Array<{ type: "text"; text: string }>;
-  details: AskUserQuestionDetails;
-}> {
+  opts: RunOptions,
+): Promise<
+  | AskUserResult
+  | {
+      content: Array<{ type: "text"; text: string }>;
+      details: AskUserQuestionDetails;
+    }
+> {
   const questions = params.questions.slice(0, MAX_QUESTIONS);
   const collected: AskUserQuestionAnswer[] = [];
   // Esc on the terminal list means "let me reply in the chat": stop the turn
@@ -422,9 +427,9 @@ async function runAskUserQuestion(
             opts.ctx.mode === "tui",
             () => {
               dismissed = true;
-            }
+            },
           ),
-      }
+      },
     );
 
     if (result.outcome.type === "awaiting_user") {
@@ -464,14 +469,14 @@ async function runAskUserQuestion(
 }
 
 function detailsFor(
-  answers: readonly AskUserQuestionAnswer[]
+  answers: readonly AskUserQuestionAnswer[],
 ): AskUserQuestionDetails {
   return {
     questions: [...answers],
     answers: Object.fromEntries(
       answers
         .filter((answer) => answer.outcome === "answered")
-        .map((answer) => [answer.question, answer.answers.join(", ")])
+        .map((answer) => [answer.question, answer.answers.join(", ")]),
     ),
   };
 }
@@ -487,7 +492,7 @@ function detailsFor(
  */
 export function askUserQuestionExtension(
   registrations?: RecipeExtensionRegistrationRegistry,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
 ): ExtensionFactory {
   return (pi) => {
     if (registrations?.owner("tool", ASK_USER_QUESTION_TOOL_NAME)) return;

@@ -1,14 +1,15 @@
-
 import { fileURLToPath } from "node:url";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import { loadRecipePackageModule } from "../recipe/companions.js";
-import { recipeDocumentPackageName, type RecipePackageDocument } from "../recipe/package.js";
+import {
+  recipeDocumentPackageName,
+  type RecipePackageDocument,
+} from "../recipe/package.js";
 import {
   DOCUMENT_COMMANDS,
   documentCommandsFor,
-  documentConnectorTools,
   registerDocumentTools,
   type DocumentCommand,
 } from "./tools.js";
@@ -17,7 +18,9 @@ import { runDocumentHelper } from "./python.js";
 import type { DocumentAdapter, DocumentCapabilities } from "./types.js";
 
 /** The core `documents` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
-export const DOCUMENTS_SKILL = fileURLToPath(new URL("../../documents/SKILL.md", import.meta.url));
+export const DOCUMENTS_SKILL = fileURLToPath(
+  new URL("../../documents/SKILL.md", import.meta.url),
+);
 
 /**
  * The document format contract this host implements. A format module
@@ -73,10 +76,15 @@ export interface DocumentFormatModuleOptions {
   createAdapter(options: DocumentAdapterOptions): DocumentAdapter;
 }
 
-function sameCapabilities(left: DocumentCapabilities, right: DocumentCapabilities): boolean {
+function sameCapabilities(
+  left: DocumentCapabilities,
+  right: DocumentCapabilities,
+): boolean {
   const a = documentCommandsFor(left);
   const b = documentCommandsFor(right);
-  return a.length === b.length && a.every((command, index) => command === b[index]);
+  return (
+    a.length === b.length && a.every((command, index) => command === b[index])
+  );
 }
 
 /**
@@ -85,9 +93,13 @@ function sameCapabilities(left: DocumentCapabilities, right: DocumentCapabilitie
  * instead export the plain object itself. The host checks every module the
  * same way when it loads it.
  */
-export function createDocumentFormatModule(options: DocumentFormatModuleOptions): RecipeDocumentFormatModule {
-  if (!options.capabilities.read) throw new Error(`Document format '${options.format}' must support read`);
-  if (options.extensions.length === 0) throw new Error(`Document format '${options.format}' opens no extensions`);
+export function createDocumentFormatModule(
+  options: DocumentFormatModuleOptions,
+): RecipeDocumentFormatModule {
+  if (!options.capabilities.read)
+    throw new Error(`Document format '${options.format}' must support read`);
+  if (options.extensions.length === 0)
+    throw new Error(`Document format '${options.format}' opens no extensions`);
   return {
     kind: "documents",
     apiVersion: DOCUMENT_FORMAT_API_VERSION,
@@ -100,22 +112,34 @@ export function createDocumentFormatModule(options: DocumentFormatModuleOptions)
 }
 
 /** Create a module's adapter, checking it returns the format and capabilities it declared. */
-function createCheckedAdapter(module: RecipeDocumentFormatModule, options: DocumentAdapterOptions): DocumentAdapter {
+function createCheckedAdapter(
+  module: RecipeDocumentFormatModule,
+  options: DocumentAdapterOptions,
+): DocumentAdapter {
   const adapter = module.createAdapter(options);
   if (adapter.format !== module.format) {
-    throw new Error(`Document adapter for '${module.format}' returned format '${adapter.format}'`);
+    throw new Error(
+      `Document adapter for '${module.format}' returned format '${adapter.format}'`,
+    );
   }
   if (!sameCapabilities(adapter.capabilities, module.capabilities)) {
-    throw new Error(`Document adapter '${module.format}' returned capabilities that differ from its declared catalog`);
+    throw new Error(
+      `Document adapter '${module.format}' returned capabilities that differ from its declared catalog`,
+    );
   }
   return adapter;
 }
 
-function parseFormatModule(value: unknown, declaration: RecipePackageDocument): RecipeDocumentFormatModule {
+function parseFormatModule(
+  value: unknown,
+  declaration: RecipePackageDocument,
+): RecipeDocumentFormatModule {
   const packageName = recipeDocumentPackageName(declaration.format);
-  const module = (value && typeof value === "object" && "default" in value ? (value as { default: unknown }).default : value) as
-    | Partial<RecipeDocumentFormatModule>
-    | undefined;
+  const module = (
+    value && typeof value === "object" && "default" in value
+      ? (value as { default: unknown }).default
+      : value
+  ) as Partial<RecipeDocumentFormatModule> | undefined;
   if (
     !module ||
     module.kind !== "documents" ||
@@ -125,9 +149,16 @@ function parseFormatModule(value: unknown, declaration: RecipePackageDocument): 
     !module.capabilities?.read ||
     typeof module.createAdapter !== "function"
   ) {
-    throw new Error(`Recipe document package ${packageName} has an invalid module contract`);
+    throw new Error(
+      `Recipe document package ${packageName} has an invalid module contract`,
+    );
   }
-  return { ...module, extensions: module.extensions.map((extension) => String(extension).toLowerCase()) } as RecipeDocumentFormatModule;
+  return {
+    ...module,
+    extensions: module.extensions.map((extension) =>
+      String(extension).toLowerCase(),
+    ),
+  } as RecipeDocumentFormatModule;
 }
 
 export interface LoadedRecipeDocuments {
@@ -165,28 +196,49 @@ export async function loadRecipeDocuments(
   const modules = await Promise.all(
     declarations.map(async (declaration) => {
       const packageName = recipeDocumentPackageName(declaration.format);
-      const imported = await loadRecipePackageModule(options.recipeDir, packageName, {
-        what: `Recipe document format '${declaration.format}'`,
-        api: { name: "document format", version: DOCUMENT_FORMAT_API_VERSION },
-        ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
-      });
+      const imported = await loadRecipePackageModule(
+        options.recipeDir,
+        packageName,
+        {
+          what: `Recipe document format '${declaration.format}'`,
+          api: {
+            name: "document format",
+            version: DOCUMENT_FORMAT_API_VERSION,
+          },
+          ...(options.hostDir !== undefined
+            ? { hostDir: options.hostDir }
+            : {}),
+        },
+      );
       const module = parseFormatModule(imported, declaration);
       const supported = documentCommandsFor(module.capabilities);
       for (const command of declaration.commands ?? []) {
-        if (!knownCommands.has(command)) throw new Error(`Unknown documents command in pi.documents allowlist: ${command}`);
+        if (!knownCommands.has(command))
+          throw new Error(
+            `Unknown documents command in pi.documents allowlist: ${command}`,
+          );
         if (!supported.includes(command as DocumentCommand)) {
-          throw new Error(`Document format '${declaration.format}' does not support command: ${command}`);
+          throw new Error(
+            `Document format '${declaration.format}' does not support command: ${command}`,
+          );
         }
       }
       const profile =
         declaration.profile === undefined
           ? undefined
-          : resolveDocumentProfile(declaration.profile, { format: declaration.format, shipped: module.profiles, recipeDir: options.recipeDir });
+          : resolveDocumentProfile(declaration.profile, {
+              format: declaration.format,
+              shipped: module.profiles,
+              recipeDir: options.recipeDir,
+            });
       return { declaration, module, profile };
     }),
   );
-  const enabled = modules.filter(({ declaration }) => declaration.commands?.length !== 0);
-  if (!agentTools.includes("documents") || enabled.length === 0) return { toolNames: [] };
+  const enabled = modules.filter(
+    ({ declaration }) => declaration.commands?.length !== 0,
+  );
+  if (!agentTools.includes("documents") || enabled.length === 0)
+    return { toolNames: [] };
   const skillPaths = [DOCUMENTS_SKILL];
   for (const { profile } of enabled) {
     if (profile && !skillPaths.includes(profile)) skillPaths.push(profile);
@@ -200,8 +252,15 @@ export async function loadRecipeDocuments(
         const env = options.env ?? process.env;
         const cwd = options.cwd ?? process.cwd();
         const adapters = enabled.map(({ declaration, module }) => {
-          const python = options.python?.[recipeDocumentPackageName(declaration.format)]?.interpreter;
-          const adapter = createCheckedAdapter(module, { env, cwd, runHelper: runDocumentHelper, ...(python ? { python } : {}) });
+          const python =
+            options.python?.[recipeDocumentPackageName(declaration.format)]
+              ?.interpreter;
+          const adapter = createCheckedAdapter(module, {
+            env,
+            cwd,
+            runHelper: runDocumentHelper,
+            ...(python ? { python } : {}),
+          });
           const allowed = declaration.commands;
           if (allowed === undefined) return adapter;
           // Narrow the descriptor to the allowlist so the shared tool filters on it.
@@ -210,10 +269,14 @@ export async function loadRecipeDocuments(
             capabilities: {
               read: true as const,
               revise: Boolean(adapter.capabilities.revise && has("revise")),
-              proposeEdits: Boolean(adapter.capabilities.proposeEdits && has("propose_edits")),
+              proposeEdits: Boolean(
+                adapter.capabilities.proposeEdits && has("propose_edits"),
+              ),
               comment: Boolean(adapter.capabilities.comment && has("comment")),
               respond: Boolean(adapter.capabilities.respond && has("respond")),
-              removeSection: Boolean(adapter.capabilities.removeSection && has("remove_section")),
+              removeSection: Boolean(
+                adapter.capabilities.removeSection && has("remove_section"),
+              ),
               render: Boolean(adapter.capabilities.render && has("render")),
             },
           });
@@ -224,5 +287,3 @@ export async function loadRecipeDocuments(
     },
   };
 }
-
-export { documentConnectorTools };
