@@ -417,6 +417,21 @@ describe("show_artifact tool", () => {
       against: "HEAD",
       text: expect.stringContaining("-1 plain text"),
     });
+    // A ref reads git's version, whatever the working tree now holds there.
+    rmSync(join(workspace, "notes.txt"));
+    expect((await show("notes.txt", { ref: "HEAD" })).details).toMatchObject({
+      content: "plain text\n",
+    });
+    writeFileSync(join(workspace, "notes.txt"), Buffer.from([0x89, 0, 1]));
+    expect((await show("notes.txt", { ref: "HEAD" })).details).toMatchObject({
+      content: "plain text\n",
+    });
+    writeFileSync(join(workspace, "blob.txt"), Buffer.from([0x89, 0, 1]));
+    git("add", "blob.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "blob");
+    await expect(show("blob.txt", { ref: "HEAD" })).rejects.toThrow(
+      "blob.txt at HEAD is not a text file, so it can't be shown.",
+    );
     await expect(show("notes.txt", { ref: "--output=x" })).rejects.toThrow(
       /is not a git ref/,
     );

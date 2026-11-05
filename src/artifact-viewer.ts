@@ -372,7 +372,14 @@ function looksBinary(absolutePath: string): boolean {
 export function resolveArtifactPath(
   cwd: string,
   path: string,
-  { anyText = false }: { anyText?: boolean } = {},
+  {
+    anyText = false,
+    inWorkingTree = true,
+  }: {
+    anyText?: boolean;
+    /** False for a path read from a git commit: it need not exist now, and git's version is checked instead. */
+    inWorkingTree?: boolean;
+  } = {},
 ): ResolvedArtifactPath {
   const input = path.trim();
   if (!input)
@@ -391,6 +398,11 @@ export function resolveArtifactPath(
       `${input} is not a markdown file; only ${ARTIFACT_MARKDOWN_EXTENSIONS.join(" and ")} files can be shown for now.`,
     );
   }
+  const resolved = {
+    absolutePath,
+    relativePath: relative(root, absolutePath).split(sep).join("/"),
+  };
+  if (!inWorkingTree) return resolved;
   let stats;
   try {
     stats = statSync(absolutePath);
@@ -414,10 +426,7 @@ export function resolveArtifactPath(
       `${input} links outside the working directory; only files under ${root} can be shown.`,
     );
   }
-  return {
-    absolutePath,
-    relativePath: relative(root, absolutePath).split(sep).join("/"),
-  };
+  return resolved;
 }
 
 /** The default `o` action: the platform's "open with default app" command. */
@@ -505,19 +514,29 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
       `${ref} is not a git ref; give a commit hash, a branch or tag, or one like HEAD~1.`,
     );
   }
+  let text: string;
   try {
     // `./` resolves the path against the working directory, wherever the repository's root is.
-    return execFileSync("git", ["show", `${ref}:./${target.relativePath}`], {
+    text = execFileSync("git", ["show", `${ref}:./${target.relativePath}`], {
       cwd: workspaceRoot(target),
       encoding: "utf8",
       maxBuffer: ARTIFACT_MAX_BYTES,
       stdio: ["ignore", "pipe", "pipe"],
     });
-  } catch {
+  } catch (error) {
     throw new Error(
-      `${target.relativePath} has no version at ${ref} in the working directory's git repository.`,
+      (error as { code?: string }).code === "ENOBUFS"
+        ? `${target.relativePath} at ${ref} is over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads.`
+        : `${target.relativePath} has no version at ${ref} in the working directory's git repository.`,
     );
   }
+  // The version at the ref gets the checks a working-tree file gets on disk.
+  if (text.includes("\0")) {
+    throw new Error(
+      `${target.relativePath} at ${ref} is not a text file, so it can't be shown.`,
+    );
+  }
+  return text;
 }
 
 /** What the panel shows: a file, as of a commit or now, and what to diff it against. */
@@ -826,6 +845,8 @@ class ArtifactViewer {
   }
 
   private watch(source: ArtifactSource): () => void {
+    // A commit's version never changes, and its file may be gone from the working tree.
+    if (source.ref) return () => {};
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stop = this.watchFile(source.target.absolutePath, () => {
       if (timer) clearTimeout(timer);
@@ -952,10 +973,11 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
     ],
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const ref = params.ref?.trim() || undefined;
       const target = resolveArtifactPath(ctx.cwd, params.path, {
         anyText: true,
+        inWorkingTree: !ref,
       });
-      const ref = params.ref?.trim() || undefined;
       const { source, current, note } = artifactSourceFor(
         viewer,
         target,
@@ -1076,7 +1098,10 @@ export function artifactViewerExtension(
           return;
         }
         try {
-          const target = resolveArtifactPath(ctx.cwd, path, { anyText: true });
+          const target = resolveArtifactPath(ctx.cwd, path, {
+            anyText: true,
+            inWorkingTree: !parsed.ref,
+          });
           const { source, note } = artifactSourceFor(
             viewer,
             target,
