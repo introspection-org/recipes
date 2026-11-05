@@ -6,6 +6,7 @@ import {
   readsWhole,
   registerSkillProgress,
   skillRead,
+  stepSkills,
   stepLine,
 } from "../src/skill-progress.js";
 
@@ -44,6 +45,19 @@ describe("where the agent is", () => {
     expect(stepLine("research", ["research"], "00:05")).toBe(
       "▸ research · 00:05",
     );
+  });
+
+  it("steps only through the phase the agent lists first, not skills it consults", () => {
+    expect(stepSkills(skills)).toEqual([
+      "build-brainstorm",
+      "build-draft",
+      "build-review",
+    ]);
+    expect(skillRead("/x/skills/eval-case/SKILL.md", skills)).toBeUndefined();
+    expect(skillRead("/x/skills/build-draft/SKILL.md", skills)).toBe(
+      "build-draft",
+    );
+    expect(stepSkills(["research", "write"])).toEqual(["research", "write"]);
   });
 
   it("counts reading a skill, not glancing at its top", () => {

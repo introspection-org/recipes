@@ -47,14 +47,31 @@ export function readsWhole(input: Record<string, unknown>): boolean {
   return true;
 }
 
-/** The agent's skill whose `SKILL.md` a tool call's path or command reads, if any. */
+/**
+ * The skills that are the agent's steps: those of the phase its first skill
+ * belongs to (`build-*` for an agent listing `build-brainstorm` first). Others
+ * it lists (`eval-case`, read while writing cases) are consulted, not stepped
+ * into, so they don't move the footer. An agent whose first skill has no phase
+ * steps through all of them.
+ */
+export function stepSkills(skills: readonly string[]): readonly string[] {
+  const first = skills[0];
+  const dash = first ? first.indexOf("-") : -1;
+  if (!first || dash <= 0) return skills;
+  const phase = first.slice(0, dash + 1);
+  const steps = skills.filter((name) => name.startsWith(phase));
+  return steps.length > 1 ? steps : skills;
+}
+
+/** The agent's step whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
   text: unknown,
   skills: readonly string[],
 ): string | undefined {
   if (typeof text !== "string") return undefined;
+  const steps = stepSkills(skills);
   for (const match of text.matchAll(/([A-Za-z0-9_-]+)\/SKILL\.md\b/g)) {
-    if (skills.includes(match[1]!)) return match[1];
+    if (steps.includes(match[1]!)) return match[1];
   }
   return undefined;
 }
