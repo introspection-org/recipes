@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.19.0...introspection-recipe-check-v0.20.0) (2026-11-05)
+
+
+### Features
+
+* **pi:** the footer follows an agent's declared phases and shows helper skills inline ([#429](https://github.com/introspection-org/recipes/issues/429)) ([850d2c4](https://github.com/introspection-org/recipes/commit/850d2c48ccd32e879ebc2bd8ca10bfb2271f7576))
+* **recipe-check:** an edited case loses its approval through approved_hash ([#433](https://github.com/introspection-org/recipes/issues/433)) ([a280e1b](https://github.com/introspection-org/recipes/commit/a280e1bea92e86e0b78c12a745948bde15f1f783))
+
 ## [0.19.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.18.0...introspection-recipe-check-v0.19.0) (2026-11-04)
 
 
