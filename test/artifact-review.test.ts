@@ -223,17 +223,7 @@ describe("what the review shows of a file", () => {
 
   it("prefers the heading that matches exactly over one that contains it", () => {
     const brief =
-      "## Part A overview
-
-Summary.
-
-## Part A
-
-The brief.
-
-## Part B
-
-Tables.";
+      "## Part A overview\n\nSummary.\n\n## Part A\n\nThe brief.\n\n## Part B\n\nTables.";
     const shown = reviewSource(brief, "part a");
     expect(shown).toContain("The brief.");
     expect(shown).not.toContain("Summary.");
