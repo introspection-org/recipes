@@ -498,6 +498,30 @@ describe("recipe agent model config loading", () => {
     });
   });
 
+  it("reads phases, inherits them through from, and rejects a malformed list", () => {
+    writeFileSync(
+      join(recipeDir, "agents", "agent.yaml"),
+      "name: agent\nmodel:\n  name: openai/gpt-5.5\nphases: [build, improve]\n"
+    );
+    writeFileSync(
+      join(recipeDir, "agents", "child.yaml"),
+      "name: child\nfrom: agent\n"
+    );
+    expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([]);
+    const definitions = loadValidatedRecipeAgentDefinitions(recipeDir).definitions;
+    expect(definitions.get("agent")?.phases).toEqual(["build", "improve"]);
+    expect(definitions.get("agent")?.declaredFields).toContain("phases");
+    expect(definitions.get("child")?.phases).toEqual(["build", "improve"]);
+
+    writeFileSync(
+      join(recipeDir, "agents", "child.yaml"),
+      "name: child\nfrom: agent\nphases: [build, build]\n"
+    );
+    expect(
+      validateRecipeAgentDefinitions(recipeDir).map((finding) => finding.message)
+    ).toEqual([expect.stringContaining("phases must not contain duplicate entries")]);
+  });
+
   it("accepts the minimal explicitly named agent", () => {
     writeFileSync(
       join(recipeDir, "agents", "agent.yaml"),

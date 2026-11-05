@@ -1602,6 +1602,7 @@ export function createRecipesExtension(
         skills = {
           names: resolved.definition.skills,
           folders: skillFolders(resolved.skillPaths, resolved.recipeDir),
+          phases: resolved.definition.phases,
         };
         skillsByRecipe.set(resolved, skills);
       }

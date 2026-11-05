@@ -78,6 +78,12 @@ export interface RecipeAgentDefinition {
   /** MCP tool selection, separate from the exact Pi/extension tool allowlist. */
   mcp?: RecipeAgentMcp;
   skills: string[];
+  /**
+   * The phases the agent moves through, in order (`[build, improve]`): each
+   * is the prefix of its step skills (`build-draft`). Pi's footer shows the
+   * phase of the step last read; the agent's other skills are helpers.
+   */
+  phases?: string[];
   subagents: string[];
   systemInstructions?: RecipeSystemInstructions;
   /** Fields authored on this definition rather than inherited through `from`. */
@@ -92,6 +98,7 @@ export type RecipeAgentConfigField =
   | "tools"
   | "mcp"
   | "skills"
+  | "phases"
   | "subagents"
   | "system_instructions";
 
@@ -125,6 +132,7 @@ const AGENT_YAML_KEYS = new Set([
   "tools",
   "mcp",
   "skills",
+  "phases",
   "subagents",
   "system_instructions",
 ]);
@@ -180,7 +188,7 @@ function invalidAgentField(
   ) {
     return "description must be a string";
   }
-  for (const key of ["tools", "skills", "subagents"] as const) {
+  for (const key of ["tools", "skills", "phases", "subagents"] as const) {
     if (Object.hasOwn(data, key) && !isNonEmptyStringArray(data[key])) {
       return `${key} must be an array of non-empty strings`;
     }
@@ -497,6 +505,7 @@ function readRecipeAgentSources(
         tools: Object.hasOwn(data, "tools") ? stringArray(data.tools) : undefined,
         mcp: parseMcp(data),
         skills: Object.hasOwn(data, "skills") ? stringArray(data.skills) : undefined,
+        phases: Object.hasOwn(data, "phases") ? stringArray(data.phases) : undefined,
         subagents: Object.hasOwn(data, "subagents") ? stringArray(data.subagents) : undefined,
         systemInstructions: parseSystemInstructions(data),
         declaredFields: [
@@ -507,6 +516,7 @@ function readRecipeAgentSources(
           "tools",
           "mcp",
           "skills",
+          "phases",
           "subagents",
           "system_instructions",
         ].filter((key): key is RecipeAgentConfigField =>
@@ -562,6 +572,9 @@ function definitionsFromSources(
       tools: raw.tools ?? base?.tools ?? [],
       mcp: mergeMcp(base?.mcp, raw.mcp),
       skills: raw.skills ?? base?.skills ?? [],
+      ...(raw.phases ?? base?.phases
+        ? { phases: raw.phases ?? base?.phases }
+        : {}),
       subagents: raw.subagents ?? base?.subagents ?? [],
       systemInstructions: mergeSystemInstructions(
         base?.systemInstructions,

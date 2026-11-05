@@ -102,6 +102,7 @@ function inspectAgent(
     "tools",
     "mcp",
     "skills",
+    "phases",
     "subagents",
     "system_instructions",
   ];
