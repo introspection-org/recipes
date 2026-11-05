@@ -206,6 +206,7 @@ jobs:
       - native-linux-arm64
       - lint-actions
       - duplication
+      - rust-lint
     runs-on: ubuntu-latest
     steps:
       - name: Check that every needed job passed
