@@ -382,7 +382,12 @@ pub fn list_recipe_suggestions(input: &RecipeFiles) -> Vec<Suggestion> {
     // `valid` is sorted; Pi reads `pi.prompts` in the order it's written
     // (sorted within a glob), and the first template with a name wins.
     let pi = package.pi.as_ref().and_then(JsonValue::as_object);
-    let patterns = resource_patterns("prompts", pi.and_then(|pi| pi.get("prompts")), false, &mut ctx);
+    let patterns = resource_patterns(
+        "prompts",
+        pi.and_then(|pi| pi.get("prompts")),
+        false,
+        &mut ctx,
+    );
     let mut ordered: Vec<String> = Vec::new();
     for pattern in &patterns.patterns {
         for path in match_paths(&ctx, pattern) {
@@ -1107,11 +1112,17 @@ fn document_profile_problem(profile: &JsonValue) -> Option<String> {
     };
     let is_path = profile.contains('/') || profile.contains('\\') || profile.starts_with('.');
     if !is_path {
-        let valid = profile.chars().next().is_some_and(|first| first.is_ascii_alphanumeric())
-            && profile.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        let valid = profile
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+            && profile
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-');
         return (!valid).then(|| USAGE.to_owned());
     }
-    let absolute = profile.starts_with('/') || profile.starts_with('\\') || profile.get(1..2) == Some(":");
+    let absolute =
+        profile.starts_with('/') || profile.starts_with('\\') || profile.get(1..2) == Some(":");
     (absolute || profile.split(['/', '\\']).any(|part| part == ".."))
         .then(|| format!("'{profile}' must be a relative path inside the Recipe"))
 }
@@ -3049,8 +3060,12 @@ fn validate_model_providers(
         return;
     };
     for key in providers.keys().filter(|key| {
-        !matches!(key.as_str(), "openrouter" | "anthropic")
-            && !(transparent_provider_payloads && key.as_str() == "vercel_ai_gateway")
+        let known = match key.as_str() {
+            "openrouter" | "anthropic" => true,
+            "vercel_ai_gateway" => transparent_provider_payloads,
+            _ => false,
+        };
+        !known
     }) {
         ctx.error(
             "agent.model.providers_key_unknown",
@@ -3625,7 +3640,10 @@ fn packaged_skill_names(
     let mut names = BTreeMap::<String, Vec<String>>::new();
     for path in skill_files {
         let name = skill_frontmatter_name(&path, ctx).unwrap_or_else(|| {
-            let parent = Path::new(&path).parent().and_then(Path::to_str).unwrap_or("");
+            let parent = Path::new(&path)
+                .parent()
+                .and_then(Path::to_str)
+                .unwrap_or("");
             if parent.is_empty() || package_roots.iter().any(|root| root == parent) {
                 return "skill".to_owned();
             }
@@ -3683,7 +3701,10 @@ fn validate_declared_agent_references(
     let name = &agent.name;
     let path = &agent.path;
     for skill in agent.skills.as_deref().unwrap_or_default() {
-        let matches = skill_names.get(skill).map(Vec::as_slice).unwrap_or_default();
+        let matches = skill_names
+            .get(skill)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         match matches.len() {
             // A dependency missing from the snapshot may ship the skill, and a
             // check without node_modules (CI) must not fail on that.
@@ -4587,7 +4608,10 @@ mod tests {
             "pi": { "agents": ["agents/*.yaml"], "documents": documents }
         });
         recipe_files(&[
-            ("package.json", &serde_json::to_string(&package).expect("serialize package")),
+            (
+                "package.json",
+                &serde_json::to_string(&package).expect("serialize package"),
+            ),
             ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
             (
                 "agents/agent.yaml",
@@ -4632,17 +4656,30 @@ mod tests {
 
         let peer = |version: JsonValue| {
             let mut files = documents_recipe(json!([{ "format": "docx" }]), json!({}));
-            let package_file = files.files.iter_mut().find(|file| file.path == PACKAGE_JSON).expect("package.json");
+            let package_file = files
+                .files
+                .iter_mut()
+                .find(|file| file.path == PACKAGE_JSON)
+                .expect("package.json");
             let mut package: JsonValue =
-                serde_json::from_str(package_file.content.as_deref().expect("package content")).expect("parse package");
-            package["peerDependencies"] = json!({ "@introspection-ai/recipe-documents-docx": version });
+                serde_json::from_str(package_file.content.as_deref().expect("package content"))
+                    .expect("parse package");
+            package["peerDependencies"] =
+                json!({ "@introspection-ai/recipe-documents-docx": version });
             package_file.content = Some(serde_json::to_string(&package).expect("serialize"));
             check_recipe_files(&files)
         };
         let provided = peer(json!(">=0.3.0"));
-        assert!(provided.valid && provided.diagnostics.is_empty(), "{:?}", provided.diagnostics);
+        assert!(
+            provided.valid && provided.diagnostics.is_empty(),
+            "{:?}",
+            provided.diagnostics
+        );
         let versionless = peer(json!(""));
-        assert_eq!(codes(&versionless), [("package.peer_version_missing", Severity::Error)]);
+        assert_eq!(
+            codes(&versionless),
+            [("package.peer_version_missing", Severity::Error)]
+        );
 
         let listed_without_version = check_recipe_files(&documents_recipe(
             json!([{ "format": "docx" }]),
@@ -4777,14 +4814,20 @@ mod tests {
     #[test]
     fn channel_package_may_be_a_peer_and_only_a_companion_may_be_omitted() {
         let omitted = check_recipe_files(&edited_connector_recipe(|package| {
-            package.as_object_mut().expect("package object").remove("dependencies");
+            package
+                .as_object_mut()
+                .expect("package object")
+                .remove("dependencies");
         }));
         assert!(omitted.valid, "{:?}", omitted.diagnostics);
 
         let as_peer = |provider: &str| {
             let provider = provider.to_owned();
             check_recipe_files(&edited_connector_recipe(move |package| {
-                package.as_object_mut().expect("package object").remove("dependencies");
+                package
+                    .as_object_mut()
+                    .expect("package object")
+                    .remove("dependencies");
                 package["peerDependencies"] =
                     json!({ format!("@introspection-ai/recipe-channel-{provider}"): ">=0.1.0" });
                 package["pi"]["channels"] = json!([{ "provider": provider }]);
@@ -4794,7 +4837,10 @@ mod tests {
         assert!(slack.diagnostics.is_empty(), "{:?}", slack.diagnostics);
         let teams = as_peer("teams");
         assert!(teams.valid, "{:?}", teams.diagnostics);
-        assert_eq!(codes(&teams), [("package.peer_not_provided_by_default", Severity::Warning)]);
+        assert_eq!(
+            codes(&teams),
+            [("package.peer_not_provided_by_default", Severity::Warning)]
+        );
     }
 
     /// The checker's host imports are Recipes and the keys of Recipes'
@@ -4810,7 +4856,10 @@ mod tests {
             .map(String::as_str)
             .collect();
         declared.insert(manifest["name"].as_str().expect("name"));
-        assert_eq!(declared, HOST_PEER_PACKAGES.into_iter().collect::<BTreeSet<_>>());
+        assert_eq!(
+            declared,
+            HOST_PEER_PACKAGES.into_iter().collect::<BTreeSet<_>>()
+        );
     }
 
     #[test]
@@ -5547,6 +5596,18 @@ mod tests {
 
     /// A Recipe depending on `@acme/skills` (and `typebox` as a peer, `acme-dev`
     /// as a devDependency), with its agent selecting `agent_skills`, plus `extra`.
+    fn add_peer_dependency(input: &mut RecipeFiles, name: &str) {
+        let package = input
+            .files
+            .iter_mut()
+            .find(|file| file.path == "package.json")
+            .expect("package.json");
+        let mut manifest: JsonValue =
+            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
+        manifest["peerDependencies"][name] = json!(">=1.0.0");
+        package.content = Some(manifest.to_string());
+    }
+
     fn dependency_skills_recipe(agent_skills: &str, extra: &[(&str, &str)]) -> RecipeFiles {
         let package = json!({
             "name": "dependency-skills",
@@ -5556,7 +5617,8 @@ mod tests {
             "pi": { "agents": ["agents"] }
         });
         let package = serde_json::to_string_pretty(&package).expect("serialize package");
-        let agent = format!("name: agent\nmodel:\n  name: test/provider-model\nskills: [{agent_skills}]\n");
+        let agent =
+            format!("name: agent\nmodel:\n  name: test/provider-model\nskills: [{agent_skills}]\n");
         let mut files = vec![
             ("package.json", package.as_str()),
             ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
@@ -5585,7 +5647,10 @@ mod tests {
 
     #[test]
     fn offers_skills_a_direct_dependency_declares_in_pi_skills() {
-        let report = check_recipe_files(&dependency_skills_recipe("review", &[ACME_SKILLS, ACME_REVIEW]));
+        let report = check_recipe_files(&dependency_skills_recipe(
+            "review",
+            &[ACME_SKILLS, ACME_REVIEW],
+        ));
         assert!(report.valid, "{:?}", report.diagnostics);
         assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     }
@@ -5596,10 +5661,14 @@ mod tests {
             "node_modules/@acme/skills/package.json",
             r#"{"name":"@acme/skills","pi":{"skills":["SKILL.md"]}}"#,
         );
-        let unnamed = ("node_modules/@acme/skills/SKILL.md", "---\ndescription: Root\n---\n");
+        let unnamed = (
+            "node_modules/@acme/skills/SKILL.md",
+            "---\ndescription: Root\n---\n",
+        );
         let report = check_recipe_files(&dependency_skills_recipe("skill", &[root_skill, unnamed]));
         assert!(report.valid, "{:?}", report.diagnostics);
-        let report = check_recipe_files(&dependency_skills_recipe("skills", &[root_skill, unnamed]));
+        let report =
+            check_recipe_files(&dependency_skills_recipe("skills", &[root_skill, unnamed]));
         assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
     }
 
@@ -5608,19 +5677,28 @@ mod tests {
         let mut input = dependency_skills_recipe(
             "skill",
             &[
-                ("node_modules/@acme/peer-skill/package.json", r#"{"name":"@acme/peer-skill","pi":{"skills":["SKILL.md"]}}"#),
-                ("node_modules/@acme/peer-skill/SKILL.md", "---\ndescription: Root\n---\n"),
+                (
+                    "node_modules/@acme/peer-skill/package.json",
+                    r#"{"name":"@acme/peer-skill","pi":{"skills":["SKILL.md"]}}"#,
+                ),
+                (
+                    "node_modules/@acme/peer-skill/SKILL.md",
+                    "---\ndescription: Root\n---\n",
+                ),
             ],
         );
-        let package = input.files.iter_mut().find(|file| file.path == "package.json").expect("package.json");
-        let mut manifest: JsonValue =
-            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
-        manifest["peerDependencies"]["@acme/peer-skill"] = json!(">=1.0.0");
-        package.content = Some(manifest.to_string());
+        add_peer_dependency(&mut input, "@acme/peer-skill");
 
         let report = check_recipe_files(&input);
         assert!(report.valid, "{:?}", report.diagnostics);
-        assert!(!report.diagnostics.iter().any(|diagnostic| diagnostic.code.starts_with("agent.")), "{:?}", report.diagnostics);
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code.starts_with("agent.")),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]
@@ -5628,38 +5706,56 @@ mod tests {
         let mut input = dependency_skills_recipe(
             "contracts",
             &[
-                ("node_modules/acme-peer/package.json", r#"{"name":"acme-peer","pi":{"skills":["skills"]}}"#),
-                ("node_modules/acme-peer/skills/contracts/SKILL.md", "---\nname: contracts\ndescription: Contracts\n---\n"),
+                (
+                    "node_modules/acme-peer/package.json",
+                    r#"{"name":"acme-peer","pi":{"skills":["skills"]}}"#,
+                ),
+                (
+                    "node_modules/acme-peer/skills/contracts/SKILL.md",
+                    "---\nname: contracts\ndescription: Contracts\n---\n",
+                ),
             ],
         );
-        let package = input.files.iter_mut().find(|file| file.path == "package.json").expect("package.json");
-        let mut manifest: JsonValue =
-            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
-        manifest["peerDependencies"]["acme-peer"] = json!(">=1.0.0");
-        package.content = Some(manifest.to_string());
+        add_peer_dependency(&mut input, "acme-peer");
 
         let report = check_recipe_files(&input);
-        assert_eq!(codes(&report), [("package.peer_not_provided_by_default", Severity::Warning)]);
+        assert_eq!(
+            codes(&report),
+            [("package.peer_not_provided_by_default", Severity::Warning)]
+        );
         assert!(report.valid, "{:?}", report.diagnostics);
     }
 
     #[test]
     fn ignores_dependency_skills_without_explicit_pi_skills_and_from_dev_and_transitive_packages() {
-        let skill = |name: &'static str| {
-            (name, "---\nname: hidden\ndescription: Hidden\n---\n")
-        };
+        let skill = |name: &'static str| (name, "---\nname: hidden\ndescription: Hidden\n---\n");
         // The Recipe also depends on acme-visible, whose skill is offered.
         let mut input = dependency_skills_recipe(
             "visible, hidden",
             &[
-                ("node_modules/acme-visible/package.json", r#"{"name":"acme-visible","pi":{"skills":["skills"]}}"#),
-                ("node_modules/acme-visible/skills/visible/SKILL.md", "---\nname: visible\ndescription: Visible\n---\n"),
+                (
+                    "node_modules/acme-visible/package.json",
+                    r#"{"name":"acme-visible","pi":{"skills":["skills"]}}"#,
+                ),
+                (
+                    "node_modules/acme-visible/skills/visible/SKILL.md",
+                    "---\nname: visible\ndescription: Visible\n---\n",
+                ),
                 // Installed direct dependency without pi.skills: its skills/ folder is not read.
-                ("node_modules/@acme/skills/package.json", r#"{"name":"@acme/skills"}"#),
+                (
+                    "node_modules/@acme/skills/package.json",
+                    r#"{"name":"@acme/skills"}"#,
+                ),
                 skill("node_modules/@acme/skills/skills/hidden/SKILL.md"),
-                ("node_modules/acme-dev/package.json", r#"{"name":"acme-dev","pi":{"skills":["skills"]}}"#),
+                (
+                    "node_modules/acme-dev/package.json",
+                    r#"{"name":"acme-dev","pi":{"skills":["skills"]}}"#,
+                ),
                 skill("node_modules/acme-dev/skills/hidden/SKILL.md"),
-                ("node_modules/acme-transitive/package.json", r#"{"name":"acme-transitive","pi":{"skills":["skills"]}}"#),
+                (
+                    "node_modules/acme-transitive/package.json",
+                    r#"{"name":"acme-transitive","pi":{"skills":["skills"]}}"#,
+                ),
                 skill("node_modules/acme-transitive/skills/hidden/SKILL.md"),
             ],
         );
@@ -5675,14 +5771,21 @@ mod tests {
 
         let report = check_recipe_files(&input);
         assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
-        assert!(report.diagnostics[0].message.contains("'hidden'"), "{:?}", report.diagnostics);
+        assert!(
+            report.diagnostics[0].message.contains("'hidden'"),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]
     fn warns_instead_of_failing_when_a_dependency_is_not_installed() {
         let report = check_recipe_files(&dependency_skills_recipe("review", &[]));
         assert!(report.valid, "{:?}", report.diagnostics);
-        assert_eq!(codes(&report), [("agent.skill_unverified", Severity::Warning)]);
+        assert_eq!(
+            codes(&report),
+            [("agent.skill_unverified", Severity::Warning)]
+        );
         assert!(report.diagnostics[0].message.contains("@acme/skills"));
     }
 
@@ -5693,13 +5796,19 @@ mod tests {
             &[
                 ACME_SKILLS,
                 ACME_REVIEW,
-                ("skills/review/SKILL.md", "---\nname: review\ndescription: Own\n---\n"),
+                (
+                    "skills/review/SKILL.md",
+                    "---\nname: review\ndescription: Own\n---\n",
+                ),
             ],
         ));
         assert_eq!(codes(&report), [("agent.skill_ambiguous", Severity::Error)]);
         let message = &report.diagnostics[0].message;
         assert!(message.contains("skills/review/SKILL.md"), "{message}");
-        assert!(message.contains("node_modules/@acme/skills/skills/review/SKILL.md"), "{message}");
+        assert!(
+            message.contains("node_modules/@acme/skills/skills/review/SKILL.md"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -5712,10 +5821,16 @@ mod tests {
             let manifest = format!(r#"{{"name":"@acme/skills","pi":{{"skills":{skills}}}}}"#);
             let report = check_recipe_files(&dependency_skills_recipe(
                 "",
-                &[("node_modules/@acme/skills/package.json", &manifest), ACME_REVIEW],
+                &[
+                    ("node_modules/@acme/skills/package.json", &manifest),
+                    ACME_REVIEW,
+                ],
             ));
             assert_eq!(codes(&report), [(code, Severity::Error)], "{skills}");
-            assert!(report.diagnostics[0].message.contains("'@acme/skills'"), "{skills}");
+            assert!(
+                report.diagnostics[0].message.contains("'@acme/skills'"),
+                "{skills}"
+            );
         }
     }
 
