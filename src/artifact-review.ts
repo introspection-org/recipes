@@ -300,9 +300,17 @@ export interface ReviewInterruptItem {
   truncated?: true;
 }
 
+/** The history key for one review scope: a path, and the section of it shown. */
+export function reviewScope(path: string, section: string | undefined): string {
+  return `${path}\u0000${section ?? ""}`;
+}
+
 /**
  * The interrupt's items, holding at most `MAX_REVIEW_INTERRUPT_BYTES` of
- * content (current, then previous) in reading order.
+ * content: every file's current content first, in reading order, then the
+ * previous versions that fit whole in what's left. `previous` is keyed by
+ * `reviewScope`, so a different section of the same file is never its previous
+ * version.
  */
 export function reviewInterruptItems(
   documents: readonly ShownDocument[],
@@ -322,26 +330,26 @@ export function reviewInterruptItems(
     // A cut can split a multi-byte character; drop the partial one.
     return { text: kept.toString("utf8").replace(/\uFFFD$/, ""), cut: true };
   };
+  const shown = documents.map((doc) => take(doc.content));
   return documents.map((doc, index) => {
-    const shown = take(doc.content);
-    const before = previous.get(doc.path);
-    // A previous version is only worth sending whole, and only if it fits, so it never cuts a later file.
+    const section = sections[index];
+    const before = previous.get(reviewScope(doc.path, section));
+    // A previous version is only worth sending whole, and only in the space the current files left.
     const prior =
       before !== undefined &&
       before !== doc.content &&
-      !shown.cut &&
+      !shown[index]!.cut &&
       Buffer.byteLength(before, "utf8") <= left
         ? take(before)
         : undefined;
-    const section = sections[index];
     return {
       path: doc.path,
       label: doc.label,
       ...(section ? { section } : {}),
-      content: shown.text,
+      content: shown[index]!.text,
       sha256: doc.sha256,
       ...(prior && !prior.cut ? { previous_content: prior.text } : {}),
-      ...(shown.cut ? { truncated: true as const } : {}),
+      ...(shown[index]!.cut ? { truncated: true as const } : {}),
     };
   });
 }
@@ -427,7 +435,12 @@ export function createReviewArtifactsTool(
         result.outcome.type === "answered" ||
         result.outcome.type === "awaiting_user"
       ) {
-        for (const doc of documents) lastShown.set(doc.path, doc.content);
+        documents.forEach((doc, index) =>
+          lastShown.set(
+            reviewScope(doc.path, items[index]!.section),
+            doc.content,
+          ),
+        );
       }
       const files = documents.map(({ path, sha256 }) => ({ path, sha256 }));
       return {

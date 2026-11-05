@@ -11,6 +11,7 @@ import {
   createReviewArtifactsTool,
   formatReviews,
   reviewInterruptItems,
+  reviewScope,
   parseReviews,
   reviewSource,
   REVIEW_ARTIFACTS_TOOL_NAME,
@@ -657,8 +658,8 @@ describe("the interrupt's items", () => {
       [doc("a.md", "same"), doc("b.md", "new"), doc("c.md", "cc")],
       [undefined, undefined, undefined],
       new Map([
-        ["a.md", "same"],
-        ["b.md", "an older and much longer version"],
+        [reviewScope("a.md", undefined), "same"],
+        [reviewScope("b.md", undefined), "an older and much longer version"],
       ]),
       12,
     );
@@ -666,6 +667,27 @@ describe("the interrupt's items", () => {
     expect(out[1]).not.toHaveProperty("previous_content");
     expect(out[1]).not.toHaveProperty("truncated");
     expect(out[2]).toEqual(doc("c.md", "cc"));
+  });
+
+  it("fits every file's current content before any previous version", () => {
+    const out = reviewInterruptItems(
+      [doc("a.md", "aaa"), doc("b.md", "bbbbb")],
+      [undefined, undefined],
+      new Map([[reviewScope("a.md", undefined), "old!"]]),
+      8,
+    );
+    expect(out[0]).not.toHaveProperty("previous_content");
+    expect(out[1]).toEqual(doc("b.md", "bbbbb"));
+  });
+
+  it("matches a previous version by section as well as path", () => {
+    const out = reviewInterruptItems(
+      [doc("d.md", "part B now"), doc("d.md", "part A now")],
+      ["Part B", "Part A"],
+      new Map([[reviewScope("d.md", "Part A"), "part A then"]]),
+    );
+    expect(out[0]).not.toHaveProperty("previous_content");
+    expect(out[1]!.previous_content).toBe("part A then");
   });
 });
 
