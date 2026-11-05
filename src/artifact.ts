@@ -47,11 +47,12 @@ export interface ArtifactRepositorySource {
 
 /**
  * The host's id for the git repository rooted at `root`, if it is one the host
- * serves (and so can read a pushed commit's files from); undefined otherwise.
+ * serves (and so can read a pushed commit's files from), with the largest file
+ * it reads from one (`maxBytes`); undefined otherwise.
  */
 export type ArtifactRepositoryResolver = (
   root: string,
-) => { id: string } | undefined;
+) => { id: string; maxBytes?: number } | undefined;
 
 /**
  * Keeps a shown file too large to carry in a result, for a host that renders

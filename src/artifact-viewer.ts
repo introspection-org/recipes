@@ -661,7 +661,8 @@ function gitIn(dir: string, args: string[]): string | undefined {
 
 /**
  * Where a host can read the shown file itself: its repository, commit and
- * path, when the repository is one the host serves (`resolve`), the file is
+ * path, when the repository is one the host serves (`resolve`) and reads a file
+ * this size from (its `maxBytes`), the file is
  * unchanged against that commit (`ref`, or HEAD for the working tree), and the
  * commit is on a remote, so the host has it. Undefined otherwise; the result
  * then carries the file.
@@ -670,6 +671,7 @@ function repositorySource(
   target: ResolvedArtifactPath,
   ref: string | undefined,
   resolve: ArtifactRepositoryResolver | undefined,
+  bytes: number,
 ): ArtifactRepositorySource | undefined {
   if (!resolve) return undefined;
   const dir = dirname(target.absolutePath);
@@ -677,7 +679,9 @@ function repositorySource(
   const root = gitIn(dir, ["rev-parse", "--show-toplevel"]);
   if (!root) return undefined;
   const repository = resolve(root);
-  if (!repository) return undefined;
+  // Past what the host reads from a repository, the file is stored instead.
+  if (!repository || bytes > (repository.maxBytes ?? Infinity))
+    return undefined;
   const path = relative(
     realpathSync(root),
     join(realpathSync(dir), basename(target.absolutePath)),
@@ -1231,7 +1235,7 @@ function createShowArtifactTool(
       // A committed file the host serves is read from its repository; otherwise it rides along, or is stored.
       const committed = deleted
         ? undefined
-        : repositorySource(target, ref, resolveRepository);
+        : repositorySource(target, ref, resolveRepository, bytes);
       // Stored now, so the recorded result names the file; a host's own sync recognises the same upload.
       const stored =
         !committed && store && bytes > ARTIFACT_DETAILS_MAX_BYTES

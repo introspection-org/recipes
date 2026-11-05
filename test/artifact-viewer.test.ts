@@ -400,6 +400,15 @@ describe("show_artifact tool", () => {
     expect(unpushed.details.source).toBeUndefined();
     expect(unpushed.details.content).toBe("# Notes\nmore\n");
 
+    // Past what the host reads from a repository, the file is not named by it.
+    const capped = await setup(
+      { artifactRepository: () => ({ id: "repo-1", maxBytes: 4 }) },
+      "rpc",
+    );
+    expect(
+      (await capped.show("app/notes.md", { ref: "HEAD~1" })).details.source,
+    ).toBeUndefined();
+
     // A folder that isn't a repository the host serves is never named.
     writeFileSync(join(workspace, "plain.md"), "x\n");
     expect((await show("plain.md")).details.source).toBeUndefined();
