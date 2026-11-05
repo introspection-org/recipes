@@ -50,6 +50,12 @@ import {
   type ArtifactDocument,
 } from "./artifact-viewer-tui.js";
 import {
+  artifactDiffCounts,
+  artifactKind,
+  SHOW_ARTIFACT_TOOL_NAME,
+  type ShowArtifactDetails,
+} from "./artifact.js";
+import {
   createReviewArtifactsTool,
   REVIEW_ARTIFACTS_TOOL_NAME,
 } from "./artifact-review.js";
@@ -61,7 +67,7 @@ import {
   type ArtifactPanelScrollBy,
 } from "./interaction-tui.js";
 
-export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
+export { SHOW_ARTIFACT_TOOL_NAME } from "./artifact.js";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
  * never clash with another extension's or the user's commands. */
 const VIEW_ARTIFACT_COMMAND = "recipe view";
@@ -313,47 +319,6 @@ const parameters = Type.Object(
   { additionalProperties: false },
 );
 
-/** Structured `details` of a `show_artifact` result, enough for a host without the panel to render it. */
-interface ShowArtifactDetails {
-  /** The file, relative to the working directory. */
-  path: string;
-  /** Whether the panel is showing it (false outside the interactive terminal). */
-  shown: boolean;
-  kind: ArtifactKind;
-  /** The highlighting language, when the path names one. */
-  language?: string;
-  /** The commit shown, when not the working tree. */
-  ref?: string;
-  /** The file as shown, up to `ARTIFACT_DETAILS_MAX_BYTES`. */
-  content: string;
-  /** The content was cut to the cap. */
-  truncated?: true;
-  /** The working directory's git branch and whether its tree has uncommitted changes. */
-  git?: { branch: string; dirty: boolean };
-  /** How the file differs from its base: the `diff` asked for, else HEAD or the version shown before. */
-  diff?: {
-    against: string;
-    text: string;
-    added: number;
-    removed: number;
-    truncated?: true;
-  };
-  /** The view a host opens on: the diff when `diff` was asked for. */
-  opens?: "diff";
-}
-
-/** How the file renders. */
-type ArtifactKind = "markdown" | "html" | "text";
-
-const HTML_EXTENSIONS: readonly string[] = [".html", ".htm"];
-
-/** How a path's file renders: markdown, HTML, or highlighted text. */
-function artifactKind(path: string): ArtifactKind {
-  const extension = extname(path).toLowerCase();
-  if (ARTIFACT_MARKDOWN_EXTENSIONS.includes(extension)) return "markdown";
-  return HTML_EXTENSIONS.includes(extension) ? "html" : "text";
-}
-
 /** A validated artifact path. */
 export interface ResolvedArtifactPath {
   absolutePath: string;
@@ -593,17 +558,6 @@ function gitState(
   return { branch: name, dirty: Boolean(status) };
 }
 
-/** Lines added and removed in a `generateDiffString` diff. */
-function diffCounts(diff: string): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+")) added += 1;
-    else if (line.startsWith("-")) removed += 1;
-  }
-  return { added, removed };
-}
-
 /** The file as `source` names it: at its ref, or as it is now. */
 function readSource(source: ArtifactSource): string {
   if (source.ref) return gitVersion(source.target, source.ref);
@@ -645,7 +599,7 @@ function readDocument(source: ArtifactSource): ArtifactDocument {
       diff = {
         against: source.base.label,
         text: diffText,
-        ...diffCounts(diffText),
+        ...artifactDiffCounts(diffText),
       };
     }
   }

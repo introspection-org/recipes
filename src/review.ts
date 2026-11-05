@@ -2,7 +2,7 @@
  * The review of the files an agent wrote, as every renderer shares it: the
  * decisions, the answer text a run resumes with, the interrupt a pause/resume
  * host renders, each tab's name and the diff since the last review, plus the
- * interaction wording. Pi's terminal (`./artifact-review-tui.ts`) and a
+ * interaction wording, and a shown artifact's details (`./artifact.ts`). Pi's terminal (`./artifact-review-tui.ts`) and a
  * browser host both import it, so it imports nothing from Node, Pi or a
  * renderer; `test/review-core.test.ts` fails if it does.
  */
@@ -14,6 +14,18 @@ export {
   type AskUserOutcome,
   type InteractionResumeResponse,
 } from "./interaction-text.js";
+
+export {
+  SHOW_ARTIFACT_TOOL_NAME,
+  artifactDetails,
+  artifactDiffCounts,
+  artifactDiffLines,
+  artifactKind,
+  type ArtifactDiff,
+  type ArtifactDiffLineKind,
+  type ArtifactKind,
+  type ShowArtifactDetails,
+} from "./artifact.js";
 
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 

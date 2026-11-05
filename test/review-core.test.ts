@@ -7,6 +7,10 @@ import { describe, expect, it } from "vitest";
 import {
   DISMISSED_TEXT,
   formatInteractionResume,
+  artifactDetails,
+  artifactDiffCounts,
+  artifactDiffLines,
+  artifactKind,
   lineDiff,
   tabWindow,
   tabName,
@@ -91,6 +95,54 @@ describe("the review core", () => {
       { kind: "same", text: "c" },
       { kind: "added", text: "d" },
     ]);
+  });
+
+  it("reads a shown artifact's details as a host receives them", () => {
+    expect(artifactKind("docs/brief.md")).toBe("markdown");
+    expect(artifactKind("page.HTM")).toBe("html");
+    expect(artifactKind("agents/agent.yaml")).toBe("text");
+    expect(
+      artifactDetails({
+        path: "agents/agent.yaml",
+        shown: false,
+        kind: "text",
+        language: "yaml",
+        content: "name: agent\n",
+        git: { branch: "main", dirty: true },
+        diff: { against: "HEAD", text: "+2 x", added: 1, removed: 0 },
+        opens: "diff",
+      }),
+    ).toEqual({
+      path: "agents/agent.yaml",
+      shown: false,
+      kind: "text",
+      language: "yaml",
+      content: "name: agent\n",
+      hasContent: true,
+      git: { branch: "main", dirty: true },
+      diff: { against: "HEAD", text: "+2 x", added: 1, removed: 0 },
+      opens: "diff",
+    });
+    // A release before the file rode along sent only the path.
+    expect(artifactDetails({ path: "brief.md", shown: false })).toMatchObject({
+      kind: "markdown",
+      content: "",
+      hasContent: false,
+    });
+    expect(artifactDetails({ shown: false })).toBeUndefined();
+    expect(artifactDetails("nope")).toBeUndefined();
+  });
+
+  it("splits and counts Pi's display diff", () => {
+    const diff = " 1 a\n-2 b\n+2 c\n+3 d\n    ...\n";
+    expect(artifactDiffLines(diff).map((line) => line.kind)).toEqual([
+      "context",
+      "removed",
+      "added",
+      "added",
+      "context",
+    ]);
+    expect(artifactDiffCounts(diff)).toEqual({ added: 2, removed: 1 });
   });
 
   it("slides the tabs to keep the current one in view", () => {
