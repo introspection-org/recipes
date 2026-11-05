@@ -138,11 +138,11 @@ describe("where the agent is", () => {
       ctx,
     );
     expect(titles).toEqual([
-      "interview-8 · build ▰▱▱ 1/3 brainstorm · next draft",
-      "interview-8 · build ▰▰▱ 2/3 draft · next review",
+      "⧈ Introspection · interview-8 · build ▰▱▱ 1/3 brainstorm · next draft",
+      "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft · next review",
     ]);
     expect(working.at(-1)).toBe(
-      "build ▰▰▱ 2/3 draft · next review (3m) › introspection tasks prompt runs/C1-1 --prompt hi",
+      "⧈ Introspection build ▰▰▱ 2/3 draft · next review (3m) › introspection tasks prompt runs/C1-1 --prompt hi",
     );
   });
 

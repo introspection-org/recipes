@@ -54,7 +54,7 @@ selects that Recipe's default agent, not the parent's.
 While a Recipe agent works, Pi's working line shows where it is in place of "Working", and the terminal title names the folder and the step:
 
 ```text
-⠋ build ▰▰▱ 2/3 draft · next review (12m) › introspection tasks prompt runs/C1-1
+⠋ ⧈ Introspection build ▰▰▱ 2/3 draft · next review (12m) › introspection tasks prompt runs/C1-1
 ```
 
 Nothing is declared for it. The step is the agent's skill it last read: a skill named `<phase>-<step>` shows as a bar of its phase's steps in the order the agent lists them, done and current filled, with the next step; any other skill shows by its name. The time is how long the step has run, not an estimate of what's left. The last part is the tool call in progress: a bash command, shortened, `waiting for you` during a question or review, or the tool's name. A resumed session shows its step at once, from its earlier reads.

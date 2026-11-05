@@ -19,6 +19,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
+/** Introspection's mark (two concentric squares) and name, at the front of the working line and the title. */
+export const BRAND = "⧈ Introspection";
+
 /** The longest a command shows in the working line. */
 export const ACTIVITY_MAX_CHARS = 60;
 
@@ -132,7 +135,7 @@ export function registerSkillProgress(
   let since = 0;
   const show = (ctx: ExtensionContext, text: string | undefined) => {
     if (!ctx.hasUI || !crumb) return;
-    const line = `${crumb} (${elapsed(now() - since)})`;
+    const line = `${BRAND} ${crumb} (${elapsed(now() - since)})`;
     ctx.ui.setWorkingMessage(text ? `${line} › ${text}` : line);
   };
   const setStep = (
@@ -145,7 +148,7 @@ export function registerSkillProgress(
     if (next === crumb) return;
     crumb = next;
     since = now();
-    ctx.ui.setTitle(`${basename(ctx.cwd)} · ${crumb}`);
+    ctx.ui.setTitle(`${BRAND} · ${basename(ctx.cwd)} · ${crumb}`);
     show(ctx, undefined);
   };
   pi.on("tool_execution_start", (event, ctx) => {
