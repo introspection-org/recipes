@@ -276,12 +276,12 @@ interface ShowArtifactDetails {
 }
 
 /** How the file renders. */
-export type ArtifactKind = "markdown" | "html" | "text";
+type ArtifactKind = "markdown" | "html" | "text";
 
 const HTML_EXTENSIONS: readonly string[] = [".html", ".htm"];
 
 /** How a path's file renders: markdown, HTML, or highlighted text. */
-export function artifactKind(path: string): ArtifactKind {
+function artifactKind(path: string): ArtifactKind {
   const extension = extname(path).toLowerCase();
   if (ARTIFACT_MARKDOWN_EXTENSIONS.includes(extension)) return "markdown";
   return HTML_EXTENSIONS.includes(extension) ? "html" : "text";
@@ -489,7 +489,7 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
 }
 
 /** What the panel shows: a file, as of a commit or now, and what to diff it against. */
-export interface ArtifactSource {
+interface ArtifactSource {
   target: ResolvedArtifactPath;
   ref?: string;
   base?: { label: string; text: string };
