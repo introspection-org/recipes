@@ -143,7 +143,7 @@ jobs:
             arch: arm64
             platform_id: linux-arm64
             target: aarch64-unknown-linux-gnu
-          - os: macos-14
+          - os: macos-15
             platform: darwin
             arch: arm64
             platform_id: darwin-arm64
