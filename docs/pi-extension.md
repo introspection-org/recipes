@@ -59,6 +59,8 @@ A Recipe agent's step shows in Pi's footer, with how long the agent has worked:
 
 Nothing is declared for it. The step is the agent's skill it last read, among the skills of the phase it lists first (`build-*` for an agent listing `build-brainstorm` first; others it consults, such as `eval-case`, don't move it): a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked, the current one marked and the rest to come; any other skill shows by its name. The clock is the agent's working time from the start of the session, across every step, redrawn every second. It pauses while the person is in the loop, when the agent's turn has ended or a question or review is open, and the current step then shows ⏸ in place of ▸. It's never an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
 
+A host that draws its own line (the platform's task chat) passes `onRecipeStep` to `createAgentSession`, with or without a UI. It receives the same step as data, `{ skill, phase?, steps: [{ name, state: "done" | "current" | "todo" }], paused, worked_ms }`, whenever the step changes or the clock starts or stops, not every second; the host runs the clock on from `worked_ms` while `paused` is false. A skill outside a phase has no `steps` and shows by `skill`.
+
 ## The Recipe a session runs
 
 When the extension starts a Recipe session it records the Recipe in the session file, as a custom entry of type `recipe_session`:
