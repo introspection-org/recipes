@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   elapsed,
   lastSkillRead,
+  readsWhole,
   registerSkillProgress,
   skillRead,
   STEP_STATUS_KEY,
@@ -44,6 +45,20 @@ describe("where the agent is", () => {
     expect(stepLine("research", ["research"], "00:05")).toBe(
       "research · 00:05",
     );
+  });
+
+  it("counts reading a skill, not glancing at its top", () => {
+    expect(readsWhole({ path: "s/build-review/SKILL.md", limit: 30 })).toBe(
+      false,
+    );
+    expect(readsWhole({ path: "s/build-review/SKILL.md", limit: 200 })).toBe(
+      true,
+    );
+    expect(readsWhole({ path: "s/build-review/SKILL.md" })).toBe(true);
+    expect(readsWhole({ command: "head -30 s/build-review/SKILL.md" })).toBe(
+      false,
+    );
+    expect(readsWhole({ command: "cat s/build-review/SKILL.md" })).toBe(true);
   });
 
   it("gives how long the step has run", () => {

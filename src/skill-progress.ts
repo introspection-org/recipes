@@ -22,6 +22,21 @@ export const BRAND = "⧈ Introspection";
 /** The footer status the step shows under. */
 export const STEP_STATUS_KEY = "recipe-step";
 
+/** Lines a read must cover to count as reading a skill; fewer is a glance at it, not the step. */
+export const SKILL_READ_MIN_LINES = 100;
+
+/** Whether a tool call's input reads a whole file rather than glancing at its top. */
+export function readsWhole(input: Record<string, unknown>): boolean {
+  if (typeof input.limit === "number" && input.limit < SKILL_READ_MIN_LINES)
+    return false;
+  if (
+    typeof input.command === "string" &&
+    /\b(head|sed\s+-n)\b/.test(input.command)
+  )
+    return false;
+  return true;
+}
+
 /** The agent's skill whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
   text: unknown,
@@ -108,7 +123,8 @@ export function lastSkillRead(
       type?: string;
       arguments?: Record<string, unknown>;
     }>) {
-      if (block.type !== "toolCall") continue;
+      if (block.type !== "toolCall" || !readsWhole(block.arguments ?? {}))
+        continue;
       last =
         skillRead(block.arguments?.path, skills) ??
         skillRead(block.arguments?.command, skills) ??
@@ -171,11 +187,13 @@ export function registerSkillProgress(
     const skills = skillsFor(ctx);
     if (!skills?.length) return;
     const input = (event.input ?? {}) as Record<string, unknown>;
-    setStep(
-      ctx,
-      skillRead(input.path, skills) ?? skillRead(input.command, skills),
-      skills,
-    );
+    if (readsWhole(input)) {
+      setStep(
+        ctx,
+        skillRead(input.path, skills) ?? skillRead(input.command, skills),
+        skills,
+      );
+    }
     show(ctx);
   });
   return {
