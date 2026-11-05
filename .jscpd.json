@@ -1,0 +1,12 @@
+{
+  "path": ["."],
+  "pattern": "packages/**/*.rs",
+  "format": ["rust"],
+  "ignore": ["**/target/**", "**/node_modules/**"],
+  "gitignore": true,
+  "minTokens": 70,
+  "minLines": 8,
+  "mode": "weak",
+  "threshold": 0.52,
+  "reporters": ["console"]
+}

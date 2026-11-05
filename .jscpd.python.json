@@ -1,0 +1,14 @@
+{
+  "path": ["."],
+  "pattern": "**/*.py",
+  "format": ["python"],
+  "ignore": ["**/.venv/**", "**/target/**", "**/node_modules/**"],
+  "gitignore": true,
+  "minTokens": 50,
+  "minLines": 5,
+  "mode": "weak",
+  "kind": ["exact", "renamed"],
+  "ignoreIdentifiers": true,
+  "threshold": 1.87,
+  "reporters": ["console"]
+}
