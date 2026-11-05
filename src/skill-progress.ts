@@ -1,8 +1,9 @@
 /**
  * Where a Recipe agent is, in Pi's footer:
  * `⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04`. Pi's own
- * "Working" line and the terminal title are left as they are. The clock is how
- * long the current step has run; no estimate of what's left is given, since
+ * "Working" line and the terminal title are left as they are. The clock is the
+ * agent's working time from the start of the session, across every step, paused
+ * while the person is in the loop, when the current step shows ⏸ in place of ▸; no estimate of what's left is given, since
  * steps vary too much for one to be honest.
  *
  * Nothing is declared for it. The step is the agent's skill it last read: a
@@ -18,6 +19,15 @@ import type {
 
 /** Introspection's mark (two concentric squares) and name, at the front of the footer line. */
 export const BRAND = "⧈ Introspection";
+
+/** The current step's mark while the clock is paused for the person, in place of ▸. */
+export const PAUSED_MARK = "⏸";
+
+/** Tools that wait for the person: the step's clock stops while one is open. */
+export const PERSON_IN_THE_LOOP = new Set([
+  "ask_user_question",
+  "review_artifacts",
+]);
 
 /** The footer status the step shows under. */
 export const STEP_STATUS_KEY = "recipe-step";
@@ -74,9 +84,11 @@ export function stepLine(
   skill: string,
   skills: readonly string[],
   clock: string,
+  paused = false,
 ): string {
   const found = phaseOf(skill, skills);
-  if (!found) return `${skill} · ${clock}`;
+  const mark = paused ? PAUSED_MARK : "▸";
+  if (!found) return `${mark} ${skill} · ${clock}`;
   const done = found.steps
     .slice(0, found.at)
     .map((step) => `✓ ${step}`)
@@ -85,7 +97,7 @@ export function stepLine(
     .slice(found.at + 1)
     .map((step) => `○ ${step}`)
     .join(" ");
-  const line = [done, `▸ ${found.steps[found.at]}`, rest]
+  const line = [done, `${mark} ${found.steps[found.at]}`, rest]
     .filter(Boolean)
     .join(" ");
   return `${found.phase} ${line} · ${clock}`;
@@ -152,7 +164,21 @@ export function registerSkillProgress(
   },
 ): { resume(ctx: ExtensionContext): void } {
   let current: { skill: string; skills: readonly string[] } | undefined;
-  let since = 0;
+  // The agent's working time this session, across every step: what's banked, plus the run in
+  // progress. It pauses while the person is in the loop (the agent's turn has ended, or a question
+  // or review is open).
+  let banked = 0;
+  let runningSince: number | undefined = now();
+  const worked = () =>
+    banked + (runningSince === undefined ? 0 : now() - runningSince);
+  const pause = () => {
+    if (runningSince === undefined) return;
+    banked += now() - runningSince;
+    runningSince = undefined;
+  };
+  const run = () => {
+    runningSince ??= now();
+  };
   // Redrawn every second, so the clock runs during a long call.
   let shown: ExtensionContext | undefined;
   let stop: (() => void) | undefined;
@@ -161,7 +187,7 @@ export function registerSkillProgress(
     shown = ctx;
     ctx.ui.setStatus(
       STEP_STATUS_KEY,
-      `${BRAND} ${stepLine(current.skill, current.skills, elapsed(now() - since))}`,
+      `${BRAND} ${stepLine(current.skill, current.skills, elapsed(worked()), runningSince === undefined)}`,
     );
     stop ??= every(() => {
       if (shown) show(shown);
@@ -180,12 +206,25 @@ export function registerSkillProgress(
     if (!skill || !ctx.hasUI) return;
     if (current?.skill === skill) return;
     current = { skill, skills };
-    since = now();
     show(ctx);
   };
+  pi.on("agent_start", (_event, ctx) => {
+    run();
+    show(ctx);
+  });
+  pi.on("agent_end", (_event, ctx) => {
+    pause();
+    show(ctx);
+  });
+  pi.on("tool_execution_start", (event, ctx) => {
+    if (!PERSON_IN_THE_LOOP.has(event.toolName)) return;
+    pause();
+    show(ctx);
+  });
   pi.on("tool_result", (event, ctx) => {
     const skills = skillsFor(ctx);
     if (!skills?.length) return;
+    if (PERSON_IN_THE_LOOP.has(event.toolName)) run();
     const input = (event.input ?? {}) as Record<string, unknown>;
     if (readsWhole(input)) {
       setStep(

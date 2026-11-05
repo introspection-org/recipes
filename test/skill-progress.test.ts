@@ -6,7 +6,6 @@ import {
   readsWhole,
   registerSkillProgress,
   skillRead,
-  STEP_STATUS_KEY,
   stepLine,
 } from "../src/skill-progress.js";
 
@@ -43,7 +42,7 @@ describe("where the agent is", () => {
       "build ✓ brainstorm ✓ draft ▸ review · 03:10",
     );
     expect(stepLine("research", ["research"], "00:05")).toBe(
-      "research · 00:05",
+      "▸ research · 00:05",
     );
   });
 
@@ -86,7 +85,7 @@ describe("where the agent is", () => {
     ).toBe("build-draft");
   });
 
-  it("sets the footer status as the agent moves, with a running clock, and on resume", () => {
+  it("shows the step and the agent's working time, paused while the person is in the loop", () => {
     const handlers = new Map<string, (event: any, ctx: any) => void>();
     const pi = {
       on: (name: string, handler: any) => handlers.set(name, handler),
@@ -102,12 +101,12 @@ describe("where the agent is", () => {
         return () => {};
       },
     );
-    const statuses: Array<[string, string]> = [];
+    const statuses: string[] = [];
     const ctx = {
       hasUI: true,
       cwd: "/home/u/interview-8",
       ui: {
-        setStatus: (key: string, text: string) => statuses.push([key, text]),
+        setStatus: (_key: string, text: string) => statuses.push(text),
         setTitle: () => {
           throw new Error("the title is Pi's");
         },
@@ -133,16 +132,41 @@ describe("where the agent is", () => {
       },
     };
     progress.resume(ctx as any);
-    handlers.get("tool_result")!(
-      { input: { path: "s/build-draft/SKILL.md" } },
+    clock = 60_000;
+    handlers.get("tool_execution_start")!(
+      { toolName: "review_artifacts", args: {} },
       ctx,
     );
-    clock = 3 * 60_000 + 17_000;
+    clock = 10 * 60_000; // nine minutes with the owner don't count
     tick!();
-    expect(statuses.at(-1)).toEqual([
-      STEP_STATUS_KEY,
-      "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 03:17",
-    ]);
+    expect(statuses.at(-1)).toBe(
+      "⧈ Introspection build ⏸ brainstorm ○ draft ○ review · 01:00",
+    );
+    handlers.get("tool_result")!(
+      { toolName: "review_artifacts", input: {} },
+      ctx,
+    );
+    handlers.get("tool_result")!(
+      { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
+      ctx,
+    );
+    clock = 10 * 60_000 + 30_000; // the clock carries on across steps
+    tick!();
+    expect(statuses.at(-1)).toBe(
+      "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 01:30",
+    );
+    handlers.get("agent_end")!({}, ctx);
+    clock = 20 * 60_000;
+    tick!();
+    expect(statuses.at(-1)).toBe(
+      "⧈ Introspection build ✓ brainstorm ⏸ draft ○ review · 01:30",
+    );
+    handlers.get("agent_start")!({}, ctx);
+    clock = 20 * 60_000 + 5_000;
+    tick!();
+    expect(statuses.at(-1)).toBe(
+      "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 01:35",
+    );
   });
 
   it("does nothing outside a Recipe session", () => {
