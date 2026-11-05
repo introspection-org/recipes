@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.45.0](https://github.com/introspection-org/recipes/compare/v0.44.0...v0.45.0) (2026-11-05)
+
+
+### Features
+
+* **recipe-check:** an edited case loses its approval through approved_hash ([#433](https://github.com/introspection-org/recipes/issues/433)) ([a280e1b](https://github.com/introspection-org/recipes/commit/a280e1bea92e86e0b78c12a745948bde15f1f783))
+
+
+### Bug Fixes
+
+* read Recipes' own manifest from a generated module, so a bundled host works ([#435](https://github.com/introspection-org/recipes/issues/435)) ([2f2c6eb](https://github.com/introspection-org/recipes/commit/2f2c6eb96566a0e96407cbfba86a1fbe73277a8c))
+
 ## [0.44.0](https://github.com/introspection-org/recipes/compare/v0.43.0...v0.44.0) (2026-11-05)
 
 
