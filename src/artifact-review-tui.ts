@@ -18,6 +18,7 @@ import {
   Markdown,
   matchesKey,
   truncateToWidth,
+  visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
@@ -32,6 +33,7 @@ import {
 } from "./interaction-tui.js";
 import {
   tabName,
+  tabWindow,
   type ArtifactReview,
   type ReviewDecision,
   type ReviewDocument,
@@ -41,6 +43,8 @@ export { tabName } from "./review.js";
 
 /** The most rows the file's box takes; a longer file scrolls in it. */
 const REVIEW_BOX_MAX_ROWS = 20;
+/** The most rows the Submit summary shows; a longer one scrolls. */
+const REVIEW_SUMMARY_MAX_ROWS = 5;
 
 interface ReviewState {
   decision?: Exclude<ReviewDecision, "not_reviewed">;
@@ -188,19 +192,36 @@ export function showReviewTui(
           const rule = theme.fg("accent", "─".repeat(Math.max(0, width)));
           add(rule);
           if (several) {
-            const tabs = items.map((item, index) => {
-              const text = ` ${mark(index)} ${tabName(item.label, item.path, index)} `;
-              return index === active
+            const texts = [
+              ...items.map(
+                (item, index) =>
+                  ` ${mark(index)} ${tabName(item.label, item.path, index)} `,
+              ),
+              ` ✔ Submit `,
+            ];
+            const styled = texts.map((text, index) =>
+              index === active
                 ? theme.inverse(theme.fg("accent", text))
-                : theme.fg(states[index]!.decision ? "success" : "text", text);
-            });
-            const submit = ` ✔ Submit `;
-            tabs.push(
-              onSubmitTab()
-                ? theme.inverse(theme.fg("accent", submit))
-                : theme.fg("dim", submit),
+                : index === items.length
+                  ? theme.fg("dim", text)
+                  : theme.fg(
+                      states[index]!.decision ? "success" : "text",
+                      text,
+                    ),
             );
-            add(` ${title}  ${tabs.join(" ")}`);
+            const lead = ` ${title}  `;
+            // The tabs slide to keep the current one in view; ‹ › mark hidden ones.
+            const { start, end } = tabWindow(
+              texts.map((text) => visibleWidth(text) + 1),
+              active,
+              Math.max(10, width - visibleWidth(lead)),
+            );
+            add(
+              lead +
+                (start > 0 ? theme.fg("dim", "‹ ") : "") +
+                styled.slice(start, end).join(" ") +
+                (end < texts.length ? theme.fg("dim", " ›") : ""),
+            );
           } else add(` ${theme.bold(title)}`);
           add();
           const inner = Math.max(10, width - 4);
@@ -251,7 +272,11 @@ export function showReviewTui(
           // At most half the terminal, so the conversation above stays in view.
           lastBodyHeight = Math.max(
             4,
-            Math.min(body.length, REVIEW_BOX_MAX_ROWS, Math.floor(rows / 2)),
+            Math.min(
+              body.length,
+              onSubmitTab() ? REVIEW_SUMMARY_MAX_ROWS : REVIEW_BOX_MAX_ROWS,
+              Math.floor(rows / 2),
+            ),
           );
           lastMaxScroll = scrollable
             ? Math.max(0, body.length - lastBodyHeight)
@@ -294,7 +319,7 @@ export function showReviewTui(
           const keys = [
             several ? "←→ file" : undefined,
             "Enter choose",
-            lastMaxScroll > 0 && !onSubmitTab() ? "j/k scroll" : undefined,
+            lastMaxScroll > 0 ? "j/k scroll" : undefined,
             "Esc cancel",
           ];
           add(theme.fg("dim", ` ${keys.filter(Boolean).join(" · ")}`));

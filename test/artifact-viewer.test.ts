@@ -5,6 +5,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -193,10 +194,10 @@ async function setup(
   )(fake.pi as never);
   const ui = fakeCtx(workspace, mode);
   const tool = fake.tools[0]!;
-  const show = (path: string) =>
+  const show = (path: string, extra: { ref?: string; diff?: string } = {}) =>
     tool.execute(
       "call-1",
-      { path } as never,
+      { path, ...extra } as never,
       undefined,
       undefined,
       ui.ctx as never,
@@ -224,6 +225,7 @@ beforeEach(() => {
     "# Refund case\n",
   );
   writeFileSync(join(workspace, "notes.txt"), "plain text\n");
+  writeFileSync(join(workspace, "photo.png"), Buffer.from([0x89, 0x50, 0, 1]));
 });
 
 afterEach(() => {
@@ -242,7 +244,12 @@ describe("show_artifact tool", () => {
     const result = await show("brief.md");
 
     expect(result.content[0]!.text).toContain("Showing brief.md");
-    expect(result.details).toEqual({ path: "brief.md", shown: true });
+    expect(result.details).toMatchObject({
+      path: "brief.md",
+      shown: true,
+      kind: "markdown",
+      content: "# Design brief\n\nShip the **first** cut.\n",
+    });
     expect(overlays).toHaveLength(1);
     const { options, component, focused } = overlays[0]!;
     expect(options.overlay).toBe(true);
@@ -302,16 +309,75 @@ describe("show_artifact tool", () => {
     ]);
   });
 
-  it("returns the path as text outside the interactive terminal", async () => {
+  it("carries the file in its details outside the interactive terminal", async () => {
     for (const mode of ["print", "rpc"] as const) {
       const { show, overlays } = await setup({}, mode);
       const result = await show("brief.md");
-      expect(result.content[0]!.text).toBe(
-        "The file is at brief.md. The artifact panel is only available in Pi's interactive terminal, so tell the user where the file is.",
-      );
-      expect(result.details).toEqual({ path: "brief.md", shown: false });
+      expect(result.content[0]!.text).toContain("tell them where the file is");
+      expect(result.details).toEqual({
+        path: "brief.md",
+        shown: false,
+        kind: "markdown",
+        language: expect.any(String),
+        content: "# Design brief\n\nShip the **first** cut.\n",
+      });
       expect(overlays).toHaveLength(0);
     }
+  });
+
+  it("shows any text file, and HTML as its own kind", async () => {
+    writeFileSync(join(workspace, "page.html"), "<h1>Hi</h1>\n");
+    const { show } = await setup({}, "rpc");
+    expect((await show("notes.txt")).details).toMatchObject({
+      kind: "text",
+      content: "plain text\n",
+    });
+    expect((await show("page.html")).details).toMatchObject({
+      kind: "html",
+      language: "html",
+    });
+  });
+
+  it("diffs against the version it last showed", async () => {
+    const { show } = await setup({}, "rpc");
+    const first = await show("notes.txt", { diff: "previous" });
+    expect(first.details.diff).toBeUndefined();
+    expect(first.content[0]!.text).toContain(
+      "Nothing of notes.txt was shown earlier",
+    );
+    writeFileSync(join(workspace, "notes.txt"), "plain text\nmore\n");
+    const second = await show("notes.txt", { diff: "previous" });
+    expect(second.details.content).toBe("plain text\nmore\n");
+    expect(second.details.diff).toMatchObject({
+      against: "the version shown before",
+      text: expect.stringContaining("+2 more"),
+    });
+  });
+
+  it("shows a file as of a git commit, or diffs against one", async () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, stdio: "pipe" });
+    git("init", "-q");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "add", "notes.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(workspace, "notes.txt"), "changed\n");
+    const { show } = await setup({}, "rpc");
+    expect((await show("notes.txt", { ref: "HEAD" })).details).toMatchObject({
+      ref: "HEAD",
+      content: "plain text\n",
+    });
+    const diffed = await show("notes.txt", { diff: "HEAD" });
+    expect(diffed.details.content).toBe("changed\n");
+    expect(diffed.details.diff).toMatchObject({
+      against: "HEAD",
+      text: expect.stringContaining("-1 plain text"),
+    });
+    await expect(show("notes.txt", { ref: "--output=x" })).rejects.toThrow(
+      /is not a git ref/,
+    );
+    await expect(show("notes.txt", { ref: "nope" })).rejects.toThrow(
+      /has no version at nope/,
+    );
   });
 });
 
@@ -369,7 +435,7 @@ describe("path validation", () => {
     await expect(show("../elsewhere.md")).rejects.toThrow(
       /outside the working directory/,
     );
-    await expect(show("notes.txt")).rejects.toThrow(/not a markdown file/);
+    await expect(show("photo.png")).rejects.toThrow(/not a text file/);
     expect(overlays).toHaveLength(0);
   });
 });
@@ -503,11 +569,10 @@ describe("/recipe view and /recipe close", () => {
 
   it("reports a bad path as a notice", async () => {
     const { subcommand, ctx, overlays, notices } = await setup();
-    await subcommand("view")("notes.txt", ctx as never);
+    await subcommand("view")("photo.png", ctx as never);
     expect(overlays).toHaveLength(0);
     expect(notices[0]).toEqual({
-      message:
-        "notes.txt is not a markdown file; only .md and .markdown files can be shown for now.",
+      message: "photo.png is not a text file, so it can't be shown.",
       level: "warning",
     });
   });

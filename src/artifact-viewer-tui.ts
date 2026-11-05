@@ -1,12 +1,17 @@
 /**
  * The right-hand artifact panel: a non-capturing Pi overlay that renders one
- * markdown file with a title line, a scroll position and a key hint.
+ * file (markdown rendered, other text highlighted) or a diff, with a title
+ * line, a scroll position and a key hint.
  *
  * The panel owns no file access. `./artifact-viewer.ts` reads and watches the
  * file and calls `setDocument()`; the panel only draws and handles keys.
  */
 
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import {
+  highlightCode,
+  renderDiff,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import {
   Key,
   Markdown,
@@ -39,8 +44,12 @@ export const ARTIFACT_PANEL_OVERLAY_OPTIONS: OverlayOptions = {
 export interface ArtifactDocument {
   /** The path shown in the title, relative to the working directory. */
   title: string;
-  /** Markdown source, or undefined when the file is gone. */
-  markdown: string | undefined;
+  /** Markdown renders; HTML and text are highlighted; a diff is drawn as Pi's edit tool draws one. */
+  kind: "markdown" | "html" | "text" | "diff";
+  /** The file or the diff, or undefined when the file is gone. */
+  text: string | undefined;
+  /** The highlighting language. */
+  language?: string;
 }
 
 /** What the panel asks its owner to do in response to a key. */
@@ -105,7 +114,7 @@ export class ArtifactPanel implements Component {
   ) {
     this.document = document;
     this.markdown = new Markdown(
-      document.markdown ?? "",
+      document.kind === "markdown" ? (document.text ?? "") : "",
       0,
       0,
       artifactMarkdownTheme(theme),
@@ -124,7 +133,9 @@ export class ArtifactPanel implements Component {
   /** Replace what the panel shows; `keepScroll` holds the position on a re-render of the same file. */
   setDocument(document: ArtifactDocument, keepScroll = false): void {
     this.document = document;
-    this.markdown.setText(document.markdown ?? "");
+    this.markdown.setText(
+      document.kind === "markdown" ? (document.text ?? "") : "",
+    );
     if (!keepScroll) this.scrollTop = 0;
     this.tui.requestRender();
   }
@@ -140,15 +151,27 @@ export class ArtifactPanel implements Component {
   }
 
   private bodyLines(contentWidth: number): string[] {
-    if (this.document.markdown === undefined) {
+    const { kind, text, language } = this.document;
+    if (text === undefined) {
       return [
         this.theme.fg("warning", "This file was removed or cannot be read."),
       ];
     }
-    if (this.document.markdown.trim() === "") {
-      return [this.theme.fg("muted", "(empty file)")];
+    if (text.trim() === "") {
+      return [
+        this.theme.fg(
+          "muted",
+          kind === "diff" ? "(no changes)" : "(empty file)",
+        ),
+      ];
     }
-    return this.markdown.render(contentWidth);
+    if (kind === "markdown") return this.markdown.render(contentWidth);
+    // Long lines are cut at the panel's edge rather than wrapped, as an editor shows code.
+    if (kind === "diff") return renderDiff(text).split("\n");
+    return highlightCode(
+      text,
+      language ?? (kind === "html" ? "html" : undefined),
+    );
   }
 
   render(width: number): string[] {

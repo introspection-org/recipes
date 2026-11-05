@@ -8,6 +8,7 @@ import {
   DISMISSED_TEXT,
   formatInteractionResume,
   lineDiff,
+  tabWindow,
   tabName,
 } from "../src/review.js";
 
@@ -90,6 +91,16 @@ describe("the review core", () => {
       { kind: "same", text: "c" },
       { kind: "added", text: "d" },
     ]);
+  });
+
+  it("slides the tabs to keep the current one in view", () => {
+    const widths = Array.from({ length: 21 }, () => 10);
+    // Room for 5 tabs with both marks: the current one sits at the right.
+    expect(tabWindow(widths, 20, 54)).toEqual({ start: 16, end: 21 });
+    expect(tabWindow(widths, 0, 54)).toEqual({ start: 0, end: 5 });
+    expect(tabWindow(widths, 10, 54)).toEqual({ start: 6, end: 11 });
+    expect(tabWindow(widths, 3, 1000)).toEqual({ start: 0, end: 21 });
+    expect(tabWindow([], 0, 10)).toEqual({ start: 0, end: 0 });
   });
 
   it("keeps a large, mostly unchanged review's diff bounded", () => {

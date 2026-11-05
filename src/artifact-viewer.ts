@@ -4,16 +4,21 @@
  * the right of Pi's terminal, so the user can read it before approving it.
  *
  * An agent gets it by listing `show_artifact` in its `tools`, like
- * `ask_user_question`. Only markdown is shown for now; the tool is named for
- * artifacts so other formats can join it without renaming a tool Recipes
- * already list. The panel exists only in Pi's interactive terminal; anywhere
- * else the tool returns the path as text.
+ * `ask_user_question`. Any text file can be shown: markdown renders, code and
+ * other text are highlighted, and a file can be shown as of a git commit or
+ * as a diff against one (or against the version this session last showed).
+ * The panel exists only in Pi's interactive terminal; elsewhere the result's
+ * `details` carry the file and the diff, so a host such as a browser can
+ * render them itself.
  */
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
+  closeSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   realpathSync,
   statSync,
   watch,
@@ -28,10 +33,12 @@ import {
   sep,
 } from "node:path";
 
-import type {
-  ExtensionContext,
-  ExtensionFactory,
-  ToolDefinition,
+import {
+  generateDiffString,
+  getLanguageFromPath,
+  type ExtensionContext,
+  type ExtensionFactory,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, OverlayHandle } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -207,33 +214,77 @@ export function markdownFilesFor(
 /** File extensions the panel renders. */
 const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [".md", ".markdown"];
 
+/** The largest file the viewer reads. */
+const ARTIFACT_MAX_BYTES = 1024 * 1024;
+/** The most of a file (and of its diff) a result's `details` carry, as a review's interrupt does. */
+const ARTIFACT_DETAILS_MAX_BYTES = 256 * 1024;
+/** The bytes read to tell a text file from a binary one. */
+const BINARY_SNIFF_BYTES = 8192;
+/** `diff` against the version this session last showed. */
+const DIFF_PREVIOUS = "previous";
+/** A git revision: a name, a hash, or one with `~`/`^`/`@{…}`; never an option. */
+const GIT_REF = /^[A-Za-z0-9_][\w./~^@{}-]*$/;
+
 const BUILTIN_OWNER = "<builtin:show_artifact>";
 const DEFAULT_DEBOUNCE_MS = 100;
 
 const description = [
-  "Show a markdown file to the user in a panel on the right of the terminal, rendered as markdown.",
-  "Call this when you want the user to read a markdown file you wrote (a brief, test cases, a report), especially before asking them to approve it, instead of only printing its path.",
-  "`path` is relative to the working directory. Only markdown files (.md, .markdown) can be shown for now.",
-  "The panel opens without taking the user's keyboard and re-renders when the file changes, so you don't need to call this again after editing a file it already shows.",
-  "Outside Pi's interactive terminal there is no panel: the result says so, and you should tell the user where the file is.",
+  "Show a file to the user beside the conversation: markdown rendered, code and other text highlighted, HTML as source (a browser host renders it).",
+  "Call this when you want the user to read a file you wrote (a brief, test cases, a report, code), especially before asking them to approve it, instead of only printing its path.",
+  "`path` is relative to the working directory and must be a text file. `ref` shows the file as of a git commit in the working directory's repository. `diff` shows what changed instead of the whole file: `previous` against the version you last showed in this session, or a git ref (e.g. `HEAD`) to compare against that commit.",
+  "The panel re-renders when the file changes, so you don't need to call this again after editing a file it already shows.",
 ].join("\n");
 
 const parameters = Type.Object(
   {
     path: Type.String({
       description:
-        'The markdown file to show, relative to the working directory (e.g. "evals/cases/refund.md").',
+        'The file to show, relative to the working directory (e.g. "evals/cases/refund.md").',
     }),
+    ref: Type.Optional(
+      Type.String({
+        description:
+          "Show the file as of this git commit (a hash, a branch, HEAD~1) instead of as it is now.",
+      }),
+    ),
+    diff: Type.Optional(
+      Type.String({
+        description: `Show a diff instead of the whole file: "${DIFF_PREVIOUS}" for what changed since you last showed it, or a git ref to compare against.`,
+      }),
+    ),
   },
   { additionalProperties: false },
 );
 
-/** Structured `details` of a `show_artifact` result. */
+/** Structured `details` of a `show_artifact` result, enough for a host without the panel to render it. */
 interface ShowArtifactDetails {
   /** The file, relative to the working directory. */
   path: string;
   /** Whether the panel is showing it (false outside the interactive terminal). */
   shown: boolean;
+  kind: ArtifactKind;
+  /** The highlighting language, when the path names one. */
+  language?: string;
+  /** The commit shown, when not the working tree. */
+  ref?: string;
+  /** The file as shown, up to `ARTIFACT_DETAILS_MAX_BYTES`. */
+  content: string;
+  /** The content was cut to the cap. */
+  truncated?: true;
+  /** With `diff`: what it was compared against, and the diff. */
+  diff?: { against: string; text: string; truncated?: true };
+}
+
+/** How the file renders. */
+export type ArtifactKind = "markdown" | "html" | "text";
+
+const HTML_EXTENSIONS: readonly string[] = [".html", ".htm"];
+
+/** How a path's file renders: markdown, HTML, or highlighted text. */
+export function artifactKind(path: string): ArtifactKind {
+  const extension = extname(path).toLowerCase();
+  if (ARTIFACT_MARKDOWN_EXTENSIONS.includes(extension)) return "markdown";
+  return HTML_EXTENSIONS.includes(extension) ? "html" : "text";
 }
 
 /** A validated artifact path. */
@@ -269,17 +320,33 @@ function isMarkdownPath(path: string): boolean {
   return ARTIFACT_MARKDOWN_EXTENSIONS.includes(extname(path).toLowerCase());
 }
 
+/** Whether a file's first bytes hold a NUL, as a binary file's do. */
+function looksBinary(absolutePath: string): boolean {
+  const fd = openSync(absolutePath, "r");
+  try {
+    const buffer = Buffer.alloc(BINARY_SNIFF_BYTES);
+    const read = readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, read).includes(0);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /**
  * Resolve `path` against `cwd` and check that it names an existing markdown
- * file inside `cwd`, following symlinks. Throws an error the model or user can
- * act on.
+ * file inside `cwd`, following symlinks; with `anyText`, any text file up to
+ * `ARTIFACT_MAX_BYTES`. Throws an error the model or user can act on.
  */
 export function resolveArtifactPath(
   cwd: string,
   path: string,
+  { anyText = false }: { anyText?: boolean } = {},
 ): ResolvedArtifactPath {
   const input = path.trim();
-  if (!input) throw new Error("Give the path of a markdown file to show.");
+  if (!input)
+    throw new Error(
+      `Give the path of a ${anyText ? "" : "markdown "}file to show.`,
+    );
   const root = resolve(cwd);
   const absolutePath = resolve(root, input);
   if (!isInside(root, absolutePath)) {
@@ -287,7 +354,7 @@ export function resolveArtifactPath(
       `${input} is outside the working directory; only files under ${root} can be shown.`,
     );
   }
-  if (!isMarkdownPath(absolutePath)) {
+  if (!anyText && !isMarkdownPath(absolutePath)) {
     throw new Error(
       `${input} is not a markdown file; only ${ARTIFACT_MARKDOWN_EXTENSIONS.join(" and ")} files can be shown for now.`,
     );
@@ -301,6 +368,14 @@ export function resolveArtifactPath(
     );
   }
   if (!stats.isFile()) throw new Error(`${input} is not a file.`);
+  if (anyText && stats.size > ARTIFACT_MAX_BYTES) {
+    throw new Error(
+      `${input} is ${Math.ceil(stats.size / 1024)} KB, over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads; show a smaller file or a part of it.`,
+    );
+  }
+  if (anyText && looksBinary(absolutePath)) {
+    throw new Error(`${input} is not a text file, so it can't be shown.`);
+  }
   // A symlink inside the working directory may still point outside it.
   if (!isInside(realpathSync(root), realpathSync(absolutePath))) {
     throw new Error(
@@ -391,26 +466,85 @@ function workspaceRoot(target: ResolvedArtifactPath): string {
   );
 }
 
-/**
- * Read an open file for the panel. Every refresh re-runs `resolveArtifactPath`,
- * since the file may since have become a symlink, or a link may point outside
- * the working directory; a path that no longer passes reads as unreadable.
- */
-function readDocument(target: ResolvedArtifactPath): ArtifactDocument {
-  let markdown: string | undefined;
-  try {
-    resolveArtifactPath(workspaceRoot(target), target.relativePath);
-    markdown = readFileSync(target.absolutePath, "utf8");
-  } catch {
-    markdown = undefined;
+/** A file at `ref` in the working directory's git repository. */
+function gitVersion(target: ResolvedArtifactPath, ref: string): string {
+  if (!GIT_REF.test(ref)) {
+    throw new Error(
+      `${ref} is not a git ref; give a commit hash, a branch or tag, or one like HEAD~1.`,
+    );
   }
-  return { title: target.relativePath, markdown };
+  try {
+    // `./` resolves the path against the working directory, wherever the repository's root is.
+    return execFileSync("git", ["show", `${ref}:./${target.relativePath}`], {
+      cwd: workspaceRoot(target),
+      encoding: "utf8",
+      maxBuffer: ARTIFACT_MAX_BYTES,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error(
+      `${target.relativePath} has no version at ${ref} in the working directory's git repository.`,
+    );
+  }
+}
+
+/** What the panel shows: a file, as of a commit or now, and what to diff it against. */
+export interface ArtifactSource {
+  target: ResolvedArtifactPath;
+  ref?: string;
+  base?: { label: string; text: string };
+}
+
+/** The file as `source` names it: at its ref, or as it is now. */
+function readSource(source: ArtifactSource): string {
+  if (source.ref) return gitVersion(source.target, source.ref);
+  // A re-read re-checks the path: the file may since have become a link out of the working directory.
+  resolveArtifactPath(
+    workspaceRoot(source.target),
+    source.target.relativePath,
+    {
+      anyText: true,
+    },
+  );
+  return readFileSync(source.target.absolutePath, "utf8");
+}
+
+/** Read an open file for the panel; a file that no longer passes reads as unreadable. */
+function readDocument(source: ArtifactSource): ArtifactDocument {
+  const path = source.target.relativePath;
+  const language = getLanguageFromPath(path);
+  const title = source.ref ? `${path} @ ${source.ref}` : path;
+  let text: string | undefined;
+  try {
+    text = readSource(source);
+  } catch {
+    text = undefined;
+  }
+  if (source.base && text !== undefined) {
+    return {
+      title: `${title} vs ${source.base.label}`,
+      kind: "diff",
+      text: generateDiffString(source.base.text, text).diff,
+      language,
+    };
+  }
+  return { title, kind: artifactKind(path), text, language };
+}
+
+/** `text` cut to `ARTIFACT_DETAILS_MAX_BYTES`, on a character boundary. */
+function capped(text: string): { text: string; truncated?: true } {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= ARTIFACT_DETAILS_MAX_BYTES) return { text };
+  const kept = new TextDecoder()
+    .decode(bytes.subarray(0, ARTIFACT_DETAILS_MAX_BYTES))
+    .replace(/\uFFFD$/, "");
+  return { text: kept, truncated: true };
 }
 
 interface OpenPanel {
   panel: ArtifactPanel | undefined;
   handle: OverlayHandle | undefined;
-  target: ResolvedArtifactPath;
+  source: ArtifactSource;
   close(): void;
   stopWatching(): void;
 }
@@ -422,6 +556,8 @@ interface OpenPanel {
 class ArtifactViewer {
   private open: OpenPanel | undefined;
   private last: string | undefined;
+  /** What the tool last showed of each path, for `diff: "previous"`. */
+  private readonly shownVersions = new Map<string, string>();
   private readonly openExternal: (absolutePath: string) => Promise<void> | void;
   private readonly watchFile: (
     absolutePath: string,
@@ -448,6 +584,16 @@ class ArtifactViewer {
     return this.open?.handle?.isHidden() ?? false;
   }
 
+  /** What the tool last showed of `path`, if anything. */
+  shownVersion(path: string): string | undefined {
+    return this.shownVersions.get(path);
+  }
+
+  /** Record what the tool showed of `path`. */
+  recordShown(path: string, text: string): void {
+    this.shownVersions.set(path, text);
+  }
+
   /** Remember a markdown file the agent wrote, for `/recipe view` with no argument. */
   remember(cwd: string, path: string): void {
     if (!isMarkdownPath(path)) return;
@@ -459,22 +605,18 @@ class ArtifactViewer {
   }
 
   /**
-   * Show `target` in the panel, opening it if needed. The panel never takes
+   * Show `source` in the panel, opening it if needed. The panel never takes
    * focus unless `focus` is set.
    */
-  show(
-    ctx: ExtensionContext,
-    target: ResolvedArtifactPath,
-    focus = false,
-  ): void {
-    this.last = target.relativePath;
+  show(ctx: ExtensionContext, source: ArtifactSource, focus = false): void {
+    this.last = source.target.relativePath;
     if (this.open) {
-      this.open.target = target;
-      // Before Pi builds the panel, the factory picks up the new target.
+      this.open.source = source;
+      // Before Pi builds the panel, the factory picks up the new source.
       if (!this.open.panel) return;
       this.open.stopWatching();
-      this.open.panel.setDocument(readDocument(target));
-      this.open.stopWatching = this.watch(target);
+      this.open.panel.setDocument(readDocument(source));
+      this.open.stopWatching = this.watch(source);
       if (focus) this.focus();
       return;
     }
@@ -483,7 +625,7 @@ class ArtifactViewer {
     const state: OpenPanel = {
       panel: undefined,
       handle: undefined,
-      target,
+      source,
       close: () => done?.(undefined),
       stopWatching: () => {},
     };
@@ -496,7 +638,7 @@ class ArtifactViewer {
           state.panel = new ArtifactPanel(
             tui,
             theme,
-            readDocument(state.target),
+            readDocument(state.source),
             {
               openExternal: () => this.openCurrent(ctx),
               unfocus: () => this.unfocus(),
@@ -504,7 +646,7 @@ class ArtifactViewer {
               disposed: () => this.release(state),
             },
           );
-          state.stopWatching = this.watch(state.target);
+          state.stopWatching = this.watch(state.source);
           return state.panel;
         },
         {
@@ -575,7 +717,7 @@ class ArtifactViewer {
   }
 
   private openCurrent(ctx: ExtensionContext): void {
-    const target = this.open?.target;
+    const target = this.open?.source.target;
     if (!target) return;
     Promise.resolve()
       .then(() => this.openExternal(target.absolutePath))
@@ -587,14 +729,14 @@ class ArtifactViewer {
       });
   }
 
-  private watch(target: ResolvedArtifactPath): () => void {
+  private watch(source: ArtifactSource): () => void {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const stop = this.watchFile(target.absolutePath, () => {
+    const stop = this.watchFile(source.target.absolutePath, () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = undefined;
-        if (this.open?.target !== target) return;
-        this.open.panel?.setDocument(readDocument(target), true);
+        if (this.open?.source !== source) return;
+        this.open.panel?.setDocument(readDocument(source), true);
       }, this.debounceMs);
     });
     return () => {
@@ -629,26 +771,71 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
     label: "Show artifact",
     description,
     promptSnippet:
-      "Show the user a markdown file you wrote, rendered in a panel beside the conversation",
+      "Show the user a file you wrote, or what changed in it, beside the conversation",
     promptGuidelines: [
-      "When you write a markdown file the user should read or approve (a brief, test cases, a report), show it with show_artifact instead of only printing its path.",
+      "When you write a file the user should read or approve (a brief, test cases, a report, code), show it with show_artifact instead of only printing its path; after revising one, show it with diff to point at what changed.",
     ],
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const target = resolveArtifactPath(ctx.cwd, params.path);
+      const target = resolveArtifactPath(ctx.cwd, params.path, {
+        anyText: true,
+      });
+      const ref = params.ref?.trim() || undefined;
+      const source: ArtifactSource = { target, ...(ref ? { ref } : {}) };
+      const current = readSource(source);
+      const against = params.diff?.trim();
+      let note = "";
+      if (against === DIFF_PREVIOUS) {
+        const previous = viewer.shownVersion(target.relativePath);
+        if (previous === undefined)
+          note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
+        else
+          source.base = { label: "the version shown before", text: previous };
+      } else if (against) {
+        source.base = { label: against, text: gitVersion(target, against) };
+      }
+      viewer.recordShown(target.relativePath, current);
+      const document = readDocument(source);
+      const content = capped(current);
+      const details: ShowArtifactDetails = {
+        path: target.relativePath,
+        shown: false,
+        kind: artifactKind(target.relativePath),
+        ...(document.language ? { language: document.language } : {}),
+        ...(ref ? { ref } : {}),
+        content: content.text,
+        ...(content.truncated ? { truncated: true as const } : {}),
+        ...(source.base &&
+        document.kind === "diff" &&
+        document.text !== undefined
+          ? (() => {
+              const diff = capped(document.text);
+              return {
+                diff: {
+                  against: source.base.label,
+                  text: diff.text,
+                  ...(diff.truncated ? { truncated: true as const } : {}),
+                },
+              };
+            })()
+          : {}),
+      };
+      const what = source.base
+        ? `the diff of ${document.title}`
+        : document.title;
       if (ctx.mode !== "tui") {
         return {
           content: [
             {
               type: "text",
-              text: `The file is at ${target.relativePath}. The artifact panel is only available in Pi's interactive terminal, so tell the user where the file is.`,
+              text: `There is no artifact panel here; the result carries ${what} for a host that displays it (a browser does). If the user may not see it, tell them where the file is.${note}`,
             },
           ],
-          details: { path: target.relativePath, shown: false },
+          details,
         };
       }
       // It takes the keyboard as it opens, so Esc or q closes it without a shortcut first.
-      viewer.show(ctx, target, true);
+      viewer.show(ctx, source, true);
       const columns = process.stdout.columns;
       if (
         columns !== undefined &&
@@ -658,20 +845,20 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
           content: [
             {
               type: "text",
-              text: `The terminal is ${columns} columns wide, too narrow for the panel (it needs ${ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS}), so the user can't see ${target.relativePath}: tell them where the file is, or put what they need in your message. The panel appears if they widen the terminal.`,
+              text: `The terminal is ${columns} columns wide, too narrow for the panel (it needs ${ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS}), so the user can't see ${target.relativePath}: tell them where the file is, or put what they need in your message. The panel appears if they widen the terminal.${note}`,
             },
           ],
-          details: { path: target.relativePath, shown: false },
+          details,
         };
       }
       return {
         content: [
           {
             type: "text",
-            text: `Showing ${target.relativePath} in the panel on the right, which has the keyboard: the user scrolls it and closes it with Esc or q, which returns them to the editor; /${VIEW_ARTIFACT_COMMAND} reopens it.`,
+            text: `Showing ${what} in the panel on the right, which has the keyboard: the user scrolls it and closes it with Esc or q, which returns them to the editor; /${VIEW_ARTIFACT_COMMAND} reopens it.${note}`,
           },
         ],
-        details: { path: target.relativePath, shown: true },
+        details: { ...details, shown: true },
       };
     },
   };
@@ -732,7 +919,11 @@ export function artifactViewerExtension(
           return;
         }
         try {
-          viewer.show(ctx, resolveArtifactPath(ctx.cwd, path), true);
+          viewer.show(
+            ctx,
+            { target: resolveArtifactPath(ctx.cwd, path, { anyText: true }) },
+            true,
+          );
         } catch (error) {
           ctx.ui.notify(errorText(error), "warning");
         }

@@ -259,6 +259,39 @@ export function tabName(label: string, path: string, index: number): string {
   return stem.length > 0 && stem.length <= 12 ? stem : String(index + 1);
 }
 
+/**
+ * The tabs a strip `room` columns wide shows: a run around `active`, filled
+ * leftward first so moving forward keeps the newest tabs in view at the right,
+ * then rightward. `marker` is the width a hidden-tabs mark takes at either end.
+ */
+export function tabWindow(
+  widths: readonly number[],
+  active: number,
+  room: number,
+  marker = 2,
+): { start: number; end: number } {
+  if (widths.length === 0) return { start: 0, end: 0 };
+  const at = Math.min(Math.max(active, 0), widths.length - 1);
+  let start = at;
+  let end = at + 1;
+  let used = widths[at]!;
+  const fits = (extra: number, nextStart: number, nextEnd: number) =>
+    used +
+      extra +
+      (nextStart > 0 ? marker : 0) +
+      (nextEnd < widths.length ? marker : 0) <=
+    room;
+  while (start > 0 && fits(widths[start - 1]!, start - 1, end)) {
+    start -= 1;
+    used += widths[start]!;
+  }
+  while (end < widths.length && fits(widths[end]!, start, end + 1)) {
+    used += widths[end]!;
+    end += 1;
+  }
+  return { start, end };
+}
+
 /** One line of a diff between what the reviewer saw last time and now. */
 export interface DiffLine {
   kind: "same" | "added" | "removed";
