@@ -340,6 +340,99 @@ describe("show_artifact tool", () => {
     }
   });
 
+  it("names a pushed, unchanged file by its repository instead of carrying it", async () => {
+    const remote = join(workspace, "remote.git");
+    const app = join(workspace, "app");
+    const run = (cwd: string, ...args: string[]) =>
+      execFileSync("git", args, { cwd, stdio: "pipe" }).toString().trim();
+    const commit = (cwd: string, message: string) =>
+      run(
+        cwd,
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-qam",
+        message,
+      );
+    run(workspace, "init", "-q", "--bare", "-b", "main", remote);
+    run(workspace, "clone", "-q", remote, app);
+    writeFileSync(join(app, "notes.md"), "# Notes\n");
+    run(app, "add", "notes.md");
+    commit(app, "notes");
+    run(app, "push", "-q", "origin", "HEAD:main");
+    const head = run(app, "rev-parse", "HEAD");
+    const roots: string[] = [];
+    const { show } = await setup(
+      {
+        artifactRepository: (root) => {
+          roots.push(root);
+          return root.endsWith("/app") ? { id: "repo-1" } : undefined;
+        },
+      },
+      "rpc",
+    );
+
+    const referenced = await show("app/notes.md");
+    expect(referenced.details).toMatchObject({
+      content: "",
+      source: { repository_id: "repo-1", commit: head, path: "notes.md" },
+    });
+
+    // A committed link holds a path, not the document: its content rides along.
+    symlinkSync("notes.md", join(app, "alias.md"));
+    run(app, "add", "alias.md");
+    commit(app, "alias");
+    run(app, "push", "-q", "origin", "HEAD:main");
+    const linked = await show("app/alias.md");
+    expect(linked.details.source).toBeUndefined();
+    expect(linked.details.content).toBe("# Notes\n");
+    run(app, "reset", "-q", "--hard", "HEAD~1");
+    run(app, "push", "-q", "-f", "origin", "HEAD:main");
+
+    // Git's index can be told a file is unchanged; the content read is what counts.
+    run(app, "update-index", "--assume-unchanged", "notes.md");
+    writeFileSync(join(app, "notes.md"), "# Notes, edited\n");
+    const hidden = await show("app/notes.md");
+    expect(hidden.details.source).toBeUndefined();
+    expect(hidden.details.content).toBe("# Notes, edited\n");
+    run(app, "update-index", "--no-assume-unchanged", "notes.md");
+
+    // An edit the remote doesn't have rides along instead.
+    writeFileSync(join(app, "notes.md"), "# Notes\nmore\n");
+    const edited = await show("app/notes.md");
+    expect(edited.details.source).toBeUndefined();
+    expect(edited.details.content).toBe("# Notes\nmore\n");
+    // ...but the pushed commit itself can still be named.
+    expect(
+      (await show("app/notes.md", { ref: "HEAD" })).details.source,
+    ).toEqual({
+      repository_id: "repo-1",
+      commit: head,
+      path: "notes.md",
+    });
+
+    // A commit not yet pushed isn't on the host either.
+    commit(app, "more");
+    const unpushed = await show("app/notes.md");
+    expect(unpushed.details.source).toBeUndefined();
+    expect(unpushed.details.content).toBe("# Notes\nmore\n");
+
+    // Past what the host reads from a repository, the file is not named by it.
+    const capped = await setup(
+      { artifactRepository: () => ({ id: "repo-1", maxBytes: 4 }) },
+      "rpc",
+    );
+    expect(
+      (await capped.show("app/notes.md", { ref: "HEAD~1" })).details.source,
+    ).toBeUndefined();
+
+    // A folder that isn't a repository the host serves is never named.
+    writeFileSync(join(workspace, "plain.md"), "x\n");
+    expect((await show("plain.md")).details.source).toBeUndefined();
+  });
+
   it("keeps a file past 1 MB in the host's store during the call, and names it", async () => {
     const big = "x".repeat(1100 * 1024) + "\n";
     writeFileSync(join(workspace, "big.txt"), big);
@@ -444,6 +537,32 @@ describe("show_artifact tool", () => {
     await expect(show("notes.txt", { diff: "HEAD" })).rejects.toThrow(
       "isn't in a git repository",
     );
+  });
+
+  it("never reads a commit through a folder that links out of the workspace", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "artifact-outside-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: outside, stdio: "pipe" });
+      writeFileSync(join(outside, "secret.md"), "secret\n");
+      execFileSync("git", ["add", "secret.md"], {
+        cwd: outside,
+        stdio: "pipe",
+      });
+      execFileSync(
+        "git",
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "s"],
+        { cwd: outside, stdio: "pipe" },
+      );
+      symlinkSync(outside, join(workspace, "linked"));
+      const { show } = await setup({}, "rpc");
+      for (const path of ["linked/secret.md", "linked/gone/deleted.md"]) {
+        await expect(show(path, { ref: "HEAD" })).rejects.toThrow(
+          /links outside the working directory/,
+        );
+      }
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("shows a file as of a git commit, or diffs against one", async () => {

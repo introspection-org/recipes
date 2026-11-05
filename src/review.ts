@@ -23,6 +23,8 @@ export {
   artifactKind,
   type ArtifactDiff,
   type ArtifactFile,
+  type ArtifactRepositoryResolver,
+  type ArtifactRepositorySource,
   type ArtifactStore,
   type ArtifactDiffLineKind,
   type ArtifactKind,
