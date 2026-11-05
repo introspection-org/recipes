@@ -95,6 +95,12 @@ jobs:
 
       - run: uv run --project packages/recipe-check-python --locked mypy --strict packages/recipe-check-python/python packages/recipe-check-python/tests
 
+      # Unused, missing, transitive and misplaced dev dependencies, configured
+      # in [tool.deptry] in the package's pyproject.toml.
+      - name: Dependency check
+        working-directory: packages/recipe-check-python
+        run: uv run --locked deptry python
+
       - run: uv run --project packages/recipe-check-python --locked maturin build --release --out dist --manifest-path packages/recipe-check-python/Cargo.toml
 
       - run: uv pip install --python packages/recipe-check-python/.venv/bin/python --reinstall dist/*.whl

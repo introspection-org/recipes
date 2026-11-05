@@ -34,6 +34,7 @@ Issues = "https://github.com/introspection-org/recipes/issues"
 dev = [
   "maturin==1.11.5",
   "mypy==2.3.0",
+  "deptry==0.25.1",
   "pytest>=9,<10",
   "ruff==0.15.22",
 ]
@@ -41,6 +42,61 @@ dev = [
 [tool.uv]
 package = false
 required-version = "==0.11.21"
+
+[tool.ruff]
+target-version = "py310"
+
+# Lint rules copied from introspection-python-sdk. Line length stays at
+# ruff's default (88), so nothing is reformatted wholesale.
+[tool.ruff.lint]
+# Preview is on only for rules selected by exact code (PLR0917 below):
+# `explicit-preview-rules` keeps prefixes like "E" or "F" from pulling in
+# preview rules.
+preview = true
+explicit-preview-rules = true
+select = [
+  "E",      # pycodestyle errors
+  "W",      # pycodestyle warnings
+  "F",      # pyflakes
+  "I",      # isort
+  "B",      # flake8-bugbear
+  "C4",     # flake8-comprehensions
+  "UP",     # pyupgrade
+  "TID252", # relative imports
+  # Complexity ratchet: thresholds below.
+  "C901",    # mccabe complexity
+  "PLR0911", # too many return statements
+  "PLR0912", # too many branches
+  "PLR0915", # too many statements
+  "PLR0917", # too many positional arguments (preview)
+]
+ignore = [
+  "E501", # line too long (handled by formatter)
+  "B008", # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# Ratchet: each threshold is today's worst value. Lower it as offenders
+# are refactored, down to the target in the comment. Never raise it.
+[tool.ruff.lint.mccabe]
+max-complexity = 7 # target 10 (met)
+
+[tool.ruff.lint.pylint]
+max-branches = 6        # target 12 (met)
+max-statements = 15     # target 50 (met)
+max-returns = 3         # target 6 (met)
+max-positional-args = 3 # target 5 (met; PLR0917, preview)
+
+[tool.ruff.lint.per-file-ignores]
+# A test suite imports its own helpers relatively.
+"**/tests/**" = ["TID252"]
+
+# deptry: unused (DEP002), missing (DEP001), transitive (DEP003) and
+# misplaced dev (DEP004) dependencies. Run with `uv run deptry python`.
+[tool.deptry]
+known_first_party = ["introspection_recipe_check"]
 
 [tool.maturin]
 bindings = "pyo3"
