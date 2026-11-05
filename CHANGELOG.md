@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.48.0](https://github.com/introspection-org/recipes/compare/v0.47.0...v0.48.0) (2026-11-05)
+
+
+### Features
+
+* show_artifact keeps a file past 1 MB in the host's store during the call, and names it in the result ([#443](https://github.com/introspection-org/recipes/issues/443)) ([53d2bc8](https://github.com/introspection-org/recipes/commit/53d2bc89ee50cdd19c4ee0e8c93573a075861ce7))
+* show_artifact names a pushed, unchanged file by its repository, and git runs in the file's own repository ([#445](https://github.com/introspection-org/recipes/issues/445)) ([2d5d8eb](https://github.com/introspection-org/recipes/commit/2d5d8eb57fa739759ad8c67bdb2c01c9476f2647))
+
 ## [0.47.0](https://github.com/introspection-org/recipes/compare/v0.46.1...v0.47.0) (2026-11-05)
 
 
