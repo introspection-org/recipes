@@ -21,12 +21,17 @@ import { Type, type Static } from "typebox";
 
 import type { RecipeExtensionRegistrationRegistry } from "./extensions.js";
 import {
-  askUserQuestion,
+  DISMISSED_TEXT,
   formatInteractionOutcome,
-  type AskUserOption,
   type AskUserOutcome,
+} from "./interaction-text.js";
+import {
+  askUserQuestion,
+  type AskUserOption,
   type AskUserResult,
 } from "./interactions.js";
+
+export { DISMISSED_TEXT } from "./interaction-text.js";
 
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 
@@ -35,10 +40,6 @@ export const ASK_USER_TYPED_ANSWER_OPTION = "Something else — I'll type it";
 
 /** The terminal list's input row, before anything is typed. */
 export const ASK_USER_TYPE_SOMETHING = "Type something.";
-
-/** What the model sees when the user pressed Esc to answer in the chat. */
-export const DISMISSED_TEXT =
-  "The user dismissed the question to reply in the chat. Stop here and wait for their message; don't proceed on your own judgment.";
 
 const DONE_OPTION = "Done";
 const BUILTIN_OWNER = "<builtin:ask_user_question>";

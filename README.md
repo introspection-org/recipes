@@ -143,6 +143,8 @@ tests.
 - `@introspection-ai/recipes/agents` — portable agent-run controller and tool
   contract
 - `@introspection-ai/recipes/interactions` — portable user-input and approval contract
+- `@introspection-ai/recipes/review` — the review and interaction wording a
+  host renders, with no Node or Pi imports, so a browser can import it
 - `@introspection-ai/recipes/inspect` — inspect resolved inheritance,
   capabilities, package closure, host requirements, and runtime boundaries
 - `@introspection-ai/recipes/test-utils` — host conformance cases

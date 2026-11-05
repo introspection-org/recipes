@@ -3,15 +3,15 @@
  * Submit tab) when there are several, the file in a capped box that scrolls,
  * and the choices under it.
  *
- * It owns no file access. `./artifact-review.ts` reads each file and its
- * section and hands over what to show; this only draws and handles keys.
+ * It owns no file access and no review logic. `./artifact-review.ts` reads
+ * each file and its section and hands over what to show, and the decisions and
+ * tab names come from `./review.ts`; this only draws and handles keys.
  */
 
 import type {
   ExtensionUIContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import { basename } from "node:path";
 
 import {
   Key,
@@ -21,7 +21,6 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
-import type { ArtifactReview, ReviewDecision } from "./artifact-review.js";
 import { artifactMarkdownTheme } from "./artifact-viewer-tui.js";
 import {
   type ArtifactPanelScrollBy,
@@ -31,38 +30,21 @@ import {
   printable,
   withoutLastCharacter,
 } from "./interaction-tui.js";
+import {
+  tabName,
+  type ArtifactReview,
+  type ReviewDecision,
+  type ReviewDocument,
+} from "./review.js";
+
+export { tabName } from "./review.js";
 
 /** The most rows the file's box takes; a longer file scrolls in it. */
 const REVIEW_BOX_MAX_ROWS = 20;
 
-/** One file as the review shows it. */
-export interface ReviewDocument {
-  /** The file's path, relative to the workspace. */
-  path: string;
-  label: string;
-  /** What the box shows: the file's summary line and its section. */
-  content: string;
-}
-
 interface ReviewState {
   decision?: Exclude<ReviewDecision, "not_reviewed">;
   comment?: string;
-}
-
-/** A case-like id at the start of a name: `C1`, `C1-1`, `C4/C5`. */
-const TAB_ID = /^([A-Za-z]{1,3}\d+(?:[-/][A-Za-z]{0,3}\d+)*)(?![A-Za-z0-9])/;
-
-/**
- * A tab's name: an id at the start of the label ("C1" from "C1: four
- * questions"), else at the start of the file's name ("C1-1" from
- * `outputs/C1-1-transcript.md`), else the file's name when short (`DESIGN`),
- * else the tab's number.
- */
-export function tabName(label: string, path: string, index: number): string {
-  const stem = basename(path).replace(/\.[^.]*$/, "");
-  const id = TAB_ID.exec(label.trim())?.[1] ?? TAB_ID.exec(stem)?.[1];
-  if (id) return id;
-  return stem.length > 0 && stem.length <= 12 ? stem : String(index + 1);
 }
 
 /**
