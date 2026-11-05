@@ -49,6 +49,16 @@ reads them as its defaults, but an agent name only counts for the Recipe it
 came with: `pi --recipe <another Recipe>` run from a Recipe session's shell
 selects that Recipe's default agent, not the parent's.
 
+## The Recipe a session runs
+
+When the extension starts a Recipe session it records the Recipe in the session file, as a custom entry of type `recipe_session`:
+
+```json
+{ "type": "custom", "customType": "recipe_session", "data": { "recipe_dir": "/abs/path/interviewer", "agent": "agent", "package": "interviewer", "version": "0.1.0" } }
+```
+
+It's written again only when the Recipe, agent or version changes, so the latest one is what the session runs now. Whoever continues the session (`introspection local`, a local task, a person) reads it to start the same Recipe and agent without being told. A session that can't record it still runs.
+
 ## GenAI spans
 
 Set `PI_RECIPE_GENAI_SPANS_FILE` to a path and the extension writes the
