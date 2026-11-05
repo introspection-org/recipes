@@ -202,6 +202,9 @@ then a comment (required for changes); on a pause/resume host it pauses with
 the host to render its own review, and resumes with `{ answer }` in the format
 below; headless runs and child agents decline, so nothing is approved without a
 person.
+`@introspection-ai/recipes/review` exports what a host needs to render it the
+way the terminal does (`formatReviews`, `parseReviews`, `tabName`, `lineDiff`
+for the changes since `previous_content`), with no Node or Pi imports.
 
 Each item carries what the reviewer is shown, so the host needs no access to
 the files:

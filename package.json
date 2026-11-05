@@ -36,6 +36,10 @@
 			"types": "./dist/interactions.d.ts",
 			"import": "./dist/interactions.js"
 		},
+		"./review": {
+			"types": "./dist/review.d.ts",
+			"import": "./dist/review.js"
+		},
 		"./extensions": {
 			"types": "./dist/api/extensions.d.ts",
 			"import": "./dist/api/extensions.js"

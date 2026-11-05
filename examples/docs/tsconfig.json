@@ -18,6 +18,7 @@
       "@introspection-ai/recipes/pi-extension": ["../../src/pi-extension.ts"],
       "@introspection-ai/recipes/agents": ["../../src/agents.ts"],
       "@introspection-ai/recipes/recipe": ["../../src/recipe/resolve.ts"],
+      "@introspection-ai/recipes/review": ["../../src/review.ts"],
       "@introspection-ai/recipes/session": ["../../src/api/session.ts"],
       "@introspection-ai/recipes/memory": ["../../src/api/memory.ts"],
       "@introspection-ai/recipes/channels": ["../../src/channels/index.ts"],
