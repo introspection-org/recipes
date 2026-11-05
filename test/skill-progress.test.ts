@@ -77,7 +77,9 @@ describe("where the agent is", () => {
     expect(nextStep(undefined, "build-brainstorm", flow)).toBe(
       "build-brainstorm",
     );
-    expect(nextStep(undefined, "deploy-runtime", flow)).toBeUndefined();
+    // A session that starts at a later phase shows that phase.
+    expect(nextStep(undefined, "deploy-runtime", flow)).toBe("deploy-runtime");
+    expect(nextStep(undefined, "deploy-test", flow)).toBeUndefined();
     // A skill consulted along the way doesn't move the step.
     expect(nextStep("build-draft", "eval-case", flow)).toBe("build-draft");
     // The next phase waits for this one's last step.

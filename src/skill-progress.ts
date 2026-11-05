@@ -74,7 +74,8 @@ export function phases(skills: readonly string[]): string[][] {
  * moves within it; the next phase's first step moves on to that phase once
  * the current phase's last step is reached; anything else (a skill consulted
  * along the way, such as `eval-case` during build) leaves the step as it is.
- * With no step yet, the first phase's skills start it; an agent with no phases
+ * With no step yet, any phase's first step starts it (a session that begins at
+ * deploy shows deploy); an agent with no phases
  * steps through all its skills.
  */
 export function nextStep(
@@ -86,7 +87,7 @@ export function nextStep(
   const all = phases(skills);
   if (all.length === 0) return skills.includes(read) ? read : current;
   const at = current ? all.findIndex((steps) => steps.includes(current)) : -1;
-  if (at < 0) return all[0]!.includes(read) ? read : current;
+  if (at < 0) return all.some((steps) => steps[0] === read) ? read : current;
   if (all[at]!.includes(read)) return read;
   const next = all[at + 1];
   return next?.[0] === read && all[at]!.at(-1) === current ? read : current;
