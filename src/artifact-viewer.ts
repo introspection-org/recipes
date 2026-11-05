@@ -16,6 +16,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
+  lstatSync,
   openSync,
   readdirSync,
   readFileSync,
@@ -676,6 +677,8 @@ function repositorySource(
   if (!resolve) return undefined;
   const dir = dirname(target.absolutePath);
   if (!existsSync(dir)) return undefined;
+  // A committed link holds its target's path, not the document shown: carry the content instead.
+  if (!ref && lstatSync(target.absolutePath).isSymbolicLink()) return undefined;
   const root = gitIn(dir, ["rev-parse", "--show-toplevel"]);
   if (!root) return undefined;
   const repository = resolve(root);

@@ -380,6 +380,17 @@ describe("show_artifact tool", () => {
       source: { repository_id: "repo-1", commit: head, path: "notes.md" },
     });
 
+    // A committed link holds a path, not the document: its content rides along.
+    symlinkSync("notes.md", join(app, "alias.md"));
+    run(app, "add", "alias.md");
+    commit(app, "alias");
+    run(app, "push", "-q", "origin", "HEAD:main");
+    const linked = await show("app/alias.md");
+    expect(linked.details.source).toBeUndefined();
+    expect(linked.details.content).toBe("# Notes\n");
+    run(app, "reset", "-q", "--hard", "HEAD~1");
+    run(app, "push", "-q", "-f", "origin", "HEAD:main");
+
     // An edit the remote doesn't have rides along instead.
     writeFileSync(join(app, "notes.md"), "# Notes\nmore\n");
     const edited = await show("app/notes.md");
