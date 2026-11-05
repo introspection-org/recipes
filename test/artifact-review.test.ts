@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createReviewArtifactsTool,
   formatReviews,
+  reviewInterruptItems,
   parseReviews,
   reviewSource,
   REVIEW_ARTIFACTS_TOOL_NAME,
@@ -535,10 +537,54 @@ describe("review_artifacts elsewhere", () => {
         fake.ctx,
       );
       expect(out.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
+      const sha = (id: string) =>
+        createHash("sha256")
+          .update(`# ${id}\n\nBody of ${id}.\n`)
+          .digest("hex");
       expect(out.details.interrupt.metadata).toEqual({
         kind: REVIEW_ARTIFACTS_TOOL_NAME,
-        items: items.map(({ path, label }) => ({ path, label })),
+        items: items.map(({ path, label }, i) => ({
+          path,
+          label,
+          content: `# C${i + 1}\n\nBody of C${i + 1}.\n`,
+          sha256: sha(`C${i + 1}`),
+        })),
       });
+      expect(out.details.files).toEqual(
+        items.map(({ path }, i) => ({ path, sha256: sha(`C${i + 1}`) })),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.PI_INTERRUPT_RESUME;
+      else process.env.PI_INTERRUPT_RESUME = previous;
+    }
+  });
+
+  it("shows a pause/resume host what the session's last review of a file showed, once it changed", async () => {
+    const previous = process.env.PI_INTERRUPT_RESUME;
+    process.env.PI_INTERRUPT_RESUME = "1";
+    try {
+      const fake = fakeCtx(dir, "print");
+      const tool = createReviewArtifactsTool();
+      const ask = () =>
+        (tool.execute as any)(
+          "call-1",
+          { title: "The cases", items: items.slice(0, 2) },
+          undefined,
+          undefined,
+          fake.ctx,
+        );
+      const first = await ask();
+      expect(
+        first.details.interrupt.metadata.items.some(
+          (item: any) => "previous_content" in item,
+        ),
+      ).toBe(false);
+      writeFileSync(join(dir, "evals", "cases", "C1.md"), "# C1\n\nRevised.\n");
+      const second = await ask();
+      const [c1, c2] = second.details.interrupt.metadata.items;
+      expect(c1.content).toBe("# C1\n\nRevised.\n");
+      expect(c1.previous_content).toBe("# C1\n\nBody of C1.\n");
+      expect(c2).not.toHaveProperty("previous_content");
     } finally {
       if (previous === undefined) delete process.env.PI_INTERRUPT_RESUME;
       else process.env.PI_INTERRUPT_RESUME = previous;
@@ -557,6 +603,69 @@ describe("review_artifacts elsewhere", () => {
         fake.ctx,
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe("the interrupt's items", () => {
+  const doc = (path: string, content: string) => ({
+    path,
+    label: path,
+    content,
+    sha256: "h",
+  });
+
+  it("cuts content past the size cap and marks the item truncated", () => {
+    const out = reviewInterruptItems(
+      [doc("a.md", "aaaa"), doc("b.md", "bbbbbb"), doc("c.md", "cc")],
+      [undefined, "Part A", undefined],
+      new Map(),
+      8,
+    );
+    expect(out).toEqual([
+      { path: "a.md", label: "a.md", content: "aaaa", sha256: "h" },
+      {
+        path: "b.md",
+        label: "b.md",
+        section: "Part A",
+        content: "bbbb",
+        sha256: "h",
+        truncated: true,
+      },
+      {
+        path: "c.md",
+        label: "c.md",
+        content: "",
+        sha256: "h",
+        truncated: true,
+      },
+    ]);
+  });
+
+  it("never splits a multi-byte character when it cuts", () => {
+    const [item] = reviewInterruptItems(
+      [doc("a.md", "é")],
+      [undefined],
+      new Map(),
+      1,
+    );
+    expect(item!.content).toBe("");
+    expect(item!.truncated).toBe(true);
+  });
+
+  it("leaves out a previous version that is unchanged or doesn't fit, without cutting a later file", () => {
+    const out = reviewInterruptItems(
+      [doc("a.md", "same"), doc("b.md", "new"), doc("c.md", "cc")],
+      [undefined, undefined, undefined],
+      new Map([
+        ["a.md", "same"],
+        ["b.md", "an older and much longer version"],
+      ]),
+      12,
+    );
+    expect(out[0]).not.toHaveProperty("previous_content");
+    expect(out[1]).not.toHaveProperty("previous_content");
+    expect(out[1]).not.toHaveProperty("truncated");
+    expect(out[2]).toEqual(doc("c.md", "cc"));
   });
 });
 
