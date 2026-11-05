@@ -1983,12 +1983,16 @@ describe("Recipes extension for Pi", () => {
       });
       const pi = createMockExtensionAPI();
       const appendEntry = pi.appendEntry.bind(pi);
+      let failedOnce = false;
       const appendEntrySpy = vi
         .spyOn(pi, "appendEntry")
-        .mockImplementationOnce(() => {
-          throw new Error("session persistence failed");
-        })
-        .mockImplementation(appendEntry);
+        .mockImplementation((type: string, data?: unknown) => {
+          if (type === "agent_run_event" && !failedOnce) {
+            failedOnce = true;
+            throw new Error("session persistence failed");
+          }
+          return appendEntry(type, data);
+        });
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
       const ctx = { ...extensionContext(projectDir), mode: "json" } as any;
@@ -2024,13 +2028,18 @@ describe("Recipes extension for Pi", () => {
         event: childEvent,
       });
       expect(onAgentRunEvent).toHaveBeenCalledWith(envelope);
-      expect(appendEntrySpy).toHaveBeenCalledTimes(2);
-      expect(pi.entries).toEqual([
+      expect(appendEntrySpy.mock.calls.filter(([type]) => type === "agent_run_event")).toHaveLength(2);
+      expect(pi.entries.filter((entry: { customType: string }) => entry.customType === "agent_run_event")).toEqual([
         {
           customType: "agent_run_event",
           data: onAgentRunEvent.mock.calls[1]?.[0],
         },
       ]);
+      // The session records the Recipe and agent it runs, so whoever continues it can start them again.
+      expect(pi.entries).toContainEqual({
+        customType: "recipe_session",
+        data: expect.objectContaining({ recipe_dir: recipeDir, agent: "main" }),
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
