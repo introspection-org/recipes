@@ -147,13 +147,13 @@ describe("where the agent is", () => {
       "⧈ Introspection · interview-8 · build ▰▰▱ 2/3 draft · next review",
     ]);
     expect(working.at(-1)).toBe(
-      "⧈ Introspection build ▰▰▱ 2/3 draft · next review 03:00 › introspection tasks prompt runs/C1-1 --prompt hi",
+      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:00 · next review › introspection tasks prompt runs/C1-1 --prompt hi",
     );
     // The clock keeps running during the same call.
     clock = 3 * 60_000 + 17_000;
     tick!();
     expect(working.at(-1)).toBe(
-      "⧈ Introspection build ▰▰▱ 2/3 draft · next review 03:17 › introspection tasks prompt runs/C1-1 --prompt hi",
+      "⧈ Introspection build ▰▰▱ 2/3 draft · 03:17 · next review › introspection tasks prompt runs/C1-1 --prompt hi",
     );
   });
 

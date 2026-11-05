@@ -1,6 +1,6 @@
 /**
  * Where a Recipe agent is, while it works: Pi's working line reads
- * `⧈ Introspection build ▰▰▱ 2/3 draft · next review 12:04 › introspection tasks prompt runs/C1-1`
+ * `⧈ Introspection build ▰▰▱ 2/3 draft · 12:04 · next review › introspection tasks prompt runs/C1-1`
  * in place of "Working", and the terminal title names the folder and the step.
  * The time is how long the step has run; no estimate of what's left is given,
  * since steps vary too much for one to be honest.
@@ -21,6 +21,9 @@ import type {
 
 /** Introspection's mark (two concentric squares) and name, at the front of the working line and the title. */
 export const BRAND = "⧈ Introspection";
+
+/** Between a step and the one after it: `draft · next review`. */
+const NEXT_SEPARATOR = " · next ";
 
 /** The longest a command shows in the working line. */
 export const ACTIVITY_MAX_CHARS = 60;
@@ -150,7 +153,9 @@ export function registerSkillProgress(
   const show = (ctx: ExtensionContext, text: string | undefined) => {
     if (!ctx.hasUI || !crumb) return;
     shown = { ctx, text };
-    const line = `${BRAND} ${crumb} ${elapsed(now() - since)}`;
+    // The clock goes with the step it measures, before what comes next.
+    const [step, next] = crumb.split(NEXT_SEPARATOR);
+    const line = `${BRAND} ${step} · ${elapsed(now() - since)}${next ? `${NEXT_SEPARATOR}${next}` : ""}`;
     ctx.ui.setWorkingMessage(text ? `${line} › ${text}` : line);
     stop ??= every(() => {
       if (shown) show(shown.ctx, shown.text);
