@@ -220,6 +220,25 @@ describe("what the review shows of a file", () => {
     expect(shown).not.toContain("Part B");
     expect(reviewSource(brief, "Part C")).toContain('No heading "Part C"');
   });
+
+  it("prefers the heading that matches exactly over one that contains it", () => {
+    const brief =
+      "## Part A overview
+
+Summary.
+
+## Part A
+
+The brief.
+
+## Part B
+
+Tables.";
+    const shown = reviewSource(brief, "part a");
+    expect(shown).toContain("The brief.");
+    expect(shown).not.toContain("Summary.");
+    expect(shown).not.toContain("Tables.");
+  });
 });
 
 describe("review_artifacts in the terminal", () => {

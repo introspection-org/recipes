@@ -147,14 +147,22 @@ export function reviewSource(source: string, section?: string): string {
         ? /^#+/.exec(line)![0].length
         : 0;
     });
-    const start = lines.findIndex(
-      (line, i) =>
-        levels[i]! > 0 &&
-        line
-          .replace(/^#+\s*/, "")
-          .toLowerCase()
-          .includes(wanted),
+    const heading = (line: string) =>
+      line
+        .replace(/^#+\s*/, "")
+        .replace(/\s+#*\s*$/, "")
+        .trim()
+        .toLowerCase();
+    // An exact heading first, so "Part A" isn't taken from "Part A overview" above it.
+    const exact = lines.findIndex(
+      (line, i) => levels[i]! > 0 && heading(line) === wanted,
     );
+    const start =
+      exact >= 0
+        ? exact
+        : lines.findIndex(
+            (line, i) => levels[i]! > 0 && heading(line).includes(wanted),
+          );
     if (start >= 0) {
       let end = lines.length;
       for (let i = start + 1; i < lines.length; i += 1) {
