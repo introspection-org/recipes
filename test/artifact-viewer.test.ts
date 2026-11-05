@@ -222,6 +222,9 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 let workspace: string;
 
+/** A terminal style escape, so a test can read the text the panel draws. */
+const ANSI_STYLE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
 // The panel highlights code with Pi's theme, which Pi loads before any extension runs.
 beforeAll(() => initTheme("dark"));
 
@@ -364,6 +367,36 @@ describe("show_artifact tool", () => {
       against: "the version shown before",
       text: expect.stringContaining("+2 more"),
     });
+  });
+
+  it("heads the panel with the git branch and the change against HEAD, and d switches to the diff", async () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, stdio: "pipe" });
+    git("init", "-q", "-b", "main");
+    git("add", "notes.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(workspace, "notes.txt"), "plain text\nmore\n");
+    const { show, overlays } = await setup({
+      watchFile: fakeWatcher().watchFile,
+    });
+    const result = await show("notes.txt");
+    // No diff asked for: the file opens, and its diff against HEAD rides along for `d`.
+    expect(result.details).toMatchObject({
+      git: { branch: "main", dirty: true },
+      diff: { against: "HEAD", added: 1, removed: 0 },
+    });
+    expect(result.details.opens).toBeUndefined();
+    const panel = overlays[0]!.component;
+    const plain = (lines: string[]) =>
+      lines.map((line) => line.replace(ANSI_STYLE, ""));
+    const header = plain(panel.render(100))[0]!;
+    expect(header).toContain("notes.txt  git:(main) ✗  +1 −0 vs HEAD");
+    expect(header).not.toContain("[diff]");
+    panel.handleInput!("d");
+    const diffed = plain(panel.render(100));
+    expect(diffed[0]).toContain("[diff]");
+    expect(diffed.join("\n")).toContain("+2 more");
+    expect(diffed.at(-1)).toContain("d file");
   });
 
   it("shows a file as of a git commit, or diffs against one", async () => {

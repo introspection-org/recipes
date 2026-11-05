@@ -328,8 +328,18 @@ interface ShowArtifactDetails {
   content: string;
   /** The content was cut to the cap. */
   truncated?: true;
-  /** With `diff`: what it was compared against, and the diff. */
-  diff?: { against: string; text: string; truncated?: true };
+  /** The working directory's git branch and whether its tree has uncommitted changes. */
+  git?: { branch: string; dirty: boolean };
+  /** How the file differs from its base: the `diff` asked for, else HEAD or the version shown before. */
+  diff?: {
+    against: string;
+    text: string;
+    added: number;
+    removed: number;
+    truncated?: true;
+  };
+  /** The view a host opens on: the diff when `diff` was asked for. */
+  opens?: "diff";
 }
 
 /** How the file renders. */
@@ -549,7 +559,49 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
 interface ArtifactSource {
   target: ResolvedArtifactPath;
   ref?: string;
-  base?: { label: string; text: string };
+  /** What `d` diffs against: a fixed text, or a git ref re-read on each refresh. */
+  base?: { label: string; text?: string; ref?: string };
+  /** Open on the diff rather than the file (`diff` was asked for). */
+  diffFirst?: boolean;
+}
+
+/** Run git in the working directory's repository; undefined outside one or on failure. */
+function git(target: ResolvedArtifactPath, args: string[]): string | undefined {
+  try {
+    return execFileSync("git", args, {
+      cwd: workspaceRoot(target),
+      encoding: "utf8",
+      maxBuffer: ARTIFACT_MAX_BYTES,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/** The branch (or short commit when detached) and whether the tree has uncommitted changes, as a zsh git prompt shows them. */
+function gitState(
+  target: ResolvedArtifactPath,
+): { branch: string; dirty: boolean } | undefined {
+  const branch = git(target, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (branch === undefined) return undefined;
+  const name =
+    branch === "HEAD"
+      ? (git(target, ["rev-parse", "--short", "HEAD"]) ?? branch)
+      : branch;
+  const status = git(target, ["status", "--porcelain", "--untracked-files=no"]);
+  return { branch: name, dirty: Boolean(status) };
+}
+
+/** Lines added and removed in a `generateDiffString` diff. */
+function diffCounts(diff: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+")) added += 1;
+    else if (line.startsWith("-")) removed += 1;
+  }
+  return { added, removed };
 }
 
 /** The file as `source` names it: at its ref, or as it is now. */
@@ -577,15 +629,47 @@ function readDocument(source: ArtifactSource): ArtifactDocument {
   } catch {
     text = undefined;
   }
+  const state = gitState(source.target);
+  let diff: ArtifactDocument["diff"];
   if (source.base && text !== undefined) {
-    return {
-      title: `${title} vs ${source.base.label}`,
-      kind: "diff",
-      text: generateDiffString(source.base.text, text).diff,
-      language,
-    };
+    let baseText = source.base.text;
+    if (baseText === undefined && source.base.ref) {
+      try {
+        baseText = gitVersion(source.target, source.base.ref);
+      } catch {
+        baseText = undefined;
+      }
+    }
+    if (baseText !== undefined) {
+      const diffText = generateDiffString(baseText, text).diff;
+      diff = {
+        against: source.base.label,
+        text: diffText,
+        ...diffCounts(diffText),
+      };
+    }
   }
-  return { title, kind: artifactKind(path), text, language };
+  return {
+    title,
+    kind: artifactKind(path),
+    text,
+    language,
+    ...(state ? { git: state } : {}),
+    ...(diff ? { diff } : {}),
+    ...(diff && source.diffFirst ? { diffFirst: true } : {}),
+  };
+}
+
+/** A document's diff for `details`, its text capped. */
+function cappedDiff(diff: NonNullable<ArtifactDocument["diff"]>) {
+  const text = capped(diff.text);
+  return {
+    against: diff.against,
+    text: text.text,
+    added: diff.added,
+    removed: diff.removed,
+    ...(text.truncated ? { truncated: true as const } : {}),
+  };
 }
 
 /** `text` cut to `ARTIFACT_DETAILS_MAX_BYTES`, on a character boundary. */
@@ -836,15 +920,29 @@ function artifactSourceFor(
   const source: ArtifactSource = { target, ...(ref ? { ref } : {}) };
   const current = readSource(source);
   const against = diff?.trim();
+  const previous = viewer.shownVersion(target.relativePath);
+  const previousBase =
+    previous === undefined
+      ? undefined
+      : { label: "the version shown before", text: previous };
   let note = "";
   if (against === DIFF_PREVIOUS) {
-    const previous = viewer.shownVersion(target.relativePath);
-    if (previous === undefined)
+    if (previousBase) source.base = previousBase;
+    else
       note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
-    else source.base = { label: "the version shown before", text: previous };
   } else if (against) {
-    source.base = { label: against, text: gitVersion(target, against) };
+    // Fails here, with the reason, when the ref has no such version.
+    gitVersion(target, against);
+    source.base = { label: against, ref: against };
+  } else if (!ref) {
+    // With no diff asked for, `d` still offers one: against HEAD for a tracked file, else the version shown before.
+    const tracked =
+      git(target, ["cat-file", "-e", `HEAD:./${target.relativePath}`]) !==
+      undefined;
+    if (tracked) source.base = { label: "HEAD", ref: "HEAD" };
+    else if (previousBase) source.base = previousBase;
   }
+  if (against && source.base) source.diffFirst = true;
   viewer.recordShown(target.relativePath, current);
   return { source, current, note };
 }
@@ -907,23 +1005,12 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         ...(ref ? { ref } : {}),
         content: content.text,
         ...(content.truncated ? { truncated: true as const } : {}),
-        ...(source.base &&
-        document.kind === "diff" &&
-        document.text !== undefined
-          ? (() => {
-              const diff = capped(document.text);
-              return {
-                diff: {
-                  against: source.base.label,
-                  text: diff.text,
-                  ...(diff.truncated ? { truncated: true as const } : {}),
-                },
-              };
-            })()
-          : {}),
+        ...(document.git ? { git: document.git } : {}),
+        ...(document.diff ? { diff: cappedDiff(document.diff) } : {}),
+        ...(document.diffFirst ? { opens: "diff" as const } : {}),
       };
-      const what = source.base
-        ? `the diff of ${document.title}`
+      const what = document.diffFirst
+        ? `the diff of ${document.title} against ${document.diff!.against}`
         : document.title;
       if (ctx.mode !== "tui") {
         return {
