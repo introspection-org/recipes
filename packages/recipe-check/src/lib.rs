@@ -1847,25 +1847,41 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
         .collect();
     for (id, (file, case)) in &cases {
         let Some(case) = case else { continue };
-        let missing = case.missing_approval();
-        if missing.is_empty() || !implemented.contains(id.as_str()) {
+        if !implemented.contains(id.as_str()) {
             continue;
         }
-        ctx.warning(
-            EVALS_CASE_UNAPPROVED,
-            file.clone(),
-            format!(
-                "case '{id}' has an implementation but is not approved: {} empty",
-                missing.join(", ")
-            ),
-            Some(
-                "have the owner approve the case: fill in approved_by, approved_at and approved_in",
-            ),
-        );
+        let missing = case.missing_approval();
+        if !missing.is_empty() {
+            ctx.warning(
+                EVALS_CASE_UNAPPROVED,
+                file.clone(),
+                format!(
+                    "case '{id}' has an implementation but is not approved: {} empty",
+                    missing.join(", ")
+                ),
+                Some(
+                    "have the owner approve the case: fill in approved_by, approved_at and approved_in",
+                ),
+            );
+            continue;
+        }
+        let body = ctx.content(file).and_then(spec::eval_case_body);
+        if body.is_some_and(|body| case.approved_hash_matches(&body) == Some(false)) {
+            ctx.warning(
+                EVALS_CASE_UNAPPROVED,
+                file.clone(),
+                format!(
+                    "case '{id}' has an implementation but changed since it was approved: its body no longer matches approved_hash"
+                ),
+                Some(format!(
+                    "have the owner review the case and approve it again: introspection eval approve {id}"
+                )),
+            );
+        }
     }
 }
 
-const EVALS_CASE_HELP: &str = "start the case file with YAML front matter: id (the file name without .md), check (code, person or later), approved_by, approved_at, approved_in, and optional conversation and issue";
+const EVALS_CASE_HELP: &str = "start the case file with YAML front matter: id (the file name without .md), check (code, person or later), approved_by, approved_at, approved_in, and optional approved_hash, conversation and issue";
 
 /// The front-matter rules a case file can break on its own.
 fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut CheckContext) {
@@ -1879,6 +1895,18 @@ fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut C
             Some("set id to the file name without .md, or rename the file"),
         );
     }
+    if let Some(hash) = case
+        .approved_hash
+        .as_deref()
+        .filter(|hash| !is_sha256(hash))
+    {
+        ctx.warning(
+            EVALS_CASE_INVALID,
+            file.to_owned(),
+            format!("case file '{file}' has approved_hash '{hash}', which is not sha256:<64 hex digits>"),
+            Some("approve the case again so approved_hash is written for you, or remove it"),
+        );
+    }
     if let Some(issue) = case.issue.as_deref().filter(|issue| !is_uuid(issue)) {
         ctx.warning(
             EVALS_CASE_INVALID,
@@ -1887,6 +1915,13 @@ fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut C
             Some("set issue to the /v1/issues id of the hypothesis the case tests, or remove it"),
         );
     }
+}
+
+/// `sha256:` and 64 hexadecimal digits, in either case.
+fn is_sha256(value: &str) -> bool {
+    value
+        .strip_prefix("sha256:")
+        .is_some_and(|hex| hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// `8-4-4-4-12` hexadecimal digits, in either case.
@@ -7232,6 +7267,76 @@ mod tests {
                     "case 'C3' has an implementation but is not approved: approved_at, approved_in empty".into(),
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn evals_case_approved_hash_unapproves_an_edited_case() {
+        let body = "\n## Situation\nSomething happens.\n";
+        let hash = spec::case_approval_hash(body);
+        let with_hash = |id: &str, hash: &str| {
+            format!(
+                "---\nid: {id}\ncheck: code\napproved_by: owner@example.com\n\
+                 approved_at: 2026-11-04\napproved_in: msg_1\napproved_hash: {hash}\n---\n"
+            )
+        };
+        // The body as approved, with CRLF and trailing whitespace, and a
+        // front matter edited after approval: still approved.
+        let matching = format!(
+            "{}\r\n## Situation   \r\nSomething happens.\r\n\r\n",
+            with_hash("C1", &hash)
+                .replace("check: code\n", "check: code\ntitle: Edited later\n")
+                .replace('\n', "\r\n")
+        );
+        // The body changed after approval.
+        let edited = format!(
+            "{}\n## Situation\nSomething else happens.\n",
+            with_hash("C2", &hash)
+        );
+        // Approved before approved_hash existed.
+        let no_hash = approved("C3");
+        let malformed = format!("{}{body}", with_hash("C4", "sha256:abc"));
+        let report = cases_report(
+            json!({}),
+            &[
+                (
+                    "evals/vitest/a.eval.jsonl",
+                    "{\"case\":\"C1\"}\n{\"case\":\"C2\"}\n{\"case\":\"C3\"}\n{\"case\":\"C4\"}\n",
+                ),
+                ("evals/cases/C1.md", &matching),
+                ("evals/cases/C2.md", &edited),
+                ("evals/cases/C3.md", &no_hash),
+                ("evals/cases/C4.md", &malformed),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [
+                (
+                    "pi.evals_case_invalid".into(),
+                    "evals/cases/C4.md".into(),
+                    "case file 'evals/cases/C4.md' has approved_hash 'sha256:abc', which is not sha256:<64 hex digits>".into(),
+                ),
+                (
+                    "pi.evals_case_unapproved".into(),
+                    "evals/cases/C2.md".into(),
+                    "case 'C2' has an implementation but changed since it was approved: its body no longer matches approved_hash".into(),
+                ),
+                (
+                    "pi.evals_case_unapproved".into(),
+                    "evals/cases/C4.md".into(),
+                    "case 'C4' has an implementation but changed since it was approved: its body no longer matches approved_hash".into(),
+                ),
+            ]
+        );
+        let help = report
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.path == "evals/cases/C2.md")
+            .and_then(|diagnostic| diagnostic.help.as_deref());
+        assert_eq!(
+            help,
+            Some("have the owner review the case and approve it again: introspection eval approve C2")
         );
     }
 
