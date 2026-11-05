@@ -672,9 +672,10 @@ function repositorySource(
   target: ResolvedArtifactPath,
   ref: string | undefined,
   resolve: ArtifactRepositoryResolver | undefined,
-  bytes: number,
+  current: string,
 ): ArtifactRepositorySource | undefined {
   if (!resolve) return undefined;
+  const bytes = new TextEncoder().encode(current).length;
   const dir = dirname(target.absolutePath);
   if (!existsSync(dir)) return undefined;
   // A committed link holds its target's path, not the document shown: carry the content instead.
@@ -699,14 +700,20 @@ function repositorySource(
     `${ref ?? "HEAD"}^{commit}`,
   ]);
   if (!commit) return undefined;
-  if (gitIn(root, ["cat-file", "-e", `${commit}:${path}`]) === undefined)
+  // The content read must be the committed blob itself, or the host would show
+  // another version; git's own diff trusts the index (`assume-unchanged`).
+  let blob: string;
+  try {
+    blob = execFileSync("git", ["cat-file", "blob", `${commit}:${path}`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: STORED_ARTIFACT_MAX_BYTES,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
     return undefined;
-  // The working tree's file must be the committed one, or the host would show another version.
-  if (
-    !ref &&
-    gitIn(root, ["diff", "--quiet", commit, "--", path]) === undefined
-  )
-    return undefined;
+  }
+  if (blob !== current) return undefined;
   if (!gitIn(root, ["branch", "-r", "--contains", commit])) return undefined;
   return { repository_id: repository.id, commit, path };
 }
@@ -1238,7 +1245,7 @@ function createShowArtifactTool(
       // A committed file the host serves is read from its repository; otherwise it rides along, or is stored.
       const committed = deleted
         ? undefined
-        : repositorySource(target, ref, resolveRepository, bytes);
+        : repositorySource(target, ref, resolveRepository, current);
       // Stored now, so the recorded result names the file; a host's own sync recognises the same upload.
       const stored =
         !committed && store && bytes > ARTIFACT_DETAILS_MAX_BYTES

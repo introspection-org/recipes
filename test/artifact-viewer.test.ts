@@ -391,6 +391,14 @@ describe("show_artifact tool", () => {
     run(app, "reset", "-q", "--hard", "HEAD~1");
     run(app, "push", "-q", "-f", "origin", "HEAD:main");
 
+    // Git's index can be told a file is unchanged; the content read is what counts.
+    run(app, "update-index", "--assume-unchanged", "notes.md");
+    writeFileSync(join(app, "notes.md"), "# Notes, edited\n");
+    const hidden = await show("app/notes.md");
+    expect(hidden.details.source).toBeUndefined();
+    expect(hidden.details.content).toBe("# Notes, edited\n");
+    run(app, "update-index", "--no-assume-unchanged", "notes.md");
+
     // An edit the remote doesn't have rides along instead.
     writeFileSync(join(app, "notes.md"), "# Notes\nmore\n");
     const edited = await show("app/notes.md");
