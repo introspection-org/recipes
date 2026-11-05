@@ -97,6 +97,48 @@ describe("where the agent is", () => {
     expect(nextStep(undefined, "write", ["research", "write"])).toBe("write");
   });
 
+  it("resumes a session in a later phase where it left off", () => {
+    const flow = [
+      "build-brainstorm",
+      "build-review",
+      "deploy-runtime",
+      "deploy-test",
+    ];
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const pi = {
+      on: (name: string, handler: any) => handlers.set(name, handler),
+    } as any;
+    const progress = registerSkillProgress(
+      pi,
+      () => ({ names: flow }),
+      () => 0,
+      () => () => {},
+    );
+    const read = (skill: string) => ({
+      type: "message",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            name: "read",
+            arguments: { path: `s/${skill}/SKILL.md` },
+          },
+        ],
+      },
+    });
+    const statuses: string[] = [];
+    const ctx = {
+      hasUI: true,
+      ui: { setStatus: (_key: string, text: string) => statuses.push(text) },
+      sessionManager: { getEntries: () => flow.map(read) },
+    };
+    progress.resume(ctx as any);
+    expect(statuses.at(-1)).toBe(
+      "⧈ Introspection deploy ✓ runtime ⏸ test · 00:00",
+    );
+  });
+
   it("shows the improve, optimize and harden phases the same way", () => {
     const later = [
       "improve-collect",

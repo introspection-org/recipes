@@ -340,11 +340,14 @@ export function registerSkillProgress(
       runningSince = undefined;
       const skills = skillsFor(ctx);
       if (!skills?.names.length) return;
-      setStep(
-        ctx,
-        lastSkillRead(ctx.sessionManager?.getEntries?.() ?? [], skills),
-        skills.names,
+      // The replay already applied the phase rules: restore its step as it is.
+      const step = lastSkillRead(
+        ctx.sessionManager?.getEntries?.() ?? [],
+        skills,
       );
+      if (!step || !ctx.hasUI) return;
+      current = { skill: step, skills: skills.names };
+      show(ctx);
     },
   };
 }
