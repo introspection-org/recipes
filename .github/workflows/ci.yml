@@ -143,3 +143,53 @@ jobs:
           MCP_CLIENT_ARCH: arm64
 
       - run: test -x vendor/mcp-client/linux-arm64/mcp-client
+
+  lint-actions:
+    name: Lint GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
+  # Ratchets copy/paste per language: each step fails once that language's
+  # duplicated-line share rises above `threshold` in its config, printing every
+  # clone. One config per language (TypeScript and JavaScript share one), so a
+  # small language's ratchet isn't drowned by the TypeScript line count. The
+  # thresholds start at the duplication measured when the job was added. Lower
+  # a threshold when a refactor removes duplication; never raise it.
+  duplication:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: TypeScript and JavaScript duplicate code stays under the threshold
+        run: npx --yes jscpd@5.4.1 --config .jscpd.js-ts.json
+      - name: Rust duplicate code stays under the threshold
+        if: ${{ !cancelled() }}
+        run: npx --yes jscpd@5.4.1 --config .jscpd.json
+      - name: Python duplicate code stays under the threshold
+        if: ${{ !cancelled() }}
+        run: npx --yes jscpd@5.4.1 --config .jscpd.python.json
+
+  # The one check to require in branch protection: it fails when any job it
+  # needs failed, was cancelled, or was skipped. Add every new job to its
+  # needs, and to allowed-skips when it has an `if:`.
+  all-green:
+    name: All green
+    if: always()
+    needs:
+      - ci
+      - python-bindings
+      - pi-minimum
+      - native-linux-arm64
+      - lint-actions
+      - duplication
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that every needed job passed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
