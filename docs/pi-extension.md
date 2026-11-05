@@ -57,7 +57,7 @@ A Recipe agent's step shows in Pi's footer, with how long it has run:
 ⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04
 ```
 
-Nothing is declared for it. The step is the agent's skill it last read: a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked and joined by arrows, the current one marked and the rest to come; any other skill shows by its name. The clock is how long the current step has run, redrawn every second, not an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
+Nothing is declared for it. The step is the agent's skill it last read: a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked, the current one marked and the rest to come; any other skill shows by its name. The clock is how long the current step has run, redrawn every second, not an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
 
 ## GenAI spans
 

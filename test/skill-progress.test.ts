@@ -39,7 +39,7 @@ describe("where the agent is", () => {
       "build ✓ brainstorm ▸ draft ○ review · 12:04",
     );
     expect(stepLine("build-review", skills, "03:10")).toBe(
-      "build ✓ brainstorm → ✓ draft ▸ review · 03:10",
+      "build ✓ brainstorm ✓ draft ▸ review · 03:10",
     );
     expect(stepLine("research", ["research"], "00:05")).toBe(
       "research · 00:05",

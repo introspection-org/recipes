@@ -51,7 +51,7 @@ function phaseOf(
 
 /**
  * The footer's line for a step: `build ✓ brainstorm ▸ draft ○ review · 12:04`,
- * the phase's steps in the agent's order (done ticked and joined by arrows,
+ * the phase's steps in the agent's order (done ticked,
  * the current one marked, the rest to come), then how long the current one has
  * run. Any other skill shows by its name.
  */
@@ -65,7 +65,7 @@ export function stepLine(
   const done = found.steps
     .slice(0, found.at)
     .map((step) => `✓ ${step}`)
-    .join(" → ");
+    .join(" ");
   const rest = found.steps
     .slice(found.at + 1)
     .map((step) => `○ ${step}`)
