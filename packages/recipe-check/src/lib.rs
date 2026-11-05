@@ -5596,6 +5596,18 @@ mod tests {
 
     /// A Recipe depending on `@acme/skills` (and `typebox` as a peer, `acme-dev`
     /// as a devDependency), with its agent selecting `agent_skills`, plus `extra`.
+    fn add_peer_dependency(input: &mut RecipeFiles, name: &str) {
+        let package = input
+            .files
+            .iter_mut()
+            .find(|file| file.path == "package.json")
+            .expect("package.json");
+        let mut manifest: JsonValue =
+            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
+        manifest["peerDependencies"][name] = json!(">=1.0.0");
+        package.content = Some(manifest.to_string());
+    }
+
     fn dependency_skills_recipe(agent_skills: &str, extra: &[(&str, &str)]) -> RecipeFiles {
         let package = json!({
             "name": "dependency-skills",
@@ -5675,15 +5687,7 @@ mod tests {
                 ),
             ],
         );
-        let package = input
-            .files
-            .iter_mut()
-            .find(|file| file.path == "package.json")
-            .expect("package.json");
-        let mut manifest: JsonValue =
-            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
-        manifest["peerDependencies"]["@acme/peer-skill"] = json!(">=1.0.0");
-        package.content = Some(manifest.to_string());
+        add_peer_dependency(&mut input, "@acme/peer-skill");
 
         let report = check_recipe_files(&input);
         assert!(report.valid, "{:?}", report.diagnostics);
@@ -5712,15 +5716,7 @@ mod tests {
                 ),
             ],
         );
-        let package = input
-            .files
-            .iter_mut()
-            .find(|file| file.path == "package.json")
-            .expect("package.json");
-        let mut manifest: JsonValue =
-            serde_json::from_str(package.content.as_deref().expect("content")).expect("json");
-        manifest["peerDependencies"]["acme-peer"] = json!(">=1.0.0");
-        package.content = Some(manifest.to_string());
+        add_peer_dependency(&mut input, "acme-peer");
 
         let report = check_recipe_files(&input);
         assert_eq!(
