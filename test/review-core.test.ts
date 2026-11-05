@@ -129,6 +129,18 @@ describe("the review core", () => {
       content: "",
       hasContent: false,
     });
+    // A file kept in the host's store: no content, and its id.
+    expect(
+      artifactDetails({
+        path: "big.txt",
+        shown: false,
+        content: "",
+        file: { id: "file-1", bytes: 1126401 },
+      }),
+    ).toMatchObject({
+      hasContent: false,
+      file: { id: "file-1", bytes: 1126401 },
+    });
     expect(artifactDetails({ shown: false })).toBeUndefined();
     expect(artifactDetails("nope")).toBeUndefined();
   });

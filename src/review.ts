@@ -22,6 +22,8 @@ export {
   artifactDiffLines,
   artifactKind,
   type ArtifactDiff,
+  type ArtifactFile,
+  type ArtifactStore,
   type ArtifactDiffLineKind,
   type ArtifactKind,
   type ShowArtifactDetails,

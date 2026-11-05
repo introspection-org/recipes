@@ -32,6 +32,7 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
+import type { ArtifactStore } from "./artifact.js";
 import {
   artifactViewerExtension,
   wantsArtifactViewer,
@@ -205,6 +206,11 @@ export interface CreateAgentSessionOptions {
    * clock runs changes, and once when a resumed session has a step.
    */
   onRecipeStep?: (step: RecipeStep) => void;
+  /**
+   * Where `show_artifact` keeps a file too large to carry in its result, for a
+   * host that renders artifacts from its own store (see `ArtifactViewerOptions`).
+   */
+  storeArtifact?: ArtifactStore;
   /** Host event bus shared with the surrounding application. */
   eventBus?: EventBus;
   /** Host-owned tools. Recipe tool selection still decides which names are live. */
@@ -745,7 +751,12 @@ async function createSessionForAgent(
     // Likewise the first-party artifact viewer (show_artifact and /recipe view).
     if (wantsArtifactViewer(recipe.tools)) {
       inlineExtensions.push(
-        artifactViewerExtension(recipeRegistrations, {}, recipe.tools, env),
+        artifactViewerExtension(
+          recipeRegistrations,
+          { storeArtifact: opts.storeArtifact },
+          recipe.tools,
+          env,
+        ),
       );
     }
     inlineExtensions.push(...recipeStepExtensions(recipe, opts.onRecipeStep));

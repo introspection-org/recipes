@@ -340,6 +340,43 @@ describe("show_artifact tool", () => {
     }
   });
 
+  it("keeps a file past 1 MB in the host's store during the call, and names it", async () => {
+    const big = "x".repeat(1100 * 1024) + "\n";
+    writeFileSync(join(workspace, "big.txt"), big);
+    const stored: Array<{ path: string; bytes: number; mimeType: string }> = [];
+    const { show } = await setup(
+      {
+        storeArtifact: async ({ path, content, mimeType }) => {
+          stored.push({ path, bytes: content.length, mimeType });
+          return { id: "file-1" };
+        },
+      },
+      "rpc",
+    );
+    const result = await show("big.txt");
+    expect(stored).toEqual([
+      { path: "big.txt", bytes: big.length, mimeType: "text/plain" },
+    ]);
+    expect(result.details).toMatchObject({
+      path: "big.txt",
+      kind: "text",
+      content: "",
+      file: { id: "file-1", bytes: big.length },
+    });
+    expect(result.details.truncated).toBeUndefined();
+    // A file under the cap rides inline, and nothing is stored.
+    await show("notes.txt");
+    expect(stored).toHaveLength(1);
+  });
+
+  it("without a store, refuses a file past 1 MB as before", async () => {
+    writeFileSync(join(workspace, "big.txt"), "x".repeat(1100 * 1024));
+    const { show } = await setup({}, "rpc");
+    await expect(show("big.txt")).rejects.toThrow(
+      /over the 1024 KB the viewer reads/,
+    );
+  });
+
   it("shows any text file, and HTML as its own kind", async () => {
     writeFileSync(join(workspace, "page.html"), "<h1>Hi</h1>\n");
     const { show } = await setup({}, "rpc");

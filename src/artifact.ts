@@ -28,6 +28,23 @@ export interface ArtifactDiff {
   truncated?: true;
 }
 
+/** A shown file too large to carry inline, kept in the host's file store. */
+export interface ArtifactFile {
+  /** The store's id for the file (the platform's Files API id). */
+  id: string;
+  bytes: number;
+}
+
+/**
+ * Keeps a shown file too large to carry in a result, for a host that renders
+ * artifacts from its own store; resolves to the store's id.
+ */
+export type ArtifactStore = (artifact: {
+  path: string;
+  content: string;
+  mimeType: string;
+}) => Promise<{ id: string }>;
+
 /** Structured `details` of a `show_artifact` result, enough for a host without the panel to render it. */
 export interface ShowArtifactDetails {
   /** The file, relative to the working directory. */
@@ -39,8 +56,10 @@ export interface ShowArtifactDetails {
   language?: string;
   /** The commit shown, when not the working tree. */
   ref?: string;
-  /** The file as shown, capped (see `truncated`). */
+  /** The file as shown, capped (see `truncated`); empty when it is in the host's store (`file`). */
   content: string;
+  /** The file, kept in the host's store because it is too large to carry here. */
+  file?: ArtifactFile;
   /** The content was cut to the cap. */
   truncated?: true;
   /** The working directory's git branch, and whether its tree has uncommitted changes. */
@@ -69,7 +88,8 @@ function count(value: unknown): number {
  * Read a `show_artifact` result's `details` as a host received them, or
  * undefined without a path. A release before the details carried the file
  * sends only `{ path, shown }`: `content` then reads as empty and the host
- * should say the file wasn't included (`hasContent` is false).
+ * should say the file wasn't included (`hasContent` is false). A file too large
+ * to carry is in the host's store instead (`file`), also with `hasContent` false.
  */
 export function artifactDetails(
   value: unknown,
@@ -87,6 +107,8 @@ export function artifactDetails(
   const diffText = typeof diff?.text === "string" ? diff.text : undefined;
   const language = nonEmpty(details.language);
   const ref = nonEmpty(details.ref);
+  const file = asRecord(details.file);
+  const fileId = nonEmpty(file?.id);
   return {
     path,
     shown: details.shown === true,
@@ -94,7 +116,8 @@ export function artifactDetails(
     ...(language ? { language } : {}),
     ...(ref ? { ref } : {}),
     content: typeof details.content === "string" ? details.content : "",
-    hasContent: typeof details.content === "string",
+    hasContent: typeof details.content === "string" && !fileId,
+    ...(fileId ? { file: { id: fileId, bytes: count(file?.bytes) } } : {}),
     ...(details.truncated === true ? { truncated: true as const } : {}),
     ...(branch ? { git: { branch, dirty: git?.dirty === true } } : {}),
     ...(diff && diffText !== undefined
