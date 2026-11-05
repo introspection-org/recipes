@@ -54,6 +54,8 @@ import {
   artifactDiffCounts,
   artifactKind,
   SHOW_ARTIFACT_TOOL_NAME,
+  type ArtifactKind,
+  type ArtifactStore,
   type ShowArtifactDetails,
 } from "./artifact.js";
 import {
@@ -275,8 +277,10 @@ const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [".md", ".markdown"];
 
 /** The largest file the viewer reads. */
 const ARTIFACT_MAX_BYTES = 1024 * 1024;
+/** The largest file the viewer reads for a host that keeps large files in its store. */
+const STORED_ARTIFACT_MAX_BYTES = 25 * 1024 * 1024;
 /** The most of a file (and of its diff) a result's `details` carry, as a review's interrupt does. */
-const ARTIFACT_DETAILS_MAX_BYTES = 256 * 1024;
+const ARTIFACT_DETAILS_MAX_BYTES = 1024 * 1024;
 /** The bytes read to tell a text file from a binary one. */
 const BINARY_SNIFF_BYTES = 8192;
 /** `diff` against the version this session last showed. */
@@ -341,6 +345,12 @@ export interface ArtifactViewerOptions {
   watchFile?: (absolutePath: string, onChange: () => void) => () => void;
   /** How long to wait for a burst of changes to settle before re-rendering. */
   debounceMs?: number;
+  /**
+   * The host's store for a shown file past the inline cap (1 MB): with it, the
+   * tool reads files up to 25 MB and records the store's id instead of the
+   * content. Pi's terminal has none; its panel reads the file itself.
+   */
+  storeArtifact?: ArtifactStore;
 }
 
 function isInside(root: string, target: string): boolean {
@@ -376,8 +386,11 @@ export function resolveArtifactPath(
   {
     anyText = false,
     inWorkingTree = true,
+    maxBytes = ARTIFACT_MAX_BYTES,
   }: {
     anyText?: boolean;
+    /** The largest file accepted. */
+    maxBytes?: number;
     /** False for a path read from a git commit: it need not exist now, and git's version is checked instead. */
     inWorkingTree?: boolean;
   } = {},
@@ -413,9 +426,9 @@ export function resolveArtifactPath(
     );
   }
   if (!stats.isFile()) throw new Error(`${input} is not a file.`);
-  if (anyText && stats.size > ARTIFACT_MAX_BYTES) {
+  if (anyText && stats.size > maxBytes) {
     throw new Error(
-      `${input} is ${Math.ceil(stats.size / 1024)} KB, over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads; show a smaller file or a part of it.`,
+      `${input} is ${Math.ceil(stats.size / 1024)} KB, over the ${maxBytes / 1024} KB the viewer reads; show a smaller file or a part of it.`,
     );
   }
   if (anyText && looksBinary(absolutePath)) {
@@ -509,7 +522,11 @@ function workspaceRoot(target: ResolvedArtifactPath): string {
 }
 
 /** A file at `ref` in the working directory's git repository. */
-function gitVersion(target: ResolvedArtifactPath, ref: string): string {
+function gitVersion(
+  target: ResolvedArtifactPath,
+  ref: string,
+  maxBytes = ARTIFACT_MAX_BYTES,
+): string {
   if (!GIT_REF.test(ref)) {
     throw new Error(
       `${ref} is not a git ref; give a commit hash, a branch or tag, or one like HEAD~1.`,
@@ -521,13 +538,13 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
     text = execFileSync("git", ["show", `${ref}:./${target.relativePath}`], {
       cwd: workspaceRoot(target),
       encoding: "utf8",
-      maxBuffer: ARTIFACT_MAX_BYTES,
+      maxBuffer: maxBytes,
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
     if ((error as { code?: string }).code === "ENOBUFS") {
       throw new Error(
-        `${target.relativePath} at ${ref} is over the ${ARTIFACT_MAX_BYTES / 1024} KB the viewer reads.`,
+        `${target.relativePath} at ${ref} is over the ${maxBytes / 1024} KB the viewer reads.`,
       );
     }
     if (git(target, ["rev-parse", "--git-dir"]) === undefined) {
@@ -579,6 +596,8 @@ interface ArtifactSource {
   diffFirst?: boolean;
   /** Gone from the working tree, shown as a diff against a base that has it: its content reads as empty. */
   deleted?: boolean;
+  /** The largest file read; larger for a host that stores large files. */
+  maxBytes?: number;
 }
 
 /** Run git in the working directory's repository; undefined outside one or on failure. */
@@ -611,7 +630,7 @@ function gitState(
 
 /** The file as `source` names it: at its ref, or as it is now. */
 function readSource(source: ArtifactSource): string {
-  if (source.ref) return gitVersion(source.target, source.ref);
+  if (source.ref) return gitVersion(source.target, source.ref, source.maxBytes);
   if (source.deleted && !existsSync(source.target.absolutePath)) return "";
   // A re-read re-checks the path: the file may since have become a link out of the working directory.
   resolveArtifactPath(
@@ -619,6 +638,7 @@ function readSource(source: ArtifactSource): string {
     source.target.relativePath,
     {
       anyText: true,
+      ...(source.maxBytes ? { maxBytes: source.maxBytes } : {}),
     },
   );
   return readFileSync(source.target.absolutePath, "utf8");
@@ -637,7 +657,11 @@ function readDocument(source: ArtifactSource): ArtifactDocument {
   }
   const state = gitState(source.target);
   let diff: ArtifactDocument["diff"];
-  if (source.base && text !== undefined) {
+  // A diff of a file past the inline cap is too large to draw or carry.
+  const diffable =
+    text !== undefined &&
+    new TextEncoder().encode(text).length <= ARTIFACT_DETAILS_MAX_BYTES;
+  if (source.base && text !== undefined && diffable) {
     let baseText = source.base.text;
     if (baseText === undefined && source.base.ref) {
       try {
@@ -925,11 +949,13 @@ function artifactSourceFor(
   ref: string | undefined,
   diff: string | undefined,
   deleted = false,
+  maxBytes?: number,
 ): { source: ArtifactSource; current: string; note: string } {
   const source: ArtifactSource = {
     target,
     ...(ref ? { ref } : {}),
     ...(deleted ? { deleted } : {}),
+    ...(maxBytes ? { maxBytes } : {}),
   };
   const current = readSource(source);
   const against = diff?.trim();
@@ -987,19 +1013,21 @@ function resolveShownPath(
   path: string,
   ref: string | undefined,
   diff: string | undefined,
+  maxBytes = ARTIFACT_MAX_BYTES,
 ): { target: ResolvedArtifactPath; deleted: boolean } {
   if (ref) {
     return {
       target: resolveArtifactPath(cwd, path, {
         anyText: true,
         inWorkingTree: false,
+        maxBytes,
       }),
       deleted: false,
     };
   }
   try {
     return {
-      target: resolveArtifactPath(cwd, path, { anyText: true }),
+      target: resolveArtifactPath(cwd, path, { anyText: true, maxBytes }),
       deleted: false,
     };
   } catch (error) {
@@ -1008,6 +1036,7 @@ function resolveShownPath(
     const target = resolveArtifactPath(cwd, path, {
       anyText: true,
       inWorkingTree: false,
+      maxBytes,
     });
     // A file that exists but fails a check (binary, too large) still fails.
     if (existsSync(target.absolutePath)) throw error;
@@ -1059,8 +1088,21 @@ function commandArgs(
   };
 }
 
-/** Build the tool over a session's viewer. */
-function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
+const ARTIFACT_MIME_TYPES: Record<ArtifactKind, string> = {
+  markdown: "text/markdown",
+  html: "text/html",
+  text: "text/plain",
+};
+
+/**
+ * Build the tool over a session's viewer. With `store`, a file past the
+ * inline cap is kept in the host's store during the call, so the result the
+ * conversation records names it (`file`) instead of carrying it.
+ */
+function createShowArtifactTool(
+  viewer: ArtifactViewer,
+  store?: ArtifactStore,
+): ToolDefinition {
   const tool: ToolDefinition<typeof parameters, ShowArtifactDetails> = {
     name: SHOW_ARTIFACT_TOOL_NAME,
     label: "Show artifact",
@@ -1073,11 +1115,13 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const ref = params.ref?.trim() || undefined;
+      const maxBytes = store ? STORED_ARTIFACT_MAX_BYTES : ARTIFACT_MAX_BYTES;
       const { target, deleted } = resolveShownPath(
         ctx.cwd,
         params.path,
         ref,
         params.diff,
+        maxBytes,
       );
       const { source, current, note } = artifactSourceFor(
         viewer,
@@ -1085,17 +1129,32 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         ref,
         params.diff,
         deleted,
+        maxBytes,
       );
       const document = readDocument(source);
-      const content = capped(current);
+      const kind = artifactKind(target.relativePath);
+      const bytes = new TextEncoder().encode(current).length;
+      // Stored now, so the recorded result names the file; a host's own sync recognises the same upload.
+      const stored =
+        store && bytes > ARTIFACT_DETAILS_MAX_BYTES
+          ? await store({
+              path: target.relativePath,
+              content: current,
+              mimeType: ARTIFACT_MIME_TYPES[kind],
+            })
+          : undefined;
+      const content = stored ? { text: "" } : capped(current);
       const details: ShowArtifactDetails = {
         path: target.relativePath,
         shown: false,
-        kind: artifactKind(target.relativePath),
+        kind,
         ...(document.language ? { language: document.language } : {}),
         ...(ref ? { ref } : {}),
         content: content.text,
-        ...(content.truncated ? { truncated: true as const } : {}),
+        ...("truncated" in content && content.truncated
+          ? { truncated: true as const }
+          : {}),
+        ...(stored ? { file: { id: stored.id, bytes } } : {}),
         ...(document.git ? { git: document.git } : {}),
         ...(document.diff ? { diff: cappedDiff(document.diff) } : {}),
         ...(document.diffFirst ? { opens: "diff" as const } : {}),
@@ -1177,7 +1236,7 @@ export function artifactViewerExtension(
     if (!agentTools.includes(SHOW_ARTIFACT_TOOL_NAME)) return;
     if (registrations?.owner("tool", SHOW_ARTIFACT_TOOL_NAME)) return;
     registrations?.claim("tool", SHOW_ARTIFACT_TOOL_NAME, BUILTIN_OWNER);
-    pi.registerTool(createShowArtifactTool(viewer));
+    pi.registerTool(createShowArtifactTool(viewer, options.storeArtifact));
 
     addRecipeSubcommand(
       pi,
