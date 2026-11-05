@@ -98,6 +98,7 @@ import {
   type MemoryContextOverride,
   type MemoryContextSource,
 } from "./memory.js";
+import { recipeStepExtensions, type RecipeStep } from "./skill-progress.js";
 
 function sessionSettingsManager(
   base: SettingsManager,
@@ -198,6 +199,12 @@ export interface CreateAgentSessionOptions {
   settingsManager?: SettingsManager;
   /** Host extensions appended after the recipe's own extensions. */
   extensionFactories?: ExtensionFactory[];
+  /**
+   * Where the agent is, as Pi's footer shows it (`build ✓ brainstorm ▸ draft`),
+   * for a host that draws its own: called when the agent's step or whether its
+   * clock runs changes, and once when a resumed session has a step.
+   */
+  onRecipeStep?: (step: RecipeStep) => void;
   /** Host event bus shared with the surrounding application. */
   eventBus?: EventBus;
   /** Host-owned tools. Recipe tool selection still decides which names are live. */
@@ -741,6 +748,7 @@ async function createSessionForAgent(
         artifactViewerExtension(recipeRegistrations, {}, recipe.tools, env),
       );
     }
+    inlineExtensions.push(...recipeStepExtensions(recipe, opts.onRecipeStep));
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 
     const baseSettingsManager =

@@ -11,7 +11,9 @@ import {
   skillRead,
   stepSkills,
   stepLine,
+  stepState,
   type RecipeSkills,
+  type RecipeStep,
 } from "../src/skill-progress.js";
 
 const names = [
@@ -436,5 +438,83 @@ describe("where the agent is", () => {
         ctx,
       ),
     ).not.toThrow();
+  });
+
+  it("gives a host the step as data, with no UI, when the step or whether the clock runs changes", () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const pi = {
+      on: (name: string, handler: any) => handlers.set(name, handler),
+    } as any;
+    let clock = 0;
+    const reports: RecipeStep[] = [];
+    const progress = registerSkillProgress(
+      pi,
+      () => skills,
+      () => clock,
+      () => () => {},
+      (step) => reports.push(step),
+    );
+    const ctx = {
+      hasUI: false,
+      cwd: "/w",
+      sessionManager: { getEntries: () => [] },
+    };
+    progress.resume(ctx as any);
+    handlers.get("agent_start")!({}, ctx);
+    handlers.get("tool_result")!(
+      { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
+      ctx,
+    );
+    clock = 60_000;
+    handlers.get("tool_result")!(
+      { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
+      ctx,
+    ); // the same step again reports nothing
+    handlers.get("tool_execution_start")!(
+      { toolName: "review_artifacts", args: {} },
+      ctx,
+    );
+    const draft = {
+      skill: "build-draft",
+      phase: "build",
+      steps: [
+        { name: "brainstorm", state: "done" },
+        { name: "draft", state: "current" },
+        { name: "review", state: "todo" },
+      ],
+    };
+    expect(reports).toEqual([
+      { ...draft, paused: false, worked_ms: 0 },
+      { ...draft, paused: true, worked_ms: 60_000 },
+    ]);
+  });
+
+  it("reports a declared phase and the helper read since its step", () => {
+    const declared: RecipeSkills = {
+      names: ["build-draft", "deploy-runtime", "deploy-test", "eval-run"],
+      phases: ["build", "deploy"],
+    };
+    expect(
+      stepState({ step: "deploy-runtime", helper: "eval-run" }, declared),
+    ).toEqual({
+      skill: "deploy-runtime",
+      phase: "deploy",
+      steps: [
+        { name: "runtime", state: "current" },
+        { name: "test", state: "todo" },
+      ],
+      helper: "eval run",
+    });
+    expect(stepState({ helper: "eval-run" }, declared)).toEqual({
+      steps: [],
+      helper: "eval run",
+    });
+  });
+
+  it("gives a skill outside a phase no steps", () => {
+    expect(stepState({ step: "research" }, { names: ["research"] })).toEqual({
+      skill: "research",
+      steps: [],
+    });
   });
 });
