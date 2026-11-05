@@ -11,11 +11,11 @@ import {
   formatReviews,
   parseReviews,
   reviewSource,
-  tabName,
   REVIEW_ARTIFACTS_TOOL_NAME,
   wantsArtifactReview,
   type ArtifactReview,
 } from "../src/artifact-review.js";
+import { tabName } from "../src/artifact-review-tui.js";
 import {
   ArtifactViewer,
   artifactViewerExtension,
