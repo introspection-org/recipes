@@ -14,13 +14,19 @@
 
 import { basename } from "node:path";
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 /** The longest a command shows in the working line. */
 export const ACTIVITY_MAX_CHARS = 60;
 
 /** The agent's skill whose `SKILL.md` a tool call's path or command reads, if any. */
-export function skillRead(text: unknown, skills: readonly string[]): string | undefined {
+export function skillRead(
+  text: unknown,
+  skills: readonly string[],
+): string | undefined {
   if (typeof text !== "string") return undefined;
   for (const match of text.matchAll(/([A-Za-z0-9_-]+)\/SKILL\.md\b/g)) {
     if (skills.includes(match[1]!)) return match[1];
@@ -49,7 +55,9 @@ export function stepCrumb(skill: string, skills: readonly string[]): string {
 export function elapsed(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 1) return `${Math.max(0, Math.floor(ms / 1000))}s`;
-  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return minutes < 60
+    ? `${minutes}m`
+    : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 /** What a tool call is doing, in a few words: a bash command's first line without a leading `cd …&&`, else the tool's name. */
@@ -60,23 +68,50 @@ export function activity(toolName: string, args: unknown): string {
       .split("\n")[0]!
       .replace(/^\s*cd\s+[^&;]+(&&|;)\s*/, "")
       .trim();
-    return command.length > ACTIVITY_MAX_CHARS ? `${command.slice(0, ACTIVITY_MAX_CHARS - 1)}…` : command;
+    return command.length > ACTIVITY_MAX_CHARS
+      ? `${command.slice(0, ACTIVITY_MAX_CHARS - 1)}…`
+      : command;
   }
-  if (toolName === "ask_user_question" || toolName === "review_artifacts") return "waiting for you";
+  if (toolName === "ask_user_question" || toolName === "review_artifacts")
+    return "waiting for you";
+  if (toolName === "agent") {
+    // A subagent call by what it names: `case-runner hello-1`, `waiting for agent-run-2`.
+    const action = typeof input.action === "string" ? input.action : "start";
+    const who = [input.name, input.label]
+      .filter((part) => typeof part === "string" && part)
+      .join(" ");
+    if (action === "start" || action === "message")
+      return who ? `${action} ${who}` : `${action} subagent`;
+    return typeof input.id === "string"
+      ? `${action} ${input.id}`
+      : `${action} subagents`;
+  }
   return toolName;
 }
 
 type Entry = { type?: string; message?: { role?: string; content?: unknown } };
 
 /** The last of the agent's skills the session read, from its entries. */
-export function lastSkillRead(entries: readonly unknown[], skills: readonly string[]): string | undefined {
+export function lastSkillRead(
+  entries: readonly unknown[],
+  skills: readonly string[],
+): string | undefined {
   let last: string | undefined;
   for (const entry of entries as Entry[]) {
-    if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-    const content = Array.isArray(entry.message.content) ? entry.message.content : [];
-    for (const block of content as Array<{ type?: string; arguments?: Record<string, unknown> }>) {
+    if (entry.type !== "message" || entry.message?.role !== "assistant")
+      continue;
+    const content = Array.isArray(entry.message.content)
+      ? entry.message.content
+      : [];
+    for (const block of content as Array<{
+      type?: string;
+      arguments?: Record<string, unknown>;
+    }>) {
       if (block.type !== "toolCall") continue;
-      last = skillRead(block.arguments?.path, skills) ?? skillRead(block.arguments?.command, skills) ?? last;
+      last =
+        skillRead(block.arguments?.path, skills) ??
+        skillRead(block.arguments?.command, skills) ??
+        last;
     }
   }
   return last;
@@ -91,7 +126,7 @@ export function lastSkillRead(entries: readonly unknown[], skills: readonly stri
 export function registerSkillProgress(
   pi: ExtensionAPI,
   skillsFor: (ctx: ExtensionContext) => readonly string[] | undefined,
-  now: () => number = Date.now
+  now: () => number = Date.now,
 ): { resume(ctx: ExtensionContext): void } {
   let crumb: string | undefined;
   let since = 0;
@@ -100,7 +135,11 @@ export function registerSkillProgress(
     const line = `${crumb} (${elapsed(now() - since)})`;
     ctx.ui.setWorkingMessage(text ? `${line} › ${text}` : line);
   };
-  const setStep = (ctx: ExtensionContext, skill: string | undefined, skills: readonly string[]) => {
+  const setStep = (
+    ctx: ExtensionContext,
+    skill: string | undefined,
+    skills: readonly string[],
+  ) => {
     if (!skill || !ctx.hasUI) return;
     const next = stepCrumb(skill, skills);
     if (next === crumb) return;
@@ -117,14 +156,22 @@ export function registerSkillProgress(
     const skills = skillsFor(ctx);
     if (!skills?.length) return;
     const input = (event.input ?? {}) as Record<string, unknown>;
-    setStep(ctx, skillRead(input.path, skills) ?? skillRead(input.command, skills), skills);
+    setStep(
+      ctx,
+      skillRead(input.path, skills) ?? skillRead(input.command, skills),
+      skills,
+    );
     show(ctx, undefined);
   });
   return {
     resume(ctx) {
       const skills = skillsFor(ctx);
       if (!skills?.length) return;
-      setStep(ctx, lastSkillRead(ctx.sessionManager?.getEntries?.() ?? [], skills), skills);
+      setStep(
+        ctx,
+        lastSkillRead(ctx.sessionManager?.getEntries?.() ?? [], skills),
+        skills,
+      );
     },
   };
 }
