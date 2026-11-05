@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/introspection-org/recipes/compare/v0.46.0...v0.46.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* the review and interactions subpaths load under require too ([#438](https://github.com/introspection-org/recipes/issues/438)) ([864ad41](https://github.com/introspection-org/recipes/commit/864ad4156c218c58dfae7928f831fa69574541de))
+
 ## [0.46.0](https://github.com/introspection-org/recipes/compare/v0.45.0...v0.46.0) (2026-11-05)
 
 
