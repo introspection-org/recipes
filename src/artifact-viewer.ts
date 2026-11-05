@@ -1,5 +1,5 @@
 /**
- * The first-party artifact viewer: a `show_artifact` tool, `/recipe view` and `/recipe close`
+ * The first-party artifact viewer: a `show_artifact` tool and `/recipe view`
  * and a focus shortcut that show a markdown file the agent wrote in a panel on
  * the right of Pi's terminal, so the user can read it before approving it.
  *
@@ -691,7 +691,7 @@ function commandPath(args: string): string {
 }
 
 /**
- * An extension factory registering the tool, `/recipe view` and `/recipe close`, and the focus shortcut,
+ * An extension factory registering the tool and `/recipe view`,
  * unless a Recipe or host extension already registered a `show_artifact`
  * tool. Callers add it only when the agent lists `show_artifact` in `tools`,
  * after the Recipe's own extensions.

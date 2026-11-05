@@ -745,7 +745,7 @@ async function createSessionForAgent(
     if (wantsAskUserQuestion(recipe.tools)) {
       inlineExtensions.push(askUserQuestionExtension(recipeRegistrations, env));
     }
-    // Likewise the first-party artifact viewer (show_artifact, /recipe view and /recipe close).
+    // Likewise the first-party artifact viewer (show_artifact and /recipe view).
     if (wantsArtifactViewer(recipe.tools)) {
       inlineExtensions.push(artifactViewerExtension(recipeRegistrations, {}, recipe.tools, env));
     }

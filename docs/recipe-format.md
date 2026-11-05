@@ -468,7 +468,7 @@ lists them in `tools`:
 | Tool | What it does |
 | --- | --- |
 | `ask_user_question` | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool). |
-| `show_artifact` | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view` and `/recipe close`. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel). |
+| `show_artifact` | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel). |
 | `review_artifacts` | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files). |
 
 ```yaml
