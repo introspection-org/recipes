@@ -417,6 +417,14 @@ describe("show_artifact tool", () => {
       against: "HEAD",
       text: expect.stringContaining("-1 plain text"),
     });
+    // A file added since the base diffs as all added, as git diff shows it.
+    writeFileSync(join(workspace, "fresh.txt"), "new\n");
+    expect(
+      (await show("fresh.txt", { diff: "HEAD" })).details.diff,
+    ).toMatchObject({ against: "HEAD", added: 1, removed: 0 });
+    await expect(show("fresh.txt", { diff: "nope" })).rejects.toThrow(
+      /has no version at nope/,
+    );
     // A ref reads git's version, whatever the working tree now holds there.
     rmSync(join(workspace, "notes.txt"));
     expect((await show("notes.txt", { ref: "HEAD" })).details).toMatchObject({

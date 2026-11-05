@@ -539,6 +539,27 @@ function gitVersion(target: ResolvedArtifactPath, ref: string): string {
   return text;
 }
 
+/**
+ * The file at `ref` as a diff's base: empty when the commit exists but the
+ * file was added since, as `git diff <ref> -- path` shows it all as added.
+ * A ref naming no commit still fails.
+ */
+function gitBaseVersion(target: ResolvedArtifactPath, ref: string): string {
+  try {
+    return gitVersion(target, ref);
+  } catch (error) {
+    const commit = GIT_REF.test(ref)
+      ? git(target, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+      : undefined;
+    const inCommit =
+      commit === undefined
+        ? undefined
+        : git(target, ["cat-file", "-e", `${ref}:./${target.relativePath}`]);
+    if (commit !== undefined && inCommit === undefined) return "";
+    throw error;
+  }
+}
+
 /** What the panel shows: a file, as of a commit or now, and what to diff it against. */
 interface ArtifactSource {
   target: ResolvedArtifactPath;
@@ -608,7 +629,7 @@ function readDocument(source: ArtifactSource): ArtifactDocument {
     let baseText = source.base.text;
     if (baseText === undefined && source.base.ref) {
       try {
-        baseText = gitVersion(source.target, source.base.ref);
+        baseText = gitBaseVersion(source.target, source.base.ref);
       } catch {
         baseText = undefined;
       }
@@ -906,8 +927,8 @@ function artifactSourceFor(
     else
       note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
   } else if (against) {
-    // Fails here, with the reason, when the ref has no such version.
-    gitVersion(target, against);
+    // Fails here, with the reason, when the ref names no commit.
+    gitBaseVersion(target, against);
     source.base = { label: against, ref: against };
   } else if (!ref || diff !== undefined) {
     // With no diff named, `d` still offers one: against HEAD for a tracked file, else the version shown before.
