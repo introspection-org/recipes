@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.43.0](https://github.com/introspection-org/recipes/compare/v0.42.0...v0.43.0) (2026-11-05)
+
+
+### Features
+
+* **artifacts:** review_artifacts asks for one decision per file, and a question scrolls the panel with PgUp/PgDn ([#419](https://github.com/introspection-org/recipes/issues/419)) ([6b1385b](https://github.com/introspection-org/recipes/commit/6b1385b0de04400dc142866e92817638ae8db3cc))
+* **pi:** a Recipe session records the Recipe and agent it runs ([#420](https://github.com/introspection-org/recipes/issues/420)) ([573cca6](https://github.com/introspection-org/recipes/commit/573cca6a8b74e1c172aa6b33b9087a57149a8f7f))
+* **pi:** the footer shows a Recipe agent's step and working time ([#421](https://github.com/introspection-org/recipes/issues/421)) ([0697e92](https://github.com/introspection-org/recipes/commit/0697e923eb3f6b40b4f7a7b4be99c59e738ee894))
+* **recipe-check:** case files, case rows and root fakes ([#416](https://github.com/introspection-org/recipes/issues/416)) ([c0cc283](https://github.com/introspection-org/recipes/commit/c0cc2839d9c9bb2098b9de6d2428cc7a40175b89))
+
+
+### Bug Fixes
+
+* **pi:** only a read or bash call moves the footer's step, never a write or edit ([#422](https://github.com/introspection-org/recipes/issues/422)) ([e2ae00f](https://github.com/introspection-org/recipes/commit/e2ae00fab0129c00971dde367f2766fa0e40578e))
+
 ## [0.42.0](https://github.com/introspection-org/recipes/compare/v0.41.0...v0.42.0) (2026-11-04)
 
 
