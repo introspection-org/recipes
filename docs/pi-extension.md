@@ -51,13 +51,13 @@ selects that Recipe's default agent, not the parent's.
 
 ## Where the agent is
 
-A Recipe agent's step shows in Pi's footer, with how long it has run, and the terminal title names the folder and the step:
+A Recipe agent's step shows in Pi's footer, with how long it has run:
 
 ```text
-⧈ Introspection build ✓ brainstorm → ▸ draft · 12:04 → review
+⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04
 ```
 
-Nothing is declared for it. The step is the agent's skill it last read: a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked and the current one marked with its clock; any other skill shows by its name. The clock is how long the step has run, redrawn every second, not an estimate of what's left. Pi's own "Working" line is left as it is. A resumed session shows its step at once, from its earlier reads.
+Nothing is declared for it. The step is the agent's skill it last read: a skill named `<phase>-<step>` shows its phase's steps in the order the agent lists them, done ticked and joined by arrows, the current one marked and the rest to come; any other skill shows by its name. The clock is how long the current step has run, redrawn every second, not an estimate of what's left. Pi's "Working" line and the terminal title are left as they are. A resumed session shows its step at once, from its earlier reads.
 
 ## GenAI spans
 

@@ -1,23 +1,22 @@
 /**
- * Where a Recipe agent is: Pi's footer reads
- * `⧈ Introspection build ▰▰▱ 2/3 draft · 12:04`, the terminal title names the
- * folder and the step; Pi's own "Working" line is left as it is. The clock is how long the step has run; no estimate of what's left is given,
- * since steps vary too much for one to be honest.
+ * Where a Recipe agent is, in Pi's footer:
+ * `⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 12:04`. Pi's own
+ * "Working" line and the terminal title are left as they are. The clock is how
+ * long the current step has run; no estimate of what's left is given, since
+ * steps vary too much for one to be honest.
  *
  * Nothing is declared for it. The step is the agent's skill it last read: a
- * skill named `<phase>-<step>` (the Operator's `build-draft`) shows its phase
- * as a bar of its steps in the agent's order, any other by its name. On resume
- * the step is recovered from the session's earlier reads.
+ * skill named `<phase>-<step>` (the Operator's `build-draft`) shows its phase's
+ * steps in the agent's order, any other by its name. On resume the step is
+ * recovered from the session's earlier reads.
  */
-
-import { basename } from "node:path";
 
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
-/** Introspection's mark (two concentric squares) and name, at the front of the working line and the title. */
+/** Introspection's mark (two concentric squares) and name, at the front of the footer line. */
 export const BRAND = "⧈ Introspection";
 
 /** The footer status the step shows under. */
@@ -51,9 +50,10 @@ function phaseOf(
 }
 
 /**
- * The footer's line for a step: `build ✓ brainstorm → ▸ draft · 12:04 → review`,
- * the phase's steps in the agent's order, done ticked, the current one marked
- * with how long it has run. Any other skill shows by its name.
+ * The footer's line for a step: `build ✓ brainstorm ▸ draft ○ review · 12:04`,
+ * the phase's steps in the agent's order (done ticked and joined by arrows,
+ * the current one marked, the rest to come), then how long the current one has
+ * run. Any other skill shows by its name.
  */
 export function stepLine(
   skill: string,
@@ -62,20 +62,18 @@ export function stepLine(
 ): string {
   const found = phaseOf(skill, skills);
   if (!found) return `${skill} · ${clock}`;
-  const parts = found.steps.map((step, index) =>
-    index < found.at
-      ? `✓ ${step}`
-      : index === found.at
-        ? `▸ ${step} · ${clock}`
-        : step,
-  );
-  return `${found.phase} ${parts.join(" → ")}`;
-}
-
-/** The title's short form: `build ▸ draft`, or the skill's name. */
-export function stepTitle(skill: string, skills: readonly string[]): string {
-  const found = phaseOf(skill, skills);
-  return found ? `${found.phase} ▸ ${found.steps[found.at]}` : skill;
+  const done = found.steps
+    .slice(0, found.at)
+    .map((step) => `✓ ${step}`)
+    .join(" → ");
+  const rest = found.steps
+    .slice(found.at + 1)
+    .map((step) => `○ ${step}`)
+    .join(" ");
+  const line = [done, `▸ ${found.steps[found.at]}`, rest]
+    .filter(Boolean)
+    .join(" ");
+  return `${found.phase} ${line} · ${clock}`;
 }
 
 /** How long a step has run, as a clock: `00:17`, `03:42`, `1:05:09`. */
@@ -121,7 +119,7 @@ export function lastSkillRead(
 }
 
 /**
- * Keep the working line and the terminal title on the agent's step.
+ * Keep the footer on the agent's step, with its clock running.
  * `skillsFor` gives the active agent's skills in their listed order, or
  * undefined outside a Recipe session. Returns `resume`, for the host's own
  * session-start handler to call, so a resumed session shows its step at once.
@@ -167,9 +165,6 @@ export function registerSkillProgress(
     if (current?.skill === skill) return;
     current = { skill, skills };
     since = now();
-    ctx.ui.setTitle(
-      `${BRAND} · ${basename(ctx.cwd)} · ${stepTitle(skill, skills)}`,
-    );
     show(ctx);
   };
   pi.on("tool_result", (event, ctx) => {

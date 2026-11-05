@@ -7,7 +7,6 @@ import {
   skillRead,
   STEP_STATUS_KEY,
   stepLine,
-  stepTitle,
 } from "../src/skill-progress.js";
 
 const skills = [
@@ -32,20 +31,19 @@ describe("where the agent is", () => {
     ).toBeUndefined();
   });
 
-  it("shows the phase's steps in order, done ticked, the current one with its clock", () => {
+  it("shows the phase's steps in order, done ticked, the current one marked, the clock at the end", () => {
     expect(stepLine("build-brainstorm", skills, "00:17")).toBe(
-      "build ▸ brainstorm · 00:17 → draft → review",
+      "build ▸ brainstorm ○ draft ○ review · 00:17",
     );
     expect(stepLine("build-draft", skills, "12:04")).toBe(
-      "build ✓ brainstorm → ▸ draft · 12:04 → review",
+      "build ✓ brainstorm ▸ draft ○ review · 12:04",
     );
-    expect(stepLine("build-review", skills, "01:00")).toBe(
-      "build ✓ brainstorm → ✓ draft → ▸ review · 01:00",
+    expect(stepLine("build-review", skills, "03:10")).toBe(
+      "build ✓ brainstorm → ✓ draft ▸ review · 03:10",
     );
     expect(stepLine("research", ["research"], "00:05")).toBe(
       "research · 00:05",
     );
-    expect(stepTitle("build-draft", skills)).toBe("build ▸ draft");
   });
 
   it("gives how long the step has run", () => {
@@ -73,7 +71,7 @@ describe("where the agent is", () => {
     ).toBe("build-draft");
   });
 
-  it("sets the footer status and title as the agent moves, with a running clock, and on resume", () => {
+  it("sets the footer status as the agent moves, with a running clock, and on resume", () => {
     const handlers = new Map<string, (event: any, ctx: any) => void>();
     const pi = {
       on: (name: string, handler: any) => handlers.set(name, handler),
@@ -90,13 +88,14 @@ describe("where the agent is", () => {
       },
     );
     const statuses: Array<[string, string]> = [];
-    const titles: string[] = [];
     const ctx = {
       hasUI: true,
       cwd: "/home/u/interview-8",
       ui: {
         setStatus: (key: string, text: string) => statuses.push([key, text]),
-        setTitle: (t: string) => titles.push(t),
+        setTitle: () => {
+          throw new Error("the title is Pi's");
+        },
         setWorkingMessage: () => {
           throw new Error("the working line is Pi's");
         },
@@ -125,13 +124,9 @@ describe("where the agent is", () => {
     );
     clock = 3 * 60_000 + 17_000;
     tick!();
-    expect(titles).toEqual([
-      "⧈ Introspection · interview-8 · build ▸ brainstorm",
-      "⧈ Introspection · interview-8 · build ▸ draft",
-    ]);
     expect(statuses.at(-1)).toEqual([
       STEP_STATUS_KEY,
-      "⧈ Introspection build ✓ brainstorm → ▸ draft · 03:17 → review",
+      "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 03:17",
     ]);
   });
 
