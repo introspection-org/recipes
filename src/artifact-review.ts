@@ -16,6 +16,7 @@ import type {
   ExtensionUIDialogOptions,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { Type } from "typebox";
@@ -31,6 +32,13 @@ export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 
 /** At most this many files in one review, so the user can get through it. */
 const MAX_REVIEW_ITEMS = 20;
+
+/**
+ * At most this many bytes of shown content across one review's interrupt, which
+ * a pause/resume host stores with the task. Past it, an item's content is cut
+ * and marked `truncated`, and the host must not let it be approved.
+ */
+const MAX_REVIEW_INTERRUPT_BYTES = 256 * 1024;
 
 export type ReviewDecision = "approved" | "changes_requested" | "not_reviewed";
 
@@ -251,19 +259,98 @@ async function reviewOverDialogs(
   return reviews;
 }
 
+/** A file as the review shows it, with the hash of the whole file (null when it doesn't exist). */
+interface ShownDocument extends ReviewDocument {
+  sha256: string | null;
+}
+
 /** Each file as the review shows it, read once when the review opens. */
-function reviewDocuments(items: readonly ReviewItem[]): ReviewDocument[] {
+function reviewDocuments(items: readonly ReviewItem[]): ShownDocument[] {
   return items.map((item) => {
     let content: string;
+    let sha256: string | null = null;
     try {
-      content = reviewSource(
-        readFileSync(item.target.absolutePath, "utf8"),
-        item.section,
-      );
+      const bytes = readFileSync(item.target.absolutePath);
+      sha256 = createHash("sha256").update(bytes).digest("hex");
+      content = reviewSource(bytes.toString("utf8"), item.section);
     } catch {
       content = "_This file doesn't exist._";
     }
-    return { path: item.target.relativePath, label: item.label, content };
+    return {
+      path: item.target.relativePath,
+      label: item.label,
+      content,
+      sha256,
+    };
+  });
+}
+
+/** One item of a pause/resume host's interrupt: what the reviewer is shown, so the host needs no file access. */
+export interface ReviewInterruptItem {
+  path: string;
+  label: string;
+  section?: string;
+  /** The file as the review shows it (`reviewSource`). */
+  content: string;
+  /** sha256 of the whole file on disk when asked; null when it doesn't exist. */
+  sha256: string | null;
+  /** What this session's last answered review of the path showed, when it differs. */
+  previous_content?: string;
+  /** The content was cut to the interrupt's size cap; the item can be read but not approved. */
+  truncated?: true;
+}
+
+/** The history key for one review scope: a path, and the section of it shown. */
+export function reviewScope(path: string, section: string | undefined): string {
+  return `${path}\u0000${section ?? ""}`;
+}
+
+/**
+ * The interrupt's items, holding at most `MAX_REVIEW_INTERRUPT_BYTES` of
+ * content: every file's current content first, in reading order, then the
+ * previous versions that fit whole in what's left. `previous` is keyed by
+ * `reviewScope`, so a different section of the same file is never its previous
+ * version.
+ */
+export function reviewInterruptItems(
+  documents: readonly ShownDocument[],
+  sections: readonly (string | undefined)[],
+  previous: ReadonlyMap<string, string>,
+  budget = MAX_REVIEW_INTERRUPT_BYTES,
+): ReviewInterruptItem[] {
+  let left = budget;
+  const take = (text: string): { text: string; cut: boolean } => {
+    const bytes = Buffer.byteLength(text, "utf8");
+    if (bytes <= left) {
+      left -= bytes;
+      return { text, cut: false };
+    }
+    const kept = Buffer.from(text, "utf8").subarray(0, Math.max(left, 0));
+    left = 0;
+    // A cut can split a multi-byte character; drop the partial one.
+    return { text: kept.toString("utf8").replace(/\uFFFD$/, ""), cut: true };
+  };
+  const shown = documents.map((doc) => take(doc.content));
+  return documents.map((doc, index) => {
+    const section = sections[index];
+    const before = previous.get(reviewScope(doc.path, section));
+    // A previous version is only worth sending whole, and only in the space the current files left.
+    const prior =
+      before !== undefined &&
+      before !== doc.content &&
+      !shown[index]!.cut &&
+      Buffer.byteLength(before, "utf8") <= left
+        ? take(before)
+        : undefined;
+    return {
+      path: doc.path,
+      label: doc.label,
+      ...(section ? { section } : {}),
+      content: shown[index]!.text,
+      sha256: doc.sha256,
+      ...(prior && !prior.cut ? { previous_content: prior.text } : {}),
+      ...(shown[index]!.cut ? { truncated: true as const } : {}),
+    };
   });
 }
 
@@ -273,12 +360,15 @@ function answered(reviews: ArtifactReview[] | null): AskUserOutcome {
     : { type: "declined" };
 }
 
-/** Build the tool over a session's viewer. */
+/** Build the tool over a session's viewer. One tool per session, so its memory of what was shown is the session's. */
 export function createReviewArtifactsTool(
   env?: NodeJS.ProcessEnv,
   /** Called before the terminal review opens, so an open artifact panel doesn't cover it. */
   beforeReview?: () => void,
 ): ToolDefinition {
+  // What this session's last answered review of each path showed, for the next review's diff. In memory only:
+  // a restarted session shows no diff rather than a stale one.
+  const lastShown = new Map<string, string>();
   const tool: ToolDefinition<typeof parameters> = {
     name: REVIEW_ARTIFACTS_TOOL_NAME,
     label: "Review artifacts",
@@ -299,17 +389,18 @@ export function createReviewArtifactsTool(
           ...(item.section?.trim() ? { section: item.section.trim() } : {}),
         };
       });
+      const documents = reviewDocuments(items);
       const result = await askUser(
         {
           reason: "review",
           message: params.title,
           metadata: {
             kind: REVIEW_ARTIFACTS_TOOL_NAME,
-            items: items.map((item) => ({
-              path: item.target.relativePath,
-              label: item.label,
-              ...(item.section ? { section: item.section } : {}),
-            })),
+            items: reviewInterruptItems(
+              documents,
+              items.map((item) => item.section),
+              lastShown,
+            ),
           },
           display: {
             kind: REVIEW_ARTIFACTS_TOOL_NAME,
@@ -329,13 +420,8 @@ export function createReviewArtifactsTool(
             answered(
               ctx.mode === "tui"
                 ? (beforeReview?.(),
-                  await showReviewTui(
-                    params.title,
-                    reviewDocuments(items),
-                    ui,
-                    signal,
-                  ))
-                : await reviewOverDialogs(reviewDocuments(items), ui, dialog),
+                  await showReviewTui(params.title, documents, ui, signal))
+                : await reviewOverDialogs(documents, ui, dialog),
             ),
         },
       );
@@ -343,9 +429,23 @@ export function createReviewArtifactsTool(
         result.outcome.type === "answered" && result.outcome.answer
           ? parseReviews(result.outcome.answer)
           : [];
+      // Shown means answered here, or handed to a pause/resume host, which rewrites this result on resume
+      // rather than running the tool again.
+      if (
+        result.outcome.type === "answered" ||
+        result.outcome.type === "awaiting_user"
+      ) {
+        documents.forEach((doc, index) =>
+          lastShown.set(
+            reviewScope(doc.path, items[index]!.section),
+            doc.content,
+          ),
+        );
+      }
+      const files = documents.map(({ path, sha256 }) => ({ path, sha256 }));
       return {
         content: result.content,
-        details: { ...result.details, reviews },
+        details: { ...result.details, reviews, files },
       };
     },
   };

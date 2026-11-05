@@ -80,6 +80,8 @@ Any other of the agent's skills is a helper: reading it never changes the phase,
 
 A helper read counts the same way a step read does: a glance at its top (fewer than 100 lines, or `head`) doesn't. While the clock is paused the step shows ⏸ as before, and a resumed session restores phase, step and helper from its earlier reads. Without `phases`, the footer works as described above.
 
+A host that draws its own line (the platform's task chat) passes `onRecipeStep` to `createAgentSession`, with or without a UI. It receives the same step as data, `{ skill, phase?, steps: [{ name, state: "done" | "current" | "todo" }], paused, worked_ms }`, whenever the step changes or the clock starts or stops, not every second; the host runs the clock on from `worked_ms` while `paused` is false. A skill outside a phase has no `steps` and shows by `skill`.
+
 ## The Recipe a session runs
 
 When the extension starts a Recipe session it records the Recipe in the session file, as a custom entry of type `recipe_session`:
@@ -196,10 +198,23 @@ file has one, to the Submit tab; nothing is sent until the user submits there
 It is an interaction ([Interactions](interactions.md)), so it works on every
 host: over RPC each file is a select (`Approve`, `Request changes`, `Skip`),
 then a comment (required for changes); on a pause/resume host it pauses with
-`details.interrupt.metadata` `{ kind: "review_artifacts", items: [{ path, label }] }`
-for the host to render its own review, and resumes with `{ answer }` in the
-format below; headless runs and child agents decline, so nothing is approved
-without a person. The model sees, after `Answer: `:
+`details.interrupt.metadata` `{ kind: "review_artifacts", items: [...] }` for
+the host to render its own review, and resumes with `{ answer }` in the format
+below; headless runs and child agents decline, so nothing is approved without a
+person.
+
+Each item carries what the reviewer is shown, so the host needs no access to
+the files:
+
+| Field | What it is |
+| --- | --- |
+| `path`, `label`, `section` | As given; `section` only when one was |
+| `content` | The file as the terminal review shows it: front matter folded into one line, only `section` when given |
+| `sha256` | Of the whole file on disk when asked (`null` when it doesn't exist), so a record of approval can say exactly which file was approved |
+| `previous_content` | What this session's last review of the path showed, when the file has changed since; kept in memory only, so a restarted session sends none |
+| `truncated` | `true` when `content` was cut to the interrupt's cap (256 KB of content across the review); the host lets such a file be read but not approved |
+
+`details.files` holds `{ path, sha256 }` for every item, on every host. The model sees, after `Answer: `:
 
 ```text
 Reviewed 2 files: 1 approved, 1 with changes requested, 0 not reviewed.

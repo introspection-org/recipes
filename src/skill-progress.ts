@@ -21,6 +21,7 @@ import { basename, dirname } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionContext,
+  ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
 import { skillName } from "./recipe/skills.js";
@@ -201,6 +202,49 @@ export function stepLine(
   return `${found.phase} ${line} · ${clock}`;
 }
 
+/** One of a phase's steps, for a host that draws the line itself. */
+export interface RecipeStepItem {
+  name: string;
+  state: "done" | "current" | "todo";
+}
+
+/**
+ * Where a Recipe agent is, for a host that draws its own line (a browser): what
+ * the footer shows, as data. `steps` is empty for a skill that isn't one of a
+ * phase's steps, which a host shows by `skill`; `helper` is a skill read since
+ * the step, shown beside it. The clock is `worked_ms` as of this report,
+ * running on from it while `paused` is false.
+ */
+export interface RecipeStep {
+  skill?: string;
+  phase?: string;
+  steps: RecipeStepItem[];
+  helper?: string;
+  paused: boolean;
+  worked_ms: number;
+}
+
+/** Where the agent is among its steps, without the clock. */
+export function stepState(
+  at: Position,
+  skills: RecipeSkills,
+): Pick<RecipeStep, "skill" | "phase" | "steps" | "helper"> {
+  const helper = at.helper ? { helper: helperLabel(at.helper) } : {};
+  if (!at.step) return { steps: [], ...helper };
+  const found = phaseOf(at.step, skills.names, skills.phases);
+  if (!found) return { skill: at.step, steps: [], ...helper };
+  return {
+    skill: at.step,
+    phase: found.phase,
+    steps: found.steps.map((name, index) => ({
+      name,
+      state:
+        index < found.at ? "done" : index === found.at ? "current" : "todo",
+    })),
+    ...helper,
+  };
+}
+
 /** How long a step has run, as a clock: `00:17`, `03:42`, `1:05:09`. */
 export function elapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -307,6 +351,9 @@ function skillReads(
  * `skillsFor` gives the active agent's skills in their listed order, or
  * undefined outside a Recipe session. Returns `resume`, for the host's own
  * session-start handler to call, so a resumed session shows its step at once.
+ * `report`, when given, receives the step as data whenever it or the clock's
+ * running state changes (not every second), with or without a UI, for a host
+ * that draws its own line.
  */
 export function registerSkillProgress(
   pi: ExtensionAPI,
@@ -318,6 +365,7 @@ export function registerSkillProgress(
     timer.unref?.();
     return () => clearInterval(timer);
   },
+  report?: (step: RecipeStep) => void,
 ): { resume(ctx: ExtensionContext): void } {
   let current: { at: Position; skills: RecipeSkills } | undefined;
   // The agent's working time this session, across every step: what's banked, plus the run in
@@ -339,7 +387,21 @@ export function registerSkillProgress(
   // Redrawn every second, so the clock runs during a long call.
   let shown: ExtensionContext | undefined;
   let stop: (() => void) | undefined;
+  let reported: string | undefined;
+  const tell = () => {
+    if (!report || !current) return;
+    const paused = runningSince === undefined;
+    const key = `${current.at.step}\u0000${current.at.helper}\u0000${paused}`;
+    if (key === reported) return;
+    reported = key;
+    report({
+      ...stepState(current.at, current.skills),
+      paused,
+      worked_ms: worked(),
+    });
+  };
   const show = (ctx: ExtensionContext) => {
+    tell();
     if (!ctx.hasUI || !current) return;
     shown = ctx;
     ctx.ui.setStatus(
@@ -360,7 +422,7 @@ export function registerSkillProgress(
     at: Position | undefined,
     skills: RecipeSkills,
   ) => {
-    if (!at || !ctx.hasUI) return;
+    if (!at || (!ctx.hasUI && !report)) return;
     if (current?.at.step === at.step && current?.at.helper === at.helper)
       return;
     current = { at, skills };
@@ -400,6 +462,7 @@ export function registerSkillProgress(
       // Another session in the same process starts from nothing: no step, no time.
       if (current && ctx.hasUI) ctx.ui.setStatus(STEP_STATUS_KEY, undefined);
       current = undefined;
+      reported = undefined;
       banked = 0;
       runningSince = undefined;
       const skills = skillsFor(ctx);
@@ -411,4 +474,41 @@ export function registerSkillProgress(
       );
     },
   };
+}
+
+/**
+ * The session API's step reporter: none without a host callback or for an agent
+ * with no skills, else one extension reporting the agent's step to `report`.
+ */
+export function recipeStepExtensions(
+  agent: {
+    readonly definition: {
+      readonly skills: readonly string[];
+      readonly phases?: readonly string[];
+    };
+    readonly skillPaths: readonly string[];
+    readonly recipeDir: string;
+  },
+  report: ((step: RecipeStep) => void) | undefined,
+): ExtensionFactory[] {
+  if (!report || agent.definition.skills.length === 0) return [];
+  const skills: RecipeSkills = {
+    names: agent.definition.skills,
+    folders: skillFolders(agent.skillPaths, agent.recipeDir),
+    ...(agent.definition.phases?.length
+      ? { phases: agent.definition.phases }
+      : {}),
+  };
+  return [
+    (pi) => {
+      const progress = registerSkillProgress(
+        pi,
+        () => skills,
+        undefined,
+        undefined,
+        report,
+      );
+      pi.on("session_start", (_event, ctx) => progress.resume(ctx));
+    },
+  ];
 }

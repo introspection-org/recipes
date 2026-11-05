@@ -322,6 +322,64 @@ describe("createAgentSession", () => {
     return { hostSession, hostMcporter, env };
   }
 
+  it("tells the host the agent's step when it reads a step skill", async () => {
+    const { recipeDir, workspaceDir } = fixture({
+      manifestPi: { skills: ["skills"] },
+      agentExtras: ["skills: [build-brainstorm, build-draft]"],
+    });
+    for (const name of ["build-brainstorm", "build-draft"]) {
+      mkdirSync(join(recipeDir, "skills", name), { recursive: true });
+      writeFileSync(
+        join(recipeDir, "skills", name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: The ${name} step.\n---\n\n# ${name}\n`,
+      );
+    }
+    const steps: unknown[] = [];
+    const handle = await open({
+      recipeDir,
+      cwd: workspaceDir,
+      onRecipeStep: (step) => steps.push(step),
+    });
+    let calls = 0;
+    handle.session.agent.streamFunction = () => {
+      const stream = createAssistantMessageEventStream();
+      const message = assistantMessage("Drafting.");
+      if (++calls === 1) {
+        message.content = [
+          {
+            type: "toolCall",
+            id: "read-1",
+            name: "read",
+            arguments: {
+              path: join(recipeDir, "skills", "build-draft", "SKILL.md"),
+            },
+          },
+        ];
+        message.stopReason = "toolUse";
+      }
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: assistantMessage("") });
+        stream.push({
+          type: "done",
+          reason: message.stopReason as "stop" | "toolUse",
+          message,
+        });
+      });
+      return stream;
+    };
+    await handle.session.prompt("build me an agent");
+    expect(steps[0]).toMatchObject({
+      skill: "build-draft",
+      phase: "build",
+      steps: [
+        { name: "brainstorm", state: "done" },
+        { name: "draft", state: "current" },
+      ],
+      paused: false,
+    });
+    expect(steps.at(-1)).toMatchObject({ skill: "build-draft", paused: true });
+  });
+
   it("creates a live session from a recipe directory", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const handle = await open({ recipeDir, cwd: workspaceDir });

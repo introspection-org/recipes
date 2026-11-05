@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.44.0](https://github.com/introspection-org/recipes/compare/v0.43.0...v0.44.0) (2026-11-05)
+
+
+### Features
+
+* hosts without a terminal get the review's files and the agent's step as data ([#430](https://github.com/introspection-org/recipes/issues/430)) ([f4ed7f2](https://github.com/introspection-org/recipes/commit/f4ed7f2e8699ffe846871e31d8ce62d2c1944d3f))
+* **pi:** the footer follows an agent's declared phases and shows helper skills inline ([#429](https://github.com/introspection-org/recipes/issues/429)) ([850d2c4](https://github.com/introspection-org/recipes/commit/850d2c48ccd32e879ebc2bd8ca10bfb2271f7576))
+
 ## [0.43.0](https://github.com/introspection-org/recipes/compare/v0.42.0...v0.43.0) (2026-11-05)
 
 
