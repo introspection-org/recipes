@@ -91,4 +91,27 @@ describe("the review core", () => {
       { kind: "added", text: "d" },
     ]);
   });
+
+  it("keeps a large, mostly unchanged review's diff bounded", () => {
+    const before = Array.from({ length: 5000 }, (_, i) => `- item ${i}`).join(
+      "\n",
+    );
+    const after = before.replace("- item 2500", "- item 2500 (edited)");
+    const lines = lineDiff(before, after);
+    expect(lines.filter((line) => line.kind !== "same")).toEqual([
+      { kind: "removed", text: "- item 2500" },
+      { kind: "added", text: "- item 2500 (edited)" },
+    ]);
+    expect(lines).toHaveLength(5001);
+  });
+
+  it("reads a changed middle too large to diff as removed, then added", () => {
+    const before = Array.from({ length: 2000 }, (_, i) => `a${i}`).join("\n");
+    const after = Array.from({ length: 2000 }, (_, i) => `b${i}`).join("\n");
+    const lines = lineDiff(before, after);
+    expect(lines.slice(0, 2000).every((line) => line.kind === "removed")).toBe(
+      true,
+    );
+    expect(lines.slice(2000).every((line) => line.kind === "added")).toBe(true);
+  });
 });

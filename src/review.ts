@@ -265,42 +265,70 @@ export interface DiffLine {
   text: string;
 }
 
+/** The most cells the changed middle's table may hold before the diff falls back. */
+export const LINE_DIFF_MAX_CELLS = 1_000_000;
+
 /**
- * A line diff of a file's previous review (`previous_content`) against now,
- * by longest common subsequence; a review is a few kilobytes, so the quadratic
- * table is fine.
+ * A line diff of a file's previous review (`previous_content`) against now:
+ * the common prefix and suffix are kept as they are, and the changed middle
+ * is diffed by longest common subsequence. A middle whose table would exceed
+ * `LINE_DIFF_MAX_CELLS` reads as removed and then added, so memory stays
+ * bounded whatever the input.
  */
 export function lineDiff(before: string, after: string): DiffLine[] {
   const a = before.split("\n");
   const b = after.split("\n");
-  const lengths = Array.from({ length: a.length + 1 }, () =>
-    new Array<number>(b.length + 1).fill(0),
-  );
-  for (let i = a.length - 1; i >= 0; i -= 1) {
-    for (let j = b.length - 1; j >= 0; j -= 1) {
-      lengths[i]![j] =
-        a[i] === b[j]
-          ? lengths[i + 1]![j + 1]! + 1
-          : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
-    }
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start])
+    start += 1;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA -= 1;
+    endB -= 1;
   }
-  const lines: DiffLine[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      lines.push({ kind: "same", text: a[i]! });
-      i += 1;
-      j += 1;
-    } else if (lengths[i + 1]![j]! >= lengths[i]![j + 1]!) {
-      lines.push({ kind: "removed", text: a[i]! });
-      i += 1;
-    } else {
-      lines.push({ kind: "added", text: b[j]! });
-      j += 1;
+  const lines: DiffLine[] = a
+    .slice(0, start)
+    .map((text) => ({ kind: "same", text }));
+  const midA = a.slice(start, endA);
+  const midB = b.slice(start, endB);
+  const width = midB.length + 1;
+  if ((midA.length + 1) * width > LINE_DIFF_MAX_CELLS) {
+    for (const text of midA) lines.push({ kind: "removed", text });
+    for (const text of midB) lines.push({ kind: "added", text });
+  } else {
+    const lengths = new Uint32Array((midA.length + 1) * width);
+    for (let i = midA.length - 1; i >= 0; i -= 1) {
+      for (let j = midB.length - 1; j >= 0; j -= 1) {
+        lengths[i * width + j] =
+          midA[i] === midB[j]
+            ? lengths[(i + 1) * width + j + 1]! + 1
+            : Math.max(
+                lengths[(i + 1) * width + j]!,
+                lengths[i * width + j + 1]!,
+              );
+      }
     }
+    let i = 0;
+    let j = 0;
+    while (i < midA.length && j < midB.length) {
+      if (midA[i] === midB[j]) {
+        lines.push({ kind: "same", text: midA[i]! });
+        i += 1;
+        j += 1;
+      } else if (lengths[(i + 1) * width + j]! >= lengths[i * width + j + 1]!) {
+        lines.push({ kind: "removed", text: midA[i]! });
+        i += 1;
+      } else {
+        lines.push({ kind: "added", text: midB[j]! });
+        j += 1;
+      }
+    }
+    for (; i < midA.length; i += 1)
+      lines.push({ kind: "removed", text: midA[i]! });
+    for (; j < midB.length; j += 1)
+      lines.push({ kind: "added", text: midB[j]! });
   }
-  for (; i < a.length; i += 1) lines.push({ kind: "removed", text: a[i]! });
-  for (; j < b.length; j += 1) lines.push({ kind: "added", text: b[j]! });
+  for (const text of a.slice(endA)) lines.push({ kind: "same", text });
   return lines;
 }
