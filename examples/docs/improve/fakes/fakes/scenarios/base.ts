@@ -6,7 +6,14 @@ export default function base(_clock: Date): World {
   return {
     attio: {
       companies: [{ id: labelId("acme"), name: "Acme Robotics" }],
-      deals: [{ id: labelId("acme-growth"), name: "Acme growth plan", stage: "Proposal", company_id: labelId("acme") }],
+      deals: [
+        {
+          id: labelId("acme-growth"),
+          name: "Acme growth plan",
+          stage: "Proposal",
+          company_id: labelId("acme"),
+        },
+      ],
     },
   };
 }

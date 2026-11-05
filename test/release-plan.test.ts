@@ -27,7 +27,11 @@ interface ReleasePlan {
     artifacts: Artifact[],
     deps: {
       tags: Set<string>;
-      isPublished(registry: string, name: string, version: string): Promise<boolean>;
+      isPublished(
+        registry: string,
+        name: string,
+        version: string,
+      ): Promise<boolean>;
       pypiFiles(name: string, version: string): Promise<string[]>;
     },
   ): Promise<Planned[]>;
@@ -35,7 +39,9 @@ interface ReleasePlan {
 
 // A non-literal specifier keeps tsc from demanding declarations for the .mjs.
 const scriptPath: string = "../scripts/release-plan.mjs";
-const { readArtifacts, plan, pythonVersion } = (await import(scriptPath)) as ReleasePlan;
+const { readArtifacts, plan, pythonVersion } = (await import(
+  scriptPath
+)) as ReleasePlan;
 
 const artifacts = readArtifacts(join(import.meta.dirname, ".."));
 const allTags = new Set(artifacts.map((a) => a.tag));
@@ -57,13 +63,23 @@ const registry = (published: string[], files = pythonFiles) => ({
     published.includes(`${r}:${name}@${version}`),
   pypiFiles: async () => files,
 });
-const everything = artifacts.flatMap((a) => a.names.map((n) => `${a.registry}:${n}@${a.version}`));
-const toPublish = (results: Planned[]) => results.filter((r) => r.publish).map((r) => r.key);
+const everything = artifacts.flatMap((a) =>
+  a.names.map((n) => `${a.registry}:${n}@${a.version}`),
+);
+const toPublish = (results: Planned[]) =>
+  results.filter((r) => r.publish).map((r) => r.key);
 
 describe("release plan", () => {
   it("covers every package with release-please's tag names", () => {
     const byKey = Object.fromEntries(artifacts.map((a) => [a.key, a]));
-    expect(Object.keys(byKey)).toEqual(["root", "slack", "docx", "pdf", "crate", "python"]);
+    expect(Object.keys(byKey)).toEqual([
+      "root",
+      "slack",
+      "docx",
+      "pdf",
+      "crate",
+      "python",
+    ]);
     expect(byKey.root.tag).toBe(`v${byKey.root.version}`);
     expect(byKey.root.names).toEqual([
       "@introspection-ai/recipes",
@@ -73,12 +89,19 @@ describe("release plan", () => {
       "@introspection-ai/mcp-client-darwin-x64",
     ]);
     expect(byKey.docx.tag).toBe(`recipe-documents-docx-v${byKey.docx.version}`);
-    expect(byKey.crate.tag).toBe(`introspection-recipe-check-v${byKey.crate.version}`);
-    expect(byKey.python.tag).toBe(`introspection-recipe-check-python-v${byKey.python.version}`);
+    expect(byKey.crate.tag).toBe(
+      `introspection-recipe-check-v${byKey.crate.version}`,
+    );
+    expect(byKey.python.tag).toBe(
+      `introspection-recipe-check-python-v${byKey.python.version}`,
+    );
   });
 
   it("publishes nothing when every registry has its version", async () => {
-    const results = await plan(artifacts, { tags: allTags, ...registry(everything) });
+    const results = await plan(artifacts, {
+      tags: allTags,
+      ...registry(everything),
+    });
     expect(toPublish(results)).toEqual([]);
   });
 
@@ -87,23 +110,38 @@ describe("release plan", () => {
     const published = artifacts
       .filter((a) => !companions.has(a.key))
       .flatMap((a) => a.names.map((n) => `${a.registry}:${n}@${a.version}`));
-    const results = await plan(artifacts, { tags: allTags, ...registry(published) });
+    const results = await plan(artifacts, {
+      tags: allTags,
+      ...registry(published),
+    });
     expect(toPublish(results)).toEqual(["slack", "docx", "pdf"]);
   });
 
   it("reruns the root release when one platform binary is missing", async () => {
-    const published = everything.filter((p) => !p.includes("mcp-client-darwin-x64"));
-    const results = await plan(artifacts, { tags: allTags, ...registry(published) });
+    const published = everything.filter(
+      (p) => !p.includes("mcp-client-darwin-x64"),
+    );
+    const results = await plan(artifacts, {
+      tags: allTags,
+      ...registry(published),
+    });
     expect(toPublish(results)).toEqual(["root"]);
-    expect(results[0].missing).toEqual(["@introspection-ai/mcp-client-darwin-x64"]);
+    expect(results[0].missing).toEqual([
+      "@introspection-ai/mcp-client-darwin-x64",
+    ]);
   });
 
   it("checks each platform binary as its own npm package", async () => {
-    const binaries = artifacts[0].names.filter((n) => n.includes("/mcp-client-"));
+    const binaries = artifacts[0].names.filter((n) =>
+      n.includes("/mcp-client-"),
+    );
     expect(binaries).toHaveLength(4);
     for (const binary of binaries) {
       const published = everything.filter((p) => !p.includes(`${binary}@`));
-      const results = await plan(artifacts, { tags: allTags, ...registry(published) });
+      const results = await plan(artifacts, {
+        tags: allTags,
+        ...registry(published),
+      });
       expect(toPublish(results)).toEqual(["root"]);
     }
   });
@@ -111,7 +149,10 @@ describe("release plan", () => {
   it("finishes a PyPI release that is missing a wheel", async () => {
     // PyPI's version endpoint answers 200 once any one file is uploaded.
     const partial = pythonFiles.filter((f) => !f.includes("win_amd64"));
-    const results = await plan(artifacts, { tags: allTags, ...registry(everything, partial) });
+    const results = await plan(artifacts, {
+      tags: allTags,
+      ...registry(everything, partial),
+    });
     expect(toPublish(results)).toEqual(["python"]);
     expect(results.find((r) => r.key === "python")?.missing).toEqual([
       `${stem}-*-win_amd64.whl`,
@@ -124,7 +165,9 @@ describe("release plan", () => {
     expect(pythonVersion("0.17.0-rc.1")).toBe("0.17.0rc1");
     expect(pythonVersion("0.17.0")).toBe("0.17.0");
     const beta = { ...python, version: "0.17.0-beta.0" };
-    const betaFiles = pythonFiles.map((f) => f.replace(python.version, "0.17.0b0"));
+    const betaFiles = pythonFiles.map((f) =>
+      f.replace(python.version, "0.17.0b0"),
+    );
     const asked: string[] = [];
     const results = await plan([beta], {
       tags: new Set([beta.tag]),
@@ -140,7 +183,10 @@ describe("release plan", () => {
 
   it("finishes a PyPI release that is missing its sdist", async () => {
     const partial = pythonFiles.filter((f) => !f.endsWith(".tar.gz"));
-    const results = await plan(artifacts, { tags: allTags, ...registry(everything, partial) });
+    const results = await plan(artifacts, {
+      tags: allTags,
+      ...registry(everything, partial),
+    });
     expect(toPublish(results)).toEqual(["python"]);
   });
 
@@ -156,16 +202,29 @@ describe("release plan", () => {
   });
 
   it("never publishes a manifest version that has no tag", async () => {
-    const tags = new Set([...allTags].filter((t) => !t.startsWith("introspection-recipe-check-v")));
+    const tags = new Set(
+      [...allTags].filter((t) => !t.startsWith("introspection-recipe-check-v")),
+    );
     const results = await plan(artifacts, { tags, ...registry([], []) });
-    expect(toPublish(results)).toEqual(["root", "slack", "docx", "pdf", "python"]);
-    expect(results.find((r) => r.key === "crate")).toMatchObject({ tagged: false, publish: false });
+    expect(toPublish(results)).toEqual([
+      "root",
+      "slack",
+      "docx",
+      "pdf",
+      "python",
+    ]);
+    expect(results.find((r) => r.key === "crate")).toMatchObject({
+      tagged: false,
+      publish: false,
+    });
   });
 
   it("refuses a manifest that disagrees with package.json", async () => {
-    const drifted = artifacts.map((a) => (a.key === "slack" ? { ...a, packageVersion: "0.0.1" } : a));
-    await expect(plan(drifted, { tags: allTags, ...registry(everything) })).rejects.toThrow(
-      /slack: manifest says/,
+    const drifted = artifacts.map((a) =>
+      a.key === "slack" ? { ...a, packageVersion: "0.0.1" } : a,
     );
+    await expect(
+      plan(drifted, { tags: allTags, ...registry(everything) }),
+    ).rejects.toThrow(/slack: manifest says/);
   });
 });

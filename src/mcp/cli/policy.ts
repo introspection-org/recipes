@@ -8,7 +8,7 @@ export interface McpCliSessionPolicy {
   servers: Map<string, McpSessionServer>;
 }
 
-export interface ValidatedMcpCliCommand {
+interface ValidatedMcpCliCommand {
   args: string[];
 }
 
@@ -77,35 +77,46 @@ function withNoOAuth(args: readonly string[]): string[] {
 
 function forbiddenFlag(args: readonly string[]): string | undefined {
   const literalSeparator = args.indexOf("--");
-  const options = literalSeparator === -1 ? args : args.slice(0, literalSeparator);
-  return options.map(flagName).find((flag) => FORBIDDEN_DELEGATED_FLAGS.has(flag));
+  const options =
+    literalSeparator === -1 ? args : args.slice(0, literalSeparator);
+  return options
+    .map(flagName)
+    .find((flag) => FORBIDDEN_DELEGATED_FLAGS.has(flag));
 }
 
 function listOutputModeError(args: readonly string[]): string | undefined {
   const literalSeparator = args.indexOf("--");
-  const options = literalSeparator === -1 ? args : args.slice(0, literalSeparator);
+  const options =
+    literalSeparator === -1 ? args : args.slice(0, literalSeparator);
   const modes = new Set(
     options
       .map((arg) => LIST_OUTPUT_MODES.get(flagName(arg)))
-      .filter((mode): mode is string => Boolean(mode))
+      .filter((mode): mode is string => Boolean(mode)),
   );
   return modes.size > 1
     ? "mcp list accepts only one output mode: --schema, --all-parameters, or --status."
     : undefined;
 }
 
-function closestName(input: string, candidates: Iterable<string>): string | undefined {
-  const normalize = (value: string) => value.replace(/[^a-z0-9]/gi, "").toLowerCase();
+function closestName(
+  input: string,
+  candidates: Iterable<string>,
+): string | undefined {
+  const normalize = (value: string) =>
+    value.replace(/[^a-z0-9]/gi, "").toLowerCase();
   const source = normalize(input);
   const distance = (left: string, right: string): number => {
-    let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    let previous = Array.from(
+      { length: right.length + 1 },
+      (_, index) => index,
+    );
     for (let i = 1; i <= left.length; i += 1) {
       const current = [i];
       for (let j = 1; j <= right.length; j += 1) {
         current[j] = Math.min(
           current[j - 1] + 1,
           previous[j] + 1,
-          previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)
+          previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
         );
       }
       previous = current;
@@ -123,13 +134,15 @@ function closestName(input: string, candidates: Iterable<string>): string | unde
   }
   if (!best) return undefined;
   const baseline = Math.max(source.length, normalize(best).length, 1);
-  return bestDistance <= Math.max(2, Math.floor(baseline / 3)) ? best : undefined;
+  return bestDistance <= Math.max(2, Math.floor(baseline / 3))
+    ? best
+    : undefined;
 }
 
 function validateExactTarget(
   policy: McpCliSessionPolicy,
   server: string,
-  tool?: string
+  tool?: string,
 ): string | null {
   const configured = policy.servers.get(server);
   if (!configured) {
@@ -149,17 +162,25 @@ function validateExactTarget(
 
 function validateList(
   args: string[],
-  policy: McpCliSessionPolicy
+  policy: McpCliSessionPolicy,
 ): McpCliPolicyResult {
   const blocked = forbiddenFlag(args.slice(1));
-  if (blocked) return { error: `mcp list option '${blocked}' is unavailable in recipe sessions.` };
+  if (blocked)
+    return {
+      error: `mcp list option '${blocked}' is unavailable in recipe sessions.`,
+    };
   const outputModeError = listOutputModeError(args.slice(1));
   if (outputModeError) return { error: outputModeError };
   const adHocTarget = args
     .slice(1)
-    .find((arg) => !arg.startsWith("-") && /^(?:https?:\/\/|[^/]+\/)/i.test(arg));
+    .find(
+      (arg) => !arg.startsWith("-") && /^(?:https?:\/\/|[^/]+\/)/i.test(arg),
+    );
   if (adHocTarget) {
-    return { error: "mcp list accepts only servers materialized for this recipe session; URLs and ad-hoc servers are unavailable." };
+    return {
+      error:
+        "mcp list accepts only servers materialized for this recipe session; URLs and ad-hoc servers are unavailable.",
+    };
   }
 
   // mcporter's grammar places the optional target directly after `list`.
@@ -178,11 +199,7 @@ function validateList(
   };
 }
 
-const CALL_FLAGS_WITH_VALUE = new Set([
-  "--json",
-  "--output",
-  "--timeout",
-]);
+const CALL_FLAGS_WITH_VALUE = new Set(["--json", "--output", "--timeout"]);
 
 function callSyntaxError(args: readonly string[]): string | undefined {
   for (let index = 0; index < args.length; index += 1) {
@@ -206,7 +223,7 @@ function callSyntaxError(args: readonly string[]): string | undefined {
 
 function validateCall(
   args: string[],
-  policy: McpCliSessionPolicy
+  policy: McpCliSessionPolicy,
 ): McpCliPolicyResult {
   const rawSelector = args[1];
   const selector = rawSelector ? toolSelector(rawSelector) : null;
@@ -230,17 +247,28 @@ function validateCall(
     };
   }
   if (/^(?:https?:\/\/|[^/]+\/)/i.test(selector.server)) {
-    return { error: "mcp call accepts only tools materialized for this recipe session; URLs and ad-hoc servers are unavailable." };
+    return {
+      error:
+        "mcp call accepts only tools materialized for this recipe session; URLs and ad-hoc servers are unavailable.",
+    };
   }
-  const targetError = validateExactTarget(policy, selector.server, selector.tool);
+  const targetError = validateExactTarget(
+    policy,
+    selector.server,
+    selector.tool,
+  );
   if (targetError) return { error: targetError };
   const blocked = forbiddenFlag(args.slice(2));
   if (blocked === "--args") {
     return {
-      error: "mcp call option '--args' was removed; use --json <object|-> for structured tool arguments.",
+      error:
+        "mcp call option '--args' was removed; use --json <object|-> for structured tool arguments.",
     };
   }
-  if (blocked) return { error: `mcp call option '${blocked}' is unavailable in recipe sessions.` };
+  if (blocked)
+    return {
+      error: `mcp call option '${blocked}' is unavailable in recipe sessions.`,
+    };
   const syntaxError = callSyntaxError(args.slice(2));
   if (syntaxError) return { error: syntaxError };
 
@@ -252,18 +280,16 @@ function validateCall(
 }
 
 export function createMcpCliSessionPolicy(
-  session: McpSessionConfig
+  session: McpSessionConfig,
 ): McpCliSessionPolicy {
   return {
-    servers: new Map(
-      session.servers.map((server) => [server.id, server])
-    ),
+    servers: new Map(session.servers.map((server) => [server.id, server])),
   };
 }
 
 export function validateDelegatedMcpCommand(
   args: string[],
-  policy: McpCliSessionPolicy
+  policy: McpCliSessionPolicy,
 ): McpCliPolicyResult {
   if (args[0] === "list") return validateList(args, policy);
   if (args[0] === "call") return validateCall(args, policy);

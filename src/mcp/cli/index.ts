@@ -30,7 +30,9 @@ if (isDirectEntry(import.meta.url)) {
         process.exitCode = 0;
         return;
       }
-      stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      stderr.write(
+        `${error instanceof Error ? error.message : String(error)}\n`,
+      );
       process.exitCode = 1;
     });
 }

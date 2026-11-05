@@ -29,7 +29,9 @@ export interface DocxDocumentAdapterOptions {
 }
 
 /** The helper entry point shipped in this package. */
-export const DOCX_HELPER = fileURLToPath(new URL("../python/docx_helper.py", import.meta.url));
+export const DOCX_HELPER = fileURLToPath(
+  new URL("../python/docx_helper.py", import.meta.url),
+);
 
 /**
  * What Word supports. `render` is false: page images need a layout engine
@@ -53,9 +55,22 @@ export class DocxDocumentAdapter implements DocumentAdapter {
 
   constructor(private readonly options: DocxDocumentAdapterOptions) {}
 
-  private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
-    const { runHelper, env = process.env, script = DOCX_HELPER, python } = this.options;
-    return runHelper(script, { command, ...input }, { env, cwd: ctx.cwd, python, signal: ctx.signal });
+  private call(
+    ctx: DocumentAdapterContext,
+    command: string,
+    input: object,
+  ): Promise<DocumentResult> {
+    const {
+      runHelper,
+      env = process.env,
+      script = DOCX_HELPER,
+      python,
+    } = this.options;
+    return runHelper(
+      script,
+      { command, ...input },
+      { env, cwd: ctx.cwd, python, signal: ctx.signal },
+    );
   }
 
   read(ctx: DocumentAdapterContext, input: DocumentReadInput) {
@@ -78,7 +93,10 @@ export class DocxDocumentAdapter implements DocumentAdapter {
     return this.call(ctx, "respond", input);
   }
 
-  removeSection(ctx: DocumentAdapterContext, input: DocumentRemoveSectionInput) {
+  removeSection(
+    ctx: DocumentAdapterContext,
+    input: DocumentRemoveSectionInput,
+  ) {
     return this.call(ctx, "remove_section", input);
   }
 }
@@ -98,7 +116,9 @@ export class DocxDocumentAdapter implements DocumentAdapter {
  * Contract redlining in US English: how to plan a first markup and answer the
  * other side's redline. A Recipe selects it with `"profile": "legal-redlining-en-US"`.
  */
-export const LEGAL_REDLINING_EN_US = fileURLToPath(new URL("../profiles/legal-redlining-en-us/SKILL.md", import.meta.url));
+export const LEGAL_REDLINING_EN_US = fileURLToPath(
+  new URL("../profiles/legal-redlining-en-us/SKILL.md", import.meta.url),
+);
 
 export const docxDocumentFormatModule: RecipeDocumentFormatModule = {
   kind: "documents",
@@ -107,7 +127,8 @@ export const docxDocumentFormatModule: RecipeDocumentFormatModule = {
   extensions: [".docx"],
   capabilities: DOCX_DOCUMENT_CAPABILITIES,
   profiles: { "legal-redlining-en-US": LEGAL_REDLINING_EN_US },
-  createAdapter: ({ env, python, runHelper }) => new DocxDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
+  createAdapter: ({ env, python, runHelper }) =>
+    new DocxDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
 };
 
 export default docxDocumentFormatModule;

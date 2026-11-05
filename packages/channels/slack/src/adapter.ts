@@ -111,13 +111,24 @@ export class SlackChannelAdapter implements ChannelAdapter {
   constructor(readonly session: SlackFileSession) {}
 
   async enrichTarget(ctx: ChannelAdapterContext): Promise<ChannelTarget> {
-    const key = JSON.stringify([ctx.target.conversation, ctx.target.thread ?? null]);
+    const key = JSON.stringify([
+      ctx.target.conversation,
+      ctx.target.thread ?? null,
+    ]);
     const cached = this.targets.get(key);
     if (cached) return cached;
     const target = {
       ...ctx.target,
-      name: ctx.target.name ?? await this.channelName(ctx.target.conversation, ctx.signal),
-      permalink: ctx.target.thread ? await this.permalink(ctx.target.conversation, ctx.target.thread, ctx.signal) : null,
+      name:
+        ctx.target.name ??
+        (await this.channelName(ctx.target.conversation, ctx.signal)),
+      permalink: ctx.target.thread
+        ? await this.permalink(
+            ctx.target.conversation,
+            ctx.target.thread,
+            ctx.signal,
+          )
+        : null,
     };
     this.targets.set(key, target);
     return target;
@@ -130,11 +141,18 @@ export class SlackChannelAdapter implements ChannelAdapter {
     return this.post(ctx, input, "reply");
   }
 
-  async send(ctx: ChannelAdapterContext, input: { text: string }): Promise<ChannelPostResult> {
+  async send(
+    ctx: ChannelAdapterContext,
+    input: { text: string },
+  ): Promise<ChannelPostResult> {
     return this.post(ctx, input, "send");
   }
 
-  private async post(ctx: ChannelAdapterContext, input: { text: string }, mode: "send" | "reply"): Promise<ChannelPostResult> {
+  private async post(
+    ctx: ChannelAdapterContext,
+    input: { text: string },
+    mode: "send" | "reply",
+  ): Promise<ChannelPostResult> {
     const posted = await this.session.sendMessage(
       {
         text: input.text,
@@ -163,7 +181,11 @@ export class SlackChannelAdapter implements ChannelAdapter {
     });
     return {
       ref,
-      target: { provider: this.provider, conversation: posted.channel, thread: posted.thread_ts },
+      target: {
+        provider: this.provider,
+        conversation: posted.channel,
+        thread: posted.thread_ts,
+      },
       ...(permalink ? { permalink } : {}),
       bridge_recorded: posted.bridge_recorded,
       ...(posted.bridge_error ? { bridge_error: posted.bridge_error } : {}),
@@ -191,8 +213,10 @@ export class SlackChannelAdapter implements ChannelAdapter {
         ctx.signal,
       );
     } catch (error) {
-      const alreadySatisfied = input.action === "remove" ? "no_reaction" : "already_reacted";
-      if (!(error instanceof SlackApiError) || error.code !== alreadySatisfied) throw error;
+      const alreadySatisfied =
+        input.action === "remove" ? "no_reaction" : "already_reacted";
+      if (!(error instanceof SlackApiError) || error.code !== alreadySatisfied)
+        throw error;
     }
   }
 
@@ -266,9 +290,7 @@ export class SlackChannelAdapter implements ChannelAdapter {
         channels.push({
           id: conversation.id,
           name: conversation.name,
-          kind: conversation.is_private
-            ? "private_channel"
-            : "public_channel",
+          kind: conversation.is_private ? "private_channel" : "public_channel",
         });
       }
 
@@ -292,9 +314,13 @@ export class SlackChannelAdapter implements ChannelAdapter {
     );
     // Slack repeats the root outside its reply limit. Keep overflow in the
     // session-scoped cursor rather than dropping messages or exceeding limit.
-    const continuation = thread && input.cursor
-      ? JSON.parse(input.cursor) as { pending: SlackHistoryMessage[]; oldest?: string }
-      : undefined;
+    const continuation =
+      thread && input.cursor
+        ? (JSON.parse(input.cursor) as {
+            pending: SlackHistoryMessage[];
+            oldest?: string;
+          })
+        : undefined;
     let raw = continuation?.pending ?? [];
     let next = continuation?.oldest;
     if (!continuation || (raw.length < limit && next)) {
@@ -311,12 +337,21 @@ export class SlackChannelAdapter implements ChannelAdapter {
         ctx.signal,
       );
       const page = messagesFrom(payload);
-      raw = [...raw, ...page.filter(message => !thread || !continuation || message.ts !== thread)];
+      raw = [
+        ...raw,
+        ...page.filter(
+          (message) => !thread || !continuation || message.ts !== thread,
+        ),
+      ];
       // Slack's cursor + oldest combination can skip replies. Page by the
       // exclusive timestamp boundary instead, keeping the public cursor opaque.
-      const lastReply = page.filter(message => message.ts && message.ts !== thread).at(-1)?.ts;
+      const lastReply = page
+        .filter((message) => message.ts && message.ts !== thread)
+        .at(-1)?.ts;
       next = thread
-        ? ((payload.has_more === true || nextCursor(payload)) && lastReply ? lastReply : undefined)
+        ? (payload.has_more === true || nextCursor(payload)) && lastReply
+          ? lastReply
+          : undefined
         : nextCursor(payload);
     }
     if (thread) raw.sort((a, b) => Number(a.ts) - Number(b.ts));
@@ -324,7 +359,9 @@ export class SlackChannelAdapter implements ChannelAdapter {
     const pending = raw.slice(limit);
     raw = raw.slice(0, limit);
     const cursor = thread
-      ? (next || pending.length ? JSON.stringify({ pending, oldest: next }) : undefined)
+      ? next || pending.length
+        ? JSON.stringify({ pending, oldest: next })
+        : undefined
       : next;
     const messages: ChannelMessage[] = [];
     for (const message of raw) {
@@ -354,7 +391,9 @@ export class SlackChannelAdapter implements ChannelAdapter {
         },
         text: message.text ?? "",
         thread_id: message.thread_ts ?? thread ?? message.ts,
-        ...(typeof message.reply_count === "number" ? { reply_count: message.reply_count } : {}),
+        ...(typeof message.reply_count === "number"
+          ? { reply_count: message.reply_count }
+          : {}),
         ...(slackTimestamp(message.ts)
           ? { timestamp: slackTimestamp(message.ts) }
           : {}),
@@ -444,7 +483,11 @@ export class SlackChannelAdapter implements ChannelAdapter {
         signal,
       );
       const profile = payload.user as
-        | { real_name?: string; name?: string; profile?: { display_name?: string } }
+        | {
+            real_name?: string;
+            name?: string;
+            profile?: { display_name?: string };
+          }
         | undefined;
       name =
         profile?.profile?.display_name?.trim() ||
@@ -471,8 +514,7 @@ export class SlackChannelAdapter implements ChannelAdapter {
         signal,
       );
       const conversation = payload.channel as
-        | { name?: string; name_normalized?: string }
-        | undefined;
+        { name?: string; name_normalized?: string } | undefined;
       return (
         conversation?.name?.trim() ||
         conversation?.name_normalized?.trim() ||
@@ -487,8 +529,7 @@ export class SlackChannelAdapter implements ChannelAdapter {
 
 function nextCursor(payload: SlackApiResult): string | undefined {
   const metadata = payload.response_metadata as
-    | { next_cursor?: string }
-    | undefined;
+    { next_cursor?: string } | undefined;
   const cursor = metadata?.next_cursor?.trim();
   return cursor ? cursor : undefined;
 }
@@ -500,7 +541,9 @@ function messagesFrom(payload: SlackApiResult): SlackHistoryMessage[] {
 }
 
 /** Resolve the bound conversation for a session, or explain why there is none. */
-export function slackChannelTarget(config: ChannelConfig | null): ChannelTarget {
+export function slackChannelTarget(
+  config: ChannelConfig | null,
+): ChannelTarget {
   if (!config || config.provider !== "slack") {
     throw new Error(
       "No Slack channel is configured. Use introspection dev and send a Slack event to the development runtime.",
@@ -519,12 +562,14 @@ export function slackChannelTarget(config: ChannelConfig | null): ChannelTarget 
  * `@introspection-ai/recipes/channels`); without it, the session has no
  * default conversation.
  */
-export function createSlackChannelSession(options: {
-  config?: ChannelConfig | null;
-  env?: ChannelEnvironment;
-  cwd?: string;
-  session?: SlackFileSession;
-} = {}): ChannelConnectorSession {
+export function createSlackChannelSession(
+  options: {
+    config?: ChannelConfig | null;
+    env?: ChannelEnvironment;
+    cwd?: string;
+    session?: SlackFileSession;
+  } = {},
+): ChannelConnectorSession {
   const env = options.env ?? process.env;
   const config = options.config ?? null;
   const session =

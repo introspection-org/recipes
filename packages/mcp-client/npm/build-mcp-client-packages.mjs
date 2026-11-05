@@ -38,7 +38,7 @@ function findRepoRoot(from) {
     }
     if (path.dirname(dir) === dir) {
       throw new Error(
-        `could not locate the @introspection-ai/recipes package.json above ${from}`
+        `could not locate the @introspection-ai/recipes package.json above ${from}`,
       );
     }
   }
@@ -47,14 +47,20 @@ function findRepoRoot(from) {
 const repoRoot = findRepoRoot(here);
 
 const version = process.argv[2];
-const artifactsDir = path.resolve(process.argv[3] ?? path.join(here, "artifacts"));
+const artifactsDir = path.resolve(
+  process.argv[3] ?? path.join(here, "artifacts"),
+);
 if (!version) {
-  console.error("usage: build-mcp-client-packages.mjs <version> [artifactsDir]");
+  console.error(
+    "usage: build-mcp-client-packages.mjs <version> [artifactsDir]",
+  );
   process.exit(1);
 }
 
 const SCOPE = "@introspection-ai";
-const targets = JSON.parse(fs.readFileSync(path.join(here, "targets.json"), "utf8"));
+const targets = JSON.parse(
+  fs.readFileSync(path.join(here, "targets.json"), "utf8"),
+);
 
 const distDir = path.join(here, "dist");
 fs.rmSync(distDir, { recursive: true, force: true });
@@ -94,8 +100,8 @@ for (const t of targets) {
         files: ["bin"],
       },
       null,
-      2
-    ) + "\n"
+      2,
+    ) + "\n",
   );
 
   optionalDependencies[pkgName] = version;
@@ -105,13 +111,16 @@ for (const t of targets) {
 const rootPkgPath = path.join(repoRoot, "package.json");
 const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"));
 // Merge: the root also lists its companion packages here (src/recipe/companions.ts).
-rootPkg.optionalDependencies = { ...rootPkg.optionalDependencies, ...optionalDependencies };
+rootPkg.optionalDependencies = {
+  ...rootPkg.optionalDependencies,
+  ...optionalDependencies,
+};
 fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, "\t") + "\n");
 console.log(`stamped optionalDependencies onto ${rootPkg.name}`);
 console.warn(
   "\nNote: package.json has been modified in place — that stamp belongs to a\n" +
     "release, not to the repository. Outside CI, `git checkout -- package.json`\n" +
-    "before committing."
+    "before committing.",
 );
 
 console.log(`\nDone. ${targets.length} platform packages in ${distDir}`);

@@ -5,30 +5,31 @@ import {
 } from "../src/mcp/cli/policy.js";
 
 function policy() {
-  return createMcpCliSessionPolicy(
-    {
-      version: 1,
-      servers: [
-        {
-          id: "contacts",
-          name: "contacts",
-          base_url: "https://mcp.example.com/mcp",
-          package_tools: { include: ["search_contacts", "get_contact"] },
-          agent_tools: [{ include: ["search_contacts", "get_contact"] }],
-          catalog: [
-            {
-              name: "search_contacts",
-              input_schema: {
-                type: "object",
-                properties: { query: { type: "string" }, pageSize: { type: "number" } },
+  return createMcpCliSessionPolicy({
+    version: 1,
+    servers: [
+      {
+        id: "contacts",
+        name: "contacts",
+        base_url: "https://mcp.example.com/mcp",
+        package_tools: { include: ["search_contacts", "get_contact"] },
+        agent_tools: [{ include: ["search_contacts", "get_contact"] }],
+        catalog: [
+          {
+            name: "search_contacts",
+            input_schema: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+                pageSize: { type: "number" },
               },
             },
-            { name: "get_contact" },
-          ],
-        },
-      ],
-    }
-  );
+          },
+          { name: "get_contact" },
+        ],
+      },
+    ],
+  });
 }
 
 describe("recipe-session mcporter policy", () => {
@@ -36,8 +37,8 @@ describe("recipe-session mcporter policy", () => {
     expect(
       validateDelegatedMcpCommand(
         ["list", "contacts.search_contacts", "--schema", "--timeout", "1000"],
-        policy()
-      )
+        policy(),
+      ),
     ).toEqual({
       command: {
         args: [
@@ -59,10 +60,10 @@ describe("recipe-session mcporter policy", () => {
     expect(
       validateDelegatedMcpCommand(
         ["list", "contacts.search_contacts", left, right],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toBe(
-      "mcp list accepts only one output mode: --schema, --all-parameters, or --status."
+      "mcp list accepts only one output mode: --schema, --all-parameters, or --status.",
     );
   });
 
@@ -75,7 +76,7 @@ describe("recipe-session mcporter policy", () => {
         "--output",
         "json",
       ],
-      policy()
+      policy(),
     );
     expect(result.command?.args.at(-1)).toBe("--no-oauth");
   });
@@ -84,41 +85,52 @@ describe("recipe-session mcporter policy", () => {
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.search_contacts", "--save-images", "artifacts"],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toContain("unavailable");
   });
 
   it("rejects overlapping call syntaxes", () => {
     expect(
       validateDelegatedMcpCommand(
-        ['call', 'contacts.search_contacts(query: "docs/readme.md")'],
-        policy()
-      ).error
+        ["call", 'contacts.search_contacts(query: "docs/readme.md")'],
+        policy(),
+      ).error,
     ).toContain("requires an exact session tool selector");
     expect(
       validateDelegatedMcpCommand(
-        ["call", "contacts.search_contacts", "--future-mcporter-option", "value"],
-        policy()
-      ).error
+        [
+          "call",
+          "contacts.search_contacts",
+          "--future-mcporter-option",
+          "value",
+        ],
+        policy(),
+      ).error,
     ).toContain("use key=value or --json");
     expect(
       validateDelegatedMcpCommand(
-        ["call", "contacts.search_contacts", "--query", "Ada", "--page-size=25"],
-        policy()
-      ).error
+        [
+          "call",
+          "contacts.search_contacts",
+          "--query",
+          "Ada",
+          "--page-size=25",
+        ],
+        policy(),
+      ).error,
     ).toContain("use key=value or --json");
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.search_contacts", "query:Ada"],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toContain("must use key=value syntax");
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.search_contacts", "--", "Ada"],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toContain("positional arguments are unavailable");
   });
 
@@ -126,8 +138,8 @@ describe("recipe-session mcporter policy", () => {
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts", "search_contacts", '{"query":"Ada"}'],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toContain("Use mcp call contacts.search_contacts key=value or --json");
   });
 
@@ -153,7 +165,13 @@ describe("recipe-session mcporter policy", () => {
     ["call", "contacts.search_contacts", "--config", "/tmp/other.json"],
     ["call", "contacts.search_contacts", "--stdio", "node rogue.mjs"],
     ["call", "contacts.search_contacts", "--tail-log"],
-    ["call", "contacts.search_contacts", "--timeout", "--config", "/tmp/other.json"],
+    [
+      "call",
+      "contacts.search_contacts",
+      "--timeout",
+      "--config",
+      "/tmp/other.json",
+    ],
     ["config", "add", "rogue", "https://attacker.example/mcp"],
     ["resource", "contacts"],
     ["generate-cli", "contacts"],
@@ -163,30 +181,28 @@ describe("recipe-session mcporter policy", () => {
     ["serve", "--http", "9999"],
   ])("blocks commands or escape hatches: %j", (...args) => {
     const result = validateDelegatedMcpCommand(args as string[], policy());
-    expect(result.error).toMatch(/unavailable|only tools materialized|only servers materialized/);
+    expect(result.error).toMatch(
+      /unavailable|only tools materialized|only servers materialized/,
+    );
   });
 
   it("rejects tools outside the final materialized inventory", () => {
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.delete_workspace"],
-        policy()
-      ).error
+        policy(),
+      ).error,
     ).toContain("is not available");
   });
 
   it("suggests close session server and tool names without auto-calling them", () => {
     expect(
-      validateDelegatedMcpCommand(
-        ["call", "contact.search_contacts"],
-        policy()
-      ).error
+      validateDelegatedMcpCommand(["call", "contact.search_contacts"], policy())
+        .error,
     ).toContain("Did you mean 'contacts'");
     expect(
-      validateDelegatedMcpCommand(
-        ["call", "contacts.search_contact"],
-        policy()
-      ).error
+      validateDelegatedMcpCommand(["call", "contacts.search_contact"], policy())
+        .error,
     ).toContain("Did you mean 'search_contacts'");
   });
 
@@ -194,8 +210,8 @@ describe("recipe-session mcporter policy", () => {
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.search_contacts"],
-        policy()
-      )
+        policy(),
+      ),
     ).toEqual({
       command: {
         args: ["call", "contacts.search_contacts", "--no-oauth"],
@@ -204,8 +220,10 @@ describe("recipe-session mcporter policy", () => {
   });
 
   it("rejects interactive authentication with deployment-neutral recovery", () => {
-    expect(validateDelegatedMcpCommand(["auth", "contacts"], policy()).error).toContain(
-      "Ask the user to authenticate this MCP connection outside the agent session"
+    expect(
+      validateDelegatedMcpCommand(["auth", "contacts"], policy()).error,
+    ).toContain(
+      "Ask the user to authenticate this MCP connection outside the agent session",
     );
   });
 });

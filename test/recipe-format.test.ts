@@ -160,7 +160,12 @@ describe("Recipe Format", () => {
     );
     pkg.pi.mcp = {
       servers: [
-        { id: "contacts", required: true, discovery, tools: { include: ["*"] } },
+        {
+          id: "contacts",
+          required: true,
+          discovery,
+          tools: { include: ["*"] },
+        },
       ],
     };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
@@ -239,7 +244,10 @@ describe("Recipe Format", () => {
     ]);
   });
 
-  function channelReport(provider: string, edit: (pkg: Record<string, unknown>) => void = () => {}) {
+  function channelReport(
+    provider: string,
+    edit: (pkg: Record<string, unknown>) => void = () => {},
+  ) {
     const recipeDir = fixture();
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8"),
@@ -260,11 +268,16 @@ describe("Recipe Format", () => {
     });
     expect(slack.findings).toEqual([]);
     const teams = channelReport("teams", (pkg) => {
-      pkg.peerDependencies = { "@introspection-ai/recipe-channel-teams": ">=0.1.0" };
+      pkg.peerDependencies = {
+        "@introspection-ai/recipe-channel-teams": ">=0.1.0",
+      };
     });
     expect(teams.valid).toBe(true);
     expect(teams.findings).toEqual([
-      expect.objectContaining({ code: "package.peer_not_provided_by_default", severity: "warning" }),
+      expect.objectContaining({
+        code: "package.peer_not_provided_by_default",
+        severity: "warning",
+      }),
     ]);
   });
 
@@ -272,7 +285,9 @@ describe("Recipe Format", () => {
     const peer = channelReport("slack", (pkg) => {
       pkg.peerDependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "" };
     });
-    expect(peer.findings.map((finding) => finding.code)).toEqual(["package.peer_version_missing"]);
+    expect(peer.findings.map((finding) => finding.code)).toEqual([
+      "package.peer_version_missing",
+    ]);
     const versionless = channelReport("slack", (pkg) => {
       pkg.dependencies = { [SLACK_RECIPE_CHANNEL_PACKAGE]: "" };
     });
@@ -339,13 +354,18 @@ describe("Recipe Format", () => {
 
   it("rejects pi.runtime.system as an unknown runtime field, as the Rust checker does", () => {
     const fixtures = JSON.parse(
-      readFileSync(join(import.meta.dirname, "fixtures", "format-conformance.json"), "utf8"),
+      readFileSync(
+        join(import.meta.dirname, "fixtures", "format-conformance.json"),
+        "utf8",
+      ),
     ) as Array<{ name: string; valid: boolean; files: Record<string, string> }>;
     const conformance = fixtures.find(
       (entry) => entry.name === "pi.runtime.system is an unknown runtime field",
     );
     expect(conformance?.valid).toBe(false);
-    const recipeDir = mkdtempSync(join(tmpdir(), "recipe-format-runtime-system-"));
+    const recipeDir = mkdtempSync(
+      join(tmpdir(), "recipe-format-runtime-system-"),
+    );
     cleanups.push(() => rmSync(recipeDir, { recursive: true, force: true }));
     for (const [path, content] of Object.entries(conformance!.files)) {
       mkdirSync(join(recipeDir, path, ".."), { recursive: true });
@@ -958,7 +978,8 @@ describe("release train isolation", () => {
         "initial-version": "0.1.0",
       });
       // A manifest version is a real release, so it is absent until the first one.
-      if (manifest[path] !== undefined) expect(manifest[path]).toBe(pkg.version);
+      if (manifest[path] !== undefined)
+        expect(manifest[path]).toBe(pkg.version);
       // The release plan decides whether it is published.
       expect(releasePlan).toContain(`"${path}"`);
       expect(workflow).toContain(`channel_dirs+=("${path}")`);

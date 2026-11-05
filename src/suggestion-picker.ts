@@ -43,7 +43,9 @@ function localDate(now = new Date()): string {
 async function localValues(pi: ExtensionAPI): Promise<SuggestionValues> {
   const values: SuggestionValues = { today: localDate() };
   try {
-    const result = await pi.exec("git", ["config", "user.name"], { timeout: 2000 });
+    const result = await pi.exec("git", ["config", "user.name"], {
+      timeout: 2000,
+    });
     const name = result.code === 0 ? result.stdout.trim() : "";
     if (name) values["member.name"] = name;
   } catch {
@@ -52,7 +54,9 @@ async function localValues(pi: ExtensionAPI): Promise<SuggestionValues> {
   return values;
 }
 
-function suggestionOptions(suggestions: readonly RecipeSuggestion[]): AskUserOption[] {
+function suggestionOptions(
+  suggestions: readonly RecipeSuggestion[],
+): AskUserOption[] {
   const seen = new Set<string>();
   return suggestions.map((suggestion) => {
     const command = `/${suggestion.name}`;
@@ -66,11 +70,11 @@ function suggestionOptions(suggestions: readonly RecipeSuggestion[]): AskUserOpt
 }
 
 /** Ask once and send the answer; resolves when the picker has settled. */
-export async function offerRecipeSuggestions(
+async function offerRecipeSuggestions(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   suggestions: readonly RecipeSuggestion[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   const options = suggestionOptions(suggestions);
   let outcome: AskUserOutcome;
@@ -82,14 +86,15 @@ export async function offerRecipeSuggestions(
       ctx.ui,
       signal ? { signal } : {},
       signal,
-      true
+      true,
     );
   } catch {
     return; // Dismissed by an initial message.
   }
   const answer = outcome.type === "answered" ? outcome.answer : undefined;
   if (!answer) return;
-  const picked = suggestions[options.findIndex((option) => option.label === answer)];
+  const picked =
+    suggestions[options.findIndex((option) => option.label === answer)];
   if (!picked) {
     // A typed answer behaves like text typed in the editor.
     pi.sendUserMessage(answer, { expandPromptTemplates: true });
@@ -103,7 +108,9 @@ export async function offerRecipeSuggestions(
   const values = picked.placeholders.length > 0 ? await localValues(pi) : {};
   // An initial message or a session change can abort the picker while git runs.
   if (signal?.aborted) return;
-  pi.sendUserMessage(fillSuggestion(expandWithoutArguments(picked.text), values));
+  pi.sendUserMessage(
+    fillSuggestion(expandWithoutArguments(picked.text), values),
+  );
 }
 
 export interface RecipeSuggestionPicker {
@@ -111,7 +118,7 @@ export interface RecipeSuggestionPicker {
   sessionStarted(
     event: { reason: string },
     ctx: ExtensionContext,
-    promptPaths: readonly string[]
+    promptPaths: readonly string[],
   ): void;
   /** Dismiss a picker that is waiting or open. */
   cancel(): void;
@@ -123,7 +130,7 @@ export interface RecipeSuggestionPicker {
  */
 export function createRecipeSuggestionPicker(
   pi: ExtensionAPI,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): RecipeSuggestionPicker {
   let pending: AbortController | undefined;
   const cancel = () => {
@@ -147,7 +154,7 @@ export function createRecipeSuggestionPicker(
       const suggestions = pickSuggestions(
         readRecipeSuggestions(promptPaths),
         3,
-        seed ? seededRandom(seed) : Math.random
+        seed ? seededRandom(seed) : Math.random,
       );
       if (suggestions.length === 0) return;
       const controller = new AbortController();
@@ -157,7 +164,12 @@ export function createRecipeSuggestionPicker(
       setTimeout(() => {
         if (controller.signal.aborted) return;
         if (hasMessages(ctx) || ctx.isIdle?.() === false) return;
-        void offerRecipeSuggestions(pi, ctx, suggestions, controller.signal).finally(() => {
+        void offerRecipeSuggestions(
+          pi,
+          ctx,
+          suggestions,
+          controller.signal,
+        ).finally(() => {
           if (pending === controller) pending = undefined;
         });
       }, 0);

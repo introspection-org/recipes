@@ -32,30 +32,27 @@ describe("mcp search options", () => {
     expect(parseSearchArgs(["q", "--regex"])).toMatchObject({ regex: true });
   });
 
-  it.each([["0"], ["-1"], ["abc"], ["1.5"]])(
-    "rejects --limit %s",
-    (value) => {
-      expect(parseSearchArgs(["q", "--limit", value]).error).toBe(
-        `--limit expects a positive integer, got '${value}'.`
-      );
-    }
-  );
+  it.each([["0"], ["-1"], ["abc"], ["1.5"]])("rejects --limit %s", (value) => {
+    expect(parseSearchArgs(["q", "--limit", value]).error).toBe(
+      `--limit expects a positive integer, got '${value}'.`,
+    );
+  });
 
   it("reports a --limit with no value", () => {
     expect(parseSearchArgs(["q", "--limit"]).error).toBe(
-      "--limit expects a positive integer, got ''."
+      "--limit expects a positive integer, got ''.",
     );
   });
 
   it("reserves --json for tool results", () => {
     expect(parseSearchArgs(["q", "--json"]).error).toContain(
-      "JSON is reserved for tool results"
+      "JSON is reserved for tool results",
     );
   });
 
   it.each([["--nope"], ["-x"]])("names the unknown option %s", (flag) => {
     expect(parseSearchArgs(["q", flag]).error).toBe(
-      `Unknown mcp search option '${flag}'.`
+      `Unknown mcp search option '${flag}'.`,
     );
   });
 });
@@ -87,13 +84,13 @@ describe("mcp list --timeout", () => {
 
   it("reports a --timeout with no value", () => {
     expect(parseListTimeoutMs(["list", "--timeout"])).toBe(
-      "mcp list: --timeout requires a value."
+      "mcp list: --timeout requires a value.",
     );
   });
 
   it.each([["0"], ["abc"], ["-5"]])("rejects --timeout %s", (value) => {
     expect(parseListTimeoutMs(["list", "--timeout", value])).toBe(
-      "mcp list: --timeout must be a positive integer (milliseconds)."
+      "mcp list: --timeout must be a positive integer (milliseconds).",
     );
   });
 });
@@ -113,19 +110,19 @@ describe("mcp list options", () => {
   // as a second target and be rejected.
   it("does not mistake a --timeout value for a target", () => {
     expect(
-      compactListArgumentError(["list", "contacts", "--timeout", "90"])
+      compactListArgumentError(["list", "contacts", "--timeout", "90"]),
     ).toBeUndefined();
   });
 
   it("rejects a second target", () => {
     expect(compactListArgumentError(["list", "contacts", "extra"])).toBe(
-      "Unexpected mcp list argument 'extra'."
+      "Unexpected mcp list argument 'extra'.",
     );
   });
 
   it("names an unknown option", () => {
     expect(compactListArgumentError(["list", "--nope"])).toBe(
-      "Unknown mcp list option '--nope'."
+      "Unknown mcp list option '--nope'.",
     );
   });
 
@@ -133,13 +130,17 @@ describe("mcp list options", () => {
   // target from args[1] and tests exact tokens like `args.includes("--schema")`.
   it("rejects a target hiding behind a flag", () => {
     expect(compactListArgumentError(["list", "--quiet", "contacts"])).toBe(
-      "Unexpected mcp list argument 'contacts'."
+      "Unexpected mcp list argument 'contacts'.",
     );
   });
 
   it("rejects a value on a boolean flag", () => {
     expect(
-      compactListArgumentError(["list", "contacts.search_contacts", "--schema=false"])
+      compactListArgumentError([
+        "list",
+        "contacts.search_contacts",
+        "--schema=false",
+      ]),
     ).toBe("Unknown mcp list option '--schema=false'.");
   });
 });

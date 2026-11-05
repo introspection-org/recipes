@@ -1,0 +1,47 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The documents tests build the adapters' Python environments with uv.
+  "ignoreBinaries": ["uv"],
+  "ignoreIssues": {
+    // A companion exports its module by name and as the default export the
+    // host's loader imports.
+    "packages/*/*/src/index.ts": ["duplicates"]
+  },
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.mjs!",
+        "packages/mcp-client/npm/*.mjs!",
+        // Bundled or spawned on their own: scripts/build-mcp-daemon.mjs and
+        // src/mcp/index.ts (compiledEntrypoint).
+        "src/mcp/daemon/index.ts!",
+        "src/mcp/cli/run-worker.ts!",
+        "src/mcp/client-entry.ts!",
+        "test/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts!",
+        "scripts/*.mjs!",
+        "packages/mcp-client/npm/*.mjs!",
+        "test/**/*.ts"
+      ],
+      // Loaded from the Recipe's install first, then from Pi's own copy
+      // (src/recipe/extensions.ts::loadJiti), so the host never pins it.
+      "ignoreDependencies": ["jiti"]
+    },
+    "packages/*/*": {
+      "project": ["src/**/*.ts!"]
+    },
+    "examples/docs": {
+      // The docs snippets: extensions and evals a Recipe loads by path, and
+      // the fakes its evals bind.
+      "entry": [
+        "**/extensions/*.ts",
+        "**/*.eval.ts",
+        "**/fakes/**/*.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["**/*.ts"]
+    }
+  }
+}

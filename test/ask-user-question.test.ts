@@ -54,7 +54,7 @@ function fakeCtx(opts: {
               (option) =>
                 option === next ||
                 option.startsWith(next) ||
-                option.includes(`] ${next}`)
+                option.includes(`] ${next}`),
             );
       },
       async input(title: string) {
@@ -71,12 +71,12 @@ function fakeCtx(opts: {
                   bold(text: string): string;
                 },
                 keybindings: object,
-                done: (result: T) => void
+                done: (result: T) => void,
               ) => {
                 render(width: number): string[];
                 handleInput?(data: string): void;
                 dispose?(): void;
-              }
+              },
             ) {
               let result: T | undefined;
               const component = factory(
@@ -85,7 +85,7 @@ function fakeCtx(opts: {
                 {},
                 (value) => {
                   result = value;
-                }
+                },
               );
               calls.push({
                 kind: "custom",
@@ -110,14 +110,14 @@ function run(
   tool: ToolDefinition,
   params: unknown,
   ctx: ExtensionContext,
-  toolCallId = "call-1"
+  toolCallId = "call-1",
 ) {
   return tool.execute(
     toolCallId,
     params as never,
     undefined,
     undefined,
-    ctx as never
+    ctx as never,
   ) as Promise<{
     content: Array<{ type: "text"; text: string }>;
     details: Record<string, any>;
@@ -137,11 +137,7 @@ const authQuestion = {
 const featuresQuestion = {
   question: "Which features should ship in the first release?",
   header: "Features",
-  options: [
-    { label: "Search" },
-    { label: "Export" },
-    { label: "Sharing" },
-  ],
+  options: [{ label: "Search" }, { label: "Export" }, { label: "Sharing" }],
   multiSelect: true,
 };
 
@@ -178,7 +174,7 @@ function hostPanelView(toolCallId: string, details: Record<string, any>) {
         label: option.label,
         value: option.value ?? option.label,
         description: option.description ?? null,
-      })
+      }),
     ),
   };
 }
@@ -193,7 +189,7 @@ describe("ask_user_question tool", () => {
       "about 30 seconds",
       "bare option label still makes sense",
       "Don't list the options inside the question",
-      "don't add a \"change it\" option",
+      'don\'t add a "change it" option',
       "Prefer this over asking in plain text",
     ]) {
       expect(tool.description).toContain(guidance);
@@ -273,7 +269,7 @@ describe("ask_user_question tool", () => {
       const result = await run(tool, { questions: [authQuestion] }, ctx);
 
       expect(result.content[0]!.text).toBe(
-        "Auth: (no answer)\n\nUser declined to answer. Proceed with your best judgment."
+        "Auth: (no answer)\n\nUser declined to answer. Proceed with your best judgment.",
       );
       expect(result.details.questions[0].outcome).toBe("declined");
       expect(result.details.answers).toEqual({});
@@ -290,7 +286,7 @@ describe("ask_user_question tool", () => {
       const result = await run(
         tool,
         { questions: [authQuestion, featuresQuestion] },
-        ctx
+        ctx,
       );
 
       expect(calls[1]!.options).toEqual([
@@ -306,7 +302,7 @@ describe("ask_user_question tool", () => {
         "[x] 3. Sharing",
       ]);
       expect(result.content[0]!.text).toBe(
-        "Auth: Passkeys\nFeatures: Search, Sharing"
+        "Auth: Passkeys\nFeatures: Search, Sharing",
       );
       expect(result.details.questions[1]).toMatchObject({
         multiSelect: true,
@@ -332,7 +328,7 @@ describe("ask_user_question tool", () => {
 
       expect(calls[0]!.kind).toBe("custom");
       expect(calls[0]!.options!.join("\n")).toContain(
-        `4. ${ASK_USER_TYPE_SOMETHING}`
+        `4. ${ASK_USER_TYPE_SOMETHING}`,
       );
       expect(calls[1]!.kind).toBe("input");
       expect(result.content[0]!.text).toBe("Features: Export, Audit log");
@@ -357,15 +353,23 @@ describe("ask_user_question tool", () => {
 
     it("picks an option by its digit or with Enter, and digits are text once typing starts", async () => {
       const tool = createAskUserQuestionTool({ env: terminalEnv });
-      const byDigit = await run(tool, { questions: [authQuestion] }, tui(["2"]).ctx);
+      const byDigit = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui(["2"]).ctx,
+      );
       expect(byDigit.content[0]!.text).toBe("Auth: Email link");
       const byEnter = await run(
         tool,
         { questions: [authQuestion] },
-        tui(["\x1b[B", "\x1b[B", "\r"]).ctx
+        tui(["\x1b[B", "\x1b[B", "\r"]).ctx,
       );
       expect(byEnter.content[0]!.text).toBe("Auth: Password");
-      const typed = await run(tool, { questions: [authQuestion] }, tui([..."v2 SSO", "\r"]).ctx);
+      const typed = await run(
+        tool,
+        { questions: [authQuestion] },
+        tui([..."v2 SSO", "\r"]).ctx,
+      );
       expect(typed.content[0]!.text).toBe("Auth: v2 SSO");
     });
 
@@ -374,13 +378,13 @@ describe("ask_user_question tool", () => {
       const edited = await run(
         tool,
         { questions: [authQuestion] },
-        tui([..."SSOx", "\x7f", "\r"]).ctx
+        tui([..."SSOx", "\x7f", "\r"]).ctx,
       );
       expect(edited.content[0]!.text).toBe("Auth: SSO");
       const cleared = await run(
         tool,
         { questions: [authQuestion] },
-        tui([..."SSO", "\x1b", "1"]).ctx
+        tui([..."SSO", "\x1b", "1"]).ctx,
       );
       expect(cleared.content[0]!.text).toBe("Auth: Passkeys");
     });
@@ -390,20 +394,20 @@ describe("ask_user_question tool", () => {
       const whole = await run(
         tool,
         { questions: [authQuestion] },
-        tui(["\x1b[200~Magic link\x1b[201~", "\r"]).ctx
+        tui(["\x1b[200~Magic link\x1b[201~", "\r"]).ctx,
       );
       expect(whole.content[0]!.text).toBe("Auth: Magic link");
       const split = await run(
         tool,
         { questions: [authQuestion] },
-        tui(["\x1b[200~Magic", "\nlink 2", "\x1b[201~", "\r"]).ctx
+        tui(["\x1b[200~Magic", "\nlink 2", "\x1b[201~", "\r"]).ctx,
       );
       expect(split.content[0]!.text).toBe("Auth: Magic link 2");
       // Tabs become spaces and other control characters are dropped, never the whole paste.
       const tabbed = await run(
         tool,
         { questions: [authQuestion] },
-        tui(["\x1b[200~Magic\tlink\x07\x1b[201~", "\r"]).ctx
+        tui(["\x1b[200~Magic\tlink\x07\x1b[201~", "\r"]).ctx,
       );
       expect(tabbed.content[0]!.text).toBe("Auth: Magic link");
     });
@@ -413,7 +417,7 @@ describe("ask_user_question tool", () => {
       const result = await run(
         tool,
         { questions: [authQuestion] },
-        tui([..."SSO", "😀", "\x7f", "\r"]).ctx
+        tui([..."SSO", "😀", "\x7f", "\r"]).ctx,
       );
       expect(result.content[0]!.text).toBe("Auth: SSO");
       expect(withoutLastCharacter("ok👍🏽")).toBe("ok");
@@ -423,7 +427,11 @@ describe("ask_user_question tool", () => {
     it("stops the turn when the user presses Esc, so the agent waits for their message", async () => {
       const tool = createAskUserQuestionTool({ env: terminalEnv });
       const { ctx, aborts } = tui(["\x1b"]);
-      const result = await run(tool, { questions: [authQuestion, featuresQuestion] }, ctx);
+      const result = await run(
+        tool,
+        { questions: [authQuestion, featuresQuestion] },
+        ctx,
+      );
       expect(aborts()).toBe(1);
       expect(result.content[0]!.text).toBe(DISMISSED_TEXT);
     });
@@ -446,7 +454,7 @@ describe("ask_user_question tool", () => {
         tool,
         { questions: [authQuestion] },
         ctx,
-        "call-7"
+        "call-7",
       );
 
       expect(result.content).toEqual([
@@ -457,8 +465,14 @@ describe("ask_user_question tool", () => {
         message: "Which sign-in method should the app use?",
         // Bare labels: the panel lists them itself and always offers free text.
         options: [
-          { label: "Passkeys", description: "No passwords; newest browsers only" },
-          { label: "Email link", description: "Works everywhere; slower sign-in" },
+          {
+            label: "Passkeys",
+            description: "No passwords; newest browsers only",
+          },
+          {
+            label: "Email link",
+            description: "Works everywhere; slower sign-in",
+          },
           { label: "Password" },
         ],
         selection: "single",
@@ -493,7 +507,7 @@ describe("ask_user_question tool", () => {
         formatInteractionResume({
           status: "resolved",
           payload: { answer: "Email link" },
-        })
+        }),
       ).toBe("Answer: Email link");
     });
 
@@ -505,7 +519,11 @@ describe("ask_user_question tool", () => {
 
       expect(result.details.interrupt).toMatchObject({
         selection: "multiple",
-        options: [{ label: "Search" }, { label: "Export" }, { label: "Sharing" }],
+        options: [
+          { label: "Search" },
+          { label: "Export" },
+          { label: "Sharing" },
+        ],
         metadata: { header: "Features" },
       });
     });
@@ -514,17 +532,29 @@ describe("ask_user_question tool", () => {
       const tool = createAskUserQuestionTool({ env: pauseEnv });
       const questions = (tool.parameters as any).properties.questions;
       expect(questions.maxItems).toBe(1);
-      expect(tool.description).toContain("make one call per question in the same turn");
+      expect(tool.description).toContain(
+        "make one call per question in the same turn",
+      );
 
       const { ctx } = fakeCtx({ hasUI: false });
       // Two calls in one turn: the host collects both interrupts into one
       // pause and the panel steps through them (1 of 2, 2 of 2).
-      const first = await run(tool, { questions: [authQuestion] }, ctx, "call-1");
-      const second = await run(tool, { questions: [featuresQuestion] }, ctx, "call-2");
+      const first = await run(
+        tool,
+        { questions: [authQuestion] },
+        ctx,
+        "call-1",
+      );
+      const second = await run(
+        tool,
+        { questions: [featuresQuestion] },
+        ctx,
+        "call-2",
+      );
       expect(
         [first, second].map((result, index) =>
-          hostPanelView(`call-${index + 1}`, result.details)
-        )
+          hostPanelView(`call-${index + 1}`, result.details),
+        ),
       ).toMatchObject([
         { id: "ask_user_question:call-1", title: "Auth" },
         { id: "ask_user_question:call-2", title: "Features" },
@@ -534,11 +564,15 @@ describe("ask_user_question tool", () => {
       const several = await run(
         tool,
         { questions: [authQuestion, featuresQuestion] },
-        ctx
+        ctx,
       );
       expect(several.details.interrupt).toBeUndefined();
-      expect(several.content[0]!.text).toContain("Nothing was shown to the user");
-      expect(several.content[0]!.text).toContain("call it 2 times in the same turn");
+      expect(several.content[0]!.text).toContain(
+        "Nothing was shown to the user",
+      );
+      expect(several.content[0]!.text).toContain(
+        "call it 2 times in the same turn",
+      );
     });
 
     it("prefers a local dialog when the host also has a UI", async () => {
@@ -561,13 +595,13 @@ describe("ask_user_question tool", () => {
       const result = await run(
         tool,
         { questions: [authQuestion, featuresQuestion] },
-        ctx
+        ctx,
       );
 
       expect(calls).toHaveLength(0);
       expect(result.content[0]!.text).toBe(
         "Auth: (no answer)\nFeatures: (no answer)\n\n" +
-          "The user did not answer every question. Proceed with your best judgment for those."
+          "The user did not answer every question. Proceed with your best judgment for those.",
       );
     });
 
@@ -578,11 +612,11 @@ describe("ask_user_question tool", () => {
       const result = await run(
         tool,
         { questions: [authQuestion, featuresQuestion] },
-        ctx
+        ctx,
       );
 
       expect(result.content[0]!.text).toContain(
-        "User interaction is unavailable in this session; nothing was shown to the user."
+        "User interaction is unavailable in this session; nothing was shown to the user.",
       );
       expect(result.details.interrupt.outcome).toEqual({ type: "unavailable" });
     });
@@ -592,7 +626,7 @@ describe("ask_user_question tool", () => {
       const { ctx, calls } = fakeCtx({ hasUI: true });
 
       const result = await autoResolveInteractions(() =>
-        run(tool, { questions: [authQuestion] }, ctx)
+        run(tool, { questions: [authQuestion] }, ctx),
       );
 
       expect(calls).toHaveLength(0);
@@ -611,18 +645,26 @@ describe("ask_user_question tool", () => {
 
     it("registers the built-in tool", async () => {
       const { pi, registered } = fakePi();
-      await askUserQuestionExtension(createRecipeExtensionRegistrationRegistry())(
-        pi as never
-      );
-      expect(registered.map((tool) => tool.name)).toEqual(["ask_user_question"]);
+      await askUserQuestionExtension(
+        createRecipeExtensionRegistrationRegistry(),
+      )(pi as never);
+      expect(registered.map((tool) => tool.name)).toEqual([
+        "ask_user_question",
+      ]);
     });
 
     it("passes the session environment to the tool", async () => {
       const { pi, registered } = fakePi();
       await askUserQuestionExtension(undefined, pauseEnv)(pi as never);
       const { ctx } = fakeCtx({ hasUI: false });
-      const result = await run(registered[0]!, { questions: [authQuestion] }, ctx);
-      expect(result.details.interrupt.outcome).toEqual({ type: "awaiting_user" });
+      const result = await run(
+        registered[0]!,
+        { questions: [authQuestion] },
+        ctx,
+      );
+      expect(result.details.interrupt.outcome).toEqual({
+        type: "awaiting_user",
+      });
 
       const headless = fakePi();
       await askUserQuestionExtension(undefined, {
@@ -632,7 +674,7 @@ describe("ask_user_question tool", () => {
       const declined = await run(
         headless.registered[0]!,
         { questions: [authQuestion] },
-        uiCtx
+        uiCtx,
       );
       expect(calls).toHaveLength(0);
       expect(declined.details.questions[0].outcome).toBe("declined");

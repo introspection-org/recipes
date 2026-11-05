@@ -1,6 +1,10 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { CHANNEL_MODULE_API_VERSION, createChannelConnectorModule, type RecipeChannelModule } from "./channels/module.js";
+import {
+  CHANNEL_MODULE_API_VERSION,
+  createChannelConnectorModule,
+  type RecipeChannelModule,
+} from "./channels/module.js";
 import { loadRecipeDocuments } from "./documents/module.js";
 import { loadRecipePackageModule } from "./recipe/companions.js";
 import { deferTools } from "./tool-search.js";
@@ -10,13 +14,13 @@ import {
   type RecipePackageManifest,
 } from "./recipe/package.js";
 
-export interface RecipeConnectorToolDefinition {
+interface RecipeConnectorToolDefinition {
   readonly id: string;
   readonly name: string;
   readonly defaultActive: boolean;
 }
 
-export interface RecipeConnectorExtension {
+interface RecipeConnectorExtension {
   owner: string;
   factory: ExtensionFactory;
 }
@@ -31,13 +35,13 @@ export interface RecipeConnectorExtensionOptions {
   hostDir?: string;
 }
 
-export interface RecipeConnectorToolLoadout {
+interface RecipeConnectorToolLoadout {
   toolNames: string[];
   initialActiveToolNames: string[];
   deferredToolNames: string[];
 }
 
-export interface RecipeConnectorModuleOptions {
+interface RecipeConnectorModuleOptions {
   tools: readonly string[];
   commands?: readonly string[];
   requireReply?: boolean;
@@ -60,15 +64,15 @@ export interface LoadedRecipeConnectors {
 
 function connectorModuleError(
   channel: RecipePackageChannel,
-  detail: string
+  detail: string,
 ): Error {
   return new Error(
-    `Recipe channel package ${recipeChannelPackageName(channel.provider)} ${detail}`
+    `Recipe channel package ${recipeChannelPackageName(channel.provider)} ${detail}`,
   );
 }
 
 function isConnectorToolDefinition(
-  value: unknown
+  value: unknown,
 ): value is RecipeConnectorToolDefinition {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -85,7 +89,7 @@ function isConnectorToolDefinition(
 
 function parseRecipeConnectorModule(
   value: unknown,
-  channel: RecipePackageChannel
+  channel: RecipePackageChannel,
 ): RecipeConnectorModule {
   if (!value || typeof value !== "object") {
     throw connectorModuleError(channel, "does not export a module");
@@ -109,7 +113,7 @@ function parseRecipeConnectorModule(
   ) {
     throw connectorModuleError(
       channel,
-      "has duplicate or conflicting tool names"
+      "has duplicate or conflicting tool names",
     );
   }
   return module as RecipeConnectorModule;
@@ -120,8 +124,16 @@ function parseRecipeConnectorModule(
  * here, in the host. A package built with `createChannelConnectorModule`
  * already is one.
  */
-function fromChannelModule(value: unknown, channel: RecipePackageChannel): unknown {
-  if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "channel") return value;
+function fromChannelModule(
+  value: unknown,
+  channel: RecipePackageChannel,
+): unknown {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    (value as { kind?: unknown }).kind !== "channel"
+  )
+    return value;
   const module = value as Partial<RecipeChannelModule>;
   if (
     module.provider !== channel.provider ||
@@ -137,32 +149,42 @@ function fromChannelModule(value: unknown, channel: RecipePackageChannel): unkno
 async function loadRecipeConnectorModule(
   recipeDir: string,
   channel: RecipePackageChannel,
-  hostDir: string | undefined
+  hostDir: string | undefined,
 ): Promise<RecipeConnectorModule> {
-  const imported = await loadRecipePackageModule(recipeDir, recipeChannelPackageName(channel.provider), {
-    what: `Recipe channel '${channel.provider}'`,
-    api: { name: "channel module", version: CHANNEL_MODULE_API_VERSION },
-    ...(hostDir !== undefined ? { hostDir } : {}),
-  });
+  const imported = await loadRecipePackageModule(
+    recipeDir,
+    recipeChannelPackageName(channel.provider),
+    {
+      what: `Recipe channel '${channel.provider}'`,
+      api: { name: "channel module", version: CHANNEL_MODULE_API_VERSION },
+      ...(hostDir !== undefined ? { hostDir } : {}),
+    },
+  );
   const connectorModule =
-    imported &&
-    typeof imported === "object" &&
-    "default" in imported
+    imported && typeof imported === "object" && "default" in imported
       ? imported.default
       : imported;
-  return parseRecipeConnectorModule(fromChannelModule(connectorModule, channel), channel);
+  return parseRecipeConnectorModule(
+    fromChannelModule(connectorModule, channel),
+    channel,
+  );
 }
 
 export async function loadRecipeConnectors(
   manifest: RecipePackageManifest,
   agentTools: readonly string[],
-  options: RecipeConnectorExtensionOptions
+  options: RecipeConnectorExtensionOptions,
 ): Promise<LoadedRecipeConnectors> {
   const loaded = await Promise.all(
     (manifest.channels ?? []).map(async (channel) => {
-      const module = await loadRecipeConnectorModule(options.recipeDir, channel, options.hostDir);
-      const selected = module.tools.filter((tool) =>
-        agentTools.includes(tool.name) && channel.commands?.length !== 0
+      const module = await loadRecipeConnectorModule(
+        options.recipeDir,
+        channel,
+        options.hostDir,
+      );
+      const selected = module.tools.filter(
+        (tool) =>
+          agentTools.includes(tool.name) && channel.commands?.length !== 0,
       );
       return {
         extension: {
@@ -170,22 +192,36 @@ export async function loadRecipeConnectors(
           factory: deferTools(
             module.createExtension({
               tools: selected.map((tool) => tool.id),
-              ...(channel.commands !== undefined ? { commands: channel.commands } : {}),
-              ...(channel.requireReply !== undefined ? { requireReply: channel.requireReply } : {}),
+              ...(channel.commands !== undefined
+                ? { commands: channel.commands }
+                : {}),
+              ...(channel.requireReply !== undefined
+                ? { requireReply: channel.requireReply }
+                : {}),
               env: options.env,
               cwd: options.cwd,
             }),
-            selected.filter((tool) => !tool.defaultActive).map((tool) => tool.name)
+            selected
+              .filter((tool) => !tool.defaultActive)
+              .map((tool) => tool.name),
           ),
         },
         selected,
       };
-    })
+    }),
   );
-  const documents = await loadRecipeDocuments(manifest.documents ?? [], agentTools, options);
+  const documents = await loadRecipeDocuments(
+    manifest.documents ?? [],
+    agentTools,
+    options,
+  );
   const selected = [
     ...loaded.flatMap((connector) => connector.selected),
-    ...documents.toolNames.map((name) => ({ id: name, name, defaultActive: true })),
+    ...documents.toolNames.map((name) => ({
+      id: name,
+      name,
+      defaultActive: true,
+    })),
   ];
   const registeredNames = selected.map((tool) => tool.name);
   if (new Set(registeredNames).size !== registeredNames.length) {

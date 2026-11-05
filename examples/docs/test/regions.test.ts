@@ -27,10 +27,22 @@ const IDS = [
 ];
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const SKIP = new Set([".git", "node_modules", "dist", "target", "vendor", ".turbo"]);
+const SKIP = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "target",
+  "vendor",
+  ".turbo",
+]);
 const MARKER = /^\s*(?:\/\/|#) #(region|endregion) docs:(\S+)\s*$/;
 
-type Marker = { kind: "region" | "endregion"; id: string; file: string; line: number };
+type Marker = {
+  kind: "region" | "endregion";
+  id: string;
+  file: string;
+  line: number;
+};
 
 function markers(dir: string): Marker[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -45,7 +57,14 @@ function markers(dir: string): Marker[] {
       .flatMap((content, index) => {
         const match = MARKER.exec(content);
         return match
-          ? [{ kind: match[1] as Marker["kind"], id: match[2]!, file: relative(ROOT, path), line: index + 1 }]
+          ? [
+              {
+                kind: match[1] as Marker["kind"],
+                id: match[2]!,
+                file: relative(ROOT, path),
+                line: index + 1,
+              },
+            ]
           : [];
       });
   });
@@ -54,12 +73,20 @@ function markers(dir: string): Marker[] {
 const found = markers(ROOT);
 
 test("every docs region id is known", () => {
-  expect([...new Set(found.map((marker) => marker.id))].filter((id) => !IDS.includes(id))).toEqual([]);
+  expect(
+    [...new Set(found.map((marker) => marker.id))].filter(
+      (id) => !IDS.includes(id),
+    ),
+  ).toEqual([]);
 });
 
 test.each(IDS)("%s is one region, opened and closed in one file", (id) => {
-  const regions = found.filter((marker) => marker.id === id && marker.kind === "region");
-  const ends = found.filter((marker) => marker.id === id && marker.kind === "endregion");
+  const regions = found.filter(
+    (marker) => marker.id === id && marker.kind === "region",
+  );
+  const ends = found.filter(
+    (marker) => marker.id === id && marker.kind === "endregion",
+  );
   expect(regions, "#region").toHaveLength(1);
   expect(ends, "#endregion").toHaveLength(1);
   expect(ends[0]!.file).toBe(regions[0]!.file);
@@ -68,12 +95,16 @@ test.each(IDS)("%s is one region, opened and closed in one file", (id) => {
 
 test("regions do not overlap", () => {
   const byFile = new Map<string, Marker[]>();
-  for (const marker of found) byFile.set(marker.file, [...(byFile.get(marker.file) ?? []), marker]);
+  for (const marker of found)
+    byFile.set(marker.file, [...(byFile.get(marker.file) ?? []), marker]);
   for (const [file, list] of byFile) {
     let open: string | undefined;
     for (const marker of list) {
       if (marker.kind === "region") {
-        expect(open, `${file}:${marker.line} opens ${marker.id} inside ${open}`).toBeUndefined();
+        expect(
+          open,
+          `${file}:${marker.line} opens ${marker.id} inside ${open}`,
+        ).toBeUndefined();
         open = marker.id;
       } else {
         expect(marker.id, `${file}:${marker.line}`).toBe(open);

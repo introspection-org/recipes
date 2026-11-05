@@ -26,7 +26,7 @@ const DEFAULT_CALL_TIMEOUT_MS = 120_000;
 
 type Recordish = Record<string, unknown>;
 
-export interface McpToolDetails {
+interface McpToolDetails {
   server: string;
   tool: string;
   structuredContent?: Recordish;
@@ -40,7 +40,7 @@ export interface McpToolDetails {
 }
 
 /** The MCP server serving a Pi tool, for its `execute_tool` span. */
-export interface McpToolOrigin {
+interface McpToolOrigin {
   serverId: string;
   /** The tool's name in the server's contract. */
   toolName: string;
@@ -85,10 +85,7 @@ function asRecord(value: unknown): Recordish | undefined {
     : undefined;
 }
 
-function positiveInteger(
-  value: string | undefined,
-  fallback: number
-): number {
+function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
@@ -100,17 +97,14 @@ function schemaCompiler(schema: Recordish): Ajv | Ajv2020 {
     : new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
 }
 
-function compileSchema(
-  schema: Recordish,
-  label: string
-): ValidateFunction {
+function compileSchema(schema: Recordish, label: string): ValidateFunction {
   try {
     return schemaCompiler(schema).compile(schema);
   } catch (error) {
     throw new Error(
       `${label} is not a compilable JSON Schema: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   }
 }
@@ -149,7 +143,7 @@ function jsonPointerValue(root: Recordish, ref: string): unknown {
 function dereferenceSchema(
   root: Recordish,
   value: unknown,
-  stack: readonly string[] = []
+  stack: readonly string[] = [],
 ): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => dereferenceSchema(root, entry, stack));
@@ -159,33 +153,36 @@ function dereferenceSchema(
   if (typeof record.$ref === "string") {
     if (stack.includes(record.$ref)) {
       throw new Error(
-        `circular JSON Schema reference '${record.$ref}' is not provider-safe`
+        `circular JSON Schema reference '${record.$ref}' is not provider-safe`,
       );
     }
     const target = asRecord(jsonPointerValue(root, record.$ref));
     if (!target) {
       throw new Error(
-        `JSON Schema reference '${record.$ref}' does not resolve to an object`
+        `JSON Schema reference '${record.$ref}' does not resolve to an object`,
       );
     }
     const siblings = Object.fromEntries(
-      Object.entries(record).filter(([key]) => key !== "$ref")
+      Object.entries(record).filter(([key]) => key !== "$ref"),
     );
     return {
-      ...(dereferenceSchema(root, target, [...stack, record.$ref]) as Recordish),
+      ...(dereferenceSchema(root, target, [
+        ...stack,
+        record.$ref,
+      ]) as Recordish),
       ...(dereferenceSchema(root, siblings, stack) as Recordish),
     };
   }
   return Object.fromEntries(
     Object.entries(record)
       .filter(([key]) => key !== "$defs" && key !== "definitions")
-      .map(([key, entry]) => [key, dereferenceSchema(root, entry, stack)])
+      .map(([key, entry]) => [key, dereferenceSchema(root, entry, stack)]),
   );
 }
 
 function providerSafeInputSchema(
   schema: Recordish,
-  label: string
+  label: string,
 ): { schema: Recordish; validate: ValidateFunction } {
   const normalized = asRecord(dereferenceSchema(schema, schema));
   if (!normalized || normalized.type !== "object") {
@@ -206,9 +203,12 @@ function sanitizeNamePart(value: string): string {
 
 export function piMcpToolName(serverId: string, toolName: string): string {
   const canonical = `${serverId}.${toolName}`;
-  const hash = createHash("sha256").update(canonical).digest("hex").slice(0, 10);
+  const hash = createHash("sha256")
+    .update(canonical)
+    .digest("hex")
+    .slice(0, 10);
   const readable = `mcp_${sanitizeNamePart(serverId)}_${sanitizeNamePart(
-    toolName
+    toolName,
   )}`;
   const prefix = readable.slice(0, 64 - hash.length - 1).replace(/_+$/g, "");
   return `${prefix}_${hash}`;
@@ -254,7 +254,7 @@ function embeddedResourceText(block: Recordish): string {
 
 function contentBlocks(
   result: Recordish,
-  structuredContent: Recordish | undefined
+  structuredContent: Recordish | undefined,
 ): Array<
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
@@ -270,10 +270,7 @@ function contentBlocks(
     const block = asRecord(raw);
     if (!block || typeof block.type !== "string") continue;
     if (block.type === "text" && typeof block.text === "string") {
-      if (
-        structuredContent &&
-        sameJsonText(block.text, structuredContent)
-      ) {
+      if (structuredContent && sameJsonText(block.text, structuredContent)) {
         continue;
       }
       blocks.push({ type: "text", text: block.text });
@@ -338,33 +335,33 @@ function truncateUtf8(text: string, maxBytes: number): string {
 
 function guardContent(
   content: ReturnType<typeof contentBlocks>,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): {
   content: ReturnType<typeof contentBlocks>;
   truncated?: McpToolDetails["truncated"];
 } {
   const maxBytes = positiveInteger(
     env.PI_RECIPES_MCP_MAX_OUTPUT_BYTES,
-    DEFAULT_OUTPUT_MAX_BYTES
+    DEFAULT_OUTPUT_MAX_BYTES,
   );
   const maxLines = positiveInteger(
     env.PI_RECIPES_MCP_MAX_OUTPUT_LINES,
-    DEFAULT_OUTPUT_MAX_LINES
+    DEFAULT_OUTPUT_MAX_LINES,
   );
   const images = content.filter(
     (block): block is { type: "image"; data: string; mimeType: string } =>
-      block.type === "image"
+      block.type === "image",
   );
   const text = content
     .filter(
-      (block): block is { type: "text"; text: string } => block.type === "text"
+      (block): block is { type: "text"; text: string } => block.type === "text",
     )
     .map((block) => block.text)
     .join("\n");
   const originalBytes = Buffer.byteLength(text, "utf8");
   const imageBytes = images.reduce(
     (total, image) => total + Buffer.byteLength(image.data, "base64"),
-    0
+    0,
   );
   const originalContentBytes = originalBytes + imageBytes;
   const originalLines = text.split("\n").length;
@@ -377,7 +374,7 @@ function guardContent(
   }.]`;
   const preview = truncateUtf8(
     linePreview,
-    Math.max(0, maxBytes - Buffer.byteLength(notice, "utf8"))
+    Math.max(0, maxBytes - Buffer.byteLength(notice, "utf8")),
   );
   const guarded = `${preview}${notice}`;
   return {
@@ -391,15 +388,11 @@ function guardContent(
   };
 }
 
-function errorText(
-  result: Recordish,
-  env: NodeJS.ProcessEnv
-): string {
+function errorText(result: Recordish, env: NodeJS.ProcessEnv): string {
   const guarded = guardContent(contentBlocks(result, undefined), env);
   const text = guarded.content
     .filter(
-      (value): value is { type: "text"; text: string } =>
-        value.type === "text"
+      (value): value is { type: "text"; text: string } => value.type === "text",
     )
     .map((value) => value.text)
     .join("\n")
@@ -410,12 +403,12 @@ function errorText(
 function validateResult(
   tool: UsableMcpTool,
   raw: unknown,
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ) {
   const result = asRecord(raw);
   if (!result) {
     throw new Error(
-      `MCP tool '${tool.canonicalName}' returned a malformed result.`
+      `MCP tool '${tool.canonicalName}' returned a malformed result.`,
     );
   }
   if (result.isError === true) {
@@ -425,21 +418,18 @@ function validateResult(
   if (tool.validateOutput) {
     if (!structuredContent) {
       throw new Error(
-        `MCP tool '${tool.canonicalName}' declares outputSchema but returned no structuredContent. The remote outcome is unknown; do not retry automatically.`
+        `MCP tool '${tool.canonicalName}' declares outputSchema but returned no structuredContent. The remote outcome is unknown; do not retry automatically.`,
       );
     }
     if (!tool.validateOutput(structuredContent)) {
       throw new Error(
         `MCP tool '${tool.canonicalName}' returned structuredContent that does not match outputSchema: ${schemaErrors(
-          tool.validateOutput
-        )}. The remote outcome is unknown; do not retry automatically.`
+          tool.validateOutput,
+        )}. The remote outcome is unknown; do not retry automatically.`,
       );
     }
   }
-  const guarded = guardContent(
-    contentBlocks(result, structuredContent),
-    env
-  );
+  const guarded = guardContent(contentBlocks(result, structuredContent), env);
   return {
     content: guarded.content,
     details: {
@@ -455,13 +445,15 @@ function validateResult(
 function schemaErrors(validate: ValidateFunction): string {
   return (validate.errors ?? [])
     .slice(0, 3)
-    .map((error) => `${error.instancePath || "/"} ${error.message ?? "invalid"}`)
+    .map(
+      (error) => `${error.instancePath || "/"} ${error.message ?? "invalid"}`,
+    )
     .join("; ");
 }
 
 function activeCanonicalNames(
   mcp: RecipeAgentMcp,
-  usable: readonly UsableMcpTool[]
+  usable: readonly UsableMcpTool[],
 ): Set<string> {
   const result = new Set<string>();
   for (const tool of usable) {
@@ -479,7 +471,7 @@ function activeCanonicalNames(
 
 function compileUsableTools(
   session: McpSessionConfig,
-  catalogs: readonly McpCatalogServer[]
+  catalogs: readonly McpCatalogServer[],
 ): { usable: UsableMcpTool[]; unusable: Map<string, string> } {
   const usable: UsableMcpTool[] = [];
   const unusable = new Map<string, string>();
@@ -495,7 +487,7 @@ function compileUsableTools(
         };
         const input = providerSafeInputSchema(
           rawInputSchema,
-          `${canonicalName} inputSchema`
+          `${canonicalName} inputSchema`,
         );
         const outputSchema = asRecord(catalog.output_schema);
         usable.push({
@@ -512,7 +504,7 @@ function compileUsableTools(
                 outputSchema,
                 validateOutput: compileSchema(
                   outputSchema,
-                  `${canonicalName} outputSchema`
+                  `${canonicalName} outputSchema`,
                 ),
               }
             : {}),
@@ -520,7 +512,7 @@ function compileUsableTools(
       } catch (error) {
         unusable.set(
           canonicalName,
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error ? error.message : String(error),
         );
       }
     }
@@ -540,7 +532,7 @@ export function createMcpToolSet(options: {
   const session: McpSessionConfig = {
     ...options.session,
     servers: options.session.servers.filter((server) =>
-      Object.hasOwn(options.mcp.servers, server.id)
+      Object.hasOwn(options.mcp.servers, server.id),
     ),
   };
   const catalogs = options.catalogs
@@ -548,7 +540,7 @@ export function createMcpToolSet(options: {
     .map((catalog) => ({
       ...catalog,
       tools: catalog.tools.filter((tool) =>
-        mcpSelectionAllowsTool(options.mcp.servers[catalog.id], tool.name)
+        mcpSelectionAllowsTool(options.mcp.servers[catalog.id], tool.name),
       ),
     }));
   const deferred = new Set<string>();
@@ -567,7 +559,7 @@ export function createMcpToolSet(options: {
     throw new Error(
       `Required MCP catalog discovery failed: ${requiredFailures
         .map((catalog) => `${catalog.id}: ${catalog.error}`)
-        .join("; ")}`
+        .join("; ")}`,
     );
   }
   const { usable, unusable } = compileUsableTools(session, catalogs);
@@ -575,7 +567,7 @@ export function createMcpToolSet(options: {
   // A deferred server's tools cannot be named yet, so its eager selectors wait
   // for the session that discovers it.
   const eagerServers = Object.entries(options.mcp.servers).filter(
-    ([serverId]) => !deferred.has(serverId)
+    ([serverId]) => !deferred.has(serverId),
   );
   const requestedEager = new Set(
     eagerServers.flatMap(([serverId, policy]) =>
@@ -583,8 +575,8 @@ export function createMcpToolSet(options: {
         ? usable
             .filter((tool) => tool.serverId === serverId)
             .map((tool) => tool.canonicalName)
-        : (policy.eager ?? []).map((tool) => `${serverId}.${tool}`)
-    )
+        : (policy.eager ?? []).map((tool) => `${serverId}.${tool}`),
+    ),
   );
   for (const [serverId, policy] of eagerServers) {
     const selectors = policy.eager ?? [];
@@ -594,38 +586,38 @@ export function createMcpToolSet(options: {
       throw new Error(
         `Eager MCP wildcard for '${serverId}' requires a healthy catalog${
           catalog?.error ? `: ${catalog.error}` : "."
-        }`
+        }`,
       );
     }
     const unusableActive = [...unusable.entries()].find(([name]) =>
-      name.startsWith(`${serverId}.`)
+      name.startsWith(`${serverId}.`),
     );
     if (unusableActive) {
       throw new Error(
-        `Eager MCP wildcard for '${serverId}' includes unusable tool '${unusableActive[0]}': ${unusableActive[1]}`
+        `Eager MCP wildcard for '${serverId}' includes unusable tool '${unusableActive[0]}': ${unusableActive[1]}`,
       );
     }
   }
   const knownCanonical = new Set(
     catalogs.flatMap((server) =>
-      server.tools.map((tool) => `${server.id}.${tool.name}`)
-    )
+      server.tools.map((tool) => `${server.id}.${tool.name}`),
+    ),
   );
   for (const name of requestedEager) {
     if (unusable.has(name)) {
       throw new Error(
-        `Eager MCP tool '${name}' is unusable: ${unusable.get(name)}`
+        `Eager MCP tool '${name}' is unusable: ${unusable.get(name)}`,
       );
     }
     if (!knownCanonical.has(name) || !activeCanonical.has(name)) {
       throw new Error(
-        `Eager MCP tool '${name}' is not authorized and available in the current catalog.`
+        `Eager MCP tool '${name}' is not authorized and available in the current catalog.`,
       );
     }
   }
 
   const canonicalToPiName = new Map(
-    usable.map((tool) => [tool.canonicalName, tool.piName])
+    usable.map((tool) => [tool.canonicalName, tool.piName]),
   );
   const piNames = new Set<string>();
   for (const tool of usable) {
@@ -635,7 +627,7 @@ export function createMcpToolSet(options: {
       tool.piName === LEGACY_MCP_TOOL_SEARCH_NAME
     ) {
       throw new Error(
-        `MCP tool name collision for '${tool.canonicalName}' (${tool.piName}).`
+        `MCP tool name collision for '${tool.canonicalName}' (${tool.piName}).`,
       );
     }
     piNames.add(tool.piName);
@@ -670,8 +662,8 @@ export function createMcpToolSet(options: {
       if (!tool.validateInput(input)) {
         throw new Error(
           `MCP tool '${tool.canonicalName}' received arguments that do not match inputSchema: ${schemaErrors(
-            tool.validateInput
-          )}`
+            tool.validateInput,
+          )}`,
         );
       }
       const raw = await callMcpDaemonTool(
@@ -683,9 +675,9 @@ export function createMcpToolSet(options: {
           signal,
           timeoutMs: positiveInteger(
             options.env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
-            DEFAULT_CALL_TIMEOUT_MS
+            DEFAULT_CALL_TIMEOUT_MS,
           ),
-        }
+        },
       );
       return validateResult(tool, raw, options.env);
     },
@@ -695,7 +687,7 @@ export function createMcpToolSet(options: {
     .filter((tool) => activeCanonical.has(tool.canonicalName))
     .map((tool) => tool.piName);
   const inactive = usable.filter(
-    (tool) => !activeCanonical.has(tool.canonicalName)
+    (tool) => !activeCanonical.has(tool.canonicalName),
   );
   return {
     tools,
@@ -706,9 +698,7 @@ export function createMcpToolSet(options: {
       ...options.catalogs
         .filter((catalog) => catalog.error)
         .map((catalog) => `${catalog.id}: ${catalog.error}`),
-      ...[...unusable.entries()].map(
-        ([name, error]) => `${name}: ${error}`
-      ),
+      ...[...unusable.entries()].map(([name, error]) => `${name}: ${error}`),
     ],
     canonicalToPiName,
     mcpToolOrigin,

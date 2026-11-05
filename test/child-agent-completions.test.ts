@@ -15,7 +15,7 @@ import {
 import type { ChildRunSnapshot } from "../src/child/agent-store.js";
 
 function envelope(
-  overrides: Partial<ChildCompletionEnvelope> = {}
+  overrides: Partial<ChildCompletionEnvelope> = {},
 ): ChildCompletionEnvelope {
   return {
     id: "recipe-agent-1",
@@ -71,7 +71,7 @@ describe("ChildCompletionQueue", () => {
 
     queue.enqueue(envelope({ id: "recipe-agent-1" }));
     queue.enqueue(
-      envelope({ id: "recipe-agent-2", status: "failed", error: "boom" })
+      envelope({ id: "recipe-agent-2", status: "failed", error: "boom" }),
     );
     await microtasks();
     expect(delivered).toHaveLength(1);
@@ -193,11 +193,11 @@ describe("envelopeFromRun", () => {
         status: "completed",
         output_preview: "child output",
         duration_ms: 5_000,
-      })
+      }),
     );
-    expect(
-      envelopeFromRun(run({ status: "failed", error: "boom" }))
-    ).toEqual(expect.objectContaining({ status: "failed", error: "boom" }));
+    expect(envelopeFromRun(run({ status: "failed", error: "boom" }))).toEqual(
+      expect.objectContaining({ status: "failed", error: "boom" }),
+    );
   });
 
   it("returns null for running and interrupted runs", () => {

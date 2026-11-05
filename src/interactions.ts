@@ -171,7 +171,7 @@ export interface AskUserOptions {
    */
   interactive?: (
     ui: ExtensionUIContext,
-    dialog: ExtensionUIDialogOptions
+    dialog: ExtensionUIDialogOptions,
   ) => Promise<AskUserOutcome | undefined>;
   /** Dialog timeout override in milliseconds (defaults: TUI none, RPC 120s). */
   timeoutMs?: number;
@@ -223,7 +223,7 @@ export interface AskUserResult {
 // Keep the async context process-global so either copy can establish the child
 // boundary and every current copy observes it.
 const INTERACTION_AUTO_RESOLUTION_KEY = Symbol.for(
-  "@introspection-ai/recipes/interaction-auto-resolution"
+  "@introspection-ai/recipes/interaction-auto-resolution",
 );
 const interactionGlobals = globalThis as typeof globalThis & {
   [key: symbol]: AsyncLocalStorage<boolean> | undefined;
@@ -247,7 +247,7 @@ export function autoResolveInteractions<T>(fn: () => Promise<T>): Promise<T> {
 /** Ask the user, resolving the best available interaction channel. */
 export async function askUser(
   request: AskUserRequest,
-  opts: AskUserOptions
+  opts: AskUserOptions,
 ): Promise<AskUserResult> {
   const env = opts.env ?? process.env;
 
@@ -263,7 +263,7 @@ export async function askUser(
       request,
       isApprovalReason(request.reason)
         ? { type: "approved" }
-        : { type: "declined" }
+        : { type: "declined" },
     );
   }
 
@@ -272,7 +272,7 @@ export async function askUser(
       request,
       isApprovalReason(request.reason)
         ? { type: "approved" }
-        : { type: "declined" }
+        : { type: "declined" },
     );
   }
 
@@ -295,7 +295,7 @@ export async function askUser(
         opts.ctx.ui,
         dialog,
         opts.signal,
-        opts.ctx.mode === "tui"
+        opts.ctx.mode === "tui",
       ));
     return finishedResult(request, outcome);
   }
@@ -310,7 +310,7 @@ export async function askUser(
 /** Ask a blocking clarification question without hand-authoring interrupt details. */
 export async function askUserQuestion(
   request: AskUserQuestionRequest,
-  opts: AskUserOptions
+  opts: AskUserOptions,
 ): Promise<AskUserResult> {
   const metadata = compactRecord({
     kind: "ask_user_question",
@@ -328,14 +328,14 @@ export async function askUserQuestion(
       ...(request.display ? { display: request.display } : {}),
       ...(request.expiresAt ? { expiresAt: request.expiresAt } : {}),
     },
-    opts
+    opts,
   );
 }
 
 /** Request approval without hand-authoring interrupt details or display data. */
 export async function askUserApproval(
   request: AskUserApprovalRequest,
-  opts: AskUserOptions
+  opts: AskUserOptions,
 ): Promise<AskUserResult> {
   const kind = request.kind?.trim() || "approval";
   const title = request.title?.trim();
@@ -363,7 +363,7 @@ export async function askUserApproval(
       ...(display ? { display } : {}),
       ...(request.expiresAt ? { expiresAt: request.expiresAt } : {}),
     },
-    opts
+    opts,
   );
 }
 
@@ -389,14 +389,16 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   }
 }
 
-function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
+function compactRecord(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).filter(
       ([, value]) =>
         value !== undefined &&
         value !== null &&
-        (!Array.isArray(value) || value.length > 0)
-    )
+        (!Array.isArray(value) || value.length > 0),
+    ),
   );
 }
 
@@ -417,7 +419,9 @@ function compactDisplay(display: AskUserDisplay): AskUserDisplay | undefined {
         ...(items && items.length > 0 ? { items } : {}),
       };
     })
-    .filter((section): section is NonNullable<typeof section> => Boolean(section));
+    .filter((section): section is NonNullable<typeof section> =>
+      Boolean(section),
+    );
   if (!title && !body && sections.length === 0) return undefined;
   return {
     kind: display.kind,
@@ -437,14 +441,14 @@ async function dialogWalk(
   ui: ExtensionUIContext,
   dialog: ExtensionUIDialogOptions,
   signal: AbortSignal | undefined,
-  preferCustomTui: boolean
+  preferCustomTui: boolean,
 ): Promise<AskUserOutcome> {
   if (isApprovalReason(request.reason)) {
     // ui.confirm() cannot carry per-option labels, so approvals use a select.
     const choice = await ui.select(
       localDialogMessage(request),
       [APPROVE_OPTION, REQUEST_CHANGES_OPTION],
-      dialog
+      dialog,
     );
     throwIfAborted(signal);
     if (choice === undefined) return { type: "declined" };
@@ -452,7 +456,7 @@ async function dialogWalk(
     const feedback = await ui.input(
       "Feedback",
       "Describe the changes you want (optional)",
-      dialog
+      dialog,
     );
     throwIfAborted(signal);
     const trimmed = feedback?.trim();
@@ -470,7 +474,7 @@ async function dialogWalk(
         ui,
         dialog,
         signal,
-        preferCustomTui
+        preferCustomTui,
       );
     }
     const selectOptions = [...options.map((option) => option.label)];
@@ -480,16 +484,12 @@ async function dialogWalk(
     const choice = await ui.select(
       localDialogMessage(request),
       selectOptions,
-      dialog
+      dialog,
     );
     throwIfAborted(signal);
     if (choice === undefined) return { type: "declined" };
     if (choice === CUSTOM_ANSWER_OPTION) {
-      const text = await ui.input(
-        "Answer",
-        "Type your own answer",
-        dialog
-      );
+      const text = await ui.input("Answer", "Type your own answer", dialog);
       throwIfAborted(signal);
       const trimmed = text?.trim();
       return trimmed
@@ -506,9 +506,7 @@ async function dialogWalk(
   const text = await ui.input(localDialogMessage(request), undefined, dialog);
   throwIfAborted(signal);
   const trimmed = text?.trim();
-  return trimmed
-    ? { type: "answered", answer: trimmed }
-    : { type: "declined" };
+  return trimmed ? { type: "answered", answer: trimmed } : { type: "declined" };
 }
 
 async function multiSelectDialogWalk(
@@ -517,7 +515,7 @@ async function multiSelectDialogWalk(
   ui: ExtensionUIContext,
   dialog: ExtensionUIDialogOptions,
   signal: AbortSignal | undefined,
-  preferCustomTui: boolean
+  preferCustomTui: boolean,
 ): Promise<AskUserOutcome> {
   if (preferCustomTui && typeof ui.custom === "function") {
     const { showMultiSelectTui } = await import("./interaction-tui.js");
@@ -525,7 +523,7 @@ async function multiSelectDialogWalk(
       localDialogMessage(request),
       options,
       ui,
-      signal
+      signal,
     );
     throwIfAborted(signal);
     if (!result) return { type: "declined" };
@@ -561,17 +559,22 @@ async function multiSelectFallback(
   options: AskUserOption[],
   ui: ExtensionUIContext,
   dialog: ExtensionUIDialogOptions,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<AskUserOutcome> {
   const selected = new Set<number>();
 
   while (true) {
     const choices = options.map(
-      (option, index) => `${selected.has(index) ? "[x]" : "[ ]"} ${option.label}`
+      (option, index) =>
+        `${selected.has(index) ? "[x]" : "[ ]"} ${option.label}`,
     );
     choices.push(CUSTOM_ANSWER_OPTION, COMPLETE_SELECTION_OPTION);
 
-    const choice = await ui.select(localDialogMessage(request), choices, dialog);
+    const choice = await ui.select(
+      localDialogMessage(request),
+      choices,
+      dialog,
+    );
     throwIfAborted(signal);
     if (choice === undefined) return { type: "declined" };
 
@@ -608,13 +611,13 @@ async function multiSelectFallback(
 
 function selectedAnswers(
   options: AskUserOption[],
-  selected: ReadonlySet<number>
+  selected: ReadonlySet<number>,
 ): string[] {
   return [
     ...new Set(
       options.flatMap((option, index) =>
-        selected.has(index) ? [option.value?.trim() || option.label] : []
-      )
+        selected.has(index) ? [option.value?.trim() || option.label] : [],
+      ),
     ),
   ];
 }
@@ -639,7 +642,8 @@ function localDialogMessage(request: AskUserRequest): string {
   for (const section of display.sections ?? []) {
     const sectionTitle = section.title.trim();
     const sectionBody = section.body?.trim();
-    const items = section.items?.map((item) => item.trim()).filter(Boolean) ?? [];
+    const items =
+      section.items?.map((item) => item.trim()).filter(Boolean) ?? [];
 
     if (!sectionTitle && !sectionBody && items.length === 0) continue;
     lines.push("");
@@ -694,7 +698,7 @@ export interface InteractionResumeResponse {
  * Convert a host resume response into the frozen Recipe interaction envelope.
  */
 export function formatInteractionResume(
-  response: InteractionResumeResponse
+  response: InteractionResumeResponse,
 ): string {
   if (response.status === "cancelled") {
     return formatInteractionOutcome({ type: "declined" });
@@ -729,7 +733,7 @@ export function formatInteractionResume(
         : {
             type: "revision_requested",
             ...(feedback ? { feedback } : {}),
-          }
+          },
     );
   }
 
@@ -746,13 +750,13 @@ function normalizeAnswers(value: unknown): string[] {
         if (typeof answer !== "string") return [];
         const trimmed = answer.trim();
         return trimmed ? [trimmed] : [];
-      })
+      }),
     ),
   ];
 }
 
 function normalizeOptions(
-  options: readonly (string | AskUserOption)[] | undefined
+  options: readonly (string | AskUserOption)[] | undefined,
 ): AskUserOption[] {
   return (options ?? []).flatMap((option) => {
     if (typeof option === "string") {
@@ -775,7 +779,7 @@ function normalizeOptions(
 
 function interruptDetails(
   request: AskUserRequest,
-  outcome: AskUserOutcome
+  outcome: AskUserOutcome,
 ): AskUserDetails {
   const options = normalizeOptions(request.options);
   return {
@@ -794,7 +798,7 @@ function interruptDetails(
 
 function finishedResult(
   request: AskUserRequest,
-  outcome: AskUserOutcome
+  outcome: AskUserOutcome,
 ): AskUserResult {
   return {
     outcome,
@@ -805,7 +809,7 @@ function finishedResult(
 
 function awaitingUserResult(
   request: AskUserRequest,
-  _toolCallId: string
+  _toolCallId: string,
 ): AskUserResult {
   const outcome: AskUserOutcome = { type: "awaiting_user" };
   return {

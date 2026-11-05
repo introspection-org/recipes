@@ -24,7 +24,9 @@ export interface PdfDocumentAdapterOptions {
   python?: string;
 }
 
-export const PDF_HELPER = fileURLToPath(new URL("../python/pdf.py", import.meta.url));
+export const PDF_HELPER = fileURLToPath(
+  new URL("../python/pdf.py", import.meta.url),
+);
 
 /**
  * PDFs are read and rendered here, never changed: the write commands are absent for .pdf.
@@ -48,16 +50,35 @@ export class PdfDocumentAdapter implements DocumentAdapter {
 
   constructor(private readonly options: PdfDocumentAdapterOptions) {}
 
-  private call(ctx: DocumentAdapterContext, command: string, input: object): Promise<DocumentResult> {
-    const { runHelper, env = process.env, script = PDF_HELPER, python } = this.options;
-    return runHelper(script, { command, ...input }, { env, cwd: ctx.cwd, python, signal: ctx.signal });
+  private call(
+    ctx: DocumentAdapterContext,
+    command: string,
+    input: object,
+  ): Promise<DocumentResult> {
+    const {
+      runHelper,
+      env = process.env,
+      script = PDF_HELPER,
+      python,
+    } = this.options;
+    return runHelper(
+      script,
+      { command, ...input },
+      { env, cwd: ctx.cwd, python, signal: ctx.signal },
+    );
   }
 
-  read(ctx: DocumentAdapterContext, input: DocumentReadInput): Promise<DocumentResult> {
+  read(
+    ctx: DocumentAdapterContext,
+    input: DocumentReadInput,
+  ): Promise<DocumentResult> {
     return this.call(ctx, "read", input);
   }
 
-  render(ctx: DocumentAdapterContext, input: DocumentRenderInput): Promise<DocumentResult> {
+  render(
+    ctx: DocumentAdapterContext,
+    input: DocumentRenderInput,
+  ): Promise<DocumentResult> {
     return this.call(ctx, "render", input);
   }
 }
@@ -69,7 +90,8 @@ export const pdfDocumentFormatModule: RecipeDocumentFormatModule = {
   format: "pdf",
   extensions: [".pdf"],
   capabilities: PDF_DOCUMENT_CAPABILITIES,
-  createAdapter: ({ env, python, runHelper }) => new PdfDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
+  createAdapter: ({ env, python, runHelper }) =>
+    new PdfDocumentAdapter({ runHelper, env, ...(python ? { python } : {}) }),
 };
 
 export default pdfDocumentFormatModule;

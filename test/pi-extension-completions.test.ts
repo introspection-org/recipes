@@ -6,7 +6,14 @@
  * interrupted runs are not announced.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -38,8 +45,8 @@ function writeRecipe(root: string) {
     `${JSON.stringify(
       { name: "demo", version: "1.0.0", pi: { agents: ["defs/*.yaml"] } },
       null,
-      2
-    )}\n`
+      2,
+    )}\n`,
   );
   writeFileSync(join(recipeDir, "SYSTEM.md"), "Base recipe prompt");
   const agentYaml = (name: string, subagents: string[]) =>
@@ -57,8 +64,14 @@ function writeRecipe(root: string) {
       "  content: prompt",
       "",
     ].join("\n");
-  writeFileSync(join(recipeDir, "defs", "main.yaml"), agentYaml("main", ["explorer"]));
-  writeFileSync(join(recipeDir, "defs", "explorer.yaml"), agentYaml("explorer", []));
+  writeFileSync(
+    join(recipeDir, "defs", "main.yaml"),
+    agentYaml("main", ["explorer"]),
+  );
+  writeFileSync(
+    join(recipeDir, "defs", "explorer.yaml"),
+    agentYaml("explorer", []),
+  );
   return recipeDir;
 }
 
@@ -95,7 +108,7 @@ function runnerPool() {
 async function startSession(
   createChildAgentRunner: (opts?: any) => any,
   root: string,
-  ctxOpts: { isIdle?: () => boolean } = {}
+  ctxOpts: { isIdle?: () => boolean } = {},
 ): Promise<{ pi: MockExtensionAPI; ctx: any; projectDir: string }> {
   const recipeDir = writeRecipe(root);
   const projectDir = join(root, "project");
@@ -104,8 +117,13 @@ async function startSession(
   pi.flagValues.set("recipe", recipeDir);
   pi.flagValues.set("agent", "main");
   const ctx = extensionContext(projectDir, ctxOpts);
-  createRecipesExtension({ createChildAgentRunner: createChildAgentRunner as any })(pi);
-  await pi.emitExtensionEvent({ type: "session_start", reason: "startup" } as any, ctx);
+  createRecipesExtension({
+    createChildAgentRunner: createChildAgentRunner as any,
+  })(pi);
+  await pi.emitExtensionEvent(
+    { type: "session_start", reason: "startup" } as any,
+    ctx,
+  );
   return { pi, ctx, projectDir };
 }
 
@@ -117,7 +135,7 @@ function agentTool(pi: MockExtensionAPI) {
 
 function completionMessages(pi: MockExtensionAPI) {
   return pi.sentMessages.filter(
-    (entry) => entry.message?.customType === "recipe-agent-completions"
+    (entry) => entry.message?.customType === "recipe-agent-completions",
   );
 }
 
@@ -125,7 +143,7 @@ function completionMessages(pi: MockExtensionAPI) {
 async function waitForPersistedStatus(
   projectDir: string,
   id: string,
-  status: string
+  status: string,
 ): Promise<void> {
   const path = join(projectDir, ".pi", "agents", id, "status.json");
   await vi.waitFor(() => {
@@ -139,14 +157,17 @@ describe("recipe child agent completion delivery", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-completions-"));
     try {
       const pool = runnerPool();
-      const { pi, ctx, projectDir } = await startSession(pool.createChildAgentRunner, root);
+      const { pi, ctx, projectDir } = await startSession(
+        pool.createChildAgentRunner,
+        root,
+      );
 
       const started = await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(started?.details?.agent?.status).toBe("running");
       const id = started?.details?.agent?.agent_run_id as string;
@@ -154,20 +175,23 @@ describe("recipe child agent completion delivery", () => {
       await waitForPersistedStatus(projectDir, id, "completed");
 
       // Settle boundary: flush without waiting out the batch window.
-      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
       await vi.waitFor(() => {
         expect(completionMessages(pi)).toHaveLength(1);
       });
       const { message, options } = completionMessages(pi)[0]!;
       expect(options).toEqual(
-        expect.objectContaining({ triggerTurn: true, deliverAs: "followUp" })
+        expect.objectContaining({ triggerTurn: true, deliverAs: "followUp" }),
       );
       expect(message.display).toBe(true);
       expect(message.content).toContain("<agent_run_completions>");
       expect(message.content).toContain(`run ${id} (explorer`);
       expect(message.content).toContain("background result");
       expect(message.details?.completions?.[0]).toEqual(
-        expect.objectContaining({ id, agent: "explorer", status: "completed" })
+        expect.objectContaining({ id, agent: "explorer", status: "completed" }),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -185,14 +209,14 @@ describe("recipe child agent completion delivery", () => {
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       pool.runs[0]?.fail(new Error("boom"));
       await vi.waitFor(() => {
         expect(completionMessages(pi)).toHaveLength(1);
       });
       expect(completionMessages(pi)[0]?.message.content).toContain(
-        "Agent failed: boom"
+        "Agent failed: boom",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -203,21 +227,24 @@ describe("recipe child agent completion delivery", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-completions-"));
     try {
       const pool = runnerPool();
-      const { pi, ctx, projectDir } = await startSession(pool.createChildAgentRunner, root);
+      const { pi, ctx, projectDir } = await startSession(
+        pool.createChildAgentRunner,
+        root,
+      );
 
       const first = await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "slice one" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const second = await agentTool(pi).execute(
         "call-2",
         { name: "explorer", prompt: "slice two" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       const firstId = first?.details?.agent?.agent_run_id as string;
       const secondId = second?.details?.agent?.agent_run_id as string;
@@ -231,17 +258,20 @@ describe("recipe child agent completion delivery", () => {
         { action: "status", id: firstId },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       await agentTool(pi).execute(
         "call-4",
         { action: "wait", id: secondId },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
 
-      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(completionMessages(pi)).toHaveLength(0);
     } finally {
@@ -254,16 +284,20 @@ describe("recipe child agent completion delivery", () => {
     try {
       const pool = runnerPool();
       let idle = false;
-      const { pi, ctx } = await startSession(pool.createChildAgentRunner, root, {
-        isIdle: () => idle,
-      });
+      const { pi, ctx } = await startSession(
+        pool.createChildAgentRunner,
+        root,
+        {
+          isIdle: () => idle,
+        },
+      );
 
       await agentTool(pi).execute(
         "call-1",
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       // Failures flush immediately, but the parent is mid-turn: hold.
       pool.runs[0]?.fail(new Error("boom"));
@@ -272,7 +306,10 @@ describe("recipe child agent completion delivery", () => {
 
       // Still mid-turn at the settle poke (pi tears the loop down after
       // agent_end): the retry timer must carry delivery to the idle point.
-      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(completionMessages(pi)).toHaveLength(0);
 
@@ -296,18 +333,21 @@ describe("recipe child agent completion delivery", () => {
         { name: "explorer", prompt: "look around" },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       await agentTool(pi).execute(
         "call-2",
         { action: "interrupt", id: started?.details?.agent?.agent_run_id },
         undefined,
         undefined,
-        ctx
+        ctx,
       );
       expect(pool.cancel).toHaveBeenCalled();
 
-      await pi.emitExtensionEvent({ type: "agent_end", messages: [] } as any, ctx);
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(completionMessages(pi)).toHaveLength(0);
     } finally {
@@ -346,10 +386,12 @@ describe("recipe child agent completion delivery", () => {
           },
         },
         { expanded: false },
-        undefined
+        undefined,
       ) as { render(width: number): string[] };
       const text = component.render(200).join("\n");
-      expect(text).toContain("✓ explorer recipe-agent-1 (scan) completed · 1m 5s");
+      expect(text).toContain(
+        "✓ explorer recipe-agent-1 (scan) completed · 1m 5s",
+      );
       expect(text).toContain("⎿  line one");
       expect(text).not.toContain("line two");
       expect(text).toContain("expand for full output");

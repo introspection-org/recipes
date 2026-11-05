@@ -5,9 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { loadRecipeConnectors } from "../src/connector-tools.js";
-import {
-  readPiPackageManifest,
-} from "../src/recipe/package.js";
+import { readPiPackageManifest } from "../src/recipe/package.js";
 
 describe("Recipe connector packages", () => {
   const cleanups: string[] = [];
@@ -26,7 +24,7 @@ describe("Recipe connector packages", () => {
       recipeDir,
       "node_modules",
       "@introspection-ai",
-      "recipe-channel-custom"
+      "recipe-channel-custom",
     );
     mkdirSync(channelDir, { recursive: true });
     writeFileSync(
@@ -36,9 +34,11 @@ describe("Recipe connector packages", () => {
         version: "0.1.0",
         dependencies: { [channelPackage]: "0.1.0" },
         pi: {
-          channels: [{ provider: "custom", commands: ["ping"], requireReply: true }],
+          channels: [
+            { provider: "custom", commands: ["ping"], requireReply: true },
+          ],
         },
-      })
+      }),
     );
     writeFileSync(
       join(channelDir, "package.json"),
@@ -47,7 +47,7 @@ describe("Recipe connector packages", () => {
         version: "0.1.0",
         type: "module",
         exports: { import: "./index.js" },
-      })
+      }),
     );
     writeFileSync(
       join(channelDir, "index.js"),
@@ -60,13 +60,13 @@ describe("Recipe connector packages", () => {
         '  createExtension(options) { if (!options.requireReply) throw new Error("requireReply not forwarded"); if (options.commands?.join() !== "ping" && options.commands?.length !== 0) throw new Error("commands not forwarded"); return () => {}; },',
         "};",
         "",
-      ].join("\n")
+      ].join("\n"),
     );
 
     const loaded = await loadRecipeConnectors(
       readPiPackageManifest(recipeDir),
       ["package_owned_ping"],
-      { recipeDir }
+      { recipeDir },
     );
 
     expect(loaded.loadout).toEqual({
@@ -78,7 +78,9 @@ describe("Recipe connector packages", () => {
     const manifest = readPiPackageManifest(recipeDir);
     expect(manifest.channels?.[0]?.commands).toEqual(["ping"]);
     manifest.channels![0]!.commands = [];
-    const empty = await loadRecipeConnectors(manifest, ["package_owned_ping"], { recipeDir });
+    const empty = await loadRecipeConnectors(manifest, ["package_owned_ping"], {
+      recipeDir,
+    });
     expect(empty.loadout.toolNames).toEqual([]);
     expect(empty.loadout.initialActiveToolNames).toEqual([]);
   });

@@ -1,4 +1,11 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +27,11 @@ export function write(path: string, body: string): void {
  * its version starts with the request (any specifier passes), else one elsewhere (or none, exit 2,
  * with FAKE_UV_FIND_NONE). Every call is appended to FAKE_UV_LOG.
  */
-export function fakeUv(): { bin: string; log: string; calls(): Array<{ args: string[]; project?: string }> } {
+export function fakeUv(): {
+  bin: string;
+  log: string;
+  calls(): Array<{ args: string[]; project?: string }>;
+} {
   const bin = scratch("fake-uv-");
   const log = join(bin, "calls.jsonl");
   const python = [
@@ -72,7 +83,7 @@ setTimeout(() => {
   fs.writeFileSync(marker, "");
   process.exit(0);
 }, delay);
-`
+`,
   );
   chmodSync(join(bin, "uv"), 0o755);
   return {
@@ -83,14 +94,23 @@ setTimeout(() => {
         ? readFileSync(log, "utf8")
             .trim()
             .split("\n")
-            .map((line) => JSON.parse(line) as { args: string[]; project?: string; python?: boolean })
+            .map(
+              (line) =>
+                JSON.parse(line) as {
+                  args: string[];
+                  project?: string;
+                  python?: boolean;
+                },
+            )
             .filter((call) => !call.python)
         : [],
   };
 }
 
 export function pythonProject(dir: string, lock = "version = 1\n"): void {
-  write(join(dir, "python", "pyproject.toml"), "[project]\nname = 'synthetic'\nversion = '0.1.0'\n");
+  write(
+    join(dir, "python", "pyproject.toml"),
+    "[project]\nname = 'synthetic'\nversion = '0.1.0'\n",
+  );
   write(join(dir, "python", "uv.lock"), lock);
 }
-

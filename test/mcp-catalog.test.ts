@@ -21,10 +21,12 @@ const directories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    servers.splice(0).map(
-      (server) =>
-        new Promise<void>((resolve) => server.close(() => resolve()))
-    )
+    servers
+      .splice(0)
+      .map(
+        (server) =>
+          new Promise<void>((resolve) => server.close(() => resolve())),
+      ),
   );
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
@@ -36,8 +38,8 @@ describe("MCP catalog preload", () => {
     expect(() =>
       serializeMcpDaemonEnvelope(
         { id: "large", result: { text: "x".repeat(1_000) } },
-        128
-      )
+        128,
+      ),
     ).toThrow("exceeded the frame limit");
   });
 
@@ -53,12 +55,14 @@ describe("MCP catalog preload", () => {
       socket.once("data", (chunk) => {
         const request = JSON.parse(String(chunk).split("\n")[0]!);
         if (request.token !== token) {
-          socket.end(`${JSON.stringify({ id: request.id, error: "unauthorized" })}\n`);
+          socket.end(
+            `${JSON.stringify({ id: request.id, error: "unauthorized" })}\n`,
+          );
           return;
         }
         if (request.type === "ping") {
           socket.end(
-            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`
+            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`,
           );
           return;
         }
@@ -70,10 +74,12 @@ describe("MCP catalog preload", () => {
               {
                 id: "crm",
                 name: "CRM",
-                tools: [{ name: "search_contacts", input_schema: { type: "object" } }],
+                tools: [
+                  { name: "search_contacts", input_schema: { type: "object" } },
+                ],
               },
             ],
-          })}\n`
+          })}\n`,
         );
       });
     });
@@ -113,7 +119,7 @@ describe("MCP catalog preload", () => {
         const request = JSON.parse(String(chunk).split("\n")[0]!);
         if (request.type === "ping") {
           socket.end(
-            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`
+            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`,
           );
           return;
         }
@@ -127,12 +133,17 @@ describe("MCP catalog preload", () => {
                 id: "crm",
                 name: "CRM",
                 tools: recovered
-                  ? [{ name: "search_contacts", input_schema: { type: "object" } }]
+                  ? [
+                      {
+                        name: "search_contacts",
+                        input_schema: { type: "object" },
+                      },
+                    ]
                   : [],
                 ...(recovered ? {} : { error: "connection refused" }),
               },
             ],
-          })}\n`
+          })}\n`,
         );
       });
     });
@@ -163,7 +174,9 @@ describe("MCP catalog preload", () => {
     });
     expect(catalogAttempts).toBe(2);
     expect(later[0]?.error).toBeUndefined();
-    expect(later[0]?.tools.map((tool) => tool.name)).toEqual(["search_contacts"]);
+    expect(later[0]?.tools.map((tool) => tool.name)).toEqual([
+      "search_contacts",
+    ]);
 
     await preloadMcpCatalogs({ env, timeoutMs: 100, allowPartial: true });
     expect(catalogAttempts).toBe(2);
@@ -188,7 +201,7 @@ describe("MCP catalog preload", () => {
         const request = JSON.parse(String(chunk).split("\n")[0]!);
         if (request.type === "ping") {
           socket.end(
-            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`
+            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`,
           );
           return;
         }
@@ -199,14 +212,12 @@ describe("MCP catalog preload", () => {
         }
         if (request.type === "cancel") {
           cancelledRequestId = request.requestId;
-          socket.end(
-            `${JSON.stringify({ id: request.id, exitCode: 130 })}\n`
-          );
+          socket.end(`${JSON.stringify({ id: request.id, exitCode: 130 })}\n`);
           callSocket?.end(
             `${JSON.stringify({
               id: request.requestId,
               error: "cancelled; remote outcome is unknown",
-            })}\n`
+            })}\n`,
           );
         }
       });
@@ -222,10 +233,15 @@ describe("MCP catalog preload", () => {
       [MCP_DAEMON_FINGERPRINT_ENV]: fingerprint,
     };
     const controller = new AbortController();
-    const call = callMcpDaemonTool("contacts", "update_contact", {}, {
-      env,
-      signal: controller.signal,
-    });
+    const call = callMcpDaemonTool(
+      "contacts",
+      "update_contact",
+      {},
+      {
+        env,
+        signal: controller.signal,
+      },
+    );
     await sawCall;
     controller.abort();
 
@@ -241,7 +257,9 @@ describe("MCP catalog preload", () => {
   });
 
   it("marks a lost post-dispatch daemon response as outcome unknown", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "recipes-call-lost-response-"));
+    const directory = mkdtempSync(
+      join(tmpdir(), "recipes-call-lost-response-"),
+    );
     directories.push(directory);
     const socketPath = join(directory, "mcp.sock");
     const token = "test-token";
@@ -252,7 +270,7 @@ describe("MCP catalog preload", () => {
         const request = JSON.parse(String(chunk).split("\n")[0]!);
         if (request.type === "ping") {
           socket.end(
-            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`
+            `${JSON.stringify({ id: request.id, ready: true, fingerprint })}\n`,
           );
           return;
         }
@@ -271,7 +289,7 @@ describe("MCP catalog preload", () => {
     };
 
     await expect(
-      callMcpDaemonTool("contacts", "update_contact", {}, { env })
+      callMcpDaemonTool("contacts", "update_contact", {}, { env }),
     ).rejects.toThrow("remote outcome is unknown; do not retry automatically");
   });
 });

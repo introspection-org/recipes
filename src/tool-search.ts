@@ -20,7 +20,7 @@ export type RecipeToolActivation = Pick<
  */
 export function createRecipeToolSearchTools(
   tools: RecipeToolActivation,
-  includeLegacyMcpAlias: boolean
+  includeLegacyMcpAlias: boolean,
 ): ToolDefinition[] {
   let search: ToolDefinition | undefined;
   createToolSearchExtension()({
@@ -46,7 +46,7 @@ export function createRecipeToolSearchTools(
 /** Register the named tools with `deferred` exposure, so tool search can load them. */
 export function deferTools(
   factory: ExtensionFactory,
-  deferredToolNames: readonly string[]
+  deferredToolNames: readonly string[],
 ): ExtensionFactory {
   if (deferredToolNames.length === 0) return factory;
   const deferred = new Set(deferredToolNames);
@@ -63,9 +63,9 @@ export function deferTools(
               target,
               deferred.has(definition.name)
                 ? { ...definition, exposure: "deferred" }
-                : definition
+                : definition,
             );
         },
-      })
+      }),
     );
 }

@@ -34,7 +34,7 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, OverlayHandle } from "@earendil-works/pi-tui";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 
 import {
   ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS,
@@ -57,7 +57,7 @@ import {
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 /** The viewer's commands, as subcommands of Recipes' own `/recipe` so they
  * never clash with another extension's or the user's commands. */
-export const VIEW_ARTIFACT_COMMAND = "recipe view";
+const VIEW_ARTIFACT_COMMAND = "recipe view";
 
 /** A `/recipe` subcommand an optional built-in adds: `/recipe <name> <args>`. */
 export type RecipeSubcommand = (
@@ -205,10 +205,7 @@ export function markdownFilesFor(
 }
 
 /** File extensions the panel renders. */
-export const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [
-  ".md",
-  ".markdown",
-];
+const ARTIFACT_MARKDOWN_EXTENSIONS: readonly string[] = [".md", ".markdown"];
 
 const BUILTIN_OWNER = "<builtin:show_artifact>";
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -231,10 +228,8 @@ const parameters = Type.Object(
   { additionalProperties: false },
 );
 
-export type ShowArtifactToolParams = Static<typeof parameters>;
-
 /** Structured `details` of a `show_artifact` result. */
-export interface ShowArtifactDetails {
+interface ShowArtifactDetails {
   /** The file, relative to the working directory. */
   path: string;
   /** Whether the panel is showing it (false outside the interactive terminal). */
@@ -270,7 +265,7 @@ function isInside(root: string, target: string): boolean {
 }
 
 /** Whether a path names a file the panel can render. */
-export function isMarkdownPath(path: string): boolean {
+function isMarkdownPath(path: string): boolean {
   return ARTIFACT_MARKDOWN_EXTENSIONS.includes(extname(path).toLowerCase());
 }
 
@@ -319,7 +314,7 @@ export function resolveArtifactPath(
 }
 
 /** The default `o` action: the platform's "open with default app" command. */
-export function openWithSystemApp(absolutePath: string): Promise<void> {
+function openWithSystemApp(absolutePath: string): Promise<void> {
   const [command, args] =
     process.platform === "darwin"
       ? ["open", [absolutePath]]
@@ -424,7 +419,7 @@ interface OpenPanel {
  * One session's viewer: at most one panel, the file it shows, and the last
  * markdown file the agent showed or wrote (for `/recipe view` with no argument).
  */
-export class ArtifactViewer {
+class ArtifactViewer {
   private open: OpenPanel | undefined;
   private last: string | undefined;
   private readonly openExternal: (absolutePath: string) => Promise<void> | void;
@@ -628,7 +623,7 @@ function errorText(error: unknown): string {
 }
 
 /** Build the tool over a session's viewer. */
-export function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
+function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
   const tool: ToolDefinition<typeof parameters, ShowArtifactDetails> = {
     name: SHOW_ARTIFACT_TOOL_NAME,
     label: "Show artifact",

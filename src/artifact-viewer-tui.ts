@@ -9,7 +9,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   Key,
-  type KeyId,
   Markdown,
   matchesKey,
   truncateToWidth,

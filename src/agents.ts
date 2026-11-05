@@ -12,11 +12,7 @@ import {
 
 /** Portable lifecycle contract for Recipe agent runs. */
 export type AgentRunStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "interrupted"
-  | "closed";
+  "running" | "completed" | "failed" | "interrupted" | "closed";
 
 export interface AgentNestedToolSummary {
   toolName: string;
@@ -65,13 +61,13 @@ export interface AgentRunEvent {
 
 /** Host observer for child run events. Observers never own run lifecycle. */
 export type AgentRunEventObserver = (
-  event: AgentRunEvent
+  event: AgentRunEvent,
 ) => void | Promise<void>;
 
 /** Notify a host observer without allowing it to interrupt the child run. */
 export function notifyAgentRunEvent(
   observer: AgentRunEventObserver | undefined,
-  event: AgentRunEvent
+  event: AgentRunEvent,
 ): void {
   if (!observer) return;
   try {
@@ -108,19 +104,19 @@ const AgentToolParams = Type.Object({
       Type.Literal("message"),
       Type.Literal("interrupt"),
       Type.Literal("close"),
-    ])
+    ]),
   ),
   name: Type.Optional(Type.String()),
   prompt: Type.Optional(Type.String()),
   label: Type.Optional(Type.String()),
   id: Type.Optional(
-    Type.String({ description: "The run id `start` returned." })
+    Type.String({ description: "The run id `start` returned." }),
   ),
   message: Type.Optional(Type.String()),
   wait: Type.Optional(
     Type.Boolean({
       description: "With start: return the child's result in this call.",
-    })
+    }),
   ),
 });
 
@@ -145,8 +141,15 @@ function statusBlock(run: AgentRunSummary): string {
 
 function subtask(run: AgentRunSummary) {
   const nestedTools = [...(run.nested_tools ?? [])];
-  if (run.current_tool && !nestedTools.some((tool) => tool.toolName === run.current_tool)) {
-    nestedTools.push({ toolName: run.current_tool, verb: run.current_tool, detail: "" });
+  if (
+    run.current_tool &&
+    !nestedTools.some((tool) => tool.toolName === run.current_tool)
+  ) {
+    nestedTools.push({
+      toolName: run.current_tool,
+      verb: run.current_tool,
+      detail: "",
+    });
   }
   return {
     agentName: run.invocation_name,
@@ -157,7 +160,8 @@ function subtask(run: AgentRunSummary) {
       ? [{ type: "assistant" as const, text: run.output_preview }]
       : [],
     status: terminal(run) ? ("completed" as const) : ("running" as const),
-    finishReason: run.status === "completed" ? "stop" : run.error ?? run.status,
+    finishReason:
+      run.status === "completed" ? "stop" : (run.error ?? run.status),
     startedAt: run.started_at,
     completedAt: run.completed_at,
   };
@@ -181,7 +185,7 @@ function errorResult(text: string, controller: AgentRunController) {
 function unknownRun(id: string, controller: AgentRunController) {
   return errorResult(
     `Unknown agent run ${id}: use the run id \`start\` returned.`,
-    controller
+    controller,
   );
 }
 
@@ -190,7 +194,7 @@ const UNKNOWN_RUN = /unknown agent run|agent run not found/i;
 export function createAgentTool(
   controller: AgentRunController,
   agents: ReadonlyMap<string, unknown>,
-  opts: { acknowledgeCompletions?(ids: readonly string[]): void } = {}
+  opts: { acknowledgeCompletions?(ids: readonly string[]): void } = {},
 ): ToolDefinition {
   const closedRunIds = new Set<string>();
   const acknowledge = (run: AgentRunSummary) => {
@@ -213,12 +217,15 @@ export function createAgentTool(
       try {
         if (!params.action || params.action === "start") {
           if (!params.name || !params.prompt) {
-            return errorResult("Starting an agent requires name and prompt.", controller);
+            return errorResult(
+              "Starting an agent requires name and prompt.",
+              controller,
+            );
           }
           if (!agents.has(params.name)) {
             return errorResult(
               `Unknown agent "${params.name}". Available: ${[...agents.keys()].join(", ")}`,
-              controller
+              controller,
             );
           }
           const run = await controller.start({
@@ -251,9 +258,13 @@ export function createAgentTool(
             details: { agents: runs, subtasks: runs.map(subtask) },
           };
         }
-        if (!params.id) return errorResult(`${params.action} requires id`, controller);
+        if (!params.id)
+          return errorResult(`${params.action} requires id`, controller);
         if (closedRunIds.has(params.id)) {
-          return errorResult(`Agent run already closed: ${params.id}`, controller);
+          return errorResult(
+            `Agent run already closed: ${params.id}`,
+            controller,
+          );
         }
 
         if (params.action === "status") {
@@ -266,7 +277,8 @@ export function createAgentTool(
           return await waitFor(params.id, signal);
         }
         if (params.action === "message") {
-          if (!params.message) return errorResult("message requires message", controller);
+          if (!params.message)
+            return errorResult("message requires message", controller);
           const run = await controller.message(params.id, params.message);
           return result(run, `Sent message to ${runLine(run)}`);
         }
@@ -275,7 +287,7 @@ export function createAgentTool(
           if (run.status !== "interrupted") {
             return result(
               run,
-              `No interrupt sent: ${runLine(run)} is already ${run.status}.`
+              `No interrupt sent: ${runLine(run)} is already ${run.status}.`,
             );
           }
           return result(run, `Interrupted ${runLine(run)}`);
@@ -286,12 +298,16 @@ export function createAgentTool(
         return result(run, `Closed ${runLine(run)}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (params.id && UNKNOWN_RUN.test(message) && !controller.get(params.id)) {
+        if (
+          params.id &&
+          UNKNOWN_RUN.test(message) &&
+          !controller.get(params.id)
+        ) {
           return unknownRun(params.id, controller);
         }
         return errorResult(
           `Agent ${params.action ?? "start"} failed: ${message}`,
-          controller
+          controller,
         );
       }
     },
@@ -303,7 +319,7 @@ export function createAgentTool(
    */
   async function waitFor(
     target: string | AgentRunSummary,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
   ) {
     const id = typeof target === "string" ? target : target.agent_run_id;
     let run: AgentRunSummary;
@@ -318,7 +334,7 @@ export function createAgentTool(
     if (!terminal(run)) {
       return result(
         run,
-        `Stopped waiting: ${runLine(run)} keeps working; its result reaches you when it finishes.`
+        `Stopped waiting: ${runLine(run)} keeps working; its result reaches you when it finishes.`,
       );
     }
     acknowledge(run);
@@ -348,7 +364,7 @@ export interface DelegatedRuns {
   run(
     session: { agentRuns?: AgentRunController },
     prompt: string,
-    send: (input: string) => Promise<boolean | void>
+    send: (input: string) => Promise<boolean | void>,
   ): Promise<void>;
   /** End the loop and interrupt every run the session started. */
   interrupt(session: { agentRuns?: AgentRunController }): Promise<void>;
@@ -368,7 +384,7 @@ export function createDelegatedRuns(): DelegatedRuns {
     await Promise.all(
       own()
         .filter((run) => run.status === "running")
-        .map((run) => runs!.interrupt(run.agent_run_id).catch(() => {}))
+        .map((run) => runs!.interrupt(run.agent_run_id).catch(() => {})),
     );
   };
   return {
@@ -394,8 +410,8 @@ export function createDelegatedRuns(): DelegatedRuns {
           while (running.length > 0) {
             await Promise.all(
               running.map((run) =>
-                runs!.wait(run.agent_run_id).catch(() => undefined)
-              )
+                runs!.wait(run.agent_run_id).catch(() => undefined),
+              ),
             );
             if (stopped) return;
             running = own().filter((run) => run.status === "running");
@@ -403,7 +419,7 @@ export function createDelegatedRuns(): DelegatedRuns {
           const unseen = own().filter(
             (run) =>
               (run.status === "completed" || run.status === "failed") &&
-              !seen.has(completion(run))
+              !seen.has(completion(run)),
           );
           for (const run of unseen) seen.add(completion(run));
           if (unseen.length > 0)

@@ -1,5 +1,10 @@
 export type Company = { id: string; name: string };
-export type Deal = { id: string; name: string; stage: string; company_id: string };
+export type Deal = {
+  id: string;
+  name: string;
+  stage: string;
+  company_id: string;
+};
 
 export type State = {
   companies: Company[];

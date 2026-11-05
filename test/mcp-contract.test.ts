@@ -30,7 +30,7 @@ describe("compact MCP contracts", () => {
 
   it("renders unions and constraints without JSON Schema ceremony", () => {
     expect(compactSchemaType(inputSchema.properties.group)).toBe(
-      '"off" | {field: string [minLength=1], limit?: integer [1..250]}'
+      '"off" | {field: string [minLength=1], limit?: integer [1..250]}',
     );
     const outputSchema = {
       type: "object",
@@ -38,11 +38,11 @@ describe("compact MCP contracts", () => {
       required: ["found"],
     };
     const contract = renderToolContract("nextplay", {
-        name: "search_profiles",
-        description: "Search profiles.",
-        inputSchema,
-        outputSchema,
-      });
+      name: "search_profiles",
+      description: "Search profiles.",
+      inputSchema,
+      outputSchema,
+    });
     expect(contract).toBe(
       [
         "nextplay.search_profiles",
@@ -60,35 +60,42 @@ describe("compact MCP contracts", () => {
         "  mcp call nextplay.search_profiles q='<q>'",
         `  structured: mcp call nextplay.search_profiles --json '{"q":"<q>","group":{"field":"<field>"}}'`,
         "",
-      ].join("\n")
+      ].join("\n"),
     );
     expect(contract.length).toBeLessThan(
-      JSON.stringify(inputSchema, null, 2).length + JSON.stringify(outputSchema, null, 2).length
+      JSON.stringify(inputSchema, null, 2).length +
+        JSON.stringify(outputSchema, null, 2).length,
     );
   });
 
   it("keeps signatures short by default", () => {
     const properties = Object.fromEntries(
-      Array.from({ length: 8 }, (_, index) => [`field${index}`, { type: "string" }])
+      Array.from({ length: 8 }, (_, index) => [
+        `field${index}`,
+        { type: "string" },
+      ]),
     );
     expect(
       renderToolSignature("nextplay", {
         name: "search",
         inputSchema: { type: "object", properties },
-      })
+      }),
     ).toContain("… +3 optional");
     expect(
       renderToolSignature(
         "nextplay",
         { name: "search", inputSchema: { type: "object", properties } },
-        { allParameters: true }
-      )
+        { allParameters: true },
+      ),
     ).not.toContain("...");
   });
 
   it("always keeps required parameters visible regardless of property order", () => {
     const properties = Object.fromEntries(
-      Array.from({ length: 8 }, (_, index) => [`field${index}`, { type: "string" }])
+      Array.from({ length: 8 }, (_, index) => [
+        `field${index}`,
+        { type: "string" },
+      ]),
     );
     const signature = renderToolSignature("nextplay", {
       name: "ordered",
@@ -119,7 +126,7 @@ describe("compact MCP contracts", () => {
       },
     });
     expect(contract).toContain(
-      `mcp call server.constrained --json '{"limit":0,"tags":["<value>","<value>"]}'`
+      `mcp call server.constrained --json '{"limit":0,"tags":["<value>","<value>"]}'`,
     );
   });
 
@@ -136,7 +143,7 @@ describe("compact MCP contracts", () => {
     });
     expect(contract).toContain("items: string[] [minItems=10000]");
     expect(contract).toContain(
-      `mcp call server.bulk --json '{"items":["<value>","<value>","<value>"]}'`
+      `mcp call server.bulk --json '{"items":["<value>","<value>","<value>"]}'`,
     );
     expect(contract.length).toBeLessThan(1_000);
   });
@@ -157,7 +164,7 @@ describe("compact MCP contracts", () => {
       },
     });
     expect(contract).toContain(
-      `mcp call server.structured --json '{"request":{"query":"<query>"}}'`
+      `mcp call server.structured --json '{"request":{"query":"<query>"}}'`,
     );
   });
 
@@ -197,7 +204,7 @@ describe("compact MCP contracts", () => {
             },
           ],
         },
-      })
+      }),
     ).toBe("server.composed(q: string, limit?: integer [1..])");
   });
 
@@ -226,7 +233,7 @@ describe("compact MCP contracts", () => {
       },
     });
     expect(contract).toContain(
-      `mcp call 'unsafe server.lookup; touch /tmp/nope' --json '{"q; touch /tmp/nope":"<q; touch /tmp/nope>"}'`
+      `mcp call 'unsafe server.lookup; touch /tmp/nope' --json '{"q; touch /tmp/nope":"<q; touch /tmp/nope>"}'`,
     );
     expect(contract).not.toContain("mcp call unsafe server.lookup; touch");
     expect(contract).not.toContain(" q; touch /tmp/nope=");
@@ -243,9 +250,13 @@ describe("compact MCP contracts", () => {
       },
     };
     const compact = renderToolContract("server", tool);
-    const verbose = renderToolContract("server", tool, { verboseDescriptions: true });
+    const verbose = renderToolContract("server", tool, {
+      verboseDescriptions: true,
+    });
     expect(compact).toContain("…");
-    expect(compact).toContain("Descriptions shortened; use --verbose for full text.");
+    expect(compact).toContain(
+      "Descriptions shortened; use --verbose for full text.",
+    );
     expect(compact.length).toBeLessThan(verbose.length);
     expect(verbose).not.toContain("Descriptions shortened");
     expect(verbose).toContain(description.trim().replace(/\s+/g, " "));
