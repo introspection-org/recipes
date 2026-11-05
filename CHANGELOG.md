@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.0](https://github.com/introspection-org/recipes/compare/v0.46.1...v0.47.0) (2026-11-05)
+
+
+### Features
+
+* show_artifact shows any text file, at a git ref or as a diff, and a long review's tabs slide ([#440](https://github.com/introspection-org/recipes/issues/440)) ([d7138ec](https://github.com/introspection-org/recipes/commit/d7138ec95c9b464df8c96a6202d7c412b8c4c321))
+
 ## [0.46.1](https://github.com/introspection-org/recipes/compare/v0.46.0...v0.46.1) (2026-11-05)
 
 
