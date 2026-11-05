@@ -1,3 +1,4 @@
+import { registerSkillProgress, skillFolders, type RecipeSkills } from "./skill-progress.js";
 import {
   RECIPE_SESSION_ENTRY_TYPE,
   recipeSessionChanged,
@@ -1586,6 +1587,22 @@ export function createRecipesExtension(
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);
+    // The footer names the agent's step: the skill it last read.
+    const skillsByRecipe = new WeakMap<object, RecipeSkills>();
+    const skillProgress = registerSkillProgress(pi, (ctx) => {
+      const resolved = safeLoadState(pi, ctx.cwd)?.resolved;
+      if (!resolved) return undefined;
+      let skills = skillsByRecipe.get(resolved);
+      if (!skills) {
+        skills = {
+          names: resolved.definition.skills,
+          folders: skillFolders(resolved.skillPaths, resolved.recipeDir),
+        };
+        skillsByRecipe.set(resolved, skills);
+      }
+      return skills;
+    });
+
     pi.on("session_start", async (event, ctx) => {
       if (!ensureManagedFetch()) {
         const warning = managedFetchMissingWarning(env);
@@ -1595,6 +1612,7 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
+      skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
       for (const [name, definition] of launchState.resolved.subagents) {
