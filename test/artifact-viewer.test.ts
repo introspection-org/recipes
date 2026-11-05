@@ -567,6 +567,26 @@ describe("/recipe view and /recipe close", () => {
     );
   });
 
+  it("takes --diff and --ref, and reports a ref with no such version", async () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, stdio: "pipe" });
+    git("init", "-q");
+    git("add", "notes.txt");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    writeFileSync(join(workspace, "notes.txt"), "changed\n");
+    const { subcommand, ctx, overlays, notices } = await setup({
+      watchFile: fakeWatcher().watchFile,
+    });
+    await subcommand("view")("notes.txt --diff HEAD", ctx as never);
+    expect(overlays).toHaveLength(1);
+    await subcommand("view")("notes.txt --ref=nope", ctx as never);
+    expect(notices.at(-1)).toEqual({
+      message:
+        "notes.txt has no version at nope in the working directory's git repository.",
+      level: "warning",
+    });
+  });
+
   it("reports a bad path as a notice", async () => {
     const { subcommand, ctx, overlays, notices } = await setup();
     await subcommand("view")("photo.png", ctx as never);
@@ -585,7 +605,7 @@ describe("/recipe view and /recipe close", () => {
       subcommand("view")(args, context as never);
     await view("", ctx);
     expect(overlays).toHaveLength(0);
-    expect(notices[0]!.message).toContain("Usage: /recipe view <file.md>");
+    expect(notices[0]!.message).toContain("Usage: /recipe view <file>");
 
     const toolResult = (toolName: string, path: string, isError = false) => {
       for (const handler of events.get("tool_result") ?? []) {

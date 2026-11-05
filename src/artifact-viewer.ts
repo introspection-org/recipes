@@ -764,6 +764,58 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * What to show of `target`: at `ref` or as it is now, diffed against `diff`
+ * (`previous` or a git ref) when given. Records what is shown, for the next
+ * `previous`; `note` says when there was nothing earlier to compare against.
+ */
+function artifactSourceFor(
+  viewer: ArtifactViewer,
+  target: ResolvedArtifactPath,
+  ref: string | undefined,
+  diff: string | undefined,
+): { source: ArtifactSource; current: string; note: string } {
+  const source: ArtifactSource = { target, ...(ref ? { ref } : {}) };
+  const current = readSource(source);
+  const against = diff?.trim();
+  let note = "";
+  if (against === DIFF_PREVIOUS) {
+    const previous = viewer.shownVersion(target.relativePath);
+    if (previous === undefined)
+      note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
+    else source.base = { label: "the version shown before", text: previous };
+  } else if (against) {
+    source.base = { label: against, text: gitVersion(target, against) };
+  }
+  viewer.recordShown(target.relativePath, current);
+  return { source, current, note };
+}
+
+const COMMAND_OPTION = (name: string) =>
+  new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(\\S+)`);
+
+/** `/recipe view`'s arguments: a path, `--diff <ref|previous>` and `--ref <ref>`. */
+function commandArgs(args: string): {
+  path: string;
+  ref?: string;
+  diff?: string;
+} {
+  let rest = args;
+  const option = (name: string) => {
+    const match = COMMAND_OPTION(name).exec(rest);
+    if (!match) return undefined;
+    rest = rest.replace(match[0], " ");
+    return match[1];
+  };
+  const diff = option("diff");
+  const ref = option("ref");
+  return {
+    path: commandPath(rest),
+    ...(ref ? { ref } : {}),
+    ...(diff ? { diff } : {}),
+  };
+}
+
 /** Build the tool over a session's viewer. */
 function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
   const tool: ToolDefinition<typeof parameters, ShowArtifactDetails> = {
@@ -781,20 +833,12 @@ function createShowArtifactTool(viewer: ArtifactViewer): ToolDefinition {
         anyText: true,
       });
       const ref = params.ref?.trim() || undefined;
-      const source: ArtifactSource = { target, ...(ref ? { ref } : {}) };
-      const current = readSource(source);
-      const against = params.diff?.trim();
-      let note = "";
-      if (against === DIFF_PREVIOUS) {
-        const previous = viewer.shownVersion(target.relativePath);
-        if (previous === undefined)
-          note = ` Nothing of ${target.relativePath} was shown earlier in this session, so the whole file is shown.`;
-        else
-          source.base = { label: "the version shown before", text: previous };
-      } else if (against) {
-        source.base = { label: against, text: gitVersion(target, against) };
-      }
-      viewer.recordShown(target.relativePath, current);
+      const { source, current, note } = artifactSourceFor(
+        viewer,
+        target,
+        ref,
+        params.diff,
+      );
       const document = readDocument(source);
       const content = capped(current);
       const details: ShowArtifactDetails = {
@@ -910,26 +954,32 @@ export function artifactViewerExtension(
           );
           return;
         }
-        const path = commandPath(args) || viewer.lastPath;
+        const parsed = commandArgs(args);
+        const path = parsed.path || viewer.lastPath;
         if (!path) {
           ctx.ui.notify(
-            `Usage: /${VIEW_ARTIFACT_COMMAND} <file.md>. With no file, it shows the last markdown file the agent showed or wrote.`,
+            `Usage: /${VIEW_ARTIFACT_COMMAND} <file> [--diff <ref|previous>] [--ref <ref>]. With no file, it shows the last file the agent showed or wrote.`,
             "info",
           );
           return;
         }
         try {
-          viewer.show(
-            ctx,
-            { target: resolveArtifactPath(ctx.cwd, path, { anyText: true }) },
-            true,
+          const target = resolveArtifactPath(ctx.cwd, path, { anyText: true });
+          const { source, note } = artifactSourceFor(
+            viewer,
+            target,
+            parsed.ref,
+            parsed.diff,
           );
+          viewer.show(ctx, source, true);
+          if (note) ctx.ui.notify(note.trim(), "info");
         } catch (error) {
           ctx.ui.notify(errorText(error), "warning");
         }
       },
       {
-        description: "Show a markdown file in the panel on the right",
+        description:
+          "Show a file in the panel on the right (--diff <ref|previous> for what changed, --ref <ref> for a commit's version)",
         complete: (argument, cwd) => markdownFilesFor(cwd, argument),
       },
     );
