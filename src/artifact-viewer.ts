@@ -231,7 +231,12 @@ const DEFAULT_DEBOUNCE_MS = 100;
 const description = [
   "Show a file to the user beside the conversation: markdown rendered, code and other text highlighted, HTML as source (a browser host renders it).",
   "Call this when you want the user to read a file you wrote (a brief, test cases, a report, code), especially before asking them to approve it, instead of only printing its path.",
-  "`path` is relative to the working directory and must be a text file. `ref` shows the file as of a git commit in the working directory's repository. `diff` shows what changed instead of the whole file: `previous` against the version you last showed in this session, or a git ref (e.g. `HEAD`) to compare against that commit.",
+  "`path` is relative to the working directory and must be a text file. `ref` and `diff` work like git, in the working directory's repository:",
+  "- `{ path }`: the file as it is now.",
+  '- `{ path, ref: "HEAD~1" }`: the file at a commit, like `git show HEAD~1:path`.',
+  '- `{ path, diff: "HEAD" }`: what changed since a commit, like `git diff HEAD -- path`.',
+  '- `{ path, ref: "HEAD", diff: "main" }`: what changed between two commits, like `git diff main HEAD -- path`.',
+  '- `{ path, diff: "previous" }`: what changed since you last showed it in this session; use it after revising a file the user is reading.',
   "The panel re-renders when the file changes, so you don't need to call this again after editing a file it already shows.",
 ].join("\n");
 
