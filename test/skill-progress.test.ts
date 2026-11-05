@@ -10,13 +10,14 @@ import {
   stepLine,
 } from "../src/skill-progress.js";
 
-const skills = [
+const names = [
   "build-brainstorm",
   "build-draft",
   "build-review",
   "eval-case",
   "eval-run",
 ];
+const skills = { names };
 
 describe("where the agent is", () => {
   it("finds the agent's skill a path or command reads", () => {
@@ -33,13 +34,13 @@ describe("where the agent is", () => {
   });
 
   it("shows the phase's steps in order, done ticked, the current one marked, the clock at the end", () => {
-    expect(stepLine("build-brainstorm", skills, "00:17")).toBe(
+    expect(stepLine("build-brainstorm", names, "00:17")).toBe(
       "build ▸ brainstorm ○ draft ○ review · 00:17",
     );
-    expect(stepLine("build-draft", skills, "12:04")).toBe(
+    expect(stepLine("build-draft", names, "12:04")).toBe(
       "build ✓ brainstorm ▸ draft ○ review · 12:04",
     );
-    expect(stepLine("build-review", skills, "03:10")).toBe(
+    expect(stepLine("build-review", names, "03:10")).toBe(
       "build ✓ brainstorm ✓ draft ▸ review · 03:10",
     );
     expect(stepLine("research", ["research"], "00:05")).toBe(
@@ -47,8 +48,18 @@ describe("where the agent is", () => {
     );
   });
 
+  it("finds a skill whose name isn't its folder's", () => {
+    const renamed = {
+      names: ["build-brainstorm", "build-draft"],
+      folders: new Map([["draft-folder", "build-draft"]]),
+    };
+    expect(skillRead("/x/skills/draft-folder/SKILL.md", renamed)).toBe(
+      "build-draft",
+    );
+  });
+
   it("steps only through the phase the agent lists first, not skills it consults", () => {
-    expect(stepSkills(skills)).toEqual([
+    expect(stepSkills(names)).toEqual([
       "build-brainstorm",
       "build-draft",
       "build-review",
@@ -97,6 +108,31 @@ describe("where the agent is", () => {
         skills,
       ),
     ).toBe("build-draft");
+    expect(
+      lastSkillRead(
+        [
+          call({ path: "/x/skills/build-brainstorm/SKILL.md" }),
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "t2",
+                  arguments: { path: "/wrong/build-draft/SKILL.md" },
+                },
+              ],
+            },
+          },
+          {
+            type: "message",
+            message: { role: "toolResult", toolCallId: "t2", isError: true },
+          },
+        ],
+        skills,
+      ),
+    ).toBe("build-brainstorm");
   });
 
   it("shows the step and the agent's working time, paused while the person is in the loop", () => {
@@ -146,12 +182,14 @@ describe("where the agent is", () => {
       },
     };
     progress.resume(ctx as any);
-    clock = 60_000;
+    clock = 5 * 60_000; // waiting for the first prompt doesn't count
+    handlers.get("agent_start")!({}, ctx);
+    clock += 60_000;
     handlers.get("tool_execution_start")!(
       { toolName: "review_artifacts", args: {} },
       ctx,
     );
-    clock = 10 * 60_000; // nine minutes with the owner don't count
+    clock = 15 * 60_000; // nine minutes with the owner don't count
     tick!();
     expect(statuses.at(-1)).toBe(
       "⧈ Introspection build ⏸ brainstorm ○ draft ○ review · 01:00",
@@ -164,7 +202,7 @@ describe("where the agent is", () => {
       { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
       ctx,
     );
-    clock = 10 * 60_000 + 30_000; // the clock carries on across steps
+    clock = 15 * 60_000 + 30_000; // the clock carries on across steps
     tick!();
     expect(statuses.at(-1)).toBe(
       "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 01:30",
@@ -181,6 +219,12 @@ describe("where the agent is", () => {
     expect(statuses.at(-1)).toBe(
       "⧈ Introspection build ✓ brainstorm ▸ draft ○ review · 01:35",
     );
+    // Another session in the same process keeps nothing of this one.
+    const fresh = { ...ctx, sessionManager: { getEntries: () => [] } };
+    progress.resume(fresh as any);
+    expect(statuses.at(-1)).toBeUndefined();
+    handlers.get("tool_result")!({ toolName: "bash", input: {} }, fresh);
+    expect(statuses.at(-1)).toBeUndefined();
   });
 
   it("does nothing outside a Recipe session", () => {

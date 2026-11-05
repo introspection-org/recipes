@@ -1,4 +1,4 @@
-import { registerSkillProgress } from "./skill-progress.js";
+import { registerSkillProgress, skillFolders, type RecipeSkills } from "./skill-progress.js";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -1569,8 +1569,21 @@ export function createRecipesExtension(
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);
-    // The working line and terminal title name the agent's step: the skill it last read.
-    const skillProgress = registerSkillProgress(pi, (ctx) => safeLoadState(pi, ctx.cwd)?.resolved.definition.skills);
+    // The footer names the agent's step: the skill it last read.
+    const skillsByRecipe = new WeakMap<object, RecipeSkills>();
+    const skillProgress = registerSkillProgress(pi, (ctx) => {
+      const resolved = safeLoadState(pi, ctx.cwd)?.resolved;
+      if (!resolved) return undefined;
+      let skills = skillsByRecipe.get(resolved);
+      if (!skills) {
+        skills = {
+          names: resolved.definition.skills,
+          folders: skillFolders(resolved.skillPaths, resolved.recipeDir),
+        };
+        skillsByRecipe.set(resolved, skills);
+      }
+      return skills;
+    });
 
     pi.on("session_start", async (event, ctx) => {
       if (!ensureManagedFetch()) {

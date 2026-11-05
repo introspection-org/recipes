@@ -12,10 +12,14 @@
  * recovered from the session's earlier reads.
  */
 
+import { basename, dirname } from "node:path";
+
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+
+import { skillName } from "./recipe/skills.js";
 
 /** Introspection's mark (two concentric squares) and name, at the front of the footer line. */
 export const BRAND = "⧈ Introspection";
@@ -63,15 +67,36 @@ export function stepSkills(skills: readonly string[]): readonly string[] {
   return steps.length > 1 ? steps : skills;
 }
 
+/** The agent's skills in their listed order, and the name of each by its folder where the two differ. */
+export type RecipeSkills = {
+  names: readonly string[];
+  folders?: ReadonlyMap<string, string>;
+};
+
+/** Each skill's name by its folder, for the skills whose `name` isn't their folder's. */
+export function skillFolders(
+  skillPaths: readonly string[],
+  recipeDir: string,
+): Map<string, string> {
+  const folders = new Map<string, string>();
+  for (const path of skillPaths) {
+    const folder = basename(dirname(path));
+    const name = skillName(path, recipeDir);
+    if (name !== folder) folders.set(folder, name);
+  }
+  return folders;
+}
+
 /** The agent's step whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
   text: unknown,
-  skills: readonly string[],
+  skills: RecipeSkills,
 ): string | undefined {
   if (typeof text !== "string") return undefined;
-  const steps = stepSkills(skills);
+  const steps = stepSkills(skills.names);
   for (const match of text.matchAll(/([A-Za-z0-9_-]+)\/SKILL\.md\b/g)) {
-    if (steps.includes(match[1]!)) return match[1];
+    const name = skills.folders?.get(match[1]!) ?? match[1]!;
+    if (steps.includes(name)) return name;
   }
   return undefined;
 }
@@ -134,13 +159,29 @@ export function elapsed(ms: number): string {
     : `${two(minutes)}:${two(seconds)}`;
 }
 
-type Entry = { type?: string; message?: { role?: string; content?: unknown } };
+type Entry = {
+  type?: string;
+  message?: {
+    role?: string;
+    content?: unknown;
+    toolCallId?: string;
+    isError?: boolean;
+  };
+};
 
-/** The last of the agent's skills the session read, from its entries. */
+/** The last of the agent's skills the session read, from its entries; a read that failed doesn't count. */
 export function lastSkillRead(
   entries: readonly unknown[],
-  skills: readonly string[],
+  skills: RecipeSkills,
 ): string | undefined {
+  const failed = new Set(
+    (entries as Entry[])
+      .filter(
+        (entry) =>
+          entry.message?.role === "toolResult" && entry.message.isError,
+      )
+      .map((entry) => entry.message!.toolCallId),
+  );
   let last: string | undefined;
   for (const entry of entries as Entry[]) {
     if (entry.type !== "message" || entry.message?.role !== "assistant")
@@ -150,9 +191,14 @@ export function lastSkillRead(
       : [];
     for (const block of content as Array<{
       type?: string;
+      id?: string;
       arguments?: Record<string, unknown>;
     }>) {
-      if (block.type !== "toolCall" || !readsWhole(block.arguments ?? {}))
+      if (
+        block.type !== "toolCall" ||
+        failed.has(block.id) ||
+        !readsWhole(block.arguments ?? {})
+      )
         continue;
       last =
         skillRead(block.arguments?.path, skills) ??
@@ -171,7 +217,7 @@ export function lastSkillRead(
  */
 export function registerSkillProgress(
   pi: ExtensionAPI,
-  skillsFor: (ctx: ExtensionContext) => readonly string[] | undefined,
+  skillsFor: (ctx: ExtensionContext) => RecipeSkills | undefined,
   now: () => number = Date.now,
   /** Calls `tick` every second until the returned stop is called; injected by tests. */
   every: (tick: () => void) => () => void = (tick) => {
@@ -184,8 +230,9 @@ export function registerSkillProgress(
   // The agent's working time this session, across every step: what's banked, plus the run in
   // progress. It pauses while the person is in the loop (the agent's turn has ended, or a question
   // or review is open).
+  // Paused until the agent's first turn starts: time before the first prompt isn't the agent's.
   let banked = 0;
-  let runningSince: number | undefined = now();
+  let runningSince: number | undefined;
   const worked = () =>
     banked + (runningSince === undefined ? 0 : now() - runningSince);
   const pause = () => {
@@ -240,26 +287,31 @@ export function registerSkillProgress(
   });
   pi.on("tool_result", (event, ctx) => {
     const skills = skillsFor(ctx);
-    if (!skills?.length) return;
+    if (!skills?.names.length) return;
     if (PERSON_IN_THE_LOOP.has(event.toolName)) run();
     const input = (event.input ?? {}) as Record<string, unknown>;
-    if (readsWhole(input)) {
+    if (!event.isError && readsWhole(input)) {
       setStep(
         ctx,
         skillRead(input.path, skills) ?? skillRead(input.command, skills),
-        skills,
+        skills.names,
       );
     }
     show(ctx);
   });
   return {
     resume(ctx) {
+      // Another session in the same process starts from nothing: no step, no time.
+      if (current && ctx.hasUI) ctx.ui.setStatus(STEP_STATUS_KEY, undefined);
+      current = undefined;
+      banked = 0;
+      runningSince = undefined;
       const skills = skillsFor(ctx);
-      if (!skills?.length) return;
+      if (!skills?.names.length) return;
       setStep(
         ctx,
         lastSkillRead(ctx.sessionManager?.getEntries?.() ?? [], skills),
-        skills,
+        skills.names,
       );
     },
   };
