@@ -1,3 +1,4 @@
+import { registerSkillProgress } from "./skill-progress.js";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -1568,6 +1569,9 @@ export function createRecipesExtension(
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);
+    // The working line and terminal title name the agent's step: the skill it last read.
+    const skillProgress = registerSkillProgress(pi, (ctx) => safeLoadState(pi, ctx.cwd)?.resolved.definition.skills);
+
     pi.on("session_start", async (event, ctx) => {
       if (!ensureManagedFetch()) {
         const warning = managedFetchMissingWarning(env);
@@ -1577,6 +1581,7 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
+      skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
       for (const [name, definition] of launchState.resolved.subagents) {
