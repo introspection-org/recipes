@@ -18,6 +18,7 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 import {
   Key,
@@ -225,12 +226,20 @@ interface ReviewState {
   comment?: string;
 }
 
-/** A tab's name: the label's id before a colon ("C1" from "C1: four questions"), else its number. */
-export function tabName(label: string, index: number): string {
-  const id = label.split(":")[0]!.trim();
-  return label.includes(":") && id.length > 0 && id.length <= 12
-    ? id
-    : String(index + 1);
+/** A case-like id at the start of a name: `C1`, `C1-1`, `C4/C5`. */
+const TAB_ID = /^([A-Za-z]{1,3}\d+(?:[-/][A-Za-z]{0,3}\d+)*)(?![A-Za-z0-9])/;
+
+/**
+ * A tab's name: an id at the start of the label ("C1" from "C1: four
+ * questions"), else at the start of the file's name ("C1-1" from
+ * `outputs/C1-1-transcript.md`), else the file's name when short (`DESIGN`),
+ * else the tab's number.
+ */
+export function tabName(label: string, path: string, index: number): string {
+  const stem = basename(path).replace(/\.[^.]*$/, "");
+  const id = TAB_ID.exec(label.trim())?.[1] ?? TAB_ID.exec(stem)?.[1];
+  if (id) return id;
+  return stem.length > 0 && stem.length <= 12 ? stem : String(index + 1);
 }
 
 /**
@@ -378,7 +387,7 @@ export function showReviewTui(
           add(rule);
           if (several) {
             const tabs = items.map((item, index) => {
-              const text = ` ${mark(index)} ${tabName(item.label, index)} `;
+              const text = ` ${mark(index)} ${tabName(item.label, item.target.relativePath, index)} `;
               return index === active
                 ? theme.inverse(theme.fg("accent", text))
                 : theme.fg(states[index]!.decision ? "success" : "text", text);

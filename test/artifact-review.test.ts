@@ -268,7 +268,17 @@ describe("review_artifacts in the terminal", () => {
     expect(tabs).toContain(" C1 ");
     expect(tabs).not.toContain("four questions");
     expect(heading).toContain("C1: four questions");
-    expect(tabName("A brief", 0)).toBe("1");
+    expect(tabName("The updated brief", "docs/DESIGN.md", 0)).toBe("DESIGN");
+    expect(
+      tabName("Example candidate interview", "outputs/C1-1-transcript.md", 3),
+    ).toBe("C1-1");
+    expect(
+      tabName("C2 example: probing", "outputs/C2-1-transcript.md", 4),
+    ).toBe("C2");
+    expect(
+      tabName("C4/C5 example: evaluation", "outputs/C4-3-assessment.md", 5),
+    ).toBe("C4/C5");
+    expect(tabName("Notes", "docs/a-very-long-file-name.md", 6)).toBe("7");
     type(dialog(fake), ["\x1b"]);
     await result;
   });
