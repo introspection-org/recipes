@@ -124,6 +124,20 @@
   `skillsOverride`. Any new source of Recipe skills must join both, and
   `test/recipe-skill-isolation.test.ts` must cover it.
 
+## Docs, skills and examples
+
+- **`docs/` is for developers:** Recipe authors, host builders, and the
+  coding agents helping them. It is the reference and contract, read at build
+  time, on GitHub and in the npm package.
+- **`skills/` is for agents:** the model running inside a Recipe. The host
+  offers a tool's skill (`skills/<tool>/SKILL.md`) when an agent selects that
+  tool, so a skill says how to use the tool well, never how to configure it.
+  Format- or provider-specific guidance is a profile in that package's own
+  `profiles/`.
+- **`examples/docs/` is for developers:** the code docs.introspection.dev
+  shows, typechecked and tested here (see Docs regions below). It is never
+  published and never offered to an agent.
+
 ## Docs regions
 
 - **A docs region (`#region docs:…` under `examples/docs/`) shows every helper
