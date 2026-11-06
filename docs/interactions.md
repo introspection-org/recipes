@@ -21,7 +21,7 @@ that agent; agents that do not list it never see it.
 ```yaml
 name: agent
 ai:
-  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
+  model: <provider>/<model> # one Pi has credentials for: pi --list-models
 tools: [read, bash, ask_user_question]
 ```
 
@@ -51,12 +51,12 @@ approvals, and prefer the tool over asking in plain text).
 
 How each host renders it:
 
-| Host | Rendering | Result the model sees |
-| --- | --- | --- |
-| Pi terminal (TUI) and RPC | One dialog per question, in order. Options are numbered (numbers the model put in labels are stripped), with descriptions after the label, and a last option, `Something else — I'll type it`, opens a text input. `multiSelect` uses the toggle list in the TUI and a toggle-then-`Done` selector over RPC. | One line per question, `<header>: <answer>` (several answers joined with `, `), and `details.questions` / `details.answers` with each answer. |
-| Pause/resume host (`PI_INTERRUPT_RESUME`) | The tool returns the `details.interrupt` request from `askUserQuestion()` with bare option labels and their descriptions, `metadata.header` and `metadata.question`; the host renders its own option list and free-text answer. | The host's resume envelope, for example `Answer: Email link`. |
-| Headless (`PI_ASK_USER_AUTO_APPROVE`) and child agents | Nothing is shown; every question declines. | `<header>: (no answer)` per question, then an instruction to proceed with best judgment. |
-| No channel | Nothing is shown. | The unavailable envelope, telling the model to ask in its reply. |
+| Host                                                   | Rendering                                                                                                                                                                                                                                                                                                    | Result the model sees                                                                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pi terminal (TUI) and RPC                              | One dialog per question, in order. Options are numbered (numbers the model put in labels are stripped), with descriptions after the label, and a last option, `Something else — I'll type it`, opens a text input. `multiSelect` uses the toggle list in the TUI and a toggle-then-`Done` selector over RPC. | One line per question, `<header>: <answer>` (several answers joined with `, `), and `details.questions` / `details.answers` with each answer. |
+| Pause/resume host (`PI_INTERRUPT_RESUME`)              | The tool returns the `details.interrupt` request from `askUserQuestion()` with bare option labels and their descriptions, `metadata.header` and `metadata.question`; the host renders its own option list and free-text answer.                                                                              | The host's resume envelope, for example `Answer: Email link`.                                                                                 |
+| Headless (`PI_ASK_USER_AUTO_APPROVE`) and child agents | Nothing is shown; every question declines.                                                                                                                                                                                                                                                                   | `<header>: (no answer)` per question, then an instruction to proceed with best judgment.                                                      |
+| No channel                                             | Nothing is shown.                                                                                                                                                                                                                                                                                            | The unavailable envelope, telling the model to ask in its reply.                                                                              |
 
 The built-in tool reads `PI_INTERRUPT_RESUME` and `PI_ASK_USER_AUTO_APPROVE`
 from the session's environment, the `env` passed to `createAgentSession()` or
@@ -78,6 +78,63 @@ A skill that also runs in Claude Code or another host should not name one
 host's tool as the only way to ask. Write, for example: "Ask with the host's
 question tool (`ask_user_question` here, `AskUserQuestion` in Claude Code);
 otherwise ask with numbered options in text."
+
+## The built-in `introspection_open` tool
+
+List `introspection_open` in an agent's `tools` and the agent can ask the
+person to open an Introspection page and, with `wait: true`, continue with
+what they did. The agent names a target, never a URL; each host builds its own
+link.
+
+```ts
+introspection_open({
+  target:
+    | { kind: "integration"; provider: string }  // github, slack: project admin installs it
+    | { kind: "connector"; provider: string }    // an admin adds the project's OAuth client
+    | { kind: "connection"; provider: string }   // the person's own account
+    | { kind: "sso"; provider: string }          // google, entra: an org admin sets up sign-in
+    | { kind: "binding"; runtime: string; name: string; environment?: string }
+    | { kind: "runtime"; runtime: string }
+    | { kind: "task"; task: string },
+  reason: string,  // one line the card shows
+  wait?: boolean,  // default false
+})
+```
+
+With `wait: true` it is an interaction like the others: `reason` is
+`input_required`, the interrupt carries no `options`, and its metadata is
+`{ kind: "introspection_open", target, action }` (`action` is the button
+label, e.g. `Install GitHub`). A host with no renderer for this kind still
+shows a plain question, which stays usable. The answers use the existing
+envelopes:
+
+| Outcome                                   | Resume                                                           | The model sees            |
+| ----------------------------------------- | ---------------------------------------------------------------- | ------------------------- |
+| Connected                                 | `{ status: "resolved", payload: { answer: "connected" } }`       | `Answer: connected`       |
+| Came back from a `runtime` or `task` page | `{ status: "resolved", payload: { answer: "returned" } }`        | `Answer: returned`        |
+| The provider failed                       | `{ status: "resolved", payload: { answer: "failed: <error>" } }` | `Answer: failed: <error>` |
+| Not now                                   | `{ status: "cancelled" }`                                        | the declined envelope     |
+| Reply in chat                             | `{ status: "cancelled", payload: { dismissed: true } }`          | the dismissed text        |
+
+The answer is what the person did, not proof: the agent reads the real state
+before it says something is connected.
+
+| Host                      | With `wait: true`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pi terminal (TUI) and RPC | Runs the Introspection CLI (`INTROSPECTION_CLI`, else `introspection` on `PATH`) until it returns: `connectors authorize <provider> --subject user` for a `connection`, `integrations install --type <provider> --wait` for an `integration`, `open --runtime <runtime> --wait` for a `binding` or `runtime`, `open --task <task> --wait` for a `task`. Exit 0 answers `connected` (`returned` for a page); another exit answers `failed:` with the CLI's last error line. A `connector` or `sso` target, or a missing CLI, shows a Done / Not now dialog instead. The wait lasts up to an hour. |
+| Pause/resume host         | The interrupt above; the host renders it and resumes with the answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Headless and child agents | Declined.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| No channel                | The unavailable envelope.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+Without `wait`, nothing pauses: Pi's terminal opens a `runtime`, `task` or
+`binding` page, or starts an `integration` install, through the CLI, and the
+result says the person has not acted yet; elsewhere the result tells the model
+to ask in its reply.
+
+The target helpers (`parseIntrospectionOpenTarget`,
+`introspectionOpenTargetOf`, `introspectionOpenAction`,
+`INTROSPECTION_OPEN_ANSWER`) are exported from
+`@introspection-ai/recipes/review`, which a browser can import.
 
 ## Writing your own interaction tool
 
@@ -106,7 +163,7 @@ export default function (pi: ExtensionAPI) {
           options: params.options,
           selection: params.multiple ? "multiple" : "single",
         },
-        { toolCallId, ctx, signal }
+        { toolCallId, ctx, signal },
       );
     },
   });
@@ -151,16 +208,16 @@ A host that supports pause/resume treats
 `details.interrupt.outcome.type === "awaiting_user"` as a pause request.
 Hosts generate their own pause state from this record.
 
-| Field | Meaning |
-| --- | --- |
-| `reason` | Open string; well-known: `input_required`, `confirmation`, `tool_call` |
-| `message` | Concise human-readable prompt |
-| `options` | Optional structured answer suggestions: `{ label, value?, description? }[]` |
-| `selection` | Optional answer cardinality: `single` (default) or `multiple` |
-| `metadata` | Renderer or tool hints (`kind`, `header`, source tool parameters, …) |
-| `display` | Optional structured display copy for richer local or remote UI |
-| `expiresAt` | Optional ISO-8601 instant after which the host may auto-decline |
-| `outcome` | Local result, or `{ type: "awaiting_user" }` when the host must pause |
+| Field       | Meaning                                                                     |
+| ----------- | --------------------------------------------------------------------------- |
+| `reason`    | Open string; well-known: `input_required`, `confirmation`, `tool_call`      |
+| `message`   | Concise human-readable prompt                                               |
+| `options`   | Optional structured answer suggestions: `{ label, value?, description? }[]` |
+| `selection` | Optional answer cardinality: `single` (default) or `multiple`               |
+| `metadata`  | Renderer or tool hints (`kind`, `header`, source tool parameters, …)        |
+| `display`   | Optional structured display copy for richer local or remote UI              |
+| `expiresAt` | Optional ISO-8601 instant after which the host may auto-decline             |
+| `outcome`   | Local result, or `{ type: "awaiting_user" }` when the host must pause       |
 
 Question options are suggestions, not a closed enum. Local Pi shows them in a
 selector plus an `Other` input path. Multi-select TUI questions use Space or
@@ -239,10 +296,11 @@ await askUserApproval(
       },
     ],
     metadata: {
-      proposal: "Target senior product leaders in Sydney with B2B SaaS or marketplace experience.",
+      proposal:
+        "Target senior product leaders in Sydney with B2B SaaS or marketplace experience.",
     },
   },
-  { toolCallId, ctx, signal }
+  { toolCallId, ctx, signal },
 );
 ```
 
@@ -259,16 +317,16 @@ host must synthesize identical text for the same outcome,
 so Recipe tools cannot tell where the answer came from. Do not reword these
 without a coordinated protocol change across all hosts.
 
-| Outcome | Envelope |
-| --- | --- |
-| Answered | `Answer: <answer>` |
-| Multiple answers | `Answers: ["<answer>","<answer>"]` |
-| Approved | `Approved.` |
-| Approved with feedback | `Approved. Feedback: <feedback>` |
-| Revision requested | `Revision requested.` |
-| Revision requested with feedback | `Revision requested. Feedback: <feedback>` |
-| Declined | `User declined to answer. Proceed with your best judgment.` |
-| Pending host resume | `Awaiting user response.` |
+| Outcome                          | Envelope                                                    |
+| -------------------------------- | ----------------------------------------------------------- |
+| Answered                         | `Answer: <answer>`                                          |
+| Multiple answers                 | `Answers: ["<answer>","<answer>"]`                          |
+| Approved                         | `Approved.`                                                 |
+| Approved with feedback           | `Approved. Feedback: <feedback>`                            |
+| Revision requested               | `Revision requested.`                                       |
+| Revision requested with feedback | `Revision requested. Feedback: <feedback>`                  |
+| Declined                         | `User declined to answer. Proceed with your best judgment.` |
+| Pending host resume              | `Awaiting user response.`                                   |
 
 Declines are **not** tool errors — the model is expected to proceed with its
 best judgment.
@@ -283,7 +341,7 @@ best judgment.
 - **Never format envelopes yourself.** Return the helper result as-is; envelope
   authorship must not split across layers.
 - **Thread the tool's `signal`** into the helper and check for aborts after any
-  custom dialog (`undefined` from a dialog means dismissal *or* abort — only
+  custom dialog (`undefined` from a dialog means dismissal _or_ abort — only
   the signal distinguishes them).
 - **Custom UIs are enhancements.** A richer TUI walk goes through the
   `interactive` option; remote hosts can adapt `metadata` and `display`.

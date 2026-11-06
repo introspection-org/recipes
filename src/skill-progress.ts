@@ -33,7 +33,11 @@ const BRAND = "⧈ Introspection";
 const PAUSED_MARK = "⏸";
 
 /** Tools that wait for the person: the step's clock stops while one is open. */
-const PERSON_IN_THE_LOOP = new Set(["ask_user_question", "review_artifacts"]);
+const PERSON_IN_THE_LOOP = new Set([
+  "ask_user_question",
+  "review_artifacts",
+  "introspection_open",
+]);
 
 /** Tools that read a skill; a write or edit of a `SKILL.md` isn't a step. */
 const SKILL_READ_TOOLS = new Set(["read", "bash"]);
