@@ -88,15 +88,19 @@ function isJson(response: FetchResponse): boolean {
   return type.includes("application/json") || type.includes("+json");
 }
 
-/** A response whose JSON body was read once, served again to its reader. */
-function buffered(response: FetchResponse, text: string): FetchResponse {
+/** A response whose body was read once, served again to its reader byte for byte. */
+function buffered(
+  response: FetchResponse,
+  bytes: Uint8Array,
+  text: string,
+): FetchResponse {
   return {
     ok: response.ok,
     status: response.status,
     headers: response.headers,
     text: async () => text,
     json: async () => JSON.parse(text) as unknown,
-    arrayBuffer: async () => new TextEncoder().encode(text).slice().buffer,
+    arrayBuffer: async () => bytes.slice().buffer,
   };
 }
 
@@ -124,10 +128,17 @@ export async function tracedFetch(
   });
   try {
     const response = await fetchImpl(url, init);
-    const body = isJson(response) ? await response.text() : undefined;
-    span.setAttributes(httpResponseAttributes(response.status, body));
+    if (!isJson(response)) {
+      span.setAttributes(httpResponseAttributes(response.status));
+      if (response.status >= 400)
+        span.setStatus({ code: SpanStatusCode.ERROR });
+      return response;
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
+    span.setAttributes(httpResponseAttributes(response.status, text));
     if (response.status >= 400) span.setStatus({ code: SpanStatusCode.ERROR });
-    return body === undefined ? response : buffered(response, body);
+    return buffered(response, bytes, text);
   } catch (error) {
     span.setAttribute(
       "error.type",
