@@ -7,6 +7,8 @@ import {
   type Tracer,
 } from "@opentelemetry/api";
 
+import type { ProductivityToolCallOutcome } from "@introspection-ai/recipes/productivity";
+
 import type { GoogleFetch, GoogleHttpResponse } from "./http.js";
 
 const TRACER_NAME = "@introspection-ai/recipe-productivity-google";
@@ -169,25 +171,27 @@ export async function tracedFetch(
   }
 }
 
-/** One MCP request: its JSON-RPC method, and the tool for `tools/call`. */
-export interface McpSpanRequest {
-  method: "initialize" | "tools/list" | "tools/call";
-  /** The MCP server's URL; only its host and port are recorded. */
-  url: string;
-  tool?: string;
+/** One call to a Recipe MCP server's tool through the session's tools. */
+export interface ToolCallSpanRequest {
+  /** The MCP server's id in the Recipe. */
+  server: string;
+  tool: string;
 }
 
-/** The span name and start attributes for one MCP request, after the MCP semantic conventions. */
-export function mcpRequestSpan(request: McpSpanRequest): {
+/**
+ * The span name and start attributes for one MCP tool call through Pi. It
+ * carries no `mcp.method.name` or `gen_ai.operation.name`: the request on the
+ * wire is the runtime's own `tools/call` span, a child of this one.
+ */
+export function toolCallSpan(request: ToolCallSpanRequest): {
   name: string;
   attributes: Attributes;
 } {
   return {
-    name: request.tool ? `${request.method} ${request.tool}` : request.method,
+    name: `${request.server}/${request.tool}`,
     attributes: {
-      "mcp.method.name": request.method,
-      ...serverAttributes(request.url),
-      ...(request.tool ? { "gen_ai.tool.name": request.tool } : {}),
+      "mcp.server.id": request.server,
+      "mcp.tool.name": request.tool,
     },
   };
 }
@@ -206,29 +210,40 @@ export function mcpResultAttributes(result: unknown): Attributes {
 }
 
 /**
- * Run one MCP request inside a client span, a child of the active context.
- * The result is recorded like a REST answer's body; `initialize` records none.
+ * Run one MCP tool call through the session's tools inside an internal span,
+ * active while Pi's client sends the request. Neither Pi nor the session
+ * instrumentation records a nested call's result, so the `CallToolResult` is
+ * recorded here like a REST answer's body; a call Pi failed records
+ * `error.type` `call_failed` only.
  */
-export async function tracedMcp<T>(
+export async function tracedToolCall(
   tracer: Tracer,
-  request: McpSpanRequest,
-  run: () => Promise<T>,
-): Promise<T> {
-  const { name, attributes } = mcpRequestSpan(request);
-  const span = tracer.startSpan(name, { kind: SpanKind.CLIENT, attributes });
-  try {
-    const result = await run();
-    if (request.method !== "initialize") {
-      const recorded = mcpResultAttributes(result);
-      span.setAttributes(recorded);
-      if (recorded["error.type"])
-        span.setStatus({ code: SpanStatusCode.ERROR });
-    }
-    return result;
-  } catch (error) {
-    failed(span, error);
-    throw error;
-  } finally {
-    span.end();
-  }
+  request: ToolCallSpanRequest,
+  run: () => Promise<ProductivityToolCallOutcome>,
+): Promise<ProductivityToolCallOutcome> {
+  const { name, attributes } = toolCallSpan(request);
+  return tracer.startActiveSpan(
+    name,
+    { kind: SpanKind.INTERNAL, attributes },
+    async (span) => {
+      try {
+        const outcome = await run();
+        if (outcome.structuredContent !== undefined) {
+          const recorded = mcpResultAttributes(outcome.structuredContent);
+          span.setAttributes(recorded);
+          if (recorded["error.type"])
+            span.setStatus({ code: SpanStatusCode.ERROR });
+        } else if (outcome.isError) {
+          span.setAttribute("error.type", "call_failed");
+          span.setStatus({ code: SpanStatusCode.ERROR });
+        }
+        return outcome;
+      } catch (error) {
+        failed(span, error);
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }

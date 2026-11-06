@@ -160,12 +160,11 @@ beforeAll(async () => {
   });
   google = await createGoogleProductivitySession(
     { config: ALL, env: EGRESS_ENV, cwd: process.cwd() },
-    { endpoints: emulator.endpoints, restOnly: true },
+    { endpoints: emulator.endpoints },
   );
 });
 
 afterAll(async () => {
-  await google?.close?.();
   await emulator?.close();
 });
 

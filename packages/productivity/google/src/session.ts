@@ -1,32 +1,24 @@
 import type { Tracer } from "@opentelemetry/api";
 import type {
-  CalendarCommand,
   CalendarSession,
-  DriveCommand,
   DriveSession,
-  MailCommand,
   MailSession,
+  ProductivityCallContext,
   ProductivityCapabilities,
   ProductivitySession,
   ProductivitySessionOptions,
 } from "@introspection-ai/recipes/productivity";
 
-import {
-  connectGoogleMcp,
-  EXPECTED_MCP_TOOLS,
-  type GoogleMcpBackend,
-  type GoogleMcpServers,
-  type McpCommand,
-  type McpFetch,
-} from "./mcp.js";
+import { GoogleMcpBackend, type McpCommand } from "./mcp.js";
 import { type GoogleEndpoints, GoogleTransport, type Sleep } from "./http.js";
 import { GoogleRestBackend } from "./rest.js";
+import { defaultTracer } from "./telemetry.js";
 
 /**
  * What the package serves, and from where by default
  * (docs/productivity/google.md, Backends). A command marked `mcp` is served
- * by the Workspace MCP server when the server lists its tool at session
- * start, and by REST otherwise. The effects restate the host's fixed table,
+ * by the Recipe's Workspace MCP server when the session can call its tool,
+ * and by REST otherwise. The effects restate the host's fixed table,
  * which the host checks; a companion imports the host's types only.
  */
 export const GOOGLE_PRODUCTIVITY_CAPABILITIES = {
@@ -88,11 +80,7 @@ export const GOOGLE_PRODUCTIVITY_CAPABILITIES = {
 /** What tests and other hosts may override; production needs none of it. */
 export interface GoogleSessionOverrides {
   endpoints?: Partial<GoogleEndpoints>;
-  mcpServers?: Partial<GoogleMcpServers>;
-  mcpFetch?: McpFetch;
   sleep?: Sleep;
-  /** Skip the MCP servers entirely: every command over REST. */
-  restOnly?: boolean;
   /** Default: the globally registered tracer; tests record the spans. */
   tracer?: Tracer;
 }
@@ -109,28 +97,17 @@ export interface GoogleProductivitySession extends ProductivitySession {
   readonly mail: CompleteSession<MailSession>;
   readonly calendar: CompleteSession<CalendarSession>;
   readonly drive: CompleteSession<DriveSession>;
-  /** Which backend serves each MCP-capable command in this session. */
-  readonly backends: Readonly<Partial<Record<McpCommand, "mcp" | "rest">>>;
-}
-
-function enabledMcpCommands(options: ProductivitySessionOptions): McpCommand[] {
-  const tools = options.config.tools;
-  const enabled = [
-    ...(tools.mail ?? []).map((command: MailCommand) => `mail.${command}`),
-    ...(tools.calendar ?? []).map(
-      (command: CalendarCommand) => `calendar.${command}`,
-    ),
-    ...(tools.drive ?? []).map((command: DriveCommand) => `drive.${command}`),
-  ];
-  return enabled.filter(
-    (command): command is McpCommand => command in EXPECTED_MCP_TOOLS,
-  );
+  /** Which backend serves `command` for a call with `ctx`. */
+  backendFor(
+    command: McpCommand,
+    ctx?: ProductivityCallContext,
+  ): "mcp" | "rest";
 }
 
 /**
- * One person's Google connection. The MCP servers the enabled commands need
- * are listed once, here; each command then goes to MCP when its tool was
- * listed, and to REST otherwise.
+ * One person's Google connection. Each call goes to MCP when the session can
+ * call the command's tool on the Recipe's Google MCP server (Pi's in-process
+ * client, through `ctx.tools`), and to REST otherwise.
  */
 export async function createGoogleProductivitySession(
   options: ProductivitySessionOptions,
@@ -145,28 +122,19 @@ export async function createGoogleProductivitySession(
     tracer: overrides.tracer,
   });
   const rest = new GoogleRestBackend(transport);
-  const commands = overrides.restOnly ? [] : enabledMcpCommands(options);
-  const mcp = commands.length
-    ? await connectGoogleMcp(transport, rest, {
-        servers: overrides.mcpServers,
-        fetchImpl:
-          overrides.mcpFetch ?? (options.fetch as McpFetch | undefined),
-        commands,
-        tracer: overrides.tracer,
-      })
-    : undefined;
-  const via = (command: McpCommand): GoogleMcpBackend | undefined =>
-    mcp?.backend.served.has(command) ? mcp.backend : undefined;
-  const backends = Object.fromEntries(
-    (Object.keys(EXPECTED_MCP_TOOLS) as McpCommand[]).map((command) => [
-      command,
-      via(command) ? "mcp" : "rest",
-    ]),
-  ) as Record<McpCommand, "mcp" | "rest">;
+  const tracer = overrides.tracer ?? defaultTracer();
+  const via = (
+    command: McpCommand,
+    ctx: ProductivityCallContext,
+  ): GoogleMcpBackend | undefined => {
+    if (!ctx.tools) return undefined;
+    const backend = new GoogleMcpBackend(ctx.tools, rest, tracer);
+    return backend.serves(command) ? backend : undefined;
+  };
 
   const mail: CompleteSession<MailSession> = {
     search: async (args, ctx = {}) => {
-      const backend = via("mail.search");
+      const backend = via("mail.search", ctx);
       if (!backend) return rest.mail.search(args, ctx);
       const query = await rest.mail.searchQuery(args, ctx.signal);
       return backend.mailSearch(
@@ -175,7 +143,7 @@ export async function createGoogleProductivitySession(
       );
     },
     read: (args, ctx = {}) => {
-      const backend = via("mail.read");
+      const backend = via("mail.read", ctx);
       return backend && "message_id" in args
         ? backend.mailRead(args.message_id, ctx.signal)
         : rest.mail.read(args, ctx);
@@ -183,37 +151,31 @@ export async function createGoogleProductivitySession(
     fetchAttachment: (args, ctx) => rest.mail.fetchAttachment(args, ctx),
     // A reply needs In-Reply-To and References, which only the REST draft sets.
     draft: (args, ctx = {}) => {
-      const backend = via("mail.draft");
+      const backend = via("mail.draft", ctx);
       return backend && !args.reply_to_id
-        ? backend.mailDraft(
-            {
-              to: [...args.to],
-              cc: [...(args.cc ?? [])],
-              subject: args.subject,
-              body: args.body,
-            },
-            ctx.signal,
-          )
+        ? backend.mailDraft({
+            to: [...args.to],
+            cc: [...(args.cc ?? [])],
+            subject: args.subject,
+            body: args.body,
+          })
         : rest.mail.draft(args, ctx);
     },
     updateDraft: (args, ctx = {}) => {
-      const backend = via("mail.update_draft");
+      const backend = via("mail.update_draft", ctx);
       return backend
-        ? backend.mailUpdateDraft(
-            {
-              draftId: args.draft_id,
-              to: args.to ? [...args.to] : undefined,
-              cc: args.cc ? [...args.cc] : undefined,
-              subject: args.subject,
-              body: args.body,
-            },
-            ctx.signal,
-          )
+        ? backend.mailUpdateDraft({
+            draftId: args.draft_id,
+            to: args.to ? [...args.to] : undefined,
+            cc: args.cc ? [...args.cc] : undefined,
+            subject: args.subject,
+            body: args.body,
+          })
         : rest.mail.updateDraft(args, ctx);
     },
     send: (args, ctx) => rest.mail.send(args, ctx),
     move: async (args, ctx = {}) => {
-      const backend = via("mail.move");
+      const backend = via("mail.move", ctx);
       if (!backend) return rest.mail.move(args, ctx);
       const change = await rest.mail.moveChange(args.folder, ctx.signal);
       return backend.mailModifyLabels(
@@ -223,7 +185,7 @@ export async function createGoogleProductivitySession(
       );
     },
     label: async (args, ctx = {}) => {
-      const backend = via("mail.label");
+      const backend = via("mail.label", ctx);
       if (!backend) return rest.mail.label(args, ctx);
       const change = await rest.mail.labelChange(args, ctx.signal);
       return backend.mailModifyLabels(
@@ -236,90 +198,76 @@ export async function createGoogleProductivitySession(
 
   const calendar: CompleteSession<CalendarSession> = {
     list: async (args, ctx = {}) => {
-      const backend = via("calendar.list");
+      const backend = via("calendar.list", ctx);
       if (!backend) return rest.calendar.list(args, ctx);
       const calendarId = await rest.calendar.calendarId(
         args.calendar,
         ctx.signal,
       );
-      return backend.calendarList(
-        {
-          calendarId,
-          from: args.from,
-          to: args.to,
-          limit: args.limit,
-          cursor: args.cursor,
-        },
-        ctx.signal,
-      );
+      return backend.calendarList({
+        calendarId,
+        from: args.from,
+        to: args.to,
+        limit: args.limit,
+        cursor: args.cursor,
+      });
     },
     read: (args, ctx = {}) => {
-      const backend = via("calendar.read");
+      const backend = via("calendar.read", ctx);
       return backend
-        ? backend.calendarRead(args.event_id, ctx.signal)
+        ? backend.calendarRead(args.event_id)
         : rest.calendar.read(args, ctx);
     },
     freeBusy: (args, ctx) => rest.calendar.freeBusy(args, ctx),
     create: (args, ctx = {}) => {
-      const backend = via("calendar.create");
+      const backend = via("calendar.create", ctx);
       return backend
-        ? backend.calendarCreate(
-            rest.calendar.eventBody(args),
-            args.time_zone,
-            ctx.signal,
-          )
+        ? backend.calendarCreate(rest.calendar.eventBody(args), args.time_zone)
         : rest.calendar.create(args, ctx);
     },
     update: (args, ctx = {}) => {
-      const backend = via("calendar.update");
+      const backend = via("calendar.update", ctx);
       if (!backend) return rest.calendar.update(args, ctx);
       const { event_id: eventId, ...change } = args;
       return backend.calendarUpdate(
         eventId,
         rest.calendar.eventBody(change),
         args.time_zone,
-        ctx.signal,
       );
     },
     respond: (args, ctx = {}) => {
-      const backend = via("calendar.respond");
+      const backend = via("calendar.respond", ctx);
       return backend
-        ? backend.calendarRespond(
-            {
-              eventId: args.event_id,
-              response: args.response,
-              comment: args.comment,
-            },
-            ctx.signal,
-          )
+        ? backend.calendarRespond({
+            eventId: args.event_id,
+            response: args.response,
+            comment: args.comment,
+          })
         : rest.calendar.respond(args, ctx);
     },
     cancel: (args, ctx = {}) => {
-      const backend = via("calendar.cancel");
+      const backend = via("calendar.cancel", ctx);
       return backend
-        ? backend.calendarCancel(args.event_id, ctx.signal)
+        ? backend.calendarCancel(args.event_id)
         : rest.calendar.cancel(args, ctx);
     },
   };
 
   const drive: CompleteSession<DriveSession> = {
     search: (args, ctx = {}) => {
-      const backend = via("drive.search");
+      const backend = via("drive.search", ctx);
       return backend
-        ? backend.driveSearch(
-            {
-              query: args.query,
-              folderId: args.folder_id,
-              modifiedAfter: args.modified_after,
-              limit: args.limit,
-              cursor: args.cursor,
-            },
-            ctx.signal,
-          )
+        ? backend.driveSearch({
+            query: args.query,
+            folderId: args.folder_id,
+            modifiedAfter: args.modified_after,
+            limit: args.limit,
+            cursor: args.cursor,
+          })
         : rest.drive.search(args, ctx);
     },
     read: (args, ctx = {}) => {
-      const backend = via("drive.read");
+      const backend = via("drive.read", ctx);
       return backend
         ? backend.driveRead(args.file_id, args.max_bytes, ctx.signal)
         : rest.drive.read(args, ctx);
@@ -333,9 +281,6 @@ export async function createGoogleProductivitySession(
     mail,
     calendar,
     drive,
-    backends,
-    close: async () => {
-      await mcp?.close();
-    },
+    backendFor: (command, ctx = {}) => (via(command, ctx) ? "mcp" : "rest"),
   };
 }

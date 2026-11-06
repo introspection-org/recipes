@@ -61,15 +61,12 @@ describe("the Google productivity module", () => {
   });
 
   it("opens a session with a method for every declared command", async () => {
-    const session = await createGoogleProductivitySession(
-      {
-        config: { provider: "google", tools: {} },
-        env: { INTROSPECTION_TASK_ID: "t" },
-        cwd: process.cwd(),
-        fetch: fakeGoogle([]).fetchImpl,
-      },
-      { restOnly: true },
-    );
+    const session = await createGoogleProductivitySession({
+      config: { provider: "google", tools: {} },
+      env: { INTROSPECTION_TASK_ID: "t" },
+      cwd: process.cwd(),
+      fetch: fakeGoogle([]).fetchImpl,
+    });
     expect(session.provider).toBe("google");
     for (const tool of PRODUCTIVITY_TOOLS) {
       for (const method of Object.values(PRODUCTIVITY_SESSION_METHODS[tool])) {

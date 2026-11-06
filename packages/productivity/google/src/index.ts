@@ -37,9 +37,10 @@ export {
 export {
   EXPECTED_MCP_TOOLS,
   GOOGLE_MCP_SERVERS,
-  type GoogleMcpServers,
+  type GoogleMcpServer,
   type McpCommand,
-  type McpFetch,
+  mcpToolFor,
+  mcpToolName,
 } from "./mcp.js";
 export {
   decodeBase64Url,

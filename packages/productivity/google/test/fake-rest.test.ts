@@ -76,7 +76,7 @@ async function backend(
       cwd: process.cwd(),
       fetch: fake.fetchImpl,
     },
-    { restOnly: true, sleep: recordingSleep().sleep },
+    { sleep: recordingSleep().sleep },
   );
   return { calls: fake.calls, backend: session };
 }

@@ -1,11 +1,4 @@
 import type { Tracer } from "@opentelemetry/api";
-import {
-  Client,
-  ProtocolError,
-  SdkHttpError,
-  StreamableHTTPClientTransport,
-  UnauthorizedError,
-} from "@modelcontextprotocol/client";
 import type {
   CalendarEvent,
   CalendarListResult,
@@ -15,39 +8,40 @@ import type {
   MailMessageSummary,
   MailReadResult,
   MailSearchResult,
-  ProductivityBackend,
+  ProductivityToolCaller,
+  ProductivityToolCallOutcome,
 } from "@introspection-ai/recipes/productivity";
 
 import type { CalendarEvent as GoogleEvent } from "./calendar.js";
 import { driveSearchQuery, type DriveFile } from "./drive.js";
 import { GoogleProductivityError } from "./errors.js";
 import type { GmailDraft, GmailMessage } from "./gmail.js";
-import { mapGoogleError, type GoogleTransport } from "./http.js";
+import { mapGoogleError } from "./http.js";
 import {
   driveFileSummary,
   eventDetail,
   eventSummary,
   type GoogleRestBackend,
 } from "./rest.js";
-import { defaultTracer, tracedMcp } from "./telemetry.js";
-
-/** Google's Workspace MCP servers, one per product. */
-export interface GoogleMcpServers {
-  gmail: string;
-  calendar: string;
-  drive: string;
-}
+import { tracedToolCall } from "./telemetry.js";
 
 /**
- * Gmail's host answers; the Calendar and Drive host names follow Google's
- * `<product>mcp.googleapis.com` pattern and are *to confirm*
- * (docs/productivity/google.md, Backends).
+ * Google's Workspace MCP servers, one per product, as a Recipe declares them:
+ * the server id under `pi.mcp.servers` and the agent's `mcp.servers`, and the
+ * URL its binding names. Gmail's host answers; the Calendar and Drive host
+ * names follow Google's `<product>mcp.googleapis.com` pattern and are *to
+ * confirm* (docs/productivity/google.md, Backends).
  */
-export const GOOGLE_MCP_SERVERS: GoogleMcpServers = {
-  gmail: "https://gmailmcp.googleapis.com/mcp/v1",
-  calendar: "https://calendarmcp.googleapis.com/mcp/v1",
-  drive: "https://drivemcp.googleapis.com/mcp/v1",
-};
+export const GOOGLE_MCP_SERVERS = {
+  gmail: { id: "gmail", url: "https://gmailmcp.googleapis.com/mcp/v1" },
+  calendar: {
+    id: "calendar",
+    url: "https://calendarmcp.googleapis.com/mcp/v1",
+  },
+  drive: { id: "drive", url: "https://drivemcp.googleapis.com/mcp/v1" },
+} as const;
+
+export type GoogleMcpServer = keyof typeof GOOGLE_MCP_SERVERS;
 
 /** The commands an MCP tool can serve; the rest are REST only by design. */
 export type McpCommand =
@@ -71,13 +65,13 @@ export type McpCommand =
  * confirm** against the server's authenticated `tools/list`: none could be
  * listed while this was written. The Drive names match a Drive MCP server's
  * published tools (`search_files`, `read_file_content`); the Gmail and
- * Calendar names are the design's intent. A command whose tool the server
- * does not list is served by REST, so a wrong name costs a REST call, never a
+ * Calendar names are the design's intent. A command whose tool the session
+ * cannot call is served by REST, so a wrong name costs a REST call, never a
  * failure. `mail fetch_attachment`, `mail send`, `calendar free_busy`,
  * `drive download` and `drive upload` have no entry: they are REST only.
  */
 export const EXPECTED_MCP_TOOLS: Readonly<
-  Record<McpCommand, { server: keyof GoogleMcpServers; tool: string }>
+  Record<McpCommand, { server: GoogleMcpServer; tool: string }>
 > = {
   "mail.search": { server: "gmail", tool: "search_messages" },
   "mail.read": { server: "gmail", tool: "get_message" },
@@ -95,46 +89,51 @@ export const EXPECTED_MCP_TOOLS: Readonly<
   "drive.read": { server: "drive", tool: "read_file_content" },
 };
 
-export type McpFetch = (
-  url: string | URL,
-  init?: RequestInit,
-) => Promise<Response>;
-
-/** What one call to a tool needs: a connected client and the tool's name. */
-interface McpToolCaller {
-  call(
-    tool: string,
-    args: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<unknown>;
+/**
+ * Pi's name for an MCP tool, `mcp__<server>__<tool>` with every character
+ * outside `[A-Za-z0-9_]` replaced. Pi shortens a name past 64 characters with
+ * a hash; no expected tool comes near that.
+ */
+export function mcpToolName(server: string, tool: string): string {
+  return `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
 }
 
-function mapMcpFailure(
-  error: unknown,
+/** The Pi tool name that serves `command`. */
+export function mcpToolFor(command: McpCommand): string {
+  const { server, tool } = EXPECTED_MCP_TOOLS[command];
+  return mcpToolName(GOOGLE_MCP_SERVERS[server].id, tool);
+}
+
+/**
+ * A call Pi's MCP client failed rather than the tool answering: Pi reports
+ * the error's message as the result's text, so the HTTP status is read back
+ * from Pi's own wording (`MCP server requires authentication` for a 401,
+ * `MCP HTTP request failed with status <n>` for the rest).
+ */
+function mapFailedCall(
+  outcome: ProductivityToolCallOutcome,
   label: string,
   scope: string,
 ): GoogleProductivityError {
-  if (error instanceof GoogleProductivityError) return error;
-  if (UnauthorizedError.isInstance(error)) {
-    return mapGoogleError(401, {}, { scope, label });
-  }
-  if (SdkHttpError.isInstance(error)) {
+  const text = outcome.content
+    .flatMap((block) =>
+      block.type === "text" && block.text ? [block.text] : [],
+    )
+    .join("\n");
+  const status = /MCP server requires authentication/.test(text)
+    ? 401
+    : Number(/MCP HTTP request failed with status (\d{3})/.exec(text)?.[1]);
+  if (status) {
     // MCP's authorization spec answers an insufficient scope with 403.
     const body =
-      error.status === 403
+      status === 403
         ? { error: { errors: [{ reason: "insufficientPermissions" }] } }
         : {};
-    return mapGoogleError(error.status, body, { scope, label });
-  }
-  if (ProtocolError.isInstance(error)) {
-    return new GoogleProductivityError(
-      "provider_error",
-      `${label} failed: ${error.message}`,
-    );
+    return mapGoogleError(status, body, { scope, label });
   }
   return new GoogleProductivityError(
     "provider_error",
-    `${label} failed: ${error instanceof Error ? error.message : String(error)}`,
+    `${label} failed: ${(text || "the call failed").slice(0, 500)}`,
   );
 }
 
@@ -186,47 +185,47 @@ function nextToken(data: Record<string, unknown>): string | undefined {
 }
 
 /**
- * The Workspace MCP backend: the commands whose expected tool the server
- * lists at session start, mapped onto the same results the REST backend
- * returns. Results are read as the REST resources they wrap (a Gmail
- * `Message`, a Calendar `Event`, a Drive `File`); that assumption is pinned by
- * the contract tests and is *to confirm* against the live servers.
+ * The Workspace MCP backend for one tool call: commands go to the Recipe's
+ * Google MCP servers through the session's tools (Pi's in-process MCP
+ * client), mapped onto the same results the REST backend returns. Results are
+ * read as the REST resources they wrap (a Gmail `Message`, a Calendar
+ * `Event`, a Drive `File`); that assumption is pinned by the contract tests
+ * and is *to confirm* against the live servers.
  */
 export class GoogleMcpBackend {
   constructor(
-    private readonly callers: Partial<
-      Record<keyof GoogleMcpServers, McpToolCaller>
-    >,
-    readonly served: ReadonlySet<McpCommand>,
+    private readonly tools: ProductivityToolCaller,
     private readonly rest: GoogleRestBackend,
+    private readonly tracer: Tracer,
   ) {}
 
-  /** Which backend serves `command` in this session. */
-  backendFor(command: McpCommand): ProductivityBackend {
-    return this.served.has(command) ? "mcp" : "rest";
+  /** Whether this call can serve `command`: the session can call its tool now. */
+  serves(command: McpCommand): boolean {
+    return this.tools.canCall(mcpToolFor(command));
   }
 
   private async call(
     command: McpCommand,
     args: Record<string, unknown>,
     scope: string,
-    signal?: AbortSignal,
   ): Promise<unknown> {
     const { server, tool } = EXPECTED_MCP_TOOLS[command];
     const label = `${server} MCP ${tool}`;
-    const caller = this.callers[server];
-    if (!caller)
-      throw new GoogleProductivityError(
-        "provider_error",
-        `${label} is not connected.`,
-      );
-    let result: unknown;
-    try {
-      result = await caller.call(tool, args, signal);
-    } catch (error) {
-      throw mapMcpFailure(error, label, scope);
-    }
-    return toolResultData(result, label);
+    const defined = Object.fromEntries(
+      Object.entries(args).filter(([, v]) => v !== undefined),
+    );
+    const outcome = await tracedToolCall(
+      this.tracer,
+      { server: GOOGLE_MCP_SERVERS[server].id, tool },
+      () => this.tools.executeTool(mcpToolFor(command), defined),
+    );
+    // A tool's own error result keeps its `CallToolResult`; a failed call has none.
+    if (outcome.isError && outcome.structuredContent === undefined)
+      throw mapFailedCall(outcome, label, scope);
+    return toolResultData(
+      outcome.structuredContent ?? { content: outcome.content },
+      label,
+    );
   }
 
   async mailSearch(
@@ -243,7 +242,6 @@ export class GoogleMcpBackend {
           pageToken: args.cursor,
         },
         "https://www.googleapis.com/auth/gmail.readonly",
-        signal,
       ),
       "mail search",
     );
@@ -278,7 +276,6 @@ export class GoogleMcpBackend {
         "mail.read",
         { messageId },
         "https://www.googleapis.com/auth/gmail.readonly",
-        signal,
       ),
       "mail read",
     );
@@ -286,22 +283,18 @@ export class GoogleMcpBackend {
     return { messages: [await this.rest.mail.message(message, signal)] };
   }
 
-  async mailDraft(
-    args: {
-      to: string[];
-      cc: string[];
-      subject: string;
-      body: string;
-      threadId?: string;
-    },
-    signal?: AbortSignal,
-  ): Promise<MailDraft> {
+  async mailDraft(args: {
+    to: string[];
+    cc: string[];
+    subject: string;
+    body: string;
+    threadId?: string;
+  }): Promise<MailDraft> {
     const draft = record(
       await this.call(
         "mail.draft",
         { ...args },
         "https://www.googleapis.com/auth/gmail.compose",
-        signal,
       ),
       "mail draft",
     ) as unknown as GmailDraft;
@@ -312,22 +305,18 @@ export class GoogleMcpBackend {
     };
   }
 
-  async mailUpdateDraft(
-    args: {
-      draftId: string;
-      to?: string[];
-      cc?: string[];
-      subject?: string;
-      body?: string;
-    },
-    signal?: AbortSignal,
-  ): Promise<MailDraft> {
+  async mailUpdateDraft(args: {
+    draftId: string;
+    to?: string[];
+    cc?: string[];
+    subject?: string;
+    body?: string;
+  }): Promise<MailDraft> {
     const draft = record(
       await this.call(
         "mail.update_draft",
         { ...args },
         "https://www.googleapis.com/auth/gmail.compose",
-        signal,
       ),
       "mail update_draft",
     ) as unknown as GmailDraft;
@@ -352,7 +341,6 @@ export class GoogleMcpBackend {
         command,
         { ...args },
         "https://www.googleapis.com/auth/gmail.modify",
-        signal,
       ),
       command,
     );
@@ -363,16 +351,13 @@ export class GoogleMcpBackend {
     );
   }
 
-  async calendarList(
-    args: {
-      calendarId: string;
-      from: string;
-      to: string;
-      limit: number;
-      cursor?: string;
-    },
-    signal?: AbortSignal,
-  ): Promise<CalendarListResult> {
+  async calendarList(args: {
+    calendarId: string;
+    from: string;
+    to: string;
+    limit: number;
+    cursor?: string;
+  }): Promise<CalendarListResult> {
     const data = record(
       await this.call(
         "calendar.list",
@@ -384,7 +369,6 @@ export class GoogleMcpBackend {
           pageToken: args.cursor,
         },
         "https://www.googleapis.com/auth/calendar.readonly",
-        signal,
       ),
       "calendar list",
     );
@@ -402,34 +386,27 @@ export class GoogleMcpBackend {
     args: Record<string, unknown>,
     scope: string,
     zone: string | undefined,
-    signal?: AbortSignal,
   ): Promise<CalendarEvent> {
-    const data = record(await this.call(command, args, scope, signal), command);
+    const data = record(await this.call(command, args, scope), command);
     return eventDetail((data.event ?? data) as GoogleEvent, zone);
   }
 
-  calendarRead(eventId: string, signal?: AbortSignal): Promise<CalendarEvent> {
+  calendarRead(eventId: string): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.read",
       { calendarId: "primary", eventId },
       "https://www.googleapis.com/auth/calendar.readonly",
       undefined,
-      signal,
     );
   }
 
   /** `event` is the REST `Event` body, which the tool is expected to take. */
-  calendarCreate(
-    event: GoogleEvent,
-    zone: string,
-    signal?: AbortSignal,
-  ): Promise<CalendarEvent> {
+  calendarCreate(event: GoogleEvent, zone: string): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.create",
       { calendarId: "primary", event, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
       zone,
-      signal,
     );
   }
 
@@ -437,35 +414,32 @@ export class GoogleMcpBackend {
     eventId: string,
     event: GoogleEvent,
     zone: string | undefined,
-    signal?: AbortSignal,
   ): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.update",
       { calendarId: "primary", eventId, event, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
       zone,
-      signal,
     );
   }
 
-  async calendarRespond(
-    args: { eventId: string; response: string; comment?: string },
-    signal?: AbortSignal,
-  ): Promise<void> {
+  async calendarRespond(args: {
+    eventId: string;
+    response: string;
+    comment?: string;
+  }): Promise<void> {
     await this.call(
       "calendar.respond",
       { calendarId: "primary", ...args, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
-      signal,
     );
   }
 
-  async calendarCancel(eventId: string, signal?: AbortSignal): Promise<void> {
+  async calendarCancel(eventId: string): Promise<void> {
     await this.call(
       "calendar.cancel",
       { calendarId: "primary", eventId, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
-      signal,
     );
   }
 
@@ -474,16 +448,13 @@ export class GoogleMcpBackend {
    * the terms used here (`fullText contains`, `modifiedTime >`), but names a
    * parent `parentId = '…'` rather than `'…' in parents`.
    */
-  async driveSearch(
-    args: {
-      query: string;
-      folderId?: string;
-      modifiedAfter?: string;
-      limit: number;
-      cursor?: string;
-    },
-    signal?: AbortSignal,
-  ): Promise<DriveSearchResult> {
+  async driveSearch(args: {
+    query: string;
+    folderId?: string;
+    modifiedAfter?: string;
+    limit: number;
+    cursor?: string;
+  }): Promise<DriveSearchResult> {
     const query = driveSearchQuery({
       query: args.query,
       modifiedAfter: args.modifiedAfter,
@@ -501,7 +472,6 @@ export class GoogleMcpBackend {
           excludeContentSnippets: true,
         },
         "https://www.googleapis.com/auth/drive.readonly",
-        signal,
       ),
       "drive search",
     );
@@ -529,7 +499,6 @@ export class GoogleMcpBackend {
       "drive.read",
       { fileId },
       "https://www.googleapis.com/auth/drive.readonly",
-      signal,
     );
     const text =
       typeof data === "string"
@@ -546,117 +515,4 @@ export class GoogleMcpBackend {
       },
     };
   }
-}
-
-/** A tool caller over one MCP server, each call a span. */
-class McpServerConnection implements McpToolCaller {
-  constructor(
-    private readonly client: Client,
-    private readonly url: string,
-    private readonly tracer: Tracer,
-  ) {}
-
-  async call(
-    tool: string,
-    args: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
-    const defined = Object.fromEntries(
-      Object.entries(args).filter(([, v]) => v !== undefined),
-    );
-    return tracedMcp(
-      this.tracer,
-      { method: "tools/call", url: this.url, tool },
-      () =>
-        this.client.callTool({ name: tool, arguments: defined }, { signal }),
-    );
-  }
-
-  close(): Promise<void> {
-    return this.client.close();
-  }
-}
-
-export interface ConnectMcpOptions {
-  servers?: Partial<GoogleMcpServers>;
-  /** The fetch the MCP client uses; the placeholder bearer is added to every request. */
-  fetchImpl?: McpFetch;
-  /** Commands to look for; the host's allowlist, so a disabled command opens no server. */
-  commands: readonly McpCommand[];
-  /** Default: the globally registered tracer; tests record the spans. */
-  tracer?: Tracer;
-}
-
-/**
- * Open the MCP servers the enabled commands need, list each one's tools, and
- * keep the commands whose expected tool is listed. A server that fails to
- * connect or list serves nothing, and its commands fall back to REST.
- */
-export async function connectGoogleMcp(
-  transport: GoogleTransport,
-  rest: GoogleRestBackend,
-  options: ConnectMcpOptions,
-): Promise<{ backend: GoogleMcpBackend; close(): Promise<void> }> {
-  const servers = { ...GOOGLE_MCP_SERVERS, ...options.servers };
-  const tracer = options.tracer ?? defaultTracer();
-  const baseFetch: McpFetch =
-    options.fetchImpl ?? ((url, init) => fetch(url, init));
-  const authorized: McpFetch = (url, init) => {
-    const headers = new Headers(init?.headers);
-    headers.set("Authorization", transport.authorization());
-    return baseFetch(url, { ...init, headers });
-  };
-  const wanted = new Set(
-    options.commands.map((command) => EXPECTED_MCP_TOOLS[command].server),
-  );
-  const callers: Partial<Record<keyof GoogleMcpServers, McpServerConnection>> =
-    {};
-  const served = new Set<McpCommand>();
-  await Promise.all(
-    [...wanted].map(async (server) => {
-      const client = new Client({
-        name: "introspection-recipe-productivity-google",
-        version: "1",
-      });
-      try {
-        const url = servers[server];
-        await tracedMcp(tracer, { method: "initialize", url }, () =>
-          client.connect(
-            new StreamableHTTPClientTransport(new URL(url), {
-              fetch: authorized,
-            }),
-          ),
-        );
-        const tools = new Set<string>();
-        let cursor: string | undefined;
-        do {
-          const page = await tracedMcp(
-            tracer,
-            { method: "tools/list", url },
-            () => client.listTools(cursor ? { cursor } : undefined),
-          );
-          for (const tool of page.tools) tools.add(tool.name);
-          cursor = page.nextCursor;
-        } while (cursor);
-        callers[server] = new McpServerConnection(client, url, tracer);
-        for (const command of options.commands) {
-          const expected = EXPECTED_MCP_TOOLS[command];
-          if (expected.server === server && tools.has(expected.tool))
-            served.add(command);
-        }
-      } catch {
-        await client.close().catch(() => undefined);
-      }
-    }),
-  );
-  return {
-    backend: new GoogleMcpBackend(callers, served, rest),
-    close: async () => {
-      await Promise.all(
-        Object.values(callers).map((caller) =>
-          caller.close().catch(() => undefined),
-        ),
-      );
-    },
-  };
 }

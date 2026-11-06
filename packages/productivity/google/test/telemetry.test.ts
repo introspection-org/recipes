@@ -1,18 +1,22 @@
-import type { Attributes, Span, SpanStatus, Tracer } from "@opentelemetry/api";
+import {
+  type Attributes,
+  type Span,
+  SpanKind,
+  type SpanOptions,
+  type SpanStatus,
+  type Tracer,
+} from "@opentelemetry/api";
 import { describe, expect, it } from "vitest";
 
-import {
-  createGoogleProductivitySession,
-  GOOGLE_MCP_SERVERS,
-} from "../src/index.js";
+import { createGoogleProductivitySession } from "../src/index.js";
 import {
   httpRequestSpan,
   httpResponseAttributes,
   MAX_RECORDED_BODY_BYTES,
-  mcpRequestSpan,
   mcpResultAttributes,
   OPERATION_ID_ATTRIBUTE,
   RESPONSE_BODY_ATTRIBUTE,
+  toolCallSpan,
 } from "../src/telemetry.js";
 import {
   fakeGoogle,
@@ -20,10 +24,11 @@ import {
   json,
   recordingSleep,
 } from "./fake-google.js";
-import { fakeMcp, structured } from "./fake-mcp.js";
+import { fakeTools, httpFailure, structured } from "./fake-tools.js";
 
 interface RecordedSpan {
   name: string;
+  kind?: number;
   attributes: Attributes;
   status?: SpanStatus;
   ended: boolean;
@@ -32,10 +37,11 @@ interface RecordedSpan {
 /** A tracer that keeps every span it starts. */
 function recordingTracer(): { tracer: Tracer; spans: RecordedSpan[] } {
   const spans: RecordedSpan[] = [];
-  const tracer: Tracer = {
-    startSpan(name, options) {
+  const tracer = {
+    startSpan(name: string, options?: SpanOptions) {
       const recorded: RecordedSpan = {
         name,
+        ...(options?.kind !== undefined ? { kind: options.kind } : {}),
         attributes: { ...options?.attributes },
         ended: false,
       };
@@ -59,11 +65,15 @@ function recordingTracer(): { tracer: Tracer; spans: RecordedSpan[] } {
       };
       return span as unknown as Span;
     },
-    startActiveSpan() {
-      throw new Error("not used");
+    startActiveSpan(
+      name: string,
+      options: SpanOptions,
+      fn: (span: Span) => unknown,
+    ) {
+      return fn(tracer.startSpan(name, options));
     },
   };
-  return { tracer, spans };
+  return { tracer: tracer as unknown as Tracer, spans };
 }
 
 const CONFIG = {
@@ -114,20 +124,12 @@ describe("request span attributes", () => {
     });
   });
 
-  it("names an MCP span after its method and tool, and records the result", () => {
-    expect(
-      mcpRequestSpan({
-        method: "tools/call",
-        url: GOOGLE_MCP_SERVERS.gmail,
-        tool: "get_message",
-      }),
-    ).toEqual({
-      name: "tools/call get_message",
+  it("names an MCP tool call span after the server and tool, and records the result", () => {
+    expect(toolCallSpan({ server: "gmail", tool: "get_message" })).toEqual({
+      name: "gmail/get_message",
       attributes: {
-        "mcp.method.name": "tools/call",
-        "server.address": "gmailmcp.googleapis.com",
-        "server.port": 443,
-        "gen_ai.tool.name": "get_message",
+        "mcp.server.id": "gmail",
+        "mcp.tool.name": "get_message",
       },
     });
     const result = { content: [{ type: "text", text: "no" }], isError: true };
@@ -169,7 +171,7 @@ describe("request spans from a session", () => {
         cwd: process.cwd(),
         fetch: rest.fetchImpl,
       },
-      { restOnly: true, tracer, sleep: recordingSleep().sleep },
+      { tracer, sleep: recordingSleep().sleep },
     );
     const file = await withFake.drive.download({ file_id: "f1" });
     expect(Buffer.from(file.bytes).toString()).toBe("PK");
@@ -208,15 +210,13 @@ describe("request spans from a session", () => {
     expect(JSON.stringify(spans)).not.toContain("alt=media");
   });
 
-  it("records each MCP request the provider makes, with the tool's result", async () => {
+  it("records one internal span per MCP tool call through Pi, with the tool's result and no wire attributes", async () => {
     const { tracer, spans } = recordingTracer();
-    const gmail = new URL(GOOGLE_MCP_SERVERS.gmail).host;
-    const mcp = fakeMcp({
-      [gmail]: {
-        get_message: structured({
-          message: { id: "m1", threadId: "t1", snippet: "hello" },
-        }),
-      },
+    const pi = fakeTools({
+      mcp__gmail__get_message: structured({
+        message: { id: "m1", threadId: "t1", snippet: "hello" },
+      }),
+      mcp__calendar__get_event: httpFailure(500),
     });
     const google = await createGoogleProductivitySession(
       {
@@ -226,32 +226,33 @@ describe("request spans from a session", () => {
         fetch: fakeGoogle([["GET", /\/labels$/, () => json({ labels: [] })]])
           .fetchImpl,
       },
-      { mcpFetch: mcp.fetchImpl, tracer, sleep: recordingSleep().sleep },
+      { tracer, sleep: recordingSleep().sleep },
     );
-    expect(google.backends["mail.read"]).toBe("mcp");
-    await google.mail.read({ message_id: "m1" });
+    await google.mail.read({ message_id: "m1" }, pi.ctx);
+    await expect(
+      google.calendar.read({ event_id: "e1" }, pi.ctx),
+    ).rejects.toMatchObject({ productivity: { code: "provider_error" } });
 
-    const names = spans.map((span) => span.name);
-    expect(names.slice(0, 3)).toEqual([
-      "initialize",
-      "tools/list",
-      "tools/call get_message",
+    const calls = spans.filter((span) => span.kind === SpanKind.INTERNAL);
+    expect(calls.map((span) => span.name)).toEqual([
+      "gmail/get_message",
+      "calendar/get_event",
     ]);
-    const call = spans[2]!;
-    expect(call.attributes).toMatchObject({
-      "mcp.method.name": "tools/call",
-      "gen_ai.tool.name": "get_message",
-      "server.address": "gmailmcp.googleapis.com",
+    expect(calls[0]!.attributes).toMatchObject({
+      "mcp.server.id": "gmail",
+      "mcp.tool.name": "get_message",
     });
+    // The request on the wire is the runtime's `tools/call` span, not this one.
+    expect(calls[0]!.attributes["mcp.method.name"]).toBeUndefined();
+    expect(calls[0]!.attributes["gen_ai.operation.name"]).toBeUndefined();
     expect(
-      JSON.parse(String(call.attributes[RESPONSE_BODY_ATTRIBUTE])),
+      JSON.parse(String(calls[0]!.attributes[RESPONSE_BODY_ATTRIBUTE])),
     ).toMatchObject({
       structuredContent: { message: { id: "m1" } },
     });
-    expect(
-      JSON.parse(String(spans[1]!.attributes[RESPONSE_BODY_ATTRIBUTE])),
-    ).toMatchObject({ tools: [{ name: "get_message" }] });
-    expect(spans[0]!.attributes[RESPONSE_BODY_ATTRIBUTE]).toBeUndefined();
+    expect(calls[1]!.attributes).toMatchObject({ "error.type": "call_failed" });
+    expect(calls[1]!.attributes[RESPONSE_BODY_ATTRIBUTE]).toBeUndefined();
+    expect(calls[1]!.status?.code).toBe(2);
     expect(spans.every((span) => span.ended)).toBe(true);
   });
 });

@@ -3,14 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   createGoogleProductivitySession,
   EXPECTED_MCP_TOOLS,
-  GOOGLE_MCP_SERVERS,
+  mcpToolFor,
+  mcpToolName,
 } from "../src/index.js";
 import { fakeGoogle, json, recordingSleep } from "./fake-google.js";
-import { type FakeTool, fakeMcp, structured } from "./fake-mcp.js";
-
-const GMAIL = new URL(GOOGLE_MCP_SERVERS.gmail).host;
-const CALENDAR = new URL(GOOGLE_MCP_SERVERS.calendar).host;
-const DRIVE = new URL(GOOGLE_MCP_SERVERS.drive).host;
+import {
+  type FakeTool,
+  fakeTools,
+  httpFailure,
+  structured,
+} from "./fake-tools.js";
 
 const CONFIG = {
   provider: "google",
@@ -91,11 +93,8 @@ function restFake() {
   ]);
 }
 
-async function sessionWithRest(
-  servers: Record<string, Record<string, FakeTool>>,
-  options: Parameters<typeof fakeMcp>[1] = {},
-) {
-  const mcp = fakeMcp(servers, options);
+async function sessionWithRest(tools: Record<string, FakeTool>) {
+  const pi = fakeTools(tools);
   const rest = restFake();
   const google = await createGoogleProductivitySession(
     {
@@ -104,103 +103,90 @@ async function sessionWithRest(
       cwd: process.cwd(),
       fetch: rest.fetchImpl,
     },
-    { mcpFetch: mcp.fetchImpl, sleep: recordingSleep().sleep },
+    { sleep: recordingSleep().sleep },
   );
-  return { google, mcp, rest };
+  return { google, ctx: pi.ctx, mcp: pi.calls, rest };
 }
 
-describe("MCP backend selection at session start", () => {
-  it("serves a command over MCP when the server lists its tool", async () => {
-    const { google, mcp, rest } = await sessionWithRest({
-      [GMAIL]: { get_message: structured({ message: MESSAGE }) },
-    });
-    expect(google.backends["mail.read"]).toBe("mcp");
+describe("MCP tool names", () => {
+  it("names each expected tool as Pi does: mcp__<server>__<tool>", () => {
+    expect(mcpToolFor("mail.read")).toBe("mcp__gmail__get_message");
+    expect(mcpToolFor("calendar.list")).toBe("mcp__calendar__list_events");
+    expect(mcpToolFor("drive.search")).toBe("mcp__drive__search_files");
+    expect(mcpToolName("google-mail", "a.b")).toBe("mcp__google_mail__a_b");
+    // Pi shortens a name past 64 characters; none of ours comes near.
+    for (const command of Object.keys(EXPECTED_MCP_TOOLS))
+      expect(
+        mcpToolFor(command as keyof typeof EXPECTED_MCP_TOOLS).length,
+      ).toBeLessThanOrEqual(64);
+  });
+});
 
-    const { messages } = await google.mail.read({ message_id: "m1" });
+describe("MCP backend selection per call", () => {
+  it("serves a command over MCP when the session can call its tool", async () => {
+    const { google, ctx, mcp, rest } = await sessionWithRest({
+      mcp__gmail__get_message: structured({ message: MESSAGE }),
+    });
+    expect(google.backendFor("mail.read", ctx)).toBe("mcp");
+
+    const { messages } = await google.mail.read({ message_id: "m1" }, ctx);
     expect(messages[0]).toMatchObject({
       id: "m1",
       from: { email: "ada@example.com", name: "Ada" },
       labels: ["INBOX", "Clients"],
       body: { content_type: "text", content: "Hello from MCP" },
     });
-    expect(mcp.calls.find((c) => c.tool === "get_message")?.arguments).toEqual({
-      messageId: "m1",
-    });
+    expect(mcp).toEqual([
+      { name: "mcp__gmail__get_message", arguments: { messageId: "m1" } },
+    ]);
     expect(
       rest.calls.some((c) => c.url.pathname.endsWith("/messages/m1")),
     ).toBe(false);
-    await google.close?.();
   });
 
-  it("falls back to REST for a command whose tool the server does not list", async () => {
-    const { google, mcp, rest } = await sessionWithRest({
-      [GMAIL]: { search_messages: structured({ messages: [] }) },
+  it("falls back to REST for a command whose tool the session cannot call", async () => {
+    const { google, ctx, mcp, rest } = await sessionWithRest({
+      mcp__gmail__search_messages: structured({ messages: [] }),
     });
-    expect(google.backends).toMatchObject({
-      "mail.search": "mcp",
-      "mail.read": "rest",
-    });
+    expect(google.backendFor("mail.search", ctx)).toBe("mcp");
+    expect(google.backendFor("mail.read", ctx)).toBe("rest");
 
-    const { messages } = await google.mail.read({ message_id: "m1" });
+    const { messages } = await google.mail.read({ message_id: "m1" }, ctx);
     expect(messages[0]!.body?.content).toBe("Hello from REST");
     expect(
       rest.calls.some((c) => c.url.pathname.endsWith("/messages/m1")),
     ).toBe(true);
-    expect(mcp.calls.some((c) => c.method === "tools/call")).toBe(false);
+    expect(mcp).toEqual([]);
   });
 
-  it("falls back to REST for every command of a server that is down", async () => {
-    const { google } = await sessionWithRest(
-      {},
-      { down: [GMAIL, CALENDAR, DRIVE] },
-    );
-    for (const command of Object.keys(EXPECTED_MCP_TOOLS)) {
+  it("serves every command over REST when the host runs no other tool (Pi before ctx.executeTool)", async () => {
+    const { google, rest } = await sessionWithRest({
+      mcp__gmail__get_message: structured({ message: MESSAGE }),
+    });
+    for (const command of Object.keys(EXPECTED_MCP_TOOLS))
       expect(
-        google.backends[command as keyof typeof EXPECTED_MCP_TOOLS],
+        google.backendFor(command as keyof typeof EXPECTED_MCP_TOOLS),
         command,
       ).toBe("rest");
-    }
     const { messages } = await google.mail.read({ message_id: "m1" });
     expect(messages[0]!.body?.content).toBe("Hello from REST");
-  });
-
-  it("opens only the servers the enabled commands need", async () => {
-    const mcp = fakeMcp({ [GMAIL]: {}, [CALENDAR]: {}, [DRIVE]: {} });
-    await createGoogleProductivitySession(
-      {
-        config: { provider: "google", tools: { drive: ["search"] } },
-        env: { INTROSPECTION_TASK_ID: "t" },
-        cwd: process.cwd(),
-        fetch: restFake().fetchImpl,
-      },
-      { mcpFetch: mcp.fetchImpl },
-    );
-    expect(new Set(mcp.calls.map((c) => c.server))).toEqual(new Set([DRIVE]));
-  });
-
-  it("sends only the placeholder bearer to the MCP servers", async () => {
-    const { mcp } = await sessionWithRest({ [GMAIL]: {} });
-    expect(mcp.calls.length).toBeGreaterThan(0);
-    for (const call of mcp.calls)
-      expect(call.authorization).toBe("Bearer introspection-egress");
+    expect(rest.calls.length).toBeGreaterThan(0);
   });
 
   it("sends mail only through REST, even when the server offers a send tool", async () => {
     const send: FakeTool = () => {
       throw new Error("mail send must not go through MCP");
     };
-    const { google, mcp, rest } = await sessionWithRest({
-      [GMAIL]: {
-        send_draft: send,
-        send_message: send,
-        create_draft: structured({ id: "d1" }),
-      },
+    const { google, ctx, mcp, rest } = await sessionWithRest({
+      mcp__gmail__send_draft: send,
+      mcp__gmail__send_message: send,
+      mcp__gmail__create_draft: structured({ id: "d1" }),
     });
-    await expect(google.mail.send({ draft_id: "d1" })).resolves.toEqual({
+    await expect(google.mail.send({ draft_id: "d1" }, ctx)).resolves.toEqual({
       message_id: "sent1",
       thread_id: "t1",
     });
-    expect(mcp.calls.some((c) => c.method === "tools/call")).toBe(false);
+    expect(mcp).toEqual([]);
     expect(rest.calls.at(-1)!.url.pathname).toBe(
       "/gmail/v1/users/me/drafts/send",
     );
@@ -209,15 +195,15 @@ describe("MCP backend selection at session start", () => {
 
 describe("MCP errors", () => {
   it("maps a tool's error result to provider_error with its message", async () => {
-    const { google } = await sessionWithRest({
-      [GMAIL]: {
-        get_message: () => ({
-          isError: true,
-          content: [{ type: "text", text: "Backend unavailable" }],
-        }),
-      },
+    const { google, ctx } = await sessionWithRest({
+      mcp__gmail__get_message: () => ({
+        isError: true,
+        content: [{ type: "text", text: "Backend unavailable" }],
+      }),
     });
-    await expect(google.mail.read({ message_id: "m1" })).rejects.toMatchObject({
+    await expect(
+      google.mail.read({ message_id: "m1" }, ctx),
+    ).rejects.toMatchObject({
       productivity: {
         code: "provider_error",
         message: expect.stringContaining("Backend unavailable"),
@@ -225,23 +211,21 @@ describe("MCP errors", () => {
     });
   });
 
-  it("maps HTTP 401 on a call to not_connected and 403 to missing_scope", async () => {
-    const unauthorized = await sessionWithRest(
-      { [GMAIL]: { get_message: structured({}) } },
-      { failCalls: { [GMAIL]: 401 } },
-    );
+  it("maps Pi's HTTP 401 on a call to not_connected and 403 to missing_scope", async () => {
+    const unauthorized = await sessionWithRest({
+      mcp__gmail__get_message: httpFailure(401),
+    });
     await expect(
-      unauthorized.google.mail.read({ message_id: "m1" }),
+      unauthorized.google.mail.read({ message_id: "m1" }, unauthorized.ctx),
     ).rejects.toMatchObject({
       productivity: { code: "not_connected" },
     });
 
-    const forbidden = await sessionWithRest(
-      { [DRIVE]: { search_files: structured({ files: [] }) } },
-      { failCalls: { [DRIVE]: 403 } },
-    );
+    const forbidden = await sessionWithRest({
+      mcp__drive__search_files: httpFailure(403),
+    });
     await expect(
-      forbidden.google.drive.search({ query: "x", limit: 5 }),
+      forbidden.google.drive.search({ query: "x", limit: 5 }, forbidden.ctx),
     ).rejects.toMatchObject({
       productivity: {
         code: "missing_scope",
@@ -250,14 +234,30 @@ describe("MCP errors", () => {
     });
   });
 
-  it("refuses a result it does not recognise rather than guessing", async () => {
-    const { google } = await sessionWithRest({
-      [CALENDAR]: {
-        get_event: () => ({ content: [{ type: "text", text: "not json" }] }),
+  it("maps any other failed call (blocked, invalid) to provider_error with Pi's message", async () => {
+    const { google, ctx } = await sessionWithRest({
+      mcp__calendar__get_event: () => {
+        throw new Error("Tool call blocked by policy");
       },
     });
     await expect(
-      google.calendar.read({ event_id: "e1" }),
+      google.calendar.read({ event_id: "e1" }, ctx),
+    ).rejects.toMatchObject({
+      productivity: {
+        code: "provider_error",
+        message: expect.stringContaining("Tool call blocked by policy"),
+      },
+    });
+  });
+
+  it("refuses a result it does not recognise rather than guessing", async () => {
+    const { google, ctx } = await sessionWithRest({
+      mcp__calendar__get_event: () => ({
+        content: [{ type: "text", text: "not json" }],
+      }),
+    });
+    await expect(
+      google.calendar.read({ event_id: "e1" }, ctx),
     ).rejects.toMatchObject({
       productivity: { code: "provider_error" },
     });
@@ -266,25 +266,22 @@ describe("MCP errors", () => {
 
 describe("MCP request and result shapes (to confirm against the live servers)", () => {
   it("searches Drive with the server's query language, reading `title` as the name", async () => {
-    const { google, mcp } = await sessionWithRest({
-      [DRIVE]: {
-        search_files: structured({
-          files: [
-            {
-              id: "f1",
-              title: "Plan",
-              mimeType: "application/vnd.google-apps.document",
-            },
-          ],
-          nextPageToken: "p2",
-        }),
-      },
+    const { google, ctx, mcp } = await sessionWithRest({
+      mcp__drive__search_files: structured({
+        files: [
+          {
+            id: "f1",
+            title: "Plan",
+            mimeType: "application/vnd.google-apps.document",
+          },
+        ],
+        nextPageToken: "p2",
+      }),
     });
-    const result = await google.drive.search({
-      query: "Bob's plan",
-      folder_id: "root",
-      limit: 5,
-    });
+    const result = await google.drive.search(
+      { query: "Bob's plan", folder_id: "root", limit: 5 },
+      ctx,
+    );
     expect(result).toEqual({
       files: [
         expect.objectContaining({
@@ -295,25 +292,23 @@ describe("MCP request and result shapes (to confirm against the live servers)", 
       ],
       cursor: "p2",
     });
-    expect(mcp.calls.find((c) => c.tool === "search_files")?.arguments).toEqual(
-      {
-        query:
-          "trashed = false and fullText contains 'Bob\\'s plan' and parentId = 'root'",
-        pageSize: 5,
-        excludeContentSnippets: true,
-      },
-    );
+    expect(
+      mcp.find((c) => c.name === "mcp__drive__search_files")?.arguments,
+    ).toEqual({
+      query:
+        "trashed = false and fullText contains 'Bob\\'s plan' and parentId = 'root'",
+      pageSize: 5,
+      excludeContentSnippets: true,
+    });
   });
 
   it("reads a Drive file as the server's text, within max_bytes", async () => {
-    const { google } = await sessionWithRest({
-      [DRIVE]: {
-        read_file_content: () => ({
-          content: [{ type: "text", text: "Plan text from MCP" }],
-        }),
-      },
+    const { google, ctx } = await sessionWithRest({
+      mcp__drive__read_file_content: () => ({
+        content: [{ type: "text", text: "Plan text from MCP" }],
+      }),
     });
-    const read = await google.drive.read({ file_id: "f1", max_bytes: 9 });
+    const read = await google.drive.read({ file_id: "f1", max_bytes: 9 }, ctx);
     expect(read).toMatchObject({
       file: { id: "f1", name: "Plan" },
       content: { content_type: "text", content: "Plan text" },
@@ -330,53 +325,56 @@ describe("MCP request and result shapes (to confirm against the live servers)", 
       },
       end: { dateTime: "2025-11-20T15:30:00+01:00", timeZone: "Europe/Paris" },
     };
-    const { google, mcp } = await sessionWithRest({
-      [CALENDAR]: { create_event: structured(created) },
+    const { google, ctx, mcp } = await sessionWithRest({
+      mcp__calendar__create_event: structured(created),
     });
-    const event = await google.calendar.create({
-      title: "1:1",
-      start: "2025-11-20T15:00:00+01:00",
-      end: "2025-11-20T15:30:00+01:00",
-      time_zone: "Europe/Paris",
-      attendees: ["grace@example.com"],
-    });
+    const event = await google.calendar.create(
+      {
+        title: "1:1",
+        start: "2025-11-20T15:00:00+01:00",
+        end: "2025-11-20T15:30:00+01:00",
+        time_zone: "Europe/Paris",
+        attendees: ["grace@example.com"],
+      },
+      ctx,
+    );
     expect(event).toMatchObject({
       id: "e9",
       title: "1:1",
       time_zone: "Europe/Paris",
     });
-    expect(mcp.calls.find((c) => c.tool === "create_event")?.arguments).toEqual(
-      {
-        calendarId: "primary",
-        sendUpdates: "all",
-        event: {
-          summary: "1:1",
-          start: {
-            dateTime: "2025-11-20T15:00:00+01:00",
-            timeZone: "Europe/Paris",
-          },
-          end: {
-            dateTime: "2025-11-20T15:30:00+01:00",
-            timeZone: "Europe/Paris",
-          },
-          attendees: [{ email: "grace@example.com" }],
+    expect(
+      mcp.find((c) => c.name === "mcp__calendar__create_event")?.arguments,
+    ).toEqual({
+      calendarId: "primary",
+      sendUpdates: "all",
+      event: {
+        summary: "1:1",
+        start: {
+          dateTime: "2025-11-20T15:00:00+01:00",
+          timeZone: "Europe/Paris",
         },
+        end: {
+          dateTime: "2025-11-20T15:30:00+01:00",
+          timeZone: "Europe/Paris",
+        },
+        attendees: [{ email: "grace@example.com" }],
       },
-    );
+    });
   });
 
   it("labels through MCP with label IDs resolved from names", async () => {
-    const { google, mcp } = await sessionWithRest({
-      [GMAIL]: { modify_message_labels: structured({ message: MESSAGE }) },
+    const { google, ctx, mcp } = await sessionWithRest({
+      mcp__gmail__modify_message_labels: structured({ message: MESSAGE }),
     });
-    const summary = await google.mail.label({
-      message_id: "m1",
-      add: ["clients"],
-      remove: ["unread"],
-    });
+    const summary = await google.mail.label(
+      { message_id: "m1", add: ["clients"], remove: ["unread"] },
+      ctx,
+    );
     expect(summary.labels).toEqual(["INBOX", "Clients"]);
     expect(
-      mcp.calls.find((c) => c.tool === "modify_message_labels")?.arguments,
+      mcp.find((c) => c.name === "mcp__gmail__modify_message_labels")
+        ?.arguments,
     ).toEqual({
       messageId: "m1",
       addLabelIds: ["Label_1"],

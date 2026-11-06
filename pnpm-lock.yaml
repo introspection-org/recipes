@@ -182,9 +182,6 @@ importers:
 
   packages/productivity/google:
     dependencies:
-      '@modelcontextprotocol/client':
-        specifier: ^2.4.0
-        version: 2.4.0
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.10.0
@@ -198,9 +195,6 @@ importers:
       '@introspection-ai/recipes':
         specifier: workspace:^
         version: link:../../..
-      '@modelcontextprotocol/server':
-        specifier: ^2.4.0
-        version: 2.4.0
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6
