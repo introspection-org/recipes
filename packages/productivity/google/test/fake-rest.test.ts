@@ -133,17 +133,14 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     ]);
     await b.calendar.create({
       title: "x",
-      start: "2025-11-10T10:00:00+01:00",
-      end: "2025-11-10T11:00:00+01:00",
+      start: "2025-11-10T10:00:00",
+      end: "2025-11-10T11:00:00",
       time_zone: "Europe/Paris",
       online_meeting: true,
     });
     expect(calls[0]!.url.searchParams.get("conferenceDataVersion")).toBe("1");
     expect(bodyJson(calls[0]!)).toMatchObject({
-      start: {
-        dateTime: "2025-11-10T10:00:00+01:00",
-        timeZone: "Europe/Paris",
-      },
+      start: { dateTime: "2025-11-10T10:00:00", timeZone: "Europe/Paris" },
       conferenceData: {
         createRequest: { conferenceSolutionKey: { type: "hangoutsMeet" } },
       },

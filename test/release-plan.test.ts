@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -77,7 +78,6 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
-      "google",
       "crate",
       "python",
     ]);
@@ -98,6 +98,17 @@ describe("release plan", () => {
     );
   });
 
+  it("leaves out a package that has never been released", () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "..", ".release-please-manifest.json"),
+        "utf8",
+      ),
+    ) as Record<string, string>;
+    expect(manifest["packages/productivity/google"]).toBeUndefined();
+    expect(artifacts.map((a) => a.key)).not.toContain("google");
+  });
+
   it("publishes nothing when every registry has its version", async () => {
     const results = await plan(artifacts, {
       tags: allTags,
@@ -107,7 +118,7 @@ describe("release plan", () => {
   });
 
   it("finishes companions a failed run left unpublished", async () => {
-    const companions = new Set(["slack", "docx", "pdf", "google"]);
+    const companions = new Set(["slack", "docx", "pdf"]);
     const published = artifacts
       .filter((a) => !companions.has(a.key))
       .flatMap((a) => a.names.map((n) => `${a.registry}:${n}@${a.version}`));
@@ -115,7 +126,7 @@ describe("release plan", () => {
       tags: allTags,
       ...registry(published),
     });
-    expect(toPublish(results)).toEqual(["slack", "docx", "pdf", "google"]);
+    expect(toPublish(results)).toEqual(["slack", "docx", "pdf"]);
   });
 
   it("reruns the root release when one platform binary is missing", async () => {
@@ -212,7 +223,6 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
-      "google",
       "python",
     ]);
     expect(results.find((r) => r.key === "crate")).toMatchObject({

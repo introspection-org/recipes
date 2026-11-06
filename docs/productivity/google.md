@@ -1,9 +1,10 @@
 # Google productivity provider
 
-**Status: proposed,** with the [productivity tools](README.md). Facts
-marked *to confirm* come from Google's documentation as summarised in design
-review, and are checked against a live Workspace domain before the package
-ships.
+**Status: built** (`packages/productivity/google`), not yet published or
+tested against a live Workspace domain. [As built](#as-built) lists where it
+differs from the design below. Facts marked *to confirm* come from Google's
+documentation as summarised in design review, and are checked against a live
+Workspace domain before the package ships.
 
 The `google` provider serves the `mail`, `calendar` and `drive` tools from a
 person's Gmail, Google Calendar and Google Drive. It is the package
@@ -159,6 +160,73 @@ Excel and PowerPoint files are the same problem.
   fallback when an MCP tool is missing.
 - **Live:** `introspection dev` against a Workspace test domain enrolled in
   the developer preview, with a test person connected.
+
+## As built
+
+- **Backends.** Every command the table above maps to MCP is declared `mcp`
+  in the descriptor; the rest are `rest`. At session start the package lists
+  the tools of each MCP server an enabled command needs, and serves a command
+  over MCP only when its expected tool is listed. A server that fails to
+  connect or list serves nothing, so its commands use REST. A `mail draft`
+  that replies always uses REST, since only the REST draft sets
+  `In-Reply-To` and `References`; a thread read uses REST too.
+- **Expected MCP tools** (`EXPECTED_MCP_TOOLS`, all *to confirm*). Gmail
+  (`gmailmcp.googleapis.com`): `search_messages`, `get_message`,
+  `create_draft`, `update_draft`, `modify_message_labels` (label and move).
+  Calendar (`calendarmcp.googleapis.com`, host *to confirm*): `list_events`,
+  `get_event`, `create_event`, `update_event`, `respond_to_event`,
+  `delete_event`. Drive (`drivemcp.googleapis.com`, host *to confirm*):
+  `search_files`, `read_file_content`, the names a Drive MCP server publishes.
+  Their results are read as the REST resources they wrap (`Message`, `Event`,
+  `File`, or `{messages|items|files, nextPageToken}`); a result in another
+  shape is a `provider_error`, never a guess. Drive's MCP search names a
+  parent `parentId = '…'` where `files.list` takes `'…' in parents`.
+- **Retries.** Reads are retried on `429` and `403` `rateLimitExceeded` /
+  `userRateLimitExceeded` up to four attempts, waiting `Retry-After` or
+  0.5, 1 and 2 seconds, and once on a `5xx`. A wait above 30 seconds comes
+  back as `rate_limited` with `retry_after_seconds`. A write is sent once,
+  even on a rate limit.
+- **Errors.** As the table above, plus: `400` is `invalid_request`; `403`
+  `exportSizeLimitExceeded` is `invalid_request` stating the 10 MB limit (the
+  limit is printed on `files.export` in Drive's discovery document); an MCP
+  `401` is `not_connected` and an MCP `403` is `missing_scope`, as MCP's
+  authorization spec answers an insufficient scope; a tool's `isError` result
+  is `provider_error` with its message.
+- **Mail.** `mail search` builds a Gmail query from the neutral filters
+  (`from:`, `after:`/`before:` as epoch seconds, `is:unread`) and maps
+  `folder` to a label ID. Summaries come from `format=metadata` reads. Bodies
+  are returned as text: the `text/plain` part, else the HTML part converted
+  with images, scripts, styles, frames and embeds dropped and link targets
+  kept in angle brackets. An attachment's ID is its `partId`, since Gmail's
+  `attachmentId` changes between reads. Draft bodies are sent as
+  `text/plain` (the Markdown as written), and a header value containing a
+  line break is refused. `mail move` adds the label and removes `INBOX`;
+  `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.
+- **Calendar.** `calendar` names a calendar by its title on the person's
+  list (`calendarList.list`). `create` and `update` send local times with
+  `timeZone`, which Calendar reads in that zone. `respond` patches the
+  attendee list with only the person's own `responseStatus` and comment
+  changed. `cancel` deletes with `sendUpdates=all`; Google sends attendees
+  its own notice, so a cancellation comment is not delivered.
+- **Drive.** `drive read` exports Docs and Slides as `text/plain` and Sheets
+  as `text/csv` (the first sheet; the sheet list the design names needs the
+  Sheets API and is not returned), and reads only text files of other types,
+  with a `Range` request cut at `max_bytes`. Over MCP it returns the server's
+  own text rendering. `drive upload` uses a multipart upload, or a resumable
+  one above 5 MB whose session URI must stay on `/upload/drive/v3/`.
+- **Tests.** The REST commands run against Vercel Labs' Google emulator
+  (`@emulators/google`) where it serves them, and against fakes for the rest
+  (`events.get`, `events.patch`, `files.export`, resumable uploads) and for
+  error injection; the MCP backend runs against fake MCP servers built on the
+  MCP SDK.
+- **Not yet:** a live-domain test, and confirming the MCP hosts, tool names
+  and result shapes.
+
+Request and response shapes come from Google's discovery documents as
+published in `googleapis/google-api-go-client` at `b6ee70b`:
+`gmail/v1/gmail-api.json` (revision 20261005),
+`calendar/v3/calendar-api.json` (20261030) and `drive/v3/drive-api.json`
+(20261023).
 
 ## Open questions
 

@@ -75,7 +75,9 @@ export function readArtifacts(repo) {
       names: ["introspection-recipe-check"],
       wheels,
     },
-  ];
+    // A package's manifest version is its last release, so a package that
+    // has never been released has none, and nothing to publish yet.
+  ].filter((artifact) => artifact.version !== undefined);
 }
 
 /**

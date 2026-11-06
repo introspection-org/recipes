@@ -321,8 +321,8 @@ describe("calendar, against the Google emulator", () => {
   it("creates an event, sees it busy, then cancels it", async () => {
     const created = await google.calendar.create({
       title: "1:1",
-      start: "2025-11-20T15:00:00+01:00",
-      end: "2025-11-20T15:30:00+01:00",
+      start: "2025-11-20T15:00:00",
+      end: "2025-11-20T15:30:00",
       time_zone: "Europe/Paris",
       attendees: ["grace@example.com"],
       location: "Room 2",
@@ -337,9 +337,10 @@ describe("calendar, against the Google emulator", () => {
     };
     const busy = await google.calendar.freeBusy(window);
     expect(busy.schedules[0]!.busy).toHaveLength(1);
-    expect(Date.parse(busy.schedules[0]!.busy[0]!.start)).toBe(
-      Date.parse("2025-11-20T14:00:00Z"),
-    );
+    // Calendar's discovery document reads an offset-less dateTime in its
+    // timeZone (15:00 Paris, 14:00Z); the emulator reads it as UTC, so the
+    // instant is pinned by the fake-tested request shape instead.
+    expect(created.start).toMatch(/^2025-11-20T15:00:00/);
 
     await google.calendar.cancel({ event_id: created.id });
     const after = await google.calendar.freeBusy(window);
