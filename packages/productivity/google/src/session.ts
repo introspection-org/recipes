@@ -1,3 +1,4 @@
+import type { Tracer } from "@opentelemetry/api";
 import type {
   CalendarCommand,
   CalendarSession,
@@ -92,6 +93,8 @@ export interface GoogleSessionOverrides {
   sleep?: Sleep;
   /** Skip the MCP servers entirely: every command over REST. */
   restOnly?: boolean;
+  /** Default: the globally registered tracer; tests record the spans. */
+  tracer?: Tracer;
 }
 
 /** A tool session with every method present and the call context optional. */
@@ -139,6 +142,7 @@ export async function createGoogleProductivitySession(
     hostAttachesCredential: options.fetch !== undefined,
     endpoints: overrides.endpoints,
     sleep: overrides.sleep,
+    tracer: overrides.tracer,
   });
   const rest = new GoogleRestBackend(transport);
   const commands = overrides.restOnly ? [] : enabledMcpCommands(options);
@@ -148,6 +152,7 @@ export async function createGoogleProductivitySession(
         fetchImpl:
           overrides.mcpFetch ?? (options.fetch as McpFetch | undefined),
         commands,
+        tracer: overrides.tracer,
       })
     : undefined;
   const via = (command: McpCommand): GoogleMcpBackend | undefined =>

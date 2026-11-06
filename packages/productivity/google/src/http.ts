@@ -1,8 +1,10 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
 
+import type { Tracer } from "@opentelemetry/api";
 import type { ProductivityFetch } from "@introspection-ai/recipes/productivity";
 
 import { GoogleProductivityError } from "./errors.js";
+import { defaultTracer, tracedFetch } from "./telemetry.js";
 
 export type GoogleEnvironment = Record<string, string | undefined>;
 
@@ -37,9 +39,18 @@ export interface GoogleTransportOptions {
    * credential, so the placeholder goes out whatever the environment says.
    */
   hostAttachesCredential?: boolean;
+  /** Default: the globally registered tracer; tests record the spans. */
+  tracer?: Tracer;
 }
 
 export interface GoogleRequest {
+  /** The method's id in the API's discovery document, such as `gmail.users.messages.get`. */
+  operation: string;
+  /**
+   * The method's path template from the host's root, after the discovery
+   * document's `flatPath`, such as `/gmail/v1/users/{userId}/messages/{id}`.
+   */
+  template: string;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   query?: Record<string, string | number | boolean | string[] | undefined>;
   json?: unknown;
@@ -237,6 +248,7 @@ export class GoogleTransport {
   private readonly sleep: Sleep;
   private readonly maxRateLimitAttempts: number;
   private readonly maxRetryWaitMs: number;
+  private readonly tracer: Tracer;
 
   constructor(options: GoogleTransportOptions = {}) {
     this.env = options.env ?? process.env;
@@ -250,6 +262,7 @@ export class GoogleTransport {
     this.maxRetryWaitMs = options.maxRetryWaitMs ?? 30_000;
     this.endpoints = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
     this.hostAttachesCredential = options.hostAttachesCredential ?? false;
+    this.tracer = options.tracer ?? defaultTracer();
   }
 
   /**
@@ -280,12 +293,21 @@ export class GoogleTransport {
     init: Omit<GoogleRequestInit, "headers"> & {
       headers?: Record<string, string>;
     },
+    request?: Pick<GoogleRequest, "operation" | "template">,
   ): Promise<GoogleHttpResponse> {
-    return this.fetchImpl(url, {
-      ...init,
-      redirect: "error",
-      headers: { ...init.headers, Authorization: this.authorization() },
-    });
+    return tracedFetch(
+      this.tracer,
+      this.fetchImpl,
+      url,
+      {
+        ...init,
+        redirect: "error",
+        headers: { ...init.headers, Authorization: this.authorization() },
+      },
+      request
+        ? { template: request.template, operation: request.operation }
+        : {},
+    );
   }
 
   /**
@@ -305,12 +327,16 @@ export class GoogleTransport {
     }
     let serverRetried = false;
     for (let attempt = 1; ; attempt += 1) {
-      const response = await this.raw(target, {
-        method: request.method ?? "GET",
-        headers,
-        body,
-        signal: request.signal,
-      });
+      const response = await this.raw(
+        target,
+        {
+          method: request.method ?? "GET",
+          headers,
+          body,
+          signal: request.signal,
+        },
+        request,
+      );
       if (response.ok) return response;
       const errorBody = parseErrorBody(await response.text());
       const reasons = errorReasons(errorBody);

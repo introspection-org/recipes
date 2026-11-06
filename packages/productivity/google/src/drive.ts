@@ -139,6 +139,8 @@ export class DriveClient {
       files?: DriveFile[];
       nextPageToken?: string;
     }>(`${this.transport.endpoints.drive}/files`, {
+      operation: "drive.files.list",
+      template: "/drive/v3/files",
       query: {
         q: options.q,
         pageSize: options.pageSize,
@@ -155,6 +157,8 @@ export class DriveClient {
     return this.transport.json<DriveFile>(
       `${this.transport.endpoints.drive}/files/${encodeURIComponent(id)}`,
       {
+        operation: "drive.files.get",
+        template: "/drive/v3/files/{fileId}",
         query: { fields: FILE_FIELDS },
         scope: DRIVE_SCOPES.read,
         signal,
@@ -172,6 +176,8 @@ export class DriveClient {
       .bytes(
         `${this.transport.endpoints.drive}/files/${encodeURIComponent(id)}/export`,
         {
+          operation: "drive.files.export",
+          template: "/drive/v3/files/{fileId}/export",
           query: { mimeType },
           scope: DRIVE_SCOPES.read,
           limitBytes: DRIVE_EXPORT_LIMIT_BYTES,
@@ -203,6 +209,8 @@ export class DriveClient {
     return this.transport.bytes(
       `${this.transport.endpoints.drive}/files/${encodeURIComponent(id)}`,
       {
+        operation: "drive.files.get",
+        template: "/drive/v3/files/{fileId}",
         query: { alt: "media" },
         scope: DRIVE_SCOPES.read,
         limitBytes,
@@ -224,6 +232,8 @@ export class DriveClient {
     const response = await this.transport.send(
       `${this.transport.endpoints.drive}/files/${encodeURIComponent(id)}`,
       {
+        operation: "drive.files.get",
+        template: "/drive/v3/files/{fileId}",
         query: { alt: "media" },
         headers: { Range: `bytes=0-${Math.max(0, maxBytes - 1)}` },
         scope: DRIVE_SCOPES.read,
@@ -279,6 +289,8 @@ export class DriveClient {
     return this.transport.json<DriveFile>(
       `${this.transport.endpoints.driveUpload}/files`,
       {
+        operation: "drive.files.create",
+        template: "/upload/drive/v3/files",
         method: "POST",
         query: { uploadType: "multipart", fields: FILE_FIELDS },
         body: new Uint8Array(Buffer.concat([head, file.data, tail])),
@@ -298,6 +310,8 @@ export class DriveClient {
     const start = await this.transport.send(
       `${this.transport.endpoints.driveUpload}/files`,
       {
+        operation: "drive.files.create",
+        template: "/upload/drive/v3/files",
         method: "POST",
         query: { uploadType: "resumable", fields: FILE_FIELDS },
         json: metadata,
@@ -319,6 +333,8 @@ export class DriveClient {
       );
     }
     return this.transport.json<DriveFile>(session, {
+      operation: "drive.files.create",
+      template: "/upload/drive/v3/files",
       method: "PUT",
       body: file.data,
       contentType: file.mimeType,

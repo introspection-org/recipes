@@ -185,6 +185,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.4.0
         version: 2.4.0
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.10.0
     devDependencies:
       '@emulators/core':
         specifier: ^0.13.0

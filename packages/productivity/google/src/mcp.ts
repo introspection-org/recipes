@@ -1,3 +1,4 @@
+import type { Tracer } from "@opentelemetry/api";
 import {
   Client,
   ProtocolError,
@@ -28,6 +29,7 @@ import {
   eventSummary,
   type GoogleRestBackend,
 } from "./rest.js";
+import { defaultTracer, tracedMcp } from "./telemetry.js";
 
 /** Google's Workspace MCP servers, one per product. */
 export interface GoogleMcpServers {
@@ -546,9 +548,13 @@ export class GoogleMcpBackend {
   }
 }
 
-/** A tool caller over one MCP server. */
+/** A tool caller over one MCP server, each call a span. */
 class McpServerConnection implements McpToolCaller {
-  constructor(private readonly client: Client) {}
+  constructor(
+    private readonly client: Client,
+    private readonly url: string,
+    private readonly tracer: Tracer,
+  ) {}
 
   async call(
     tool: string,
@@ -558,7 +564,12 @@ class McpServerConnection implements McpToolCaller {
     const defined = Object.fromEntries(
       Object.entries(args).filter(([, v]) => v !== undefined),
     );
-    return this.client.callTool({ name: tool, arguments: defined }, { signal });
+    return tracedMcp(
+      this.tracer,
+      { method: "tools/call", url: this.url, tool },
+      () =>
+        this.client.callTool({ name: tool, arguments: defined }, { signal }),
+    );
   }
 
   close(): Promise<void> {
@@ -572,6 +583,8 @@ export interface ConnectMcpOptions {
   fetchImpl?: McpFetch;
   /** Commands to look for; the host's allowlist, so a disabled command opens no server. */
   commands: readonly McpCommand[];
+  /** Default: the globally registered tracer; tests record the spans. */
+  tracer?: Tracer;
 }
 
 /**
@@ -585,6 +598,7 @@ export async function connectGoogleMcp(
   options: ConnectMcpOptions,
 ): Promise<{ backend: GoogleMcpBackend; close(): Promise<void> }> {
   const servers = { ...GOOGLE_MCP_SERVERS, ...options.servers };
+  const tracer = options.tracer ?? defaultTracer();
   const baseFetch: McpFetch =
     options.fetchImpl ?? ((url, init) => fetch(url, init));
   const authorized: McpFetch = (url, init) => {
@@ -605,19 +619,26 @@ export async function connectGoogleMcp(
         version: "1",
       });
       try {
-        await client.connect(
-          new StreamableHTTPClientTransport(new URL(servers[server]), {
-            fetch: authorized,
-          }),
+        const url = servers[server];
+        await tracedMcp(tracer, { method: "initialize", url }, () =>
+          client.connect(
+            new StreamableHTTPClientTransport(new URL(url), {
+              fetch: authorized,
+            }),
+          ),
         );
         const tools = new Set<string>();
         let cursor: string | undefined;
         do {
-          const page = await client.listTools(cursor ? { cursor } : undefined);
+          const page = await tracedMcp(
+            tracer,
+            { method: "tools/list", url },
+            () => client.listTools(cursor ? { cursor } : undefined),
+          );
           for (const tool of page.tools) tools.add(tool.name);
           cursor = page.nextCursor;
         } while (cursor);
-        callers[server] = new McpServerConnection(client);
+        callers[server] = new McpServerConnection(client, url, tracer);
         for (const command of options.commands) {
           const expected = EXPECTED_MCP_TOOLS[command];
           if (expected.server === server && tools.has(expected.tool))

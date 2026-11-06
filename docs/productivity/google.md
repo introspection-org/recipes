@@ -219,6 +219,24 @@ Excel and PowerPoint files are the same problem.
   (`events.get`, `events.patch`, `files.export`, resumable uploads) and for
   error injection; the MCP backend runs against fake MCP servers built on the
   MCP SDK.
+- **Telemetry.** Each REST request (each retried attempt included) and each
+  MCP request the package makes (`initialize`, `tools/list`, `tools/call`)
+  is an OpenTelemetry client span on the globally registered tracer (scope
+  `@introspection-ai/recipe-productivity-google`), a child of the tool
+  call's `execute_tool` span. A REST span is named `METHOD /template` after
+  the discovery document's path from the host's root, such as
+  `GET /gmail/v1/users/{userId}/messages/{id}`, and carries
+  `http.request.method`, `server.address`, `server.port`, `url.template`,
+  the discovery method id as `introspection.api.operation_id` (such as
+  `gmail.users.messages.get`), `http.response.status_code`,
+  `http.response.body.size` and `error.type`. An MCP span is named
+  `tools/call <tool>` (or its method) and carries `mcp.method.name`,
+  `gen_ai.tool.name`, `server.address` and `server.port`. A JSON answer, or
+  an MCP result, up to 256 KiB is recorded under `gen_ai.tool.call.result`,
+  the attribute the tool result itself uses, so the Introspection processor
+  seals it as it seals tool results; bytes are never recorded. No header,
+  path or query is recorded. With no tracer provider registered the spans
+  are no-ops.
 - **Not yet:** a live-domain test, and confirming the MCP hosts, tool names
   and result shapes.
 

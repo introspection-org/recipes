@@ -81,6 +81,8 @@ export class CalendarClient {
         primary?: boolean;
       }>;
     }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
+      operation: "calendar.calendarList.list",
+      template: "/calendar/v3/users/me/calendarList",
       scope: CALENDAR_SCOPES.read,
       signal,
     });
@@ -104,6 +106,8 @@ export class CalendarClient {
       nextPageToken?: string;
       timeZone?: string;
     }>(this.eventsUrl(calendarId), {
+      operation: "calendar.events.list",
+      template: "/calendar/v3/calendars/{calendarId}/events",
       query: {
         timeMin: options.timeMin,
         timeMax: options.timeMax,
@@ -130,7 +134,12 @@ export class CalendarClient {
   ): Promise<CalendarEvent> {
     return this.transport.json<CalendarEvent>(
       `${this.eventsUrl(calendarId)}/${encodeURIComponent(eventId)}`,
-      { scope: CALENDAR_SCOPES.read, signal },
+      {
+        operation: "calendar.events.get",
+        template: "/calendar/v3/calendars/{calendarId}/events/{eventId}",
+        scope: CALENDAR_SCOPES.read,
+        signal,
+      },
     );
   }
 
@@ -140,6 +149,8 @@ export class CalendarClient {
     signal?: AbortSignal,
   ): Promise<CalendarEvent> {
     return this.transport.json<CalendarEvent>(this.eventsUrl(calendarId), {
+      operation: "calendar.events.insert",
+      template: "/calendar/v3/calendars/{calendarId}/events",
       method: "POST",
       query: {
         sendUpdates: "all",
@@ -161,6 +172,8 @@ export class CalendarClient {
     return this.transport.json<CalendarEvent>(
       `${this.eventsUrl(calendarId)}/${encodeURIComponent(eventId)}`,
       {
+        operation: "calendar.events.patch",
+        template: "/calendar/v3/calendars/{calendarId}/events/{eventId}",
         method: "PATCH",
         query: {
           sendUpdates: "all",
@@ -182,6 +195,8 @@ export class CalendarClient {
     await this.transport.send(
       `${this.eventsUrl(calendarId)}/${encodeURIComponent(eventId)}`,
       {
+        operation: "calendar.events.delete",
+        template: "/calendar/v3/calendars/{calendarId}/events/{eventId}",
         method: "DELETE",
         query: { sendUpdates: "all" },
         write: true,
@@ -204,6 +219,8 @@ export class CalendarClient {
     return this.transport.json<FreeBusyResult>(
       `${this.transport.endpoints.calendar}/freeBusy`,
       {
+        operation: "calendar.freebusy.query",
+        template: "/calendar/v3/freeBusy",
         method: "POST",
         json: request,
         scope: CALENDAR_SCOPES.read,

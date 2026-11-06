@@ -60,6 +60,8 @@ export class GmailClient {
       messages?: Array<{ id: string; threadId?: string }>;
       nextPageToken?: string;
     }>(`${this.me}/messages`, {
+      operation: "gmail.users.messages.list",
+      template: "/gmail/v1/users/{userId}/messages",
       query: {
         q: options.q,
         labelIds: options.labelIds,
@@ -81,6 +83,8 @@ export class GmailClient {
     return this.transport.json<GmailMessage>(
       `${this.me}/messages/${encodeURIComponent(id)}`,
       {
+        operation: "gmail.users.messages.get",
+        template: "/gmail/v1/users/{userId}/messages/{id}",
         query: {
           format,
           metadataHeaders: format === "metadata" ? SUMMARY_HEADERS : undefined,
@@ -95,6 +99,8 @@ export class GmailClient {
     return this.transport.json<GmailThread>(
       `${this.me}/threads/${encodeURIComponent(id)}`,
       {
+        operation: "gmail.users.threads.get",
+        template: "/gmail/v1/users/{userId}/threads/{id}",
         query: { format: "full" },
         scope: GMAIL_SCOPES.read,
         signal,
@@ -110,7 +116,13 @@ export class GmailClient {
   ): Promise<Uint8Array> {
     const body = await this.transport.json<{ data?: string }>(
       `${this.me}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      { scope: GMAIL_SCOPES.read, signal },
+      {
+        operation: "gmail.users.messages.attachments.get",
+        template:
+          "/gmail/v1/users/{userId}/messages/{messageId}/attachments/{id}",
+        scope: GMAIL_SCOPES.read,
+        signal,
+      },
     );
     return decodeBase64Url(body.data ?? "");
   }
@@ -119,6 +131,8 @@ export class GmailClient {
     const body = await this.transport.json<{ labels?: GmailLabel[] }>(
       `${this.me}/labels`,
       {
+        operation: "gmail.users.labels.list",
+        template: "/gmail/v1/users/{userId}/labels",
         scope: GMAIL_SCOPES.read,
         signal,
       },
@@ -132,6 +146,8 @@ export class GmailClient {
     signal?: AbortSignal,
   ): Promise<GmailDraft> {
     return this.transport.json<GmailDraft>(`${this.me}/drafts`, {
+      operation: "gmail.users.drafts.create",
+      template: "/gmail/v1/users/{userId}/drafts",
       method: "POST",
       json: { message: { raw, ...(threadId ? { threadId } : {}) } },
       write: true,
@@ -149,6 +165,8 @@ export class GmailClient {
     return this.transport.json<GmailDraft>(
       `${this.me}/drafts/${encodeURIComponent(id)}`,
       {
+        operation: "gmail.users.drafts.update",
+        template: "/gmail/v1/users/{userId}/drafts/{id}",
         method: "PUT",
         json: { id, message: { raw, ...(threadId ? { threadId } : {}) } },
         write: true,
@@ -162,6 +180,8 @@ export class GmailClient {
     return this.transport.json<GmailDraft>(
       `${this.me}/drafts/${encodeURIComponent(id)}`,
       {
+        operation: "gmail.users.drafts.get",
+        template: "/gmail/v1/users/{userId}/drafts/{id}",
         query: { format: "full" },
         scope: GMAIL_SCOPES.compose,
         signal,
@@ -172,6 +192,8 @@ export class GmailClient {
   /** `users.drafts.send`: never retried, since a second send is a second email. */
   sendDraft(id: string, signal?: AbortSignal): Promise<GmailMessage> {
     return this.transport.json<GmailMessage>(`${this.me}/drafts/send`, {
+      operation: "gmail.users.drafts.send",
+      template: "/gmail/v1/users/{userId}/drafts/send",
       method: "POST",
       json: { id },
       write: true,
@@ -188,6 +210,8 @@ export class GmailClient {
     return this.transport.json<GmailMessage>(
       `${this.me}/messages/${encodeURIComponent(id)}/modify`,
       {
+        operation: "gmail.users.messages.modify",
+        template: "/gmail/v1/users/{userId}/messages/{id}/modify",
         method: "POST",
         json: change,
         write: true,

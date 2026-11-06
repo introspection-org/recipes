@@ -14,6 +14,10 @@ import {
 } from "./fake-google.js";
 
 const URL_UNDER_TEST = "https://gmail.googleapis.com/gmail/v1/users/me/labels";
+const LABELS = {
+  operation: "gmail.users.labels.list",
+  template: "/gmail/v1/users/{userId}/labels",
+};
 
 function transport(
   responses: Response[],
@@ -50,7 +54,7 @@ async function failure(
 describe("placeholder credential", () => {
   it("sends the egress placeholder behind the native egress proxy, never a real token", async () => {
     const { transport: t, calls } = transport([json({ labels: [] })]);
-    await t.json(URL_UNDER_TEST, { scope: GMAIL_SCOPES.read });
+    await t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read });
     expect(calls[0]!.init.headers.Authorization).toBe(
       "Bearer introspection-egress",
     );
@@ -63,7 +67,7 @@ describe("placeholder credential", () => {
       INTROSPECTION_TOKEN: "locator",
       INTROSPECTION_EGRESS_URL: "http://egress.internal:8081",
     });
-    await t.json(URL_UNDER_TEST, { scope: GMAIL_SCOPES.read });
+    await t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read });
     expect(calls[0]!.init.headers.Authorization).toBe("Bearer locator");
     expect(calls[0]!.url.toString()).toBe(URL_UNDER_TEST);
   });
@@ -71,7 +75,7 @@ describe("placeholder credential", () => {
   it("refuses to run outside the egress environment", async () => {
     const { transport: t, calls } = transport([json({})], {});
     await expect(
-      t.json(URL_UNDER_TEST, { scope: GMAIL_SCOPES.read }),
+      t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read }),
     ).rejects.toThrow(/require the Introspection cloud egress environment/);
     expect(calls).toHaveLength(0);
   });
@@ -83,6 +87,7 @@ describe("error mapping", () => {
       transport([googleError(401, "authError")]).transport.json(
         URL_UNDER_TEST,
         {
+          ...LABELS,
           scope: GMAIL_SCOPES.read,
         },
       ),
@@ -95,6 +100,7 @@ describe("error mapping", () => {
       transport([googleError(403, "insufficientPermissions")]).transport.json(
         URL_UNDER_TEST,
         {
+          ...LABELS,
           scope: GMAIL_SCOPES.compose,
         },
       ),
@@ -111,12 +117,12 @@ describe("error mapping", () => {
       googleError(404, "notFound"),
       googleError(400, "invalidArgument"),
     ]).transport;
-    expect((await failure(t.json(URL_UNDER_TEST, { scope: "s" }))).code).toBe(
-      "not_found",
-    );
-    expect((await failure(t.json(URL_UNDER_TEST, { scope: "s" }))).code).toBe(
-      "invalid_request",
-    );
+    expect(
+      (await failure(t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }))).code,
+    ).toBe("not_found");
+    expect(
+      (await failure(t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }))).code,
+    ).toBe("invalid_request");
   });
 });
 
@@ -130,7 +136,9 @@ describe("rate limits and retries", () => {
       googleError(429, "rateLimitExceeded", { "Retry-After": "2" }),
       json({ labels: [{ id: "L", name: "x" }] }),
     ]);
-    await expect(t.json(URL_UNDER_TEST, { scope: "s" })).resolves.toEqual({
+    await expect(
+      t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
+    ).resolves.toEqual({
       labels: [{ id: "L", name: "x" }],
     });
     expect(calls).toHaveLength(2);
@@ -143,7 +151,7 @@ describe("rate limits and retries", () => {
       googleError(403, "rateLimitExceeded"),
       json({}),
     ]);
-    await t.json(URL_UNDER_TEST, { scope: "s" });
+    await t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" });
     expect(waits).toEqual([500, 1000]);
   });
 
@@ -154,7 +162,9 @@ describe("rate limits and retries", () => {
       googleError(429, "rateLimitExceeded"),
       googleError(429, "rateLimitExceeded", { "Retry-After": "7" }),
     ]);
-    const error = await failure(t.json(URL_UNDER_TEST, { scope: "s" }));
+    const error = await failure(
+      t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
+    );
     expect(error).toMatchObject({ code: "rate_limited", retryAfterMs: 7000 });
     expect(calls).toHaveLength(4);
   });
@@ -163,7 +173,9 @@ describe("rate limits and retries", () => {
     const { transport: t, waits } = transport([
       googleError(429, "rateLimitExceeded", { "Retry-After": "3600" }),
     ]);
-    const error = await failure(t.json(URL_UNDER_TEST, { scope: "s" }));
+    const error = await failure(
+      t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
+    );
     expect(error).toMatchObject({
       code: "rate_limited",
       retryAfterMs: 3_600_000,
@@ -181,6 +193,7 @@ describe("rate limits and retries", () => {
         method: "POST",
         json: {},
         write: true,
+        ...LABELS,
         scope: "s",
       }),
     );
@@ -193,6 +206,7 @@ describe("rate limits and retries", () => {
         method: "POST",
         json: {},
         write: true,
+        ...LABELS,
         scope: "s",
       }),
     );
@@ -206,7 +220,7 @@ describe("rate limits and retries", () => {
       json({ ok: 1 }),
     ]);
     await expect(
-      recovered.transport.json(URL_UNDER_TEST, { scope: "s" }),
+      recovered.transport.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
     ).resolves.toEqual({ ok: 1 });
 
     const down = transport([
@@ -215,7 +229,11 @@ describe("rate limits and retries", () => {
       json({}),
     ]);
     expect(
-      (await failure(down.transport.json(URL_UNDER_TEST, { scope: "s" }))).code,
+      (
+        await failure(
+          down.transport.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
+        )
+      ).code,
     ).toBe("provider_error");
     expect(down.calls).toHaveLength(2);
   });
