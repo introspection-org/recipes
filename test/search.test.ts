@@ -7,16 +7,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BUILTIN_SEARCH_PROVIDERS,
   createWebSearch,
+  piSearchMcpClient,
   registerWebSearchTool,
   SEARCH_PROVIDER_API_VERSION,
   SEARCH_SKILL,
   searchProvidersForHosts,
   webSearchParameters,
+  type McpCallToolResult,
   type SearchProviderId,
   type SearchProviderModule,
   type WebSearchOptions,
   type WebSearchResult,
 } from "../src/search/index.js";
+import { mcpToolName } from "../src/search/mcp.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 interface Recorded {
@@ -138,22 +141,35 @@ interface RecordedSpan {
 
 function fakeTracer() {
   const spans: RecordedSpan[] = [];
+  const span = (name: string, attributes: Record<string, unknown> = {}) => {
+    const recorded: RecordedSpan = {
+      name,
+      attributes: { ...attributes },
+      ended: false,
+    };
+    spans.push(recorded);
+    return {
+      setAttribute(key: string, value: unknown) {
+        recorded.attributes[key] = value;
+      },
+      setAttributes(more: Record<string, unknown>) {
+        Object.assign(recorded.attributes, more);
+      },
+      setStatus(status: { code: number; message?: string }) {
+        recorded.status = status;
+      },
+      end() {
+        recorded.ended = true;
+      },
+    };
+  };
   const tracer = {
-    startActiveSpan(name: string, fn: (span: unknown) => unknown) {
-      const recorded: RecordedSpan = { name, attributes: {}, ended: false };
-      spans.push(recorded);
-      return fn({
-        setAttributes(attributes: Record<string, unknown>) {
-          Object.assign(recorded.attributes, attributes);
-        },
-        setStatus(status: { code: number; message?: string }) {
-          recorded.status = status;
-        },
-        end() {
-          recorded.ended = true;
-        },
-      });
-    },
+    startActiveSpan: (name: string, fn: (span: unknown) => unknown) =>
+      fn(span(name)),
+    startSpan: (
+      name: string,
+      options?: { attributes?: Record<string, unknown> },
+    ) => span(name, options?.attributes),
   };
   return { spans, tracer: tracer as unknown as WebSearchOptions["tracer"] };
 }
@@ -161,6 +177,7 @@ function fakeTracer() {
 function setup(
   bound: SearchProviderId[],
   options: Partial<WebSearchOptions> = {},
+  ctx: unknown = {},
 ) {
   const pi = createMockExtensionAPI();
   const { spans, tracer } = fakeTracer();
@@ -178,7 +195,7 @@ function setup(
       params as never,
       undefined,
       undefined,
-      {} as never,
+      ctx as never,
     )) as {
       content: Array<{ text: string }>;
       details: WebSearchResult & { error?: { code: string } };
@@ -541,5 +558,272 @@ describe("web_search routing", () => {
     expect(result.content[0]!.text).toBe(
       'web_search failed (rate_limited): tavily answered 429: {"detail":"slow down"} Retry after 30s.',
     );
+  });
+});
+
+/** A Pi tool context whose MCP tools answer from handlers, as Pi's built-in client returns them. */
+function fakePiMcp(
+  tools: Record<string, (args: Record<string, unknown>) => McpCallToolResult>,
+) {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const ctx = {
+    tools: Object.keys(tools).map((name) => ({ name })),
+    async executeTool(name: string, args: unknown) {
+      calls.push({ name, args: args as Record<string, unknown> });
+      const handler = tools[name];
+      if (!handler)
+        return {
+          isError: true,
+          result: {
+            content: [{ type: "text", text: `Tool ${name} not found` }],
+          },
+        };
+      const result = handler(args as Record<string, unknown>);
+      return {
+        isError: Boolean(result.isError),
+        result: {
+          content: result.content ?? [],
+          structuredContent: result,
+        },
+      };
+    },
+  };
+  return { ctx, calls };
+}
+
+const text = (value: string): McpCallToolResult => ({
+  content: [{ type: "text", text: value }],
+});
+
+/** What tavily-mcp's `tavily_search` writes (src/format-results.ts). */
+const TAVILY_MCP_TEXT = [
+  "Request ID: r-1",
+  "Detailed Results:",
+  "",
+  "Title: A",
+  "ID: a",
+  "URL: https://news.example.org/a",
+  "Content: Tavily content A",
+  "",
+  "Title: B",
+  "URL: https://b.example.com/b",
+  "Content: Tavily content B",
+].join("\n");
+
+/** What exa-mcp-server's `web_search_exa` writes (src/tools/webSearch.ts). */
+const EXA_MCP_TEXT = [
+  "Title: P",
+  "URL: https://exa.example/p",
+  "Published: 2026-11-01T00:00:00.000Z",
+  "Author: N/A",
+  "Highlights:\none\ntwo",
+].join("\n");
+
+describe("web_search over a provider's MCP server", () => {
+  const TAVILY = mcpToolName("tavily", "tavily_search");
+  const EXA_ADVANCED = mcpToolName("exa", "web_search_advanced_exa");
+  const EXA_DEFAULT = mcpToolName("exa", "web_search_exa");
+
+  it("names MCP tools as Pi does", () => {
+    expect(TAVILY).toBe("mcp__tavily__tavily_search");
+    expect(mcpToolName("my-search", "x.y")).toBe("mcp__my_search__x_y");
+    expect(mcpToolName("s".repeat(40), "t".repeat(40))).toHaveLength(64);
+  });
+
+  it("calls Tavily's MCP tool through Pi's executeTool, with an MCP span", async () => {
+    const rest = await fakeApi(() => ({ body: tavilyBody }));
+    const { ctx, calls } = fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) });
+    const { tool, call, spans } = setup(
+      ["tavily"],
+      { mcpServers: { tavily: "tavily" }, baseUrls: { tavily: rest.baseUrl } },
+      ctx,
+    );
+    expect((tool as any).reachesTools()).toEqual([TAVILY]);
+    const result = await call({
+      query: "agents",
+      mode: "deep",
+      freshness: "week",
+      sites: ["example.org", "-spam.com"],
+    });
+    expect(calls).toEqual([
+      {
+        name: TAVILY,
+        args: {
+          query: "agents",
+          search_depth: "advanced",
+          max_results: 5,
+          time_range: "week",
+          include_domains: ["example.org"],
+          exclude_domains: ["spam.com"],
+        },
+      },
+    ]);
+    expect(rest.requests).toHaveLength(0);
+    expect(result.content[0]!.text).toBe(
+      [
+        "[1] A — news.example.org",
+        "https://news.example.org/a",
+        "Tavily content A",
+        "",
+        "[2] B — b.example.com",
+        "https://b.example.com/b",
+        "Tavily content B",
+      ].join("\n"),
+    );
+    expect(result.details).toMatchObject({
+      provider: "tavily",
+      transport: "mcp",
+    });
+    expect(spans.map((span) => span.name)).toEqual([
+      "web_search",
+      "tools/call tavily_search",
+    ]);
+    expect(spans[0]!.attributes["search.transport"]).toBe("mcp");
+    expect(spans[1]!.attributes).toMatchObject({
+      "mcp.method.name": "tools/call",
+      "gen_ai.tool.name": "tavily_search",
+      "search.mcp.server": "tavily",
+    });
+  });
+
+  it("falls back to REST for what the MCP tool cannot express, or notes it when REST is not bound", async () => {
+    const rest = await fakeApi(() => ({ body: tavilyBody }));
+    const { ctx, calls } = fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) });
+    const args = { query: "agents", mode: "deep", content: "context" };
+    const both = await setup(
+      ["tavily"],
+      { mcpServers: { tavily: "tavily" }, baseUrls: { tavily: rest.baseUrl } },
+      ctx,
+    ).call(args);
+    expect(both.details.transport).toBe("rest");
+    expect(rest.requests[0]!.body.chunks_per_source).toBe(3);
+    expect(calls).toHaveLength(0);
+
+    const mcpOnly = await setup(
+      [],
+      { mcpServers: { tavily: "tavily" } },
+      ctx,
+    ).call(args);
+    expect(mcpOnly.details.transport).toBe("mcp");
+    expect(mcpOnly.content[0]!.text.split("\n").at(-1)).toBe(
+      "(ignored: context — tavily's MCP tool tavily_search cannot express it)",
+    );
+  });
+
+  it("prefers Exa's advanced MCP tool and reads its JSON", async () => {
+    const { ctx, calls } = fakePiMcp({
+      [EXA_ADVANCED]: () =>
+        text(
+          JSON.stringify({
+            results: [
+              {
+                url: "https://exa.example/p",
+                title: "P",
+                publishedDate: "2026-11-01T00:00:00.000Z",
+                highlights: ["one", "two"],
+              },
+            ],
+            costDollars: { total: 0.007 },
+          }),
+        ),
+      [EXA_DEFAULT]: () => text(EXA_MCP_TEXT),
+    });
+    const { call } = setup([], { mcpServers: { exa: "exa" } }, ctx);
+    const result = await call({
+      query: "q",
+      freshness: "week",
+      sites: ["exa.example"],
+    });
+    expect(calls[0]).toEqual({
+      name: EXA_ADVANCED,
+      args: {
+        query: "q",
+        type: "auto",
+        numResults: 5,
+        enableHighlights: true,
+        highlightsMaxCharacters: 300,
+        startPublishedDate: "2026-10-30",
+        includeDomains: ["exa.example"],
+      },
+    });
+    expect(result.content[0]!.text.split("\n")[0]).toBe(
+      "[1] P — exa.example · 2026-11-01",
+    );
+    expect(result.details.usage.units).toEqual({ name: "usd", count: 0.007 });
+  });
+
+  it("uses Exa's default MCP tool for a plain query, and REST when it cannot filter", async () => {
+    const rest = await fakeApi(() => ({ body: { results: [] } }));
+    const { ctx, calls } = fakePiMcp({
+      [EXA_DEFAULT]: () => text(EXA_MCP_TEXT),
+    });
+    const { call } = setup(
+      ["exa"],
+      { mcpServers: { exa: "exa" }, baseUrls: { exa: rest.baseUrl } },
+      ctx,
+    );
+    const plain = await call({ query: "q" });
+    expect(calls[0]).toEqual({
+      name: EXA_DEFAULT,
+      args: { query: "q", numResults: 5 },
+    });
+    expect(plain.content[0]!.text).toBe(
+      [
+        "[1] P — exa.example · 2026-11-01",
+        "https://exa.example/p",
+        "one … two",
+      ].join("\n"),
+    );
+    const filtered = await call({ query: "q", freshness: "day" });
+    expect(filtered.details.transport).toBe("rest");
+    expect(rest.requests).toHaveLength(1);
+  });
+
+  it("reports a tool error, a call Pi refused, and an MCP-only provider with no client", async () => {
+    const failing = fakePiMcp({
+      [TAVILY]: () => ({ ...text("quota exceeded"), isError: true }),
+    });
+    const failed = await setup(
+      [],
+      { mcpServers: { tavily: "tavily" } },
+      failing.ctx,
+    ).call({ query: "x" });
+    expect(failed.content[0]!.text).toBe(
+      "web_search failed (provider_error): tavily/tavily_search failed: quota exceeded",
+    );
+
+    const refused = {
+      tools: [{ name: TAVILY }],
+      executeTool: async () => ({
+        isError: true,
+        result: { content: [{ type: "text", text: "blocked by policy" }] },
+      }),
+    };
+    const blocked = await setup(
+      [],
+      { mcpServers: { tavily: "tavily" } },
+      refused,
+    ).call({ query: "x" });
+    expect(blocked.content[0]!.text).toBe(
+      "web_search failed (unavailable): MCP tool tavily/tavily_search could not be called: blocked by policy",
+    );
+
+    const search = createWebSearch({
+      bound: [],
+      mcpServers: { tavily: "tavily" },
+      tracer: fakeTracer().tracer,
+    });
+    await expect(search({ query: "x" })).rejects.toThrow(
+      /bound only as an MCP server, and this call has no MCP client/,
+    );
+    const served = await search(
+      { query: "x" },
+      {
+        mcp: piSearchMcpClient(
+          fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) }).ctx,
+        ),
+      },
+    );
+    expect(served.transport).toBe("mcp");
   });
 });

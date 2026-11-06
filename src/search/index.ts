@@ -6,9 +6,21 @@ export {
   SEARCH_SKILL,
   SEARCH_TOOL_NAME,
   searchProvidersForHosts,
+  webSearchMcpToolNames,
   webSearchParameters,
 } from "./tool.js";
-export type { SearchProviders, WebSearch, WebSearchOptions } from "./tool.js";
+export type {
+  SearchProviders,
+  WebSearch,
+  WebSearchCall,
+  WebSearchOptions,
+} from "./tool.js";
+export { piSearchMcpClient } from "./mcp.js";
+export type {
+  McpCallToolResult,
+  PiToolContext,
+  SearchMcpClient,
+} from "./mcp.js";
 export { egressCredentialHeaders } from "./egress.js";
 export type { SearchEnvironment } from "./egress.js";
 export { braveSearchProvider } from "./providers/brave.js";
@@ -35,6 +47,8 @@ export type {
   SearchErrorInfo,
   SearchFetch,
   SearchFreshness,
+  SearchMcpAdapter,
+  SearchMcpPlan,
   SearchMode,
   SearchModeMapping,
   SearchNote,

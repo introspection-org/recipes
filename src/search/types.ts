@@ -1,3 +1,5 @@
+import type { McpCallToolResult } from "./mcp.js";
+
 /** Compatibility of a search provider module with this host. */
 export const SEARCH_PROVIDER_API_VERSION = 1;
 
@@ -170,12 +172,42 @@ export class SearchProviderError extends Error {
   }
 }
 
-/** A search provider: a descriptor and one function. */
+/** How one request maps onto a provider's MCP tool. */
+export interface SearchMcpPlan {
+  tool: string;
+  args: Record<string, unknown>;
+  /** What the tool cannot express; with REST bound too, the call goes to REST instead. */
+  unsupported: Array<SearchOption | "mode">;
+}
+
+/** A provider's hosted MCP server, which `web_search` prefers to its REST API. */
+export interface SearchMcpAdapter {
+  /** The provider's hosted server, for docs and bindings; the bound URL may differ. */
+  url: string;
+  /** The header its key travels in, injected by the egress like a REST key. */
+  credential: { header: string; prefix?: string };
+  /** The tools it may call, in order of preference. */
+  tools: readonly string[];
+  /** The call for this request, given the tools the bound server offers; undefined when it offers none of them. */
+  plan(
+    request: SearchRequest,
+    hasTool: (tool: string) => boolean,
+    now: Date,
+  ): SearchMcpPlan | undefined;
+  parse(
+    result: McpCallToolResult,
+    request: SearchRequest,
+    plan: SearchMcpPlan,
+  ): SearchProviderResult;
+}
+
+/** A search provider: a descriptor, its REST call and, optionally, its MCP server. */
 export interface SearchProviderModule {
   kind: "search";
   apiVersion: number;
   id: SearchProviderId;
   capabilities: SearchCapabilities;
+  mcp?: SearchMcpAdapter;
   search(
     request: SearchRequest,
     context: SearchCallContext,
@@ -201,6 +233,8 @@ export interface WebSearchResult {
   mode: SearchMode;
   /** The provider's own setting the mode mapped to. */
   setting: string;
+  /** Whether the provider's MCP server or its REST API served the call. */
+  transport: "mcp" | "rest";
   content: SearchContent;
   notes: SearchNote[];
   usage: { requests: number; units?: SearchUnits };
