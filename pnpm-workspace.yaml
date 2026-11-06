@@ -2,4 +2,4 @@ packages:
   - packages/*
   - packages/channels/*
   - packages/documents/*
-  - examples/*
+  - examples

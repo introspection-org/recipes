@@ -26,7 +26,7 @@ const IDS = [
   "patterns/memory-and-data/load-memory",
 ];
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const SKIP = new Set([
   ".git",
   "node_modules",

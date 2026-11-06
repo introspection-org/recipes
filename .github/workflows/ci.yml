@@ -194,7 +194,7 @@ jobs:
 
       # Prove the floor the peer range advertises, read from the range itself so
       # a bump cannot leave this job testing a version we no longer support.
-      # Overrides, not devDependencies, so every workspace package (examples/docs
+      # Overrides, not devDependencies, so every workspace package (examples
       # declares Pi too) resolves the same single Pi the root source compiles
       # against.
       - run: |

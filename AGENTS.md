@@ -134,13 +134,13 @@
   tool, so a skill says how to use the tool well, never how to configure it.
   Format- or provider-specific guidance is a profile in that package's own
   `profiles/`.
-- **`examples/docs/` is for developers:** the code docs.introspection.dev
+- **`examples/` is for developers:** the code docs.introspection.dev
   shows, typechecked and tested here (see Docs regions below). It is never
   published and never offered to an agent.
 
 ## Docs regions
 
-- **A docs region (`#region docs:…` under `examples/docs/`) shows every helper
+- **A docs region (`#region docs:…` under `examples/`) shows every helper
   it calls that the example file defines** — functions, consts, methods and
   closures alike — inside the region, before the code that uses them; a helper
   standing in for the reader's own code (`render`, `sendEventToBrowser`, ...)

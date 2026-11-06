@@ -32,7 +32,7 @@
     "packages/*/*": {
       "project": ["src/**/*.ts!"]
     },
-    "examples/docs": {
+    "examples": {
       // The docs snippets: extensions and evals a Recipe loads by path, and
       // the fakes its evals bind.
       "entry": [

@@ -8,7 +8,7 @@ const read = (path: string) =>
 // tsconfig.json maps each public specifier to the source its "exports" entry is
 // built from. A map written by hand drifts, so derive it and compare.
 test("tsconfig paths are the root package's exports, at source", () => {
-  const root = JSON.parse(read("../../../package.json")) as {
+  const root = JSON.parse(read("../../package.json")) as {
     name: string;
     exports: Record<string, { types: string }>;
   };
@@ -16,7 +16,7 @@ test("tsconfig paths are the root package's exports, at source", () => {
     Object.entries(root.exports).map(([subpath, entry]) => [
       root.name + subpath.slice(1),
       [
-        `../../${entry.types.replace(/^\.\/dist\//, "src/").replace(/\.d\.ts$/, ".ts")}`,
+        `../${entry.types.replace(/^\.\/dist\//, "src/").replace(/\.d\.ts$/, ".ts")}`,
       ],
     ]),
   );
