@@ -818,16 +818,17 @@ Recipe. It checks the rest of the layout only for a Recipe that declares
 `pi.evals`; an empty `{}` adopts those checks with the default paths. Those
 checks are Harbor task folders without `task.toml`, eval files outside the
 eval paths, the links between cases and implementations, and the judges eval
-code names, all as warnings:
+code names. A broken link between a case and its implementation, or a broken
+case file, is an error and fails the check; the rest are warnings:
 
-| Code | Rule |
-| --- | --- |
-| `pi.evals_case_unknown` | A Vitest row or Harbor task names a case with no case file. |
-| `pi.evals_case_duplicate` | A case has more than one implementation, on one runner or across both: two rows, two tasks, or a row and a task. Keep one and delete the other. |
-| `pi.evals_case_unapproved` | A case with an implementation has an empty approval field, or a body that no longer matches its `approved_hash`; `introspection eval approve <id>` approves it again. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
-| `pi.evals_case_row_missing_id` | A `.eval.jsonl` row has no `case`. |
-| `pi.evals_case_invalid` | A case file has no readable front matter, an `id` other than its file name, an `issue` that is not a UUID, or an `approved_hash` that is not `sha256:` and 64 hexadecimal digits. |
-| `pi.evals_judge_unknown` | A string-literal `recipeJudge("<name>")` in a Vitest suite or the eval `lib`, or `judge_reward("<name>")` in a Harbor task's Python, names an online judge with no definition of that `name` in `judges/`; a `recipeJudge` YAML path, read from the Recipe root, that names a missing file warns too. Names built at run time or passed in a variable are not seen. It stays a warning. |
+| Code | Severity | Rule |
+| --- | --- | --- |
+| `pi.evals_case_unknown` | error | A Vitest row or Harbor task names a case with no case file. |
+| `pi.evals_case_duplicate` | error | A case has more than one implementation, on one runner or across both: two rows, two tasks, or a row and a task. Keep one and delete the other. |
+| `pi.evals_case_unapproved` | warning | A case with an implementation has an empty approval field, or a body that no longer matches its `approved_hash`; `introspection eval approve <id>` approves it again. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
+| `pi.evals_case_row_missing_id` | error | A `.eval.jsonl` row has no `case`. |
+| `pi.evals_case_invalid` | error | A case file has no readable front matter, an `id` other than its file name, an `issue` that is not a UUID, or an `approved_hash` that is not `sha256:` and 64 hexadecimal digits. |
+| `pi.evals_judge_unknown` | warning | A string-literal `recipeJudge("<name>")` in a Vitest suite or the eval `lib`, or `judge_reward("<name>")` in a Harbor task's Python, names an online judge with no definition of that `name` in `judges/`; a `recipeJudge` YAML path, read from the Recipe root, that names a missing file warns too. Names built at run time or passed in a variable are not seen. It stays a warning. |
 
 ## Conformance
 

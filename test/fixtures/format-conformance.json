@@ -137,7 +137,19 @@
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
       ".recipeignore": "evals/\n",
       "evals/harbor/c1/task.toml": "[verifier]\ntimeout_sec = 60.0\n",
-      "evals/vitest/hello.eval.jsonl": "{\"input\":\"hi\"}\n"
+      "evals/vitest/hello.eval.jsonl": "{\"schema_version\":3,\"case\":\"hello\",\"input\":\"hi\"}\n",
+      "evals/cases/c1.md": "---\nid: c1\ncheck: code\napproved_by: owner@example.com\napproved_at: 2026-11-04\napproved_in: msg_1\n---\n\n## Situation\nSomething happens.\n",
+      "evals/cases/hello.md": "---\nid: hello\ncheck: code\napproved_by: owner@example.com\napproved_at: 2026-11-04\napproved_in: msg_1\n---\n\n## Situation\nSomething happens.\n"
+    }
+  },
+  {
+    "name": "eval suite row naming no case file",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"with-evals\",\"pi\":{\"evals\":{}}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      ".recipeignore": "evals/\n",
+      "evals/vitest/hello.eval.jsonl": "{\"schema_version\":3,\"case\":\"missing\",\"input\":\"hi\"}\n"
     }
   },
   {

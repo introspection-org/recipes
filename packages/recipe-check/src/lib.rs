@@ -1762,7 +1762,8 @@ struct CaseImplementation {
 /// Link implementations to case files: every implementation names a case
 /// that exists, a case has one implementation across both runners, and an
 /// implemented case is approved.
-/// All of it warns; a draft case is how the improve loop proposes one.
+/// A broken link or case file is an error; an unapproved case only warns,
+/// since a draft case is how the improve loop proposes one.
 fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
     let cases_dir = layout.support_path("cases").unwrap_or("evals/cases");
     // Case id (the file name) -> its file and, when it parsed, front matter.
@@ -1779,7 +1780,7 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
         let parsed = match ctx.content(&file).map(spec::parse_eval_case) {
             None => None,
             Some(Err(err)) => {
-                ctx.warning(
+                ctx.error(
                     EVALS_CASE_INVALID,
                     file.clone(),
                     format!("case file '{file}' {err}"),
@@ -1804,7 +1805,7 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
         }
         ctx.push(
             EVALS_CASE_UNKNOWN,
-            Severity::Warning,
+            Severity::Error,
             implementation.path.clone(),
             implementation.span,
             format!(
@@ -1830,7 +1831,7 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
         );
         ctx.push(
             EVALS_CASE_DUPLICATE,
-            Severity::Warning,
+            Severity::Error,
             implementation.path.clone(),
             implementation.span,
             message,
@@ -2064,7 +2065,7 @@ const EVALS_CASE_HELP: &str = "start the case file with YAML front matter: id (t
 /// The front-matter rules a case file can break on its own.
 fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut CheckContext) {
     if let Some(written) = case.id.as_deref().filter(|written| *written != id) {
-        ctx.warning(
+        ctx.error(
             EVALS_CASE_INVALID,
             file.to_owned(),
             format!(
@@ -2078,7 +2079,7 @@ fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut C
         .as_deref()
         .filter(|hash| !is_sha256(hash))
     {
-        ctx.warning(
+        ctx.error(
             EVALS_CASE_INVALID,
             file.to_owned(),
             format!("case file '{file}' has approved_hash '{hash}', which is not sha256:<64 hex digits>"),
@@ -2086,7 +2087,7 @@ fn validate_case_fields(file: &str, id: &str, case: &spec::EvalCase, ctx: &mut C
         );
     }
     if let Some(issue) = case.issue.as_deref().filter(|issue| !is_uuid(issue)) {
-        ctx.warning(
+        ctx.error(
             EVALS_CASE_INVALID,
             file.to_owned(),
             format!("case file '{file}' has issue '{issue}', which is not a UUID"),
@@ -2152,7 +2153,7 @@ fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImpl
                 }),
                 _ => ctx.push(
                     EVALS_CASE_ROW_MISSING_ID,
-                    Severity::Warning,
+                    Severity::Error,
                     file.clone(),
                     span,
                     format!("{label} has no case"),
@@ -7221,7 +7222,13 @@ mod tests {
             .iter()
             .filter(|diagnostic| diagnostic.code.starts_with("pi.evals_case_"))
             .map(|diagnostic| {
-                assert_eq!(diagnostic.severity, Severity::Warning, "{diagnostic:?}");
+                // Only an unapproved case warns; a broken link or case file fails.
+                let severity = if diagnostic.code == "pi.evals_case_unapproved" {
+                    Severity::Warning
+                } else {
+                    Severity::Error
+                };
+                assert_eq!(diagnostic.severity, severity, "{diagnostic:?}");
                 (
                     diagnostic.code.clone(),
                     diagnostic.path.clone(),
@@ -7233,11 +7240,32 @@ mod tests {
         found
     }
 
-    fn cases_report(evals: JsonValue, extra: &[(&str, &str)]) -> Report {
+    fn checked_cases(evals: JsonValue, extra: &[(&str, &str)]) -> Report {
         let mut files = vec![(".recipeignore", "evals/\nfakes/\n")];
         files.extend_from_slice(extra);
-        let report = check_recipe_files(&evals_recipe(Some(evals), &files));
+        check_recipe_files(&evals_recipe(Some(evals), &files))
+    }
+
+    /// A Recipe whose case layout passes the check, warnings allowed.
+    fn cases_report(evals: JsonValue, extra: &[(&str, &str)]) -> Report {
+        let report = checked_cases(evals, extra);
         assert!(report.valid, "{:?}", report.diagnostics);
+        report
+    }
+
+    /// A Recipe whose case layout fails the check, on case rules only.
+    fn failing_cases_report(evals: JsonValue, extra: &[(&str, &str)]) -> Report {
+        let report = checked_cases(evals, extra);
+        assert!(!report.valid, "{:?}", report.diagnostics);
+        for diagnostic in &report.diagnostics {
+            if diagnostic.severity == Severity::Error {
+                assert!(
+                    diagnostic.code.starts_with("pi.evals_case_")
+                        && diagnostic.code != "pi.evals_case_unapproved",
+                    "{diagnostic:?}"
+                );
+            }
+        }
         report
     }
 
@@ -7273,9 +7301,9 @@ mod tests {
     }
 
     #[test]
-    fn evals_case_unknown_warns() {
+    fn evals_case_unknown_fails() {
         let c1 = approved("C1");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({}),
             &[
                 (
@@ -7353,9 +7381,9 @@ mod tests {
     }
 
     #[test]
-    fn evals_case_duplicate_warns() {
+    fn evals_case_duplicate_fails() {
         let c1 = approved("C1");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({ "suites": [
                 { "type": "vitest", "path": "evals/vitest" },
                 { "type": "vitest", "path": "evals/vitest-slow" },
@@ -7395,9 +7423,9 @@ mod tests {
     }
 
     #[test]
-    fn evals_case_on_both_runners_warns() {
+    fn evals_case_on_both_runners_fails() {
         let c1 = approved("C1");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({}),
             &[
                 ("evals/vitest/greet.eval.jsonl", "{\"case\":\"C1\"}\n"),
@@ -7427,7 +7455,7 @@ mod tests {
     #[test]
     fn evals_case_nested_suites_read_each_row_once() {
         let c1 = approved("C1");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({ "suites": [
                 { "type": "vitest", "path": "evals/vitest" },
                 { "type": "vitest", "path": "evals/vitest/slow" }
@@ -7509,7 +7537,7 @@ mod tests {
         // Approved before approved_hash existed.
         let no_hash = approved("C3");
         let malformed = format!("{}{body}", with_hash("C4", "sha256:abc"));
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({}),
             &[
                 (
@@ -7554,9 +7582,9 @@ mod tests {
     }
 
     #[test]
-    fn evals_case_row_missing_id_warns() {
+    fn evals_case_row_missing_id_fails() {
         let c1 = approved("C1");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({}),
             &[
                 (
@@ -7767,7 +7795,7 @@ mod tests {
         let bad_issue = case_file("id: C2\nissue: ISSUE-12\n");
         let wrong_id = case_file("id: C4\n");
         let bad_check = case_file("id: C5\ncheck: maybe\n");
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({}),
             &[
                 ("evals/cases/C1.md", &valid_issue),
@@ -7830,7 +7858,7 @@ mod tests {
             report.diagnostics
         );
 
-        let report = cases_report(
+        let report = failing_cases_report(
             json!({ "cases": "evals/owner-cases" }),
             &[("evals/vitest/a.eval.jsonl", "{\"case\":\"C9\"}\n")],
         );
