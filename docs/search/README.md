@@ -1,0 +1,397 @@
+# Web search
+
+**Status: prototype.** `@introspection-ai/recipes/search` implements the
+`web_search` tool, its provider contract, and three providers (Brave, Exa,
+Tavily), tested against local HTTP fakes. Parallel, Perplexity and Keenable
+are designed here, not built. Nothing registers the tool yet: [Wiring](#wiring)
+says what a host does. [Open questions](#open-questions) lists what needs a
+decision.
+
+An agent searches the web with one tool, `web_search`, whatever provider
+serves it. A call names the query and, when it wants to, the provider, a mode
+and a few filters. Each provider maps those arguments to its own API under the
+hood. The model reads compact text; the host and the trace get the structured
+result, including the provider, mode and billed units of every call.
+
+The same properties hold as for [channels](../channels/README.md),
+[documents](../documents/README.md) and
+[productivity](../productivity/README.md):
+
+- **One vocabulary.** Every provider takes the same arguments with the same
+  meaning. A provider's own vocabulary (`search_depth`, `type`, goggles,
+  `source_policy`) never reaches the model or the Recipe.
+- **What a provider cannot do is stated, not hidden.** Each provider exports a
+  capability descriptor saying, per argument, whether it serves it natively,
+  approximately or not at all. An argument a provider cannot serve is ignored
+  and the result says so in one line.
+- **No credential in the Recipe.** The platform's egress holds each provider's
+  key and injects it on the way out ([Credentials](#credentials)).
+
+## The call
+
+```ts
+web_search({
+  query: string;
+  provider?: "tavily" | "parallel" | "exa" | "keenable" | "perplexity" | "brave";
+  mode?: "fast" | "default" | "deep";
+  max_results?: number;            // 1-10, default 5
+  freshness?: "day" | "week" | "month" | "year";
+  sites?: string[];                // "arxiv.org" restricts, "-pinterest.com" excludes
+  content?: "snippets" | "context"; // default snippets
+})
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `query` | What to search for. Parallel also receives it as its `objective`. |
+| `provider` | Which bound provider serves this call. The schema lists only the providers bound to the runtime and leaves the argument out when exactly one is bound. Omitted with several bound, the call fails with `not_bound` and lists them. |
+| `mode` | `fast`, `default` or `deep`: one scale for every provider. `default` is the provider's recommended setting. Each provider maps the three to its own setting ([Modes](#modes)); a provider with one setting maps all three to it and says so in a note. |
+| `max_results` | At most 10 per call. A provider that returns fewer says so. |
+| `freshness` | Pages from the last day, week, month or year. |
+| `sites` | Domains, optionally with a path, to keep (`arxiv.org`) or drop (`-pinterest.com`). |
+| `content` | `snippets`: about 300 characters per result. `context`: about 1,500 characters of query-relevant text extracted from each page, for grounding (Brave's LLM Context API, Exa's highlights, Tavily's chunks, Parallel's excerpts, Perplexity's page content). |
+
+Every call chooses its own provider and mode. A Recipe that wants a cheap
+first pass and a thorough second one asks for `mode: "fast"` and then
+`mode: "deep"`, or two providers, within one task. There is no Recipe
+configuration: the providers offered are the providers bound to the runtime.
+
+### Result for the model
+
+Compact text, not JSON:
+
+```text
+[1] Agents that search — arxiv.org · 2026-10-02
+https://arxiv.org/abs/2601.00001
+Relevance-ranked text from the page, cut at the content level's length…
+
+[2] Example post — example.com · 2026-11-01
+https://www.example.com/post
+An example…
+
+(approximated: freshness — Exa filters on published date from the start of the window, so undated pages drop out.)
+```
+
+A note line appears only when an argument was ignored or approximated. A
+failure is one line: `web_search failed (rate_limited): tavily answered 429 …
+Retry after 30s.`
+
+### Result for the host and the trace
+
+The tool result's `details`, and the return value for Recipe code, is a
+`WebSearchResult`:
+
+```ts
+{
+  results: Array<{ url, title?, snippet?, published_at?, score?, site? }>;
+  provider: "tavily";
+  mode: "deep";
+  setting: "advanced";          // the provider's own value the mode mapped to
+  content: "context";           // what was served, after any downgrade
+  notes: Array<{ option, outcome: "ignored" | "approximated", detail }>;
+  usage: { requests: 1, units?: { name: "credits", count: 2 } };
+}
+```
+
+Each call records a `web_search` span with `search.provider`, `search.mode`,
+`search.setting`, `search.content`, `search.results`, `search.requests`,
+`search.units.name` and `search.units.count` when the provider reports them,
+and `search.notes`. A failed call sets `error.type` to the error code. Cost
+per provider and mode is therefore a query over spans. The span does not carry
+the query, which can hold personal data.
+
+### Recipe code
+
+Recipe code calls the same function with the same arguments:
+
+```ts
+import { createWebSearch } from "@introspection-ai/recipes/search";
+
+const search = createWebSearch({ bound: ["tavily", "brave"] });
+const { results } = await search({
+  query: "…",
+  provider: "tavily",
+  mode: "deep",
+});
+```
+
+A host that registers the tool returns the same function from
+`registerWebSearchTool`, so an extension can share it.
+
+## Providers
+
+Researched from each provider's official SDK source or published skill, since
+the documentation hosts below were not reachable from the session that wrote
+this (`docs.tavily.com`, `api-dashboard.search.brave.com`, and so the other
+docs sites were not tried). Prices are list prices as last known and must be
+checked before they are relied on; nothing in the tool depends on them.
+
+| Provider | Endpoint | Credential header | Quality knob | Content | Filters | Max results | Billing | Sources |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Tavily | `POST https://api.tavily.com/search` | `Authorization: Bearer` | `search_depth`: `ultra-fast`, `fast`, `basic`, `advanced` | `content` per result; `chunks_per_source` 1-3 (advanced only); `include_raw_content`; `include_answer` | `time_range`, `start_date`/`end_date`, `include_domains`/`exclude_domains`, `topic` (general, news, finance), `country`, `exact_match` | 20 | Credits: 1 per basic, fast or ultra-fast search, 2 per advanced; `include_usage` reports them | [API reference](https://docs.tavily.com/documentation/api-reference/endpoint/search), [credits](https://docs.tavily.com/documentation/api-credits), [tavily-js](https://github.com/tavily-ai/tavily-js) |
+| Exa | `POST https://api.exa.ai/search` | `x-api-key` | `type`: `auto` (recommended), `lite` (beta), `fast` and `instant` (legacy), `neural`, `keyword`, `deep-lite`, `deep`, `deep-reasoning` | `contents.highlights` (query-relevant extracts), `contents.text`, `contents.summary` | `startPublishedDate`/`endPublishedDate`, `includeDomains`/`excludeDomains`, `category`, `userLocation`, `includeText`/`excludeText` | 100 | Dollars per request by type and contents; the response's `costDollars` reports them | [Search reference](https://docs.exa.ai/reference/search), [exa-js](https://github.com/exa-labs/exa-js) |
+| Parallel | `POST https://api.parallel.ai/v1/search` | `x-api-key` | `mode`: `turbo`, `fast`, `basic`, `advanced` (the default when omitted). Its older `processor` field is gone from the current SDK | `excerpts` per result (markdown); `advanced_settings.excerpt_settings.max_chars_per_result`, `max_chars_total` | `advanced_settings.source_policy`: `include_domains` (when set, `exclude_domains` is ignored), `exclude_domains`, `after_date`; `location` | `advanced_settings.max_results`, default 10 | Per request; `usage` lists SKUs and counts | [Advanced search settings](https://docs.parallel.ai/search/advanced-search-settings), [parallel-sdk-typescript](https://github.com/parallel-web/parallel-sdk-typescript) |
+| Perplexity | `POST https://api.perplexity.ai/search` (the Search API, not Sonar's chat completions) | `Authorization: Bearer` | `search_type`: `web`, `fast`, `people` | `snippet` per result; `max_tokens_per_page`, `max_tokens` | `search_recency_filter` (hour to year), `search_after_date_filter`/`search_before_date_filter`, `search_domain_filter` (`-` prefix denies), `country`, `search_language_filter`, `search_mode` (web, academic, sec) | `max_results` | Per request | [perplexity-node](https://github.com/perplexityai/perplexity-node) (`src/generated/api.ts`) |
+| Keenable | `POST https://api.keenable.ai/v1/search` (keyless `/v1/search/public`) | `X-API-Key` | `mode`: only `pro` is documented in the source found | `snippet`, `description`; page text through a separate fetch endpoint | `site` (one domain), `published_after`/`published_before`, `acquired_after`/`acquired_before` | not exposed in the source found | Pay as you go by request; no public price list found; `402` means out of credits | [keenable.ai](https://keenable.ai), [llama-index-tools-keenable](https://pypi.org/project/llama-index-tools-keenable/) |
+| Brave | `GET https://api.search.brave.com/res/v1/web/search` and `GET …/res/v1/llm/context` | `X-Subscription-Token` | none | Web Search: `description`, `extra_snippets` (up to 5). LLM Context: extracted `snippets` per URL, bounded by `maximum_number_of_tokens(_per_url)` and `maximum_number_of_snippets(_per_url)` | `freshness` (`pd`, `pw`, `pm`, `py` or a date range), Goggles (inline `$discard`, `$site=`), `country`, `search_lang`, `safesearch`, `context_threshold_mode` | Web Search 20, LLM Context 50 | Both on the Search plan; $5 of monthly credit covers about 1,000 requests | [LLM Context](https://api-dashboard.search.brave.com/app/documentation/llm-context/get-started), [brave-search-skills](https://github.com/brave/brave-search-skills) |
+
+**Rate limits** are per plan for every provider and none was confirmed from a
+reachable source. All answer `429` when exceeded; when the answer carries
+`Retry-After`, the tool passes it to the model as a retry delay.
+
+**Keenable** is identified with moderate confidence: a search API for agents
+with its own index, CLI and MCP server ([keenable.ai](https://keenable.ai)).
+Its only first-party source reachable here is its LlamaIndex integration, which
+sends `mode: "pro"` and names no other mode. Whether `default` is a Keenable
+mode, or means omitting `mode`, is an open question.
+
+## Modes
+
+`fast`, `default` and `deep` map to each provider's own setting. The rows for
+built providers are their descriptors' `modes` (`test/search.test.ts` checks
+this table against them); the others are the proposed mapping.
+
+| Provider | Parameter | `fast` | `default` | `deep` |
+| --- | --- | --- | --- | --- |
+| `tavily` | `search_depth` | `fast` | `basic` | `advanced` |
+| `exa` | `type` | `fast` | `auto` | `deep` |
+| `brave` | none | one level (approximated) | one level | one level (approximated) |
+| `parallel` (design) | `mode` | `fast` | `advanced` | `advanced` (approximated: Parallel's deeper research is the Task API) |
+| `perplexity` (design) | `search_type` | `fast` | `web` | `web` (approximated) |
+| `keenable` (design) | `mode` | `pro` (approximated) | `pro` | `pro` (approximated) |
+
+What each costs and means:
+
+- **Tavily.** `basic` returns one snippet per result for 1 credit; `fast` (1
+  credit) trades some relevance for latency; `advanced` returns up to three
+  relevant chunks per source and costs 2 credits. `default` follows Tavily's
+  own default, `basic`, so the pairing named as "tavily / advanced" is
+  `mode: "deep"`.
+- **Exa.** `auto` lets Exa choose its retrieval and is its recommendation.
+  `fast` is a legacy type Exa still accepts; it suggests `lite` for new code,
+  but `lite` rejects some parameters, so `fast` maps to `fast` until `lite`
+  accepts the ones this tool sends. `deep` runs several searches and costs
+  more. "exa / auto" is `mode: "default"`.
+- **Parallel.** The API defaults to `advanced`, so `default` is `advanced`
+  and "parallel / advanced" is `mode: "default"`. `fast` targets about a
+  second. Nothing in the Search API is deeper than `advanced`.
+- **Perplexity.** `web` is the default search; `fast` its low-latency variant.
+  "perplexity / default" is `mode: "default"`.
+- **Keenable.** `pro` is the only mode found. "keenable / default" is
+  `mode: "default"`.
+- **Brave.** One quality level, so `fast` and `deep` are approximated. What
+  "brave / llm-context" named is not a quality level but a different endpoint
+  returning extracted text, which is what `content: "context"` asks for.
+  `content` therefore selects the endpoint: `snippets` uses Web Search,
+  `context` uses LLM Context. Tying it to `content` rather than `mode` keeps
+  `mode` one scale for every provider and lets any provider serve `context`.
+
+## Arguments by provider
+
+From each descriptor's `options`. `approximate` means the argument applies in
+a form close to its meaning, and the note line says how.
+
+| Provider | `freshness` | `sites` include | `sites` exclude | `context` |
+| --- | --- | --- | --- | --- |
+| `tavily` | native (`time_range`) | native | native | approximate: chunks only in `deep` |
+| `exa` | approximate: published-date start, so undated pages drop out | native | native | native (`highlights`) |
+| `brave` | native (`freshness`) | native (Goggles allowlist) | native (Goggles `$discard`) | native (LLM Context) |
+| `parallel` (design) | approximate (`after_date`) | native | native, but ignored by Parallel when an include is set | native (`max_chars_per_result`) |
+| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`) | native (`max_tokens_per_page`) |
+| `keenable` (design) | approximate (`published_after`) | one site only | none | none |
+
+Every provider honours `max_results` up to its own maximum. What one provider
+offers and the tool does not (answers, `topic`, `country`, language, safe
+search, Exa's `category`, Goggles beyond sites) is listed under
+[Later](#later).
+
+## Bound providers
+
+A provider is **bound** when the runtime holds an endpoint for its host with
+a credential: a `kind='api'` endpoint row
+(introspection-cloud `docs/design/endpoints.md`, "Runtime HTTP APIs"), at
+project, runtime, runtime group or environment scope. The bound set is what
+the egress will authenticate, so it is what `web_search` offers.
+
+The tool takes the bound set as an input (`bound`), and
+`searchProvidersForHosts(hosts)` maps endpoint hosts to provider ids through
+each descriptor's `host`. The host discovers the hosts:
+
+- **Legacy provider lane:** the sandbox receives the credential-injected
+  hosts as `INTROSPECTION_ENDPOINT_HOSTS` (comma-separated), which the data
+  plane builds from the session's endpoint targets.
+- **Proxy-native egress:** the runtime removes `INTROSPECTION_ENDPOINT_HOSTS`
+  when it accepts the proxy-native offer, and
+  `INTROSPECTION_EGRESS_PLACEHOLDERS` is keyed by variable name, not host. So
+  on a proxy-native runtime nothing in the sandbox lists the bound hosts
+  today. The proposal is that the data plane keeps a non-secret list of
+  credentialed endpoint hosts in the bootstrap (or keeps the variable as
+  information only), and that the runtime passes it to Recipes. This needs a
+  platform decision.
+- **Other hosts** pass `bound` themselves, and `credentialHeaders` when they
+  attach credentials their own way.
+
+Unlike channels and productivity, search needs no declaration in the Recipe:
+those name a provider because their handles and commands are per provider,
+while a search provider is interchangeable and chosen per call. A bound
+provider this package does not implement is not offered.
+
+## Credentials
+
+A provider sends its request to its own host, and the Recipe never holds the
+key. The host's egress supplies it, as for the Slack channel
+(`packages/channels/slack/src/client.ts`):
+
+| Provider | Host to bind | Header the endpoint injects |
+| --- | --- | --- |
+| Tavily | `api.tavily.com` | `Authorization: Bearer <key>` |
+| Exa | `api.exa.ai` | `x-api-key: <key>` |
+| Parallel | `api.parallel.ai` | `x-api-key: <key>` |
+| Perplexity | `api.perplexity.ai` | `Authorization: Bearer <key>` |
+| Keenable | `api.keenable.ai` | `X-API-Key: <key>` |
+| Brave | `api.search.brave.com` | `X-Subscription-Token: <key>` |
+
+- **Proxy-native egress** (`INTROSPECTION_EGRESS_PROXY_NATIVE=1`): the request
+  leaves without the header. The egress intercepts the bound host and, finding
+  the endpoint's header absent, injects it (introspection-cloud
+  `docs/design/sandbox-egress-proxy-native.md`, "Credential placeholders").
+- **Legacy provider lane** (`INTROSPECTION_EGRESS_URL` and
+  `INTROSPECTION_TOKEN`): the session locator travels in the provider's own
+  header, with its prefix, and ext_proc swaps it for the key. The runtime's
+  managed fetch dials the egress while keeping the provider's host as the
+  authority.
+- **Neither:** the call fails with `not_configured` before any request, rather
+  than reaching the provider unauthenticated.
+
+Each endpoint is one host and one header, so binding a search provider is a
+CRUD call on `/v1/endpoints`, with no chart change. Brave and Parallel are
+already named there as runtime utility APIs.
+
+## Content is data
+
+Titles and snippets come from arbitrary web pages. The tool returns them as
+the result of a search, the skill tells the agent to treat them as data, and
+Brave's HTML highlighting is stripped. A snippet is cut at the content level's
+length on a word boundary.
+
+## Fetching a page
+
+Search does not return whole pages. A separate tool is proposed, not built:
+
+```ts
+web_fetch({ url: string; max_chars?: number })
+```
+
+It returns the page's main text as Markdown, cut at a limit the result
+states. Tavily Extract, Exa's contents endpoint, Parallel Extract, Keenable's
+fetch endpoint can each serve it, as can a plain HTTP fetch through the
+general egress. It carries
+the same notes, span attributes and egress credentials. Keeping it separate
+keeps search results small: an agent fetches the one or two pages it needs.
+
+## Token budget
+
+Measured from the generated definition (`name`, `description` and the JSON
+schema) and estimated at about 3.5 characters per token for JSON:
+
+|  | Characters | About |
+| --- | --- | --- |
+| Tool definition, one provider bound | 718 | 205 tokens |
+| Tool definition, three providers bound | 779 | 220 tokens |
+| Typical 5-result response, `snippets` | about 2,200 | 500-550 tokens |
+| Typical 5-result response, `context` | about 8,000 | 1,900 tokens |
+
+The skill adds about 550 tokens when the agent loads it. Snippets dominate the
+response: each result's title, site, date and URL line costs about 35 tokens
+and its snippet about 70.
+
+## Wiring
+
+Not built. The intended shape:
+
+- An agent selects the tool as any other: `tools: [web_search]` in its
+  agent file.
+- The host computes the bound set ([Bound providers](#bound-providers)) and,
+  when it is not empty, calls `registerWebSearchTool(pi, { bound })` and
+  offers `SEARCH_SKILL` (`skills/search/SKILL.md`), as it offers the
+  documents skill with `documents`. The skill joins the Recipe isolation
+  rule in `AGENTS.md`.
+- An agent that selects `web_search` on a runtime with nothing bound fails
+  at selection, naming the providers it could bind.
+
+## Write a provider
+
+A provider is a plain module, `SearchProviderModule`:
+
+- `kind: "search"`, `apiVersion` (`SEARCH_PROVIDER_API_VERSION`, checked
+  when the tool is built), and `id`, one of `SEARCH_PROVIDER_IDS`.
+- `capabilities`: `modes` (each of `fast`, `default` and `deep` with the
+  provider's `setting`, and `approximate` when the setting does not mean the
+  mode), `mode_parameter`, `max_results`, `options` (native, approximate or
+  none for `freshness`, `include_sites`, `exclude_sites` and `context`, with a
+  one-sentence `note` for each approximation), `host`, `credential` (header
+  and prefix) and `billing`.
+- `search(request, context)`: `request` is normalized, with the mode's
+  `setting`, the content level and its `max_chars`, and only the arguments the
+  descriptor serves. `context` carries `fetch`, `baseUrl`, the
+  `credentialHeaders` to send, `now` and the abort `signal`. It returns
+  results and the billed `units`, and throws `SearchProviderError` with a code
+  for a failure (`requestJson` in `src/search/http.ts` maps HTTP statuses).
+
+The three built providers live in this package, because each is one HTTP
+call with no SDK. A provider that needs its own dependencies would become a
+companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
+
+## Test search
+
+- **Unit:** `test/search.test.ts` runs each provider against a local HTTP
+  server: request shape per mode and argument, the credential header on each
+  egress lane, response mapping, notes, errors and spans. No live calls and
+  no keys.
+- **Evals:** a search provider is a REST API, so it fits eval-simulate's API
+  fakes (introspection-cli `integrations/eval-simulate/docs/api-fakes.md`):
+  one fake per provider under `fakes/api/<id>/`, its manifest naming the host
+  above, and a scenario's world holding the pages each query finds. Parallel
+  and Perplexity generate their SDKs from OpenAPI documents the trim could
+  capture; for the others the document would be written from their
+  reference. Until then, a Recipe's eval can bind a fake provider module
+  through `providers`.
+- **Live:** `introspection dev` with a bound endpoint per provider.
+
+## Later
+
+Possible additions, each only once a real Recipe needs it:
+
+- **Fallback** to another bound provider on a rate limit or outage, reported
+  in the notes and the span.
+- **Strict** mode, refusing an argument a provider cannot serve exactly, for
+  evals that compare providers.
+- **Recipe defaults** for `country`, `language`, `topic`, safe search and
+  snippet length.
+- **Provider passthrough** options, such as Tavily's `chunks_per_source` or a
+  Brave Goggle, outside the model's schema.
+- **Answers**: Tavily's `include_answer` and Perplexity's Sonar return an
+  answer with citations. An answer is a model's summary of results the agent
+  could read itself, so it belongs in the tool only if it saves real tokens
+  and keeps its citations.
+- **Several queries in one call**, which Parallel takes natively
+  (`search_queries`); others would fan out and merge.
+- **Pagination.**
+
+## Open questions
+
+1. **Keenable's modes.** Only `pro` is documented in the source found; is
+   `default` a mode, and is there a fast or deep one?
+2. **Bound hosts under proxy-native egress.** Nothing in a proxy-native
+   sandbox lists the bound endpoint hosts. Should the data plane keep
+   `INTROSPECTION_ENDPOINT_HOSTS` (or a new non-secret list) for discovery?
+3. **Answers.** Do answer-style providers (Perplexity Sonar, Tavily's
+   answer, Exa's answer endpoint) belong in `web_search`, in a separate
+   `web_answer` tool, or nowhere?
+4. **Cost limits.** The span records billed units per call; does a Recipe or
+   the platform need a budget per task that refuses `deep` once spent?
+5. **Tavily `default`.** It maps to Tavily's own default, `basic`, so the
+   named pairing "tavily / advanced" is `mode: "deep"`. Confirm, or map
+   `default` to `advanced`.
+6. **Exa `fast`.** Keep the legacy `fast` type, or move to `lite` and accept
+   that it rejects some arguments?

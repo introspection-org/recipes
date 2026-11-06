@@ -18,6 +18,9 @@ export default defineConfig({
       "@introspection-ai/recipes/documents": fileURLToPath(
         new URL("./src/documents/index.ts", import.meta.url),
       ),
+      "@introspection-ai/recipes/search": fileURLToPath(
+        new URL("./src/search/index.ts", import.meta.url),
+      ),
       "@introspection-ai/recipes/channels": fileURLToPath(
         new URL("./src/channels/index.ts", import.meta.url),
       ),
