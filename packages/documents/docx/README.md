@@ -1,6 +1,6 @@
 # @introspection-ai/recipe-documents-docx
 
-The Word (`.docx`) format for the Recipes [`documents` tool](../../../docs/documents.md):
+The Word (`.docx`) format for the Recipes [`documents` tool](../../../docs/documents/README.md):
 `read`, `propose_edits`, `comment`, `respond` and `remove_section`, on paper-docx.
 `render` is not registered.
 
@@ -63,7 +63,7 @@ the folder's name, and point `profile` at it.
 }
 ```
 
-[Write your own profile](../../../docs/documents.md#write-your-own-profile) has the
+[Write your own profile](../../../docs/documents/README.md#write-your-own-profile) has the
 contract, what a profile should say, and a complete example.
 
 ## Python

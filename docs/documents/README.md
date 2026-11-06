@@ -6,7 +6,7 @@ discriminator, shaped identically for every format. Each format is a package
 that supplies the mechanics and a capability descriptor; the commands, their
 schemas and the rules about where files may be written live in the host.
 
-Two properties follow, as for [channels](channels.md):
+Two properties follow, as for [channels](../channels/README.md):
 
 - **A command a format cannot support is absent for that format, not
   failing.** Each format package declares what it supports, and the tool
@@ -342,7 +342,7 @@ The Word and PDF helpers are small Python programs. Each format package
 declares its own `pi.runtime.python` environment, locked by the package's
 `python/uv.lock`: paper-docx for Word, pypdfium2 and pillow for PDF. The host
 prepares that environment for the installed package, as it does every
-package's (see [Runtime requirements](recipe-format.md#runtime-requirements)),
+package's (see [Runtime requirements](../recipe-format.md#runtime-requirements)),
 and passes its interpreter to the adapter. A Recipe declaring `pi.documents`
 declares and locks none of these packages itself; its own
 `pi.runtime.python`, if any, stays its shell environment. The helpers use
@@ -350,7 +350,7 @@ declares and locks none of these packages itself; its own
 interpreter the host passes, then `VIRTUAL_ENV`, then `python3`. An extension
 that needs one of these interpreters itself reads it with
 `packagePython("@introspection-ai/recipe-documents-docx")` on its session
-context (see [Package declarations](recipe-format.md#package-declarations)). Package
+context (see [Package declarations](../recipe-format.md#package-declarations)). Package
 environments are synced without extras, so PDF `tables: true` needs
 pdfplumber from an environment synced with `--extra tables` and named by
 `RECIPE_DOCUMENTS_PYTHON`.
@@ -398,7 +398,7 @@ the same object, for a format that depends on Recipes anyway.
 
 `createAdapter` also receives `python`: the interpreter of the environment the
 format package's own `pi.runtime.python` declares, which the host prepares
-(see [Runtime requirements](recipe-format.md#runtime-requirements)). It is
+(see [Runtime requirements](../recipe-format.md#runtime-requirements)). It is
 absent when the package declares none; an adapter that ignores it keeps
 working.
 

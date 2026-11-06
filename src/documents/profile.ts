@@ -10,7 +10,7 @@ import { assertRecipePathContained } from "../recipe/package.js";
  * frontmatter `name` is the folder's name, in lower case, with a
  * `description`. A format package ships some by name; a Recipe can bring its
  * own by a relative path to the folder (or its `SKILL.md`). A profile is only
- * read, never run. See docs/documents.md, "Write your own profile".
+ * read, never run. See docs/documents/README.md, "Write your own profile".
  */
 
 /** A profile name a format ships, such as `legal-redlining-en-US`. */

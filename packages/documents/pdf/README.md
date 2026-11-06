@@ -1,6 +1,6 @@
 # @introspection-ai/recipe-documents-pdf
 
-The PDF format for the Recipes [`documents` tool](../../../docs/documents.md): `read` and
+The PDF format for the Recipes [`documents` tool](../../../docs/documents/README.md): `read` and
 `render`. PDFs are never changed, so the write commands are not registered.
 
 ```json

@@ -1,7 +1,7 @@
 # Slack channel connector
 
 `@introspection-ai/recipe-channel-slack` is the Slack adapter for the
-[channel tools](channels.md). It supplies Slack Web API transport and a
+[channel tools](README.md). It supplies Slack Web API transport and a
 capability descriptor. The `channels` tool and its command schemas are
 provider-neutral, so a Recipe written against it is not written against Slack.
 
