@@ -1,7 +1,10 @@
 # Productivity tools
 
-**Status: proposed.** Nothing on this page is built yet. It records the design
-for review, and each section names the contract a first build would ship.
+**Status: the host is built** (`@introspection-ai/recipes/productivity`): the
+`pi.productivity` declaration and its checks, the provider contract, the
+`mail`, `calendar` and `drive` tools, handles, and the core skill. Provider
+packages are built separately: see each provider's guide for its status.
+[As built](#as-built) lists where the host differs from the design below.
 
 A Recipe that works with a person's mail, calendar and files declares a
 **productivity provider**. The host then registers up to three tools, `mail`,
@@ -231,19 +234,75 @@ schema and description, so a Recipe never depends on which provider runs.
 
 ## Write a provider
 
-A provider package exports a plain descriptor, `RecipeProductivityModule`,
-and the host builds the tools from it, as for channels:
+A provider package exports a plain descriptor, `RecipeProductivityModule`
+(`kind: "productivity"`), and the host builds the tools from it, as for
+channels:
 
 - `apiVersion` (`PRODUCTIVITY_MODULE_API_VERSION`), checked when the module
   loads;
 - `capabilities`: per tool, the commands it supports, each with its effect
-  class and backend;
-- `createSession({ config, env, cwd })`: returns the transport for one
-  person's connection, which receives handle resolution from the host and
-  never mints handles itself.
+  class (which must equal `PRODUCTIVITY_COMMAND_EFFECTS`), its backend
+  (`mcp` or `rest`) and an optional one-sentence `note` the host appends to
+  the command's description. `mail` also says what `label` and `move` act on
+  (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`);
+- `createSession({ config, env, cwd, fetch? })`: returns (or resolves to) a
+  `ProductivitySession` for one person's connection, with a `mail`,
+  `calendar` and `drive` object whose methods serve the enabled commands
+  (`PRODUCTIVITY_SESSION_METHODS` names them). The host calls it on the first
+  command, checks every enabled command is implemented, and calls `close()`
+  when the session shuts down. `config` carries the enabled commands per
+  tool; `fetch`, when a host passes one, replaces the global `fetch`.
+
+A session takes and returns the provider's own ids. The host resolves each
+handle before the call and mints handles for what comes back, so a provider
+never sees or mints one. It returns bodies as `{ content_type, content }`
+(the host converts HTML and caps the size) and files as bytes (the host
+writes them). To report a failure it throws an `Error` with a
+`productivity: { code, message, scope?, retry_after_seconds?, status? }`
+field (`ProductivityProviderError`); any other error is a `provider_error`.
 
 It imports only Recipes' types (`import type`, Recipes in
 `devDependencies`), and needs no run-time dependency on Recipes.
+
+## As built
+
+Where the host differs from, or settles, the design above:
+
+- **Handles.** A draft is a `msg_…` handle that remembers the session
+  created it; `mail update_draft` and `mail send` take only such a handle,
+  and a sent draft's handle stops resolving. Pagination cursors are `cur_…`
+  handles valid only with the same command and arguments. A handle whose item
+  the provider reports `not_found` is dropped. `mail move` keeps the
+  message's handle when the provider gives the moved message a new id.
+- **Arguments.** `mail search` `folder` is a folder (or Gmail label) name.
+  `drive search` and `drive upload` take `folder` as a folder's `file_…`
+  handle. `calendar list` and `calendar free_busy` take absolute RFC 3339
+  times with an offset, and `free_busy` takes the `time_zone` of its result.
+  `calendar create` and `update` take local RFC 3339 times read in an IANA
+  `time_zone` (checked with `Intl`), and `all_day` with dates; `update` needs
+  `time_zone` with `start` or `end`.
+- **Results.** `calendar respond` returns the event handle and the response,
+  and `calendar cancel` returns `cancelled: true`, since providers return no
+  event for either. `mail send` returns the sent message's handle only when
+  the provider reports its id.
+- **Effects.** `calendar create`, `update` and `respond` are `sends`
+  whatever the attendee list; `drive upload` is `reversible`.
+- **Limits.** Mail and event bodies are cut at 20,000 characters and
+  `drive read` text at 100,000, each result saying `truncated` and
+  `limit_chars`. Files moved by `fetch_attachment`, `download` and `upload`
+  are capped at 100 MB.
+- **Downloads** go to `<INTROSPECTION_RUNTIME_FILES_DIR or files/>/<provider>/<handle>/<name>`,
+  returned as a workspace-relative path when inside the workspace.
+  `drive upload` reads only a file under the workspace's `outputs/`.
+- **Errors.** A failed command returns an error result (`isError`) with
+  `error: { code, message, … }`. The codes are `not_connected` and
+  `missing_scope` (both with a `connect` hint for the person),
+  `rate_limited`, `not_found`, `invalid_request` (the host refused the
+  arguments or a handle, before any provider call) and `provider_error`.
+- **Selection.** The host fails when an agent selects `mail`, `calendar` or
+  `drive` while the Recipe's `pi.productivity` declaration does not enable
+  it. A Recipe with no declaration is not checked, so its own extension may
+  register a tool of the same name.
 
 ## Deferred
 

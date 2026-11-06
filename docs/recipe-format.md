@@ -274,6 +274,25 @@ kind of work, such as `legal-redlining-en-US`, which the docx package ships.
 
 See [Document tools](documents/README.md).
 
+### Productivity tools
+
+`pi.productivity` names one provider for the `mail`, `calendar` and `drive`
+tools, as `{"provider": "<provider>"}` served by
+`@introspection-ai/recipe-productivity-<provider>`, with an optional `tools`
+object holding a command allowlist per tool. A second provider is refused.
+
+```json
+{
+  "pi": {
+    "productivity": [
+      { "provider": "microsoft", "tools": { "mail": ["search", "read", "draft"] } }
+    ]
+  }
+}
+```
+
+See [Productivity tools](productivity/README.md).
+
 ## Judges
 
 A Recipe MAY include portable LLM grading definitions as direct `.yaml` or

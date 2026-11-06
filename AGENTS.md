@@ -45,19 +45,21 @@
   (`src/recipe/extensions.ts::recipeExtensionAliases`), and a peer alone is
   never installed, so the import would silently resolve to the older host copy
   and fail.
-- **A channel adapter or document format is a peer by default when it is a
-  companion package** (or omitted), **and a dependency with an exact version
+- **A channel adapter, document format or productivity provider is a peer by
+  default when it is a companion package** (or omitted), **and a dependency with an exact version
   only to pin it.** Third-party ones are dependencies. The companions are the
-  first-party ones published here (`recipe-channel-*`, `recipe-documents-*`),
+  first-party ones published here (`recipe-channel-*`, `recipe-documents-*`,
+  `recipe-productivity-*`),
   listed in Recipes' `optionalDependencies` so installing Recipes installs
   them beside it. A Recipe may declare one as a peer (the platform provides
   it) or omit it (the copy beside Recipes is used); listing one in
   `dependencies` pins it (the Recipe's copy wins, as in
-  `recipeExtensionAliases`). Any other channel or format package must be
+  `recipeExtensionAliases`). Any other channel, format or provider package must be
   declared, and a third-party one belongs in `dependencies`. The list is read
   at run time by `src/recipe/companions.ts`; `test/companions.test.ts` and the
   checker's `COMPANION_PACKAGES` and `HOST_PEER_PACKAGES` tests keep the
-  copies in step, and a new channel or format package here must join it.
+  copies in step, and a new channel, format or provider package here must
+  join it.
 - **Companions never depend on Recipes at run time.** Recipes depends on
   them, so a dependency or peer back would be a cycle. A companion imports
   only Recipes' types (`import type`, with Recipes in `devDependencies`), and
@@ -94,7 +96,7 @@
   went stale twice in one change.
 - **Where the packages come from.** `@introspection-ai/recipes`,
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/recipe-documents-*`,
-  `@introspection-ai/mcp-client-*` and
+  `@introspection-ai/recipe-productivity-*`, `@introspection-ai/mcp-client-*` and
   `introspection-recipe-check` are all published from THIS repository, but on
   **two release trains**: `release-please-config.json` covers the npm packages
   and `release-please-checker-config.json` the checker and its Python binding,
@@ -115,8 +117,8 @@
 ## Recipe isolation
 
 - **A Recipe run sees only the Recipe's skills.** That means its own, its
-  dependency and peer packages' `pi.skills`, and the `documents` tool's core
-  skill and profile, never a skill Pi discovered elsewhere (an installed Pi
+  dependency and peer packages' `pi.skills`, the `documents` tool's core
+  skill and profile, and the productivity tools' core skill, never a skill Pi discovered elsewhere (an installed Pi
   package, user or project skills, `--skill`). Pi still fills its resource
   loader, and an extension cannot replace that, so `src/pi-extension.ts`
   rebuilds the prompt's skills (`before_agent_start`) and `/skill:` commands
