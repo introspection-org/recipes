@@ -40,9 +40,7 @@ export default [
   {
     // A docs snippet (#region docs:improve/eval-cases/expected-values) that
     // shows the values a reader grades; its body is left for the reader.
-    files: [
-      "examples/docs/improve/eval-cases/evals/vitest/refund-policy.eval.ts",
-    ],
+    files: ["examples/improve/eval-cases/evals/vitest/refund-policy.eval.ts"],
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
     },

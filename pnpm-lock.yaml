@@ -95,7 +95,7 @@ importers:
         specifier: workspace:>=0.2.0
         version: link:packages/documents/pdf
 
-  examples/docs:
+  examples:
     devDependencies:
       '@earendil-works/pi-coding-agent':
         specifier: '>=1.1.0 <2.0.0'
@@ -105,7 +105,7 @@ importers:
         version: 0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)
       '@introspection-ai/recipes':
         specifier: workspace:*
-        version: link:../..
+        version: link:..
       '@introspection-ai/vitest-evals':
         specifier: '>=0.2.0 <1.0.0'
         version: 0.4.0(@introspection-ai/mcp-fakes@0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3))(vitest-evals@0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7))(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))
