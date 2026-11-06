@@ -20,6 +20,7 @@ task lifecycle, protocols, and deployment.
 | Answer a chat message from a Recipe | [Channel tools](channels.md) |
 | Add Slack tools to a Recipe | [Slack channel connector](slack.md) |
 | Read and mark up Word and PDF files from a Recipe | [Document tools](documents.md) |
+| Work with a person's mail, calendar and files (proposed) | [Productivity tools](productivity.md) |
 | Define portable evaluation judges | [Recipe judges](recipe-judges.md) |
 
 ## Boundary
