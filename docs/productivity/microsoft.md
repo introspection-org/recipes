@@ -76,6 +76,21 @@ descriptor states this, since Outlook has no labels in Gmail's sense.
   follow Graph's `302` to the pre-authenticated URL without the bearer.
   `drive upload` never overwrites (`conflictBehavior=rename`) and uses an
   upload session in 10 MiB ranges (a 320 KiB multiple) above 4 MiB.
+- **Telemetry.** Each Graph request, each retried attempt and each redirect
+  or upload-range request is an OpenTelemetry client span on the globally
+  registered tracer (scope `@introspection-ai/recipe-productivity-microsoft`),
+  a child of the tool call's `execute_tool` span. It is named
+  `METHOD /template` from the path template in Graph's OpenAPI description,
+  such as `GET /me/messages/{message-id}` (a request to a pre-authenticated
+  URL is named by its method alone), and carries `http.request.method`,
+  `server.address`, `server.port`, `url.template`,
+  `http.response.status_code`, `http.response.body.size` and `error.type`.
+  A JSON response body up to 256 KiB is recorded under
+  `gen_ai.tool.call.result`, the attribute the tool result itself uses, so
+  the Introspection processor seals it as it seals tool results; bytes are
+  never recorded. No header, path or query is recorded, since a bearer, an
+  id or a pre-authenticated link can be in them. With no tracer provider
+  registered the spans are no-ops.
 - **Not yet:** a live-tenant test; `Files.Read` reaches the person's own
   OneDrive, and SharePoint results may need `Files.Read.All` or
   `Sites.Read.All`. A download's pre-authenticated host

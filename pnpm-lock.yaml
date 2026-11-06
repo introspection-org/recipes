@@ -181,6 +181,10 @@ importers:
         version: 7.0.2
 
   packages/productivity/microsoft:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.10.0
     devDependencies:
       '@introspection-ai/recipes':
         specifier: workspace:^

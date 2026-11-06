@@ -1,3 +1,4 @@
+import type { Tracer } from "@opentelemetry/api";
 import type {
   CalendarAttendeeResponse,
   CalendarBusyInterval,
@@ -282,12 +283,35 @@ function driveItemId(item: GraphDriveItem): string {
   return driveId ? `${driveId}/${itemId}` : itemId;
 }
 
+/** A request path and its template in Graph's OpenAPI description. */
+type GraphPath = Pick<GraphRequest, "path" | "template">;
+
+const route = (path: string, template = path): GraphPath => ({
+  path,
+  template,
+});
+
+/** Below `base`, adding `path` and its `template`. */
+const under = (base: GraphPath, path: string, template = path): GraphPath => ({
+  path: `${base.path}${path}`,
+  template: `${base.template}${template}`,
+});
+
+const messagePath = (id: string): GraphPath =>
+  route(`/me/messages/${segment(id)}`, "/me/messages/{message-id}");
+
+const eventPath = (id: string): GraphPath =>
+  route(`/me/events/${segment(id)}`, "/me/events/{event-id}");
+
 /** The Graph path of an item id from `driveItemId`. */
-function itemPath(id: string): string {
+function itemPath(id: string): GraphPath {
   const slash = id.indexOf("/");
   return slash === -1
-    ? `/me/drive/items/${segment(id)}`
-    : `/drives/${segment(id.slice(0, slash))}/items/${segment(id.slice(slash + 1))}`;
+    ? route(`/me/drive/items/${segment(id)}`, "/me/drive/items/{driveItem-id}")
+    : route(
+        `/drives/${segment(id.slice(0, slash))}/items/${segment(id.slice(slash + 1))}`,
+        "/drives/{drive-id}/items/{driveItem-id}",
+      );
 }
 
 function fileSummary(item: GraphDriveItem): DriveFileSummary {
@@ -326,6 +350,7 @@ export function createMicrosoftSession(
   options: Pick<ProductivitySessionOptions, "env" | "fetch"> & {
     baseUrl?: string;
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+    tracer?: Tracer;
   },
 ): ProductivitySession {
   const graph = new GraphClient({
@@ -333,28 +358,30 @@ export function createMicrosoftSession(
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
     ...(options.sleep ? { sleep: options.sleep } : {}),
+    ...(options.tracer ? { tracer: options.tracer } : {}),
   });
   const get = (
-    path: string,
+    target: GraphPath,
     query: GraphRequest["query"],
     scope: string,
   ): GraphRequest => ({
     method: "GET",
-    path,
+    ...target,
     query,
     scope,
     read: true,
   });
 
+  const folderTemplate = "/me/mailFolders/{mailFolder-id}";
   const mailFolderPath = async (
     folder: string,
     signal?: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<GraphPath> => {
     const known = WELL_KNOWN_FOLDERS[folder.trim().toLowerCase()];
-    if (known) return `/me/mailFolders/${known}`;
+    if (known) return route(`/me/mailFolders/${known}`, folderTemplate);
     const found = await graph.json<{ value?: GraphMailFolder[] }>(
       get(
-        "/me/mailFolders",
+        route("/me/mailFolders"),
         {
           $filter: `displayName eq ${odata(folder.trim())}`,
           $select: "id,displayName",
@@ -369,14 +396,14 @@ export function createMicrosoftSession(
       throw invalidRequest(
         `No mail folder named '${folder}'. Use inbox, archive, sent, drafts, trash, junk or a top-level folder's name.`,
       );
-    return `/me/mailFolders/${segment(id)}`;
+    return route(`/me/mailFolders/${segment(id)}`, folderTemplate);
   };
 
   const mail: MailSession = {
     async search(args, { signal }) {
       const folderPath = args.folder
         ? await mailFolderPath(args.folder, signal)
-        : "/me";
+        : route("/me");
       const query: Record<string, string | undefined> = {
         $select: MESSAGE_SELECT,
         $top: String(args.limit),
@@ -408,7 +435,11 @@ export function createMicrosoftSession(
         query.$orderby = "receivedDateTime desc";
       }
       const page = await graph.page<GraphMessage>(
-        get(`${folderPath}/messages`, query, MICROSOFT_SCOPES.mail.search),
+        get(
+          under(folderPath, "/messages"),
+          query,
+          MICROSOFT_SCOPES.mail.search,
+        ),
         args.limit,
         signal,
         args.cursor,
@@ -426,7 +457,7 @@ export function createMicrosoftSession(
       if ("message_id" in args) {
         const message = await graph.json<GraphMessage>(
           get(
-            `/me/messages/${segment(args.message_id)}`,
+            messagePath(args.message_id),
             { $select: `${MESSAGE_SELECT},body`, $expand: ATTACHMENT_EXPAND },
             MICROSOFT_SCOPES.mail.read,
           ),
@@ -436,7 +467,7 @@ export function createMicrosoftSession(
       }
       const page = await graph.page<GraphMessage>(
         get(
-          "/me/messages",
+          route("/me/messages"),
           {
             $filter: `conversationId eq ${odata(args.thread_id)}`,
             $select: `${MESSAGE_SELECT},body`,
@@ -455,7 +486,11 @@ export function createMicrosoftSession(
     },
 
     async fetchAttachment(args, { signal }) {
-      const path = `/me/messages/${segment(args.message_id)}/attachments/${segment(args.attachment_id)}`;
+      const path = under(
+        messagePath(args.message_id),
+        `/attachments/${segment(args.attachment_id)}`,
+        "/attachments/{attachment-id}",
+      );
       const meta = await graph.json<GraphAttachment>(
         get(
           path,
@@ -470,7 +505,7 @@ export function createMicrosoftSession(
         );
       const content = await graph.bytes(
         get(
-          `${path}/$value`,
+          under(path, "/$value"),
           undefined,
           MICROSOFT_SCOPES.mail.fetch_attachment,
         ),
@@ -492,7 +527,7 @@ export function createMicrosoftSession(
         const created = await graph.json<GraphMessage>(
           {
             method: "POST",
-            path: `/me/messages/${segment(args.reply_to_id)}/createReply`,
+            ...under(messagePath(args.reply_to_id), "/createReply"),
             body: {
               comment: args.body,
               message: {
@@ -513,7 +548,7 @@ export function createMicrosoftSession(
       const created = await graph.json<GraphMessage>(
         {
           method: "POST",
-          path: "/me/messages",
+          ...route("/me/messages"),
           body: {
             subject: args.subject,
             body: { contentType: "text", content: args.body },
@@ -532,7 +567,7 @@ export function createMicrosoftSession(
       const updated = await graph.json<GraphMessage>(
         {
           method: "PATCH",
-          path: `/me/messages/${segment(args.draft_id)}`,
+          ...messagePath(args.draft_id),
           body: {
             ...(args.subject !== undefined ? { subject: args.subject } : {}),
             ...(args.body !== undefined
@@ -553,7 +588,7 @@ export function createMicrosoftSession(
       await graph.send(
         {
           method: "POST",
-          path: `/me/messages/${segment(args.draft_id)}/send`,
+          ...under(messagePath(args.draft_id), "/send"),
           scope: MICROSOFT_SCOPES.mail.send,
           read: false,
         },
@@ -568,10 +603,10 @@ export function createMicrosoftSession(
       const moved = await graph.json<GraphMessage>(
         {
           method: "POST",
-          path: `/me/messages/${segment(args.message_id)}/move`,
+          ...under(messagePath(args.message_id), "/move"),
           body: {
             destinationId: decodeURIComponent(
-              folder.slice("/me/mailFolders/".length),
+              folder.path.slice("/me/mailFolders/".length),
             ),
           },
           scope: MICROSOFT_SCOPES.mail.move,
@@ -583,7 +618,7 @@ export function createMicrosoftSession(
     },
 
     async label(args, { signal }) {
-      const path = `/me/messages/${segment(args.message_id)}`;
+      const path = messagePath(args.message_id);
       const current = await graph.json<GraphMessage>(
         get(path, { $select: "id,categories" }, MICROSOFT_SCOPES.mail.label),
         signal,
@@ -605,7 +640,7 @@ export function createMicrosoftSession(
       const updated = await graph.json<GraphMessage>(
         {
           method: "PATCH",
-          path,
+          ...path,
           body: { categories },
           scope: MICROSOFT_SCOPES.mail.label,
           read: false,
@@ -619,11 +654,11 @@ export function createMicrosoftSession(
   const calendarPath = async (
     name: string | undefined,
     signal?: AbortSignal,
-  ) => {
-    if (!name) return "/me";
+  ): Promise<GraphPath> => {
+    if (!name) return route("/me");
     const found = await graph.json<{ value?: GraphCalendar[] }>(
       get(
-        "/me/calendars",
+        route("/me/calendars"),
         { $filter: `name eq ${odata(name)}`, $select: "id,name", $top: "2" },
         MICROSOFT_SCOPES.calendar.list,
       ),
@@ -631,7 +666,7 @@ export function createMicrosoftSession(
     );
     const id = found?.value?.[0]?.id;
     if (!id) throw invalidRequest(`No calendar named '${name}'.`);
-    return `/me/calendars/${segment(id)}`;
+    return route(`/me/calendars/${segment(id)}`, "/me/calendars/{calendar-id}");
   };
 
   const eventBody = (args: {
@@ -700,7 +735,7 @@ export function createMicrosoftSession(
       const base = await calendarPath(args.calendar, signal);
       const page = await graph.page<GraphEvent>(
         get(
-          `${base}/calendarView`,
+          under(base, "/calendarView"),
           {
             startDateTime: args.from,
             endDateTime: args.to,
@@ -724,7 +759,7 @@ export function createMicrosoftSession(
       return fullEvent(
         await graph.json<GraphEvent>(
           get(
-            `/me/events/${segment(args.event_id)}`,
+            eventPath(args.event_id),
             { $select: `${EVENT_SELECT},attendees,body` },
             MICROSOFT_SCOPES.calendar.read,
           ),
@@ -737,7 +772,7 @@ export function createMicrosoftSession(
       const result = await graph.json<{ value?: GraphScheduleInformation[] }>(
         {
           method: "POST",
-          path: "/me/calendar/getSchedule",
+          ...route("/me/calendar/getSchedule"),
           headers: preferZone(args.time_zone),
           body: {
             schedules: args.attendees,
@@ -776,7 +811,7 @@ export function createMicrosoftSession(
         await graph.json<GraphEvent>(
           {
             method: "POST",
-            path: "/me/events",
+            ...route("/me/events"),
             headers: preferZone(args.time_zone),
             body: eventBody(args),
             scope: MICROSOFT_SCOPES.calendar.create,
@@ -793,7 +828,7 @@ export function createMicrosoftSession(
         await graph.json<GraphEvent>(
           {
             method: "PATCH",
-            path: `/me/events/${segment(eventId)}`,
+            ...eventPath(eventId),
             ...(args.time_zone ? { headers: preferZone(args.time_zone) } : {}),
             body: eventBody(changes),
             scope: MICROSOFT_SCOPES.calendar.update,
@@ -813,7 +848,7 @@ export function createMicrosoftSession(
       await graph.send(
         {
           method: "POST",
-          path: `/me/events/${segment(args.event_id)}/${action}`,
+          ...under(eventPath(args.event_id), `/${action}`),
           body: {
             ...(args.comment !== undefined ? { comment: args.comment } : {}),
             sendResponse: true,
@@ -829,7 +864,7 @@ export function createMicrosoftSession(
       await graph.send(
         {
           method: "POST",
-          path: `/me/events/${segment(args.event_id)}/cancel`,
+          ...under(eventPath(args.event_id), "/cancel"),
           body: {
             ...(args.comment !== undefined ? { comment: args.comment } : {}),
           },
@@ -849,10 +884,16 @@ export function createMicrosoftSession(
 
   const drive: DriveSession = {
     async search(args, { signal }) {
-      const base = args.folder_id ? itemPath(args.folder_id) : "/me/drive/root";
+      const base = args.folder_id
+        ? itemPath(args.folder_id)
+        : route("/me/drive/root");
       const page = await graph.page<GraphDriveItem>(
         get(
-          `${base}/search(q=${segment(odata(args.query))})`,
+          under(
+            base,
+            `/search(q=${segment(odata(args.query))})`,
+            "/search(q='{q}')",
+          ),
           { $select: DRIVE_SELECT, $top: String(args.limit) },
           MICROSOFT_SCOPES.drive.search,
         ),
@@ -900,7 +941,7 @@ export function createMicrosoftSession(
       }
       const content = await graph.bytes(
         get(
-          `${itemPath(args.file_id)}/content`,
+          under(itemPath(args.file_id), "/content"),
           undefined,
           MICROSOFT_SCOPES.drive.read,
         ),
@@ -927,7 +968,7 @@ export function createMicrosoftSession(
         throw invalidRequest(`${item.name ?? "This item"} is a folder.`);
       const content = await graph.bytes(
         get(
-          `${itemPath(args.file_id)}/content`,
+          under(itemPath(args.file_id), "/content"),
           undefined,
           MICROSOFT_SCOPES.drive.download,
         ),
@@ -944,14 +985,14 @@ export function createMicrosoftSession(
     async upload(args, { signal }) {
       const parent = args.folder_id
         ? itemPath(args.folder_id)
-        : "/me/drive/root";
-      const target = `${parent}:/${segment(args.name)}:`;
+        : route("/me/drive/root");
+      const target = under(parent, `:/${segment(args.name)}:`, ":/{filename}:");
       const scope = MICROSOFT_SCOPES.drive.upload;
       if (args.bytes.byteLength <= SIMPLE_UPLOAD_LIMIT_BYTES) {
         const item = await graph.json<GraphDriveItem>(
           {
             method: "PUT",
-            path: `${target}/content`,
+            ...under(target, "/content"),
             query: { "@microsoft.graph.conflictBehavior": "rename" },
             headers: {
               "Content-Type": args.mime_type ?? "application/octet-stream",
@@ -969,7 +1010,7 @@ export function createMicrosoftSession(
       const session = await graph.json<GraphUploadSession>(
         {
           method: "POST",
-          path: `${target}/createUploadSession`,
+          ...under(target, "/createUploadSession"),
           body: { item: { "@microsoft.graph.conflictBehavior": "rename" } },
           scope,
           read: false,

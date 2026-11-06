@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Attributes, Span, SpanStatus, Tracer } from "@opentelemetry/api";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import microsoft, {
@@ -18,6 +19,12 @@ import microsoft, {
   UPLOAD_CHUNK_BYTES,
   wallTime,
 } from "../packages/productivity/microsoft/src/index.js";
+import {
+  httpRequestSpan,
+  httpResponseAttributes,
+  MAX_RECORDED_BODY_BYTES,
+  RESPONSE_BODY_ATTRIBUTE,
+} from "../packages/productivity/microsoft/src/telemetry.js";
 import {
   loadRecipeProductivity,
   PRODUCTIVITY_COMMANDS,
@@ -88,9 +95,53 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 beforeEach(() => {
   requests.length = 0;
+  spans.length = 0;
   routes = [];
 });
 
+interface RecordedSpan {
+  name: string;
+  attributes: Attributes;
+  status?: SpanStatus;
+  ended: boolean;
+}
+
+/** A tracer that keeps every span it starts, for the request-span tests. */
+function recordingTracer(spans: RecordedSpan[]): Tracer {
+  return {
+    startSpan(name, options) {
+      const recorded: RecordedSpan = {
+        name,
+        attributes: { ...options?.attributes },
+        ended: false,
+      };
+      spans.push(recorded);
+      const span = {
+        setAttribute(key: string, value: Attributes[string]) {
+          recorded.attributes[key] = value;
+          return span;
+        },
+        setAttributes(attributes: Attributes) {
+          Object.assign(recorded.attributes, attributes);
+          return span;
+        },
+        setStatus(status: SpanStatus) {
+          recorded.status = status;
+          return span;
+        },
+        end() {
+          recorded.ended = true;
+        },
+      };
+      return span as unknown as Span;
+    },
+    startActiveSpan() {
+      throw new Error("not used");
+    },
+  };
+}
+
+const spans: RecordedSpan[] = [];
 const waits: number[] = [];
 function session(
   env: Record<string, string> = { INTROSPECTION_TASK_ID: "task" },
@@ -98,6 +149,7 @@ function session(
   waits.length = 0;
   return createMicrosoftSession({
     env,
+    tracer: recordingTracer(spans),
     baseUrl: `${base}/v1.0`,
     sleep: async (ms) => {
       waits.push(ms);
@@ -935,6 +987,160 @@ describe("Microsoft productivity provider: drive", () => {
       productivity: { code: "provider_error", status: 503 },
     });
     expect(requests).toHaveLength(2);
+  });
+});
+
+describe("Microsoft productivity provider: request spans", () => {
+  it("names a span after the method and the OpenAPI path template, recording no path or query", () => {
+    expect(
+      httpRequestSpan({
+        method: "GET",
+        url: "https://graph.microsoft.com/v1.0/me/messages/AAMk%3D?$search=%22secret%22",
+        template: "/me/messages/{message-id}",
+      }),
+    ).toEqual({
+      name: "GET /me/messages/{message-id}",
+      attributes: {
+        "http.request.method": "GET",
+        "server.address": "graph.microsoft.com",
+        "server.port": 443,
+        "url.template": "/me/messages/{message-id}",
+      },
+    });
+    expect(
+      httpRequestSpan({
+        method: "GET",
+        url: "https://tenant.sharepoint.com/download.aspx?tempauth=token",
+      }),
+    ).toEqual({
+      name: "GET",
+      attributes: {
+        "http.request.method": "GET",
+        "server.address": "tenant.sharepoint.com",
+        "server.port": 443,
+      },
+    });
+  });
+
+  it("records a JSON body up to the cap, and only its size above it", () => {
+    expect(httpResponseAttributes(200, '{"id":"m1"}')).toEqual({
+      "http.response.status_code": 200,
+      "http.response.body.size": 11,
+      [RESPONSE_BODY_ATTRIBUTE]: '{"id":"m1"}',
+    });
+    const large = "x".repeat(MAX_RECORDED_BODY_BYTES + 1);
+    expect(httpResponseAttributes(200, large)).toEqual({
+      "http.response.status_code": 200,
+      "http.response.body.size": MAX_RECORDED_BODY_BYTES + 1,
+    });
+    expect(httpResponseAttributes(404)).toEqual({
+      "http.response.status_code": 404,
+      "error.type": "404",
+    });
+  });
+
+  it("records one span per Graph request, with the answer's body and never the bearer", async () => {
+    on("GET", "/me/messages/m1", {
+      json: {
+        id: "m1",
+        subject: "Hi",
+        body: { contentType: "text", content: "x" },
+      },
+    });
+    const read = await session({
+      INTROSPECTION_TOKEN: "locator-secret",
+      INTROSPECTION_EGRESS_URL: "http://egress:8080",
+    }).mail!.read!({ message_id: "m1" }, ctx);
+    expect(read.messages[0]!.subject).toBe("Hi");
+    expect(spans).toHaveLength(1);
+    expect(spans[0]).toMatchObject({
+      name: "GET /me/messages/{message-id}",
+      ended: true,
+      attributes: {
+        "http.request.method": "GET",
+        "server.address": "127.0.0.1",
+        "url.template": "/me/messages/{message-id}",
+        "http.response.status_code": 200,
+      },
+    });
+    expect(
+      JSON.parse(String(spans[0]!.attributes[RESPONSE_BODY_ATTRIBUTE])),
+    ).toMatchObject({ id: "m1", subject: "Hi" });
+    expect(JSON.stringify(spans)).not.toContain("locator-secret");
+    expect(JSON.stringify(spans)).not.toContain("$expand");
+  });
+
+  it("templates each call site: folders, actions, drive items and uploads", async () => {
+    on("GET", "/me/mailFolders/inbox/messages", { json: { value: [] } });
+    on("POST", "/me/events/e1/tentativelyAccept", { status: 202 });
+    on("GET", "/drives/D1/items/I1", {
+      json: { id: "I1", name: "a.bin", file: { mimeType: "application/x" } },
+    });
+    on("GET", "/drives/D1/items/I1/content", {
+      status: 302,
+      headers: { Location: `${base}/download/a.bin?tempauth=token` },
+    });
+    routes.push((request) =>
+      request.path === "/download/a.bin"
+        ? { bytes: Buffer.from("PK") }
+        : undefined,
+    );
+    on("PUT", "/me/drive/root:/out.txt:/content", {
+      status: 201,
+      json: { id: "N1", name: "out.txt" },
+    });
+    const graph = session();
+    await graph.mail!.search!({ folder: "inbox", limit: 5 }, ctx);
+    await graph.calendar!.respond!(
+      { event_id: "e1", response: "tentative" },
+      ctx,
+    );
+    await graph.drive!.download!({ file_id: "D1/I1" }, ctx);
+    await graph.drive!.upload!(
+      { name: "out.txt", bytes: new TextEncoder().encode("hi") },
+      ctx,
+    );
+    expect(spans.map((span) => span.name)).toEqual([
+      "GET /me/mailFolders/{mailFolder-id}/messages",
+      "POST /me/events/{event-id}/tentativelyAccept",
+      "GET /drives/{drive-id}/items/{driveItem-id}",
+      "GET /drives/{drive-id}/items/{driveItem-id}/content",
+      "GET",
+      "PUT /me/drive/root:/{filename}:/content",
+    ]);
+    expect(
+      spans.map((span) => span.attributes["http.response.status_code"]),
+    ).toEqual([200, 202, 200, 302, 200, 201]);
+    // Bytes are never recorded, only JSON.
+    expect(spans[4]!.attributes[RESPONSE_BODY_ATTRIBUTE]).toBeUndefined();
+    expect(JSON.stringify(spans)).not.toContain("tempauth");
+  });
+
+  it("records each retried attempt, and a failure as an error span", async () => {
+    let calls = 0;
+    on("GET", "/me/events/e1", () =>
+      ++calls < 2
+        ? {
+            status: 429,
+            headers: { "Retry-After": "1" },
+            json: { error: { code: "TooManyRequests" } },
+          }
+        : { status: 404, json: { error: { code: "ErrorItemNotFound" } } },
+    );
+    await expect(
+      session().calendar!.read!({ event_id: "e1" }, ctx),
+    ).rejects.toMatchObject({ productivity: { code: "not_found" } });
+    expect(
+      spans.map((span) => [
+        span.name,
+        span.attributes["http.response.status_code"],
+        span.attributes["error.type"],
+        span.status?.code,
+      ]),
+    ).toEqual([
+      ["GET /me/events/{event-id}", 429, "429", 2],
+      ["GET /me/events/{event-id}", 404, "404", 2],
+    ]);
   });
 });
 

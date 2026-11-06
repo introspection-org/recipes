@@ -1,11 +1,15 @@
 import { setTimeout } from "node:timers/promises";
 
+import type { Tracer } from "@opentelemetry/api";
+
 import type {
   ProductivityErrorCode,
   ProductivityErrorInfo,
   ProductivityFetch,
   ProductivityProviderError,
 } from "@introspection-ai/recipes/productivity";
+
+import { defaultTracer, tracedFetch } from "./telemetry.js";
 
 /** Microsoft Graph v1.0. Beta is never used. */
 export const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
@@ -82,6 +86,11 @@ export interface GraphRequest {
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   /** Below the base URL, already escaped, such as `/me/messages`. */
   path: string;
+  /**
+   * The path's template in Graph's OpenAPI description, such as
+   * `/me/messages/{message-id}`, which names the request's span.
+   */
+  template: string;
   query?: Record<string, string | undefined>;
   headers?: Record<string, string>;
   /** JSON-encoded unless it is bytes. */
@@ -107,6 +116,8 @@ export interface GraphClientOptions {
   baseUrl?: string;
   /** Default `timers/promises` `setTimeout`; tests record the waits. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Default: the globally registered tracer; tests record the spans. */
+  tracer?: Tracer;
 }
 
 type FetchResponse = Awaited<ReturnType<ProductivityFetch>>;
@@ -125,6 +136,7 @@ export class GraphClient {
   private readonly hooked: boolean;
   private readonly fetchImpl: ProductivityFetch;
   private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private readonly tracer: Tracer;
 
   constructor(options: GraphClientOptions = {}) {
     this.env = options.env ?? process.env;
@@ -134,6 +146,15 @@ export class GraphClient {
     this.baseUrl = (options.baseUrl ?? GRAPH_BASE_URL).replace(/\/+$/, "");
     this.sleep =
       options.sleep ?? ((ms, signal) => setTimeout(ms, undefined, { signal }));
+    this.tracer = options.tracer ?? defaultTracer();
+  }
+
+  private fetch(
+    url: string,
+    init: Parameters<ProductivityFetch>[1],
+    template?: string,
+  ): Promise<FetchResponse> {
+    return tracedFetch(this.tracer, this.fetchImpl, url, init, template);
   }
 
   /** The `Authorization` header for a Graph request. */
@@ -182,20 +203,24 @@ export class GraphClient {
     for (let attempt = 0; ; attempt += 1) {
       let response: FetchResponse;
       try {
-        response = await this.fetchImpl(url, {
-          method: request.method,
-          headers: {
-            Accept: "application/json",
-            ...(body !== undefined && !isBytes
-              ? { "Content-Type": "application/json" }
-              : {}),
-            ...request.headers,
-            Authorization: this.authorization(),
+        response = await this.fetch(
+          url,
+          {
+            method: request.method,
+            headers: {
+              Accept: "application/json",
+              ...(body !== undefined && !isBytes
+                ? { "Content-Type": "application/json" }
+                : {}),
+              ...request.headers,
+              Authorization: this.authorization(),
+            },
+            ...(body !== undefined ? { body } : {}),
+            redirect: "manual",
+            ...(signal ? { signal } : {}),
           },
-          ...(body !== undefined ? { body } : {}),
-          redirect: "manual",
-          ...(signal ? { signal } : {}),
-        });
+          request.template,
+        );
       } catch (error) {
         if (signal?.aborted || error instanceof GraphError) throw error;
         throw graphError(
@@ -263,14 +288,11 @@ export class GraphClient {
           "Graph redirected without a location",
         );
       // The redirect carries its own credential; the bearer never follows it.
-      response = await this.fetchImpl(
-        new URL(location, this.baseUrl).toString(),
-        {
-          method: "GET",
-          redirect: "error",
-          ...(signal ? { signal } : {}),
-        },
-      );
+      response = await this.fetch(new URL(location, this.baseUrl).toString(), {
+        method: "GET",
+        redirect: "error",
+        ...(signal ? { signal } : {}),
+      });
       if (!response.ok) throw await this.error(response, request);
     }
     const contentType = response.headers.get("Content-Type") ?? undefined;
@@ -287,7 +309,7 @@ export class GraphClient {
     range: { start: number; end: number; total: number },
     signal?: AbortSignal,
   ): Promise<FetchResponse> {
-    const response = await this.fetchImpl(uploadUrl, {
+    const response = await this.fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Length": String(chunk.byteLength),
@@ -301,6 +323,7 @@ export class GraphClient {
       throw await this.error(response, {
         method: "PUT",
         path: "",
+        template: "",
         scope: "Files.ReadWrite",
         read: false,
       });
