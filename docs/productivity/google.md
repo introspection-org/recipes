@@ -1,6 +1,6 @@
 # Google productivity provider
 
-**Status: proposed,** with the [productivity tools](productivity.md). Facts
+**Status: proposed,** with the [productivity tools](README.md). Facts
 marked *to confirm* come from Google's documentation as summarised in design
 review, and are checked against a live Workspace domain before the package
 ships.
@@ -89,7 +89,7 @@ tools.
 ## Authentication and setup
 
 The package sends a placeholder bearer, and the host attaches the person's
-token ([productivity tools, Authentication](productivity.md#authentication)).
+token ([productivity tools, Authentication](README.md#authentication)).
 On Introspection the connector declares these hosts, and the egress attaches
 the credential only to them:
 
@@ -136,7 +136,7 @@ not idempotent.
 
 ## Docs, Sheets and Slides
 
-Working **inside** a document is the [documents](documents.md) tool's job,
+Working **inside** a document is the [documents](../documents/README.md) tool's job,
 not productivity's. Productivity finds a file and moves it; documents reads
 and marks it up. The split holds for both providers, since OneDrive's Word,
 Excel and PowerPoint files are the same problem.

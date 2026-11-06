@@ -8,8 +8,8 @@ A Recipe that works with a person's mail, calendar and files declares a
 `calendar` and `drive`, each with a `command` discriminator, shaped
 identically for every provider. A provider package supplies the transport and
 a capability descriptor; the commands, their schemas and the handle rules
-live in the host, as they do for [channels](channels.md) and
-[documents](documents.md).
+live in the host, as they do for [channels](../channels/README.md) and
+[documents](../documents/README.md).
 
 The same properties follow:
 
@@ -109,10 +109,10 @@ guesses a zone from the model's text.
 | --- | --- | --- | --- |
 | `drive search` | `query`, `folder?`, `modified_after?`, `limit?`, `cursor?` | file summaries with `file_…` handles | read |
 | `drive read` | `file` | metadata and text content, exported from native formats, size-limited | read |
-| `drive download` | `file` | the file under the session's downloads, for the [documents](documents.md) tool | read |
+| `drive download` | `file` | the file under the session's downloads, for the [documents](../documents/README.md) tool | read |
 | `drive upload` | `path` (under `outputs/`), `folder?`, `name?` | the new file's handle | creates a file |
 
-Editing inside a file is the [documents](documents.md) tool's job:
+Editing inside a file is the [documents](../documents/README.md) tool's job:
 `drive download` exports Google Docs, Sheets and Slides (and fetches Word,
 Excel and PowerPoint files) into the session for it, and `drive upload` puts
 the result back. Sharing and permission changes are deferred (see
@@ -184,8 +184,8 @@ because Google's MCP servers are a developer preview and Graph changes by
 version.
 
 Each provider's guide gives its command-to-API mapping, scopes, setup and
-errors: [Google](productivity-google.md) and
-[Microsoft](productivity-microsoft.md).
+errors: [Google](google.md) and
+[Microsoft](microsoft.md).
 
 ## Policy and approvals
 
@@ -198,7 +198,7 @@ descriptor. A host can gate on it:
   `calendar cancel` the same way for both providers. The rule names `mail
   send`, never a vendor's tool name.
 - A host without a policy engine can require an interaction
-  ([interactions](interactions.md)) before an irreversible command.
+  ([interactions](../interactions.md)) before an irreversible command.
 
 ## Test productivity Recipes
 
@@ -240,7 +240,7 @@ It imports only Recipes' types (`import type`, Recipes in
 - **Tenant-wide access** (Google domain-wide delegation, Microsoft
   application permissions). These need a host decision about whose data a
   task may reach, and a security review, before any tool offers them.
-- **Teams and Google Chat.** Chat belongs to [channels](channels.md).
+- **Teams and Google Chat.** Chat belongs to [channels](../channels/README.md).
 
 ## Migrating from Pipedream tools
 

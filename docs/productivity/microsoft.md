@@ -1,6 +1,6 @@
 # Microsoft productivity provider
 
-**Status: proposed,** with the [productivity tools](productivity.md).
+**Status: proposed,** with the [productivity tools](README.md).
 
 The `microsoft` provider serves the `mail`, `calendar` and `drive` tools from
 a person's Outlook mail, Outlook calendar and OneDrive or SharePoint files,
@@ -56,7 +56,7 @@ it as an ordinary MCP server beside these tools.
 
 The package sends a placeholder bearer to `graph.microsoft.com`, and the host
 attaches the person's token
-([productivity tools, Authentication](productivity.md#authentication)).
+([productivity tools, Authentication](README.md#authentication)).
 
 A tenant admin registers one Entra app with the connector callback as its
 redirect URI, adds the delegated scopes for the commands the Recipe enables
@@ -67,5 +67,5 @@ without a consent screen.
 
 ## Docs, Sheets and Slides equivalents
 
-Word, Excel and PowerPoint files are [documents](documents.md) work, as for
+Word, Excel and PowerPoint files are [documents](../documents/README.md) work, as for
 Google: `drive download` fetches them and `drive upload` returns the result.

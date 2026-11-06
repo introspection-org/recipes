@@ -1,7 +1,7 @@
 # Slack connector for Introspection Recipes
 
 The Slack adapter for the provider-neutral
-[channel tools](https://github.com/introspection-org/recipes/blob/main/docs/channels.md).
+[channel tools](https://github.com/introspection-org/recipes/blob/main/docs/channels/README.md).
 A Recipe uses it when its `package.json#pi.channels` list includes the
 `slack` provider.
 
@@ -56,7 +56,7 @@ The package calls the Slack Web API. It does not use Socket Mode, WebSockets,
 or streaming. Operations outside the declared `channels` command set are
 unsupported.
 
-See the [Slack connector guide](https://github.com/introspection-org/recipes/blob/main/docs/slack.md)
+See the [Slack connector guide](https://github.com/introspection-org/recipes/blob/main/docs/channels/slack.md)
 for tool behavior and testing.
 
 ### Follow-up routing
