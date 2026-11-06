@@ -208,7 +208,7 @@ image, npm) they are there too.
 
 A package can also ship skills a Recipe uses; see
 [Shipping skills in a package](#shipping-skills-in-a-package).
-[Channel tools](channels.md) and [Document tools](documents.md) show full
+[Channel tools](channels/README.md) and [Document tools](documents/README.md) show full
 examples, and how a loaded package is checked against the running Recipes.
 
 ### Channel tools
@@ -247,7 +247,7 @@ Omitting it allows supported commands; an empty list exposes no channel tool.
 `requireReply` is an optional boolean that defaults to `true` when channel tools
 are enabled. Incoming turns then require a successful final `reply`, so an
 enabled command allowlist must include `reply`. Set `requireReply: false` for
-intentional silence, such as a read-only allowlist. See [Channel tools](channels.md).
+intentional silence, such as a read-only allowlist. See [Channel tools](channels/README.md).
 
 ### Document tools
 
@@ -272,7 +272,7 @@ kind of work, such as `legal-redlining-en-US`, which the docx package ships.
 }
 ```
 
-See [Document tools](documents.md).
+See [Document tools](documents/README.md).
 
 ## Judges
 
