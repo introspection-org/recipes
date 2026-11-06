@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.20.0...introspection-recipe-check-v0.21.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recipe-check:** a Recipe that declares pi.evals fails recipe-check when an implementation names a missing case, a case has more than one implementation, a .eval.jsonl row has no case, or a case file is invalid.
+* **recipe-check:** a judge with `type: offline` is now invalid, and the Rust API drops `JudgeType::Offline` and `OFFLINE_JUDGE_TYPE`.
+
+### Features
+
+* **recipe-check:** one implementation per case, and drop the offline judge type ([#446](https://github.com/introspection-org/recipes/issues/446)) ([44197fa](https://github.com/introspection-org/recipes/commit/44197fa77a32c03de16e4e2ce97f131d633dbda9))
+* **recipe-check:** the eval case rules are errors ([#449](https://github.com/introspection-org/recipes/issues/449)) ([7927ce5](https://github.com/introspection-org/recipes/commit/7927ce5bb6f40319b9bb35fb53e90dcc4c3270ac))
+
 ## [0.20.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.19.0...introspection-recipe-check-v0.20.0) (2026-11-05)
 
 
