@@ -133,7 +133,8 @@
 	"optionalDependencies": {
 		"@introspection-ai/recipe-channel-slack": "workspace:>=0.6.0",
 		"@introspection-ai/recipe-documents-docx": "workspace:>=0.3.0",
-		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0"
+		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0",
+		"@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",

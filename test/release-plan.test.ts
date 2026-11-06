@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -95,6 +96,17 @@ describe("release plan", () => {
     expect(byKey.python.tag).toBe(
       `introspection-recipe-check-python-v${byKey.python.version}`,
     );
+  });
+
+  it("leaves out a package that has never been released", () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "..", ".release-please-manifest.json"),
+        "utf8",
+      ),
+    ) as Record<string, string>;
+    expect(manifest["packages/productivity/microsoft"]).toBeUndefined();
+    expect(artifacts.map((a) => a.key)).not.toContain("microsoft");
   });
 
   it("publishes nothing when every registry has its version", async () => {

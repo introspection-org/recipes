@@ -1,6 +1,8 @@
 # Microsoft productivity provider
 
-**Status: proposed,** with the [productivity tools](README.md).
+**Status: built** (`packages/productivity/microsoft`), not yet published or
+tested against a live tenant. [As built](#as-built) lists where it differs from
+the design below.
 
 The `microsoft` provider serves the `mail`, `calendar` and `drive` tools from
 a person's Outlook mail, Outlook calendar and OneDrive or SharePoint files,
@@ -22,27 +24,74 @@ over Microsoft Graph v1.0. It is the package
 
 A small fetch client over Graph v1.0, not the Microsoft Graph TypeScript SDK,
 which is pre-release (`1.0.0-preview.*`) and large. The client handles
-`@odata.nextLink` paging, `429` and `503` with `Retry-After`, and `$batch`
-where a command reads several items. Types are generated from Graph's OpenAPI
-description (`microsoftgraph/msgraph-metadata`) or imported as type-only from
-the SDK, so nothing extra ships at run time.
+`@odata.nextLink` paging, `429`, `503` and `504` with `Retry-After`, and error
+mapping. The Graph types it uses are written by hand from Graph's OpenAPI
+description (`microsoftgraph/msgraph-metadata`, `openapi/v1.0/openapi.yaml`),
+so nothing extra ships at run time.
 
 | Command | Graph | Delegated scope |
 | --- | --- | --- |
 | `mail search` | `GET /me/messages?$search=` or `$filter=` | `Mail.Read` |
-| `mail read` | `GET /me/messages/{id}`, `/me/messages?$filter=conversationId eq` | `Mail.Read` |
-| `mail draft` | `POST /me/messages`, `POST /me/messages/{id}/createReply` | `Mail.ReadWrite` |
+| `mail read` | `GET /me/messages/{id}`, `/me/messages?$filter=conversationId eq`, with `$expand=attachments` | `Mail.Read` |
+| `mail fetch_attachment` | `GET /me/messages/{id}/attachments/{id}`, then `/$value` | `Mail.Read` |
+| `mail draft` / `update_draft` | `POST /me/messages`, `POST /me/messages/{id}/createReply`, `PATCH /me/messages/{id}` | `Mail.ReadWrite` |
 | `mail send` | `POST /me/messages/{id}/send` | `Mail.Send` |
 | `mail move` / `mail label` | `POST /me/messages/{id}/move`, `PATCH` `categories` | `Mail.ReadWrite` |
 | `calendar list` | `GET /me/calendarView?startDateTime=&endDateTime=` | `Calendars.Read` |
 | `calendar free_busy` | `POST /me/calendar/getSchedule` | `Calendars.Read` |
 | `calendar create` / `update` / `cancel` | `POST /me/events`, `PATCH /me/events/{id}`, `POST /me/events/{id}/cancel` | `Calendars.ReadWrite` |
 | `calendar respond` | `POST /me/events/{id}/accept`, `tentativelyAccept`, `decline` | `Calendars.ReadWrite` |
-| `drive search` / `read` | `GET /me/drive/root/search(q=)`, `GET /me/drive/items/{id}/content` | `Files.Read` |
+| `calendar read` | `GET /me/events/{id}` | `Calendars.Read` |
+| `drive search` / `read` / `download` | `GET /me/drive/root/search(q=)`, `GET /me/drive/items/{id}/content` | `Files.Read` |
 | `drive upload` | `PUT /me/drive/items/{parent}:/{name}:/content`, upload sessions above 4 MB | `Files.ReadWrite` |
 
 `mail label` maps to Outlook categories, and `mail move` to folders. The
 descriptor states this, since Outlook has no labels in Gmail's sense.
+
+## As built
+
+- **Retries.** Only reads are retried (`GET`s and `getSchedule`), up to three
+  times, waiting `Retry-After` when it is at most 30 seconds. A write is sent
+  once, even on a `429`, and a longer wait comes back as `rate_limited` with
+  `retry_after_seconds`. `$batch` is not used.
+- **Errors.** `401` is `not_connected`; `403` is `missing_scope`, naming the
+  command's scope from the table (Graph does not say which was missing);
+  `404` and `410` are `not_found`; `429` is `rate_limited`; other `4xx` are
+  `invalid_request`; `5xx` and network failures are `provider_error`.
+- **Mail.** `mail search` uses `$filter` and `$orderby` without text and a
+  KQL `$search` with it (Graph combines neither with the other), filtering
+  `unread` from the page in that case. `folder` and `mail move` take a
+  well-known folder (`inbox`, `archive`, `sent`, `drafts`, `trash`, `junk`)
+  or a top-level folder's display name. Draft bodies are sent as plain text;
+  a reply's text goes in `createReply`'s `comment`, so the quoted thread is
+  kept. `mail send` returns no sent-message id, since Graph answers `202`.
+  `mail label` reads the message's categories and writes the new set.
+- **Calendar.** `calendar list` and `read` return times in UTC.
+  `create` and `update` send wall-clock times in the event's IANA zone (a
+  time with an offset is converted to it). `free_busy` treats
+  `workingElsewhere` as busy and drops `free` slots.
+- **Drive.** A file id carries its drive (`<driveId>/<itemId>`), so items
+  in another drive resolve. `drive read` returns text only for text files;
+  Word, Excel and PowerPoint files say to use `drive download`. Downloads
+  follow Graph's `302` to the pre-authenticated URL without the bearer.
+  `drive upload` never overwrites (`conflictBehavior=rename`) and uses an
+  upload session in 10 MiB ranges (a 320 KiB multiple) above 4 MiB.
+- **Not yet:** a live-tenant test; `Files.Read` reaches the person's own
+  OneDrive, and SharePoint results may need `Files.Read.All` or
+  `Sites.Read.All`. A download's pre-authenticated host
+  (`*.sharepoint.com`) must be reachable through the egress.
+
+Endpoint references, from `MicrosoftDocs/microsoft-graph-docs-contrib`
+(`api-reference/v1.0/api/`): `user-list-messages.md`, `message-get.md`,
+`message-list-attachments.md`, `attachment-get.md`, `user-post-messages.md`,
+`message-createreply.md`, `message-update.md`, `message-send.md`,
+`message-move.md`, `user-list-mailfolders.md`, `user-list-calendarview.md`,
+`calendar-list-calendarview.md`, `user-list-calendars.md`, `event-get.md`,
+`calendar-getschedule.md`, `user-post-events.md`, `event-update.md`,
+`event-accept.md`, `event-tentativelyaccept.md`, `event-decline.md`,
+`event-cancel.md`, `driveitem-search.md`, `driveitem-get.md`,
+`driveitem-get-content.md`, `driveitem-put-content.md` and
+`driveitem-createuploadsession.md`.
 
 ## Why Graph rather than Work IQ
 

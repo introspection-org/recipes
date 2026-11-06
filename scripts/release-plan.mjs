@@ -55,6 +55,11 @@ export function readArtifacts(repo) {
     npmPackage("slack", "packages/channels/slack", "recipe-channel-slack-v"),
     npmPackage("docx", "packages/documents/docx", "recipe-documents-docx-v"),
     npmPackage("pdf", "packages/documents/pdf", "recipe-documents-pdf-v"),
+    npmPackage(
+      "microsoft",
+      "packages/productivity/microsoft",
+      "recipe-productivity-microsoft-v"
+    ),
     {
       key: "crate",
       version: checker["packages/recipe-check"],
@@ -70,7 +75,9 @@ export function readArtifacts(repo) {
       names: ["introspection-recipe-check"],
       wheels,
     },
-  ];
+    // A package's manifest version is its last release, so a package that
+    // has never been released has none, and nothing to publish yet.
+  ].filter((artifact) => artifact.version !== undefined);
 }
 
 /**
