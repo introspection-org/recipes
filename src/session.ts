@@ -32,6 +32,10 @@ import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
+import {
+  introspectionOpenExtension,
+  wantsIntrospectionOpen,
+} from "./introspection-open.js";
 import type { ArtifactRepositoryResolver, ArtifactStore } from "./artifact.js";
 import {
   artifactViewerExtension,
@@ -82,6 +86,7 @@ import {
   createRecipeExtensionSessionContext,
   createRecipeExtensionRegistrationRegistry,
   recipeExtensionToolAllowlist,
+  type RecipeExtensionRegistrationRegistry,
   type RecipeExtensionSessionContext,
 } from "./extensions.js";
 import {
@@ -750,9 +755,9 @@ async function createSessionForAgent(
     }
     // The first-party ask_user_question tool loads after the Recipe's own
     // extensions, so a Recipe that still ships its own keeps it.
-    if (wantsAskUserQuestion(recipe.tools)) {
-      inlineExtensions.push(askUserQuestionExtension(recipeRegistrations, env));
-    }
+    inlineExtensions.push(
+      ...interactionToolExtensions(recipe.tools, recipeRegistrations, env),
+    );
     // Likewise the first-party artifact viewer (show_artifact and /recipe view).
     if (wantsArtifactViewer(recipe.tools)) {
       inlineExtensions.push(
@@ -1074,4 +1079,20 @@ export async function createAgentSessionInternal(
   opts: CreateAgentSessionInternalOptions,
 ): Promise<RecipeSessionHandle> {
   return createSessionForAgent(opts.recipe.selectAgent(opts.agentName), opts);
+}
+
+/** The first-party interaction tools the agent lists, after the Recipe's own extensions so a Recipe's own tool wins. */
+function interactionToolExtensions(
+  tools: readonly string[],
+  registrations: RecipeExtensionRegistrationRegistry,
+  env: NodeJS.ProcessEnv | undefined,
+): ExtensionFactory[] {
+  return [
+    ...(wantsAskUserQuestion(tools)
+      ? [askUserQuestionExtension(registrations, env)]
+      : []),
+    ...(wantsIntrospectionOpen(tools)
+      ? [introspectionOpenExtension(registrations, env)]
+      : []),
+  ];
 }
