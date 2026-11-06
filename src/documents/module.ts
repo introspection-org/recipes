@@ -19,7 +19,7 @@ import type { DocumentAdapter, DocumentCapabilities } from "./types.js";
 
 /** The core `documents` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
 export const DOCUMENTS_SKILL = fileURLToPath(
-  new URL("../../documents/SKILL.md", import.meta.url),
+  new URL("../../skills/documents/SKILL.md", import.meta.url),
 );
 
 /**
