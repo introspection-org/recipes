@@ -5,8 +5,7 @@ import {
   decodeBase64Url,
   decodeEncodedWords,
   DRIVE_EXPORT_LIMIT_BYTES,
-  GoogleRestBackend,
-  GoogleTransport,
+  createGoogleProductivitySession,
   htmlToText,
   MULTIPART_UPLOAD_LIMIT_BYTES,
   NATIVE_EXPORTS,
@@ -40,39 +39,67 @@ const EVENT = {
   },
 };
 
-function backend(routes: Array<[string, RegExp, FakeHandler | Response[]]>) {
+const CONFIG = {
+  provider: "google",
+  tools: {
+    mail: [
+      "search",
+      "read",
+      "fetch_attachment",
+      "draft",
+      "update_draft",
+      "send",
+      "move",
+      "label",
+    ],
+    calendar: [
+      "list",
+      "read",
+      "free_busy",
+      "create",
+      "update",
+      "respond",
+      "cancel",
+    ],
+    drive: ["search", "read", "download", "upload"],
+  },
+} as const;
+
+async function backend(
+  routes: Array<[string, RegExp, FakeHandler | Response[]]>,
+) {
   const fake = fakeGoogle(routes);
-  return {
-    calls: fake.calls,
-    backend: new GoogleRestBackend(
-      new GoogleTransport({
-        env: { INTROSPECTION_TASK_ID: "t" },
-        fetchImpl: fake.fetchImpl,
-        sleep: recordingSleep().sleep,
-      }),
-    ),
-  };
+  const session = await createGoogleProductivitySession(
+    {
+      config: CONFIG,
+      env: { INTROSPECTION_TASK_ID: "t" },
+      cwd: process.cwd(),
+      fetch: fake.fetchImpl,
+    },
+    { restOnly: true, sleep: recordingSleep().sleep },
+  );
+  return { calls: fake.calls, backend: session };
 }
 
 describe("calendar commands the emulator lacks (events.get, events.patch)", () => {
   it("reads an event with its zone, attendee responses, meeting link and text body", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       ["GET", /\/calendars\/primary\/events\/e1$/, () => json(EVENT)],
     ]);
-    const event = await b.calendarRead("e1");
+    const event = await b.calendar.read({ event_id: "e1" });
     expect(event).toMatchObject({
       title: "Review",
-      start: {
-        date_time: "2025-11-10T10:00:00+01:00",
-        time_zone: "Europe/Paris",
-      },
+      start: "2025-11-10T10:00:00+01:00",
+      time_zone: "Europe/Paris",
       online_meeting_url: "https://meet.google.com/abc",
-      body: { text: "Agenda: roadmap", truncated: false },
+      organizer: { email: "grace@example.com" },
+      response: "none",
+      body: { content_type: "html", content: "<p>Agenda: <b>roadmap</b></p>" },
     });
-    expect(event.attendees.map((a) => [a.email, a.response])).toEqual([
-      ["grace@example.com", "accept"],
+    expect(event.attendees!.map((a) => [a.email, a.response])).toEqual([
+      ["grace@example.com", "organizer"],
       ["person@example.com", "none"],
-      ["alan@example.com", "decline"],
+      ["alan@example.com", "declined"],
     ]);
     expect(calls[0]!.url.host).toBe("www.googleapis.com");
     expect(calls[0]!.url.pathname).toBe(
@@ -81,14 +108,15 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
   });
 
   it("updates only the fields given, notifying attendees", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       [
         "PATCH",
         /\/events\/e1$/,
         () => json({ ...EVENT, summary: "Review (moved)" }),
       ],
     ]);
-    await b.calendarUpdate("e1", {
+    await b.calendar.update({
+      event_id: "e1",
       title: "Review (moved)",
       location: "Room 4",
     });
@@ -100,10 +128,10 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
   });
 
   it("requests a Meet link with conferenceDataVersion=1", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       ["POST", /\/events$/, () => json(EVENT)],
     ]);
-    await b.calendarCreate({
+    await b.calendar.create({
       title: "x",
       start: "2025-11-10T10:00:00+01:00",
       end: "2025-11-10T11:00:00+01:00",
@@ -123,11 +151,15 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
   });
 
   it("responds by setting only the person's own responseStatus", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       ["GET", /\/events\/e1$/, () => json(EVENT)],
       ["PATCH", /\/events\/e1$/, () => json(EVENT)],
     ]);
-    await b.calendarRespond("e1", "tentative", "may be late");
+    await b.calendar.respond({
+      event_id: "e1",
+      response: "tentative",
+      comment: "may be late",
+    });
     const patch = bodyJson(calls[1]!) as {
       attendees: Array<Record<string, unknown>>;
     };
@@ -144,7 +176,7 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
   });
 
   it("refuses to respond to an event the person is not invited to", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       [
         "GET",
         /\/events\/e1$/,
@@ -152,9 +184,9 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
       ],
     ]);
     await expect(
-      b.calendarRespond("e1", "accept", undefined),
+      b.calendar.respond({ event_id: "e1", response: "accept" }),
     ).rejects.toMatchObject({
-      code: "invalid_request",
+      productivity: { code: "invalid_request" },
     });
     expect(calls).toHaveLength(1);
   });
@@ -177,7 +209,7 @@ describe("drive exports (the emulator has no files.export)", () => {
 
   for (const entry of NATIVE_EXPORTS) {
     it(`reads and downloads a ${entry.kind}`, async () => {
-      const { backend: b, calls } = backend([
+      const { backend: b, calls } = await backend([
         [
           "GET",
           /\/files\/n1$/,
@@ -192,15 +224,18 @@ describe("drive exports (the emulator has no files.export)", () => {
             ),
         ],
       ]);
-      const read = await b.driveRead("n1");
+      const read = await b.drive.read({ file_id: "n1", max_bytes: 1000 });
       expect(read).toMatchObject({
-        text: `exported as ${entry.read.mimeType}`,
+        content: {
+          content_type: "text",
+          content: `exported as ${entry.read.mimeType}`,
+        },
         exported_as: entry.read.mimeType,
-        file: { native: entry.kind },
+        file: { native_type: entry.nativeType },
       });
-      const download = await b.driveDownload("n1");
+      const download = await b.drive.download({ file_id: "n1" });
       expect(download).toMatchObject({
-        filename: `Plan${entry.download.extension}`,
+        name: `Plan${entry.download.extension}`,
         mime_type: entry.download.mimeType,
       });
       expect(
@@ -210,7 +245,7 @@ describe("drive exports (the emulator has no files.export)", () => {
   }
 
   it("reports Google's export limit instead of truncating (403 exportSizeLimitExceeded)", async () => {
-    const { backend: b } = backend([
+    const { backend: b } = await backend([
       [
         "GET",
         /\/files\/n1$/,
@@ -223,14 +258,17 @@ describe("drive exports (the emulator has no files.export)", () => {
       ],
       ["GET", /\/export$/, () => googleError(403, "exportSizeLimitExceeded")],
     ]);
-    await expect(b.driveRead("n1")).rejects.toMatchObject({
-      code: "export_too_large",
+    const read = await b.drive.read({ file_id: "n1", max_bytes: 1000 });
+    expect(read.content).toBeUndefined();
+    expect(read.unavailable).toMatch(/export limit of 10 MB/);
+    await expect(b.drive.download({ file_id: "n1" })).rejects.toMatchObject({
       limitBytes: DRIVE_EXPORT_LIMIT_BYTES,
+      productivity: { code: "invalid_request", status: 403 },
     });
   });
 
   it("refuses an export body over the limit rather than cutting it", async () => {
-    const { backend: b } = backend([
+    const { backend: b } = await backend([
       [
         "GET",
         /\/files\/n1$/,
@@ -250,8 +288,9 @@ describe("drive exports (the emulator has no files.export)", () => {
           }),
       ],
     ]);
-    await expect(b.driveDownload("n1")).rejects.toMatchObject({
-      code: "export_too_large",
+    await expect(b.drive.download({ file_id: "n1" })).rejects.toMatchObject({
+      limitBytes: DRIVE_EXPORT_LIMIT_BYTES,
+      productivity: { code: "invalid_request" },
     });
   });
 
@@ -259,7 +298,7 @@ describe("drive exports (the emulator has no files.export)", () => {
     const big = new Uint8Array(MULTIPART_UPLOAD_LIMIT_BYTES + 1);
     const session =
       "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=u1";
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       [
         "POST",
         /\/upload\/drive\/v3\/files$/,
@@ -277,18 +316,18 @@ describe("drive exports (the emulator has no files.export)", () => {
       ],
     ]);
     await expect(
-      b.driveUpload({
+      b.drive.upload({
         name: "big.bin",
         mime_type: "application/octet-stream",
-        data: big,
-        folder: "f",
+        bytes: big,
+        folder_id: "f",
       }),
     ).resolves.toMatchObject({ id: "new" });
     expect(calls[0]!.url.searchParams.get("uploadType")).toBe("resumable");
     expect(bodyJson(calls[0]!)).toEqual({ name: "big.bin", parents: ["f"] });
     expect(calls[1]!.url.toString()).toBe(session);
 
-    const elsewhere = backend([
+    const elsewhere = await backend([
       [
         "POST",
         /\/upload\/drive\/v3\/files$/,
@@ -299,19 +338,24 @@ describe("drive exports (the emulator has no files.export)", () => {
       ],
     ]);
     await expect(
-      elsewhere.backend.driveUpload({ name: "b", mime_type: "x/y", data: big }),
-    ).rejects.toMatchObject({ code: "provider_error" });
+      elsewhere.backend.drive.upload({
+        name: "b",
+        mime_type: "x/y",
+        bytes: big,
+      }),
+    ).rejects.toMatchObject({ productivity: { code: "provider_error" } });
     expect(elsewhere.calls).toHaveLength(1);
   });
 
   it("builds a Drive query with escaped literals", async () => {
-    const { backend: b, calls } = backend([
+    const { backend: b, calls } = await backend([
       ["GET", /\/drive\/v3\/files$/, () => json({ files: [] })],
     ]);
-    await b.driveSearch({
+    await b.drive.search({
       query: "Bob's plan",
-      folder: "f1",
+      folder_id: "f1",
       modified_after: "2025-01-01T00:00:00Z",
+      limit: 10,
     });
     expect(calls[0]!.url.searchParams.get("q")).toBe(
       "trashed = false and fullText contains 'Bob\\'s plan' and 'f1' in parents and modifiedTime > '2025-01-01T00:00:00Z'",

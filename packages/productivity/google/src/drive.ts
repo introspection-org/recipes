@@ -44,7 +44,7 @@ export interface NativeExport {
  * Google-native files have no bytes of their own, so `drive read` and
  * `drive download` export them (docs/productivity/google.md, Results). Each
  * export is limited to `DRIVE_EXPORT_LIMIT_BYTES`; a larger file reports that
- * limit (`export_too_large`) rather than arriving cut short.
+ * limit rather than arriving cut short.
  */
 export const NATIVE_EXPORTS: readonly NativeExport[] = [
   {
@@ -181,10 +181,11 @@ export class DriveClient {
       .catch((error: unknown) => {
         if (
           error instanceof GoogleProductivityError &&
-          error.code === "too_large"
+          error.limitBytes !== undefined &&
+          error.status === undefined
         ) {
           throw new GoogleProductivityError(
-            "export_too_large",
+            "invalid_request",
             `The file is larger than Google's export limit of ${DRIVE_EXPORT_LIMIT_BYTES / (1024 * 1024)} MB, so it cannot be exported.`,
             { limitBytes: DRIVE_EXPORT_LIMIT_BYTES },
           );
@@ -208,6 +209,37 @@ export class DriveClient {
         signal,
       },
     );
+  }
+
+  /**
+   * The first `maxBytes` of a stored file, asked for with a `Range` header and
+   * cut here too, since a server may ignore the range. For `drive read`,
+   * whose text the host caps anyway.
+   */
+  async downloadPrefix(
+    id: string,
+    maxBytes: number,
+    signal?: AbortSignal,
+  ): Promise<{ data: Uint8Array; truncated: boolean }> {
+    const response = await this.transport.send(
+      `${this.transport.endpoints.drive}/files/${encodeURIComponent(id)}`,
+      {
+        query: { alt: "media" },
+        headers: { Range: `bytes=0-${Math.max(0, maxBytes - 1)}` },
+        scope: DRIVE_SCOPES.read,
+        signal,
+      },
+    );
+    const data = new Uint8Array(await response.arrayBuffer());
+    const total = /\/(\d+)$/.exec(
+      response.headers.get("Content-Range") ?? "",
+    )?.[1];
+    return {
+      data: data.subarray(0, maxBytes),
+      truncated:
+        data.byteLength > maxBytes ||
+        (total !== undefined && Number(total) > maxBytes),
+    };
   }
 
   /**

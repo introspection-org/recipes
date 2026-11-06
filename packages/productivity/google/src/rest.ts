@@ -1,58 +1,73 @@
+import type {
+  CalendarAttendee,
+  CalendarAttendeeResponse,
+  CalendarCancelArgs,
+  CalendarCreateArgs,
+  CalendarEvent,
+  CalendarEventSummary,
+  CalendarFreeBusyArgs,
+  CalendarFreeBusyResult,
+  CalendarListArgs,
+  CalendarListResult,
+  CalendarReadArgs,
+  CalendarRespondArgs,
+  CalendarSession,
+  CalendarUpdateArgs,
+  DriveDownloadArgs,
+  DriveFileSummary,
+  DriveReadArgs,
+  DriveReadResult,
+  DriveSearchArgs,
+  DriveSearchResult,
+  DriveSession,
+  DriveUploadArgs,
+  MailDraft,
+  MailDraftArgs,
+  MailFetchAttachmentArgs,
+  MailLabelArgs,
+  MailMessage,
+  MailMessageSummary,
+  MailMoveArgs,
+  MailReadArgs,
+  MailReadResult,
+  MailSearchArgs,
+  MailSearchResult,
+  MailSendArgs,
+  MailSendResult,
+  MailSession,
+  MailUpdateDraftArgs,
+  ProductivityAddress,
+  ProductivityCallContext,
+  ProductivityContent,
+  ProductivityFileContent,
+} from "@introspection-ai/recipes/productivity";
+
 import {
-  type CalendarAttendee,
+  type CalendarAttendee as GoogleAttendee,
   CalendarClient,
   type CalendarDateTime,
-  type CalendarEvent,
+  type CalendarEvent as GoogleEvent,
 } from "./calendar.js";
 import { composeRawMessage, replySubject } from "./compose.js";
 import {
   DriveClient,
   type DriveFile,
   driveSearchQuery,
+  isGoogleNative,
   isTextType,
   MAX_DOWNLOAD_BYTES,
   nativeExport,
 } from "./drive.js";
-import { GoogleProductivityError } from "./errors.js";
+import { GoogleProductivityError, isSizeLimit } from "./errors.js";
 import { GmailClient, type GmailLabel, type GmailMessage } from "./gmail.js";
-import { htmlToText } from "./html.js";
 import { collectPages, type GoogleTransport } from "./http.js";
 import {
   decodeBase64Url,
   findPart,
   header,
-  limitText,
   parseMailPayload,
   splitAddresses,
 } from "./mime.js";
-import type {
-  AttendeeResponse,
-  CalendarEventResult,
-  CalendarListInput,
-  DraftInput,
-  DraftResult,
-  DriveFileSummary,
-  DriveReadResult,
-  DriveSearchInput,
-  DriveUploadInput,
-  EventInput,
-  EventTime,
-  FetchedFile,
-  FreeBusyResultItem,
-  MailMessage,
-  MailSearchInput,
-  MailSummary,
-  MailThread,
-  Page,
-  SentResult,
-} from "./types.js";
-
-/** A mail body or event description longer than this is cut, and says so. */
-export const MAIL_BODY_LIMIT_CHARS = 100_000;
-/** `drive read` returns at most this much text, and says when it cut. */
-export const DRIVE_READ_LIMIT_CHARS = 200_000;
-export const DEFAULT_LIMIT = 20;
-export const MAX_LIMIT = 100;
 
 const SYSTEM_LABELS = new Set([
   "INBOX",
@@ -66,11 +81,8 @@ const SYSTEM_LABELS = new Set([
 ]);
 /** Labels Gmail sets itself, which `mail move` and `mail label` may not. */
 const IMMUTABLE_LABELS = new Set(["SENT", "DRAFT"]);
-
-function pageSize(limit: number | undefined): number {
-  if (limit === undefined) return DEFAULT_LIMIT;
-  return Math.max(1, Math.min(MAX_LIMIT, Math.floor(limit)));
-}
+const FOLDER_TYPE = "application/vnd.google-apps.folder";
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 function invalid(message: string): GoogleProductivityError {
   return new GoogleProductivityError("invalid_request", message);
@@ -88,6 +100,20 @@ function gmailOperand(value: string): string {
   return /\s/.test(bare) ? `"${bare}"` : bare;
 }
 
+/** `Name <a@b>` or `a@b` as an address. */
+export function parseAddress(value: string): ProductivityAddress {
+  const match = /^\s*(?:"?([^"<]*?)"?\s*)?<([^>]+)>\s*$/.exec(value);
+  if (match) {
+    const name = match[1]?.trim();
+    return { email: match[2]!.trim(), ...(name ? { name } : {}) };
+  }
+  return { email: value.trim() };
+}
+
+function addresses(value: string | undefined): ProductivityAddress[] {
+  return splitAddresses(value).map(parseAddress);
+}
+
 function sentAt(message: GmailMessage): string | undefined {
   if (message.internalDate && /^\d+$/.test(message.internalDate)) {
     return new Date(Number(message.internalDate)).toISOString();
@@ -97,128 +123,15 @@ function sentAt(message: GmailMessage): string | undefined {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 }
 
-const RESPONSES: Record<string, AttendeeResponse> = {
-  accepted: "accept",
-  tentative: "tentative",
-  declined: "decline",
-  needsAction: "none",
-};
-const GOOGLE_RESPONSES: Record<
-  Exclude<AttendeeResponse, "none">,
-  CalendarAttendee["responseStatus"]
-> = {
-  accept: "accepted",
-  tentative: "tentative",
-  decline: "declined",
-};
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-
-function assertTimeZone(timeZone: string): void {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
-  } catch {
-    throw invalid(
-      `time_zone must be an IANA time zone name, not '${timeZone}'.`,
-    );
-  }
+function textContent(text: string): ProductivityContent {
+  return { content_type: "text", content: text };
 }
 
-function eventDateTime(
-  value: string,
-  timeZone: string,
-  name: string,
-): CalendarDateTime {
-  if (DATE_ONLY.test(value)) return { date: value };
-  if (!Number.isFinite(Date.parse(value)))
-    throw invalid(`${name} must be RFC 3339 or a date.`);
-  return { dateTime: value, timeZone };
-}
-
-function eventTime(
-  value: CalendarDateTime | undefined,
-  fallbackZone?: string,
-): EventTime {
-  if (value?.date) return { date: value.date };
-  return {
-    date_time: value?.dateTime,
-    time_zone: value?.timeZone ?? fallbackZone,
-  };
-}
-
-export function eventResult(
-  event: CalendarEvent,
-  fallbackZone?: string,
-): CalendarEventResult {
-  const video = event.conferenceData?.entryPoints?.find(
-    (entry) => entry.entryPointType === "video",
-  )?.uri;
-  return {
-    id: event.id ?? "",
-    title: event.summary,
-    start: eventTime(event.start, fallbackZone),
-    end: eventTime(event.end, fallbackZone),
-    location: event.location,
-    body: event.description
-      ? limitText(
-          /<[a-z][\s\S]*>/i.test(event.description)
-            ? htmlToText(event.description)
-            : event.description,
-          MAIL_BODY_LIMIT_CHARS,
-        )
-      : undefined,
-    status: event.status,
-    organizer: event.organizer?.email,
-    attendees: (event.attendees ?? [])
-      .filter((attendee) => attendee.email)
-      .map((attendee) => ({
-        email: attendee.email!,
-        name: attendee.displayName,
-        response: RESPONSES[attendee.responseStatus ?? "needsAction"] ?? "none",
-        optional: attendee.optional ?? false,
-        self: attendee.self ?? false,
-      })),
-    online_meeting_url: video ?? event.hangoutLink,
-    web_url: event.htmlLink,
-  };
-}
-
-export function driveFileSummary(file: DriveFile): DriveFileSummary {
-  const size = file.size === undefined ? undefined : Number(file.size);
-  return {
-    id: file.id,
-    name: file.name ?? "",
-    mime_type: file.mimeType ?? "application/octet-stream",
-    size: Number.isFinite(size) ? size : undefined,
-    modified_at: file.modifiedTime,
-    web_url: file.webViewLink,
-    native: nativeExport(file.mimeType)?.kind,
-  };
-}
-
-function attachmentRef(id: string): { messageId: string; partId: string } {
-  const at = id.lastIndexOf(":");
-  if (at <= 0) throw invalid("Unknown attachment.");
-  return { messageId: id.slice(0, at), partId: id.slice(at + 1) };
-}
-
-/**
- * Every productivity command over Google's REST APIs. This is the complete
- * backend: the MCP backend serves a subset and falls back here.
- */
-export class GoogleRestBackend {
-  readonly gmail: GmailClient;
-  readonly calendar: CalendarClient;
-  readonly drive: DriveClient;
+/** Gmail over REST (`gmail/v1`): every `mail` command. */
+export class GoogleRestMail implements Required<MailSession> {
   private labels?: Promise<GmailLabel[]>;
 
-  constructor(transport: GoogleTransport) {
-    this.gmail = new GmailClient(transport);
-    this.calendar = new CalendarClient(transport);
-    this.drive = new DriveClient(transport);
-  }
-
-  // ---- labels -------------------------------------------------------------
+  constructor(readonly gmail: GmailClient) {}
 
   private labelList(signal?: AbortSignal): Promise<GmailLabel[]> {
     this.labels ??= this.gmail.listLabels(signal).catch((error: unknown) => {
@@ -250,66 +163,48 @@ export class GoogleRestBackend {
     return ids.map((id) => byId.get(id) ?? id);
   }
 
-  // ---- mail ---------------------------------------------------------------
-
-  async mailSearchQuery(
-    input: MailSearchInput,
-  ): Promise<{ q: string; labelIds?: string[] }> {
+  /** The `q` and `labelIds` for `users.messages.list` from neutral filters. */
+  async searchQuery(
+    args: Omit<MailSearchArgs, "limit">,
+    signal?: AbortSignal,
+  ): Promise<{ q?: string; labelIds?: string[] }> {
     const terms: string[] = [];
-    if (input.query?.trim()) terms.push(input.query.trim());
-    if (input.from?.trim())
-      terms.push(`from:${gmailOperand(input.from.trim())}`);
-    if (input.after) terms.push(`after:${epochSeconds(input.after, "after")}`);
-    if (input.before)
-      terms.push(`before:${epochSeconds(input.before, "before")}`);
-    if (input.unread === true) terms.push("is:unread");
-    if (input.unread === false) terms.push("-is:unread");
-    const labelIds = input.folder
-      ? [await this.labelId(input.folder)]
-      : undefined;
-    return { q: terms.join(" "), labelIds };
+    if (args.query?.trim()) terms.push(args.query.trim());
+    if (args.from?.trim()) terms.push(`from:${gmailOperand(args.from.trim())}`);
+    if (args.after) terms.push(`after:${epochSeconds(args.after, "after")}`);
+    if (args.before)
+      terms.push(`before:${epochSeconds(args.before, "before")}`);
+    if (args.unread === true) terms.push("is:unread");
+    if (args.unread === false) terms.push("-is:unread");
+    return {
+      q: terms.length ? terms.join(" ") : undefined,
+      labelIds: args.folder
+        ? [await this.labelId(args.folder, signal)]
+        : undefined,
+    };
   }
 
   async summary(
     message: GmailMessage,
     signal?: AbortSignal,
-  ): Promise<MailSummary> {
+  ): Promise<MailMessageSummary> {
+    const from = header(message.payload, "From");
+    const cc = addresses(header(message.payload, "Cc"));
+    const parsed = parseMailPayload(message.payload);
     return {
       id: message.id,
       thread_id: message.threadId,
-      from: header(message.payload, "From"),
-      to: splitAddresses(header(message.payload, "To")),
+      ...(from ? { from: parseAddress(from) } : {}),
+      to: addresses(header(message.payload, "To")),
+      ...(cc.length ? { cc } : {}),
       subject: header(message.payload, "Subject"),
-      sent_at: sentAt(message),
       snippet: message.snippet,
-      labels: await this.labelNames(message.labelIds, signal),
+      sent_at: sentAt(message),
       unread: message.labelIds?.includes("UNREAD") ?? false,
+      has_attachments: parsed.attachments.length > 0,
+      labels: await this.labelNames(message.labelIds, signal),
+      is_draft: message.labelIds?.includes("DRAFT") ?? false,
     };
-  }
-
-  async mailSearch(
-    input: MailSearchInput,
-    signal?: AbortSignal,
-  ): Promise<Page<MailSummary>> {
-    const { q, labelIds } = await this.mailSearchQuery(input);
-    const page = await collectPages(
-      (pageToken, maxResults) =>
-        this.gmail.listMessages(
-          { q: q || undefined, labelIds, maxResults, pageToken },
-          signal,
-        ),
-      pageSize(input.limit),
-      input.cursor,
-    );
-    const items = await Promise.all(
-      page.items.map(async (ref) =>
-        this.summary(
-          await this.gmail.getMessage(ref.id, "metadata", signal),
-          signal,
-        ),
-      ),
-    );
-    return { items, next_cursor: page.nextPageToken };
   }
 
   async message(
@@ -319,50 +214,77 @@ export class GoogleRestBackend {
     const parsed = parseMailPayload(message.payload);
     return {
       ...(await this.summary(message, signal)),
-      cc: splitAddresses(header(message.payload, "Cc")),
-      body: {
-        ...limitText(parsed.text, MAIL_BODY_LIMIT_CHARS),
-        from_html: parsed.fromHtml,
-      },
+      body: textContent(parsed.text),
       attachments: parsed.attachments.map((attachment) => ({
-        id: `${message.id}:${attachment.partId}`,
-        filename: attachment.filename,
+        id: attachment.partId,
+        name: attachment.filename,
         mime_type: attachment.mimeType,
         size: attachment.size,
       })),
     };
   }
 
-  async mailRead(
-    messageId: string,
-    signal?: AbortSignal,
-  ): Promise<MailMessage> {
-    return this.message(
-      await this.gmail.getMessage(messageId, "full", signal),
-      signal,
+  async search(
+    args: MailSearchArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailSearchResult> {
+    const { q, labelIds } = await this.searchQuery(args, ctx.signal);
+    const page = await collectPages(
+      (pageToken, maxResults) =>
+        this.gmail.listMessages(
+          { q, labelIds, maxResults, pageToken },
+          ctx.signal,
+        ),
+      args.limit,
+      args.cursor,
     );
+    const messages = await Promise.all(
+      page.items.map(async (ref) =>
+        this.summary(
+          await this.gmail.getMessage(ref.id, "metadata", ctx.signal),
+          ctx.signal,
+        ),
+      ),
+    );
+    return { messages, cursor: page.nextPageToken };
   }
 
-  async mailReadThread(
-    threadId: string,
-    signal?: AbortSignal,
-  ): Promise<MailThread> {
-    const thread = await this.gmail.getThread(threadId, signal);
+  async read(
+    args: MailReadArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailReadResult> {
+    if ("message_id" in args) {
+      const message = await this.gmail.getMessage(
+        args.message_id,
+        "full",
+        ctx.signal,
+      );
+      return { messages: [await this.message(message, ctx.signal)] };
+    }
+    const thread = await this.gmail.getThread(args.thread_id, ctx.signal);
     return {
-      thread_id: thread.id,
       messages: await Promise.all(
-        (thread.messages ?? []).map((message) => this.message(message, signal)),
+        (thread.messages ?? []).map((message) =>
+          this.message(message, ctx.signal),
+        ),
       ),
     };
   }
 
-  async mailFetchAttachment(
-    attachmentId: string,
-    signal?: AbortSignal,
-  ): Promise<FetchedFile> {
-    const { messageId, partId } = attachmentRef(attachmentId);
-    const message = await this.gmail.getMessage(messageId, "full", signal);
-    const part = findPart(message.payload, partId);
+  /**
+   * `attachment_id` is the part's `partId`: Gmail's `attachmentId` changes
+   * between fetches of the same message, so it is looked up afresh here.
+   */
+  async fetchAttachment(
+    args: MailFetchAttachmentArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<ProductivityFileContent> {
+    const message = await this.gmail.getMessage(
+      args.message_id,
+      "full",
+      ctx.signal,
+    );
+    const part = findPart(message.payload, args.attachment_id);
     if (!part) {
       throw new GoogleProductivityError(
         "not_found",
@@ -371,93 +293,111 @@ export class GoogleRestBackend {
     }
     if ((part.body?.size ?? 0) > MAX_DOWNLOAD_BYTES) {
       throw new GoogleProductivityError(
-        "too_large",
+        "invalid_request",
         `The attachment is larger than the ${MAX_DOWNLOAD_BYTES / (1024 * 1024)} MB limit, so it was not fetched.`,
         { limitBytes: MAX_DOWNLOAD_BYTES },
       );
     }
-    const data = part.body?.attachmentId
+    const bytes = part.body?.attachmentId
       ? await this.gmail.getAttachment(
-          messageId,
+          args.message_id,
           part.body.attachmentId,
-          signal,
+          ctx.signal,
         )
       : decodeBase64Url(part.body?.data ?? "");
     return {
-      filename: part.filename || "attachment",
+      name: part.filename || "attachment",
       mime_type: part.mimeType ?? "application/octet-stream",
-      data,
+      bytes,
     };
   }
 
-  async mailDraft(
-    input: DraftInput,
-    signal?: AbortSignal,
-  ): Promise<DraftResult> {
+  private draftResult(
+    draft: { id: string; message?: GmailMessage },
+    fields: { to: readonly string[]; cc?: readonly string[]; subject: string },
+    threadId?: string,
+  ): MailDraft {
+    return {
+      id: draft.id,
+      message_id: draft.message?.id,
+      thread_id: draft.message?.threadId ?? threadId,
+      to: fields.to.map(parseAddress),
+      cc: (fields.cc ?? []).map(parseAddress),
+      subject: fields.subject,
+    };
+  }
+
+  async draft(
+    args: MailDraftArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailDraft> {
     let threadId: string | undefined;
     let inReplyTo: { messageId?: string; references?: string } | undefined;
-    let subject = input.subject;
-    if (input.reply_to) {
+    let subject = args.subject;
+    if (args.reply_to_id) {
       const parent = await this.gmail.getMessage(
-        input.reply_to,
+        args.reply_to_id,
         "full",
-        signal,
+        ctx.signal,
       );
       threadId = parent.threadId;
       inReplyTo = {
-        messageId:
-          header(parent.payload, "Message-ID") ??
-          header(parent.payload, "Message-Id"),
+        messageId: header(parent.payload, "Message-ID"),
         references: header(parent.payload, "References"),
       };
       if (!subject.trim())
         subject = replySubject(header(parent.payload, "Subject"));
     }
-    const raw = composeRawMessage({ ...input, subject, inReplyTo });
-    const draft = await this.gmail.createDraft(raw, threadId, signal);
-    return {
-      draft_id: draft.id,
-      message_id: draft.message?.id,
-      thread_id: draft.message?.threadId ?? threadId,
-    };
+    const fields = { to: [...args.to], cc: [...(args.cc ?? [])], subject };
+    const raw = composeRawMessage({ ...fields, body: args.body, inReplyTo });
+    const draft = await this.gmail.createDraft(raw, threadId, ctx.signal);
+    return this.draftResult(draft, fields, threadId);
   }
 
-  async mailUpdateDraft(
-    draftId: string,
-    change: Partial<Omit<DraftInput, "reply_to">>,
-    signal?: AbortSignal,
-  ): Promise<DraftResult> {
-    const current = await this.gmail.getDraft(draftId, signal);
+  async updateDraft(
+    args: MailUpdateDraftArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailDraft> {
+    const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
+    const parent = header(payload, "In-Reply-To");
+    const fields = {
+      to: args.to ? [...args.to] : splitAddresses(header(payload, "To")),
+      cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
+      subject: args.subject ?? header(payload, "Subject") ?? "",
+    };
     const raw = composeRawMessage({
-      to: change.to ?? splitAddresses(header(payload, "To")),
-      cc: change.cc ?? splitAddresses(header(payload, "Cc")),
-      subject: change.subject ?? header(payload, "Subject") ?? "",
-      body: change.body ?? parseMailPayload(payload).text,
+      ...fields,
+      body: args.body ?? parseMailPayload(payload).text,
       inReplyTo: {
-        messageId: header(payload, "In-Reply-To"),
+        messageId: parent,
         // References already ends with the parent, which composing appends again.
         references: header(payload, "References")
           ?.split(/\s+/)
-          .filter((id) => id && id !== header(payload, "In-Reply-To"))
+          .filter((id) => id && id !== parent)
           .join(" "),
       },
     });
     const threadId = current.message?.threadId;
-    const draft = await this.gmail.updateDraft(draftId, raw, threadId, signal);
-    return {
-      draft_id: draft.id,
-      message_id: draft.message?.id,
-      thread_id: draft.message?.threadId ?? threadId,
-    };
+    const draft = await this.gmail.updateDraft(
+      args.draft_id,
+      raw,
+      threadId,
+      ctx.signal,
+    );
+    return this.draftResult(draft, fields, threadId);
   }
 
-  async mailSend(draftId: string, signal?: AbortSignal): Promise<SentResult> {
-    const sent = await this.gmail.sendDraft(draftId, signal);
+  /** Always REST, so a policy sees one path for the only command that sends mail. */
+  async send(
+    args: MailSendArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailSendResult> {
+    const sent = await this.gmail.sendDraft(args.draft_id, ctx.signal);
     return { message_id: sent.id, thread_id: sent.threadId };
   }
 
-  private async assertMutable(ids: string[]): Promise<void> {
+  private assertMutable(ids: string[]): void {
     const fixed = ids.find((id) => IMMUTABLE_LABELS.has(id));
     if (fixed)
       throw invalid(
@@ -465,129 +405,312 @@ export class GoogleRestBackend {
       );
   }
 
-  async mailLabel(
-    messageId: string,
-    change: { add?: string[]; remove?: string[] },
+  /** The label IDs `mail label` adds and removes, from label names. */
+  async labelChange(
+    args: Omit<MailLabelArgs, "message_id">,
     signal?: AbortSignal,
-  ): Promise<MailSummary> {
+  ): Promise<{ addLabelIds: string[]; removeLabelIds: string[] }> {
     const addLabelIds = await Promise.all(
-      (change.add ?? []).map((name) => this.labelId(name, signal)),
+      (args.add ?? []).map((name) => this.labelId(name, signal)),
     );
     const removeLabelIds = await Promise.all(
-      (change.remove ?? []).map((name) => this.labelId(name, signal)),
+      (args.remove ?? []).map((name) => this.labelId(name, signal)),
     );
-    await this.assertMutable([...addLabelIds, ...removeLabelIds]);
-    await this.gmail.modifyMessage(
-      messageId,
-      { addLabelIds, removeLabelIds },
-      signal,
-    );
-    return this.summary(
-      await this.gmail.getMessage(messageId, "metadata", signal),
-      signal,
-    );
+    this.assertMutable([...addLabelIds, ...removeLabelIds]);
+    return { addLabelIds, removeLabelIds };
   }
 
   /**
-   * Gmail has no folders: moving adds the folder's label and takes the
-   * message out of the inbox. `archive` only takes it out of the inbox.
+   * Gmail has no folders: moving adds the folder's label and takes the message
+   * out of the inbox, and `archive` only takes it out of the inbox.
    */
-  async mailMove(
-    messageId: string,
+  async moveChange(
     folder: string,
     signal?: AbortSignal,
-  ): Promise<MailSummary> {
+  ): Promise<{ addLabelIds: string[]; removeLabelIds: string[] }> {
     const archive = folder.trim().toLowerCase() === "archive";
     const target = archive ? undefined : await this.labelId(folder, signal);
-    if (target) await this.assertMutable([target]);
-    const change =
-      target === "INBOX"
-        ? { addLabelIds: ["INBOX"], removeLabelIds: [] }
-        : { addLabelIds: target ? [target] : [], removeLabelIds: ["INBOX"] };
-    await this.gmail.modifyMessage(messageId, change, signal);
-    return this.summary(
-      await this.gmail.getMessage(messageId, "metadata", signal),
-      signal,
-    );
+    if (target) this.assertMutable([target]);
+    return target === "INBOX"
+      ? { addLabelIds: ["INBOX"], removeLabelIds: [] }
+      : { addLabelIds: target ? [target] : [], removeLabelIds: ["INBOX"] };
   }
 
-  // ---- calendar -----------------------------------------------------------
+  async label(
+    args: MailLabelArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailMessageSummary> {
+    const change = await this.labelChange(args, ctx.signal);
+    const message = await this.gmail.modifyMessage(
+      args.message_id,
+      change,
+      ctx.signal,
+    );
+    return this.summaryAfterChange(message, ctx.signal);
+  }
 
-  async calendarList(
-    input: CalendarListInput,
+  async move(
+    args: MailMoveArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<MailMessageSummary> {
+    const change = await this.moveChange(args.folder, ctx.signal);
+    const message = await this.gmail.modifyMessage(
+      args.message_id,
+      change,
+      ctx.signal,
+    );
+    return this.summaryAfterChange(message, ctx.signal);
+  }
+
+  /** `messages.modify` answers with IDs and labels only; headers need a read. */
+  private async summaryAfterChange(
+    modified: GmailMessage,
     signal?: AbortSignal,
-  ): Promise<Page<CalendarEventResult>> {
-    const calendarId = input.calendar ?? "primary";
+  ): Promise<MailMessageSummary> {
+    const message = modified.payload
+      ? modified
+      : await this.gmail.getMessage(modified.id, "metadata", signal);
+    return this.summary(message, signal);
+  }
+}
+
+const ATTENDEE_RESPONSES: Record<string, CalendarAttendeeResponse> = {
+  accepted: "accepted",
+  tentative: "tentative",
+  declined: "declined",
+  needsAction: "none",
+};
+const GOOGLE_RESPONSES = {
+  accept: "accepted",
+  tentative: "tentative",
+  decline: "declined",
+} as const;
+
+function assertTimeZone(timeZone: string): void {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+  } catch {
+    throw invalid(
+      `time_zone must be an IANA time zone name, not '${timeZone}'.`,
+    );
+  }
+}
+
+function eventDateTime(
+  value: string,
+  timeZone: string,
+  allDay: boolean | undefined,
+  name: string,
+): CalendarDateTime {
+  if (allDay || DATE_ONLY.test(value)) {
+    if (!DATE_ONLY.test(value))
+      throw invalid(`${name} must be a date for an all-day event.`);
+    return { date: value };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
+    throw invalid(`${name} must be an RFC 3339 date-time or a date.`);
+  }
+  return { dateTime: value, timeZone };
+}
+
+function looksLikeHtml(text: string): boolean {
+  return /<\/?[a-z][^>]*>/i.test(text);
+}
+
+function attendeeResponse(
+  attendee: GoogleAttendee | undefined,
+): CalendarAttendeeResponse | undefined {
+  if (!attendee) return undefined;
+  if (attendee.organizer) return "organizer";
+  return ATTENDEE_RESPONSES[attendee.responseStatus ?? "needsAction"] ?? "none";
+}
+
+/** A Google event as the neutral summary, its times in the event's own zone. */
+export function eventSummary(
+  event: GoogleEvent,
+  calendarZone = "UTC",
+): CalendarEventSummary {
+  const allDay = Boolean(event.start?.date);
+  const self = event.attendees?.find((attendee) => attendee.self);
+  const video = event.conferenceData?.entryPoints?.find(
+    (entry) => entry.entryPointType === "video",
+  )?.uri;
+  return {
+    id: event.id ?? "",
+    title: event.summary,
+    start: (allDay ? event.start?.date : event.start?.dateTime) ?? "",
+    end: (allDay ? event.end?.date : event.end?.dateTime) ?? "",
+    time_zone: event.start?.timeZone ?? calendarZone,
+    ...(allDay ? { all_day: true } : {}),
+    location: event.location,
+    ...(event.organizer?.email
+      ? {
+          organizer: {
+            email: event.organizer.email,
+            ...(event.organizer.displayName
+              ? { name: event.organizer.displayName }
+              : {}),
+          },
+        }
+      : {}),
+    is_organizer: event.organizer?.self ?? false,
+    response: event.organizer?.self ? "organizer" : attendeeResponse(self),
+    cancelled: event.status === "cancelled",
+    online_meeting_url: video ?? event.hangoutLink,
+    web_link: event.htmlLink,
+  };
+}
+
+export function eventDetail(
+  event: GoogleEvent,
+  calendarZone?: string,
+): CalendarEvent {
+  return {
+    ...eventSummary(event, calendarZone),
+    attendees: (event.attendees ?? [])
+      .filter((attendee) => attendee.email)
+      .map((attendee): CalendarAttendee => ({
+        email: attendee.email!,
+        ...(attendee.displayName ? { name: attendee.displayName } : {}),
+        type: attendee.resource
+          ? "resource"
+          : attendee.optional
+            ? "optional"
+            : "required",
+        response: attendeeResponse(attendee),
+      })),
+    ...(event.description
+      ? {
+          body: {
+            content_type: looksLikeHtml(event.description) ? "html" : "text",
+            content: event.description,
+          },
+        }
+      : {}),
+  };
+}
+
+/** Google Calendar over REST (`calendar/v3`): every `calendar` command. */
+export class GoogleRestCalendar implements Required<CalendarSession> {
+  constructor(readonly calendar: CalendarClient) {}
+
+  /** A calendar named by its title (or ID) on the person's list; absent means primary. */
+  async calendarId(
+    name: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (!name?.trim() || name.trim().toLowerCase() === "primary")
+      return "primary";
+    const wanted = name.trim().toLowerCase();
+    const calendars = await this.calendar.listCalendars(signal);
+    const found =
+      calendars.find((entry) => entry.summary?.toLowerCase() === wanted) ??
+      calendars.find((entry) => entry.id.toLowerCase() === wanted);
+    if (!found)
+      throw invalid(`No calendar named '${name}' is on the person's list.`);
+    return found.id;
+  }
+
+  async list(
+    args: CalendarListArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<CalendarListResult> {
+    const calendarId = await this.calendarId(args.calendar, ctx.signal);
     let zone: string | undefined;
     const page = await collectPages(
       async (pageToken, maxResults) => {
         const result = await this.calendar.listEvents(
           calendarId,
-          { timeMin: input.from, timeMax: input.to, maxResults, pageToken },
-          signal,
+          { timeMin: args.from, timeMax: args.to, maxResults, pageToken },
+          ctx.signal,
         );
         zone ??= result.timeZone;
         return result;
       },
-      pageSize(input.limit),
-      input.cursor,
+      args.limit,
+      args.cursor,
     );
     return {
-      items: page.items.map((event) => eventResult(event, zone)),
-      next_cursor: page.nextPageToken,
+      events: page.items.map((event) => eventSummary(event, zone)),
+      cursor: page.nextPageToken,
     };
   }
 
-  async calendarRead(
-    eventId: string,
-    signal?: AbortSignal,
-  ): Promise<CalendarEventResult> {
-    return eventResult(
-      await this.calendar.getEvent("primary", eventId, signal),
+  async read(
+    args: CalendarReadArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<CalendarEvent> {
+    return eventDetail(
+      await this.calendar.getEvent("primary", args.event_id, ctx.signal),
     );
   }
 
-  async calendarFreeBusy(
-    input: { attendees: string[]; from: string; to: string },
-    signal?: AbortSignal,
-  ): Promise<FreeBusyResultItem[]> {
+  async freeBusy(
+    args: CalendarFreeBusyArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<CalendarFreeBusyResult> {
+    assertTimeZone(args.time_zone);
     const result = await this.calendar.freeBusy(
       {
-        timeMin: input.from,
-        timeMax: input.to,
-        items: input.attendees.map((id) => ({ id })),
+        timeMin: args.from,
+        timeMax: args.to,
+        timeZone: args.time_zone,
+        items: args.attendees.map((id) => ({ id })),
       },
-      signal,
+      ctx.signal,
     );
-    return input.attendees.map((attendee) => {
-      const entry = result.calendars?.[attendee];
-      const error = entry?.errors?.[0]?.reason;
-      return {
-        attendee,
-        busy: (entry?.busy ?? []).map(({ start, end }) => ({ start, end })),
-        ...(error || !entry ? { error: error ?? "notFound" } : {}),
-      };
-    });
+    return {
+      time_zone: args.time_zone,
+      schedules: args.attendees.map((attendee) => {
+        const entry = result.calendars?.[attendee];
+        const error = entry ? entry.errors?.[0]?.reason : "notFound";
+        return {
+          attendee,
+          busy: (entry?.busy ?? []).map(({ start, end }) => ({
+            start,
+            end,
+            status: "busy" as const,
+          })),
+          ...(error ? { error } : {}),
+        };
+      }),
+    };
   }
 
-  eventBody(input: Partial<EventInput>, existingZone?: string): CalendarEvent {
-    const zone = input.time_zone ?? existingZone;
-    if ((input.start || input.end) && !zone) {
+  /** The `Event` body for a create, or for a patch of only the fields given. */
+  eventBody(args: Partial<CalendarCreateArgs>): GoogleEvent {
+    if (
+      (args.start !== undefined || args.end !== undefined) &&
+      !args.time_zone
+    ) {
       throw invalid("time_zone is required with start and end.");
     }
-    if (zone) assertTimeZone(zone);
-    const event: CalendarEvent = {};
-    if (input.title !== undefined) event.summary = input.title;
-    if (input.start !== undefined)
-      event.start = eventDateTime(input.start, zone!, "start");
-    if (input.end !== undefined)
-      event.end = eventDateTime(input.end, zone!, "end");
-    if (input.location !== undefined) event.location = input.location;
-    if (input.body !== undefined) event.description = input.body;
-    if (input.attendees !== undefined) {
-      event.attendees = input.attendees.map((email) => ({ email }));
+    if (args.time_zone) assertTimeZone(args.time_zone);
+    const event: GoogleEvent = {};
+    if (args.title !== undefined) event.summary = args.title;
+    if (args.start !== undefined) {
+      event.start = eventDateTime(
+        args.start,
+        args.time_zone!,
+        args.all_day,
+        "start",
+      );
     }
-    if (input.online_meeting) {
+    if (args.end !== undefined) {
+      event.end = eventDateTime(args.end, args.time_zone!, args.all_day, "end");
+    }
+    if (args.location !== undefined) event.location = args.location;
+    if (args.body !== undefined) event.description = args.body;
+    if (args.attendees !== undefined || args.optional_attendees !== undefined) {
+      event.attendees = [
+        ...(args.attendees ?? []).map((email) => ({ email })),
+        ...(args.optional_attendees ?? []).map((email) => ({
+          email,
+          optional: true,
+        })),
+      ];
+    }
+    if (args.online_meeting) {
       event.conferenceData = {
         createRequest: {
           requestId: crypto.randomUUID(),
@@ -598,38 +721,42 @@ export class GoogleRestBackend {
     return event;
   }
 
-  async calendarCreate(
-    input: EventInput,
-    signal?: AbortSignal,
-  ): Promise<CalendarEventResult> {
-    return eventResult(
-      await this.calendar.insertEvent("primary", this.eventBody(input), signal),
+  async create(
+    args: CalendarCreateArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<CalendarEvent> {
+    const created = await this.calendar.insertEvent(
+      "primary",
+      this.eventBody(args),
+      ctx.signal,
     );
+    return eventDetail(created, args.time_zone);
   }
 
-  async calendarUpdate(
-    eventId: string,
-    change: Partial<EventInput>,
-    signal?: AbortSignal,
-  ): Promise<CalendarEventResult> {
-    return eventResult(
-      await this.calendar.patchEvent(
-        "primary",
-        eventId,
-        this.eventBody(change),
-        signal,
-      ),
+  async update(
+    args: CalendarUpdateArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<CalendarEvent> {
+    const { event_id: eventId, ...change } = args;
+    const updated = await this.calendar.patchEvent(
+      "primary",
+      eventId,
+      this.eventBody(change),
+      ctx.signal,
     );
+    return eventDetail(updated, args.time_zone);
   }
 
   /** Sets the person's own `responseStatus` (and comment) and nothing else. */
-  async calendarRespond(
-    eventId: string,
-    response: Exclude<AttendeeResponse, "none">,
-    comment: string | undefined,
-    signal?: AbortSignal,
-  ): Promise<CalendarEventResult> {
-    const event = await this.calendar.getEvent("primary", eventId, signal);
+  async respond(
+    args: CalendarRespondArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<void> {
+    const event = await this.calendar.getEvent(
+      "primary",
+      args.event_id,
+      ctx.signal,
+    );
     const attendees = event.attendees ?? [];
     if (!attendees.some((attendee) => attendee.self)) {
       throw invalid(
@@ -640,138 +767,176 @@ export class GoogleRestBackend {
       attendee.self
         ? {
             ...attendee,
-            responseStatus: GOOGLE_RESPONSES[response],
-            ...(comment !== undefined ? { comment } : {}),
+            responseStatus: GOOGLE_RESPONSES[args.response],
+            ...(args.comment !== undefined ? { comment: args.comment } : {}),
           }
         : attendee,
     );
-    return eventResult(
-      await this.calendar.patchEvent(
-        "primary",
-        eventId,
-        { attendees: updated },
-        signal,
-      ),
+    await this.calendar.patchEvent(
+      "primary",
+      args.event_id,
+      { attendees: updated },
+      ctx.signal,
     );
   }
 
-  /** Deletes the event and notifies attendees; Google takes no cancellation note. */
-  async calendarCancel(eventId: string, signal?: AbortSignal): Promise<void> {
-    await this.calendar.deleteEvent("primary", eventId, signal);
+  /** Deletes the event and notifies attendees; Google's delete carries no comment. */
+  async cancel(
+    args: CalendarCancelArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<void> {
+    await this.calendar.deleteEvent("primary", args.event_id, ctx.signal);
   }
+}
 
-  // ---- drive --------------------------------------------------------------
+export function driveFileSummary(file: DriveFile): DriveFileSummary {
+  const size = file.size === undefined ? Number.NaN : Number(file.size);
+  return {
+    id: file.id,
+    name: file.name ?? "",
+    mime_type: file.mimeType,
+    ...(Number.isFinite(size) ? { size } : {}),
+    modified_at: file.modifiedTime,
+    is_folder: file.mimeType === FOLDER_TYPE,
+    ...(isGoogleNative(file.mimeType) && file.mimeType !== FOLDER_TYPE
+      ? { native_type: file.mimeType }
+      : {}),
+    web_url: file.webViewLink,
+    ...(file.parents?.[0] ? { parent_id: file.parents[0] } : {}),
+  };
+}
 
-  async driveSearch(
-    input: DriveSearchInput,
-    signal?: AbortSignal,
-  ): Promise<Page<DriveFileSummary>> {
+/** Text from bytes, dropping a multi-byte character cut at the end. */
+function decodePrefix(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes).replace(/�$/, "");
+}
+
+/** Google Drive over REST (`drive/v3`, `upload/drive/v3`): every `drive` command. */
+export class GoogleRestDrive implements Required<DriveSession> {
+  constructor(readonly drive: DriveClient) {}
+
+  async search(
+    args: DriveSearchArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<DriveSearchResult> {
     const q = driveSearchQuery({
-      query: input.query,
-      folderId: input.folder,
-      modifiedAfter: input.modified_after,
+      query: args.query,
+      folderId: args.folder_id,
+      modifiedAfter: args.modified_after,
     });
     const page = await collectPages(
-      (pageToken, size) =>
-        this.drive.listFiles({ q, pageSize: size, pageToken }, signal),
-      pageSize(input.limit),
-      input.cursor,
+      (pageToken, pageSize) =>
+        this.drive.listFiles({ q, pageSize, pageToken }, ctx.signal),
+      args.limit,
+      args.cursor,
     );
     return {
-      items: page.items.map(driveFileSummary),
-      next_cursor: page.nextPageToken,
+      files: page.items.map(driveFileSummary),
+      cursor: page.nextPageToken,
     };
   }
 
-  async driveRead(
-    fileId: string,
-    signal?: AbortSignal,
+  async read(
+    args: DriveReadArgs,
+    ctx: ProductivityCallContext = {},
   ): Promise<DriveReadResult> {
-    const file = await this.drive.getFile(fileId, signal);
+    const file = await this.drive.getFile(args.file_id, ctx.signal);
     const summary = driveFileSummary(file);
     const exported = nativeExport(file.mimeType);
     if (exported) {
-      const bytes = await this.drive.exportFile(
-        fileId,
-        exported.read.mimeType,
-        signal,
-      );
-      return {
-        file: summary,
-        exported_as: exported.read.mimeType,
-        ...limitText(new TextDecoder().decode(bytes), DRIVE_READ_LIMIT_CHARS),
-      };
+      try {
+        const bytes = await this.drive.exportFile(
+          args.file_id,
+          exported.read.mimeType,
+          ctx.signal,
+        );
+        return {
+          file: summary,
+          content: textContent(decodePrefix(bytes.subarray(0, args.max_bytes))),
+          exported_as: exported.read.mimeType,
+        };
+      } catch (error) {
+        if (isSizeLimit(error))
+          return { file: summary, unavailable: error.message };
+        throw error;
+      }
     }
     if (!isTextType(file.mimeType)) {
       return {
         file: summary,
-        binary: true,
-        text: "",
-        truncated: false,
-        limit_chars: DRIVE_READ_LIMIT_CHARS,
+        unavailable: `${file.mimeType ?? "This file"} has no text form; use drive download.`,
       };
     }
-    const bytes = await this.drive.downloadFile(
-      fileId,
-      MAX_DOWNLOAD_BYTES,
-      signal,
+    const { data } = await this.drive.downloadPrefix(
+      args.file_id,
+      args.max_bytes,
+      ctx.signal,
     );
-    return {
-      file: summary,
-      ...limitText(new TextDecoder().decode(bytes), DRIVE_READ_LIMIT_CHARS),
-    };
+    return { file: summary, content: textContent(decodePrefix(data)) };
   }
 
-  async driveDownload(
-    fileId: string,
-    signal?: AbortSignal,
-  ): Promise<FetchedFile & { file: DriveFileSummary }> {
-    const file = await this.drive.getFile(fileId, signal);
+  async download(
+    args: DriveDownloadArgs,
+    ctx: ProductivityCallContext = {},
+  ): Promise<ProductivityFileContent> {
+    const file = await this.drive.getFile(args.file_id, ctx.signal);
     const exported = nativeExport(file.mimeType);
+    const name = file.name ?? "file";
     if (exported) {
-      const data = await this.drive.exportFile(
-        fileId,
-        exported.download.mimeType,
-        signal,
-      );
-      const base = file.name ?? "file";
       return {
-        file: driveFileSummary(file),
-        filename: base.endsWith(exported.download.extension)
-          ? base
-          : `${base}${exported.download.extension}`,
+        name: name.endsWith(exported.download.extension)
+          ? name
+          : `${name}${exported.download.extension}`,
         mime_type: exported.download.mimeType,
-        data,
+        bytes: await this.drive.exportFile(
+          args.file_id,
+          exported.download.mimeType,
+          ctx.signal,
+        ),
       };
     }
-    if (file.mimeType?.startsWith("application/vnd.google-apps.")) {
-      throw new GoogleProductivityError(
-        "unsupported",
+    if (isGoogleNative(file.mimeType)) {
+      throw invalid(
         `${file.mimeType} has no file form drive download can export.`,
       );
     }
     return {
-      file: driveFileSummary(file),
-      filename: file.name ?? "file",
+      name,
       mime_type: file.mimeType ?? "application/octet-stream",
-      data: await this.drive.downloadFile(fileId, MAX_DOWNLOAD_BYTES, signal),
+      bytes: await this.drive.downloadFile(
+        args.file_id,
+        MAX_DOWNLOAD_BYTES,
+        ctx.signal,
+      ),
     };
   }
 
-  async driveUpload(
-    input: DriveUploadInput,
-    signal?: AbortSignal,
+  async upload(
+    args: DriveUploadArgs,
+    ctx: ProductivityCallContext = {},
   ): Promise<DriveFileSummary> {
-    return driveFileSummary(
-      await this.drive.uploadFile(
-        {
-          name: input.name,
-          mimeType: input.mime_type,
-          parents: input.folder ? [input.folder] : undefined,
-          data: input.data,
-        },
-        signal,
-      ),
+    const uploaded = await this.drive.uploadFile(
+      {
+        name: args.name,
+        mimeType: args.mime_type ?? "application/octet-stream",
+        parents: args.folder_id ? [args.folder_id] : undefined,
+        data: args.bytes,
+      },
+      ctx.signal,
     );
+    return driveFileSummary(uploaded);
+  }
+}
+
+/** Every productivity command over Google's REST APIs, sharing one transport. */
+export class GoogleRestBackend {
+  readonly mail: GoogleRestMail;
+  readonly calendar: GoogleRestCalendar;
+  readonly drive: GoogleRestDrive;
+
+  constructor(transport: GoogleTransport) {
+    this.mail = new GoogleRestMail(new GmailClient(transport));
+    this.calendar = new GoogleRestCalendar(new CalendarClient(transport));
+    this.drive = new GoogleRestDrive(new DriveClient(transport));
   }
 }

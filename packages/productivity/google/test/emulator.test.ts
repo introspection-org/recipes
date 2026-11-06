@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { GoogleRestBackend, GoogleTransport } from "../src/index.js";
+import {
+  createGoogleProductivitySession,
+  type GoogleProductivitySession,
+} from "../src/index.js";
 import {
   EGRESS_ENV,
   PERSON,
@@ -35,7 +38,33 @@ const RAW_WITH_ATTACHMENT = Buffer.from(
 ).toString("base64url");
 
 let emulator: RunningEmulator;
-let backend: GoogleRestBackend;
+let google: GoogleProductivitySession;
+
+const ALL = {
+  provider: "google",
+  tools: {
+    mail: [
+      "search",
+      "read",
+      "fetch_attachment",
+      "draft",
+      "update_draft",
+      "send",
+      "move",
+      "label",
+    ],
+    calendar: [
+      "list",
+      "read",
+      "free_busy",
+      "create",
+      "update",
+      "respond",
+      "cancel",
+    ],
+    drive: ["search", "read", "download", "upload"],
+  },
+} as const;
 
 beforeAll(async () => {
   emulator = await startGoogleEmulator({
@@ -129,104 +158,124 @@ beforeAll(async () => {
       },
     ],
   });
-  backend = new GoogleRestBackend(
-    new GoogleTransport({ env: EGRESS_ENV, endpoints: emulator.endpoints }),
+  google = await createGoogleProductivitySession(
+    { config: ALL, env: EGRESS_ENV, cwd: process.cwd() },
+    { endpoints: emulator.endpoints, restOnly: true },
   );
 });
 
 afterAll(async () => {
+  await google?.close?.();
   await emulator?.close();
 });
 
 describe("mail, against the Google emulator", () => {
   it("searches with neutral filters, label names and nextPageToken paging", async () => {
-    const unread = await backend.mailSearch({ unread: true, folder: "inbox" });
-    expect(unread.items.map((m) => m.id)).toEqual(["m_plain"]);
-    expect(unread.items[0]).toMatchObject({
-      from: "Grace <grace@example.com>",
-      to: [PERSON],
+    const unread = await google.mail.search({
+      unread: true,
+      folder: "inbox",
+      limit: 20,
+    });
+    expect(unread.messages.map((m) => m.id)).toEqual(["m_plain"]);
+    expect(unread.messages[0]).toMatchObject({
+      from: { email: "grace@example.com", name: "Grace" },
+      to: [{ email: PERSON }],
       subject: "Lunch on Friday",
       labels: expect.arrayContaining(["INBOX", "UNREAD"]),
       unread: true,
+      has_attachments: false,
     });
 
-    const first = await backend.mailSearch({
+    const first = await google.mail.search({
       from: "news@example.com",
       limit: 2,
     });
-    expect(first.items).toHaveLength(2);
-    expect(first.next_cursor).toBeTruthy();
-    const second = await backend.mailSearch({
+    expect(first.messages).toHaveLength(2);
+    expect(first.cursor).toBeTruthy();
+    const second = await google.mail.search({
       from: "news@example.com",
       limit: 10,
-      cursor: first.next_cursor,
+      cursor: first.cursor,
     });
-    expect(second.items).toHaveLength(3);
-    expect(second.next_cursor).toBeUndefined();
-    const all = [...first.items, ...second.items].map((m) => m.id);
+    expect(second.messages).toHaveLength(3);
+    expect(second.cursor).toBeUndefined();
+    const all = [...first.messages, ...second.messages].map((m) => m.id);
     expect(new Set(all).size).toBe(5);
 
-    const dated = await backend.mailSearch({
+    const dated = await google.mail.search({
       from: "news@example.com",
       after: "2025-10-03T00:00:00Z",
+      limit: 20,
     });
-    expect(dated.items.map((m) => m.subject).sort()).toEqual([
+    expect(dated.messages.map((m) => m.subject).sort()).toEqual([
       "Digest 2",
       "Digest 3",
       "Digest 4",
     ]);
   });
 
-  it("reads HTML mail as text without remote content, and lists its attachment", async () => {
-    const message = await backend.mailRead("m_html");
+  it("reads HTML mail as text without remote content, and fetches its attachment", async () => {
+    const { messages } = await google.mail.read({ message_id: "m_html" });
+    const message = messages[0]!;
     expect(message.subject).toBe("Quarterly notes – draft");
-    expect(message.body.from_html).toBe(true);
-    expect(message.body.text).toContain("Hello there & welcome.");
-    expect(message.body.text).toContain("the Q3 plan <https://example.com/q3>");
-    expect(message.body.text).not.toContain("track.example.com");
+    expect(message.body?.content_type).toBe("text");
+    expect(message.body?.content).toContain("Hello there & welcome.");
+    expect(message.body?.content).toContain(
+      "the Q3 plan <https://example.com/q3>",
+    );
+    expect(message.body?.content).not.toContain("track.example.com");
+    expect(message.has_attachments).toBe(true);
     expect(message.attachments).toEqual([
-      expect.objectContaining({
-        filename: "notes.txt",
-        mime_type: "text/plain",
-      }),
+      expect.objectContaining({ name: "notes.txt", mime_type: "text/plain" }),
     ]);
 
-    const file = await backend.mailFetchAttachment(message.attachments[0]!.id);
-    expect(file.filename).toBe("notes.txt");
-    expect(Buffer.from(file.data).toString("utf8")).toBe("attached notes\n");
+    const file = await google.mail.fetchAttachment({
+      message_id: "m_html",
+      attachment_id: message.attachments![0]!.id,
+    });
+    expect(file.name).toBe("notes.txt");
+    expect(Buffer.from(file.bytes).toString("utf8")).toBe("attached notes\n");
 
-    const thread = await backend.mailReadThread("t_plain");
-    expect(thread.messages.map((m) => m.body.text)).toEqual([
+    const thread = await google.mail.read({ thread_id: "t_plain" });
+    expect(thread.messages.map((m) => m.body?.content)).toEqual([
       "Shall we meet at noon?",
     ]);
   });
 
   it("drafts a reply, updates it, sends it, and reads the sent message back", async () => {
-    const draft = await backend.mailDraft({
+    const draft = await google.mail.draft({
       to: ["grace@example.com"],
       subject: "",
       body: "Noon works.",
-      reply_to: "m_plain",
+      reply_to_id: "m_plain",
     });
-    expect(draft.thread_id).toBe("t_plain");
+    expect(draft).toMatchObject({
+      thread_id: "t_plain",
+      subject: "Re: Lunch on Friday",
+    });
 
-    await backend.mailUpdateDraft(draft.draft_id, {
+    const updated = await google.mail.updateDraft({
+      draft_id: draft.id,
       body: "Noon works. **See you**.",
     });
+    expect(updated.to).toEqual([{ email: "grace@example.com" }]);
 
-    const sent = await backend.mailSend(draft.draft_id);
-    const read = await backend.mailRead(sent.message_id);
-    expect(read).toMatchObject({
-      subject: "Re: Lunch on Friday",
-      to: ["grace@example.com"],
-      labels: expect.arrayContaining(["SENT"]),
+    const sent = await google.mail.send({ draft_id: draft.id });
+    const { messages } = await google.mail.read({
+      message_id: sent.message_id!,
     });
-    expect(read.body.text.trim()).toBe("Noon works. **See you**.");
-    expect(read.thread_id).toBe("t_plain");
+    expect(messages[0]).toMatchObject({
+      subject: "Re: Lunch on Friday",
+      to: [{ email: "grace@example.com" }],
+      labels: expect.arrayContaining(["SENT"]),
+      thread_id: "t_plain",
+    });
+    expect(messages[0]!.body?.content.trim()).toBe("Noon works. **See you**.");
   });
 
   it("labels by name and moves to a label out of the inbox", async () => {
-    const labelled = await backend.mailLabel("m_plain", {
+    const labelled = await google.mail.label({
+      message_id: "m_plain",
       add: ["clients"],
       remove: ["UNREAD"],
     });
@@ -235,39 +284,42 @@ describe("mail, against the Google emulator", () => {
     );
     expect(labelled.unread).toBe(false);
 
-    const moved = await backend.mailMove("m_html", "Clients");
+    const moved = await google.mail.move({
+      message_id: "m_html",
+      folder: "Clients",
+    });
     expect(moved.labels).toContain("Clients");
     expect(moved.labels).not.toContain("INBOX");
 
     await expect(
-      backend.mailLabel("m_plain", { add: ["No such label"] }),
-    ).rejects.toMatchObject({
-      code: "invalid_request",
-    });
+      google.mail.label({ message_id: "m_plain", add: ["No such label"] }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
   });
 });
 
 describe("calendar, against the Google emulator", () => {
   it("lists events in a window with their zones, all-day events as dates", async () => {
-    const page = await backend.calendarList({
+    const page = await google.calendar.list({
       from: "2025-11-01T00:00:00Z",
       to: "2025-11-30T00:00:00Z",
+      limit: 20,
     });
     const byId = Object.fromEntries(
-      page.items.map((event) => [event.id, event]),
+      page.events.map((event) => [event.id, event]),
     );
     expect(byId.e_review).toMatchObject({
       title: "Design review",
-      start: { date_time: expect.stringMatching(/^2025-11-10T09:00:00/) },
-      attendees: expect.arrayContaining([
-        expect.objectContaining({ email: "grace@example.com", name: "Grace" }),
-      ]),
+      start: expect.stringMatching(/^2025-11-10T09:00:00/),
+      time_zone: expect.any(String),
     });
-    expect(byId.e_offsite?.start).toEqual({ date: "2025-11-12" });
+    expect(byId.e_offsite).toMatchObject({
+      start: "2025-11-12",
+      all_day: true,
+    });
   });
 
   it("creates an event, sees it busy, then cancels it", async () => {
-    const created = await backend.calendarCreate({
+    const created = await google.calendar.create({
       title: "1:1",
       start: "2025-11-20T15:00:00+01:00",
       end: "2025-11-20T15:30:00+01:00",
@@ -277,81 +329,97 @@ describe("calendar, against the Google emulator", () => {
     });
     expect(created).toMatchObject({ title: "1:1", location: "Room 2" });
 
-    const busy = await backend.calendarFreeBusy({
+    const window = {
       attendees: [PERSON],
       from: "2025-11-20T00:00:00Z",
       to: "2025-11-21T00:00:00Z",
-    });
-    expect(busy[0]!.busy).toHaveLength(1);
-    expect(Date.parse(busy[0]!.busy[0]!.start)).toBe(
+      time_zone: "Europe/Paris",
+    };
+    const busy = await google.calendar.freeBusy(window);
+    expect(busy.schedules[0]!.busy).toHaveLength(1);
+    expect(Date.parse(busy.schedules[0]!.busy[0]!.start)).toBe(
       Date.parse("2025-11-20T14:00:00Z"),
     );
 
-    await backend.calendarCancel(created.id);
-    const after = await backend.calendarFreeBusy({
-      attendees: [PERSON],
-      from: "2025-11-20T00:00:00Z",
-      to: "2025-11-21T00:00:00Z",
-    });
-    expect(after[0]!.busy).toEqual([]);
+    await google.calendar.cancel({ event_id: created.id });
+    const after = await google.calendar.freeBusy(window);
+    expect(after.schedules[0]!.busy).toEqual([]);
   });
 
   it("refuses an event without an IANA zone before calling Google", async () => {
     await expect(
-      backend.calendarCreate({
+      google.calendar.create({
         title: "x",
         start: "2025-11-20T15:00:00Z",
         end: "2025-11-20T16:00:00Z",
         time_zone: "CET+1",
       }),
-    ).rejects.toMatchObject({ code: "invalid_request" });
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
   });
 });
 
 describe("drive, against the Google emulator", () => {
   it("searches a folder, pages, and reads a text file", async () => {
-    const first = await backend.driveSearch({ folder: "f_folder", limit: 1 });
-    expect(first.items).toHaveLength(1);
-    const second = await backend.driveSearch({
-      folder: "f_folder",
-      cursor: first.next_cursor,
+    const first = await google.drive.search({
+      query: "",
+      folder_id: "f_folder",
+      limit: 1,
     });
-    expect([...first.items, ...second.items].map((f) => f.name).sort()).toEqual(
+    expect(first.files).toHaveLength(1);
+    const second = await google.drive.search({
+      query: "",
+      folder_id: "f_folder",
+      limit: 10,
+      cursor: first.cursor,
+    });
+    expect([...first.files, ...second.files].map((f) => f.name).sort()).toEqual(
       ["plan.md", "scan.pdf"],
     );
 
-    const read = await backend.driveRead("f_text");
-    expect(read).toMatchObject({
-      text: "# Plan\n\nShip it.",
-      truncated: false,
+    const read = await google.drive.read({
+      file_id: "f_text",
+      max_bytes: 1000,
+    });
+    expect(read.content).toEqual({
+      content_type: "text",
+      content: "# Plan\n\nShip it.",
     });
     expect(read.file).toMatchObject({
       name: "plan.md",
       mime_type: "text/markdown",
     });
 
-    const binary = await backend.driveRead("f_pdf");
-    expect(binary).toMatchObject({ binary: true, text: "" });
+    const cut = await google.drive.read({ file_id: "f_text", max_bytes: 6 });
+    expect(cut.content?.content).toBe("# Plan");
+
+    const binary = await google.drive.read({
+      file_id: "f_pdf",
+      max_bytes: 1000,
+    });
+    expect(binary.content).toBeUndefined();
+    expect(binary.unavailable).toMatch(/no text form/);
   });
 
   it("uploads a file into a folder and downloads the same bytes", async () => {
-    const data = new Uint8Array([0, 1, 2, 250, 255]);
-    const uploaded = await backend.driveUpload({
+    const bytes = new Uint8Array([0, 1, 2, 250, 255]);
+    const uploaded = await google.drive.upload({
       name: "result.bin",
       mime_type: "application/octet-stream",
-      data,
-      folder: "f_folder",
+      bytes,
+      folder_id: "f_folder",
     });
-    expect(uploaded).toMatchObject({ name: "result.bin" });
+    expect(uploaded).toMatchObject({ name: "result.bin", is_folder: false });
 
-    const downloaded = await backend.driveDownload(uploaded.id);
-    expect(downloaded.filename).toBe("result.bin");
-    expect([...downloaded.data]).toEqual([...data]);
+    const downloaded = await google.drive.download({ file_id: uploaded.id });
+    expect(downloaded.name).toBe("result.bin");
+    expect([...downloaded.bytes]).toEqual([...bytes]);
   });
 
   it("maps a missing file to not_found", async () => {
-    await expect(backend.driveRead("f_missing")).rejects.toMatchObject({
-      code: "not_found",
+    await expect(
+      google.drive.read({ file_id: "f_missing", max_bytes: 10 }),
+    ).rejects.toMatchObject({
+      productivity: { code: "not_found", status: 404 },
     });
   });
 });

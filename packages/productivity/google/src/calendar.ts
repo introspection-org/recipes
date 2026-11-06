@@ -64,6 +64,31 @@ export class CalendarClient {
     return `${this.transport.endpoints.calendar}/calendars/${encodeURIComponent(calendarId)}/events`;
   }
 
+  /** `calendarList.list`: the calendars on the person's list, for `calendar` by name. */
+  async listCalendars(
+    signal?: AbortSignal,
+  ): Promise<
+    Array<{
+      id: string;
+      summary?: string;
+      timeZone?: string;
+      primary?: boolean;
+    }>
+  > {
+    const body = await this.transport.json<{
+      items?: Array<{
+        id: string;
+        summary?: string;
+        timeZone?: string;
+        primary?: boolean;
+      }>;
+    }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
+      scope: CALENDAR_SCOPES.read,
+      signal,
+    });
+    return body.items ?? [];
+  }
+
   /** `events.list`, recurring events expanded and ordered by start. */
   async listEvents(
     calendarId: string,

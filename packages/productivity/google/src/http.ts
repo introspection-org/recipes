@@ -38,6 +38,11 @@ export interface GoogleTransportOptions {
   maxRetryWaitMs?: number;
   /** Override Google's base URLs, for an emulator or a fake. */
   endpoints?: Partial<GoogleEndpoints>;
+  /**
+   * The host supplied `fetch` with a request hook that attaches the person's
+   * credential, so the placeholder goes out whatever the environment says.
+   */
+  hostAttachesCredential?: boolean;
 }
 
 export interface GoogleRequest {
@@ -46,6 +51,7 @@ export interface GoogleRequest {
   json?: unknown;
   body?: string | Uint8Array;
   contentType?: string;
+  headers?: Record<string, string>;
   /**
    * A write is never retried: Gmail and Calendar writes are not idempotent,
    * so a request that may have reached Google is not sent twice.
@@ -177,7 +183,7 @@ export function mapGoogleError(
   }
   if (status === 403 && reasons.includes("exportSizeLimitExceeded")) {
     return new GoogleProductivityError(
-      "export_too_large",
+      "invalid_request",
       `The file is larger than Google's export limit of ${DRIVE_EXPORT_LIMIT_BYTES / (1024 * 1024)} MB, so it cannot be exported.`,
       { status, reason, limitBytes: DRIVE_EXPORT_LIMIT_BYTES },
     );
@@ -233,6 +239,7 @@ export class GoogleTransport {
   readonly env: GoogleEnvironment;
   readonly fetchImpl: GoogleFetch;
   readonly endpoints: GoogleEndpoints;
+  private readonly hostAttachesCredential: boolean;
   private readonly sleep: Sleep;
   private readonly maxRateLimitAttempts: number;
   private readonly maxRetryWaitMs: number;
@@ -248,6 +255,7 @@ export class GoogleTransport {
     this.maxRateLimitAttempts = options.maxRateLimitAttempts ?? 4;
     this.maxRetryWaitMs = options.maxRetryWaitMs ?? 30_000;
     this.endpoints = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
+    this.hostAttachesCredential = options.hostAttachesCredential ?? false;
   }
 
   /**
@@ -256,7 +264,9 @@ export class GoogleTransport {
    * listener exchanges for the person's token.
    */
   authorization(): string {
-    if (egressProxyNative(this.env)) return `Bearer ${EGRESS_INJECTED_TOKEN}`;
+    if (this.hostAttachesCredential || egressProxyNative(this.env)) {
+      return `Bearer ${EGRESS_INJECTED_TOKEN}`;
+    }
     const locator = this.env.INTROSPECTION_TOKEN?.trim();
     const egressUrl = this.env.INTROSPECTION_EGRESS_URL?.trim();
     if (!locator || !egressUrl) {
@@ -291,7 +301,7 @@ export class GoogleTransport {
   async send(url: string, request: GoogleRequest): Promise<GoogleHttpResponse> {
     const target = withQuery(url, request.query);
     const label = `${request.method ?? "GET"} ${new URL(url).pathname}`;
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...request.headers };
     let body = request.body;
     if (request.json !== undefined) {
       headers["Content-Type"] = "application/json; charset=utf-8";
@@ -367,7 +377,7 @@ export class GoogleTransport {
 
 function tooLarge(limitBytes: number): GoogleProductivityError {
   return new GoogleProductivityError(
-    "too_large",
+    "invalid_request",
     `The content is larger than the ${Math.round(limitBytes / (1024 * 1024))} MB limit, so it was not fetched.`,
     { limitBytes },
   );
