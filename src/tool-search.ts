@@ -21,10 +21,14 @@ export type RecipeToolActivation = Pick<
 export function createRecipeToolSearchTools(
   tools: RecipeToolActivation,
   includeLegacyMcpAlias: boolean,
+  unsearchable: (name: string) => boolean = () => false,
 ): ToolDefinition[] {
   let search: ToolDefinition | undefined;
   createToolSearchExtension()({
-    ...tools,
+    getActiveTools: () => tools.getActiveTools(),
+    setActiveTools: (names: string[]) => tools.setActiveTools(names),
+    getAllTools: () =>
+      tools.getAllTools().filter((tool) => !unsearchable(tool.name)),
     registerTool: (definition: ToolDefinition) => {
       search = definition;
     },

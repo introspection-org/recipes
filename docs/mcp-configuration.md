@@ -143,6 +143,47 @@ replaces the inherited policy; restate its mode, servers, authorization, and
 activation selectors. This makes external capability changes reviewable at the
 derived agent. Every resolved agent owns its mode independently.
 
+### Keep a server behind a tool
+
+A server can sit behind one of the agent's own tools, so the model sees that
+one stable tool and the Recipe can change or compare the providers behind it.
+The productivity tools (`mail`, `calendar`, `drive`) work this way:
+
+```yaml
+tools: [mail]
+mcp:
+  mode: cli
+  servers:
+    gmail:
+      include: ["*"]
+      behind: [mail]
+```
+
+`behind` lists the tools allowed to call the server: each must be in the
+agent's `tools`, and the list is never empty. Its tools are reachable only from
+inside a call of one of those tools, through `ctx.executeTool(mcpToolName(server,
+tool), args)`, and a call from inside a codemode script the tool runs counts.
+Recipes refuses every other call before it reaches the server: one the model
+makes, one from a codemode script, and one from any other tool, each with a
+result that names the tool to call instead.
+
+Whatever the agent's mode, such a server runs on Pi's own MCP client, as in
+codemode, and stays out of the `mcp` command and the tools-mode daemon. The
+model is not told about it: its tools are not declared, codemode does not list
+them, `tool_search` does not find them, and Pi's list of MCP servers in the
+system prompt leaves it out. `required` and discovery behave as in codemode: a
+required server must connect before the first turn, and a call through the
+front tool waits for one still connecting. `defer` and `eager` are invalid
+with `behind`.
+
+What Pi cannot hide: a codemode script can still see the tools' names through
+`searchTools()`, `describeTool()` and `ALL_TOOLS`, though calling one is
+refused. The record of the front tool's nested calls (`nestedCalls` on its
+result) stays in the session file and is never sent to the model. The guard
+holds calls inside the Pi process; it is no network boundary, so a sandbox
+that must not reach the server's endpoint at all needs that enforced by the
+host's egress and credential rules.
+
 ## 3. Supply endpoint configuration
 
 A referenced MCP manifest can carry a portable configured endpoint and catalog.

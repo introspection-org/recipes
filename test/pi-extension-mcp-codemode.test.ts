@@ -1,36 +1,21 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  fauxAssistantMessage,
-  fauxProvider,
-  fauxToolCall,
-  InMemoryCredentialStore,
-} from "@earendil-works/pi-ai";
-import {
-  createAgentSession,
-  createCodemodeExtension,
-  createMcpExtension,
-  createToolSearchExtension,
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  type AgentSession,
-} from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { mcpToolName } from "../src/mcp/pi-client.js";
-import { createRecipesExtension } from "../src/pi-extension.js";
-import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
+import { writeFixtureRecipe } from "../src/test-utils.js";
 import { startHelloMcp } from "./helpers/hello-mcp.js";
+import {
+  lastToolResult,
+  mcpCallingToolsExtension,
+  openPiCliSession,
+} from "./helpers/mcp-session.js";
 
 const ECHO = mcpToolName("hello-mcp", "echo");
 const GREETING = mcpToolName("hello-mcp", "get_greeting");
 
-// The Pi CLI host: the recipes extension beside the built-in codemode,
-// tool_search and MCP extensions the `pi` command loads.
 describe("Pi extension MCP codemode", () => {
   const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -38,12 +23,11 @@ describe("Pi extension MCP codemode", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  it("registers the Recipe's servers with Pi's MCP support and runs a script", async () => {
-    const server = await startHelloMcp();
-    cleanups.push(() => server.close());
-    const fixture = writeFixtureRecipe({
-      tools: ["read"],
+  async function fixture(mode: string, server: string[], tools = ["read"]) {
+    const recipe = writeFixtureRecipe({
+      tools,
       manifestPi: {
+        ...(tools.includes("mail") ? { extensions: ["extensions/*.ts"] } : {}),
         mcp: {
           servers: [
             { id: "hello-mcp", required: true, tools: { include: ["*"] } },
@@ -52,98 +36,47 @@ describe("Pi extension MCP codemode", () => {
       },
       agentExtras: [
         "mcp:",
-        "  mode: codemode",
+        `  mode: ${mode}`,
         "  servers:",
         "    hello-mcp:",
         '      include: ["echo"]',
+        ...server,
       ],
     });
-    cleanups.push(fixture.cleanup);
-    const agentPath = join(fixture.recipeDir, "agents", "agent.yaml");
-    writeFileSync(
-      agentPath,
-      readFileSync(agentPath, "utf8").replace(
-        "anthropic/claude-sonnet-4-5",
-        "faux/faux-1",
-      ),
-    );
-    writeFileSync(
-      join(fixture.recipeDir, ".pi-bindings.json"),
-      JSON.stringify({
-        servers: [
-          { id: "hello-mcp", transport: "streamable_http", url: server.url },
-        ],
-      }),
-    );
-    const agentDir = mkdtempSync(join(tmpdir(), "pi-agent-"));
-    cleanups.push(() => rmSync(agentDir, { recursive: true, force: true }));
+    cleanups.push(recipe.cleanup);
+    const hello = await startHelloMcp();
+    cleanups.push(() => hello.close());
+    return { ...recipe, hello };
+  }
 
+  it("registers the Recipe's servers with Pi's MCP support and runs a script", async () => {
+    const { recipeDir, workspaceDir, hello } = await fixture("codemode", []);
     let output = "";
-    const faux = fauxProvider();
-    faux.setResponses([
-      fauxAssistantMessage(
-        [
-          fauxToolCall("codemode", {
-            code: [
-              `const a = await tools.${ECHO}({ message: "hello from the public MCP" });`,
-              `let hidden = "reachable";`,
-              `try { await tools.${GREETING}({}); } catch { hidden = "unreachable"; }`,
-              `return { echoed: a.content[0].text, hidden };`,
-            ].join("\n"),
-          }),
-        ],
-        { stopReason: "toolUse" },
-      ),
-      (context) => {
-        const result = [...context.messages]
-          .reverse()
-          .find(
-            (message) => (message as { role?: string }).role === "toolResult",
-          ) as { content: Array<{ text?: string }> } | undefined;
-        output =
-          result?.content.map((part) => part.text ?? "").join("\n") ?? "";
-        return fauxAssistantMessage("done");
-      },
-    ]);
-    const credentials = new InMemoryCredentialStore();
-    await credentials.modify("faux", async () => ({
-      type: "api_key",
-      key: "test-key",
-    }));
-    const modelRuntime = await ModelRuntime.create({
-      credentials,
-      modelsPath: null,
-    });
-    modelRuntime.registerNativeProvider(faux.provider);
-
-    const env = {
-      ...cleanEnv(),
-      PI_RECIPE_DIR: fixture.recipeDir,
-      PI_RECIPES_MCP_LOCAL_CONFIG: join(fixture.recipeDir, ".pi-bindings.json"),
-    };
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: fixture.workspaceDir,
-      agentDir,
-      noExtensions: true,
-      extensionFactories: [
-        createCodemodeExtension({ models: false }),
-        createToolSearchExtension(),
-        createMcpExtension({ loadConfig: () => ({ servers: [], errors: [] }) }),
-        createRecipesExtension({ env }),
+    const session = await openPiCliSession({
+      recipeDir,
+      workspaceDir,
+      bindings: [{ id: "hello-mcp", url: hello.url }],
+      cleanups,
+      responses: [
+        fauxAssistantMessage(
+          [
+            fauxToolCall("codemode", {
+              code: [
+                `const a = await tools.${ECHO}({ message: "hello from the public MCP" });`,
+                `let hidden = "reachable";`,
+                `try { await tools.${GREETING}({}); } catch { hidden = "unreachable"; }`,
+                `return { echoed: a.content[0].text, hidden };`,
+              ].join("\n"),
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
       ],
     });
-    await resourceLoader.reload();
-    const { session } = await createAgentSession({
-      cwd: fixture.workspaceDir,
-      agentDir,
-      model: faux.getModel(),
-      modelRuntime,
-      resourceLoader,
-      settingsManager: SettingsManager.inMemory(),
-      sessionManager: SessionManager.inMemory(),
-    });
-    cleanups.push(() => (session as AgentSession).dispose());
-    await session.bindExtensions({});
 
     expect(session.getActiveToolNames()).toContain("codemode");
     expect(session.getActiveToolNames()).not.toContain(ECHO);
@@ -155,8 +88,66 @@ describe("Pi extension MCP codemode", () => {
 
     expect(output).toContain('"echoed":"Echo: hello from the public MCP"');
     expect(output).toContain('"hidden":"unreachable"');
-    expect(server.calls).toEqual([
+    expect(hello.calls).toEqual([
       { name: "echo", arguments: { message: "hello from the public MCP" } },
     ]);
   });
+
+  for (const mode of ["cli", "codemode"]) {
+    it(`keeps a server behind its tool in mode ${mode}`, async () => {
+      const { recipeDir, workspaceDir, hello } = await fixture(
+        mode,
+        ["      behind: [mail]"],
+        ["read", "mail", "other"],
+      );
+      mkdirSync(join(recipeDir, "extensions"));
+      writeFileSync(
+        join(recipeDir, "extensions", "wrappers.ts"),
+        mcpCallingToolsExtension(ECHO, ["mail", "other"]),
+      );
+      const results: string[] = [];
+      let declared = "";
+      const session = await openPiCliSession({
+        recipeDir,
+        workspaceDir,
+        bindings: [{ id: "hello-mcp", url: hello.url }],
+        cleanups,
+        responses: [
+          fauxAssistantMessage([fauxToolCall("mail", { message: "hi" })], {
+            stopReason: "toolUse",
+          }),
+          (context) => {
+            results.push(lastToolResult(context));
+            return fauxAssistantMessage(
+              [fauxToolCall("other", { message: "sneak" })],
+              { stopReason: "toolUse" },
+            );
+          },
+          (context) => {
+            results.push(lastToolResult(context));
+            declared = JSON.stringify(
+              context.messages.filter((message) => message.role === "system"),
+            );
+            return fauxAssistantMessage("done");
+          },
+        ],
+      });
+
+      expect(
+        session.getAllTools().find((tool) => tool.name === ECHO)?.exposure,
+      ).toBe("deferred");
+
+      await session.prompt("go");
+
+      expect(results).toEqual([
+        "Echo: hi",
+        "refused: MCP server 'hello-mcp' is reachable only through the mail tool; call mail instead.",
+      ]);
+      expect(hello.calls).toEqual([
+        { name: "echo", arguments: { message: "hi" } },
+      ]);
+      expect(declared).toContain("mail");
+      expect(declared).not.toContain("hello_mcp");
+    });
+  }
 });

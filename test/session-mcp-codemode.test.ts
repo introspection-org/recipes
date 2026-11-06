@@ -3,11 +3,8 @@ import { join } from "node:path";
 
 import {
   fauxAssistantMessage,
-  fauxProvider,
   fauxToolCall,
-  type FauxProviderHandle,
   type FauxResponseStep,
-  InMemoryCredentialStore,
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -15,31 +12,17 @@ import {
   assertPiSupportsMcpCodemode,
   mcpToolName,
 } from "../src/mcp/pi-client.js";
-import { resolveRecipe } from "../src/recipe/resolve.js";
-import {
-  createAgentSession,
-  type RecipeSessionHandle,
-} from "../src/session.js";
+import { type RecipeSessionHandle } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
 import { startHelloMcp, type HelloMcp } from "./helpers/hello-mcp.js";
+import { lastToolResult, openRecipeSession } from "./helpers/mcp-session.js";
 
 const ECHO = mcpToolName("hello-mcp", "echo");
 const GREETING = mcpToolName("hello-mcp", "get_greeting");
 
-const lastToolResult = (context: { messages: readonly unknown[] }): string => {
-  const message = [...context.messages]
-    .reverse()
-    .find((entry) => (entry as { role?: string }).role === "toolResult") as
-    { content: Array<{ text?: string }> } | undefined;
-  return message
-    ? message.content.map((part) => part.text ?? "").join("\n")
-    : "";
-};
-
 describe("Recipe session MCP codemode on Pi's client", () => {
   const handles: RecipeSessionHandle[] = [];
   const cleanups: Array<() => void | Promise<void>> = [];
-  let faux: FauxProviderHandle;
 
   afterEach(async () => {
     for (const handle of handles.splice(0))
@@ -80,15 +63,6 @@ describe("Recipe session MCP codemode on Pi's client", () => {
       ],
     });
     cleanups.push(fixture.cleanup);
-    // The scripted model stands in for the one the fixture's agent names.
-    const agentPath = join(fixture.recipeDir, "agents", "agent.yaml");
-    writeFileSync(
-      agentPath,
-      readFileSync(agentPath, "utf8").replace(
-        "anthropic/claude-sonnet-4-5",
-        "faux/faux-1",
-      ),
-    );
     if (options.extension) {
       mkdirSync(join(fixture.recipeDir, "extensions"));
       writeFileSync(
@@ -96,31 +70,17 @@ describe("Recipe session MCP codemode on Pi's client", () => {
         options.extension,
       );
     }
-    faux = fauxProvider();
-    faux.setResponses(options.responses ?? []);
-    const model = faux.getModel();
-    const credentials = new InMemoryCredentialStore();
-    await credentials.modify(model.provider, async () => ({
-      type: "api_key",
-      key: "test-key",
-    }));
-    const handle = await createAgentSession({
-      recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
-      cwd: fixture.workspaceDir,
-      env: options.env ?? cleanEnv(),
-      credentials,
-      modelOverride: model,
-      extensionFactories: [(pi) => pi.registerProvider(faux.provider)],
-      mcpBindings: {
-        servers: [
-          {
-            id: "hello-mcp",
-            transport: "streamable_http",
-            url: options.server.url,
-            ...(options.headers ? { headers: options.headers } : {}),
-          },
-        ],
-      },
+    const handle = await openRecipeSession({
+      ...fixture,
+      ...(options.env ? { env: options.env } : {}),
+      ...(options.responses ? { responses: options.responses } : {}),
+      bindings: [
+        {
+          id: "hello-mcp",
+          url: options.server.url,
+          ...(options.headers ? { headers: options.headers } : {}),
+        },
+      ],
     });
     handles.push(handle);
     return { handle, fixture };
