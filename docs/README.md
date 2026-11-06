@@ -6,6 +6,11 @@ A Recipe keeps the agent-owned layer together as inspectable source. Pi runs
 the agent; a compatible host supplies credentials, isolation, persistence,
 task lifecycle, protocols, and deployment.
 
+**Audience: developers.** These pages are for people building Recipes and
+hosts, and the coding agents helping them. Guidance for the model running
+inside a Recipe is a skill, in `skills/`, which the host offers to the agent
+at run time.
+
 ## Start here
 
 | Goal | Document |
