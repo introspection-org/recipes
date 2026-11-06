@@ -339,36 +339,18 @@ export interface MailLabelArgs {
 }
 
 export interface MailSession {
-  search?(
-    args: MailSearchArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailSearchResult>;
-  read?(
-    args: MailReadArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailReadResult>;
-  fetchAttachment?(
-    args: MailFetchAttachmentArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<ProductivityFileContent>;
-  draft?(args: MailDraftArgs, ctx: ProductivityCallContext): Promise<MailDraft>;
-  updateDraft?(
-    args: MailUpdateDraftArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailDraft>;
-  send?(
-    args: MailSendArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailSendResult>;
+  search?: ProductivityMethod<MailSearchArgs, MailSearchResult>;
+  read?: ProductivityMethod<MailReadArgs, MailReadResult>;
+  fetchAttachment?: ProductivityMethod<
+    MailFetchAttachmentArgs,
+    ProductivityFileContent
+  >;
+  draft?: ProductivityMethod<MailDraftArgs, MailDraft>;
+  updateDraft?: ProductivityMethod<MailUpdateDraftArgs, MailDraft>;
+  send?: ProductivityMethod<MailSendArgs, MailSendResult>;
   /** Returns the message as it is after the move; its id may change. */
-  move?(
-    args: MailMoveArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailMessageSummary>;
-  label?(
-    args: MailLabelArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<MailMessageSummary>;
+  move?: ProductivityMethod<MailMoveArgs, MailMessageSummary>;
+  label?: ProductivityMethod<MailLabelArgs, MailMessageSummary>;
 }
 
 // ---------------------------------------------------------------------------
@@ -488,34 +470,13 @@ export interface CalendarCancelArgs {
 }
 
 export interface CalendarSession {
-  list?(
-    args: CalendarListArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<CalendarListResult>;
-  read?(
-    args: CalendarReadArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<CalendarEvent>;
-  freeBusy?(
-    args: CalendarFreeBusyArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<CalendarFreeBusyResult>;
-  create?(
-    args: CalendarCreateArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<CalendarEvent>;
-  update?(
-    args: CalendarUpdateArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<CalendarEvent>;
-  respond?(
-    args: CalendarRespondArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<void>;
-  cancel?(
-    args: CalendarCancelArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<void>;
+  list?: ProductivityMethod<CalendarListArgs, CalendarListResult>;
+  read?: ProductivityMethod<CalendarReadArgs, CalendarEvent>;
+  freeBusy?: ProductivityMethod<CalendarFreeBusyArgs, CalendarFreeBusyResult>;
+  create?: ProductivityMethod<CalendarCreateArgs, CalendarEvent>;
+  update?: ProductivityMethod<CalendarUpdateArgs, CalendarEvent>;
+  respond?: ProductivityMethod<CalendarRespondArgs, void>;
+  cancel?: ProductivityMethod<CalendarCancelArgs, void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -581,22 +542,10 @@ export interface DriveUploadArgs {
 }
 
 export interface DriveSession {
-  search?(
-    args: DriveSearchArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<DriveSearchResult>;
-  read?(
-    args: DriveReadArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<DriveReadResult>;
-  download?(
-    args: DriveDownloadArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<ProductivityFileContent>;
-  upload?(
-    args: DriveUploadArgs,
-    ctx: ProductivityCallContext,
-  ): Promise<DriveFileSummary>;
+  search?: ProductivityMethod<DriveSearchArgs, DriveSearchResult>;
+  read?: ProductivityMethod<DriveReadArgs, DriveReadResult>;
+  download?: ProductivityMethod<DriveDownloadArgs, ProductivityFileContent>;
+  upload?: ProductivityMethod<DriveUploadArgs, DriveFileSummary>;
 }
 
 // ---------------------------------------------------------------------------
@@ -605,6 +554,12 @@ export interface DriveSession {
 export interface ProductivityCallContext {
   readonly signal?: AbortSignal;
 }
+
+/** A session method: one call for one person, aborted with `ctx.signal`. */
+export type ProductivityMethod<A, R> = (
+  args: A,
+  ctx: ProductivityCallContext,
+) => Promise<R>;
 
 /**
  * One person's connection to a provider. Each method is present exactly when

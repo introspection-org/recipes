@@ -1048,15 +1048,7 @@ fn validate_channel_config(value: &JsonValue, package: &Package, ctx: &mut Check
             );
         }
         if let Some(commands) = connector.get("commands") {
-            let valid = commands.as_array().is_some_and(|values| {
-                let mut seen = BTreeSet::new();
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            if unique_names(commands).is_none() {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
                     format!("package.json#pi.channels[{index}].commands must be an array of unique non-empty strings"), Some("use a list of unique command names"));
             }
@@ -1171,23 +1163,17 @@ fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut Che
             );
         }
         if let Some(commands) = declaration.get("commands") {
-            let mut seen = BTreeSet::new();
-            let valid = commands.as_array().is_some_and(|values| {
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            let names = unique_names(commands);
+            if names.is_none() {
                 ctx.error(
                     CODE,
                     PACKAGE_JSON,
                     format!("package.json#pi.documents[{index}].commands must be an array of unique non-empty strings"),
                     Some("use a list of unique command names"),
                 );
-            } else if let Some(unknown) = seen
+            } else if let Some(unknown) = names
                 .iter()
+                .flatten()
                 .find(|command| !DOCUMENT_COMMANDS.contains(command))
             {
                 ctx.error(
@@ -1340,22 +1326,19 @@ fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut 
                     );
                     continue;
                 };
-                let mut seen = BTreeSet::new();
-                let valid = commands.as_array().is_some_and(|values| {
-                    values.iter().all(|value| {
-                        value
-                            .as_str()
-                            .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                    })
-                });
-                if !valid {
+                let names = unique_names(commands);
+                if names.is_none() {
                     ctx.error(
                         CODE,
                         PACKAGE_JSON,
                         format!("package.json#pi.productivity[{index}].tools.{tool} must be an array of unique non-empty strings"),
                         Some("use a list of unique command names"),
                     );
-                } else if let Some(unknown) = seen.iter().find(|command| !known.contains(command)) {
+                } else if let Some(unknown) = names
+                    .iter()
+                    .flatten()
+                    .find(|command| !known.contains(command))
+                {
                     ctx.error(
                         CODE,
                         PACKAGE_JSON,
@@ -4642,6 +4625,20 @@ fn validate_relative_pattern(pattern: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// The strings in `value` when it is an array of unique non-empty strings.
+fn unique_names(value: &JsonValue) -> Option<BTreeSet<&str>> {
+    let mut seen = BTreeSet::new();
+    value
+        .as_array()?
+        .iter()
+        .all(|value| {
+            value
+                .as_str()
+                .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+        })
+        .then_some(seen)
 }
 
 fn string_value(value: Option<&JsonValue>) -> Option<String> {
