@@ -15,7 +15,7 @@ use url::{Host, Url};
 
 use crate::spec::{
     validate_mission_judge as validate_mission_judge_spec, MissionJudgeDefinition,
-    MISSION_JUDGE_TYPE, OFFLINE_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+    MISSION_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
 };
 use crate::{span_from_message, CheckContext};
 
@@ -118,16 +118,21 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
 
     match map.get("type") {
         None => {}
-        Some(kind) if kind == ONLINE_JUDGE_TYPE || kind == OFFLINE_JUDGE_TYPE => {}
+        Some(kind) if kind == ONLINE_JUDGE_TYPE => {}
         Some(kind) if kind == MISSION_JUDGE_TYPE => {
             return validate_mission_judge(path, &content, ctx)
         }
-        Some(_) => {
+        Some(kind) => {
+            let hint = if kind == "offline" {
+                "`offline` is not a judge type: a judge that grades only eval trials belongs to its eval suite (a Vitest `createJudge`, a judge YAML under `evals/vitest/judges/` loaded by path through `recipeJudge`, or a Harbor RewardKit `[judge]` TOML in the task's `tests/`), so move it there"
+            } else {
+                "`online` judges every runtime conversation, `mission` a request a policy route names"
+            };
             ctx.error(
                 "judge.type_invalid",
                 path,
-                "Judge type must be `online` (the default), `offline` or `mission`",
-                Some("`online` judges every runtime conversation, `offline` each eval trial, `mission` a request a policy route names"),
+                "Judge type must be `online` (the default) or `mission`",
+                Some(hint),
             );
             return ValidatedJudge {
                 path: path.to_owned(),
@@ -1258,7 +1263,7 @@ questions:
             ("judges/minimal.yaml", Some(MINIMAL)),
             (
                 "judges/explicit.yaml",
-                Some(&MINIMAL.replace("name: helpful", "type: offline\nname: explicit")),
+                Some(&MINIMAL.replace("name: helpful", "type: online\nname: explicit")),
             ),
             ("judges/booking.yaml", Some(MISSION)),
         ]));
@@ -1297,6 +1302,23 @@ questions:
             Some(&MISSION.replace("type: mission", "type: gate")),
         )]);
         assert_eq!(diagnostics[0].code, "judge.type_invalid");
+    }
+
+    #[test]
+    fn rejects_an_offline_judge_and_points_to_its_eval_suite() {
+        let diagnostics = judge_diagnostics(&[(
+            "judges/explicit.yaml",
+            Some(&MINIMAL.replace("name: helpful", "type: offline\nname: explicit")),
+        )]);
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|d| d.code.as_str())
+                .collect::<Vec<_>>(),
+            ["judge.type_invalid"]
+        );
+        let hint = diagnostics[0].help.as_deref().unwrap_or_default();
+        assert!(hint.contains("eval suite"), "{hint}");
     }
 
     #[test]

@@ -88,10 +88,14 @@ block is rejected.
 `type` says when a judge runs:
 
 - `online`, the default: at the end of every runtime conversation.
-- `offline`: at the end of each eval trial. It has the same shape as `online`.
 - `mission`: on a request leaving the sandbox, which a route in the Recipe's
   `policies/routes.yaml` names. Its answers reach the Recipe's Cedar policy
   before the request is allowed.
+
+An eval-only judge is defined in its eval suite, not in `judges/`: a Vitest
+`createJudge`, or a judge YAML under `evals/vitest/judges/` loaded by path
+through `recipeJudge`; for Harbor, a RewardKit `[judge]` and `[[criterion]]`
+TOML in the task's `tests/`. `type: offline` reports `judge.type_invalid`.
 
 A mission judge asks yes-or-no questions instead of grading against a rubric, and
 the platform chooses the model:
@@ -119,8 +123,8 @@ questions:
   describes both `true` and `false` in non-empty text.
 - `attributes` lists the request attributes the judge sees, and is empty to show
   them all.
-- `on` and `llm` belong to `online` and `offline` judges and are rejected on a
-  mission judge; `questions` and `attributes` are rejected on the others.
+- `on` and `llm` belong to `online` judges and are rejected on a mission
+  judge; `questions` and `attributes` are rejected on online judges.
 
 ### LLM settings
 
@@ -181,4 +185,4 @@ diagnostics use stable `judge.*` codes, Recipe-relative source paths, useful
 help text, and deterministic ordering. YAML syntax failures use
 `judge.yaml_malformed` and include a 1-based source span when the parser
 provides one. An invalid mission judge reports `judge.mission_invalid`, and a
-`type` outside `online`, `offline` and `mission` reports `judge.type_invalid`.
+`type` other than `online` and `mission` reports `judge.type_invalid`.
