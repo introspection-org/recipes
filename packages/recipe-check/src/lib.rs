@@ -1888,18 +1888,18 @@ struct JudgeReference {
     reference: String,
 }
 
-/// `recipeJudge(...)` and `judge_reward(...)` with a literal first argument.
-/// A template literal with `${` and a Python f-string are built at run time
-/// and not matched.
+/// `recipeJudge(...)` and `judge_reward(...)` whose first argument is one
+/// literal and nothing else. A concatenation, a template literal with `${`
+/// and a Python f-string are built at run time and not matched.
 fn judge_reference_patterns() -> &'static (regex::Regex, regex::Regex) {
     static PATTERNS: std::sync::OnceLock<(regex::Regex, regex::Regex)> = std::sync::OnceLock::new();
     PATTERNS.get_or_init(|| {
         let script = regex::Regex::new(
-            r#"(?:^|[^\w$])recipeJudge\s*\(\s*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`([^`$\\]*)`)"#,
+            r#"(?:^|[^\w$])recipeJudge\s*\(\s*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`([^`$\\]*)`)\s*[,)]"#,
         )
         .expect("recipeJudge pattern");
         let python = regex::Regex::new(
-            r#"(?:^|[^\w])judge_reward\s*\(\s*(?:name\s*=\s*)?(?:[rRuU]?"((?:[^"\\\n]|\\.)*)"|[rRuU]?'((?:[^'\\\n]|\\.)*)')"#,
+            r#"(?:^|[^\w])judge_reward\s*\(\s*(?:name\s*=\s*)?(?:[rRuU]?"((?:[^"\\\n]|\\.)*)"|[rRuU]?'((?:[^'\\\n]|\\.)*)')\s*[,)]"#,
         )
         .expect("judge_reward pattern");
         (script, python)
@@ -7637,6 +7637,9 @@ mod tests {
                         "// recipeJudge(\"commented\")\n",
                         "const built = recipeJudge(`${prefix}-judge`);\n",
                         "const variable = recipeJudge(name);\n",
+                        "const joined = recipeJudge(\"help\" + \"ful\");\n",
+                        "const prefixed = recipeJudge('evals/vitest/judges/' + file);\n",
+                        "const subject = recipeJudge(\"helpfull\", (run) => run);\n",
                     ),
                 ),
                 (
@@ -7652,6 +7655,7 @@ mod tests {
                         "typo = judge_reward(name='helpfull')\n",
                         "# judge_reward(\"commented\")\n",
                         "built = judge_reward(f\"{prefix}\")\n",
+                        "joined = judge_reward(\"help\" + suffix)\n",
                     ),
                 ),
                 // A Vitest call in a Harbor task is not a Harbor reference.
@@ -7690,6 +7694,11 @@ mod tests {
                     "evals/vitest/greet.eval.ts".into(),
                     line(6),
                     "'evals/vitest/greet.eval.ts' calls recipeJudge(\"evals/vitest/judges/missing.yaml\"), but 'evals/vitest/judges/missing.yaml' does not exist".into(),
+                ),
+                (
+                    "evals/vitest/greet.eval.ts".into(),
+                    line(14),
+                    "'evals/vitest/greet.eval.ts' calls recipeJudge(\"helpfull\"), but judges/ has no online judge named 'helpfull'".into(),
                 ),
             ]
         );
