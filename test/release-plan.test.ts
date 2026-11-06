@@ -77,6 +77,7 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
       "crate",
       "python",
     ]);
@@ -106,7 +107,7 @@ describe("release plan", () => {
   });
 
   it("finishes companions a failed run left unpublished", async () => {
-    const companions = new Set(["slack", "docx", "pdf"]);
+    const companions = new Set(["slack", "docx", "pdf", "google"]);
     const published = artifacts
       .filter((a) => !companions.has(a.key))
       .flatMap((a) => a.names.map((n) => `${a.registry}:${n}@${a.version}`));
@@ -114,7 +115,7 @@ describe("release plan", () => {
       tags: allTags,
       ...registry(published),
     });
-    expect(toPublish(results)).toEqual(["slack", "docx", "pdf"]);
+    expect(toPublish(results)).toEqual(["slack", "docx", "pdf", "google"]);
   });
 
   it("reruns the root release when one platform binary is missing", async () => {
@@ -211,6 +212,7 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
       "python",
     ]);
     expect(results.find((r) => r.key === "crate")).toMatchObject({

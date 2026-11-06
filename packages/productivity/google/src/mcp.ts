@@ -117,7 +117,12 @@ function mapMcpFailure(
     return mapGoogleError(401, {}, { scope, label });
   }
   if (SdkHttpError.isInstance(error)) {
-    return mapGoogleError(error.status, {}, { scope, label });
+    // MCP's authorization spec answers an insufficient scope with 403.
+    const body =
+      error.status === 403
+        ? { error: { errors: [{ reason: "insufficientPermissions" }] } }
+        : {};
+    return mapGoogleError(error.status, body, { scope, label });
   }
   if (ProtocolError.isInstance(error)) {
     return new GoogleProductivityError(
@@ -136,7 +141,7 @@ function mapMcpFailure(
  * block parsed as JSON, else that text. An `isError` result maps to
  * `provider_error` with the tool's own message, cut short.
  */
-export function toolResultData(result: unknown, label: string): unknown {
+function toolResultData(result: unknown, label: string): unknown {
   const value = result as {
     isError?: boolean;
     structuredContent?: unknown;

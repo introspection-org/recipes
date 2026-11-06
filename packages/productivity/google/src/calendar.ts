@@ -65,9 +65,7 @@ export class CalendarClient {
   }
 
   /** `calendarList.list`: the calendars on the person's list, for `calendar` by name. */
-  async listCalendars(
-    signal?: AbortSignal,
-  ): Promise<
+  async listCalendars(signal?: AbortSignal): Promise<
     Array<{
       id: string;
       summary?: string;

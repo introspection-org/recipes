@@ -20,7 +20,7 @@ export function encodeBase64Url(data: Uint8Array | string): string {
 }
 
 /** Decode bytes in a MIME charset, falling back to UTF-8 for one Node does not know. */
-export function decodeCharset(bytes: Uint8Array, charset?: string): string {
+function decodeCharset(bytes: Uint8Array, charset?: string): string {
   const label = (charset ?? "utf-8").trim().replace(/^"|"$/g, "").toLowerCase();
   try {
     return new TextDecoder(label).decode(bytes);
@@ -95,7 +95,7 @@ function headerParameter(
   return match ? (match[2] ?? match[1]) : undefined;
 }
 
-export interface ParsedAttachment {
+interface ParsedAttachment {
   /** Gmail's `partId`; stable across fetches, unlike `attachmentId`. */
   partId: string;
   filename: string;
@@ -199,14 +199,4 @@ export function splitAddresses(value: string | undefined): string[] {
   }
   if (current.trim()) out.push(current.trim());
   return out;
-}
-
-/** Cut text to `limit` characters, saying so rather than cutting silently. */
-export function limitText(
-  text: string,
-  limit: number,
-): { text: string; truncated: boolean; limit_chars: number } {
-  return text.length > limit
-    ? { text: text.slice(0, limit), truncated: true, limit_chars: limit }
-    : { text, truncated: false, limit_chars: limit };
 }

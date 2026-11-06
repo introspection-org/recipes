@@ -103,7 +103,7 @@ export function isTextType(mimeType: string | undefined): boolean {
 }
 
 /** A value inside a Drive query string literal. */
-export function driveQueryLiteral(value: string): string {
+function driveQueryLiteral(value: string): string {
   return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 

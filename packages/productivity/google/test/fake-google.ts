@@ -48,11 +48,15 @@ export function fakeGoogle(
   const calls: RecordedCall[] = [];
   const queues = new Map<number, Response[]>();
   const fetchImpl: GoogleFetch = async (url, init) => {
-    const call = { method: init.method, url: new URL(url), init };
+    const call: RecordedCall = {
+      method: init.method ?? "GET",
+      url: new URL(url),
+      init: init as GoogleRequestInit,
+    };
     calls.push(call);
     const index = routes.findIndex(
       ([method, path]) =>
-        method === init.method && path.test(call.url.pathname),
+        method === call.method && path.test(call.url.pathname),
     );
     if (index < 0) return googleError(404, "notFound");
     const handler = routes[index]![2];

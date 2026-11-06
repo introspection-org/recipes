@@ -18,12 +18,7 @@ import {
   type McpCommand,
   type McpFetch,
 } from "./mcp.js";
-import {
-  type GoogleEndpoints,
-  type GoogleFetch,
-  GoogleTransport,
-  type Sleep,
-} from "./http.js";
+import { type GoogleEndpoints, GoogleTransport, type Sleep } from "./http.js";
 import { GoogleRestBackend } from "./rest.js";
 
 /**
@@ -99,10 +94,18 @@ export interface GoogleSessionOverrides {
   restOnly?: boolean;
 }
 
+/** A tool session with every method present and the call context optional. */
+type CompleteSession<S> = {
+  [K in keyof S]-?: S[K] extends
+    ((args: infer A, ctx: infer C) => infer R) | undefined
+    ? (args: A, ctx?: C) => R
+    : never;
+};
+
 export interface GoogleProductivitySession extends ProductivitySession {
-  readonly mail: Required<MailSession>;
-  readonly calendar: Required<CalendarSession>;
-  readonly drive: Required<DriveSession>;
+  readonly mail: CompleteSession<MailSession>;
+  readonly calendar: CompleteSession<CalendarSession>;
+  readonly drive: CompleteSession<DriveSession>;
   /** Which backend serves each MCP-capable command in this session. */
   readonly backends: Readonly<Partial<Record<McpCommand, "mcp" | "rest">>>;
 }
@@ -132,7 +135,7 @@ export async function createGoogleProductivitySession(
 ): Promise<GoogleProductivitySession> {
   const transport = new GoogleTransport({
     env: options.env,
-    fetchImpl: options.fetch as GoogleFetch | undefined,
+    fetchImpl: options.fetch,
     hostAttachesCredential: options.fetch !== undefined,
     endpoints: overrides.endpoints,
     sleep: overrides.sleep,
@@ -156,7 +159,7 @@ export async function createGoogleProductivitySession(
     ]),
   ) as Record<McpCommand, "mcp" | "rest">;
 
-  const mail: Required<MailSession> = {
+  const mail: CompleteSession<MailSession> = {
     search: async (args, ctx = {}) => {
       const backend = via("mail.search");
       if (!backend) return rest.mail.search(args, ctx);
@@ -226,7 +229,7 @@ export async function createGoogleProductivitySession(
     },
   };
 
-  const calendar: Required<CalendarSession> = {
+  const calendar: CompleteSession<CalendarSession> = {
     list: async (args, ctx = {}) => {
       const backend = via("calendar.list");
       if (!backend) return rest.calendar.list(args, ctx);
@@ -294,7 +297,7 @@ export async function createGoogleProductivitySession(
     },
   };
 
-  const drive: Required<DriveSession> = {
+  const drive: CompleteSession<DriveSession> = {
     search: (args, ctx = {}) => {
       const backend = via("drive.search");
       return backend

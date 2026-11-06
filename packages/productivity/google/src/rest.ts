@@ -101,7 +101,7 @@ function gmailOperand(value: string): string {
 }
 
 /** `Name <a@b>` or `a@b` as an address. */
-export function parseAddress(value: string): ProductivityAddress {
+function parseAddress(value: string): ProductivityAddress {
   const match = /^\s*(?:"?([^"<]*?)"?\s*)?<([^>]+)>\s*$/.exec(value);
   if (match) {
     const name = match[1]?.trim();

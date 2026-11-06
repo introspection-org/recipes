@@ -11,7 +11,7 @@ import {
 import type { GoogleEndpoints } from "../src/index.js";
 
 /** The bearer the package sends behind the egress; the emulator accepts it as the person's token. */
-export const PLACEHOLDER_TOKEN = "introspection-egress";
+const PLACEHOLDER_TOKEN = "introspection-egress";
 export const PERSON = "person@example.com";
 
 /** The env the egress-native placeholder path reads (`packages/channels/slack/src/client.ts`). */

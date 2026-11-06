@@ -23,7 +23,7 @@ const NAMED_ENTITIES: Record<string, string> = {
   zwj: "",
 };
 
-export function decodeEntities(text: string): string {
+function decodeEntities(text: string): string {
   return text.replace(
     /&(#x[0-9a-f]+|#\d+|[a-z]+);/gi,
     (match, entity: string) => {
@@ -66,7 +66,8 @@ const BLOCK_TAGS =
  */
 export function htmlToText(html: string): string {
   let text = html
-    .replace(/[\u0001\u0002]/g, "")
+    .replaceAll(LINK_OPEN, "")
+    .replaceAll(LINK_CLOSE, "")
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(
       /<(script|style|head|title|iframe|object|embed|svg|noscript|template)\b[\s\S]*?<\/\1\s*>/gi,
@@ -100,7 +101,7 @@ export function htmlToText(html: string): string {
     .replaceAll(LINK_CLOSE, ">");
   return text
     .split("\n")
-    .map((line) => line.replace(/[ \t ]+/g, " ").trim())
+    .map((line) => line.replace(/[ \t\u00a0]+/g, " ").trim())
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

@@ -1,16 +1,15 @@
 import { setTimeout as sleepFor } from "node:timers/promises";
 
+import type { ProductivityFetch } from "@introspection-ai/recipes/productivity";
+
 import { GoogleProductivityError } from "./errors.js";
 
 export type GoogleEnvironment = Record<string, string | undefined>;
 
-export interface GoogleHttpResponse {
-  ok: boolean;
-  status: number;
-  headers: { get(name: string): string | null | undefined };
-  text(): Promise<string>;
-  arrayBuffer(): Promise<ArrayBuffer>;
-}
+/** The contract's `ProductivityFetch`: global `fetch`, or a host's request hook. */
+export type GoogleFetch = ProductivityFetch;
+
+export type GoogleHttpResponse = Awaited<ReturnType<ProductivityFetch>>;
 
 export interface GoogleRequestInit {
   method: string;
@@ -19,11 +18,6 @@ export interface GoogleRequestInit {
   redirect?: "error";
   signal?: AbortSignal;
 }
-
-export type GoogleFetch = (
-  url: string,
-  init: GoogleRequestInit,
-) => Promise<GoogleHttpResponse>;
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 
@@ -106,7 +100,7 @@ function egressProxyNative(env: GoogleEnvironment): boolean {
   );
 }
 
-export function retryAfterMs(value: string | null | undefined): number {
+function retryAfterMs(value: string | null | undefined): number {
   if (!value?.trim()) return 0;
   const seconds = Number(value);
   if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);

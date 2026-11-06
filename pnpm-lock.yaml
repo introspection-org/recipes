@@ -94,6 +94,9 @@ importers:
       '@introspection-ai/recipe-documents-pdf':
         specifier: workspace:>=0.2.0
         version: link:packages/documents/pdf
+      '@introspection-ai/recipe-productivity-google':
+        specifier: workspace:>=0.0.0
+        version: link:packages/productivity/google
 
   examples:
     devDependencies:

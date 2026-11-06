@@ -23,7 +23,6 @@ function safeHeaderValue(name: string, value: string): string {
 
 /** RFC 2047 B-encoding for a header value that is not plain ASCII. */
 function encodeHeaderText(value: string): string {
-  // eslint-disable-next-line no-control-regex
   if (/^[\x20-\x7e]*$/.test(value)) return value;
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }

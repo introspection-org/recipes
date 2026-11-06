@@ -55,6 +55,11 @@ export function readArtifacts(repo) {
     npmPackage("slack", "packages/channels/slack", "recipe-channel-slack-v"),
     npmPackage("docx", "packages/documents/docx", "recipe-documents-docx-v"),
     npmPackage("pdf", "packages/documents/pdf", "recipe-documents-pdf-v"),
+    npmPackage(
+      "google",
+      "packages/productivity/google",
+      "recipe-productivity-google-v"
+    ),
     {
       key: "crate",
       version: checker["packages/recipe-check"],
