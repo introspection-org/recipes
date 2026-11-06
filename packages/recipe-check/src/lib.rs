@@ -1350,6 +1350,7 @@ const EVALS_CASE_DUPLICATE: &str = "pi.evals_case_duplicate";
 const EVALS_CASE_UNAPPROVED: &str = "pi.evals_case_unapproved";
 const EVALS_CASE_ROW_MISSING_ID: &str = "pi.evals_case_row_missing_id";
 const EVALS_CASE_INVALID: &str = "pi.evals_case_invalid";
+const EVALS_JUDGE_UNKNOWN: &str = "pi.evals_judge_unknown";
 const EVALS_SHAPE_HELP: &str = "use { suites: [{ type: harbor | vitest, path }], lib, sources, fakes, cases } with package-relative paths";
 const EVALS_PATH_HELP: &str =
     "use a package-relative path with / separators, no '..', and no glob characters";
@@ -1441,6 +1442,7 @@ fn validate_evals_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
     validate_eval_suites(&layout, ctx);
     validate_stray_eval_content(&layout, ctx);
     validate_eval_cases(&layout, ctx);
+    validate_eval_judge_references(&layout, ctx);
 }
 
 fn eval_layout(value: Option<&JsonValue>, ctx: &mut CheckContext) -> Option<EvalLayout> {
@@ -1749,7 +1751,6 @@ fn validate_stray_eval_content(layout: &EvalLayout, ctx: &mut CheckContext) {
 
 /// One runner's implementation of a case: a Vitest row or a Harbor task.
 struct CaseImplementation {
-    kind: EvalSuiteKind,
     case: String,
     /// The file or folder diagnostics point at.
     path: String,
@@ -1759,7 +1760,8 @@ struct CaseImplementation {
 }
 
 /// Link implementations to case files: every implementation names a case
-/// that exists, at most one per runner, and an implemented case is approved.
+/// that exists, a case has one implementation across both runners, and an
+/// implemented case is approved.
 /// All of it warns; a draft case is how the improve loop proposes one.
 fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
     let cases_dir = layout.support_path("cases").unwrap_or("evals/cases");
@@ -1816,19 +1818,14 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
         );
     }
 
-    let mut first: BTreeMap<(String, &'static str), &CaseImplementation> = BTreeMap::new();
+    let mut first: BTreeMap<&str, &CaseImplementation> = BTreeMap::new();
     for implementation in &implementations {
-        let runner = match implementation.kind {
-            EvalSuiteKind::Harbor => "harbor",
-            EvalSuiteKind::Vitest => "vitest",
-        };
-        let key = (implementation.case.clone(), runner);
-        let Some(earlier) = first.get(&key) else {
-            first.insert(key, implementation);
+        let Some(earlier) = first.get(implementation.case.as_str()) else {
+            first.insert(implementation.case.as_str(), implementation);
             continue;
         };
         let message = format!(
-            "case '{}' has a second {runner} implementation: {} repeats {}",
+            "case '{}' has a second implementation: {} repeats {}",
             implementation.case, implementation.label, earlier.label
         );
         ctx.push(
@@ -1837,7 +1834,7 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
             implementation.path.clone(),
             implementation.span,
             message,
-            Some("give a case at most one implementation per runner, or give the second its own case"),
+            Some("give a case one implementation, on one runner: keep one and delete the other, or give the second its own case"),
         );
     }
 
@@ -1878,6 +1875,187 @@ fn validate_eval_cases(layout: &EvalLayout, ctx: &mut CheckContext) {
                 )),
             );
         }
+    }
+}
+
+/// A string-literal judge reference in eval code: `recipeJudge("<name or
+/// path>")` in a Vitest suite or the eval lib, `judge_reward("<name>")` in a
+/// Harbor task's Python.
+struct JudgeReference {
+    path: String,
+    span: Span,
+    call: &'static str,
+    reference: String,
+}
+
+/// `recipeJudge(...)` and `judge_reward(...)` with a literal first argument.
+/// A template literal with `${` and a Python f-string are built at run time
+/// and not matched.
+fn judge_reference_patterns() -> &'static (regex::Regex, regex::Regex) {
+    static PATTERNS: std::sync::OnceLock<(regex::Regex, regex::Regex)> = std::sync::OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        let script = regex::Regex::new(
+            r#"(?:^|[^\w$])recipeJudge\s*\(\s*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`([^`$\\]*)`)"#,
+        )
+        .expect("recipeJudge pattern");
+        let python = regex::Regex::new(
+            r#"(?:^|[^\w])judge_reward\s*\(\s*(?:name\s*=\s*)?(?:[rRuU]?"((?:[^"\\\n]|\\.)*)"|[rRuU]?'((?:[^'\\\n]|\\.)*)')"#,
+        )
+        .expect("judge_reward pattern");
+        (script, python)
+    })
+}
+
+const SCRIPT_EXTENSIONS: [&str; 6] = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
+
+/// Every literal judge reference in the eval code: script files in the Vitest
+/// suites and the eval lib, Python files in the Harbor suites. A line comment
+/// is skipped; anything else that looks like a call is read as one.
+fn eval_judge_references(layout: &EvalLayout, ctx: &CheckContext) -> Vec<JudgeReference> {
+    let mut roots: Vec<(&str, bool)> = layout
+        .suites
+        .iter()
+        .map(|suite| (suite.path.as_str(), suite.kind == EvalSuiteKind::Harbor))
+        .collect();
+    if let Some(lib) = layout.support_path("lib") {
+        roots.push((lib, false));
+    }
+    let (script, python) = judge_reference_patterns();
+    let mut seen = BTreeSet::new();
+    let mut references = Vec::new();
+    for (root, harbor) in roots {
+        let prefix = format!("{root}/");
+        for (path, content) in ctx
+            .files
+            .range(prefix.clone()..)
+            .take_while(|(path, _)| path.starts_with(&prefix))
+        {
+            let (pattern, call, comment) = if harbor && path.ends_with(".py") {
+                (python, "judge_reward", "#")
+            } else if !harbor && SCRIPT_EXTENSIONS.iter().any(|ext| path.ends_with(ext)) {
+                (script, "recipeJudge", "//")
+            } else {
+                continue;
+            };
+            let Some(content) = content.as_deref() else {
+                continue;
+            };
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            for captures in pattern.captures_iter(content) {
+                let Some(literal) = captures.iter().skip(1).flatten().next() else {
+                    continue;
+                };
+                // The match may open on the character before the call.
+                let matched = captures.get(0).map_or(0, |m| m.start());
+                let start = matched + content[matched..].find(call).unwrap_or(0);
+                let line_start = content[..start].rfind('\n').map_or(0, |index| index + 1);
+                let before = content[line_start..start].trim_start();
+                if before.starts_with(comment) || before.starts_with('*') {
+                    continue;
+                }
+                let reference = literal.as_str().trim();
+                if reference.is_empty() || reference.contains('\\') {
+                    continue;
+                }
+                references.push(JudgeReference {
+                    path: path.clone(),
+                    span: Span {
+                        line: content[..start].matches('\n').count() + 1,
+                        column: 1,
+                    },
+                    call,
+                    reference: reference.to_owned(),
+                });
+            }
+        }
+    }
+    references
+}
+
+/// Whether `introspection judges evaluate --judge` reads a reference as a
+/// YAML path rather than a judge name.
+fn judge_reference_is_path(reference: &str) -> bool {
+    let lower = reference.to_ascii_lowercase();
+    reference.starts_with('.')
+        || reference.starts_with('/')
+        || reference.contains('/')
+        || lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+}
+
+/// The `name` of every online judge in `judges/`, or `None` when a judge file
+/// was not supplied or does not parse, since a name could hide there.
+fn online_judge_names(ctx: &CheckContext) -> Option<BTreeSet<String>> {
+    let mut names = BTreeSet::new();
+    for file in ctx.child_files("judges") {
+        let lower = file.to_ascii_lowercase();
+        if !lower.ends_with(".yaml") && !lower.ends_with(".yml") {
+            continue;
+        }
+        let parsed: JsonValue = serde_saphyr::from_str(ctx.content(file)?).ok()?;
+        if parsed.get("type").and_then(JsonValue::as_str) == Some(spec::MISSION_JUDGE_TYPE) {
+            continue;
+        }
+        if let Some(name) = parsed
+            .get("name")
+            .or_else(|| parsed.get("judge"))
+            .and_then(JsonValue::as_str)
+        {
+            names.insert(name.to_owned());
+        }
+    }
+    Some(names)
+}
+
+/// Warn about a literal judge name with no online judge of that name in
+/// `judges/`, and a literal `recipeJudge` YAML path naming no file. Names
+/// built at run time are not seen; review keeps those.
+fn validate_eval_judge_references(layout: &EvalLayout, ctx: &mut CheckContext) {
+    let references = eval_judge_references(layout, ctx);
+    if references.is_empty() {
+        return;
+    }
+    let names = online_judge_names(ctx);
+    for reference in references {
+        let JudgeReference {
+            path,
+            span,
+            call,
+            reference,
+        } = reference;
+        if call == "recipeJudge" && judge_reference_is_path(&reference) {
+            // A path is resolved from the Recipe root, where the eval runs.
+            let relative = normalize_relative(&reference);
+            if reference.starts_with('/')
+                || relative.split('/').any(|segment| segment == "..")
+                || ctx.has_file(&relative)
+            {
+                continue;
+            }
+            ctx.push(
+                EVALS_JUDGE_UNKNOWN,
+                Severity::Warning,
+                path.clone(),
+                Some(span),
+                format!("'{path}' calls recipeJudge(\"{reference}\"), but '{relative}' does not exist"),
+                Some("point recipeJudge at an existing judge YAML (relative to the Recipe root), or pass an online judge's name"),
+            );
+            continue;
+        }
+        let Some(names) = &names else { continue };
+        if names.contains(&reference) {
+            continue;
+        }
+        ctx.push(
+            EVALS_JUDGE_UNKNOWN,
+            Severity::Warning,
+            path.clone(),
+            Some(span),
+            format!("'{path}' calls {call}(\"{reference}\"), but judges/ has no online judge named '{reference}'"),
+            Some("name an online judge defined in judges/, or define the eval's own judge in its suite"),
+        );
     }
 }
 
@@ -1967,7 +2145,6 @@ fn vitest_case_rows(layout: &EvalLayout, ctx: &mut CheckContext) -> Vec<CaseImpl
             let label = format!("row {} of '{file}'", index + 1);
             match row.get("case").and_then(JsonValue::as_str).map(str::trim) {
                 Some(case) if !case.is_empty() => rows.push(CaseImplementation {
-                    kind: EvalSuiteKind::Vitest,
                     case: case.to_owned(),
                     path: file.clone(),
                     span,
@@ -2010,7 +2187,6 @@ fn harbor_case_tasks(layout: &EvalLayout, ctx: &CheckContext) -> Vec<CaseImpleme
                 None => (folder, format!("Harbor task '{task}' (by its folder name)")),
             };
             tasks.push(CaseImplementation {
-                kind: EvalSuiteKind::Harbor,
                 case,
                 path: task.clone(),
                 span: None,
@@ -7069,6 +7245,7 @@ mod tests {
     fn evals_case_linked_layout_is_clean() {
         let c1 = approved("C1");
         let c2 = approved("C2");
+        let c3 = approved("C3");
         let report = cases_report(
             json!({}),
             &[
@@ -7077,9 +7254,10 @@ mod tests {
                     "{\"schema_version\":3,\"case\":\"C1\",\"name\":\"greets\"}\n\n{\"schema_version\":3,\"case\":\"C2\"}\n",
                 ),
                 ("evals/vitest/greet.eval.ts", "export {};\n"),
-                // One implementation per runner: C1 also runs on Harbor.
-                ("evals/harbor/C1/task.toml", HARBOR_TASK_TOML),
+                // One implementation per case: C3 runs on Harbor only.
+                ("evals/harbor/C3/task.toml", HARBOR_TASK_TOML),
                 ("evals/cases/C1.md", &c1),
+                ("evals/cases/C3.md", &c3),
                 ("evals/cases/C2.md", &c2),
                 // A synthetic input beside the case files is not a case.
                 ("evals/cases/inputs/brief.txt", "brief\n"),
@@ -7199,16 +7377,51 @@ mod tests {
             [
                 (
                     "pi.evals_case_duplicate".into(),
+                    "evals/harbor/C1".into(),
+                    "case 'C1' has a second implementation: Harbor task 'evals/harbor/C1' (by its folder name) repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
+                ),
+                (
+                    "pi.evals_case_duplicate".into(),
                     "evals/harbor/c1-again".into(),
-                    "case 'C1' has a second harbor implementation: Harbor task 'evals/harbor/c1-again' ([metadata] case) repeats Harbor task 'evals/harbor/C1' (by its folder name)".into(),
+                    "case 'C1' has a second implementation: Harbor task 'evals/harbor/c1-again' ([metadata] case) repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
                 ),
                 (
                     "pi.evals_case_duplicate".into(),
                     "evals/vitest-slow/b.eval.jsonl".into(),
-                    "case 'C1' has a second vitest implementation: row 1 of 'evals/vitest-slow/b.eval.jsonl' repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
+                    "case 'C1' has a second implementation: row 1 of 'evals/vitest-slow/b.eval.jsonl' repeats row 1 of 'evals/vitest/a.eval.jsonl'".into(),
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn evals_case_on_both_runners_warns() {
+        let c1 = approved("C1");
+        let report = cases_report(
+            json!({}),
+            &[
+                ("evals/vitest/greet.eval.jsonl", "{\"case\":\"C1\"}\n"),
+                ("evals/harbor/C1/task.toml", HARBOR_TASK_TOML),
+                ("evals/cases/C1.md", &c1),
+            ],
+        );
+        assert_eq!(
+            case_diagnostics(&report),
+            [(
+                "pi.evals_case_duplicate".into(),
+                "evals/harbor/C1".into(),
+                "case 'C1' has a second implementation: Harbor task 'evals/harbor/C1' (by its folder name) repeats row 1 of 'evals/vitest/greet.eval.jsonl'".into(),
+            )]
+        );
+        let duplicate = report
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "pi.evals_case_duplicate")
+            .unwrap();
+        assert!(duplicate
+            .help
+            .as_deref()
+            .is_some_and(|help| help.contains("keep one and delete the other")));
     }
 
     #[test]
@@ -7377,6 +7590,143 @@ mod tests {
             .filter_map(|diagnostic| diagnostic.span.map(|span| span.line))
             .collect();
         assert_eq!(lines, [2, 5]);
+    }
+
+    const ONLINE_JUDGE: &str =
+        "name: helpful\ninstructions: Did the assistant answer correctly?\nllm:\n  model: gpt-5\n";
+    const MISSION_JUDGE: &str = "name: booking\ntype: mission\nquestions:\n  requested:\n    instructions: Did the traveller ask for this?\n";
+
+    fn judge_diagnostics(report: &Report) -> Vec<(String, Option<Span>, String)> {
+        let mut found: Vec<(String, Option<Span>, String)> = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "pi.evals_judge_unknown")
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.severity, Severity::Warning, "{diagnostic:?}");
+                (
+                    diagnostic.path.clone(),
+                    diagnostic.span,
+                    diagnostic.message.clone(),
+                )
+            })
+            .collect();
+        found.sort_by(|a, b| (&a.0, a.1.map(|s| s.line)).cmp(&(&b.0, b.1.map(|s| s.line))));
+        found
+    }
+
+    #[test]
+    fn evals_judge_unknown_warns() {
+        let report = cases_report(
+            json!({}),
+            &[
+                ("judges/helpful.yaml", ONLINE_JUDGE),
+                ("judges/booking.yaml", MISSION_JUDGE),
+                (
+                    "evals/vitest/judges/tone.yaml",
+                    ONLINE_JUDGE.replace("helpful", "tone").as_str(),
+                ),
+                (
+                    "evals/vitest/greet.eval.ts",
+                    concat!(
+                        "import { recipeJudge } from '@introspection-ai/vitest-evals';\n",
+                        "const ok = recipeJudge(\"helpful\");\n",
+                        "const typo = recipeJudge('helpfull');\n",
+                        "const mission = recipeJudge(`booking`);\n",
+                        "const file = recipeJudge(\"./evals/vitest/judges/tone.yaml\");\n",
+                        "const gone = recipeJudge(\n  \"evals/vitest/judges/missing.yaml\",\n);\n",
+                        "// recipeJudge(\"commented\")\n",
+                        "const built = recipeJudge(`${prefix}-judge`);\n",
+                        "const variable = recipeJudge(name);\n",
+                    ),
+                ),
+                (
+                    "evals/lib/judges.ts",
+                    "export const j = () => evals.recipeJudge(\"lib-typo\");\n",
+                ),
+                ("evals/harbor/greet/task.toml", HARBOR_TASK_TOML),
+                (
+                    "evals/harbor/greet/tests/test.py",
+                    concat!(
+                        "from introspection_harbor.verifier import judge_reward\n",
+                        "ok = judge_reward(\"helpful\")\n",
+                        "typo = judge_reward(name='helpfull')\n",
+                        "# judge_reward(\"commented\")\n",
+                        "built = judge_reward(f\"{prefix}\")\n",
+                    ),
+                ),
+                // A Vitest call in a Harbor task is not a Harbor reference.
+                (
+                    "evals/harbor/greet/tests/helper.ts",
+                    "recipeJudge(\"nope\");\n",
+                ),
+                ("evals/cases/greet.md", &approved("greet")),
+            ],
+        );
+        let line = |line| Some(Span { line, column: 1 });
+        assert_eq!(
+            judge_diagnostics(&report),
+            [
+                (
+                    "evals/harbor/greet/tests/test.py".into(),
+                    line(3),
+                    "'evals/harbor/greet/tests/test.py' calls judge_reward(\"helpfull\"), but judges/ has no online judge named 'helpfull'".into(),
+                ),
+                (
+                    "evals/lib/judges.ts".into(),
+                    line(1),
+                    "'evals/lib/judges.ts' calls recipeJudge(\"lib-typo\"), but judges/ has no online judge named 'lib-typo'".into(),
+                ),
+                (
+                    "evals/vitest/greet.eval.ts".into(),
+                    line(3),
+                    "'evals/vitest/greet.eval.ts' calls recipeJudge(\"helpfull\"), but judges/ has no online judge named 'helpfull'".into(),
+                ),
+                (
+                    "evals/vitest/greet.eval.ts".into(),
+                    line(4),
+                    "'evals/vitest/greet.eval.ts' calls recipeJudge(\"booking\"), but judges/ has no online judge named 'booking'".into(),
+                ),
+                (
+                    "evals/vitest/greet.eval.ts".into(),
+                    line(6),
+                    "'evals/vitest/greet.eval.ts' calls recipeJudge(\"evals/vitest/judges/missing.yaml\"), but 'evals/vitest/judges/missing.yaml' does not exist".into(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn evals_judge_unknown_skips_unreadable_judges_and_needs_a_declaration() {
+        // A judge file that does not parse could hold the name: no name warning.
+        let input = evals_recipe(
+            Some(json!({})),
+            &[
+                (".recipeignore", "evals/\nfakes/\n"),
+                ("judges/broken.yaml", "name: [\n"),
+                ("evals/vitest/a.eval.ts", "recipeJudge(\"helpful\");\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(!report.valid);
+        assert!(
+            judge_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
+        // No pi.evals: the rule does not run.
+        let input = evals_recipe(
+            None,
+            &[
+                (".recipeignore", "evals/\nfakes/\n"),
+                ("evals/vitest/a.eval.ts", "recipeJudge(\"helpful\");\n"),
+            ],
+        );
+        let report = check_recipe_files(&input);
+        assert!(
+            judge_diagnostics(&report).is_empty(),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]
