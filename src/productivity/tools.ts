@@ -12,6 +12,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
+import { commandParameters } from "../command-parameters.js";
+
 import {
   BODY_LIMIT_CHARS,
   FILE_TEXT_LIMIT_CHARS,
@@ -28,21 +30,32 @@ import {
   PRODUCTIVITY_ERROR_CODES,
   PRODUCTIVITY_SESSION_METHODS,
   PRODUCTIVITY_TOOLS,
-  type CalendarEvent,
-  type CalendarEventSummary,
-  type DriveFileSummary,
-  type MailDraft,
-  type MailMessage,
-  type MailMessageSummary,
-  type ProductivityCallContext,
-  type ProductivityCapabilities,
-  type ProductivityCommand,
-  type ProductivityCommandCapability,
-  type ProductivityEffect,
-  type ProductivityErrorInfo,
-  type ProductivityFileContent,
-  type ProductivitySession,
-  type ProductivityTool,
+} from "./types.js";
+import type {
+  CalendarCancelArgs,
+  CalendarCreateArgs,
+  CalendarEvent,
+  CalendarEventSummary,
+  CalendarListArgs,
+  CalendarRespondArgs,
+  CalendarUpdateArgs,
+  DriveFileSummary,
+  DriveSearchArgs,
+  MailDraft,
+  MailDraftArgs,
+  MailMessage,
+  MailMessageSummary,
+  MailSearchArgs,
+  MailUpdateDraftArgs,
+  ProductivityCallContext,
+  ProductivityCapabilities,
+  ProductivityCommand,
+  ProductivityCommandCapability,
+  ProductivityEffect,
+  ProductivityErrorInfo,
+  ProductivityFileContent,
+  ProductivitySession,
+  ProductivityTool,
 } from "./types.js";
 
 /** The largest file `fetch_attachment`, `download` and `upload` move. */
@@ -344,6 +357,55 @@ const emails = (description: string) =>
   });
 
 /**
+ * When a provider field reaches a result: when truthy, when defined, when a
+ * non-empty array, or as `true` when truthy.
+ */
+type Keep = "truthy" | "defined" | "nonempty" | "flag";
+
+/** The fields of `source` its rules keep, in the rules' order. */
+function kept<T extends object, K extends keyof T>(
+  source: T,
+  rules: { readonly [P in K]: Keep },
+): { [P in K]?: T[P] } {
+  const result: { [P in K]?: T[P] } = {};
+  for (const key of Object.keys(rules) as K[]) {
+    const value = source[key];
+    const rule = rules[key];
+    const keep =
+      rule === "defined"
+        ? value !== undefined
+        : rule === "nonempty"
+          ? Boolean((value as readonly unknown[] | undefined)?.length)
+          : Boolean(value);
+    if (keep) result[key] = (rule === "flag" ? true : value) as T[K];
+  }
+  return result;
+}
+
+/** A validated parameter, passed to the provider as it is. */
+const asIs = <V>(value: unknown): V => value as V;
+
+/**
+ * The provider arguments for the parameters a call passed, each read by its
+ * field's reader, in the readers' order.
+ */
+function given<T>(
+  params: Record<string, unknown>,
+  readers: {
+    readonly [K in keyof T & string]?: (value: unknown, field: K) => T[K];
+  },
+): Partial<T> {
+  const args: Record<string, unknown> = {};
+  for (const [field, read] of Object.entries(readers) as [
+    string,
+    (value: unknown, field: string) => unknown,
+  ][]) {
+    if (params[field] !== undefined) args[field] = read(params[field], field);
+  }
+  return args as Partial<T>;
+}
+
+/**
  * Register `mail`, `calendar` and `drive` for ONE person's connection. Each
  * tool has a `command` discriminator whose schema holds only the commands
  * the provider supports and the Recipe allows; every item is addressed by a
@@ -379,27 +441,36 @@ export function registerProductivityTools(
     await current?.close?.();
   });
 
+  const messageIdentity = (
+    id: string,
+    thread_id: string | undefined,
+  ): MessageIdentity => ({ id, ...(thread_id ? { thread_id } : {}) });
+  const draftIdentity = (draft: MailDraft): MessageIdentity => ({
+    id: draft.message_id ?? draft.id,
+    draft_id: draft.id,
+    ...(draft.thread_id ? { thread_id: draft.thread_id } : {}),
+  });
+  const threadRef = (thread_id: string | undefined) =>
+    thread_id ? { thread: handles.handle("thread", { id: thread_id }) } : {};
   const mailSummary = (message: MailMessageSummary) => ({
-    message: handles.handle("message", {
-      id: message.id,
-      ...(message.thread_id ? { thread_id: message.thread_id } : {}),
+    message: handles.handle(
+      "message",
+      messageIdentity(message.id, message.thread_id),
+    ),
+    ...threadRef(message.thread_id),
+    ...kept(message, {
+      from: "truthy",
+      to: "truthy",
+      cc: "nonempty",
+      subject: "defined",
+      snippet: "truthy",
+      sent_at: "truthy",
+      unread: "defined",
+      has_attachments: "defined",
+      labels: "nonempty",
+      folder: "truthy",
+      is_draft: "flag",
     }),
-    ...(message.thread_id
-      ? { thread: handles.handle("thread", { id: message.thread_id }) }
-      : {}),
-    ...(message.from ? { from: message.from } : {}),
-    ...(message.to ? { to: message.to } : {}),
-    ...(message.cc?.length ? { cc: message.cc } : {}),
-    ...(message.subject !== undefined ? { subject: message.subject } : {}),
-    ...(message.snippet ? { snippet: message.snippet } : {}),
-    ...(message.sent_at ? { sent_at: message.sent_at } : {}),
-    ...(message.unread !== undefined ? { unread: message.unread } : {}),
-    ...(message.has_attachments !== undefined
-      ? { has_attachments: message.has_attachments }
-      : {}),
-    ...(message.labels?.length ? { labels: message.labels } : {}),
-    ...(message.folder ? { folder: message.folder } : {}),
-    ...(message.is_draft ? { is_draft: true } : {}),
   });
   const mailMessage = (message: MailMessage) => {
     const summary = mailSummary(message);
@@ -415,28 +486,19 @@ export function registerProductivityTools(
           name: attachment.name,
         }),
         name: attachment.name,
-        ...(attachment.mime_type ? { mime_type: attachment.mime_type } : {}),
-        ...(attachment.size !== undefined ? { size: attachment.size } : {}),
-        ...(attachment.inline ? { inline: true } : {}),
+        ...kept(attachment, {
+          mime_type: "truthy",
+          size: "defined",
+          inline: "flag",
+        }),
       })),
     };
   };
-  const draftResult = (draft: MailDraft) => {
-    const identity: MessageIdentity = {
-      id: draft.message_id ?? draft.id,
-      draft_id: draft.id,
-      ...(draft.thread_id ? { thread_id: draft.thread_id } : {}),
-    };
-    return {
-      draft: handles.handle("message", identity),
-      ...(draft.thread_id
-        ? { thread: handles.handle("thread", { id: draft.thread_id }) }
-        : {}),
-      ...(draft.to ? { to: draft.to } : {}),
-      ...(draft.cc?.length ? { cc: draft.cc } : {}),
-      ...(draft.subject !== undefined ? { subject: draft.subject } : {}),
-    };
-  };
+  const draftResult = (draft: MailDraft) => ({
+    draft: handles.handle("message", draftIdentity(draft)),
+    ...threadRef(draft.thread_id),
+    ...kept(draft, { to: "truthy", cc: "nonempty", subject: "defined" }),
+  });
   const sessionDraft = (handle: unknown) => {
     const identity = handles.resolve("message", handle);
     if (!identity.draft_id)
@@ -447,41 +509,41 @@ export function registerProductivityTools(
   };
   const eventSummary = (event: CalendarEventSummary) => ({
     event: handles.handle("event", { id: event.id }),
-    ...(event.title !== undefined ? { title: event.title } : {}),
+    ...kept(event, { title: "defined" }),
     start: event.start,
     end: event.end,
     time_zone: event.time_zone,
-    ...(event.all_day ? { all_day: true } : {}),
-    ...(event.location ? { location: event.location } : {}),
-    ...(event.organizer ? { organizer: event.organizer } : {}),
-    ...(event.is_organizer !== undefined
-      ? { is_organizer: event.is_organizer }
-      : {}),
-    ...(event.response ? { response: event.response } : {}),
-    ...(event.cancelled ? { cancelled: true } : {}),
-    ...(event.online_meeting_url
-      ? { online_meeting_url: event.online_meeting_url }
-      : {}),
-    ...(event.web_link ? { web_link: event.web_link } : {}),
+    ...kept(event, {
+      all_day: "flag",
+      location: "truthy",
+      organizer: "truthy",
+      is_organizer: "defined",
+      response: "truthy",
+      cancelled: "flag",
+      online_meeting_url: "truthy",
+      web_link: "truthy",
+    }),
   });
   const eventResult = (event: CalendarEvent) => ({
     ...eventSummary(event),
-    ...(event.attendees ? { attendees: event.attendees } : {}),
+    ...kept(event, { attendees: "truthy" }),
     ...(event.body ? { body: contentText(event.body, BODY_LIMIT_CHARS) } : {}),
   });
   const fileSummary = (file: DriveFileSummary) => ({
     file: handles.handle("file", {
       id: file.id,
-      ...(file.is_folder ? { is_folder: true } : {}),
+      ...kept(file, { is_folder: "flag" }),
     }),
     name: file.name,
-    ...(file.mime_type ? { mime_type: file.mime_type } : {}),
-    ...(file.size !== undefined ? { size: file.size } : {}),
-    ...(file.modified_at ? { modified_at: file.modified_at } : {}),
-    ...(file.modified_by ? { modified_by: file.modified_by } : {}),
-    ...(file.is_folder ? { is_folder: true } : {}),
-    ...(file.native_type ? { native_type: file.native_type } : {}),
-    ...(file.web_url ? { web_url: file.web_url } : {}),
+    ...kept(file, {
+      mime_type: "truthy",
+      size: "defined",
+      modified_at: "truthy",
+      modified_by: "truthy",
+      is_folder: "flag",
+      native_type: "truthy",
+      web_url: "truthy",
+    }),
   });
   const folderId = (handle: unknown): string | undefined => {
     if (handle === undefined) return undefined;
@@ -568,24 +630,14 @@ export function registerProductivityTools(
         async run(params, s, ctx) {
           const result = await s.mail!.search!(
             {
-              ...(params.query !== undefined
-                ? { query: params.query as string }
-                : {}),
-              ...(params.folder !== undefined
-                ? { folder: params.folder as string }
-                : {}),
-              ...(params.from !== undefined
-                ? { from: params.from as string }
-                : {}),
-              ...(params.after !== undefined
-                ? { after: instant(params.after, "after") }
-                : {}),
-              ...(params.before !== undefined
-                ? { before: instant(params.before, "before") }
-                : {}),
-              ...(params.unread !== undefined
-                ? { unread: params.unread as boolean }
-                : {}),
+              ...given<MailSearchArgs>(params, {
+                query: asIs,
+                folder: asIs,
+                from: asIs,
+                after: instant,
+                before: instant,
+                unread: asIs,
+              }),
               ...page("mail", "search", params),
             },
             ctx,
@@ -674,7 +726,7 @@ export function registerProductivityTools(
           const draft = await s.mail!.draft!(
             {
               to: params.to as string[],
-              ...(params.cc !== undefined ? { cc: params.cc as string[] } : {}),
+              ...given<MailDraftArgs>(params, { cc: asIs }),
               subject: params.subject as string,
               body: params.body as string,
               ...(replyTo !== undefined ? { reply_to_id: replyTo } : {}),
@@ -704,22 +756,20 @@ export function registerProductivityTools(
           const updated = await s.mail!.updateDraft!(
             {
               draft_id: draft.draft_id,
-              ...(params.to !== undefined ? { to: params.to as string[] } : {}),
-              ...(params.cc !== undefined ? { cc: params.cc as string[] } : {}),
-              ...(params.subject !== undefined
-                ? { subject: params.subject as string }
-                : {}),
-              ...(params.body !== undefined
-                ? { body: params.body as string }
-                : {}),
+              ...given<MailUpdateDraftArgs>(params, {
+                to: asIs,
+                cc: asIs,
+                subject: asIs,
+                body: asIs,
+              }),
             },
             ctx,
           );
-          handles.rebind("message", params.draft as string, {
-            id: updated.message_id ?? updated.id,
-            draft_id: updated.id,
-            ...(updated.thread_id ? { thread_id: updated.thread_id } : {}),
-          });
+          handles.rebind(
+            "message",
+            params.draft as string,
+            draftIdentity(updated),
+          );
           return { ...draftResult(updated), draft: params.draft };
         },
       },
@@ -740,15 +790,13 @@ export function registerProductivityTools(
             sent: true,
             ...(sent.message_id
               ? {
-                  message: handles.handle("message", {
-                    id: sent.message_id,
-                    ...(sent.thread_id ? { thread_id: sent.thread_id } : {}),
-                  }),
+                  message: handles.handle(
+                    "message",
+                    messageIdentity(sent.message_id, sent.thread_id),
+                  ),
                 }
               : {}),
-            ...(sent.thread_id
-              ? { thread: handles.handle("thread", { id: sent.thread_id }) }
-              : {}),
+            ...threadRef(sent.thread_id),
           };
         },
       },
@@ -774,10 +822,11 @@ export function registerProductivityTools(
             { message_id: message.id, folder: params.folder as string },
             ctx,
           );
-          handles.rebind("message", params.message as string, {
-            id: moved.id,
-            ...(moved.thread_id ? { thread_id: moved.thread_id } : {}),
-          });
+          handles.rebind(
+            "message",
+            params.message as string,
+            messageIdentity(moved.id, moved.thread_id),
+          );
           return { ...mailSummary(moved), message: params.message };
         },
       },
@@ -834,9 +883,7 @@ export function registerProductivityTools(
             {
               from: instant(params.from, "from"),
               to: instant(params.to, "to"),
-              ...(params.calendar !== undefined
-                ? { calendar: params.calendar as string }
-                : {}),
+              ...given<CalendarListArgs>(params, { calendar: asIs }),
               ...page("calendar", "list", params),
             },
             ctx,
@@ -924,18 +971,12 @@ export function registerProductivityTools(
               end: eventTime(params.end, "end", allDay),
               time_zone: timeZone(params.time_zone),
               ...(allDay ? { all_day: true } : {}),
-              ...(params.attendees !== undefined
-                ? { attendees: params.attendees as string[] }
-                : {}),
-              ...(params.location !== undefined
-                ? { location: params.location as string }
-                : {}),
-              ...(params.body !== undefined
-                ? { body: params.body as string }
-                : {}),
-              ...(params.online_meeting !== undefined
-                ? { online_meeting: params.online_meeting as boolean }
-                : {}),
+              ...given<CalendarCreateArgs>(params, {
+                attendees: asIs,
+                location: asIs,
+                body: asIs,
+                online_meeting: asIs,
+              }),
             },
             ctx,
           );
@@ -970,31 +1011,17 @@ export function registerProductivityTools(
           const updated = await s.calendar!.update!(
             {
               event_id: event.id,
-              ...(params.title !== undefined
-                ? { title: params.title as string }
-                : {}),
-              ...(params.start !== undefined
-                ? { start: eventTime(params.start, "start", allDay) }
-                : {}),
-              ...(params.end !== undefined
-                ? { end: eventTime(params.end, "end", allDay) }
-                : {}),
-              ...(params.time_zone !== undefined
-                ? { time_zone: timeZone(params.time_zone) }
-                : {}),
-              ...(params.all_day !== undefined ? { all_day: allDay } : {}),
-              ...(params.attendees !== undefined
-                ? { attendees: params.attendees as string[] }
-                : {}),
-              ...(params.location !== undefined
-                ? { location: params.location as string }
-                : {}),
-              ...(params.body !== undefined
-                ? { body: params.body as string }
-                : {}),
-              ...(params.online_meeting !== undefined
-                ? { online_meeting: params.online_meeting as boolean }
-                : {}),
+              ...given<CalendarUpdateArgs>(params, {
+                title: asIs,
+                start: (value, field) => eventTime(value, field, allDay),
+                end: (value, field) => eventTime(value, field, allDay),
+                time_zone: timeZone,
+                all_day: () => allDay,
+                attendees: asIs,
+                location: asIs,
+                body: asIs,
+                online_meeting: asIs,
+              }),
             },
             ctx,
           );
@@ -1019,9 +1046,7 @@ export function registerProductivityTools(
             {
               event_id: event.id,
               response: params.response as "accept" | "tentative" | "decline",
-              ...(params.comment !== undefined
-                ? { comment: params.comment as string }
-                : {}),
+              ...given<CalendarRespondArgs>(params, { comment: asIs }),
             },
             ctx,
           );
@@ -1040,9 +1065,7 @@ export function registerProductivityTools(
           await s.calendar!.cancel!(
             {
               event_id: event.id,
-              ...(params.comment !== undefined
-                ? { comment: params.comment as string }
-                : {}),
+              ...given<CalendarCancelArgs>(params, { comment: asIs }),
             },
             ctx,
           );
@@ -1073,14 +1096,7 @@ export function registerProductivityTools(
             {
               query: params.query as string,
               ...(folder !== undefined ? { folder_id: folder } : {}),
-              ...(params.modified_after !== undefined
-                ? {
-                    modified_after: instant(
-                      params.modified_after,
-                      "modified_after",
-                    ),
-                  }
-                : {}),
+              ...given<DriveSearchArgs>(params, { modified_after: instant }),
               ...page("drive", "search", params),
             },
             ctx,
@@ -1112,8 +1128,7 @@ export function registerProductivityTools(
             ...(result.content
               ? { text: contentText(result.content, FILE_TEXT_LIMIT_CHARS) }
               : {}),
-            ...(result.exported_as ? { exported_as: result.exported_as } : {}),
-            ...(result.unavailable ? { unavailable: result.unavailable } : {}),
+            ...kept(result, { exported_as: "truthy", unavailable: "truthy" }),
           };
         },
       },
@@ -1203,24 +1218,9 @@ export function registerProductivityTools(
         ),
       };
     });
-    const fields = new Map<string, TSchema[]>();
-    for (const variant of variants) {
-      for (const [key, schema] of Object.entries(variant.schema.properties)) {
-        fields.set(key, [...(fields.get(key) ?? []), schema]);
-      }
-    }
-    const properties = Object.fromEntries(
-      [...fields].map(([key, schemas]) => [
-        key,
-        key === "command"
-          ? Type.Union(schemas)
-          : Type.Optional(Type.Union(schemas)),
-      ]),
+    const parameters = commandParameters(
+      variants.map((variant) => variant.schema),
     );
-    const parameters = Type.Object(properties, {
-      additionalProperties: false,
-      anyOf: variants.map((variant) => variant.schema),
-    });
     pi.registerTool({
       name: tool,
       label: tool[0]!.toUpperCase() + tool.slice(1),
