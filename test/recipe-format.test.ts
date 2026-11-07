@@ -968,6 +968,7 @@ describe("release train isolation", () => {
         "packages/documents/docx",
         "packages/documents/pdf",
         "packages/productivity/google",
+        "packages/productivity/microsoft",
       ]),
     );
     for (const path of adapters) {
