@@ -59,6 +59,7 @@ import {
   nativeExport,
 } from "./drive.js";
 import { GoogleProductivityError, isSizeLimit } from "./errors.js";
+import { decodeEventId, encodeEventId, PRIMARY_CALENDAR } from "./event-id.js";
 import { GmailClient, type GmailLabel, type GmailMessage } from "./gmail.js";
 import { collectPages, type GoogleTransport } from "./http.js";
 import {
@@ -121,6 +122,20 @@ function sentAt(message: GmailMessage): string | undefined {
   const date = header(message.payload, "Date");
   const ms = date ? Date.parse(date) : Number.NaN;
   return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+}
+
+/**
+ * Who a reply goes to when the draft names no one, as Gmail's Reply does: the
+ * parent's `Reply-To`, else its `From`, or its `To` when the person sent it.
+ */
+function replyRecipients(parent: GmailMessage): string[] {
+  const payload = parent.payload;
+  const replyTo = parent.labelIds?.includes("SENT")
+    ? addresses(header(payload, "To"))
+    : addresses(header(payload, "Reply-To"));
+  const to = replyTo.length ? replyTo : addresses(header(payload, "From"));
+  // Bare addresses: a decoded display name may not be ASCII, which a header cannot carry raw.
+  return to.map((address) => address.email);
 }
 
 function textContent(text: string): ProductivityContent {
@@ -334,6 +349,7 @@ export class GoogleRestMail implements Required<MailSession> {
     let threadId: string | undefined;
     let inReplyTo: { messageId?: string; references?: string } | undefined;
     let subject = args.subject;
+    let to = [...args.to];
     if (args.reply_to_id) {
       const parent = await this.gmail.getMessage(
         args.reply_to_id,
@@ -347,8 +363,11 @@ export class GoogleRestMail implements Required<MailSession> {
       };
       if (!subject.trim())
         subject = replySubject(header(parent.payload, "Subject"));
+      if (to.length === 0) to = replyRecipients(parent);
+      if (to.length === 0)
+        throw invalid("The message has no sender to reply to; pass `to`.");
     }
-    const fields = { to: [...args.to], cc: [...(args.cc ?? [])], subject };
+    const fields = { to, cc: [...(args.cc ?? [])], subject };
     const raw = composeRawMessage({ ...fields, body: args.body, inReplyTo });
     const draft = await this.gmail.createDraft(raw, threadId, ctx.signal);
     return this.draftResult(draft, fields, threadId);
@@ -529,6 +548,7 @@ function attendeeResponse(
 export function eventSummary(
   event: GoogleEvent,
   calendarZone = "UTC",
+  calendarId = PRIMARY_CALENDAR,
 ): CalendarEventSummary {
   const allDay = Boolean(event.start?.date);
   const self = event.attendees?.find((attendee) => attendee.self);
@@ -536,7 +556,7 @@ export function eventSummary(
     (entry) => entry.entryPointType === "video",
   )?.uri;
   return {
-    id: event.id ?? "",
+    id: encodeEventId(calendarId, event.id ?? ""),
     title: event.summary,
     start: (allDay ? event.start?.date : event.start?.dateTime) ?? "",
     end: (allDay ? event.end?.date : event.end?.dateTime) ?? "",
@@ -564,9 +584,10 @@ export function eventSummary(
 export function eventDetail(
   event: GoogleEvent,
   calendarZone?: string,
+  calendarId = PRIMARY_CALENDAR,
 ): CalendarEvent {
   return {
-    ...eventSummary(event, calendarZone),
+    ...eventSummary(event, calendarZone, calendarId),
     attendees: (event.attendees ?? [])
       .filter((attendee) => attendee.email)
       .map((attendee): CalendarAttendee => ({
@@ -599,8 +620,8 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     name: string | undefined,
     signal?: AbortSignal,
   ): Promise<string> {
-    if (!name?.trim() || name.trim().toLowerCase() === "primary")
-      return "primary";
+    if (!name?.trim() || name.trim().toLowerCase() === PRIMARY_CALENDAR)
+      return PRIMARY_CALENDAR;
     const wanted = name.trim().toLowerCase();
     const calendars = await this.calendar.listCalendars(signal);
     const found =
@@ -631,7 +652,7 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
       args.cursor,
     );
     return {
-      events: page.items.map((event) => eventSummary(event, zone)),
+      events: page.items.map((event) => eventSummary(event, zone, calendarId)),
       cursor: page.nextPageToken,
     };
   }
@@ -640,8 +661,11 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     args: CalendarReadArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarEvent> {
+    const { calendarId, eventId } = decodeEventId(args.event_id);
     return eventDetail(
-      await this.calendar.getEvent("primary", args.event_id, ctx.signal),
+      await this.calendar.getEvent(calendarId, eventId, ctx.signal),
+      undefined,
+      calendarId,
     );
   }
 
@@ -726,7 +750,7 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarEvent> {
     const created = await this.calendar.insertEvent(
-      "primary",
+      PRIMARY_CALENDAR,
       this.eventBody(args),
       ctx.signal,
     );
@@ -737,14 +761,15 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     args: CalendarUpdateArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarEvent> {
-    const { event_id: eventId, ...change } = args;
+    const { event_id: id, ...change } = args;
+    const { calendarId, eventId } = decodeEventId(id);
     const updated = await this.calendar.patchEvent(
-      "primary",
+      calendarId,
       eventId,
       this.eventBody(change),
       ctx.signal,
     );
-    return eventDetail(updated, args.time_zone);
+    return eventDetail(updated, args.time_zone, calendarId);
   }
 
   /** Sets the person's own `responseStatus` (and comment) and nothing else. */
@@ -752,11 +777,8 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     args: CalendarRespondArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<void> {
-    const event = await this.calendar.getEvent(
-      "primary",
-      args.event_id,
-      ctx.signal,
-    );
+    const { calendarId, eventId } = decodeEventId(args.event_id);
+    const event = await this.calendar.getEvent(calendarId, eventId, ctx.signal);
     const attendees = event.attendees ?? [];
     if (!attendees.some((attendee) => attendee.self)) {
       throw invalid(
@@ -773,8 +795,8 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
         : attendee,
     );
     await this.calendar.patchEvent(
-      "primary",
-      args.event_id,
+      calendarId,
+      eventId,
       { attendees: updated },
       ctx.signal,
     );
@@ -785,7 +807,8 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     args: CalendarCancelArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<void> {
-    await this.calendar.deleteEvent("primary", args.event_id, ctx.signal);
+    const { calendarId, eventId } = decodeEventId(args.event_id);
+    await this.calendar.deleteEvent(calendarId, eventId, ctx.signal);
   }
 }
 

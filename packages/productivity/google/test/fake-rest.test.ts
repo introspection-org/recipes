@@ -107,6 +107,38 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     );
   });
 
+  it("keeps a listed event's calendar for every later command", async () => {
+    const team = "team#x@group.calendar.google.com";
+    const teamPath = `/calendar/v3/calendars/${encodeURIComponent(team)}/events`;
+    const { backend: b, calls } = await backend([
+      [
+        "GET",
+        /\/users\/me\/calendarList$/,
+        () => json({ items: [{ id: team, summary: "Team" }] }),
+      ],
+      ["GET", /\/events$/, () => json({ items: [EVENT] })],
+      ["GET", /\/events\/e1$/, () => json(EVENT)],
+      ["PATCH", /\/events\/e1$/, () => json(EVENT)],
+      ["DELETE", /\/events\/e1$/, () => new Response(null, { status: 204 })],
+    ]);
+    const listed = await b.calendar.list({
+      from: "2025-11-10T00:00:00Z",
+      to: "2025-11-11T00:00:00Z",
+      calendar: "Team",
+      limit: 10,
+    });
+    const id = listed.events[0]!.id;
+    expect(id).not.toBe("e1");
+    expect((await b.calendar.read({ event_id: id })).id).toBe(id);
+    expect((await b.calendar.update({ event_id: id, title: "x" })).id).toBe(id);
+    await b.calendar.respond({ event_id: id, response: "accept" });
+    await b.calendar.cancel({ event_id: id });
+    expect(calls.slice(1).map((call) => call.url.pathname)).toEqual([
+      teamPath,
+      ...Array<string>(5).fill(`${teamPath}/e1`),
+    ]);
+  });
+
   it("updates only the fields given, notifying attendees", async () => {
     const { backend: b, calls } = await backend([
       [
@@ -431,6 +463,79 @@ describe("mail parsing", () => {
     );
     expect(text).toBe("Hi you\n\n- one\n- two");
   });
+
+  for (const [name, labels, headers, expected] of [
+    [
+      "the parent's Reply-To",
+      ["INBOX"],
+      [
+        { name: "From", value: "Ada <ada@example.com>" },
+        { name: "Reply-To", value: "Lists <list@example.com>" },
+        { name: "To", value: "person@example.com, bob@example.com" },
+      ],
+      "list@example.com",
+    ],
+    [
+      "the parent's From",
+      ["INBOX"],
+      [
+        { name: "From", value: "=?UTF-8?B?w4lsaXNl?= <elise@example.com>" },
+        { name: "To", value: "person@example.com, bob@example.com" },
+      ],
+      "elise@example.com",
+    ],
+    [
+      "the parent's To when the person sent it",
+      ["SENT"],
+      [
+        { name: "From", value: "person@example.com" },
+        { name: "To", value: "Bob <bob@example.com>" },
+      ],
+      "bob@example.com",
+    ],
+  ] as const) {
+    it(`addresses a reply with no recipients to ${name}`, async () => {
+      const { backend: b, calls } = await backend([
+        [
+          "GET",
+          /\/messages\/p1$/,
+          () =>
+            json({
+              id: "p1",
+              threadId: "t1",
+              labelIds: labels,
+              payload: {
+                mimeType: "text/plain",
+                headers: [
+                  ...headers,
+                  { name: "Subject", value: "Plan" },
+                  { name: "Message-ID", value: "<p1@example.com>" },
+                ],
+              },
+            }),
+        ],
+        [
+          "POST",
+          /\/drafts$/,
+          () => json({ id: "d1", message: { id: "m2", threadId: "t1" } }),
+        ],
+      ]);
+      const draft = await b.mail.draft({
+        to: [],
+        subject: "",
+        body: "Thanks",
+        reply_to_id: "p1",
+      });
+      expect(draft.to).toEqual([{ email: expected }]);
+      const raw = new TextDecoder().decode(
+        decodeBase64Url(
+          (bodyJson(calls[1]!) as { message: { raw: string } }).message.raw,
+        ),
+      );
+      expect(raw).toContain(`To: ${expected}\r\n`);
+      expect(raw).toContain("Subject: Re: Plan\r\n");
+    });
+  }
 
   it("composes a draft whose headers cannot be injected", () => {
     const raw = Buffer.from(

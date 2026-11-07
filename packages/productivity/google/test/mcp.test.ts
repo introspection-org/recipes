@@ -363,6 +363,65 @@ describe("MCP request and result shapes (to confirm against the live servers)", 
     });
   });
 
+  it("keeps a listed event's calendar for every later MCP command", async () => {
+    const team = "team@group.calendar.google.com";
+    const event = {
+      id: "e1",
+      summary: "Standup",
+      start: { dateTime: "2025-11-20T09:00:00Z" },
+      end: { dateTime: "2025-11-20T09:15:00Z" },
+    };
+    const pi = fakeTools({
+      mcp__calendar__list_events: structured({ items: [event] }),
+      mcp__calendar__get_event: structured(event),
+      mcp__calendar__update_event: structured(event),
+      mcp__calendar__respond_to_event: structured({}),
+      mcp__calendar__delete_event: structured({}),
+    });
+    const rest = fakeGoogle([
+      [
+        "GET",
+        /\/users\/me\/calendarList$/,
+        () => json({ items: [{ id: team, summary: "Team" }] }),
+      ],
+    ]);
+    const google = await createGoogleProductivitySession(
+      {
+        config: CONFIG,
+        env: { INTROSPECTION_TASK_ID: "task-1" },
+        cwd: process.cwd(),
+        fetch: rest.fetchImpl,
+      },
+      { sleep: recordingSleep().sleep },
+    );
+    const listed = await google.calendar.list(
+      {
+        from: "2025-11-20T00:00:00Z",
+        to: "2025-11-21T00:00:00Z",
+        calendar: "Team",
+        limit: 5,
+      },
+      pi.ctx,
+    );
+    const id = listed.events[0]!.id;
+    expect((await google.calendar.read({ event_id: id }, pi.ctx)).id).toBe(id);
+    await google.calendar.update({ event_id: id, title: "x" }, pi.ctx);
+    await google.calendar.respond({ event_id: id, response: "accept" }, pi.ctx);
+    await google.calendar.cancel({ event_id: id }, pi.ctx);
+    expect(
+      pi.calls.map((call) => [
+        call.arguments.calendarId,
+        call.arguments.eventId,
+      ]),
+    ).toEqual([
+      [team, undefined],
+      [team, "e1"],
+      [team, "e1"],
+      [team, "e1"],
+      [team, "e1"],
+    ]);
+  });
+
   it("labels through MCP with label IDs resolved from names", async () => {
     const { google, ctx, mcp } = await sessionWithRest({
       mcp__gmail__modify_message_labels: structured({ message: MESSAGE }),

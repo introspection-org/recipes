@@ -315,10 +315,15 @@ Excel and PowerPoint files are the same problem.
   kept in angle brackets. An attachment's ID is its `partId`, since Gmail's
   `attachmentId` changes between reads. Draft bodies are sent as
   `text/plain` (the Markdown as written), and a header value containing a
-  line break is refused. `mail move` adds the label and removes `INBOX`;
+  line break is refused. A reply drafted with no `to` goes to the parent's
+  `Reply-To`, else its `From`, or to its `To` when the person sent it, as
+  Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;
   `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.
 - **Calendar.** `calendar` names a calendar by its title on the person's
-  list (`calendarList.list`). `create` and `update` send local times with
+  list (`calendarList.list`). An event listed from another calendar than the
+  primary one carries that calendar in its provider id, so `read`, `update`,
+  `respond` and `cancel` address the calendar it came from (`create` always
+  writes to the primary calendar). `create` and `update` send local times with
   `timeZone`, which Calendar reads in that zone. `respond` patches the
   attendee list with only the person's own `responseStatus` and comment
   changed. `cancel` deletes with `sendUpdates=all`; Google sends attendees

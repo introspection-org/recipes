@@ -15,6 +15,7 @@ import type {
 import type { CalendarEvent as GoogleEvent } from "./calendar.js";
 import { driveSearchQuery, type DriveFile } from "./drive.js";
 import { GoogleProductivityError } from "./errors.js";
+import { decodeEventId, PRIMARY_CALENDAR } from "./event-id.js";
 import type { GmailDraft, GmailMessage } from "./gmail.js";
 import { mapGoogleError } from "./http.js";
 import {
@@ -248,9 +249,7 @@ export class GoogleMcpBackend {
     const messages = list<GmailMessage>(data, ["messages", "items"]);
     return {
       messages: await Promise.all(
-        messages
-          .slice(0, args.limit)
-          .map((message) => this.mailSummary(message, signal)),
+        messages.map((message) => this.mailSummary(message, signal)),
       ),
       cursor: nextToken(data),
     };
@@ -374,27 +373,31 @@ export class GoogleMcpBackend {
     );
     const zone = typeof data.timeZone === "string" ? data.timeZone : undefined;
     return {
-      events: list<GoogleEvent>(data, ["items", "events"])
-        .slice(0, args.limit)
-        .map((event) => eventSummary(event, zone)),
+      events: list<GoogleEvent>(data, ["items", "events"]).map((event) =>
+        eventSummary(event, zone, args.calendarId),
+      ),
       cursor: nextToken(data),
     };
   }
 
   private async calendarEvent(
     command: "calendar.read" | "calendar.create" | "calendar.update",
-    args: Record<string, unknown>,
+    args: { calendarId: string } & Record<string, unknown>,
     scope: string,
     zone: string | undefined,
   ): Promise<CalendarEvent> {
     const data = record(await this.call(command, args, scope), command);
-    return eventDetail((data.event ?? data) as GoogleEvent, zone);
+    return eventDetail(
+      (data.event ?? data) as GoogleEvent,
+      zone,
+      args.calendarId,
+    );
   }
 
-  calendarRead(eventId: string): Promise<CalendarEvent> {
+  calendarRead(id: string): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.read",
-      { calendarId: "primary", eventId },
+      { ...decodeEventId(id) },
       "https://www.googleapis.com/auth/calendar.readonly",
       undefined,
     );
@@ -404,20 +407,20 @@ export class GoogleMcpBackend {
   calendarCreate(event: GoogleEvent, zone: string): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.create",
-      { calendarId: "primary", event, sendUpdates: "all" },
+      { calendarId: PRIMARY_CALENDAR, event, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
       zone,
     );
   }
 
   calendarUpdate(
-    eventId: string,
+    id: string,
     event: GoogleEvent,
     zone: string | undefined,
   ): Promise<CalendarEvent> {
     return this.calendarEvent(
       "calendar.update",
-      { calendarId: "primary", eventId, event, sendUpdates: "all" },
+      { ...decodeEventId(id), event, sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
       zone,
     );
@@ -430,15 +433,15 @@ export class GoogleMcpBackend {
   }): Promise<void> {
     await this.call(
       "calendar.respond",
-      { calendarId: "primary", ...args, sendUpdates: "all" },
+      { ...args, ...decodeEventId(args.eventId), sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
     );
   }
 
-  async calendarCancel(eventId: string): Promise<void> {
+  async calendarCancel(id: string): Promise<void> {
     await this.call(
       "calendar.cancel",
-      { calendarId: "primary", eventId, sendUpdates: "all" },
+      { ...decodeEventId(id), sendUpdates: "all" },
       "https://www.googleapis.com/auth/calendar.events",
     );
   }
@@ -476,11 +479,9 @@ export class GoogleMcpBackend {
       "drive search",
     );
     return {
-      files: list<DriveFile & { title?: string }>(data, ["files", "items"])
-        .slice(0, args.limit)
-        .map((file) =>
-          driveFileSummary({ ...file, name: file.name ?? file.title }),
-        ),
+      files: list<DriveFile & { title?: string }>(data, ["files", "items"]).map(
+        (file) => driveFileSummary({ ...file, name: file.name ?? file.title }),
+      ),
       cursor: nextToken(data),
     };
   }
