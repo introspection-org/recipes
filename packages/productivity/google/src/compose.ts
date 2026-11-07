@@ -7,6 +7,8 @@ export interface ComposedDraft {
   subject: string;
   /** Markdown, sent as the `text/plain` body. */
   body: string;
+  /** Send `body` as `text/html`: an HTML draft's body kept as it was. */
+  html?: boolean;
   /** The message replied to: its `Message-ID` and `References`. */
   inReplyTo?: { messageId?: string; references?: string };
 }
@@ -68,7 +70,7 @@ export function composeRawMessage(draft: ComposedDraft): string {
   }
   lines.push(
     "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
+    `Content-Type: text/${draft.html ? "html" : "plain"}; charset="UTF-8"`,
     "Content-Transfer-Encoding: base64",
     "",
     wrapBase64(draft.body),

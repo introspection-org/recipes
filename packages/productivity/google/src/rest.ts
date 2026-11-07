@@ -197,7 +197,7 @@ export class GoogleRestMail implements Required<MailSession> {
   private async searchQuery(
     args: Omit<MailSearchArgs, "limit">,
     signal?: AbortSignal,
-  ): Promise<{ q?: string; labelIds?: string[] }> {
+  ): Promise<{ q?: string; labelIds?: string[]; includeSpamTrash?: true }> {
     const terms: string[] = [];
     if (args.query?.trim()) terms.push(args.query.trim());
     if (args.from?.trim()) terms.push(`from:${gmailOperand(args.from.trim())}`);
@@ -206,11 +206,16 @@ export class GoogleRestMail implements Required<MailSession> {
       terms.push(`before:${epochSeconds(args.before, "before")}`);
     if (args.unread === true) terms.push("is:unread");
     if (args.unread === false) terms.push("-is:unread");
+    const label = args.folder
+      ? await this.labelId(args.folder, signal)
+      : undefined;
     return {
       q: terms.length ? terms.join(" ") : undefined,
-      labelIds: args.folder
-        ? [await this.labelId(args.folder, signal)]
-        : undefined,
+      labelIds: label ? [label] : undefined,
+      // `messages.list` leaves out spam and trash unless asked.
+      ...(label === "SPAM" || label === "TRASH"
+        ? { includeSpamTrash: true as const }
+        : {}),
     };
   }
 
@@ -242,32 +247,38 @@ export class GoogleRestMail implements Required<MailSession> {
     message: GmailMessage,
     signal?: AbortSignal,
   ): Promise<{ message: MailMessage; unavailable?: string }> {
-    let parsed = parseMailPayload(message.payload);
-    let unavailable: string | undefined;
-    const stored = parsed.part?.body;
-    if (stored?.attachmentId && !stored.data) {
-      if ((stored.size ?? 0) > MAX_STORED_BODY_BYTES) {
-        unavailable = `A message body is larger than ${MAX_STORED_BODY_BYTES / (1024 * 1024)} MB, so it was not read.`;
-      } else {
-        try {
-          stored.data = encodeBase64Url(
-            await this.gmail.getAttachment(
-              message.id,
-              stored.attachmentId,
-              signal,
-            ),
-          );
-          parsed = parseMailPayload(message.payload);
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          unavailable = `A message body could not be read: ${(error as Error).message}`;
-        }
-      }
-    }
+    const { parsed, unavailable } = await this.parse(message, signal);
     return {
       message: await this.mailMessage(message, parsed, signal),
       ...(unavailable ? { unavailable } : {}),
     };
+  }
+
+  /** A message's body and attachments, fetching a body part Gmail stores apart. */
+  private async parse(
+    message: GmailMessage,
+    signal?: AbortSignal,
+  ): Promise<{ parsed: ParsedMailBody; unavailable?: string }> {
+    const parsed = parseMailPayload(message.payload);
+    const stored = parsed.part?.body;
+    if (!stored?.attachmentId || stored.data) return { parsed };
+    if ((stored.size ?? 0) > MAX_STORED_BODY_BYTES)
+      return {
+        parsed,
+        unavailable: `A message body is larger than ${MAX_STORED_BODY_BYTES / (1024 * 1024)} MB, so it was not read.`,
+      };
+    try {
+      stored.data = encodeBase64Url(
+        await this.gmail.getAttachment(message.id, stored.attachmentId, signal),
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return {
+        parsed,
+        unavailable: `A message body could not be read: ${(error as Error).message}`,
+      };
+    }
+    return { parsed: parseMailPayload(message.payload) };
   }
 
   private async mailMessage(
@@ -277,7 +288,7 @@ export class GoogleRestMail implements Required<MailSession> {
   ): Promise<MailMessage> {
     return {
       ...(await this.summary(message, signal)),
-      body: textContent(parsed.text),
+      body: parsed.body,
       attachments: parsed.attachments.map((attachment) => ({
         id: attachment.partId,
         name: attachment.filename,
@@ -291,11 +302,11 @@ export class GoogleRestMail implements Required<MailSession> {
     args: MailSearchArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<MailSearchResult> {
-    const { q, labelIds } = await this.searchQuery(args, ctx.signal);
+    const query = await this.searchQuery(args, ctx.signal);
     const page = await collectPages(
       (pageToken, maxResults) =>
         this.gmail.listMessages(
-          { q, labelIds, maxResults, pageToken },
+          { ...query, maxResults, pageToken },
           ctx.signal,
         ),
       args.limit,
@@ -428,6 +439,17 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
+    let kept: ProductivityContent | undefined;
+    if (args.body === undefined && current.message) {
+      const { parsed, unavailable } = await this.parse(
+        current.message,
+        ctx.signal,
+      );
+      // Writing the draft without its body would erase it.
+      if (unavailable)
+        throw invalid(`${unavailable} The draft was not changed; give body.`);
+      kept = parsed.body;
+    }
     const fields = {
       to: args.to ? [...args.to] : splitAddresses(header(payload, "To")),
       cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
@@ -435,7 +457,8 @@ export class GoogleRestMail implements Required<MailSession> {
     };
     const raw = composeRawMessage({
       ...fields,
-      body: args.body ?? parseMailPayload(payload).text,
+      body: args.body ?? kept?.content ?? "",
+      html: kept?.content_type === "html",
       inReplyTo: {
         messageId: parent,
         // References already ends with the parent, which composing appends again.
@@ -661,7 +684,25 @@ function eventDetail(
 
 /** Google Calendar over REST (`calendar/v3`): every `calendar` command. */
 export class GoogleRestCalendar implements Required<CalendarSession> {
+  private readonly zones = new Map<string, Promise<string | undefined>>();
+
   constructor(readonly calendar: CalendarClient) {}
+
+  /** The zone an event without its own is shown in: its calendar's, as `events.list` gives it. */
+  private zoneFor(
+    calendarId: string,
+    event: GoogleEvent,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    if (event.start?.timeZone) return Promise.resolve(undefined);
+    let zone = this.zones.get(calendarId);
+    if (!zone) {
+      zone = this.calendar.calendarZone(calendarId, signal);
+      zone.catch(() => this.zones.delete(calendarId));
+      this.zones.set(calendarId, zone);
+    }
+    return zone;
+  }
 
   /** A calendar named by its title (or ID) on the person's list; absent means primary. */
   private async calendarId(
@@ -710,9 +751,10 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarEvent> {
     const { calendarId, eventId } = decodeEventId(args.event_id);
+    const event = await this.calendar.getEvent(calendarId, eventId, ctx.signal);
     return eventDetail(
-      await this.calendar.getEvent(calendarId, eventId, ctx.signal),
-      undefined,
+      event,
+      await this.zoneFor(calendarId, event, ctx.signal),
       calendarId,
     );
   }
@@ -817,7 +859,11 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
       this.eventBody(change),
       ctx.signal,
     );
-    return eventDetail(updated, args.time_zone, calendarId);
+    return eventDetail(
+      updated,
+      args.time_zone ?? (await this.zoneFor(calendarId, updated, ctx.signal)),
+      calendarId,
+    );
   }
 
   /** Sets the person's own `responseStatus` (and comment) and nothing else. */

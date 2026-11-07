@@ -6,7 +6,6 @@ import {
   decodeEncodedWords,
   DRIVE_EXPORT_LIMIT_BYTES,
   createGoogleProductivitySession,
-  htmlToText,
   MULTIPART_UPLOAD_LIMIT_BYTES,
   NATIVE_EXPORTS,
   parseMailPayload,
@@ -105,6 +104,46 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     expect(calls[0]!.url.pathname).toBe(
       "/calendar/v3/calendars/primary/events/e1",
     );
+  });
+
+  it("shows an event without its own zone in its calendar's zone, on read as on list", async () => {
+    const team = "team@group.calendar.google.com";
+    const zoneless = {
+      id: "e2",
+      summary: "Standup",
+      start: { dateTime: "2025-11-10T10:00:00+01:00" },
+      end: { dateTime: "2025-11-10T10:15:00+01:00" },
+    };
+    const { backend: b, calls } = await backend([
+      [
+        "GET",
+        /\/users\/me\/calendarList$/,
+        () => json({ items: [{ id: team, summary: "Team" }] }),
+      ],
+      [
+        "GET",
+        /\/events$/,
+        () => json({ items: [zoneless], timeZone: "Europe/Paris" }),
+      ],
+      ["GET", /\/events\/e2$/, () => json(zoneless)],
+      ["GET", /\/calendars\/[^/]+$/, () => json({ timeZone: "Europe/Paris" })],
+    ]);
+    const listed = await b.calendar.list({
+      calendar: "Team",
+      from: "2025-11-10T00:00:00Z",
+      to: "2025-11-11T00:00:00Z",
+      limit: 5,
+    });
+    expect(listed.events[0]!.time_zone).toBe("Europe/Paris");
+    const read = await b.calendar.read({ event_id: listed.events[0]!.id });
+    await b.calendar.read({ event_id: listed.events[0]!.id });
+    expect(read.time_zone).toBe("Europe/Paris");
+    // The calendar's zone is read once per session.
+    expect(
+      calls.filter((call) =>
+        call.url.pathname.endsWith(encodeURIComponent(team)),
+      ).length,
+    ).toBe(1);
   });
 
   it("keeps a listed event's calendar for every later command", async () => {
@@ -445,6 +484,24 @@ describe("mail summaries and stored bodies", () => {
     expect(read.searchParams.get("fields")).not.toContain("data");
   });
 
+  it("asks for spam and trash only when searching either folder", async () => {
+    const { backend: b, calls } = await backend([
+      ["GET", /\/messages$/, () => json({ messages: [] })],
+    ]);
+    for (const folder of ["TRASH", "spam", "INBOX"])
+      await b.mail.search({ query: "x", folder, limit: 5 });
+    expect(
+      calls.map((call) => [
+        call.url.searchParams.get("labelIds"),
+        call.url.searchParams.get("includeSpamTrash"),
+      ]),
+    ).toEqual([
+      ["TRASH", "true"],
+      ["SPAM", "true"],
+      ["INBOX", null],
+    ]);
+  });
+
   const stored = (size: number) => ({
     id: "m2",
     threadId: "t1",
@@ -464,6 +521,47 @@ describe("mail summaries and stored bodies", () => {
     const read = await b.mail.read({ message_id: "m2" });
     expect(read.messages[0]!.body?.content).toBe("hello");
     expect(read.unavailable).toBeUndefined();
+  });
+
+  it("keeps a draft's stored body on an update without body, or refuses the update", async () => {
+    const draft = () =>
+      json({
+        id: "d1",
+        message: {
+          id: "m3",
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "To", value: "a@example.com" },
+              { name: "Subject", value: "Plan" },
+            ],
+            body: { size: 5, attachmentId: "BODY" },
+          },
+        },
+      });
+    const kept = await backend([
+      ["GET", /\/drafts\/d1$/, draft],
+      ["GET", /\/attachments\/BODY$/, () => json({ data: b64("hello") })],
+      ["PUT", /\/drafts\/d1$/, () => json({ id: "d1", message: { id: "m3" } })],
+    ]);
+    await kept.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" });
+    const put = kept.calls.find((call) => call.method === "PUT")!;
+    const raw = new TextDecoder().decode(
+      decodeBase64Url(
+        (bodyJson(put) as { message: { raw: string } }).message.raw,
+      ),
+    );
+    expect(raw).toContain("Subject: Plan v2");
+    expect(raw).toContain(Buffer.from("hello").toString("base64"));
+
+    const failing = await backend([
+      ["GET", /\/drafts\/d1$/, draft],
+      ["GET", /\/attachments\/BODY$/, () => googleError(404, "notFound")],
+    ]);
+    await expect(
+      failing.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(failing.calls.some((call) => call.method === "PUT")).toBe(false);
   });
 
   it("says so when a stored body is too large or cannot be fetched", async () => {
@@ -526,7 +624,10 @@ describe("mail parsing", () => {
     ["an attached message", { mimeType: "message/rfc822" }],
   ] as const) {
     it(`reads the body around ${name}, never the text inside it`, async () => {
-      expect(parseMailPayload(htmlBesideText(enclosing)).text).toBe("body");
+      expect(parseMailPayload(htmlBesideText(enclosing)).body).toEqual({
+        content_type: "html",
+        content: "<p>body</p>",
+      });
       const { backend: b, calls } = await backend([
         [
           "GET",
@@ -553,8 +654,9 @@ describe("mail parsing", () => {
           (bodyJson(calls[1]!) as { message: { raw: string } }).message.raw,
         ),
       );
-      // The body is base64 encoded: "body" is kept, "inner" is not.
-      expect(raw).toContain(Buffer.from("body").toString("base64"));
+      // The body is base64 encoded: the HTML body is kept as HTML, "inner" is not.
+      expect(raw).toContain('Content-Type: text/html; charset="UTF-8"');
+      expect(raw).toContain(Buffer.from("<p>body</p>").toString("base64"));
       expect(raw).not.toContain(Buffer.from("inner").toString("base64"));
     });
   }
@@ -598,9 +700,8 @@ describe("mail parsing", () => {
       ],
     });
     expect(parsed).toEqual({
-      text: "café",
+      body: { content_type: "text", content: "café" },
       part: expect.objectContaining({ partId: "0.1" }),
-      fromHtml: false,
       attachments: [
         {
           partId: "1",
@@ -617,15 +718,6 @@ describe("mail parsing", () => {
       decodeEncodedWords("=?UTF-8?Q?Caf=C3=A9_au_lait?= =?UTF-8?B?4pyT?="),
     ).toBe("Café au lait✓");
     expect(new TextDecoder().decode(decodeBase64Url("aGk_"))).toBe("hi?");
-  });
-
-  it("drops remote content and scripts from HTML", () => {
-    const text = htmlToText(
-      "<html><head><style>p{}</style></head><body><script>x()</script><p>Hi&nbsp;you</p>" +
-        '<img src="https://t.example/p.gif"><iframe src="https://x.example"></iframe>' +
-        "<ul><li>one</li><li>two</li></ul></body></html>",
-    );
-    expect(text).toBe("Hi you\n\n- one\n- two");
   });
 
   for (const [name, labels, headers, expected] of [

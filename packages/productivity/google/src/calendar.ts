@@ -89,6 +89,24 @@ export class CalendarClient {
     return body.items ?? [];
   }
 
+  /** `calendars.get`: the calendar's own time zone. */
+  async calendarZone(
+    calendarId: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    const body = await this.transport.json<{ timeZone?: string }>(
+      `${this.transport.endpoints.calendar}/calendars/${encodeURIComponent(calendarId)}`,
+      {
+        operation: "calendar.calendars.get",
+        template: "/calendar/v3/calendars/{calendarId}",
+        query: { fields: "timeZone" },
+        scope: CALENDAR_SCOPES.read,
+        signal,
+      },
+    );
+    return body.timeZone;
+  }
+
   /** `events.list`, recurring events expanded and ordered by start. */
   async listEvents(
     calendarId: string,

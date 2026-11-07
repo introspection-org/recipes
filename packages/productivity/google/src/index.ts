@@ -22,7 +22,6 @@ export {
 } from "./drive.js";
 export { GoogleProductivityError } from "./errors.js";
 export { GMAIL_SCOPES, GmailClient, type GmailMessage } from "./gmail.js";
-export { htmlToText } from "./html.js";
 export {
   collectPages,
   DRIVE_EXPORT_LIMIT_BYTES,

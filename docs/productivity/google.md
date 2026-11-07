@@ -165,15 +165,16 @@ Excel and PowerPoint files are the same problem.
   `folder` to a label ID. Summaries come from `format=full` reads with a
   `fields` mask that keeps the headers and part structure but no part data
   (`format=metadata` has no parts, so it cannot tell attachments). Bodies
-  are returned as text: the `text/plain` part, else the HTML part converted
-  with images, scripts, styles, frames and embeds dropped and link targets
-  kept in angle brackets. No part inside an attachment or an attached message
+  are the `text/plain` part, else the HTML part, which the host converts to
+  text as it does Microsoft's (`src/productivity/content.ts`). No part inside an attachment or an attached message
   is read as the body. A body part Gmail stores apart (`body.attachmentId`)
   is fetched up to 5 MB; a larger one, or one that cannot be fetched, is
   named in `unavailable`. An attachment's ID is its `partId`, since Gmail's
   `attachmentId` changes between reads. Draft bodies are sent as
-  `text/plain` (the Markdown as written), and a header value containing a
-  line break is refused. A reply drafted with no `to` goes to the parent's
+  `text/plain` (the Markdown as written); `update_draft` without `body` keeps
+  the draft's body (an HTML one as HTML, a stored one fetched) and refuses
+  the update when that body cannot be read. A header value containing a line break is
+  refused. A reply drafted with no `to` goes to the parent's
   `Reply-To`, else its `From`, or to its `To` when the person sent it, as
   Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;
   `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.
@@ -181,7 +182,10 @@ Excel and PowerPoint files are the same problem.
   list (`calendarList.list`). An event listed from another calendar than the
   primary one carries that calendar in its provider id, so `read`, `update`,
   `respond` and `cancel` address the calendar it came from (`create` always
-  writes to the primary calendar). `create` and `update` send local times with
+  writes to the primary calendar). An event without its own zone is shown in
+  its calendar's zone: `list` takes it from `events.list`, and `read` and
+  `update` from `calendars.get`, read once per calendar per session.
+  `create` and `update` send local times with
   `timeZone`, which Calendar reads in that zone. `respond` patches the
   attendee list with only the person's own `responseStatus` and comment
   changed. `cancel` deletes with `sendUpdates=all`; Google sends attendees
