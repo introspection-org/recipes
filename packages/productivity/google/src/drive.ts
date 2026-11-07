@@ -314,7 +314,12 @@ export class DriveClient {
         template: "/upload/drive/v3/files",
         method: "POST",
         query: { uploadType: "resumable", fields: FILE_FIELDS },
-        json: metadata,
+        // Without the type here, Drive stores the file as octet-stream.
+        json: { ...metadata, mimeType: file.mimeType },
+        headers: {
+          "X-Upload-Content-Type": file.mimeType,
+          "X-Upload-Content-Length": String(file.data.byteLength),
+        },
         write: true,
         scope: DRIVE_SCOPES.write,
         signal,

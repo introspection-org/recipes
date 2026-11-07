@@ -405,22 +405,31 @@ describe("drive exports (the emulator has no files.export)", () => {
         () =>
           json({
             id: "new",
-            name: "big.bin",
-            mimeType: "application/octet-stream",
+            name: "big.txt",
+            mimeType: "text/plain",
           }),
       ],
     ]);
     await expect(
       b.drive.upload({
-        name: "big.bin",
-        mime_type: "application/octet-stream",
+        name: "big.txt",
+        mime_type: "text/plain",
         bytes: big,
         folder_id: "f",
       }),
     ).resolves.toMatchObject({ id: "new" });
     expect(calls[0]!.url.searchParams.get("uploadType")).toBe("resumable");
-    expect(bodyJson(calls[0]!)).toEqual({ name: "big.bin", parents: ["f"] });
+    expect(bodyJson(calls[0]!)).toEqual({
+      name: "big.txt",
+      parents: ["f"],
+      mimeType: "text/plain",
+    });
+    expect(calls[0]!.init.headers).toMatchObject({
+      "X-Upload-Content-Type": "text/plain",
+      "X-Upload-Content-Length": String(big.byteLength),
+    });
     expect(calls[1]!.url.toString()).toBe(session);
+    expect(calls[1]!.init.headers["Content-Type"]).toBe("text/plain");
 
     const elsewhere = await backend([
       [
