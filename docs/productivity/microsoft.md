@@ -38,7 +38,7 @@ so nothing extra ships at run time.
 | `mail send` | `POST /me/messages/{id}/send` | `Mail.Send` |
 | `mail move` / `mail label` | `POST /me/messages/{id}/move`, `PATCH` `categories` | `Mail.ReadWrite` |
 | `calendar list` | `GET /me/calendarView?startDateTime=&endDateTime=` | `Calendars.Read` |
-| `calendar free_busy` | `POST /me/calendar/getSchedule` | `Calendars.Read` |
+| `calendar free_busy` | `POST /me/calendar/getSchedule`, 20 addresses per call | `Calendars.Read` |
 | `calendar create` / `update` / `cancel` | `POST /me/events`, `PATCH /me/events/{id}`, `POST /me/events/{id}/cancel` | `Calendars.ReadWrite` |
 | `calendar respond` | `POST /me/events/{id}/accept`, `tentativelyAccept`, `decline` | `Calendars.ReadWrite` |
 | `calendar read` | `GET /me/events/{id}` | `Calendars.Read` |

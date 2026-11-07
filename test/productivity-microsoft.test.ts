@@ -799,6 +799,33 @@ describe("Microsoft productivity provider: calendar", () => {
     ]);
   });
 
+  it("free_busy: asks getSchedule for at most 20 addresses at a time, answering in order", async () => {
+    on("POST", "/me/calendar/getSchedule", (request) => ({
+      json: {
+        value: (json(request).schedules as string[]).map((id) => ({
+          scheduleId: id,
+          scheduleItems: [],
+        })),
+      },
+    }));
+    const attendees = Array.from({ length: 45 }, (_, n) => `p${n}@x.test`);
+    const result = await session().calendar!.freeBusy!(
+      {
+        attendees,
+        from: "2026-03-02T00:00:00Z",
+        to: "2026-03-03T00:00:00Z",
+        time_zone: "UTC",
+      },
+      ctx,
+    );
+    expect(requests.map((request) => json(request).schedules.length)).toEqual([
+      20, 20, 5,
+    ]);
+    expect(result.schedules.map((schedule) => schedule.attendee)).toEqual(
+      attendees,
+    );
+  });
+
   it("free_busy: getSchedule in UTC, answered in the asked zone", async () => {
     on("POST", "/me/calendar/getSchedule", {
       json: {

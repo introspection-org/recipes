@@ -36,6 +36,9 @@ export const SIMPLE_UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 /** Upload session ranges: a multiple of 320 KiB, as Graph requires. */
 export const UPLOAD_CHUNK_BYTES = 320 * 1024 * 32;
 
+/** The most addresses one `getSchedule` call takes. */
+const SCHEDULES_PER_CALL = 20;
+
 const MESSAGE_SELECT =
   "id,conversationId,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,isDraft,hasAttachments,categories";
 const ATTACHMENT_EXPAND =
@@ -852,27 +855,41 @@ export function createMicrosoftSession(
     },
 
     async freeBusy(args, { signal }) {
-      const result = await graph.json<{ value?: GraphScheduleInformation[] }>(
-        {
-          method: "POST",
-          ...route("/me/calendar/getSchedule"),
-          headers: preferZone(args.time_zone),
-          body: {
-            schedules: args.attendees,
-            startTime: { dateTime: utc(args.from), timeZone: "UTC" },
-            endTime: { dateTime: utc(args.to), timeZone: "UTC" },
-            availabilityViewInterval: 30,
+      const answered: { schedule: GraphScheduleInformation; asked: string }[] =
+        [];
+      for (
+        let start = 0;
+        start < args.attendees.length;
+        start += SCHEDULES_PER_CALL
+      ) {
+        const batch = args.attendees.slice(start, start + SCHEDULES_PER_CALL);
+        const result = await graph.json<{
+          value?: GraphScheduleInformation[];
+        }>(
+          {
+            method: "POST",
+            ...route("/me/calendar/getSchedule"),
+            headers: preferZone(args.time_zone),
+            body: {
+              schedules: batch,
+              startTime: { dateTime: utc(args.from), timeZone: "UTC" },
+              endTime: { dateTime: utc(args.to), timeZone: "UTC" },
+              availabilityViewInterval: 30,
+            },
+            scope: MICROSOFT_SCOPES.calendar.free_busy,
+            // getSchedule only reads, so a throttled call may be retried.
+            read: true,
           },
-          scope: MICROSOFT_SCOPES.calendar.free_busy,
-          // getSchedule only reads, so a throttled call may be retried.
-          read: true,
-        },
-        signal,
-      );
+          signal,
+        );
+        (result?.value ?? []).forEach((schedule, index) =>
+          answered.push({ schedule, asked: batch[index] ?? "" }),
+        );
+      }
       return {
         time_zone: args.time_zone,
-        schedules: (result?.value ?? []).map((schedule, index) => ({
-          attendee: schedule.scheduleId ?? args.attendees[index] ?? "",
+        schedules: answered.map(({ schedule, asked }) => ({
+          attendee: schedule.scheduleId ?? asked,
           busy: (schedule.scheduleItems ?? []).flatMap((item) => {
             const status = BUSY[item.status ?? "unknown"];
             if (!status) return [];
