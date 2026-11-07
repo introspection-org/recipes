@@ -1,4 +1,3 @@
-import type { Tracer } from "@opentelemetry/api";
 import type {
   CalendarSession,
   DriveSession,
@@ -8,7 +7,7 @@ import type {
   ProductivitySessionOptions,
 } from "@introspection-ai/recipes/productivity";
 
-import { type GoogleEndpoints, GoogleTransport, type Sleep } from "./http.js";
+import { type GoogleEndpoints, GoogleTransport } from "./http.js";
 import { GoogleRestBackend } from "./rest.js";
 
 /**
@@ -72,12 +71,9 @@ export const GOOGLE_PRODUCTIVITY_CAPABILITIES = {
   },
 } as const satisfies ProductivityCapabilities;
 
-/** What tests and other hosts may override; production needs none of it. */
+/** What tests may override: Google's base URLs, for an emulator or a fake. */
 export interface GoogleSessionOverrides {
   endpoints?: Partial<GoogleEndpoints>;
-  sleep?: Sleep;
-  /** Default: the globally registered tracer; tests record the spans. */
-  tracer?: Tracer;
 }
 
 /** A tool session with every method present and the call context optional. */
@@ -99,15 +95,9 @@ export async function createGoogleProductivitySession(
   options: ProductivitySessionOptions,
   overrides: GoogleSessionOverrides = {},
 ): Promise<GoogleProductivitySession> {
-  const transport = new GoogleTransport({
-    env: options.env,
-    fetchImpl: options.fetch,
-    hostAttachesCredential: options.fetch !== undefined,
-    endpoints: overrides.endpoints,
-    sleep: overrides.sleep,
-    tracer: overrides.tracer,
-  });
-  const rest = new GoogleRestBackend(transport);
+  const rest = new GoogleRestBackend(
+    new GoogleTransport(options.http, overrides.endpoints),
+  );
   return {
     provider: "google",
     mail: {

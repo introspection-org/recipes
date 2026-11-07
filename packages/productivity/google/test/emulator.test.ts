@@ -1,3 +1,4 @@
+import { createProductivityHttp } from "@introspection-ai/recipes/productivity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -159,7 +160,12 @@ beforeAll(async () => {
     ],
   });
   google = await createGoogleProductivitySession(
-    { config: ALL, env: EGRESS_ENV, cwd: process.cwd() },
+    {
+      config: ALL,
+      env: EGRESS_ENV,
+      cwd: process.cwd(),
+      http: createProductivityHttp({ provider: "google", env: EGRESS_ENV }),
+    },
     { endpoints: emulator.endpoints },
   );
 });

@@ -151,9 +151,10 @@ this, as the outbound review in `recipe-crm-agent` does.
 ## Authentication
 
 A provider package holds **no credential**. It calls the provider's API
-(`graph.microsoft.com`, `gmail.googleapis.com`) with a placeholder bearer,
-exactly as the Slack package does (`packages/channels/slack/src/client.ts`),
-and the host replaces it on the way out:
+(`graph.microsoft.com`, `gmail.googleapis.com`) through the host's `http`,
+which sends a placeholder bearer exactly as the Slack package does
+(`packages/channels/slack/src/client.ts`), and the host replaces it on the
+way out:
 
 - **On Introspection**, the egress admits the request only for a host the
   session's connector declares, evaluates the session's policy, and then
@@ -228,9 +229,9 @@ schema and description, so a Recipe never depends on which provider runs.
 
 ## Test productivity Recipes
 
-- **Unit:** each provider package tests its transport against a fake HTTP
-  server, covering paging, `Retry-After`, error mapping and the placeholder
-  credential.
+- **Unit:** the host tests its `http` once (placeholder credential,
+  `Retry-After` and backoff, spans); each provider package tests its own
+  requests, paging and error mapping against a fake HTTP server.
 - **Recipe:** MCP fakes and recorded HTTP fixtures (as `recipe-crm-agent`
   does for its servers) let evals run a Recipe against a known mailbox and
   calendar without a real account.
@@ -251,13 +252,23 @@ channels:
   (`mcp` or `rest`) and an optional one-sentence `note` the host appends to
   the command's description. `mail` also says what `label` and `move` act on
   (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`);
-- `createSession({ config, env, cwd, fetch? })`: returns (or resolves to) a
+- `createSession({ config, env, cwd, http })`: returns (or resolves to) a
   `ProductivitySession` for one person's connection, with a `mail`,
   `calendar` and `drive` object whose methods serve the enabled commands
   (`PRODUCTIVITY_SESSION_METHODS` names them). The host calls it on the first
   command, checks every enabled command is implemented, and calls `close()`
   when the session shuts down. `config` carries the enabled commands per
-  tool; `fetch`, when a host passes one, replaces the global `fetch`.
+  tool. `http` (`ProductivityHttp`) is how the provider sends every request:
+  the host attaches the placeholder credential (none for a request marked
+  `anonymous`, such as a pre-authenticated download URL), records each
+  attempt as a client span named after the request's `template` and
+  `operation` with a JSON answer under `gen_ai.tool.call.result`, and
+  retries a request marked `read` on `429` and `500`, `502`, `503`, `504`
+  (plus what the provider's `throttled` adds), after `Retry-After` or 1, 2
+  and 4 seconds, never waiting more than 30 seconds. A write is sent once.
+  It hands back the final answer, ok or not, with `retryAfterSeconds`; the
+  provider maps a failure to its error. A host with a request hook that
+  attaches the credential passes it to `loadRecipeProductivity` as `fetch`.
 
 A session takes and returns the provider's own ids. The host resolves each
 handle before the call and mints handles for what comes back, so a provider

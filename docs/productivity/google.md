@@ -152,11 +152,11 @@ Excel and PowerPoint files are the same problem.
 
 ## As built
 
-- **Retries.** Reads are retried on `429` and `403` `rateLimitExceeded` /
-  `userRateLimitExceeded` up to four attempts, waiting `Retry-After` or
-  0.5, 1 and 2 seconds, and once on a `5xx`. A wait above 30 seconds comes
-  back as `rate_limited` with `retry_after_seconds`. A write is sent once,
-  even on a rate limit.
+- **Retries.** The host's `http` retries a read
+  ([Write a provider](README.md#write-a-provider)); the package adds `403`
+  `rateLimitExceeded` / `userRateLimitExceeded` as throttled. A rate limit
+  the host stops retrying comes back as `rate_limited` with
+  `retry_after_seconds`. A write is sent once, even on a rate limit.
 - **Errors.** As the table above, plus: `400` is `invalid_request`; `403`
   `exportSizeLimitExceeded` is `invalid_request` stating the 10 MB limit (the
   limit is printed on `files.export` in Drive's discovery document).
@@ -199,20 +199,16 @@ Excel and PowerPoint files are the same problem.
   (`@emulators/google`) where it serves them, and against fakes for the rest
   (`events.get`, `events.patch`, `files.export`, resumable uploads) and for
   error injection.
-- **Telemetry.** Each REST request the package makes (each retried attempt
-  included) is an OpenTelemetry client span on the globally registered
-  tracer (scope `@introspection-ai/recipe-productivity-google`), a child of
-  the tool call's `execute_tool` span. A REST span is named
-  `METHOD /template` after the discovery document's path from the host's
-  root, such as `GET /gmail/v1/users/{userId}/messages/{id}`, and carries
-  `http.request.method`, `server.address`, `server.port`, `url.template`,
-  the discovery method id as `introspection.api.operation_id` (such as
-  `gmail.users.messages.get`), `http.response.status_code`,
-  `http.response.body.size` and `error.type`. A JSON answer up to 256 KiB is
-  recorded under `gen_ai.tool.call.result`, the attribute the tool result
-  itself uses, so the Introspection processor seals it as it seals tool
-  results; bytes are never recorded. No header, path or query is recorded.
-  With no tracer provider registered the spans are no-ops.
+- **Telemetry.** The host's `http` records each request (each retried
+  attempt included) as a client span, a child of the tool call's
+  `execute_tool` span, on the tracer scope
+  `@introspection-ai/recipe-productivity-google`. The package names each
+  request by the discovery document's path from the host's root, such as
+  `GET /gmail/v1/users/{userId}/messages/{id}`, and its method id as
+  `introspection.api.operation_id` (such as `gmail.users.messages.get`). A
+  JSON answer up to 256 KiB is recorded under `gen_ai.tool.call.result`, so
+  the Introspection processor seals it as it seals tool results; bytes,
+  headers, paths and queries never are.
 - **Not yet:** a live-domain test.
 
 Request and response shapes come from Google's discovery documents as

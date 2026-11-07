@@ -1,47 +1,9 @@
-import { setTimeout as sleepFor } from "node:timers/promises";
-
-import type { Tracer } from "@opentelemetry/api";
-import type { ProductivityFetch } from "@introspection-ai/recipes/productivity";
+import type {
+  ProductivityHttp,
+  ProductivityHttpResponse,
+} from "@introspection-ai/recipes/productivity";
 
 import { GoogleProductivityError } from "./errors.js";
-import { defaultTracer, tracedFetch } from "./telemetry.js";
-
-export type GoogleEnvironment = Record<string, string | undefined>;
-
-/** The contract's `ProductivityFetch`: global `fetch`, or a host's request hook. */
-export type GoogleFetch = ProductivityFetch;
-
-export type GoogleHttpResponse = Awaited<ReturnType<ProductivityFetch>>;
-
-export interface GoogleRequestInit {
-  method: string;
-  headers: Record<string, string>;
-  body?: string | Uint8Array;
-  redirect?: "error";
-  signal?: AbortSignal;
-}
-
-export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
-
-export interface GoogleTransportOptions {
-  env?: GoogleEnvironment;
-  fetchImpl?: GoogleFetch;
-  /** Injected so tests do not wait out a backoff. */
-  sleep?: Sleep;
-  /** Attempts for a read that meets a rate limit, the first included. */
-  maxRateLimitAttempts?: number;
-  /** A rate-limit wait longer than this is reported, not slept through. */
-  maxRetryWaitMs?: number;
-  /** Override Google's base URLs, for an emulator or a fake. */
-  endpoints?: Partial<GoogleEndpoints>;
-  /**
-   * The host supplied `fetch` with a request hook that attaches the person's
-   * credential, so the placeholder goes out whatever the environment says.
-   */
-  hostAttachesCredential?: boolean;
-  /** Default: the globally registered tracer; tests record the spans. */
-  tracer?: Tracer;
-}
 
 export interface GoogleRequest {
   /** The method's id in the API's discovery document, such as `gmail.users.messages.get`. */
@@ -82,9 +44,6 @@ export const GOOGLE_ENDPOINTS: GoogleEndpoints = {
   driveUpload: "https://www.googleapis.com/upload/drive/v3",
 };
 
-/** Sent where Google expects a token; the egress replaces it with the person's. */
-const EGRESS_INJECTED_TOKEN = "introspection-egress";
-
 const RATE_LIMIT_REASONS = new Set([
   "rateLimitExceeded",
   "userRateLimitExceeded",
@@ -93,31 +52,6 @@ const SCOPE_REASONS = new Set([
   "insufficientPermissions",
   "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
 ]);
-
-function configured(value: string | undefined): value is string {
-  return Boolean(value && value !== "undefined" && value !== "null");
-}
-
-/**
- * Whether the sandbox reaches Google through the standard env proxy, which
- * attaches the person's token, rather than the provider listener named by
- * INTROSPECTION_EGRESS_URL. The same rule as the Slack package's client.
- */
-function egressProxyNative(env: GoogleEnvironment): boolean {
-  if (env.INTROSPECTION_EGRESS_PROXY_NATIVE?.trim() === "1") return true;
-  return (
-    !configured(env.INTROSPECTION_EGRESS_URL?.trim()) &&
-    configured(env.INTROSPECTION_TASK_ID?.trim())
-  );
-}
-
-function retryAfterMs(value: string | null | undefined): number {
-  if (!value?.trim()) return 0;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
-}
 
 interface GoogleErrorBody {
   error?: {
@@ -214,10 +148,10 @@ function mapGoogleError(
   );
 }
 
-function rateLimited(status: number, reasons: string[]): boolean {
+function rateLimitBody(status: number, body: string): boolean {
   return (
-    status === 429 ||
-    (status === 403 && reasons.some((r) => RATE_LIMIT_REASONS.has(r)))
+    status === 403 &&
+    errorReasons(parseErrorBody(body)).some((r) => RATE_LIMIT_REASONS.has(r))
   );
 }
 
@@ -235,88 +169,22 @@ function withQuery(url: string, query: GoogleRequest["query"]): string {
   return parsed.toString();
 }
 
-/**
- * One person's Google connection, as seen from the sandbox: every request
- * carries a placeholder bearer, and the host's egress attaches the person's
- * token on the way out. The package never holds a credential.
- */
+/** Google's REST APIs over the host's `http`, which sends, traces and retries. */
 export class GoogleTransport {
-  readonly env: GoogleEnvironment;
-  readonly fetchImpl: GoogleFetch;
   readonly endpoints: GoogleEndpoints;
-  private readonly hostAttachesCredential: boolean;
-  private readonly sleep: Sleep;
-  private readonly maxRateLimitAttempts: number;
-  private readonly maxRetryWaitMs: number;
-  private readonly tracer: Tracer;
 
-  constructor(options: GoogleTransportOptions = {}) {
-    this.env = options.env ?? process.env;
-    this.fetchImpl = options.fetchImpl ?? (fetch as unknown as GoogleFetch);
-    this.sleep =
-      options.sleep ??
-      (async (ms, signal) => {
-        await sleepFor(ms, undefined, { signal });
-      });
-    this.maxRateLimitAttempts = options.maxRateLimitAttempts ?? 4;
-    this.maxRetryWaitMs = options.maxRetryWaitMs ?? 30_000;
-    this.endpoints = { ...GOOGLE_ENDPOINTS, ...options.endpoints };
-    this.hostAttachesCredential = options.hostAttachesCredential ?? false;
-    this.tracer = options.tracer ?? defaultTracer();
+  constructor(
+    private readonly http: ProductivityHttp,
+    endpoints: Partial<GoogleEndpoints> = {},
+  ) {
+    this.endpoints = { ...GOOGLE_ENDPOINTS, ...endpoints };
   }
 
-  /**
-   * The `Authorization` value for a request leaving the sandbox: the
-   * placeholder the egress replaces, or the session locator the provider
-   * listener exchanges for the person's token.
-   */
-  authorization(): string {
-    if (this.hostAttachesCredential || egressProxyNative(this.env)) {
-      return `Bearer ${EGRESS_INJECTED_TOKEN}`;
-    }
-    const locator = this.env.INTROSPECTION_TOKEN?.trim();
-    const egressUrl = this.env.INTROSPECTION_EGRESS_URL?.trim();
-    if (!locator || !egressUrl) {
-      throw new Error(
-        "Google productivity tools require the Introspection cloud egress environment. Use introspection dev to test productivity recipes.",
-      );
-    }
-    return `Bearer ${locator}`;
-  }
-
-  /**
-   * Send one request, keeping the provider URL intact so the egress can route
-   * on its authority and select the connector credential.
-   */
-  raw(
+  /** Send a request; a failure is a `GoogleProductivityError`. */
+  async send(
     url: string,
-    init: Omit<GoogleRequestInit, "headers"> & {
-      headers?: Record<string, string>;
-    },
-    request?: Pick<GoogleRequest, "operation" | "template">,
-  ): Promise<GoogleHttpResponse> {
-    return tracedFetch(
-      this.tracer,
-      this.fetchImpl,
-      url,
-      {
-        ...init,
-        redirect: "error",
-        headers: { ...init.headers, Authorization: this.authorization() },
-      },
-      request
-        ? { template: request.template, operation: request.operation }
-        : {},
-    );
-  }
-
-  /**
-   * Send a request, retrying a read on a rate limit (with backoff) and once
-   * on a 5xx; a write is sent once. A failure is a `GoogleProductivityError`.
-   */
-  async send(url: string, request: GoogleRequest): Promise<GoogleHttpResponse> {
-    const target = withQuery(url, request.query);
-    const label = `${request.method ?? "GET"} ${new URL(url).pathname}`;
+    request: GoogleRequest,
+  ): Promise<ProductivityHttpResponse> {
     const headers: Record<string, string> = { ...request.headers };
     let body = request.body;
     if (request.json !== undefined) {
@@ -325,48 +193,30 @@ export class GoogleTransport {
     } else if (request.contentType) {
       headers["Content-Type"] = request.contentType;
     }
-    let serverRetried = false;
-    for (let attempt = 1; ; attempt += 1) {
-      const response = await this.raw(
-        target,
-        {
-          method: request.method ?? "GET",
-          headers,
-          body,
-          signal: request.signal,
-        },
-        request,
-      );
-      if (response.ok) return response;
-      const errorBody = parseErrorBody(await response.text());
-      const reasons = errorReasons(errorBody);
-      const wait = retryAfterMs(response.headers.get("Retry-After"));
-      if (rateLimited(response.status, reasons)) {
-        const delay = Math.max(wait, 500 * 2 ** (attempt - 1));
-        if (
-          request.write ||
-          attempt >= this.maxRateLimitAttempts ||
-          delay > this.maxRetryWaitMs
-        ) {
-          throw mapGoogleError(response.status, errorBody, {
-            scope: request.scope,
-            retryAfter: Math.max(wait, delay),
-            label,
-          });
-        }
-        await this.sleep(delay, request.signal);
-        continue;
-      }
-      if (response.status >= 500 && !request.write && !serverRetried) {
-        serverRetried = true;
-        await this.sleep(Math.max(wait, 500), request.signal);
-        continue;
-      }
-      throw mapGoogleError(response.status, errorBody, {
+    const method = request.method ?? "GET";
+    const response = await this.http({
+      method,
+      url: withQuery(url, request.query),
+      headers,
+      ...(body !== undefined ? { body } : {}),
+      ...(request.signal ? { signal: request.signal } : {}),
+      template: request.template,
+      operation: request.operation,
+      read: !request.write,
+      throttled: rateLimitBody,
+    });
+    if (response.ok) return response;
+    throw mapGoogleError(
+      response.status,
+      parseErrorBody(await response.text()),
+      {
         scope: request.scope,
-        label,
-      });
-    }
+        label: `${method} ${new URL(url).pathname}`,
+        ...(response.retryAfterSeconds !== undefined
+          ? { retryAfter: response.retryAfterSeconds * 1000 }
+          : {}),
+      },
+    );
   }
 
   async json<T>(url: string, request: GoogleRequest): Promise<T> {

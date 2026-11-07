@@ -13,7 +13,7 @@ import googleProductivityModule, {
   createGoogleProductivitySession,
   GoogleProductivityError,
 } from "../src/index.js";
-import { fakeGoogle } from "./fake-google.js";
+import { fakeGoogle, fakeHttp } from "./fake-google.js";
 
 describe("the Google productivity module", () => {
   it("is a descriptor the host accepts, on the host's contract version", () => {
@@ -59,7 +59,7 @@ describe("the Google productivity module", () => {
       config: { provider: "google", tools: {} },
       env: { INTROSPECTION_TASK_ID: "t" },
       cwd: process.cwd(),
-      fetch: fakeGoogle([]).fetchImpl,
+      http: fakeHttp(fakeGoogle([]).fetchImpl),
     });
     expect(session.provider).toBe("google");
     for (const tool of PRODUCTIVITY_TOOLS) {
