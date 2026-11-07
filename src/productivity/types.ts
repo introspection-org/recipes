@@ -213,7 +213,12 @@ export interface ProductivityFileContent {
   readonly bytes: Uint8Array;
 }
 
-/** A page of results. `cursor` is the provider's own; the host wraps it in a handle. */
+/**
+ * A page of results. `cursor` is the provider's own and resumes after the last
+ * item returned; the host wraps it in a handle. A provider may return more
+ * items than `limit` rather than cut a page: the host shows `limit` and serves
+ * the rest from its cursor handle before calling the provider again.
+ */
 export interface ProductivityPage {
   readonly cursor?: string;
 }
@@ -551,8 +556,37 @@ export interface DriveSession {
 // ---------------------------------------------------------------------------
 // Sessions
 
+/** What another tool of the session answered. */
+export interface ProductivityToolCallOutcome {
+  readonly isError: boolean;
+  /** The tool's model-facing content; a failed call's message is its text. */
+  readonly content: readonly {
+    readonly type: string;
+    readonly text?: string;
+  }[];
+  /** The machine-readable result: for an MCP tool on Pi, the whole `CallToolResult`. */
+  readonly structuredContent?: unknown;
+}
+
+/**
+ * The session's other tools, run through the host's tool pipeline (Pi's
+ * `ctx.executeTool`) with its hooks and policy, so a provider reaches a
+ * Recipe's MCP servers through the client the host runs for them.
+ */
+export interface ProductivityToolCaller {
+  /** Whether `name` can be called now. */
+  canCall(name: string): boolean;
+  /** Never rejects for a tool's failure: it comes back as `isError`. */
+  executeTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<ProductivityToolCallOutcome>;
+}
+
 export interface ProductivityCallContext {
   readonly signal?: AbortSignal;
+  /** Absent where the host cannot run another tool from a tool (Pi before `ctx.executeTool`). */
+  readonly tools?: ProductivityToolCaller;
 }
 
 /** A session method: one call for one person, aborted with `ctx.signal`. */

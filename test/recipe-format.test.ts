@@ -967,6 +967,7 @@ describe("release train isolation", () => {
         "packages/channels/slack",
         "packages/documents/docx",
         "packages/documents/pdf",
+        "packages/productivity/google",
         "packages/productivity/microsoft",
       ]),
     );

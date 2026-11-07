@@ -105,6 +105,8 @@ describe("release plan", () => {
         "utf8",
       ),
     ) as Record<string, string>;
+    expect(manifest["packages/productivity/google"]).toBeUndefined();
+    expect(artifacts.map((a) => a.key)).not.toContain("google");
     expect(manifest["packages/productivity/microsoft"]).toBeUndefined();
     expect(artifacts.map((a) => a.key)).not.toContain("microsoft");
   });

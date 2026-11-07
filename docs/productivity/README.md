@@ -151,10 +151,9 @@ this, as the outbound review in `recipe-crm-agent` does.
 ## Authentication
 
 A provider package holds **no credential**. It calls the provider's API
-(`graph.microsoft.com`, `gmail.googleapis.com`, a Google Workspace MCP server)
-with a placeholder bearer, exactly as the Slack package does
-(`packages/channels/slack/src/client.ts`), and the host replaces it on the
-way out:
+(`graph.microsoft.com`, `gmail.googleapis.com`) with a placeholder bearer,
+exactly as the Slack package does (`packages/channels/slack/src/client.ts`),
+and the host replaces it on the way out:
 
 - **On Introspection**, the egress admits the request only for a host the
   session's connector declares, evaluates the session's policy, and then
@@ -165,6 +164,11 @@ way out:
 - **Other hosts** supply the same seam: a request hook that attaches the
   credential for the session's person. A host that cannot keep the
   credential out of the agent's process must not offer these tools.
+
+An MCP server a provider reaches through the session's tools is one of the
+Recipe's MCP servers, so its endpoint and credential come from the Recipe's
+MCP binding ([MCP configuration](../mcp-configuration.md)), never from the
+provider.
 
 Connecting a person is a host concern. On Introspection, one connector per
 provider holds the OAuth client and scopes (per-product, never the broad
@@ -177,7 +181,7 @@ capability descriptor records the choice so a review can see it:
 
 | Provider | Default backend | Fallback |
 | --- | --- | --- |
-| `google` | Google's Workspace MCP servers (Gmail, Calendar, Drive), through `packages/mcp-client` | Google's REST APIs for a command the MCP servers do not cover |
+| `google` | Google's Workspace MCP servers (Gmail, Calendar, Drive), declared as the Recipe's MCP servers and called through Pi's in-process MCP client | Google's REST APIs for a command the session cannot call over MCP |
 | `microsoft` | Microsoft Graph REST v1.0, through a small client shaped like Slack's | None. Work IQ MCP stays available to a Recipe as an ordinary MCP binding |
 
 Both backends of one provider use the same connection, so a command can move
@@ -223,7 +227,7 @@ schema and description, so a Recipe never depends on which provider runs.
 ## Test productivity Recipes
 
 - **Unit:** each provider package tests its transport against a fake HTTP
-  server (and a fake MCP server for Google's), covering paging,
+  server (and, for Google's MCP tools, a fake `executeTool`), covering paging,
   `Retry-After`, error mapping and the placeholder credential.
 - **Recipe:** MCP fakes and recorded HTTP fixtures (as `recipe-crm-agent`
   does for its servers) let evals run a Recipe against a known mailbox and
@@ -253,6 +257,14 @@ channels:
   when the session shuts down. `config` carries the enabled commands per
   tool; `fetch`, when a host passes one, replaces the global `fetch`.
 
+Each session method takes the call's context, `{ signal?, tools? }`.
+`tools` is the session's other tools, run through the host's tool pipeline
+with its hooks and policy: on Pi it wraps the tool's `ctx.executeTool` and
+`ctx.tools`, and it is absent on a Pi without them. A provider serves a
+command over a Recipe MCP server by calling that server's tool through it
+(`tools.canCall(name)`, then `tools.executeTool(name, args)`, under Pi's
+name `mcp__<server>__<tool>`), and falls back when the tool cannot be called.
+
 A session takes and returns the provider's own ids. The host resolves each
 handle before the call and mints handles for what comes back, so a provider
 never sees or mints one. It returns bodies as `{ content_type, content }`
@@ -271,10 +283,16 @@ Where the host differs from, or settles, the design above:
 - **Handles.** A draft is a `msg_…` handle that remembers the session
   created it; `mail update_draft` and `mail send` take only such a handle,
   and a sent draft's handle stops resolving. Pagination cursors are `cur_…`
-  handles valid only with the same command and arguments. A handle whose item
+  handles valid only with the same command and arguments. A page never holds
+  more than `limit` items: when a provider returns more, the host keeps the
+  rest in the cursor handle and serves them first on the next call, so a
+  provider's cursor never skips an item it returned. A handle whose item
   the provider reports `not_found` is dropped. `mail move` keeps the
   message's handle when the provider gives the moved message a new id.
-- **Arguments.** `mail search` `folder` is a folder (or Gmail label) name.
+- **Arguments.** `mail draft` with `reply_to` may leave `to` empty: the
+  reply then goes to the parent's sender (its `Reply-To`, else `From`), as
+  the provider's own Reply does, never to every recipient.
+  `mail search` `folder` is a folder (or Gmail label) name.
   `drive search` and `drive upload` take `folder` as a folder's `file_…`
   handle. `calendar list` and `calendar free_busy` take absolute RFC 3339
   times with an offset, and `free_busy` takes the `time_zone` of its result.

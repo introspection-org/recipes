@@ -56,6 +56,11 @@ export function readArtifacts(repo) {
     npmPackage("docx", "packages/documents/docx", "recipe-documents-docx-v"),
     npmPackage("pdf", "packages/documents/pdf", "recipe-documents-pdf-v"),
     npmPackage(
+      "google",
+      "packages/productivity/google",
+      "recipe-productivity-google-v"
+    ),
+    npmPackage(
       "microsoft",
       "packages/productivity/microsoft",
       "recipe-productivity-microsoft-v"

@@ -24,6 +24,7 @@ import {
   ProductivityHandleStore,
   type MessageIdentity,
 } from "./handles.js";
+import { collectPage } from "./paging.js";
 import {
   PRODUCTIVITY_COMMAND_EFFECTS,
   PRODUCTIVITY_COMMANDS,
@@ -56,6 +57,8 @@ import type {
   ProductivityFileContent,
   ProductivitySession,
   ProductivityTool,
+  ProductivityToolCallOutcome,
+  ProductivityToolCaller,
 } from "./types.js";
 
 /** The largest file `fetch_attachment`, `download` and `upload` move. */
@@ -559,30 +562,26 @@ export function registerProductivityTools(
     const { cursor: _cursor, limit: _limit, ...rest } = params;
     return JSON.stringify([tool, command, Object.entries(rest).sort()]);
   };
-  const page = (
+  const paged = <T>(
     tool: string,
     command: string,
     params: Record<string, unknown>,
-  ): { limit: number; cursor?: string } => ({
-    limit: (params.limit as number | undefined) ?? DEFAULT_LIMIT,
-    ...(params.cursor !== undefined
-      ? {
-          cursor: handles.resolveCursor(
-            params.cursor as string,
-            scope(tool, command, params),
-          ),
-        }
-      : {}),
-  });
-  const nextCursor = (
-    tool: string,
-    command: string,
-    params: Record<string, unknown>,
-    cursor: string | undefined,
+    fetch: (page: {
+      limit: number;
+      cursor?: string;
+    }) => Promise<{ items: readonly T[]; cursor?: string }>,
   ) =>
-    cursor
-      ? { cursor: handles.cursor(cursor, scope(tool, command, params)) }
-      : {};
+    collectPage(
+      handles,
+      scope(tool, command, params),
+      {
+        limit: (params.limit as number | undefined) ?? DEFAULT_LIMIT,
+        ...(params.cursor !== undefined
+          ? { cursor: params.cursor as string }
+          : {}),
+      },
+      fetch,
+    );
 
   const mail = options.capabilities.mail;
   const labelNoun = mail?.labels === "categories" ? "categories" : "labels";
@@ -628,23 +627,26 @@ export function registerProductivityTools(
           cursor: cursorField,
         }),
         async run(params, s, ctx) {
-          const result = await s.mail!.search!(
-            {
-              ...given<MailSearchArgs>(params, {
-                query: asIs,
-                folder: asIs,
-                from: asIs,
-                after: instant,
-                before: instant,
-                unread: asIs,
-              }),
-              ...page("mail", "search", params),
+          const args = given<MailSearchArgs>(params, {
+            query: asIs,
+            folder: asIs,
+            from: asIs,
+            after: instant,
+            before: instant,
+            unread: asIs,
+          });
+          const { items, cursor } = await paged(
+            "mail",
+            "search",
+            params,
+            async (page) => {
+              const result = await s.mail!.search!({ ...args, ...page }, ctx);
+              return { items: result.messages, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            messages: result.messages.map(mailSummary),
-            ...nextCursor("mail", "search", params, result.cursor),
+            messages: items.map(mailSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },
@@ -879,18 +881,23 @@ export function registerProductivityTools(
           cursor: cursorField,
         }),
         async run(params, s, ctx) {
-          const result = await s.calendar!.list!(
-            {
-              from: instant(params.from, "from"),
-              to: instant(params.to, "to"),
-              ...given<CalendarListArgs>(params, { calendar: asIs }),
-              ...page("calendar", "list", params),
+          const args = {
+            from: instant(params.from, "from"),
+            to: instant(params.to, "to"),
+            ...given<CalendarListArgs>(params, { calendar: asIs }),
+          };
+          const { items, cursor } = await paged(
+            "calendar",
+            "list",
+            params,
+            async (page) => {
+              const result = await s.calendar!.list!({ ...args, ...page }, ctx);
+              return { items: result.events, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            events: result.events.map(eventSummary),
-            ...nextCursor("calendar", "list", params, result.cursor),
+            events: items.map(eventSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },
@@ -1092,18 +1099,23 @@ export function registerProductivityTools(
         }),
         async run(params, s, ctx) {
           const folder = folderId(params.folder);
-          const result = await s.drive!.search!(
-            {
-              query: params.query as string,
-              ...(folder !== undefined ? { folder_id: folder } : {}),
-              ...given<DriveSearchArgs>(params, { modified_after: instant }),
-              ...page("drive", "search", params),
+          const args = {
+            query: params.query as string,
+            ...(folder !== undefined ? { folder_id: folder } : {}),
+            ...given<DriveSearchArgs>(params, { modified_after: instant }),
+          };
+          const { items, cursor } = await paged(
+            "drive",
+            "search",
+            params,
+            async (page) => {
+              const result = await s.drive!.search!({ ...args, ...page }, ctx);
+              return { items: result.files, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            files: result.files.map(fileSummary),
-            ...nextCursor("drive", "search", params, result.cursor),
+            files: items.map(fileSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },
@@ -1235,6 +1247,8 @@ export function registerProductivityTools(
         _toolCallId: string,
         params: { command: string } & Record<string, unknown>,
         signal?: AbortSignal,
+        _onUpdate?: unknown,
+        toolContext?: PiToolContext,
       ) {
         const { command, ...input } = params;
         try {
@@ -1246,8 +1260,12 @@ export function registerProductivityTools(
             definitions[tool] as Record<string, CommandDefinition>
           )[command]!;
           const current = await session();
+          const tools = toolCaller(toolContext);
           return toolResult(
-            await definition.run(input, current, signal ? { signal } : {}),
+            await definition.run(input, current, {
+              ...(signal ? { signal } : {}),
+              ...(tools ? { tools } : {}),
+            }),
           );
         } catch (error) {
           if (signal?.aborted) throw error;
@@ -1258,6 +1276,42 @@ export function registerProductivityTools(
       },
     } as never);
   }
+}
+
+/** What a tool's `execute` gets from Pi 1.3 on; typed here since the peer floor is older. */
+interface PiToolContext {
+  readonly tools?: readonly { readonly name: string }[];
+  executeTool?(
+    name: string,
+    args: unknown,
+  ): Promise<{
+    isError: boolean;
+    result: {
+      content: ProductivityToolCallOutcome["content"];
+      structuredContent?: unknown;
+    };
+  }>;
+}
+
+function toolCaller(
+  context: PiToolContext | undefined,
+): ProductivityToolCaller | undefined {
+  const executeTool = context?.executeTool;
+  if (typeof executeTool !== "function") return undefined;
+  return {
+    canCall: (name) =>
+      context!.tools?.some((tool) => tool.name === name) ?? false,
+    executeTool: async (name, args) => {
+      const outcome = await executeTool.call(context, name, args);
+      return {
+        isError: outcome.isError,
+        content: outcome.result.content,
+        ...(outcome.result.structuredContent !== undefined
+          ? { structuredContent: outcome.result.structuredContent }
+          : {}),
+      };
+    },
+  };
 }
 
 const TOOL_DESCRIPTIONS: Record<ProductivityTool, string> = {
