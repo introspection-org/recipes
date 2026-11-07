@@ -64,7 +64,7 @@ export class CalendarClient {
     return `${this.transport.endpoints.calendar}/calendars/${encodeURIComponent(calendarId)}/events`;
   }
 
-  /** `calendarList.list`: the calendars on the person's list, for `calendar` by name. */
+  /** `calendarList.list`, every page up to 2,500 calendars, for `calendar` by name. */
   async listCalendars(signal?: AbortSignal): Promise<
     Array<{
       id: string;
@@ -73,20 +73,30 @@ export class CalendarClient {
       primary?: boolean;
     }>
   > {
-    const body = await this.transport.json<{
-      items?: Array<{
-        id: string;
-        summary?: string;
-        timeZone?: string;
-        primary?: boolean;
-      }>;
-    }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
-      operation: "calendar.calendarList.list",
-      template: "/calendar/v3/users/me/calendarList",
-      scope: CALENDAR_SCOPES.read,
-      signal,
-    });
-    return body.items ?? [];
+    const items: Array<{ id: string; summary?: string; primary?: boolean }> =
+      [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const body = await this.transport.json<{
+        items?: Array<{
+          id: string;
+          summary?: string;
+          timeZone?: string;
+          primary?: boolean;
+        }>;
+        nextPageToken?: string;
+      }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
+        operation: "calendar.calendarList.list",
+        template: "/calendar/v3/users/me/calendarList",
+        query: { maxResults: 250, pageToken },
+        scope: CALENDAR_SCOPES.read,
+        signal,
+      });
+      items.push(...(body.items ?? []));
+      pageToken = body.nextPageToken;
+      if (!pageToken) break;
+    }
+    return items;
   }
 
   /** `calendars.get`: the calendar's own time zone. */

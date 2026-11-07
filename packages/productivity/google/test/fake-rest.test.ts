@@ -103,6 +103,36 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     );
   });
 
+  it("finds a calendar by name or ID on a later page of the person's list", async () => {
+    const late = "late@group.calendar.google.com";
+    const { backend: b, calls } = await backend([
+      [
+        "GET",
+        /\/users\/me\/calendarList$/,
+        (call) =>
+          call.url.searchParams.get("pageToken") === "p2"
+            ? json({ items: [{ id: late, summary: "Late" }] })
+            : json({ items: [{ id: "a", summary: "A" }], nextPageToken: "p2" }),
+      ],
+      ["GET", /\/events$/, () => json({ items: [] })],
+    ]);
+    const window = {
+      from: "2025-11-10T00:00:00Z",
+      to: "2025-11-11T00:00:00Z",
+      limit: 5,
+    };
+    await b.calendar.list({ ...window, calendar: "late" });
+    await b.calendar.list({ ...window, calendar: late });
+    expect(
+      calls
+        .filter((call) => call.url.pathname.endsWith("/events"))
+        .map((call) => decodeURIComponent(call.url.pathname)),
+    ).toEqual([
+      `/calendar/v3/calendars/${late}/events`,
+      `/calendar/v3/calendars/${late}/events`,
+    ]);
+  });
+
   it("shows an event without its own zone in its calendar's zone, on read as on list", async () => {
     const team = "team@group.calendar.google.com";
     const zoneless = {
