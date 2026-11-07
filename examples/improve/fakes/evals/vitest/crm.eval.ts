@@ -1,10 +1,13 @@
 // #region docs:improve/fakes/bind-fakes
 import { fileURLToPath } from "node:url";
-import { type Services, startServices } from "@introspection-ai/mcp-fakes";
+import {
+  type Services,
+  startServices,
+} from "@introspection-ai/eval-simulate/mcp";
 import {
   loadManifests,
   writeAttempts,
-} from "@introspection-ai/mcp-fakes/verify";
+} from "@introspection-ai/eval-simulate/mcp/verify";
 import { createJudge, describeEval } from "vitest-evals";
 import {
   createRecipeHarness,
