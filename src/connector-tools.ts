@@ -6,6 +6,7 @@ import {
   type RecipeChannelModule,
 } from "./channels/module.js";
 import { loadRecipeDocuments } from "./documents/module.js";
+import { loadRecipeProductivity } from "./productivity/module.js";
 import { loadRecipePackageModule } from "./recipe/companions.js";
 import { deferTools } from "./tool-search.js";
 import {
@@ -58,7 +59,7 @@ export interface RecipeConnectorModule {
 export interface LoadedRecipeConnectors {
   extensions: RecipeConnectorExtension[];
   loadout: RecipeConnectorToolLoadout;
-  /** Skills the `documents` tool offers: its core skill and the selected profiles. */
+  /** Skills the `documents` and productivity tools offer: their core skills and the selected profiles. */
   skillPaths: string[];
 }
 
@@ -215,8 +216,18 @@ export async function loadRecipeConnectors(
     agentTools,
     options,
   );
+  const productivity = await loadRecipeProductivity(
+    manifest.productivity ?? [],
+    agentTools,
+    options,
+  );
   const selected = [
     ...loaded.flatMap((connector) => connector.selected),
+    ...productivity.toolNames.map((name) => ({
+      id: name,
+      name,
+      defaultActive: true,
+    })),
     ...documents.toolNames.map((name) => ({
       id: name,
       name,
@@ -228,10 +239,14 @@ export async function loadRecipeConnectors(
     throw new Error("Recipe connector packages register duplicate tool names");
   }
   return {
-    skillPaths: documents.skillPaths ?? [],
+    skillPaths: [
+      ...(documents.skillPaths ?? []),
+      ...(productivity.skillPaths ?? []),
+    ],
     extensions: [
       ...loaded.map((connector) => connector.extension),
       ...(documents.extension ? [documents.extension] : []),
+      ...(productivity.extension ? [productivity.extension] : []),
     ],
     loadout: {
       toolNames: selected.map((tool) => tool.name),

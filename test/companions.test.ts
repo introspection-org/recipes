@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -387,14 +388,18 @@ describe("Recipes' optionalDependencies", () => {
   ) as {
     optionalDependencies: Record<string, string>;
   };
-  const workspacePackages = ["packages/channels", "packages/documents"].flatMap(
-    (root) =>
-      readdirSync(resolve(root)).map(
-        (name) =>
-          JSON.parse(
-            readFileSync(resolve(root, name, "package.json"), "utf8"),
-          ) as { name: string; version: string },
-      ),
+  const companionRoots = [
+    "packages/channels",
+    "packages/documents",
+    "packages/productivity",
+  ].filter((root) => existsSync(resolve(root)));
+  const workspacePackages = companionRoots.flatMap((root) =>
+    readdirSync(resolve(root)).map(
+      (name) =>
+        JSON.parse(
+          readFileSync(resolve(root, name, "package.json"), "utf8"),
+        ) as { name: string; version: string },
+    ),
   );
 
   // A release stamps the MCP client's platform binaries in beside the companions
@@ -429,7 +434,7 @@ describe("Recipes' optionalDependencies", () => {
   it("are never a run-time dependency of Recipes' companions: no cycle back to Recipes", () => {
     const recipesImport =
       /\b(import|export)\s+(type\s+)?[^;]*?from\s+["']@introspection-ai\/recipes[^"']*["']/gs;
-    for (const root of ["packages/channels", "packages/documents"]) {
+    for (const root of companionRoots) {
       for (const name of readdirSync(resolve(root))) {
         const dir = resolve(root, name);
         const pkg = JSON.parse(
@@ -462,7 +467,7 @@ describe("Recipes' optionalDependencies", () => {
     }
   });
 
-  it("names every first-party channel and document format package, with an open lower bound its version satisfies", () => {
+  it("names every first-party channel, document format and productivity provider package, with an open lower bound its version satisfies", () => {
     expect(Object.keys(companionPackages()).sort()).toEqual(
       workspacePackages.map((pkg) => pkg.name).sort(),
     );
