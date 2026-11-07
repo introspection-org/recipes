@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import type { Api, CredentialStore } from "@earendil-works/pi-ai";
 import { getModel, type Model } from "@earendil-works/pi-ai/compat";
 import {
   createBashToolDefinition,
+  createCodemodeExtension,
   createAgentSessionFromServices,
   createAgentSessionServices,
   ModelRuntime,
@@ -13,6 +15,7 @@ import {
   type AgentSessionEvent,
   type AgentSessionRuntimeDiagnostic,
   type EventBus,
+  type ExtensionAPI,
   type ExtensionFactory,
   type InlineExtension,
   type ToolDefinition,
@@ -47,6 +50,7 @@ import { clearMcpCatalogPreload, preloadMcpCatalogs } from "./mcp/catalog.js";
 import {
   createIsolatedMcpEnvironment,
   configureMcpLocalConfigPath,
+  endpointBindings,
   isolateMcpEnvironment,
   materializeMcpSession,
   materializeSessionMcpCli,
@@ -58,6 +62,16 @@ import {
   type McpLocalConfig,
   type ScopedMcpToolSelection,
 } from "./mcp/index.js";
+import {
+  createPiMcpServersExtension,
+  createRecipeMcpClientExtension,
+  piMcpToolNamePrefix,
+  PI_MCP_RESOURCE_TOOL_NAMES,
+  piMcpServerRegistrations,
+  piMcpToolOrigin,
+  waitForPiMcpServers,
+  type PiMcpServerRegistration,
+} from "./mcp/pi-client.js";
 import {
   createMcpToolSet,
   type McpDiscoveryRequirement,
@@ -390,11 +404,18 @@ interface MaterializedSessionMcp {
   tools?: ToolDefinition[];
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
-  mcpToolOrigin?: McpToolSet["mcpToolOrigin"];
+  /** `tools` resolves a codemode tool through the session's definitions. */
+  mcpToolOrigin?: (
+    piName: string,
+    tools?: Pick<AgentSession, "getToolDefinition">,
+  ) => ReturnType<McpToolSet["mcpToolOrigin"]>;
+  /** `mcp.mode: codemode`: the servers Pi's own MCP support connects. */
+  piServers?: PiMcpServerRegistration[];
   release?: () => Promise<void>;
 }
 
 const leasedMcpEnvironments = new WeakSet<NodeJS.ProcessEnv>();
+const CODEMODE_TOOL_NAME = "codemode";
 
 export class RecipeMcpEnvironmentInUseError extends Error {
   override readonly name = "RecipeMcpEnvironmentInUseError";
@@ -480,7 +501,7 @@ async function configureSessionMcp(
   };
 
   try {
-    if (!hostProvisioned && mode === "tools") {
+    if (!hostProvisioned && (mode === "tools" || mode === "codemode")) {
       const isolated = await createIsolatedMcpEnvironment(env);
       runtimeEnv = isolated.env;
       privateDirectory = isolated.directory;
@@ -513,6 +534,23 @@ async function configureSessionMcp(
           ? { mcporterConfigPath: privateMcporterConfigPath }
           : {}),
       });
+    }
+
+    if (mode === "codemode") {
+      const piServers = piMcpServerRegistrations({
+        session,
+        bindings: endpointBindings(runtimeEnv, cwd, opts.mcpBindings),
+        mcp: recipe.mcp!,
+        env: runtimeEnv,
+      });
+      return {
+        available: true,
+        materialized: !hostProvisioned,
+        piServers,
+        mcpToolOrigin: (name, tools) =>
+          piMcpToolOrigin(session, tools?.getToolDefinition(name)),
+        release,
+      };
     }
 
     if (mode === "tools") {
@@ -635,6 +673,14 @@ async function createSessionForAgent(
     python: python.packages,
   });
   const mcp = await configureSessionMcp(recipe, cwd, env, opts);
+  const {
+    piServers,
+    usesPiMcp,
+    codemodeToolNames,
+    piMcpResourceToolNames,
+    piMcpSessionOptions,
+  } = piMcpSessionTools(mcp.piServers);
+  let piMcp: ExtensionAPI | undefined;
 
   const cleanup = async (): Promise<void> => {
     try {
@@ -704,6 +750,8 @@ async function createSessionForAgent(
       ...((mcp.deferredToolNames?.length ?? 0) > 0
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
+      ...codemodeToolNames,
+      ...piMcpResourceToolNames,
     ]) {
       recipeRegistrations.claim("tool", toolName, "<host>");
     }
@@ -725,6 +773,7 @@ async function createSessionForAgent(
               ? [LEGACY_MCP_TOOL_SEARCH_NAME]
               : []),
           ]),
+          usesPiMcp,
         ),
       );
     }
@@ -745,9 +794,15 @@ async function createSessionForAgent(
               ? [LEGACY_MCP_TOOL_SEARCH_NAME]
               : []),
           ]),
+          usesPiMcp,
         ),
       );
     }
+    inlineExtensions.push(
+      ...piMcpExtensions(piServers, opts.mcpRuntimeDir, cwd, (pi) => {
+        piMcp = pi;
+      }),
+    );
     // The first-party ask_user_question tool loads after the Recipe's own
     // extensions, so a Recipe that still ships its own keeps it.
     if (wantsAskUserQuestion(recipe.tools)) {
@@ -939,6 +994,12 @@ async function createSessionForAgent(
       ...connectorLoadout.toolNames,
       ...mcpToolNames,
       ...toolSearchTools.map((tool) => tool.name),
+      ...codemodeToolNames,
+      // Naming the Recipe's servers keeps their tools and drops any other MCP
+      // server's; each tool's exposure then decides what the model sees. A
+      // prefix that also covers another of these servers is harmless, as only
+      // the Recipe's servers are on this session's MCP client.
+      ...piServers.map((server) => `${piMcpToolNamePrefix(server.id)}*`),
     ];
     // The bash tool runs in `env` when the session's MCP CLI lives there, and
     // in the Recipe's Python shell environment when it declares one.
@@ -982,6 +1043,7 @@ async function createSessionForAgent(
       model,
       ...(recipe.thinkingLevel ? { thinkingLevel: recipe.thinkingLevel } : {}),
       tools: selectedToolNames,
+      ...piMcpSessionOptions,
       customTools,
     });
     session = created.session;
@@ -991,9 +1053,10 @@ async function createSessionForAgent(
     normalizeSessionToolsForModel(session, model);
     applyRecipeAgentModelConfigToSession(session, recipe.modelConfig);
     await session.bindExtensions({});
+    await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));
     const missingDeclaredTools = selectedToolNames.filter(
-      (name) => !registered.has(name),
+      (name) => !name.includes("*") && !registered.has(name),
     );
     if (missingDeclaredTools.length > 0) {
       throw new Error(
@@ -1037,7 +1100,9 @@ async function createSessionForAgent(
     detachInstrumentation = otel
       ? instrumentSession(session, {
           ...otel,
-          ...(mcp.mcpToolOrigin ? { mcpTool: mcp.mcpToolOrigin } : {}),
+          ...(mcp.mcpToolOrigin
+            ? { mcpTool: sessionMcpToolOrigin(mcp.mcpToolOrigin, session) }
+            : {}),
         }).detach
       : undefined;
 
@@ -1074,4 +1139,67 @@ export async function createAgentSessionInternal(
   opts: CreateAgentSessionInternalOptions,
 ): Promise<RecipeSessionHandle> {
   return createSessionForAgent(opts.recipe.selectAgent(opts.agentName), opts);
+}
+
+function sessionMcpToolOrigin(
+  origin: NonNullable<MaterializedSessionMcp["mcpToolOrigin"]>,
+  session: Pick<AgentSession, "getToolDefinition">,
+) {
+  return (piName: string) => origin(piName, session);
+}
+
+/** `mcp.mode: codemode`: Pi's codemode and MCP client, and the Recipe's servers on it. */
+function piMcpExtensions(
+  piServers: PiMcpServerRegistration[],
+  runtimeDir: string | undefined,
+  cwd: string,
+  onPi: (pi: ExtensionAPI) => void,
+): ExtensionFactory[] {
+  if (piServers.length === 0) return [];
+  // A script's `models.*` calls would spend on models the Recipe never
+  // declared, so scripts get tools only.
+  return [
+    createCodemodeExtension({ models: false }),
+    createRecipeMcpClientExtension(join(runtimeDir ?? cwd, ".pi", "mcp.log")),
+    createPiMcpServersExtension(piServers, onPi),
+  ];
+}
+
+/**
+ * Pi connects in the background; a required server must be up before the
+ * first turn, as its catalog must be on the daemon stack.
+ */
+async function waitForRequiredPiMcpServers(
+  piMcp: ExtensionAPI | undefined,
+  piServers: PiMcpServerRegistration[],
+  mcpDiscovery: McpDiscoveryRequirement | undefined,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (!piMcp) return;
+  await waitForPiMcpServers(
+    piMcp,
+    piServers
+      .filter(
+        (server) =>
+          server.required &&
+          !(mcpDiscovery === "defer" && server.deferrableDiscovery),
+      )
+      .map((server) => server.id),
+    env,
+  );
+}
+
+/** What `mcp.mode: codemode` adds to a session's tools; nothing when no server is on Pi's client. */
+function piMcpSessionTools(servers: PiMcpServerRegistration[] | undefined) {
+  const piServers = servers ?? [];
+  const usesPiMcp = piServers.length > 0;
+  return {
+    piServers,
+    usesPiMcp,
+    codemodeToolNames: usesPiMcp ? [CODEMODE_TOOL_NAME] : [],
+    piMcpResourceToolNames: usesPiMcp ? [...PI_MCP_RESOURCE_TOOL_NAMES] : [],
+    piMcpSessionOptions: usesPiMcp
+      ? { excludeTools: [...PI_MCP_RESOURCE_TOOL_NAMES] }
+      : {},
+  };
 }

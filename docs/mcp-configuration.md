@@ -48,8 +48,9 @@ including tools a server may add later; patterns such as `search_*` are invalid.
 `"required": true` must resolve to a bound endpoint at session materialization
 or the session fails closed rather than starting without the capability.
 
-In `mode: tools`, a required server must also be discovered when the session
-starts. A session skips that check for a server only when both of these hold:
+In `mode: tools` and `mode: codemode`, a required server must also be
+discovered when the session starts: `codemode` waits up to
+`PI_RECIPES_MCP_CONNECT_TIMEOUT_MS` (default 30 seconds) for it to connect. A session skips that check for a server only when both of these hold:
 
 - the server's declaration sets `"discovery": "defer"` (default `"require"`),
   so the Recipe chooses which servers may be skipped and an unmarked one is
@@ -114,6 +115,27 @@ the words in their names, descriptions and input schemas (BM25, default limit
 change in the session, so loaded tools survive resume. It never grants access
 beyond the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
+
+`mode: codemode` runs the agent's MCP servers on Pi's own MCP support, inside
+the Pi process, with no `mcp` command and no daemon. The model sees a `codemode`
+tool, and its scripts call each authorized tool as
+`tools.mcp__<server>__<tool>(args)`, finding tools with `searchTools()` and
+getting the whole MCP result back. `eager` tools are also declared to the model
+directly:
+
+```yaml
+mcp:
+  mode: codemode
+  servers:
+    contacts:
+      include: ["*"]
+      eager:
+        - search_contacts
+```
+
+Tools outside the authorized set cannot be called, from a script or otherwise.
+`defer` is invalid in codemode, since every tool but the `eager` ones is already
+off the model's declarations.
 
 `defer` and `eager` are invalid in CLI mode. An omitted agent `mcp` block
 inherits its base policy. Once a child declares `mcp`, the complete block
@@ -197,6 +219,17 @@ In tools mode, each Pi session—including each delegated child session—gets i
 own registered tool catalog and active set. The MCP daemon and mcporter config
 remain private to those wrappers; shell tools do not receive an `mcp` command,
 `MCPORTER_CONFIG`, or MCP session path.
+
+In codemode, Pi's MCP support connects each server in the background when the
+session starts and keeps no state outside the session: no `mcp.json` is read
+and no OAuth credential is stored. A Recipe extension calls an MCP tool with
+`ctx.executeTool(mcpToolName(server, tool), args)`, `mcpToolName` coming from
+`@introspection-ai/recipes/mcp`. Each Recipe extension tool waits for servers
+still connecting before it runs; a tool that calls no MCP tool can declare
+`reachesTools: () => []` to skip the wait, or name the servers it reaches
+(`() => ["mcp__contacts"]`). Every call, a script's nested ones included, passes
+through Pi's `tool_call` and `tool_result` hooks. A binding that authenticates
+with an OAuth flow is not supported in codemode; bind it with a header.
 
 Pi receives each tool's MCP input schema. If the server declares
 `outputSchema`, Recipes retains and validates it locally against successful
