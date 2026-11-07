@@ -94,6 +94,9 @@ importers:
       '@introspection-ai/recipe-documents-pdf':
         specifier: workspace:>=0.2.0
         version: link:packages/documents/pdf
+      '@introspection-ai/recipe-productivity-google':
+        specifier: workspace:>=0.1.0
+        version: link:packages/productivity/google
 
   examples:
     devDependencies:
@@ -167,6 +170,28 @@ importers:
 
   packages/documents/pdf:
     devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:^
+        version: link:../../..
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/productivity/google:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.10.0
+    devDependencies:
+      '@emulators/core':
+        specifier: ^0.13.0
+        version: 0.13.0
+      '@emulators/google':
+        specifier: ^0.13.0
+        version: 0.13.0
       '@introspection-ai/recipes':
         specifier: workspace:^
         version: link:../../..
@@ -356,6 +381,12 @@ packages:
 
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
+
+  '@emulators/core@0.13.0':
+    resolution: {integrity: sha512-uh9Z2ZsxsmrHyZQHENRKXRImqTAbHCqrPWCzDSQ/OKwVsiJFZhNZOu1bm/h8jsRsFU5kISuOJcD9XNMP1afwlQ==}
+
+  '@emulators/google@0.13.0':
+    resolution: {integrity: sha512-fEw2+oBgUtK8wahSrezwJx/FJfNHy1ciZvlhKMA6vneYVwSf1EJNeI45k3CCheAXfrVhegN7mrw/1XrRVuuaaA==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -3274,6 +3305,15 @@ snapshots:
     dependencies:
       tslib: 2.9.1
     optional: true
+
+  '@emulators/core@0.13.0':
+    dependencies:
+      jose: 6.2.14
+
+  '@emulators/google@0.13.0':
+    dependencies:
+      '@emulators/core': 0.13.0
+      jose: 6.2.14
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
