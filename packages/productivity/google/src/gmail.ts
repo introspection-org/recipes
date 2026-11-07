@@ -36,7 +36,13 @@ export interface GmailLabel {
   type?: "system" | "user";
 }
 
-const SUMMARY_HEADERS = ["From", "To", "Cc", "Subject", "Date"];
+/** A message's headers and part structure, without any part's data, to five levels. */
+const STRUCTURE_FIELDS = `id,threadId,labelIds,snippet,internalDate,payload(${partFields(5)})`;
+
+function partFields(depth: number): string {
+  const own = "partId,mimeType,filename,headers,body/size,body/attachmentId";
+  return depth > 0 ? `${own},parts(${partFields(depth - 1)})` : own;
+}
 
 /** The Gmail REST API (`gmail/v1`), one request per method. */
 export class GmailClient {
@@ -74,10 +80,13 @@ export class GmailClient {
     return { items: page.messages ?? [], nextPageToken: page.nextPageToken };
   }
 
-  /** `users.messages.get`, `full` or just the summary headers (`metadata`). */
+  /**
+   * `users.messages.get`, whole or as its `structure`: the headers and parts a
+   * summary needs (`metadata` has no parts, so no attachments), without data.
+   */
   getMessage(
     id: string,
-    format: "full" | "metadata" = "full",
+    format: "full" | "structure" = "full",
     signal?: AbortSignal,
   ): Promise<GmailMessage> {
     return this.transport.json<GmailMessage>(
@@ -86,8 +95,8 @@ export class GmailClient {
         operation: "gmail.users.messages.get",
         template: "/gmail/v1/users/{userId}/messages/{id}",
         query: {
-          format,
-          metadataHeaders: format === "metadata" ? SUMMARY_HEADERS : undefined,
+          format: "full",
+          fields: format === "structure" ? STRUCTURE_FIELDS : undefined,
         },
         scope: GMAIL_SCOPES.read,
         signal,

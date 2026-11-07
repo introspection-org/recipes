@@ -64,8 +64,10 @@ import { GmailClient, type GmailLabel, type GmailMessage } from "./gmail.js";
 import { collectPages, type GoogleTransport } from "./http.js";
 import {
   decodeBase64Url,
+  encodeBase64Url,
   findPart,
   header,
+  type ParsedMailBody,
   parseMailPayload,
   splitAddresses,
 } from "./mime.js";
@@ -140,6 +142,19 @@ function replyRecipients(parent: GmailMessage): string[] {
 
 function textContent(text: string): ProductivityContent {
   return { content_type: "text", content: text };
+}
+
+/** The largest body part Gmail stores apart from the message that a read fetches. */
+const MAX_STORED_BODY_BYTES = 5 * 1024 * 1024;
+
+function readResult(
+  read: readonly { message: MailMessage; unavailable?: string }[],
+): MailReadResult {
+  const notes = read.flatMap((item) => item.unavailable ?? []);
+  return {
+    messages: read.map((item) => item.message),
+    ...(notes.length ? { unavailable: notes.join(" ") } : {}),
+  };
 }
 
 /** Gmail over REST (`gmail/v1`): every `mail` command. */
@@ -222,11 +237,44 @@ export class GoogleRestMail implements Required<MailSession> {
     };
   }
 
+  /** A message read in full; a body Gmail stores apart is fetched, or said to be missing. */
   async message(
     message: GmailMessage,
     signal?: AbortSignal,
+  ): Promise<{ message: MailMessage; unavailable?: string }> {
+    let parsed = parseMailPayload(message.payload);
+    let unavailable: string | undefined;
+    const stored = parsed.part?.body;
+    if (stored?.attachmentId && !stored.data) {
+      if ((stored.size ?? 0) > MAX_STORED_BODY_BYTES) {
+        unavailable = `A message body is larger than ${MAX_STORED_BODY_BYTES / (1024 * 1024)} MB, so it was not read.`;
+      } else {
+        try {
+          stored.data = encodeBase64Url(
+            await this.gmail.getAttachment(
+              message.id,
+              stored.attachmentId,
+              signal,
+            ),
+          );
+          parsed = parseMailPayload(message.payload);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          unavailable = `A message body could not be read: ${(error as Error).message}`;
+        }
+      }
+    }
+    return {
+      message: await this.mailMessage(message, parsed, signal),
+      ...(unavailable ? { unavailable } : {}),
+    };
+  }
+
+  private async mailMessage(
+    message: GmailMessage,
+    parsed: ParsedMailBody,
+    signal?: AbortSignal,
   ): Promise<MailMessage> {
-    const parsed = parseMailPayload(message.payload);
     return {
       ...(await this.summary(message, signal)),
       body: textContent(parsed.text),
@@ -256,7 +304,7 @@ export class GoogleRestMail implements Required<MailSession> {
     const messages = await Promise.all(
       page.items.map(async (ref) =>
         this.summary(
-          await this.gmail.getMessage(ref.id, "metadata", ctx.signal),
+          await this.gmail.getMessage(ref.id, "structure", ctx.signal),
           ctx.signal,
         ),
       ),
@@ -274,16 +322,16 @@ export class GoogleRestMail implements Required<MailSession> {
         "full",
         ctx.signal,
       );
-      return { messages: [await this.message(message, ctx.signal)] };
+      return readResult([await this.message(message, ctx.signal)]);
     }
     const thread = await this.gmail.getThread(args.thread_id, ctx.signal);
-    return {
-      messages: await Promise.all(
+    return readResult(
+      await Promise.all(
         (thread.messages ?? []).map((message) =>
           this.message(message, ctx.signal),
         ),
       ),
-    };
+    );
   }
 
   /**
@@ -488,7 +536,7 @@ export class GoogleRestMail implements Required<MailSession> {
   ): Promise<MailMessageSummary> {
     const message = modified.payload
       ? modified
-      : await this.gmail.getMessage(modified.id, "metadata", signal);
+      : await this.gmail.getMessage(modified.id, "structure", signal);
     return this.summary(message, signal);
   }
 }

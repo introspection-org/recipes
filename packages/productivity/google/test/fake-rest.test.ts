@@ -407,6 +407,87 @@ describe("drive exports (the emulator has no files.export)", () => {
   });
 });
 
+describe("mail summaries and stored bodies", () => {
+  const b64 = (text: string) => Buffer.from(text).toString("base64url");
+  const withAttachment = {
+    id: "m1",
+    threadId: "t1",
+    payload: {
+      mimeType: "multipart/mixed",
+      headers: [{ name: "Subject", value: "Plan" }],
+      parts: [
+        {
+          partId: "0",
+          mimeType: "text/plain",
+          body: { size: 2, data: b64("hi") },
+        },
+        {
+          partId: "1",
+          mimeType: "application/pdf",
+          filename: "a.pdf",
+          body: { size: 9, attachmentId: "ATT" },
+        },
+      ],
+    },
+  };
+
+  it("searches with the part structure, so a summary knows its attachments", async () => {
+    const { backend: b, calls } = await backend([
+      ["GET", /\/messages$/, () => json({ messages: [{ id: "m1" }] })],
+      ["GET", /\/messages\/m1$/, () => json(withAttachment)],
+      ["GET", /\/labels$/, () => json({ labels: [] })],
+    ]);
+    const { messages } = await b.mail.search({ query: "plan", limit: 5 });
+    expect(messages[0]!.has_attachments).toBe(true);
+    const read = calls[1]!.url;
+    expect(read.searchParams.get("format")).toBe("full");
+    expect(read.searchParams.get("fields")).toContain("parts(");
+    expect(read.searchParams.get("fields")).not.toContain("data");
+  });
+
+  const stored = (size: number) => ({
+    id: "m2",
+    threadId: "t1",
+    payload: {
+      mimeType: "text/plain",
+      headers: [{ name: "Subject", value: "Long" }],
+      body: { size, attachmentId: "BODY" },
+    },
+  });
+
+  it("fetches a body Gmail stores apart from the message", async () => {
+    const { backend: b } = await backend([
+      ["GET", /\/messages\/m2$/, () => json(stored(5))],
+      ["GET", /\/attachments\/BODY$/, () => json({ data: b64("hello") })],
+      ["GET", /\/labels$/, () => json({ labels: [] })],
+    ]);
+    const read = await b.mail.read({ message_id: "m2" });
+    expect(read.messages[0]!.body?.content).toBe("hello");
+    expect(read.unavailable).toBeUndefined();
+  });
+
+  it("says so when a stored body is too large or cannot be fetched", async () => {
+    const large = await backend([
+      ["GET", /\/messages\/m2$/, () => json(stored(6 * 1024 * 1024))],
+      ["GET", /\/labels$/, () => json({ labels: [] })],
+    ]);
+    const tooLarge = await large.backend.mail.read({ message_id: "m2" });
+    expect(tooLarge.messages[0]!.body?.content).toBe("");
+    expect(tooLarge.unavailable).toContain("larger than 5 MB");
+    expect(
+      large.calls.some((c) => c.url.pathname.includes("/attachments/")),
+    ).toBe(false);
+
+    const failing = await backend([
+      ["GET", /\/messages\/m2$/, () => json(stored(5))],
+      ["GET", /\/attachments\/BODY$/, () => googleError(404, "notFound")],
+      ["GET", /\/labels$/, () => json({ labels: [] })],
+    ]);
+    const missing = await failing.backend.mail.read({ message_id: "m2" });
+    expect(missing.unavailable).toContain("could not be read");
+  });
+});
+
 describe("mail parsing", () => {
   const b64 = (text: string, encoding: BufferEncoding = "utf8") =>
     Buffer.from(text, encoding).toString("base64url");
@@ -518,6 +599,7 @@ describe("mail parsing", () => {
     });
     expect(parsed).toEqual({
       text: "café",
+      part: expect.objectContaining({ partId: "0.1" }),
       fromHtml: false,
       attachments: [
         {

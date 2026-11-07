@@ -105,6 +105,8 @@ interface ParsedAttachment {
 
 export interface ParsedMailBody {
   text: string;
+  /** The part the body is read from. */
+  part?: GmailMessagePart;
   /** Whether the text was converted from the message's HTML part. */
   fromHtml: boolean;
   attachments: ParsedAttachment[];
@@ -169,9 +171,15 @@ export function parseMailPayload(
       if (type === "text/html" && !html) html = part;
     });
   }
-  if (plain) return { text: partText(plain), fromHtml: false, attachments };
+  if (plain)
+    return { text: partText(plain), part: plain, fromHtml: false, attachments };
   if (html)
-    return { text: htmlToText(partText(html)), fromHtml: true, attachments };
+    return {
+      text: htmlToText(partText(html)),
+      part: html,
+      fromHtml: true,
+      attachments,
+    };
   return { text: "", fromHtml: false, attachments };
 }
 
