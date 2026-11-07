@@ -115,6 +115,7 @@ export const exaSearchProvider: SearchProviderModule = {
     credential: { header: "x-api-key" },
     billing:
       "dollars per request by type and contents, reported in costDollars",
+    combine_sites: true,
     options: {
       freshness: "approximate",
       include_sites: "native",

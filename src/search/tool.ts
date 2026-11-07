@@ -375,6 +375,18 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         });
       served.add(option);
     }
+    if (
+      !capabilities.combine_sites &&
+      served.has("include_sites") &&
+      served.has("exclude_sites")
+    ) {
+      served.delete("exclude_sites");
+      notes.push({
+        option: "exclude_sites",
+        outcome: "ignored",
+        detail: `${id} cannot combine included and excluded sites, so only the included ones apply`,
+      });
+    }
     const wanted = args.max_results ?? SEARCH_DEFAULT_RESULTS;
     const max_results = Math.min(wanted, capabilities.max_results);
     if (max_results < wanted)
@@ -535,6 +547,7 @@ function usageAttributes(
     "introspection.usage.unit": measured.unit,
     "introspection.usage.quantity": measured.quantity,
     "introspection.usage.variant": result.setting,
+    "introspection.usage.results": result.results.length,
     "introspection.usage.key_owner": "customer",
     ...(units?.name === "usd"
       ? { "introspection.usage.cost_usd": units.count }

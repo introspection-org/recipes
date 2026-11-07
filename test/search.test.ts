@@ -16,6 +16,7 @@ import {
   type McpCallToolResult,
   type SearchProviderId,
   type SearchProviderModule,
+  type SearchRequest,
   type WebSearchOptions,
   type WebSearchResult,
 } from "../src/search/index.js";
@@ -439,6 +440,7 @@ describe("web_search providers", () => {
       "introspection.usage.unit": "credit",
       "introspection.usage.quantity": 2,
       "introspection.usage.variant": "advanced",
+      "introspection.usage.results": 1,
       "introspection.usage.key_owner": "customer",
     });
     expect(spans[0]!.attributes).not.toHaveProperty(
@@ -546,6 +548,7 @@ describe("web_search routing", () => {
       },
       mode_parameter: "mode",
       max_results: 3,
+      combine_sites: false,
       host: "api.keenable.ai",
       credential: { header: "X-API-Key" },
       billing: "per request",
@@ -586,6 +589,50 @@ describe("web_search routing", () => {
       "(ignored: country — not supported by keenable)",
       "(approximated: max results — keenable returns at most 3)",
     ]);
+  });
+
+  it("sends only the included sites to a provider that cannot combine them, and says so", async () => {
+    const requests: SearchRequest[] = [];
+    const exclusive: SearchProviderModule = {
+      ...plain,
+      id: "perplexity",
+      capabilities: {
+        ...plain.capabilities,
+        combine_sites: false,
+        options: {
+          ...plain.capabilities.options,
+          include_sites: "native",
+          exclude_sites: "native",
+        },
+      },
+      async search(request, context) {
+        requests.push(request);
+        return plain.search(request, context);
+      },
+    };
+    const result = await setup(["perplexity"], {
+      providers: { ...BUILTIN_SEARCH_PROVIDERS, perplexity: exclusive },
+    }).call({ query: "x", sites: ["arxiv.org", "-spam.com"] });
+    expect(requests[0]).toMatchObject({
+      include_sites: ["arxiv.org"],
+      exclude_sites: [],
+    });
+    expect(result.details.notes).toContainEqual({
+      option: "exclude_sites",
+      outcome: "ignored",
+      detail:
+        "perplexity cannot combine included and excluded sites, so only the included ones apply",
+    });
+    const excludeOnly = await setup(["perplexity"], {
+      providers: { ...BUILTIN_SEARCH_PROVIDERS, perplexity: exclusive },
+    }).call({ query: "x", sites: ["-spam.com"], max_results: 3 });
+    expect(requests[1]).toMatchObject({ exclude_sites: ["spam.com"] });
+    expect(excludeOnly.details.notes).toEqual([]);
+  });
+
+  it("sends included and excluded sites together to the built providers, which combine them", () => {
+    for (const module of Object.values(BUILTIN_SEARCH_PROVIDERS))
+      expect(module.capabilities.combine_sites).toBe(true);
   });
 
   it("refuses an unnamed provider when several are bound, and an unbound one", async () => {

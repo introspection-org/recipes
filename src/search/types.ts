@@ -67,6 +67,12 @@ export interface SearchCapabilities {
   /** The most results one request returns. */
   max_results: number;
   options: Readonly<Record<SearchOption, SearchSupport>>;
+  /**
+   * Whether one request may carry both included and excluded sites. When it
+   * may not (Perplexity answers 400, Parallel drops the exclusions), a call
+   * with both sends only the included sites and notes the rest as ignored.
+   */
+  combine_sites: boolean;
   /** One sentence per approximated option, saying what it becomes. */
   notes?: Partial<Record<SearchOption, string>>;
   /** The longest query the provider accepts, in characters and in words, where it states one. */

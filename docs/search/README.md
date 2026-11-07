@@ -50,7 +50,7 @@ web_search({
 | `query` | What to search for. Parallel also receives it as its `objective`. |
 | `provider` | Which bound provider serves this call. The schema lists only the providers bound to the runtime and leaves the argument out when exactly one is bound. Omitted with several bound, the call fails with `not_bound` and lists them. |
 | `mode` | `fast`, `default` or `deep`: one scale for every provider. `default` is the provider's recommended setting. Each provider maps the three to its own setting ([Modes](#modes)); a provider with one setting maps all three to it and says so in a note. |
-| `max_results` | At most 10 per call. A provider that returns fewer says so. |
+| `max_results` | At most 10 per call, by design: it keeps a response near 550 tokens. OpenRouter's web search allows 25; a Recipe option to raise the ceiling is possible but not built. A provider that returns fewer says so. |
 | `freshness` | Pages from the last day, week, month or year. |
 | `sites` | Domains, optionally with a path, to keep (`arxiv.org`) or drop (`-pinterest.com`). |
 | `country` | Results for one country: an ISO 3166-1 alpha-2 code in upper case (`US`, `DE`). A code that is not an assigned country (`ZZ`, `EU`) fails with `invalid_request`. Each provider receives it in its own form ([Arguments by provider](#arguments-by-provider)). |
@@ -103,6 +103,13 @@ earlier (unbound provider, invalid argument, query too long) does not count.
 Unset, there is no cap: the default is none, because a sensible number depends
 on the Recipe, and the platform's per-call pricing is where cost is governed.
 
+This mirrors `max_uses` on OpenRouter's web-search server tool. OpenRouter
+also caps `max_total_results` per request; the same cap here would be a
+Recipe option beside `maxUses` (never a model argument) that lowers each
+call's `max_results` to what is left and refuses once none is. It is not
+built: per-result prices apply only beyond each provider's included 10, which
+`max_results` never exceeds.
+
 ### Result for the host and the trace
 
 The tool result's `details`, and the return value for Recipe code, is a
@@ -135,7 +142,8 @@ the query, which can hold personal data.
 A successful call also records the platform's standard usage record:
 `introspection.usage.service` (`<provider>/search`), `.unit` (`credit` when
 the provider reported credits, else `request`), `.quantity`, `.variant` (the
-`search.setting`), `.cost_usd` (Exa's reported dollars) and `.key_owner`
+`search.setting`), `.results` (results returned, for providers that price
+results beyond an allowance), `.cost_usd` (Exa's reported dollars) and `.key_owner`
 (`customer`, since a project endpoint holds the key). The platform prices it
 against its vendor rate catalog, `services/<vendor>.yaml` in
 introspection-cloud ([service-rates.md](https://github.com/introspection-org/introspection-cloud/blob/claude/service-rates/docs/design/service-rates.md));
@@ -385,9 +393,17 @@ a form close to its meaning, and the note line says how.
 | `tavily` | native (`time_range`) | native | native | approximate: chunks only in `deep` | native (`country`, the English name in lower case, `united states`; also on the MCP tool, which boosts rather than filters) |
 | `exa` | approximate: published-date start, so undated pages drop out | native | native | native (`highlights`) | native (`userLocation`; on MCP only `web_search_advanced_exa` takes it, so with the default tool a call goes to REST, or is ignored with a note) |
 | `brave` | native (`freshness`) | native (Goggles allowlist) | native (Goggles `$discard`) | native (LLM Context) | native (`country`) |
-| `parallel` (design) | approximate (`after_date`) | native | native, but ignored by Parallel when an include is set | native (`max_chars_per_result`) | native (`location`) |
-| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`) | native (`max_tokens_per_page`) | native (`country`, also on `perplexity_search`) |
+| `parallel` (design) | approximate (`after_date`) | native | native, alone (`combine_sites: false`) | native (`max_chars_per_result`) | native (`location`) |
+| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`), alone (`combine_sites: false`) | native (`max_tokens_per_page`) | native (`country`, also on `perplexity_search`) |
 | `keenable` (design) | approximate (`published_after`) | one site only | none | none | none: ignored with a note |
+
+**Included and excluded sites together.** Each descriptor declares
+`combine_sites`. Tavily, Exa and Brave take both in one request. Parallel
+ignores exclusions once an inclusion is set and Perplexity answers 400 to
+both (per OpenRouter's notes on the same engines), so they declare `false`:
+a call with both sends only the included sites and adds `(ignored: exclude
+sites — … cannot combine included and excluded sites …)`. Exclusions alone
+are sent as usual.
 
 Every provider honours `max_results` up to its own maximum. What one provider
 offers and the tool does not (answers, `topic`, language, safe search, Exa's
@@ -581,7 +597,7 @@ A provider is a plain module, `SearchProviderModule`:
   when the tool is built), and `id`, one of `SEARCH_PROVIDER_IDS`.
 - `capabilities`: `modes` (each of `fast`, `default` and `deep` with the
   provider's `setting`, and `approximate` when the setting does not mean the
-  mode), `mode_parameter`, `max_results`, `options` (native, approximate or
+  mode), `mode_parameter`, `max_results`, `combine_sites`, `options` (native, approximate or
   none for `freshness`, `include_sites`, `exclude_sites` and `context`, with a
   one-sentence `note` for each approximation), `host`, `credential` (header
   and prefix) and `billing`.

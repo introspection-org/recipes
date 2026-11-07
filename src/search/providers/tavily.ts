@@ -91,6 +91,7 @@ export const tavilySearchProvider: SearchProviderModule = {
     credential: { header: "Authorization", prefix: "Bearer " },
     billing:
       "credits: basic and fast 1, advanced 2 (reported with include_usage)",
+    combine_sites: true,
     options: {
       freshness: "native",
       include_sites: "native",

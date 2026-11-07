@@ -69,6 +69,7 @@ export const braveSearchProvider: SearchProviderModule = {
     host: "api.search.brave.com",
     credential: { header: "X-Subscription-Token" },
     billing: "1 request on the Search plan, either endpoint",
+    combine_sites: true,
     options: {
       freshness: "native",
       include_sites: "native",
