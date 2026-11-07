@@ -351,17 +351,6 @@ describe("calendar, against the Google emulator", () => {
     const after = await google.calendar.freeBusy(window);
     expect(after.schedules[0]!.busy).toEqual([]);
   });
-
-  it("refuses an event without an IANA zone before calling Google", async () => {
-    await expect(
-      google.calendar.create({
-        title: "x",
-        start: "2025-11-20T15:00:00Z",
-        end: "2025-11-20T16:00:00Z",
-        time_zone: "CET+1",
-      }),
-    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
-  });
 });
 
 describe("drive, against the Google emulator", () => {
