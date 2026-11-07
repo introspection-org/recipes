@@ -1,5 +1,5 @@
 // #region docs:improve/fakes/scenarios
-import { labelId } from "@introspection-ai/mcp-fakes";
+import { labelId } from "@introspection-ai/eval-simulate/mcp";
 import type { World } from "./index.ts";
 
 // Updating the Acme deal is rejected by the CRM.
