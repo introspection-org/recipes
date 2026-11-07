@@ -444,6 +444,24 @@ describe("mail summaries and stored bodies", () => {
     expect(read.searchParams.get("fields")).not.toContain("data");
   });
 
+  it("asks for spam and trash only when searching either folder", async () => {
+    const { backend: b, calls } = await backend([
+      ["GET", /\/messages$/, () => json({ messages: [] })],
+    ]);
+    for (const folder of ["TRASH", "spam", "INBOX"])
+      await b.mail.search({ query: "x", folder, limit: 5 });
+    expect(
+      calls.map((call) => [
+        call.url.searchParams.get("labelIds"),
+        call.url.searchParams.get("includeSpamTrash"),
+      ]),
+    ).toEqual([
+      ["TRASH", "true"],
+      ["SPAM", "true"],
+      ["INBOX", null],
+    ]);
+  });
+
   const stored = (size: number) => ({
     id: "m2",
     threadId: "t1",

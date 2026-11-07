@@ -197,7 +197,7 @@ export class GoogleRestMail implements Required<MailSession> {
   private async searchQuery(
     args: Omit<MailSearchArgs, "limit">,
     signal?: AbortSignal,
-  ): Promise<{ q?: string; labelIds?: string[] }> {
+  ): Promise<{ q?: string; labelIds?: string[]; includeSpamTrash?: true }> {
     const terms: string[] = [];
     if (args.query?.trim()) terms.push(args.query.trim());
     if (args.from?.trim()) terms.push(`from:${gmailOperand(args.from.trim())}`);
@@ -206,11 +206,16 @@ export class GoogleRestMail implements Required<MailSession> {
       terms.push(`before:${epochSeconds(args.before, "before")}`);
     if (args.unread === true) terms.push("is:unread");
     if (args.unread === false) terms.push("-is:unread");
+    const label = args.folder
+      ? await this.labelId(args.folder, signal)
+      : undefined;
     return {
       q: terms.length ? terms.join(" ") : undefined,
-      labelIds: args.folder
-        ? [await this.labelId(args.folder, signal)]
-        : undefined,
+      labelIds: label ? [label] : undefined,
+      // `messages.list` leaves out spam and trash unless asked.
+      ...(label === "SPAM" || label === "TRASH"
+        ? { includeSpamTrash: true as const }
+        : {}),
     };
   }
 
@@ -291,11 +296,11 @@ export class GoogleRestMail implements Required<MailSession> {
     args: MailSearchArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<MailSearchResult> {
-    const { q, labelIds } = await this.searchQuery(args, ctx.signal);
+    const query = await this.searchQuery(args, ctx.signal);
     const page = await collectPages(
       (pageToken, maxResults) =>
         this.gmail.listMessages(
-          { q, labelIds, maxResults, pageToken },
+          { ...query, maxResults, pageToken },
           ctx.signal,
         ),
       args.limit,

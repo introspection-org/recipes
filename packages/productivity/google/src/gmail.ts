@@ -57,6 +57,7 @@ export class GmailClient {
     options: {
       q?: string;
       labelIds?: string[];
+      includeSpamTrash?: boolean;
       maxResults?: number;
       pageToken?: string;
     },
@@ -71,6 +72,7 @@ export class GmailClient {
       query: {
         q: options.q,
         labelIds: options.labelIds,
+        includeSpamTrash: options.includeSpamTrash,
         maxResults: options.maxResults,
         pageToken: options.pageToken,
       },
