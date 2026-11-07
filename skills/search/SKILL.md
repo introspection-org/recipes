@@ -27,6 +27,7 @@ call.
 | Text to quote or reason over, not just links | `content: "context"`: longer extracts per result |
 | Recent news or a changing figure | `freshness: "day"`, `"week"`, `"month"` or `"year"` |
 | Only some sites, or none from some | `sites: ["docs.python.org"]`, `sites: ["-pinterest.com"]` |
+| Results for one country | `country: "DE"` (ISO 3166-1 alpha-2, upper case) |
 | More candidates | `max_results` up to 10; default 5 |
 
 `web_search` is the only way to search. A search provider's own tools, if you see their

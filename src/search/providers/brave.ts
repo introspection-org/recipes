@@ -74,6 +74,7 @@ export const braveSearchProvider: SearchProviderModule = {
       include_sites: "native",
       exclude_sites: "native",
       context: "native",
+      country: "native",
     },
   },
   async search(request, context) {
@@ -85,6 +86,7 @@ export const braveSearchProvider: SearchProviderModule = {
     if (!web) params.set("maximum_number_of_urls", String(request.max_results));
     if (request.freshness)
       params.set("freshness", FRESHNESS[request.freshness]);
+    if (request.country) params.set("country", request.country);
     const rules = goggles(request);
     if (rules) params.set("goggles", rules);
     const path = web ? "/res/v1/web/search" : "/res/v1/llm/context";

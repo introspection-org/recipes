@@ -6,6 +6,7 @@ import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
 import { egressCredentialHeaders, type SearchEnvironment } from "./egress.js";
+import { isCountryCode } from "./http.js";
 import {
   piSearchMcpClient,
   tracedMcpCall,
@@ -158,6 +159,12 @@ export function webSearchParameters(
         Type.Enum([...SEARCH_CONTENT], {
           type: "string",
           description: "context: longer page extracts. Default: snippets.",
+        }),
+      ),
+      country: Type.Optional(
+        Type.String({
+          pattern: "^[A-Z]{2}$",
+          description: "ISO 3166-1, e.g. US.",
         }),
       ),
     },
@@ -337,12 +344,17 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       if (site.startsWith("-")) exclude_sites.push(site.slice(1).toLowerCase());
       else include_sites.push(site.toLowerCase());
     }
+    if (args.country !== undefined && !isCountryCode(args.country))
+      throw new InvalidRequest(
+        `'${args.country}' is not an ISO 3166-1 alpha-2 country code`,
+      );
     const served = new Set<SearchOption>();
     const requested: Array<[SearchOption, boolean]> = [
       ["freshness", args.freshness !== undefined],
       ["include_sites", include_sites.length > 0],
       ["exclude_sites", exclude_sites.length > 0],
       ["context", args.content === "context"],
+      ["country", args.country !== undefined],
     ];
     for (const [option, present] of requested) {
       if (!present) continue;
@@ -382,6 +394,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       content,
       max_chars: SEARCH_CONTENT_CHARS[content],
       ...(served.has("freshness") ? { freshness: args.freshness! } : {}),
+      ...(served.has("country") ? { country: args.country! } : {}),
     };
     const now = (options.now ?? (() => new Date()))();
     const mcpServer = options.mcpServers?.[id];

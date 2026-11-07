@@ -120,6 +120,7 @@ export const exaSearchProvider: SearchProviderModule = {
       include_sites: "native",
       exclude_sites: "native",
       context: "native",
+      country: "native",
     },
     notes: {
       freshness:
@@ -149,6 +150,7 @@ export const exaSearchProvider: SearchProviderModule = {
             ...(request.exclude_sites.length
               ? { excludeDomains: request.exclude_sites }
               : {}),
+            ...(request.country ? { userLocation: request.country } : {}),
           },
           unsupported: [],
         };
@@ -160,6 +162,7 @@ export const exaSearchProvider: SearchProviderModule = {
       if (request.freshness) unsupported.push("freshness");
       if (request.include_sites.length) unsupported.push("include_sites");
       if (request.exclude_sites.length) unsupported.push("exclude_sites");
+      if (request.country) unsupported.push("country");
       return {
         tool: "web_search_exa",
         args: { query: request.query, numResults: request.max_results },
@@ -202,6 +205,7 @@ export const exaSearchProvider: SearchProviderModule = {
         ...(request.exclude_sites.length
           ? { excludeDomains: request.exclude_sites }
           : {}),
+        ...(request.country ? { userLocation: request.country } : {}),
       },
     })) as ExaResponse;
     return exaResults(body, request);

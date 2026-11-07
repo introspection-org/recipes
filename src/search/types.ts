@@ -42,6 +42,7 @@ export const SEARCH_OPTIONS = [
   "include_sites",
   "exclude_sites",
   "context",
+  "country",
 ] as const;
 export type SearchOption = (typeof SEARCH_OPTIONS)[number];
 
@@ -92,6 +93,8 @@ export interface SearchRequest {
   content: SearchContent;
   /** Characters to keep per result. */
   max_chars: number;
+  /** ISO 3166-1 alpha-2, upper case: results for this country. */
+  country?: string;
 }
 
 export interface SearchResultItem {
@@ -230,6 +233,8 @@ export interface WebSearchArgs {
   freshness?: SearchFreshness;
   /** `"arxiv.org"` restricts to a site; `"-pinterest.com"` excludes one. */
   sites?: string[];
+  /** ISO 3166-1 alpha-2 (`"US"`, `"DE"`): results for that country. */
+  country?: string;
   content?: SearchContent;
 }
 

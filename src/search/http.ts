@@ -76,6 +76,28 @@ export function retryAfterSeconds(
   return wait > 0 ? wait : undefined;
 }
 
+const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
+
+/** Region codes ICU names that are not countries: the EU, the eurozone, the UN, outlying Oceania. */
+const NOT_COUNTRIES = new Set(["EU", "EZ", "UN", "QO"]);
+
+/** An assigned ISO 3166-1 alpha-2 code: one with an English name of its own. */
+export function isCountryCode(code: string): boolean {
+  if (!/^[A-Z]{2}$/.test(code) || NOT_COUNTRIES.has(code)) return false;
+  try {
+    const name = REGIONS.of(code);
+    // ICU names an unassigned code "Unknown Region" rather than echoing it.
+    return Boolean(name) && name !== code && name !== "Unknown Region";
+  } catch {
+    return false;
+  }
+}
+
+/** A country's English name in lower case (`US` → `united states`), as Tavily takes it. */
+export function countryName(code: string): string {
+  return (REGIONS.of(code) ?? code).toLowerCase();
+}
+
 /** A text cut to `limit` characters, on a word boundary where one is near. */
 export function capText(text: string, limit: number): string {
   const clean = text.replace(/\s+/g, " ").trim();

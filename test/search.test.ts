@@ -214,6 +214,7 @@ describe("web_search schema", () => {
       "freshness",
       "sites",
       "content",
+      "country",
     ]);
     const two = webSearchParameters(["tavily", "exa"]) as any;
     expect(two.properties.provider.enum).toEqual(["tavily", "exa"]);
@@ -234,8 +235,8 @@ describe("web_search schema", () => {
       description: tool.description,
       parameters: tool.parameters,
     });
-    // About 240 tokens with three providers bound (docs/search/README.md).
-    expect(definition.length).toBeLessThan(900);
+    // About 265 tokens with three providers bound (docs/search/README.md).
+    expect(definition.length).toBeLessThan(1000);
   });
 
   it("ships the search skill beside the code", () => {
@@ -500,6 +501,36 @@ describe("web_search providers", () => {
       contents: { highlights: { maxCharacters: 1500 } },
     });
   });
+
+  it("passes country to each provider in its own form", async () => {
+    const tavily = await fakeApi(() => ({ body: { results: [] } }));
+    const exa = await fakeApi(() => ({ body: { results: [] } }));
+    const brave = await fakeApi(() => ({ body: braveWeb }));
+    const { call } = setup(["tavily", "exa", "brave"], {
+      baseUrls: {
+        tavily: tavily.baseUrl,
+        exa: exa.baseUrl,
+        brave: brave.baseUrl,
+      },
+    });
+    for (const provider of ["tavily", "exa", "brave"])
+      expect(
+        (await call({ query: "q", provider, country: "GB" })).details.notes,
+      ).toEqual([]);
+    expect(tavily.requests[0]!.body).toMatchObject({
+      country: "united kingdom",
+    });
+    expect(exa.requests[0]!.body).toMatchObject({ userLocation: "GB" });
+    expect(brave.requests[0]!.url.searchParams.get("country")).toBe("GB");
+  });
+
+  it("refuses a country that is not an ISO 3166-1 alpha-2 code", async () => {
+    const { call } = setup(["brave"]);
+    for (const country of ["ZZ", "XX", "EU", "gb", "GBR"]) {
+      const result = await call({ query: "q", country });
+      expect(result.details.error).toMatchObject({ code: "invalid_request" });
+    }
+  });
 });
 
 describe("web_search routing", () => {
@@ -523,6 +554,7 @@ describe("web_search routing", () => {
         include_sites: "native",
         exclude_sites: "none",
         context: "none",
+        country: "none",
       },
     },
     async search(request) {
@@ -544,12 +576,14 @@ describe("web_search routing", () => {
       max_results: 8,
       sites: ["-pinterest.com"],
       content: "context",
+      country: "DE",
     });
     expect(result.details.results).toHaveLength(3);
-    expect(result.content[0]!.text.split("\n").slice(-4)).toEqual([
+    expect(result.content[0]!.text.split("\n").slice(-5)).toEqual([
       "(ignored: freshness — not supported by keenable)",
       "(ignored: exclude sites — not supported by keenable)",
       "(ignored: context — not supported by keenable)",
+      "(ignored: country — not supported by keenable)",
       "(approximated: max results — keenable returns at most 3)",
     ]);
   });
@@ -750,6 +784,7 @@ describe("web_search over a provider's MCP server", () => {
       mode: "deep",
       freshness: "week",
       sites: ["example.org", "-spam.com"],
+      country: "US",
     });
     expect(calls).toEqual([
       {
@@ -761,6 +796,7 @@ describe("web_search over a provider's MCP server", () => {
           time_range: "week",
           include_domains: ["example.org"],
           exclude_domains: ["spam.com"],
+          country: "united states",
         },
       },
     ]);
@@ -839,6 +875,7 @@ describe("web_search over a provider's MCP server", () => {
       query: "q",
       freshness: "week",
       sites: ["exa.example"],
+      country: "FR",
     });
     expect(calls[0]).toEqual({
       name: EXA_ADVANCED,
@@ -850,6 +887,7 @@ describe("web_search over a provider's MCP server", () => {
         highlightsMaxCharacters: 300,
         startPublishedDate: "2026-10-30",
         includeDomains: ["exa.example"],
+        userLocation: "FR",
       },
     });
     expect(result.content[0]!.text.split("\n")[0]).toBe(
@@ -883,6 +921,9 @@ describe("web_search over a provider's MCP server", () => {
     const filtered = await call({ query: "q", freshness: "day" });
     expect(filtered.details.transport).toBe("rest");
     expect(rest.requests).toHaveLength(1);
+    const located = await call({ query: "q", country: "JP" });
+    expect(located.details.transport).toBe("rest");
+    expect(rest.requests[1]!.body).toMatchObject({ userLocation: "JP" });
   });
 
   it("takes an MCP tool as its server's only when Pi's namespace says so", () => {

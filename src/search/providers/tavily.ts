@@ -1,4 +1,4 @@
-import { capText, dateOf, hostOf, requestJson } from "../http.js";
+import { capText, countryName, dateOf, hostOf, requestJson } from "../http.js";
 import { mcpResultText } from "../mcp.js";
 import {
   SEARCH_PROVIDER_API_VERSION,
@@ -96,6 +96,7 @@ export const tavilySearchProvider: SearchProviderModule = {
       include_sites: "native",
       exclude_sites: "native",
       context: "approximate",
+      country: "native",
     },
     notes: {
       context:
@@ -121,6 +122,7 @@ export const tavilySearchProvider: SearchProviderModule = {
           ...(request.exclude_sites.length
             ? { exclude_domains: request.exclude_sites }
             : {}),
+          ...(request.country ? { country: countryName(request.country) } : {}),
         },
         // The tool takes no chunks_per_source, so context needs REST.
         unsupported:
@@ -157,6 +159,7 @@ export const tavilySearchProvider: SearchProviderModule = {
         ...(request.exclude_sites.length
           ? { exclude_domains: request.exclude_sites }
           : {}),
+        ...(request.country ? { country: countryName(request.country) } : {}),
       },
     })) as TavilyResponse;
     return tavilyResults(body, request);

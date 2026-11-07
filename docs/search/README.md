@@ -41,6 +41,7 @@ web_search({
   freshness?: "day" | "week" | "month" | "year";
   sites?: string[];                // "arxiv.org" restricts, "-pinterest.com" excludes
   content?: "snippets" | "context"; // default snippets
+  country?: string;                // ISO 3166-1 alpha-2, "US"
 })
 ```
 
@@ -52,6 +53,7 @@ web_search({
 | `max_results` | At most 10 per call. A provider that returns fewer says so. |
 | `freshness` | Pages from the last day, week, month or year. |
 | `sites` | Domains, optionally with a path, to keep (`arxiv.org`) or drop (`-pinterest.com`). |
+| `country` | Results for one country: an ISO 3166-1 alpha-2 code in upper case (`US`, `DE`). A code that is not an assigned country (`ZZ`, `EU`) fails with `invalid_request`. Each provider receives it in its own form ([Arguments by provider](#arguments-by-provider)). |
 | `content` | `snippets`: about 300 characters per result. `context`: about 1,500 characters of query-relevant text extracted from each page, for grounding (Brave's LLM Context API, Exa's highlights, Tavily's chunks, Parallel's excerpts, Perplexity's page content). |
 
 Every call chooses its own provider and mode. A Recipe that wants a cheap
@@ -378,19 +380,18 @@ What each costs and means:
 From each descriptor's `options`. `approximate` means the argument applies in
 a form close to its meaning, and the note line says how.
 
-| Provider | `freshness` | `sites` include | `sites` exclude | `context` |
-| --- | --- | --- | --- | --- |
-| `tavily` | native (`time_range`) | native | native | approximate: chunks only in `deep` |
-| `exa` | approximate: published-date start, so undated pages drop out | native | native | native (`highlights`) |
-| `brave` | native (`freshness`) | native (Goggles allowlist) | native (Goggles `$discard`) | native (LLM Context) |
-| `parallel` (design) | approximate (`after_date`) | native | native, but ignored by Parallel when an include is set | native (`max_chars_per_result`) |
-| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`) | native (`max_tokens_per_page`) |
-| `keenable` (design) | approximate (`published_after`) | one site only | none | none |
+| Provider | `freshness` | `sites` include | `sites` exclude | `context` | `country` |
+| --- | --- | --- | --- | --- | --- |
+| `tavily` | native (`time_range`) | native | native | approximate: chunks only in `deep` | native (`country`, the English name in lower case, `united states`; also on the MCP tool, which boosts rather than filters) |
+| `exa` | approximate: published-date start, so undated pages drop out | native | native | native (`highlights`) | native (`userLocation`; on MCP only `web_search_advanced_exa` takes it, so with the default tool a call goes to REST, or is ignored with a note) |
+| `brave` | native (`freshness`) | native (Goggles allowlist) | native (Goggles `$discard`) | native (LLM Context) | native (`country`) |
+| `parallel` (design) | approximate (`after_date`) | native | native, but ignored by Parallel when an include is set | native (`max_chars_per_result`) | native (`location`) |
+| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`) | native (`max_tokens_per_page`) | native (`country`, also on `perplexity_search`) |
+| `keenable` (design) | approximate (`published_after`) | one site only | none | none | none: ignored with a note |
 
 Every provider honours `max_results` up to its own maximum. What one provider
-offers and the tool does not (answers, `topic`, `country`, language, safe
-search, Exa's `category`, Goggles beyond sites) is listed under
-[Later](#later).
+offers and the tool does not (answers, `topic`, language, safe search, Exa's
+`category`, Goggles beyond sites) is listed under [Later](#later).
 
 ## Bound providers
 
@@ -503,8 +504,8 @@ schema) and estimated at about 3.5 characters per token for JSON:
 
 |  | Characters | About |
 | --- | --- | --- |
-| Tool definition, one provider bound | 785 | 225 tokens |
-| Tool definition, three providers bound | 846 | 240 tokens |
+| Tool definition, one provider bound | 873 | 250 tokens |
+| Tool definition, three providers bound | 934 | 265 tokens |
 | Typical 5-result response, `snippets` | about 2,200 | 500-550 tokens |
 | Typical 5-result response, `context` | about 8,000 | 1,900 tokens |
 
