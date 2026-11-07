@@ -104,7 +104,7 @@ interface LocalMcpOAuthSettings {
   oauthScope?: string;
 }
 
-interface McpEndpointBinding {
+export interface McpEndpointBinding {
   id: string;
   name: string;
   baseUrl: string;
@@ -506,7 +506,7 @@ function hostForUrl(value: string): string {
   }
 }
 
-function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
+export function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
   return value.replace(
     /\$\{([A-Z0-9_]+)\}/gi,
     (_match, name: string) => env[name] ?? "",
@@ -587,7 +587,7 @@ function localBindings(
   });
 }
 
-function endpointBindings(
+export function endpointBindings(
   env: NodeJS.ProcessEnv,
   cwd: string,
   localConfig?: McpLocalConfig,
@@ -705,7 +705,9 @@ function readConfiguredManifests(
   return servers;
 }
 
-function explicitAllowedTools(server: McpSessionServer): string[] | undefined {
+export function explicitAllowedTools(
+  server: McpSessionServer,
+): string[] | undefined {
   const packageIncludes = server.package_tools.include ?? [];
   const agentIncludes = server.agent_tools.flatMap(
     (selection) => selection.include ?? [],
@@ -901,9 +903,18 @@ export async function createIsolatedMcpEnvironment(
   };
 }
 
-export async function materializeMcpSession(
-  opts: MaterializeMcpSessionOptions,
-): Promise<MaterializedMcpSession> {
+/**
+ * The session servers the selections authorize and a binding or manifest can
+ * reach, without writing anything: the servers `materializeMcpSession` writes,
+ * and those a Recipe keeps on Pi's own MCP client instead.
+ */
+export function resolveMcpSessionServers(
+  opts: Omit<MaterializeMcpSessionOptions, "mcporterConfigPath">,
+): {
+  servers: McpSessionServer[];
+  diagnostics: McpConfigurationDiagnostic[];
+  endpointBindingList: McpEndpointBinding[];
+} {
   const env = opts.env ?? process.env;
   const agentSelections = opts.agentMcp ?? [];
   const endpointBindingList = endpointBindings(env, opts.cwd, opts.localConfig);
@@ -982,7 +993,15 @@ export async function materializeMcpSession(
       ...(declared?.tools ? { catalog } : {}),
     });
   }
+  return { servers, diagnostics, endpointBindingList };
+}
 
+export async function materializeMcpSession(
+  opts: MaterializeMcpSessionOptions,
+): Promise<MaterializedMcpSession> {
+  const env = opts.env ?? process.env;
+  const { servers, diagnostics, endpointBindingList } =
+    resolveMcpSessionServers(opts);
   const session: McpSessionConfig = {
     version: 1,
     servers,

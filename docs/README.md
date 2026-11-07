@@ -25,7 +25,7 @@ at run time.
 | Answer a chat message from a Recipe | [Channel tools](channels/README.md) |
 | Add Slack tools to a Recipe | [Slack channel connector](channels/slack.md) |
 | Read and mark up Word and PDF files from a Recipe | [Document tools](documents/README.md) |
-| Work with a person's mail, calendar and files (proposed) | [Productivity tools](productivity/README.md) |
+| Work with a person's mail, calendar and files | [Productivity tools](productivity/README.md) |
 | Search the web from a Recipe (prototype) | [Web search](search/README.md) |
 | Define portable evaluation judges | [Recipe judges](recipe-judges.md) |
 

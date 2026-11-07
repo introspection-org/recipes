@@ -310,6 +310,113 @@ describe("resolved Recipe agents", () => {
     );
   });
 
+  it("accepts eager but not defer in codemode", () => {
+    const recipeDir = makeRecipe();
+    writeFileSync(
+      join(recipeDir, "package.json"),
+      JSON.stringify({
+        name: "fixture-recipe",
+        version: "1.0.0",
+        pi: {
+          agents: ["agents"],
+          mcp: {
+            servers: [{ id: "contacts", tools: { include: ["*"] } }],
+          },
+        },
+      }),
+    );
+    rmSync(join(recipeDir, "agents", "base.yaml"));
+    const write = (activation: string) =>
+      writeFileSync(
+        join(recipeDir, "agents", "agent.yaml"),
+        [
+          "name: agent",
+          "model:",
+          "  name: openai/gpt-5",
+          "tools: []",
+          "mcp:",
+          "  mode: codemode",
+          "  servers:",
+          "    contacts:",
+          '      include: ["*"]',
+          activation,
+          "system_instructions:",
+          "  content: Test",
+        ].join("\n"),
+      );
+
+    write("      eager: [search_contacts]");
+    expect(resolveRecipe({ recipeDir }).selectAgent().mcp).toEqual({
+      mode: "codemode",
+      servers: { contacts: { include: ["*"], eager: ["search_contacts"] } },
+    });
+
+    write('      defer: ["*"]');
+    expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
+      "has an invalid MCP policy",
+    );
+  });
+
+  it("accepts behind naming the agent's tools, in every mode", () => {
+    const recipeDir = makeRecipe();
+    writeFileSync(
+      join(recipeDir, "package.json"),
+      JSON.stringify({
+        name: "fixture-recipe",
+        version: "1.0.0",
+        pi: {
+          agents: ["agents"],
+          mcp: {
+            servers: [{ id: "contacts", tools: { include: ["*"] } }],
+          },
+        },
+      }),
+    );
+    rmSync(join(recipeDir, "agents", "base.yaml"));
+    const write = (mode: string, ...server: string[]) =>
+      writeFileSync(
+        join(recipeDir, "agents", "agent.yaml"),
+        [
+          "name: agent",
+          "model:",
+          "  name: openai/gpt-5",
+          "tools: [mail]",
+          "mcp:",
+          `  mode: ${mode}`,
+          "  servers:",
+          "    contacts:",
+          '      include: ["*"]',
+          ...server,
+          "system_instructions:",
+          "  content: Test",
+        ].join("\n"),
+      );
+
+    for (const mode of ["cli", "tools", "codemode"]) {
+      write(mode, "      behind: [mail]");
+      expect(resolveRecipe({ recipeDir }).selectAgent().mcp).toEqual({
+        mode,
+        servers: { contacts: { include: ["*"], behind: ["mail"] } },
+      });
+    }
+    for (const invalid of [
+      ["      behind: []"],
+      ['      behind: ["*"]'],
+      ["      behind: [mail, mail]"],
+      ["      behind: mail"],
+      ["      behind: [mail]", "      eager: [search_contacts]"],
+    ]) {
+      write("codemode", ...invalid);
+      expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
+        "has an invalid MCP policy",
+      );
+    }
+    write("cli", "      behind: [calendar]");
+    expect(() => resolveRecipe({ recipeDir }).selectAgent()).toThrow(
+      "puts MCP server 'contacts' behind tool(s) it does not declare: calendar",
+    );
+  });
+
   it("fails before returning a partial session configuration", () => {
     const recipeDir = makeRecipe();
     expect(() => resolveRecipe({ recipeDir }).selectAgent("missing")).toThrow(

@@ -9,11 +9,12 @@ import { RECIPES_MANIFEST } from "./manifest.generated.js";
 import { resolveDependencyDir } from "./package.js";
 
 /**
- * Companion packages: the first-party channel and document format packages
- * Recipes installs alongside itself, as its `optionalDependencies`. Installing
+ * Companion packages: the first-party channel, document format and
+ * productivity provider packages Recipes installs alongside itself, as its
+ * `optionalDependencies`. Installing
  * `@introspection-ai/recipes` (Pi's npm folder, a runtime image, npm or npx)
- * puts them in the same `node_modules`. A Recipe may declare `pi.channels` or
- * `pi.documents` for one without listing its package, and the copy beside the
+ * puts them in the same `node_modules`. A Recipe may declare `pi.channels`,
+ * `pi.documents` or `pi.productivity` for one without listing its package, and the copy beside the
  * running Recipes is used. A Recipe that lists the package in `dependencies`
  * pins it, and its copy wins.
  *

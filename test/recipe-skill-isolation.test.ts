@@ -1,7 +1,7 @@
 /**
  * In recipe mode the agent is offered exactly the Recipe's skills: its own,
- * its dependency and peer packages' `pi.skills`, and the `documents` tool's
- * core skill and profile. Skills Pi discovers anywhere else (an installed Pi
+ * its dependency and peer packages' `pi.skills`, the `documents` tool's
+ * core skill and profile, and the productivity tools' core skill. Skills Pi discovers anywhere else (an installed Pi
  * package, the user or project skills folder, `--skill`) never reach the
  * prompt or a `/skill:` command, under `pi --recipe` and the session API alike.
  */
@@ -101,11 +101,33 @@ function writeDocxPackage(dir: string): void {
   );
 }
 
+const PRODUCTIVITY = "@introspection-ai/recipe-productivity-fake";
+
+/** A stand-in productivity provider serving `mail search`. */
+function writeProductivityPackage(dir: string): void {
+  write(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: PRODUCTIVITY,
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+    }),
+  );
+  write(
+    join(dir, "index.js"),
+    `export default { kind: "productivity", apiVersion: 1, provider: "fake",
+      capabilities: { mail: { labels: "labels", folders: "labels", commands: { search: { effect: "read", backend: "rest" } } } },
+      createSession: () => ({ provider: "fake", mail: { search: async () => ({ messages: [] }) } }) };\n`,
+  );
+}
+
 type DocxSource = "dependency" | "peer" | "omitted";
 
 /**
  * A Recipe with its own skill, a dependency and a peer package that declare
- * `pi.skills`, and the docx format with the legal profile; plus foreign skills
+ * `pi.skills`, the docx format with the legal profile, and a productivity
+ * provider whose `mail` tool offers the core productivity skill; plus foreign skills
  * Pi discovers on its own: a package installed into a fake Pi agent folder, a
  * user skill that shares a name with the Recipe's own, a project skill and a
  * `--skill` path.
@@ -121,7 +143,10 @@ function world(docx: DocxSource) {
   const piAgentDir = join(root, "pi-agent");
 
   // The Recipe.
-  const dependencies: Record<string, string> = { "acme-dep-skills": ">=1.0.0" };
+  const dependencies: Record<string, string> = {
+    "acme-dep-skills": ">=1.0.0",
+    [PRODUCTIVITY]: ">=1.0.0",
+  };
   const peerDependencies: Record<string, string> = {
     "acme-peer-skills": ">=1.0.0",
   };
@@ -135,7 +160,10 @@ function world(docx: DocxSource) {
       type: "module",
       dependencies,
       peerDependencies,
-      pi: { documents: [{ format: "docx", profile: "legal-redlining-en-US" }] },
+      pi: {
+        documents: [{ format: "docx", profile: "legal-redlining-en-US" }],
+        productivity: [{ provider: "fake", tools: { mail: ["search"] } }],
+      },
     }),
   );
   write(
@@ -144,7 +172,7 @@ function world(docx: DocxSource) {
       "name: agent",
       "model:",
       "  name: anthropic/claude-sonnet-4-5",
-      "tools: [read, documents]",
+      "tools: [read, documents, mail]",
       "skills: [recipe-own, dep-skill, peer-skill]",
       "",
     ].join("\n"),
@@ -174,6 +202,9 @@ function world(docx: DocxSource) {
     }),
   );
   write(join(peerDir, "skills", "peer-skill", "SKILL.md"), skill("peer-skill"));
+  writeProductivityPackage(
+    join(recipeDir, "node_modules", ...PRODUCTIVITY.split("/")),
+  );
   if (docx === "dependency")
     writeDocxPackage(join(recipeDir, "node_modules", ...DOCX.split("/")));
   if (docx === "peer")
@@ -250,6 +281,7 @@ const OFFERED = [
   "peer-skill",
   "documents",
   "legal-redlining-en-us",
+  "productivity",
 ] as const;
 
 async function credentials(): Promise<InMemoryCredentialStore> {

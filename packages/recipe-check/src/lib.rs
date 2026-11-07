@@ -131,6 +131,7 @@ struct RawAgent {
     fields: HashSet<AgentField>,
     skills: Option<Vec<String>>,
     subagents: Option<Vec<String>>,
+    tools: Option<Vec<String>>,
     mcp: Option<AgentMcpConfig>,
 }
 
@@ -140,6 +141,8 @@ struct McpToolSelectors {
     exclude: Option<BTreeSet<String>>,
     defer: Option<BTreeSet<String>>,
     eager: Option<BTreeSet<String>>,
+    /// The tools whose own calls alone may reach the server.
+    behind: Option<BTreeSet<String>>,
 }
 
 type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
@@ -148,6 +151,7 @@ type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
 enum AgentMcpMode {
     Cli,
     Tools,
+    Codemode,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -856,6 +860,7 @@ fn validate_pi_config(
         "prompts",
         "channels",
         "documents",
+        "productivity",
         "mcp",
         "runtime",
         "evals",
@@ -904,6 +909,9 @@ fn validate_pi_config(
     if let Some(documents) = pi.get("documents") {
         validate_documents_config(documents, package, ctx);
     }
+    if let Some(productivity) = pi.get("productivity") {
+        validate_productivity_config(productivity, package, ctx);
+    }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
@@ -911,8 +919,8 @@ fn validate_pi_config(
     resolved
 }
 
-/// The companion packages: the first-party channel and document format packages
-/// Recipes installs alongside itself, so a Recipe may omit them. They are the
+/// The companion packages: the first-party channel, document format and
+/// productivity provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
 const COMPANION_PACKAGES: [&str; 3] = [
@@ -1044,15 +1052,7 @@ fn validate_channel_config(value: &JsonValue, package: &Package, ctx: &mut Check
             );
         }
         if let Some(commands) = connector.get("commands") {
-            let valid = commands.as_array().is_some_and(|values| {
-                let mut seen = BTreeSet::new();
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            if unique_names(commands).is_none() {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
                     format!("package.json#pi.channels[{index}].commands must be an array of unique non-empty strings"), Some("use a list of unique command names"));
             }
@@ -1167,23 +1167,17 @@ fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut Che
             );
         }
         if let Some(commands) = declaration.get("commands") {
-            let mut seen = BTreeSet::new();
-            let valid = commands.as_array().is_some_and(|values| {
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            let names = unique_names(commands);
+            if names.is_none() {
                 ctx.error(
                     CODE,
                     PACKAGE_JSON,
                     format!("package.json#pi.documents[{index}].commands must be an array of unique non-empty strings"),
                     Some("use a list of unique command names"),
                 );
-            } else if let Some(unknown) = seen
+            } else if let Some(unknown) = names
                 .iter()
+                .flatten()
                 .find(|command| !DOCUMENT_COMMANDS.contains(command))
             {
                 ctx.error(
@@ -1232,6 +1226,152 @@ fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut Che
                 PACKAGE_JSON,
                 format!("package.json#pi.documents[{index}].format must be non-empty"),
                 Some("name the document format, such as docx or pdf"),
+            ),
+        }
+    }
+}
+
+/// The productivity tools and their commands, as the host names them.
+const PRODUCTIVITY_COMMANDS: [(&str, &[&str]); 3] = [
+    (
+        "mail",
+        &[
+            "search",
+            "read",
+            "fetch_attachment",
+            "draft",
+            "update_draft",
+            "send",
+            "move",
+            "label",
+        ],
+    ),
+    (
+        "calendar",
+        &[
+            "list",
+            "read",
+            "free_busy",
+            "create",
+            "update",
+            "respond",
+            "cancel",
+        ],
+    ),
+    ("drive", &["search", "read", "download", "upload"]),
+];
+
+/// `pi.productivity` holds one provider, served by
+/// `@introspection-ai/recipe-productivity-<provider>`, with an optional
+/// allowlist of commands per tool. Whether the provider supports each command
+/// is checked when the runtime loads the provider's capability descriptor.
+fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
+    const CODE: &str = "pi.productivity_invalid";
+    let JsonValue::Array(declarations) = value else {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.productivity must be an array",
+            Some(
+                "use a list with one provider declaration, like [{ \"provider\": \"microsoft\" }]",
+            ),
+        );
+        return;
+    };
+    if declarations.len() > 1 {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.productivity declares more than one provider; a Recipe uses one productivity provider",
+            Some("keep one provider declaration"),
+        );
+    }
+    for (index, declaration) in declarations.iter().enumerate() {
+        let JsonValue::Object(declaration) = declaration else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}] must be an object"),
+                Some("make it a provider declaration"),
+            );
+            continue;
+        };
+        for key in declaration
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "provider" | "tools"))
+        {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}] contains unknown field '{key}'"),
+                Some("use provider and optional tools"),
+            );
+        }
+        if let Some(tools) = declaration.get("tools") {
+            let Some(tools) = tools.as_object() else {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.productivity[{index}].tools must be an object"),
+                    Some("map mail, calendar or drive to a list of commands"),
+                );
+                continue;
+            };
+            for (tool, commands) in tools {
+                let Some((_, known)) = PRODUCTIVITY_COMMANDS
+                    .iter()
+                    .find(|(name, _)| *name == tool.as_str())
+                else {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools contains unknown tool '{tool}'"),
+                        Some("use mail, calendar or drive"),
+                    );
+                    continue;
+                };
+                let names = unique_names(commands);
+                if names.is_none() {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools.{tool} must be an array of unique non-empty strings"),
+                        Some("use a list of unique command names"),
+                    );
+                } else if let Some(unknown) = names
+                    .iter()
+                    .flatten()
+                    .find(|command| !known.contains(command))
+                {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools.{tool} contains unknown command '{unknown}'"),
+                        Some(format!("use {}", known.join(", "))),
+                    );
+                }
+            }
+        }
+        match string_value(declaration.get("provider")).as_deref() {
+            Some(provider) => {
+                if let Some(problem) = declaration_package_problem(
+                    &format!("package.json#pi.productivity provider '{provider}'"),
+                    &format!("@introspection-ai/recipe-productivity-{provider}"),
+                    package,
+                ) {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        problem,
+                        Some("add the productivity provider package to package.json#dependencies and commit the lockfile"),
+                    );
+                }
+            }
+            None => ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}].provider must be non-empty"),
+                Some("name the provider, such as microsoft or google"),
             ),
         }
     }
@@ -2786,6 +2926,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         fields,
         skills,
         subagents,
+        tools,
         mcp,
     })
 }
@@ -3485,6 +3626,8 @@ fn validate_agent_string_array(
     }
 }
 
+const AGENT_MCP_SERVER_KEYS: [&str; 5] = ["include", "exclude", "defer", "eager", "behind"];
+
 fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Option<AgentMcpConfig> {
     let value = map.get("mcp")?;
     let Some(mcp) = value.as_object() else {
@@ -3499,12 +3642,13 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
     let mode = match mcp.get("mode") {
         Some(JsonValue::String(value)) if value == "cli" => Some(AgentMcpMode::Cli),
         Some(JsonValue::String(value)) if value == "tools" => Some(AgentMcpMode::Tools),
+        Some(JsonValue::String(value)) if value == "codemode" => Some(AgentMcpMode::Codemode),
         Some(_) => {
             ctx.error(
                 "agent.mcp_mode_invalid",
                 path,
-                "Agent mcp.mode must be 'cli' or 'tools'",
-                Some("set mcp.mode to cli or tools"),
+                "Agent mcp.mode must be 'cli', 'tools' or 'codemode'",
+                Some("set mcp.mode to cli, tools or codemode"),
             );
             None
         }
@@ -3567,30 +3711,25 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             );
             continue;
         };
-        for key in server
-            .keys()
-            .filter(|key| !matches!(key.as_str(), "include" | "exclude" | "defer" | "eager"))
-        {
-            ctx.error(
-                "agent.mcp_key_unknown",
-                path,
-                format!("Agent mcp server '{server_id}' contains unknown field '{key}'"),
-                Some("use only include, exclude, defer, and eager"),
-            );
-        }
-        let mut selectors = McpToolSelectors::default();
+        reject_unknown_mcp_server_keys(server, server_id, path, ctx);
+        let mut selectors = McpToolSelectors {
+            behind: validate_mcp_behind(server, server_id, path, ctx),
+            ..McpToolSelectors::default()
+        };
         for key in ["include", "exclude", "defer", "eager"] {
             let Some(value) = server.get(key) else {
                 continue;
             };
-            if matches!(key, "defer" | "eager") && mode == Some(AgentMcpMode::Cli) {
+            if matches!(key, "defer" | "eager") && mode.is_some() && !activation_allowed(key, mode)
+            {
                 ctx.error(
                     "agent.mcp_activation_invalid",
                     path,
                     format!(
-                        "Agent mcp server '{server_id}' {key} is only valid when mcp.mode is tools"
+                        "Agent mcp server '{server_id}' {key} is not valid when mcp.mode is {}",
+                        mode_name(mode)
                     ),
-                    Some("remove the activation selector or set mcp.mode to tools"),
+                    Some(activation_help(key)),
                 );
             }
             if let Err(message) = string_array(value) {
@@ -3681,6 +3820,92 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
         mode,
         servers: parsed,
     })
+}
+
+fn reject_unknown_mcp_server_keys(
+    server: &JsonMap,
+    server_id: &str,
+    path: &str,
+    ctx: &mut CheckContext,
+) {
+    for key in server
+        .keys()
+        .filter(|key| !AGENT_MCP_SERVER_KEYS.contains(&key.as_str()))
+    {
+        ctx.error(
+            "agent.mcp_key_unknown",
+            path,
+            format!("Agent mcp server '{server_id}' contains unknown field '{key}'"),
+            Some("use only include, exclude, defer, eager, and behind"),
+        );
+    }
+}
+
+/// `behind` puts a server behind the named tools: a non-empty list of exact tool names, and never
+/// with `defer` or `eager`, since the model is not to see the server's tools at all.
+fn validate_mcp_behind(
+    server: &JsonMap,
+    server_id: &str,
+    path: &str,
+    ctx: &mut CheckContext,
+) -> Option<BTreeSet<String>> {
+    let value = server.get("behind")?;
+    let items = match (string_array(value), value.as_array()) {
+        (Ok(()), Some(items)) if !items.is_empty() => items,
+        (Err(message), _) => {
+            ctx.error(
+                "agent.mcp_invalid",
+                path,
+                format!("mcp.{server_id}.behind: {message}"),
+                Some("list the tools that call the server, such as [mail]"),
+            );
+            return None;
+        }
+        _ => {
+            ctx.error(
+                "agent.mcp_invalid",
+                path,
+                format!("Agent mcp server '{server_id}' behind must name at least one tool"),
+                Some("list the tools that call the server, or remove behind"),
+            );
+            return None;
+        }
+    };
+    let names = items
+        .iter()
+        .filter_map(JsonValue::as_str)
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    if names.iter().collect::<BTreeSet<_>>().len() != names.len() {
+        ctx.error(
+            "agent.mcp_selector_duplicate",
+            path,
+            format!("Agent mcp server '{server_id}' behind must not contain duplicates"),
+            Some("remove duplicate tool names"),
+        );
+    }
+    for name in names.iter().filter(|name| name.contains('*')) {
+        ctx.error(
+            "agent.mcp_selector_invalid",
+            path,
+            format!(
+                "Agent mcp server '{server_id}' behind entry '{name}' must be an exact tool name"
+            ),
+            None::<String>,
+        );
+    }
+    for key in ["defer", "eager"]
+        .into_iter()
+        .filter(|key| server.contains_key(*key))
+    {
+        ctx.error(
+            "agent.mcp_behind_activation",
+            path,
+            format!("Agent mcp server '{server_id}' may not use {key} with behind"),
+            Some("a server behind a tool is never declared to the model; remove defer and eager"),
+        );
+    }
+    Some(names.into_iter().map(str::to_owned).collect())
 }
 
 fn validate_agent_system_instructions(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
@@ -3982,13 +4207,42 @@ fn resolved_agent_mcp(
         return (!inherited.servers.is_empty() || inherited.mode.is_some()).then_some(inherited);
     };
     let mut merged = child.clone();
-    if merged.mode == Some(AgentMcpMode::Cli) {
+    if merged.mode.is_some() {
         for selection in merged.servers.values_mut() {
-            selection.defer = None;
-            selection.eager = None;
+            if !activation_allowed("defer", merged.mode) {
+                selection.defer = None;
+            }
+            if !activation_allowed("eager", merged.mode) {
+                selection.eager = None;
+            }
         }
     }
     Some(merged)
+}
+
+/// `defer` hides a declared tool behind tool search, so it needs `tools`; `eager` declares a tool
+/// directly, which `tools` and `codemode` both do. A resolved mode is never absent: it defaults to cli.
+fn activation_allowed(key: &str, mode: Option<AgentMcpMode>) -> bool {
+    match key {
+        "defer" => mode == Some(AgentMcpMode::Tools),
+        _ => matches!(mode, Some(AgentMcpMode::Tools | AgentMcpMode::Codemode)),
+    }
+}
+
+fn mode_name(mode: Option<AgentMcpMode>) -> &'static str {
+    match mode {
+        Some(AgentMcpMode::Tools) => "tools",
+        Some(AgentMcpMode::Codemode) => "codemode",
+        Some(AgentMcpMode::Cli) | None => "cli",
+    }
+}
+
+fn activation_help(key: &str) -> &'static str {
+    if key == "defer" {
+        "defer needs mcp.mode tools; in codemode every tool is already off the model's declarations"
+    } else {
+        "eager needs mcp.mode tools or codemode"
+    }
 }
 
 fn portable_agent_name(value: &str) -> bool {
@@ -4000,6 +4254,23 @@ fn portable_agent_name(value: &str) -> bool {
                 .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
     };
     parts.all(valid_part)
+}
+
+fn resolved_agent_tools(name: &str, raw_by_name: &HashMap<String, &RawAgent>) -> Vec<String> {
+    let mut current = raw_by_name.get(name);
+    for _ in 0..MAX_INHERITANCE_DEPTH {
+        let Some(agent) = current else {
+            break;
+        };
+        if let Some(tools) = &agent.tools {
+            return tools.clone();
+        }
+        current = agent
+            .from
+            .as_deref()
+            .and_then(|parent| raw_by_name.get(parent));
+    }
+    Vec::new()
 }
 
 fn validate_resolved_agent_mcp(
@@ -4016,20 +4287,50 @@ fn validate_resolved_agent_mcp(
         .map(|agent| agent.path.clone())
         .unwrap_or_default();
 
-    if mcp.mode != Some(AgentMcpMode::Tools)
-        && mcp
-            .servers
-            .values()
-            .any(|selection| selection.defer.is_some() || selection.eager.is_some())
-    {
-        ctx.error(
-            "agent.mcp_activation_invalid",
-            path.clone(),
-            format!(
-                "Recipe agent '{name}' may use defer and eager only when its resolved mcp.mode is tools"
-            ),
-            Some("set mcp.mode to tools or remove defer and eager"),
-        );
+    let tools = resolved_agent_tools(name, raw_by_name);
+    for (server_id, selection) in &mcp.servers {
+        for tool in selection
+            .behind
+            .iter()
+            .flatten()
+            .filter(|tool| !tools.contains(tool))
+        {
+            ctx.error(
+                "agent.mcp_behind_tool_undeclared",
+                path.clone(),
+                format!(
+                    "Recipe agent '{name}' puts MCP server '{server_id}' behind tool '{tool}', which it does not declare"
+                ),
+                Some("add the tool to the agent's tools, or name a tool it declares"),
+            );
+        }
+    }
+
+    for (key, used) in [
+        (
+            "defer",
+            mcp.servers
+                .values()
+                .any(|selection| selection.defer.is_some()),
+        ),
+        (
+            "eager",
+            mcp.servers
+                .values()
+                .any(|selection| selection.eager.is_some()),
+        ),
+    ] {
+        if used && !activation_allowed(key, mcp.mode) {
+            ctx.error(
+                "agent.mcp_activation_invalid",
+                path.clone(),
+                format!(
+                    "Recipe agent '{name}' may not use {key} when its resolved mcp.mode is {}",
+                    mode_name(mcp.mode)
+                ),
+                Some(activation_help(key)),
+            );
+        }
     }
 
     for (server_id, selection) in &mcp.servers {
@@ -4332,6 +4633,7 @@ fn mcp_tool_policy(value: Option<&JsonValue>) -> Option<McpToolPolicy> {
                 exclude: exclude.and_then(json_string_set),
                 defer: None,
                 eager: None,
+                behind: None,
             },
         );
     }
@@ -4489,6 +4791,20 @@ fn validate_relative_pattern(pattern: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// The strings in `value` when it is an array of unique non-empty strings.
+fn unique_names(value: &JsonValue) -> Option<BTreeSet<&str>> {
+    let mut seen = BTreeSet::new();
+    value
+        .as_array()?
+        .iter()
+        .all(|value| {
+            value
+                .as_str()
+                .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+        })
+        .then_some(seen)
 }
 
 fn string_value(value: Option<&JsonValue>) -> Option<String> {
@@ -5003,6 +5319,114 @@ mod tests {
         }
     }
 
+    fn productivity_recipe(productivity: JsonValue, dependencies: JsonValue) -> RecipeFiles {
+        let package = json!({
+            "name": "productivity-test",
+            "version": "0.1.0",
+            "dependencies": dependencies,
+            "pi": { "agents": ["agents/*.yaml"], "productivity": productivity }
+        });
+        recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string(&package).expect("serialize package"),
+            ),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\ntools: [mail, calendar]\n",
+            ),
+        ])
+    }
+
+    fn productivity_invalid(report: &Report) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "pi.productivity_invalid")
+    }
+
+    #[test]
+    fn productivity_declaration_shape() {
+        let pinned = json!({ "@introspection-ai/recipe-productivity-acme": "0.1.0" });
+        for (productivity, valid) in [
+            (json!([{ "provider": "acme" }]), true),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["search", "read", "draft"], "calendar": [], "drive": ["search"] } }]),
+                true,
+            ),
+            (json!({ "provider": "acme" }), false),
+            (json!(["acme"]), false),
+            (json!([{ "provider": "" }]), false),
+            (
+                json!([{ "provider": "acme" }, { "provider": "acme" }]),
+                false,
+            ),
+            (json!([{ "provider": "acme", "commands": ["read"] }]), false),
+            (json!([{ "provider": "acme", "tools": ["mail"] }]), false),
+            (
+                json!([{ "provider": "acme", "tools": { "chat": ["read"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": "send" } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["send", "send"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["forward"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "drive": ["share"] } }]),
+                false,
+            ),
+        ] {
+            let report =
+                check_recipe_files(&productivity_recipe(productivity.clone(), pinned.clone()));
+            assert_eq!(
+                !productivity_invalid(&report),
+                valid,
+                "{productivity}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn productivity_refuses_a_second_provider() {
+        let report = check_recipe_files(&productivity_recipe(
+            json!([{ "provider": "acme" }, { "provider": "other" }]),
+            json!({
+                "@introspection-ai/recipe-productivity-acme": "0.1.0",
+                "@introspection-ai/recipe-productivity-other": "0.1.0"
+            }),
+        ));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "pi.productivity_invalid"
+                && diagnostic.message.contains("more than one provider")
+        }));
+    }
+
+    #[test]
+    fn productivity_provider_without_a_companion_requires_its_package() {
+        let report = check_recipe_files(&productivity_recipe(
+            json!([{ "provider": "acme" }]),
+            json!({}),
+        ));
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "pi.productivity_invalid"
+                    && diagnostic.message.contains("recipe-productivity-acme")
+            }),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
     /// `connector_recipe` with its package.json changed by `edit`.
     fn edited_connector_recipe(edit: impl FnOnce(&mut JsonValue)) -> RecipeFiles {
         let mut files = connector_recipe(&["slack_origin"]);
@@ -5362,6 +5786,133 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    fn codemode_agent(servers: &str) -> String {
+        format!(
+            "name: root\nmodel:\n  name: test/provider-model\ntools: []\nmcp:\n  mode: codemode\n  servers:\n{servers}subagents: []\nsystem_instructions:\n  content: Root instructions\n"
+        )
+    }
+
+    fn codemode_report(servers: &str) -> Report {
+        let package = json!({
+            "name": "mcp-codemode",
+            "version": "0.1.0",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "mcp": {
+                    "servers": [{
+                        "id": "salesforce",
+                        "tools": { "include": ["search_profiles", "get_profile"] }
+                    }]
+                }
+            }
+        });
+        let input = recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("agents/root.yaml", &codemode_agent(servers)),
+        ]);
+        check_recipe_files(&input)
+    }
+
+    #[test]
+    fn accepts_codemode_with_eager_tools() {
+        let report = codemode_report(concat!(
+            "    salesforce:\n",
+            "      include: [\"*\"]\n",
+            "      eager: [search_profiles]\n",
+        ));
+
+        assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn rejects_defer_in_codemode() {
+        let report = codemode_report(concat!(
+            "    salesforce:\n",
+            "      include: [\"*\"]\n",
+            "      defer: [\"*\"]\n",
+        ));
+
+        assert!(!report.valid);
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
+            == "agent.mcp_activation_invalid"
+            && diagnostic.message.contains("codemode")));
+    }
+
+    fn behind_report(mode: &str, server: &str) -> Report {
+        let agent = codemode_agent(&format!(
+            "    salesforce:\n      include: [\"*\"]\n{server}"
+        ))
+        .replace("tools: []", "tools: [crm]")
+        .replace("mode: codemode", &format!("mode: {mode}"));
+        let package = json!({
+            "name": "mcp-behind",
+            "version": "0.1.0",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "mcp": {
+                    "servers": [{
+                        "id": "salesforce",
+                        "tools": { "include": ["search_profiles", "get_profile"] }
+                    }]
+                }
+            }
+        });
+        check_recipe_files(&recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("agents/root.yaml", &agent),
+        ]))
+    }
+
+    fn has_code(report: &Report, code: &str) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code)
+    }
+
+    #[test]
+    fn accepts_behind_naming_a_declared_tool_in_every_mode() {
+        for mode in ["cli", "tools", "codemode"] {
+            let report = behind_report(mode, "      behind: [crm]\n");
+            assert!(report.valid, "{mode}: {:?}", report.diagnostics);
+        }
+    }
+
+    #[test]
+    fn rejects_behind_naming_an_undeclared_tool() {
+        let report = behind_report("cli", "      behind: [mail]\n");
+        assert!(!report.valid);
+        assert!(has_code(&report, "agent.mcp_behind_tool_undeclared"));
+    }
+
+    #[test]
+    fn rejects_malformed_behind() {
+        for (server, code) in [
+            ("      behind: []\n", "agent.mcp_invalid"),
+            ("      behind: crm\n", "agent.mcp_invalid"),
+            ("      behind: [\"*\"]\n", "agent.mcp_selector_invalid"),
+            ("      behind: [crm, crm]\n", "agent.mcp_selector_duplicate"),
+            (
+                "      behind: [crm]\n      eager: [search_profiles]\n",
+                "agent.mcp_behind_activation",
+            ),
+        ] {
+            let report = behind_report("codemode", server);
+            assert!(!report.valid, "{server}");
+            assert!(
+                has_code(&report, code),
+                "{server}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

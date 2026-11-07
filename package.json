@@ -82,6 +82,10 @@
 			"types": "./dist/documents/index.d.ts",
 			"import": "./dist/documents/index.js"
 		},
+		"./productivity": {
+			"types": "./dist/productivity/index.d.ts",
+			"import": "./dist/productivity/index.js"
+		},
 		"./search": {
 			"types": "./dist/search/index.d.ts",
 			"import": "./dist/search/index.js"
