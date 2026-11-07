@@ -452,6 +452,41 @@ describe("Microsoft productivity provider: mail", () => {
     expect(text.messages.map((message) => message.id)).toEqual(["u"]);
   });
 
+  it("search matches a sender address with $filter and a sender name with KQL", async () => {
+    on("GET", "/me/messages", {
+      json: {
+        value: [
+          { id: "old", receivedDateTime: "2026-02-28T10:00:00Z" },
+          {
+            id: "new",
+            receivedDateTime: "2026-03-02T10:00:00Z",
+            isRead: false,
+          },
+        ],
+      },
+    });
+    await session().mail!.search!({ from: "alice@x.test", limit: 5 }, ctx);
+    expect(requests[0]!.query.get("$filter")).toBe(
+      "receivedDateTime ge 1900-01-01T00:00:00Z and from/emailAddress/address eq 'alice@x.test'",
+    );
+    expect(requests[0]!.query.get("$search")).toBeNull();
+
+    const named = await session().mail!.search!(
+      {
+        from: "Alice Smith",
+        after: "2026-03-01T00:00:00Z",
+        unread: true,
+        limit: 5,
+      },
+      ctx,
+    );
+    expect(requests[1]!.query.get("$search")).toBe(
+      '"from:\\"Alice Smith\\" received>=2026-02-28"',
+    );
+    expect(requests[1]!.query.get("$filter")).toBeNull();
+    expect(named.messages.map((message) => message.id)).toEqual(["new"]);
+  });
+
   it("search applies the exact after and before instants with text as without", async () => {
     const received = [
       "2026-03-02T09:00:00Z",

@@ -60,7 +60,9 @@ descriptor states this, since Outlook has no labels in Gmail's sense.
   `invalid_request`; `5xx` and network failures are `provider_error`.
 - **Mail.** `mail search` uses `$filter` and `$orderby` without text and a
   KQL `$search` with it (Graph combines neither with the other), filtering
-  `unread` from the page in that case. KQL's `received` takes only a date in
+  `unread` from the page in that case. `from` as an address is matched with
+  `$filter`; `from` as a name goes through KQL (`from:"Alice Smith"`), since
+  Graph documents no `$filter` on the sender's name. KQL's `received` takes only a date in
   the mailbox's zone, so with text the dates are widened a day each way and
   the exact `after` and `before` instants filter the page, as `$filter`
   applies them without text. A thread read follows every page, newest first,

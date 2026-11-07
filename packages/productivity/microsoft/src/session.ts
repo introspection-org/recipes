@@ -35,6 +35,8 @@ export const SIMPLE_UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 /** Upload session ranges: a multiple of 320 KiB, as Graph requires. */
 export const UPLOAD_CHUNK_BYTES = 320 * 1024 * 32;
 
+const EMAIL = /^[^\s@]+@[^\s@]+$/;
+
 /** The most addresses one `getSchedule` call takes. */
 const SCHEDULES_PER_CALL = 20;
 
@@ -461,13 +463,17 @@ export function createMicrosoftSession(
       let unreadAfter = false;
       const after = args.after ? Date.parse(args.after) : undefined;
       const before = args.before ? Date.parse(args.before) : undefined;
-      if (args.query?.trim()) {
+      const from = args.from?.trim();
+      // $filter matches a sender by address only; a name goes through KQL.
+      const fromName = from !== undefined && !EMAIL.test(from);
+      if (args.query?.trim() || fromName) {
         // Graph does not combine $search with $filter or $orderby on messages,
         // so every other criterion becomes a KQL term (user-list-messages.md).
         // KQL's received takes a date in the mailbox's zone, so the terms are
         // widened a day each way and the exact instants filter the results.
-        const terms = [args.query.trim()];
-        if (args.from) terms.push(`from:${args.from}`);
+        const terms = args.query?.trim() ? [args.query.trim()] : [];
+        if (from)
+          terms.push(/\s/.test(from) ? `from:"${from}"` : `from:${from}`);
         if (after !== undefined)
           terms.push(`received>=${kqlDate(after - DAY_MS)}`);
         if (before !== undefined)
@@ -483,8 +489,7 @@ export function createMicrosoftSession(
           filters.push(
             `receivedDateTime lt ${new Date(args.before).toISOString()}`,
           );
-        if (args.from)
-          filters.push(`from/emailAddress/address eq ${odata(args.from)}`);
+        if (from) filters.push(`from/emailAddress/address eq ${odata(from)}`);
         if (args.unread !== undefined)
           filters.push(`isRead eq ${args.unread ? "false" : "true"}`);
         query.$filter = filters.join(" and ");
