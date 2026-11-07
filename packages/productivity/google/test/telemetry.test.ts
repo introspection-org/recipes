@@ -131,7 +131,11 @@ describe("request spans from a session", () => {
         /\/calendars\/primary\/events\/e1$/,
         [
           googleError(429, "rateLimitExceeded"),
-          json({ id: "e1", summary: "Sync" }),
+          json({
+            id: "e1",
+            summary: "Sync",
+            start: { timeZone: "UTC" },
+          }),
         ],
       ],
     ]);

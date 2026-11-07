@@ -181,7 +181,10 @@ Excel and PowerPoint files are the same problem.
   list (`calendarList.list`). An event listed from another calendar than the
   primary one carries that calendar in its provider id, so `read`, `update`,
   `respond` and `cancel` address the calendar it came from (`create` always
-  writes to the primary calendar). `create` and `update` send local times with
+  writes to the primary calendar). An event without its own zone is shown in
+  its calendar's zone: `list` takes it from `events.list`, and `read` and
+  `update` from `calendars.get`, read once per calendar per session.
+  `create` and `update` send local times with
   `timeZone`, which Calendar reads in that zone. `respond` patches the
   attendee list with only the person's own `responseStatus` and comment
   changed. `cancel` deletes with `sendUpdates=all`; Google sends attendees

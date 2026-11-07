@@ -669,7 +669,25 @@ function eventDetail(
 
 /** Google Calendar over REST (`calendar/v3`): every `calendar` command. */
 export class GoogleRestCalendar implements Required<CalendarSession> {
+  private readonly zones = new Map<string, Promise<string | undefined>>();
+
   constructor(readonly calendar: CalendarClient) {}
+
+  /** The zone an event without its own is shown in: its calendar's, as `events.list` gives it. */
+  private zoneFor(
+    calendarId: string,
+    event: GoogleEvent,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    if (event.start?.timeZone) return Promise.resolve(undefined);
+    let zone = this.zones.get(calendarId);
+    if (!zone) {
+      zone = this.calendar.calendarZone(calendarId, signal);
+      zone.catch(() => this.zones.delete(calendarId));
+      this.zones.set(calendarId, zone);
+    }
+    return zone;
+  }
 
   /** A calendar named by its title (or ID) on the person's list; absent means primary. */
   private async calendarId(
@@ -718,9 +736,10 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarEvent> {
     const { calendarId, eventId } = decodeEventId(args.event_id);
+    const event = await this.calendar.getEvent(calendarId, eventId, ctx.signal);
     return eventDetail(
-      await this.calendar.getEvent(calendarId, eventId, ctx.signal),
-      undefined,
+      event,
+      await this.zoneFor(calendarId, event, ctx.signal),
       calendarId,
     );
   }
@@ -825,7 +844,11 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
       this.eventBody(change),
       ctx.signal,
     );
-    return eventDetail(updated, args.time_zone, calendarId);
+    return eventDetail(
+      updated,
+      args.time_zone ?? (await this.zoneFor(calendarId, updated, ctx.signal)),
+      calendarId,
+    );
   }
 
   /** Sets the person's own `responseStatus` (and comment) and nothing else. */

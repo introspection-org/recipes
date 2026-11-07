@@ -106,6 +106,46 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     );
   });
 
+  it("shows an event without its own zone in its calendar's zone, on read as on list", async () => {
+    const team = "team@group.calendar.google.com";
+    const zoneless = {
+      id: "e2",
+      summary: "Standup",
+      start: { dateTime: "2025-11-10T10:00:00+01:00" },
+      end: { dateTime: "2025-11-10T10:15:00+01:00" },
+    };
+    const { backend: b, calls } = await backend([
+      [
+        "GET",
+        /\/users\/me\/calendarList$/,
+        () => json({ items: [{ id: team, summary: "Team" }] }),
+      ],
+      [
+        "GET",
+        /\/events$/,
+        () => json({ items: [zoneless], timeZone: "Europe/Paris" }),
+      ],
+      ["GET", /\/events\/e2$/, () => json(zoneless)],
+      ["GET", /\/calendars\/[^/]+$/, () => json({ timeZone: "Europe/Paris" })],
+    ]);
+    const listed = await b.calendar.list({
+      calendar: "Team",
+      from: "2025-11-10T00:00:00Z",
+      to: "2025-11-11T00:00:00Z",
+      limit: 5,
+    });
+    expect(listed.events[0]!.time_zone).toBe("Europe/Paris");
+    const read = await b.calendar.read({ event_id: listed.events[0]!.id });
+    await b.calendar.read({ event_id: listed.events[0]!.id });
+    expect(read.time_zone).toBe("Europe/Paris");
+    // The calendar's zone is read once per session.
+    expect(
+      calls.filter((call) =>
+        call.url.pathname.endsWith(encodeURIComponent(team)),
+      ).length,
+    ).toBe(1);
+  });
+
   it("keeps a listed event's calendar for every later command", async () => {
     const team = "team#x@group.calendar.google.com";
     const teamPath = `/calendar/v3/calendars/${encodeURIComponent(team)}/events`;
