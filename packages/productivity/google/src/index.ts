@@ -35,14 +35,6 @@ export {
   type GoogleTransportOptions,
 } from "./http.js";
 export {
-  EXPECTED_MCP_TOOLS,
-  GOOGLE_MCP_SERVERS,
-  type GoogleMcpServer,
-  type McpCommand,
-  mcpToolFor,
-  mcpToolName,
-} from "./mcp.js";
-export {
   decodeBase64Url,
   decodeEncodedWords,
   type GmailMessagePart,

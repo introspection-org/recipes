@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 
 import googleProductivityModule, {
   createGoogleProductivitySession,
-  EXPECTED_MCP_TOOLS,
   GoogleProductivityError,
 } from "../src/index.js";
 import { fakeGoogle } from "./fake-google.js";
@@ -45,19 +44,14 @@ describe("the Google productivity module", () => {
     }
   });
 
-  it("declares MCP exactly for the commands with an expected MCP tool", () => {
+  it("serves every command over REST", () => {
     for (const tool of PRODUCTIVITY_TOOLS) {
       const commands = googleProductivityModule.capabilities[tool]!
         .commands as Record<string, { backend: string }>;
       for (const [command, capability] of Object.entries(commands)) {
-        expect(capability.backend, `${tool} ${command}`).toBe(
-          `${tool}.${command}` in EXPECTED_MCP_TOOLS ? "mcp" : "rest",
-        );
+        expect(capability.backend, `${tool} ${command}`).toBe("rest");
       }
     }
-    expect(
-      googleProductivityModule.capabilities.mail!.commands.send!.backend,
-    ).toBe("rest");
   });
 
   it("opens a session with a method for every declared command", async () => {

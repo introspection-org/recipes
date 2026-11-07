@@ -165,11 +165,6 @@ and the host replaces it on the way out:
   credential for the session's person. A host that cannot keep the
   credential out of the agent's process must not offer these tools.
 
-An MCP server a provider reaches through the session's tools is one of the
-Recipe's MCP servers, so its endpoint and credential come from the Recipe's
-MCP binding ([MCP configuration](../mcp-configuration.md)), never from the
-provider.
-
 Connecting a person is a host concern. On Introspection, one connector per
 provider holds the OAuth client and scopes (per-product, never the broad
 directory scopes), and each person connects once.
@@ -181,14 +176,21 @@ capability descriptor records the choice so a review can see it:
 
 | Provider | Default backend | Fallback |
 | --- | --- | --- |
-| `google` | Google's Workspace MCP servers (Gmail, Calendar, Drive), declared as the Recipe's MCP servers and called through Pi's in-process MCP client | Google's REST APIs for a command the session cannot call over MCP |
+| `google` | Google's REST APIs (Gmail, Calendar, Drive) | None. Workspace MCP later, below |
 | `microsoft` | Microsoft Graph REST v1.0, through a small client shaped like Slack's | None. Work IQ MCP stays available to a Recipe as an ordinary MCP binding |
 
 Both backends of one provider use the same connection, so a command can move
 from REST to MCP when the provider's server gains it, without a Recipe
 noticing. Contract tests pin each backend's request and response shapes,
-because Google's MCP servers are a developer preview and Graph changes by
-version.
+because Graph changes by version.
+
+**MCP later.** Google's Workspace MCP servers are in developer preview, with
+the Calendar and Drive hosts and every tool name unconfirmed, so the Google
+provider is REST-only for now. Once they are generally available and the
+tool names confirmed, an MCP path can return behind the Recipe's
+`mcp.servers.<id>.behind: [mail|calendar|drive]`
+([MCP configuration](../mcp-configuration.md#keep-a-server-behind-a-tool),
+[#459](https://github.com/introspection-org/recipes/pull/459)).
 
 Each provider's guide gives its command-to-API mapping, scopes, setup and
 errors: [Google](google.md) and
@@ -227,14 +229,14 @@ schema and description, so a Recipe never depends on which provider runs.
 ## Test productivity Recipes
 
 - **Unit:** each provider package tests its transport against a fake HTTP
-  server (and, for Google's MCP tools, a fake `executeTool`), covering paging,
-  `Retry-After`, error mapping and the placeholder credential.
+  server, covering paging, `Retry-After`, error mapping and the placeholder
+  credential.
 - **Recipe:** MCP fakes and recorded HTTP fixtures (as `recipe-crm-agent`
   does for its servers) let evals run a Recipe against a known mailbox and
   calendar without a real account.
 - **Live:** `introspection dev` with a connected test account: a Microsoft
   365 developer tenant with its sample data, and a Google Workspace test
-  domain in the MCP developer preview.
+  domain.
 
 ## Write a provider
 
@@ -256,14 +258,6 @@ channels:
   command, checks every enabled command is implemented, and calls `close()`
   when the session shuts down. `config` carries the enabled commands per
   tool; `fetch`, when a host passes one, replaces the global `fetch`.
-
-Each session method takes the call's context, `{ signal?, tools? }`.
-`tools` is the session's other tools, run through the host's tool pipeline
-with its hooks and policy: on Pi it wraps the tool's `ctx.executeTool` and
-`ctx.tools`, and it is absent on a Pi without them. A provider serves a
-command over a Recipe MCP server by calling that server's tool through it
-(`tools.canCall(name)`, then `tools.executeTool(name, args)`, under Pi's
-name `mcp__<server>__<tool>`), and falls back when the tool cannot be called.
 
 A session takes and returns the provider's own ids. The host resolves each
 handle before the call and mints handles for what comes back, so a provider
@@ -288,12 +282,12 @@ Where the host differs from, or settles, the design above:
   rest in the cursor handle and serves them first on the next call, so a
   provider's cursor never skips an item it returned. A provider that filters
   its own pages may return a short page with a cursor; the host fills the page
-  from up to five further calls.
+  from up to five further calls. A handle whose item the provider reports
+  `not_found` is dropped. `mail move` keeps the message's handle when the
+  provider gives the moved message a new id.
 - **Thread reads.** A provider reads a whole thread, up to a cap of its own;
   when the cap cuts a thread, `mail read` returns the messages it read and
-  says so in `unavailable` rather than presenting the thread as complete. A handle whose item
-  the provider reports `not_found` is dropped. `mail move` keeps the
-  message's handle when the provider gives the moved message a new id.
+  says so in `unavailable` rather than presenting the thread as complete.
 - **Arguments.** `mail draft` with `reply_to` may leave `to` empty: the
   reply then goes to the parent's sender (its `Reply-To`, else `From`), as
   the provider's own Reply does, never to every recipient.

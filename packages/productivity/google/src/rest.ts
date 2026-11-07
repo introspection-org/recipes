@@ -179,7 +179,7 @@ export class GoogleRestMail implements Required<MailSession> {
   }
 
   /** The `q` and `labelIds` for `users.messages.list` from neutral filters. */
-  async searchQuery(
+  private async searchQuery(
     args: Omit<MailSearchArgs, "limit">,
     signal?: AbortSignal,
   ): Promise<{ q?: string; labelIds?: string[] }> {
@@ -425,7 +425,7 @@ export class GoogleRestMail implements Required<MailSession> {
   }
 
   /** The label IDs `mail label` adds and removes, from label names. */
-  async labelChange(
+  private async labelChange(
     args: Omit<MailLabelArgs, "message_id">,
     signal?: AbortSignal,
   ): Promise<{ addLabelIds: string[]; removeLabelIds: string[] }> {
@@ -443,7 +443,7 @@ export class GoogleRestMail implements Required<MailSession> {
    * Gmail has no folders: moving adds the folder's label and takes the message
    * out of the inbox, and `archive` only takes it out of the inbox.
    */
-  async moveChange(
+  private async moveChange(
     folder: string,
     signal?: AbortSignal,
   ): Promise<{ addLabelIds: string[]; removeLabelIds: string[] }> {
@@ -545,7 +545,7 @@ function attendeeResponse(
 }
 
 /** A Google event as the neutral summary, its times in the event's own zone. */
-export function eventSummary(
+function eventSummary(
   event: GoogleEvent,
   calendarZone = "UTC",
   calendarId = PRIMARY_CALENDAR,
@@ -581,7 +581,7 @@ export function eventSummary(
   };
 }
 
-export function eventDetail(
+function eventDetail(
   event: GoogleEvent,
   calendarZone?: string,
   calendarId = PRIMARY_CALENDAR,
@@ -616,7 +616,7 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
   constructor(readonly calendar: CalendarClient) {}
 
   /** A calendar named by its title (or ID) on the person's list; absent means primary. */
-  async calendarId(
+  private async calendarId(
     name: string | undefined,
     signal?: AbortSignal,
   ): Promise<string> {
@@ -702,7 +702,7 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
   }
 
   /** The `Event` body for a create, or for a patch of only the fields given. */
-  eventBody(args: Partial<CalendarCreateArgs>): GoogleEvent {
+  private eventBody(args: Partial<CalendarCreateArgs>): GoogleEvent {
     if (
       (args.start !== undefined || args.end !== undefined) &&
       !args.time_zone
@@ -812,7 +812,7 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
   }
 }
 
-export function driveFileSummary(file: DriveFile): DriveFileSummary {
+function driveFileSummary(file: DriveFile): DriveFileSummary {
   const size = file.size === undefined ? Number.NaN : Number(file.size);
   return {
     id: file.id,
