@@ -184,7 +184,11 @@ Excel and PowerPoint files are the same problem.
   `respond` and `cancel` address the calendar it came from (`create` always
   writes to the primary calendar). An event without its own zone is shown in
   its calendar's zone: `list` takes it from `events.list`, and `read` and
-  `update` from `calendars.get`, read once per calendar per session.
+  `update` from `calendars.get`, read once per calendar per session. When
+  `calendars.get` is refused (a connection with only `calendar.events`), the
+  zone is the fixed one of the event's own offset (`Etc/GMT-1` for
+  `+01:00`), or UTC, so neither a read nor a write that already happened
+  fails on it.
   `create` and `update` send local times with
   `timeZone`, which Calendar reads in that zone. `respond` patches the
   attendee list with only the person's own `responseStatus` and comment

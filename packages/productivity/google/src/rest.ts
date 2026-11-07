@@ -587,6 +587,13 @@ function eventDateTime(
   return allDay ? { date: value } : { dateTime: value, timeZone };
 }
 
+/** `Etc/GMT-1` for `+01:00`: the IANA zone of a whole-hour offset; UTC otherwise. */
+function offsetZone(dateTime: string | undefined): string | undefined {
+  const match = /([+-])(\d{2}):00$/.exec(dateTime ?? "");
+  if (!match || match[2] === "00") return undefined;
+  return `Etc/GMT${match[1] === "+" ? "-" : "+"}${Number(match[2])}`;
+}
+
 function looksLikeHtml(text: string): boolean {
   return /<\/?[a-z][^>]*>/i.test(text);
 }
@@ -672,20 +679,30 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
 
   constructor(readonly calendar: CalendarClient) {}
 
-  /** The zone an event without its own is shown in: its calendar's, as `events.list` gives it. */
-  private zoneFor(
+  /**
+   * The zone an event without its own is shown in: its calendar's, as
+   * `events.list` gives it. When `calendars.get` is refused (a connection with
+   * only `calendar.events`), the fixed zone of the event's own offset, so a
+   * read degrades and a write that already happened never reports failure.
+   */
+  private async zoneFor(
     calendarId: string,
     event: GoogleEvent,
     signal?: AbortSignal,
   ): Promise<string | undefined> {
-    if (event.start?.timeZone) return Promise.resolve(undefined);
+    if (event.start?.timeZone) return undefined;
     let zone = this.zones.get(calendarId);
     if (!zone) {
-      zone = this.calendar.calendarZone(calendarId, signal);
-      zone.catch(() => this.zones.delete(calendarId));
+      zone = this.calendar.calendarZone(calendarId, signal).catch((error) => {
+        if (signal?.aborted) {
+          this.zones.delete(calendarId);
+          throw error;
+        }
+        return undefined;
+      });
       this.zones.set(calendarId, zone);
     }
-    return zone;
+    return (await zone) ?? offsetZone(event.start?.dateTime);
   }
 
   /** A calendar named by its title (or ID) on the person's list; absent means primary. */

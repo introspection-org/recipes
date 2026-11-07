@@ -103,6 +103,44 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     );
   });
 
+  it("falls back to the event's own offset when the calendar's zone is refused, after a write as on a read", async () => {
+    const zoneless = {
+      id: "e3",
+      summary: "Sync",
+      start: { dateTime: "2025-11-10T10:00:00+01:00" },
+      end: { dateTime: "2025-11-10T10:30:00+01:00" },
+    };
+    const { backend: b, calls } = await backend([
+      [
+        "PATCH",
+        /\/events\/e3$/,
+        () => json({ ...zoneless, summary: "Sync 2" }),
+      ],
+      ["GET", /\/events\/e3$/, () => json(zoneless)],
+      [
+        "GET",
+        /\/calendars\/primary$/,
+        () => googleError(403, "insufficientPermissions"),
+      ],
+    ]);
+    const updated = await b.calendar.update({
+      event_id: "e3",
+      title: "Sync 2",
+    });
+    expect(updated).toMatchObject({
+      title: "Sync 2",
+      start: "2025-11-10T10:00:00+01:00",
+      time_zone: "Etc/GMT-1",
+    });
+    const read = await b.calendar.read({ event_id: "e3" });
+    expect(read.time_zone).toBe("Etc/GMT-1");
+    expect(calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
+    // A refused zone is not asked for again.
+    expect(
+      calls.filter((call) => call.url.pathname.endsWith("/calendars/primary")),
+    ).toHaveLength(1);
+  });
+
   it("finds a calendar by name or ID on a later page of the person's list", async () => {
     const late = "late@group.calendar.google.com";
     const { backend: b, calls } = await backend([
