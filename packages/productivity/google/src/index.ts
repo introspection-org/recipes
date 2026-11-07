@@ -27,11 +27,7 @@ export {
   DRIVE_EXPORT_LIMIT_BYTES,
   GOOGLE_ENDPOINTS,
   type GoogleEndpoints,
-  type GoogleFetch,
-  type GoogleHttpResponse,
-  type GoogleRequestInit,
   GoogleTransport,
-  type GoogleTransportOptions,
 } from "./http.js";
 export {
   decodeBase64Url,

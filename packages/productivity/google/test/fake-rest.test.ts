@@ -16,7 +16,7 @@ import {
   type FakeHandler,
   googleError,
   json,
-  recordingSleep,
+  fakeHttp,
 } from "./fake-google.js";
 
 const EVENT = {
@@ -68,15 +68,12 @@ async function backend(
   routes: Array<[string, RegExp, FakeHandler | Response[]]>,
 ) {
   const fake = fakeGoogle(routes);
-  const session = await createGoogleProductivitySession(
-    {
-      config: CONFIG,
-      env: { INTROSPECTION_TASK_ID: "t" },
-      cwd: process.cwd(),
-      fetch: fake.fetchImpl,
-    },
-    { sleep: recordingSleep().sleep },
-  );
+  const session = await createGoogleProductivitySession({
+    config: CONFIG,
+    env: { INTROSPECTION_TASK_ID: "t" },
+    cwd: process.cwd(),
+    http: fakeHttp(fake.fetchImpl),
+  });
   return { calls: fake.calls, backend: session };
 }
 

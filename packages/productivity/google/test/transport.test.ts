@@ -6,12 +6,7 @@ import {
   GoogleTransport,
   GMAIL_SCOPES,
 } from "../src/index.js";
-import {
-  fakeGoogle,
-  googleError,
-  json,
-  recordingSleep,
-} from "./fake-google.js";
+import { fakeGoogle, fakeHttp, googleError, json } from "./fake-google.js";
 
 const URL_UNDER_TEST = "https://gmail.googleapis.com/gmail/v1/users/me/labels";
 const LABELS = {
@@ -19,23 +14,16 @@ const LABELS = {
   template: "/gmail/v1/users/{userId}/labels",
 };
 
-function transport(
-  responses: Response[],
-  env: Record<string, string> = { INTROSPECTION_TASK_ID: "task-1" },
-) {
+function transport(responses: Response[]) {
   const fake = fakeGoogle([
     ["GET", /labels$/, responses],
     ["POST", /drafts$/, responses],
   ]);
-  const recorded = recordingSleep();
+  const waits: number[] = [];
   return {
     ...fake,
-    waits: recorded.waits,
-    transport: new GoogleTransport({
-      env,
-      fetchImpl: fake.fetchImpl,
-      sleep: recorded.sleep,
-    }),
+    waits,
+    transport: new GoogleTransport(fakeHttp(fake.fetchImpl, { waits })),
   };
 }
 
@@ -50,36 +38,6 @@ async function failure(
   }
   throw new Error("expected a failure");
 }
-
-describe("placeholder credential", () => {
-  it("sends the egress placeholder behind the native egress proxy, never a real token", async () => {
-    const { transport: t, calls } = transport([json({ labels: [] })]);
-    await t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read });
-    expect(calls[0]!.init.headers.Authorization).toBe(
-      "Bearer introspection-egress",
-    );
-    expect(calls[0]!.init.redirect).toBe("error");
-    expect(calls[0]!.url.host).toBe("gmail.googleapis.com");
-  });
-
-  it("sends the session locator to the provider listener, keeping Google's URL", async () => {
-    const { transport: t, calls } = transport([json({ labels: [] })], {
-      INTROSPECTION_TOKEN: "locator",
-      INTROSPECTION_EGRESS_URL: "http://egress.internal:8081",
-    });
-    await t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read });
-    expect(calls[0]!.init.headers.Authorization).toBe("Bearer locator");
-    expect(calls[0]!.url.toString()).toBe(URL_UNDER_TEST);
-  });
-
-  it("refuses to run outside the egress environment", async () => {
-    const { transport: t, calls } = transport([json({})], {});
-    await expect(
-      t.json(URL_UNDER_TEST, { ...LABELS, scope: GMAIL_SCOPES.read }),
-    ).rejects.toThrow(/require the Introspection cloud egress environment/);
-    expect(calls).toHaveLength(0);
-  });
-});
 
 describe("error mapping", () => {
   it("maps 401 to not_connected", async () => {
@@ -126,50 +84,18 @@ describe("error mapping", () => {
   });
 });
 
-describe("rate limits and retries", () => {
-  it("retries a read on 429 after Retry-After, then succeeds", async () => {
-    const {
-      transport: t,
-      calls,
-      waits,
-    } = transport([
-      googleError(429, "rateLimitExceeded", { "Retry-After": "2" }),
-      json({ labels: [{ id: "L", name: "x" }] }),
-    ]);
-    await expect(
-      t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
-    ).resolves.toEqual({
-      labels: [{ id: "L", name: "x" }],
-    });
-    expect(calls).toHaveLength(2);
-    expect(waits).toEqual([2000]);
-  });
-
-  it("retries 403 rateLimitExceeded and userRateLimitExceeded with exponential backoff", async () => {
+describe("rate limits", () => {
+  it("retries a read on 403 rateLimitExceeded and userRateLimitExceeded, which the host does not know", async () => {
     const { transport: t, waits } = transport([
       googleError(403, "userRateLimitExceeded"),
       googleError(403, "rateLimitExceeded"),
       json({}),
     ]);
     await t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" });
-    expect(waits).toEqual([500, 1000]);
+    expect(waits).toEqual([1000, 2000]);
   });
 
-  it("gives up after the attempts with rate_limited and the wait", async () => {
-    const { transport: t, calls } = transport([
-      googleError(429, "rateLimitExceeded"),
-      googleError(429, "rateLimitExceeded"),
-      googleError(429, "rateLimitExceeded"),
-      googleError(429, "rateLimitExceeded", { "Retry-After": "7" }),
-    ]);
-    const error = await failure(
-      t.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
-    );
-    expect(error).toMatchObject({ code: "rate_limited", retryAfterMs: 7000 });
-    expect(calls).toHaveLength(4);
-  });
-
-  it("reports, rather than sleeps through, a wait above the cap", async () => {
+  it("maps a rate limit the host stopped retrying to rate_limited, with the wait", async () => {
     const { transport: t, waits } = transport([
       googleError(429, "rateLimitExceeded", { "Retry-After": "3600" }),
     ]);
@@ -183,59 +109,27 @@ describe("rate limits and retries", () => {
     expect(waits).toEqual([]);
   });
 
-  it("never retries a write, on a rate limit or a 5xx", async () => {
-    const limited = transport([
-      googleError(429, "rateLimitExceeded"),
-      json({}),
-    ]);
-    const error = await failure(
-      limited.transport.json(URL_UNDER_TEST.replace("labels", "drafts"), {
-        method: "POST",
-        json: {},
-        write: true,
-        ...LABELS,
-        scope: "s",
-      }),
+  it("sends a write once, mapping its rate limit or 5xx", async () => {
+    const limited = transport([googleError(429, "rateLimitExceeded")]);
+    const write = {
+      method: "POST" as const,
+      json: {},
+      write: true,
+      ...LABELS,
+      scope: "s",
+    };
+    const drafts = URL_UNDER_TEST.replace("labels", "drafts");
+    expect((await failure(limited.transport.json(drafts, write))).code).toBe(
+      "rate_limited",
     );
-    expect(error.code).toBe("rate_limited");
     expect(limited.calls).toHaveLength(1);
 
-    const failing = transport([googleError(503, "backendError"), json({})]);
-    const serverError = await failure(
-      failing.transport.json(URL_UNDER_TEST.replace("labels", "drafts"), {
-        method: "POST",
-        json: {},
-        write: true,
-        ...LABELS,
-        scope: "s",
-      }),
-    );
-    expect(serverError).toMatchObject({ code: "provider_error", status: 503 });
+    const failing = transport([googleError(503, "backendError")]);
+    expect(await failure(failing.transport.json(drafts, write))).toMatchObject({
+      code: "provider_error",
+      status: 503,
+    });
     expect(failing.calls).toHaveLength(1);
-  });
-
-  it("retries a read once on a 5xx", async () => {
-    const recovered = transport([
-      googleError(500, "backendError"),
-      json({ ok: 1 }),
-    ]);
-    await expect(
-      recovered.transport.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
-    ).resolves.toEqual({ ok: 1 });
-
-    const down = transport([
-      googleError(502, "backendError"),
-      googleError(502, "backendError"),
-      json({}),
-    ]);
-    expect(
-      (
-        await failure(
-          down.transport.json(URL_UNDER_TEST, { ...LABELS, scope: "s" }),
-        )
-      ).code,
-    ).toBe("provider_error");
-    expect(down.calls).toHaveLength(2);
   });
 });
 

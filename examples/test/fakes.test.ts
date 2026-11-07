@@ -1,12 +1,12 @@
 import { fileURLToPath } from "node:url";
 
-import { labelId, startServices } from "@introspection-ai/mcp-fakes";
-import { checkRecipeFakes } from "@introspection-ai/mcp-fakes/checks";
+import { labelId, startServices } from "@introspection-ai/eval-simulate/mcp";
+import { checkRecipeFakes } from "@introspection-ai/eval-simulate/mcp/checks";
 import {
   loadManifests,
   piToolNames,
   writeAttempts,
-} from "@introspection-ai/mcp-fakes/verify";
+} from "@introspection-ai/eval-simulate/mcp/verify";
 import {
   Client,
   StreamableHTTPClientTransport,

@@ -7,20 +7,13 @@ import {
 } from "@opentelemetry/api";
 import { describe, expect, it } from "vitest";
 
-import { createGoogleProductivitySession } from "../src/index.js";
 import {
-  httpRequestSpan,
-  httpResponseAttributes,
-  MAX_RECORDED_BODY_BYTES,
   OPERATION_ID_ATTRIBUTE,
   RESPONSE_BODY_ATTRIBUTE,
-} from "../src/telemetry.js";
-import {
-  fakeGoogle,
-  googleError,
-  json,
-  recordingSleep,
-} from "./fake-google.js";
+} from "@introspection-ai/recipes/productivity";
+
+import { createGoogleProductivitySession } from "../src/index.js";
+import { fakeGoogle, googleError, json, fakeHttp } from "./fake-google.js";
 
 interface RecordedSpan {
   name: string;
@@ -72,46 +65,6 @@ const CONFIG = {
   },
 } as const;
 
-describe("request span attributes", () => {
-  it("names a REST span after the method and the discovery path template, recording no path or query", () => {
-    expect(
-      httpRequestSpan({
-        method: "GET",
-        url: "https://gmail.googleapis.com/gmail/v1/users/me/messages/m1?format=full&q=secret",
-        template: "/gmail/v1/users/{userId}/messages/{id}",
-        operation: "gmail.users.messages.get",
-      }),
-    ).toEqual({
-      name: "GET /gmail/v1/users/{userId}/messages/{id}",
-      attributes: {
-        "http.request.method": "GET",
-        "server.address": "gmail.googleapis.com",
-        "server.port": 443,
-        "url.template": "/gmail/v1/users/{userId}/messages/{id}",
-        [OPERATION_ID_ATTRIBUTE]: "gmail.users.messages.get",
-      },
-    });
-  });
-
-  it("records a JSON body up to the cap, and only its size above it", () => {
-    expect(httpResponseAttributes(200, '{"id":"m1"}')).toEqual({
-      "http.response.status_code": 200,
-      "http.response.body.size": 11,
-      [RESPONSE_BODY_ATTRIBUTE]: '{"id":"m1"}',
-    });
-    expect(
-      httpResponseAttributes(200, "x".repeat(MAX_RECORDED_BODY_BYTES + 1)),
-    ).toEqual({
-      "http.response.status_code": 200,
-      "http.response.body.size": MAX_RECORDED_BODY_BYTES + 1,
-    });
-    expect(httpResponseAttributes(403)).toEqual({
-      "http.response.status_code": 403,
-      "error.type": "403",
-    });
-  });
-});
-
 describe("request spans from a session", () => {
   it("records one span per REST request, with its operation, status and body, never the bearer", async () => {
     const { tracer, spans } = recordingTracer();
@@ -139,15 +92,12 @@ describe("request spans from a session", () => {
         ],
       ],
     ]);
-    const withFake = await createGoogleProductivitySession(
-      {
-        config: CONFIG,
-        env: { INTROSPECTION_TASK_ID: "task-1" },
-        cwd: process.cwd(),
-        fetch: rest.fetchImpl,
-      },
-      { tracer, sleep: recordingSleep().sleep },
-    );
+    const withFake = await createGoogleProductivitySession({
+      config: CONFIG,
+      env: { INTROSPECTION_TASK_ID: "task-1" },
+      cwd: process.cwd(),
+      http: fakeHttp(rest.fetchImpl, { tracer }),
+    });
     const file = await withFake.drive.download({ file_id: "f1" });
     expect(Buffer.from(file.bytes).toString()).toBe("PK");
     await withFake.calendar.read({ event_id: "e1" });

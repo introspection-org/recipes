@@ -29,9 +29,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
   },
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.1"
-  },
   "devDependencies": {
     "@emulators/core": "^0.13.0",
     "@emulators/google": "^0.13.0",

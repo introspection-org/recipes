@@ -4,7 +4,7 @@ import {
   notImplemented,
   text,
   toolsOf,
-} from "@introspection-ai/mcp-fakes";
+} from "@introspection-ai/eval-simulate/mcp";
 import { contract } from "./contract.ts";
 import type { State } from "./entities.ts";
 

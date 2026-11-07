@@ -1,4 +1,14 @@
-import type { GoogleFetch, GoogleRequestInit } from "../src/index.js";
+import type { Tracer } from "@opentelemetry/api";
+import {
+  createProductivityHttp,
+  type ProductivityFetch,
+  type ProductivityHttp,
+} from "@introspection-ai/recipes/productivity";
+
+type GoogleFetch = ProductivityFetch;
+type GoogleRequestInit = Parameters<ProductivityFetch>[1] & {
+  headers: Record<string, string>;
+};
 
 export interface RecordedCall {
   method: string;
@@ -74,16 +84,18 @@ export function bodyJson(call: RecordedCall): unknown {
   return JSON.parse(String(call.init.body));
 }
 
-/** Sleeps recorded, never waited out. */
-export function recordingSleep(): {
-  sleep: (ms: number) => Promise<void>;
-  waits: number[];
-} {
-  const waits: number[] = [];
-  return {
-    waits,
-    sleep: async (ms: number) => {
-      waits.push(ms);
+/** The host's `http` over a fake `fetch`, with its waits recorded. */
+export function fakeHttp(
+  fetchImpl: ProductivityFetch,
+  options: { waits?: number[]; tracer?: Tracer } = {},
+): ProductivityHttp {
+  return createProductivityHttp({
+    provider: "google",
+    env: { INTROSPECTION_TASK_ID: "t" },
+    fetch: fetchImpl,
+    sleep: async (ms) => {
+      options.waits?.push(ms);
     },
-  };
+    ...(options.tracer ? { tracer: options.tracer } : {}),
+  });
 }
