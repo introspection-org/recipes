@@ -82,8 +82,8 @@ describe("Recipe tool search", () => {
       ],
       ["tool_search"],
     );
-    const [toolSearch] = createRecipeToolSearchTools(pi, false, (name) =>
-      name.startsWith("mcp__gmail__"),
+    const [toolSearch] = createRecipeToolSearchTools(pi, false, (entry) =>
+      entry.name.startsWith("mcp__gmail__"),
     );
 
     const result = await search(toolSearch!, "search mail messages");

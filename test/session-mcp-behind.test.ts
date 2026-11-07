@@ -22,8 +22,11 @@ import {
 } from "./helpers/mcp-session.js";
 
 const ECHO = mcpToolName("hello-mcp", "echo");
-const REFUSED =
-  "MCP server 'hello-mcp' is reachable only through the mail tool; call mail instead.";
+const refused = (id: string) =>
+  `MCP server '${id}' is reachable only through the mail tool; call mail instead.`;
+const REFUSED = refused("hello-mcp");
+// 60 characters: every tool name Pi gives this server is shortened with a hash.
+const LONG_ID = `hello-mcp-${"x".repeat(50)}`;
 
 type Mode = "cli" | "tools" | "codemode";
 
@@ -46,11 +49,17 @@ describe("MCP servers behind a tool", () => {
   async function open(options: {
     mode: Mode;
     server: HelloMcp;
+    /** The id of the server behind `mail`. */
+    id?: string;
     plain?: HelloMcp;
+    plainId?: string;
+    plainSelection?: string[];
     required?: boolean;
     env?: NodeJS.ProcessEnv;
     responses?: FauxResponseStep[];
   }) {
+    const id = options.id ?? "hello-mcp";
+    const plainId = options.plainId ?? "plain";
     const fixture = writeFixtureRecipe({
       tools: ["read", "bash", "mail", "other"],
       manifestPi: {
@@ -58,12 +67,12 @@ describe("MCP servers behind a tool", () => {
         mcp: {
           servers: [
             {
-              id: "hello-mcp",
+              id,
               required: options.required ?? true,
               tools: { include: ["*"] },
             },
             ...(options.plain
-              ? [{ id: "plain", tools: { include: ["*"] } }]
+              ? [{ id: plainId, tools: { include: ["*"] } }]
               : []),
           ],
         },
@@ -72,10 +81,15 @@ describe("MCP servers behind a tool", () => {
         "mcp:",
         `  mode: ${options.mode}`,
         "  servers:",
-        "    hello-mcp:",
+        `    ${id}:`,
         '      include: ["echo"]',
         "      behind: [mail]",
-        ...(options.plain ? ["    plain:", '      include: ["*"]'] : []),
+        ...(options.plain
+          ? [
+              `    ${plainId}:`,
+              ...(options.plainSelection ?? ['      include: ["*"]']),
+            ]
+          : []),
       ],
     });
     cleanups.push(fixture.cleanup);
@@ -83,7 +97,7 @@ describe("MCP servers behind a tool", () => {
     // `mail` fronts the hello server; `other` is any other tool trying to reach it.
     writeFileSync(
       join(fixture.recipeDir, "extensions", "wrappers.ts"),
-      mcpCallingToolsExtension(ECHO, ["mail", "other"]),
+      mcpCallingToolsExtension(mcpToolName(id, "echo"), ["mail", "other"]),
     );
     const env = options.env ?? cleanEnv();
     const handle = await openRecipeSession({
@@ -91,8 +105,8 @@ describe("MCP servers behind a tool", () => {
       env,
       ...(options.responses ? { responses: options.responses } : {}),
       bindings: [
-        { id: "hello-mcp", url: options.server.url },
-        ...(options.plain ? [{ id: "plain", url: options.plain.url }] : []),
+        { id, url: options.server.url },
+        ...(options.plain ? [{ id: plainId, url: options.plain.url }] : []),
       ],
     });
     handles.push(handle);
@@ -202,6 +216,110 @@ describe("MCP servers behind a tool", () => {
     expect(output).toContain('"wrapped":"Echo: wrapped"');
     expect(server.calls).toEqual([
       { name: "echo", arguments: { message: "wrapped" } },
+    ]);
+  });
+
+  it("keeps a server with a long id behind its tool, off the prompt and tool_search", async () => {
+    const server = await hello();
+    const plain = await hello();
+    const echo = mcpToolName(LONG_ID, "echo");
+    const results: string[] = [];
+    let declared = "";
+    const { handle } = await open({
+      mode: "tools",
+      id: LONG_ID,
+      server,
+      plain,
+      plainSelection: ['      include: ["*"]', '      defer: ["*"]'],
+      responses: [
+        fauxAssistantMessage([fauxToolCall("mail", { message: "hi" })], {
+          stopReason: "toolUse",
+        }),
+        (step) => {
+          results.push(lastToolResult(step));
+          return fauxAssistantMessage(
+            [fauxToolCall("other", { message: "sneak" })],
+            { stopReason: "toolUse" },
+          );
+        },
+        (step) => {
+          results.push(lastToolResult(step));
+          return fauxAssistantMessage(
+            [fauxToolCall("tool_search", { query: "echo" })],
+            { stopReason: "toolUse" },
+          );
+        },
+        (step) => {
+          results.push(lastToolResult(step));
+          declared = JSON.stringify(
+            step.messages.filter((message) => message.role === "system"),
+          );
+          return fauxAssistantMessage("done");
+        },
+      ],
+    });
+
+    expect(echo).toHaveLength(64);
+    expect(
+      handle.session.getAllTools().find((tool) => tool.name === echo)?.exposure,
+    ).toBe("deferred");
+
+    await handle.session.prompt("go");
+
+    expect(results.slice(0, 2)).toEqual([
+      "Echo: hi",
+      `refused: ${refused(LONG_ID)}`,
+    ]);
+    // tool_search finds the plain server's echo, never the one behind mail.
+    expect(results[2]).toContain("echo");
+    expect(results[2]).not.toContain(echo);
+    expect(handle.session.getActiveToolNames()).not.toContain(echo);
+    expect(declared).not.toContain("hello_mcp_x");
+    expect(server.calls).toEqual([
+      { name: "echo", arguments: { message: "hi" } },
+    ]);
+  });
+
+  it("tells servers a and a__b apart, keeping only a behind its tool", async () => {
+    const server = await hello();
+    const plain = await hello();
+    let output = "";
+    const { handle } = await open({
+      mode: "codemode",
+      id: "a",
+      server,
+      plain,
+      plainId: "a__b",
+      responses: [
+        fauxAssistantMessage(
+          [
+            fauxToolCall("codemode", {
+              code: [
+                `const out = {};`,
+                `for (const name of ${JSON.stringify([mcpToolName("a", "echo"), mcpToolName("a__b", "echo")])}) {`,
+                `  try { out[name] = (await tools[name]({ message: "hi" })).content[0].text; }`,
+                `  catch { out[name] = "refused"; }`,
+                `}`,
+                `return out;`,
+              ].join("\n"),
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        (step) => {
+          output = lastToolResult(step);
+          return fauxAssistantMessage("done");
+        },
+      ],
+    });
+
+    await handle.session.prompt("go");
+
+    expect(output).toContain('"mcp__a__echo":"refused"');
+    expect(output).toContain('"mcp__a__b__echo":"Echo: hi"');
+    expect(server.calls).toEqual([]);
+    expect(plain.calls).toEqual([
+      { name: "echo", arguments: { message: "hi" } },
     ]);
   });
 

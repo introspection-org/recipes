@@ -172,6 +172,8 @@ export async function openRecipeSession(options: {
   }>;
   responses?: FauxResponseStep[];
   env?: NodeJS.ProcessEnv;
+  /** The host already materialized the session's MCP, so no bindings go to it. */
+  mcpProvisioning?: "host";
 }): Promise<RecipeSessionHandle> {
   useFauxModel(options.recipeDir);
   const { faux, credentials } = await scriptedFaux(options.responses ?? []);
@@ -182,11 +184,15 @@ export async function openRecipeSession(options: {
     credentials,
     modelOverride: faux.getModel(),
     extensionFactories: [(pi) => pi.registerProvider(faux.provider)],
-    mcpBindings: {
-      servers: options.bindings.map((binding) => ({
-        ...binding,
-        transport: "streamable_http" as const,
-      })),
-    },
+    ...(options.mcpProvisioning
+      ? { mcpProvisioning: options.mcpProvisioning }
+      : {
+          mcpBindings: {
+            servers: options.bindings.map((binding) => ({
+              ...binding,
+              transport: "streamable_http" as const,
+            })),
+          },
+        }),
   });
 }

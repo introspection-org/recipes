@@ -70,7 +70,7 @@ import {
   createPiMcpServersExtension,
   hideServersBehindTools,
   createRecipeMcpClientExtension,
-  mcpToolName,
+  piMcpToolNamePrefix,
   PI_MCP_RESOURCE_TOOL_NAMES,
   piMcpServerRegistrations,
   piMcpToolOrigin,
@@ -410,7 +410,11 @@ interface MaterializedSessionMcp {
   tools?: ToolDefinition[];
   initialActiveToolNames?: string[];
   deferredToolNames?: string[];
-  mcpToolOrigin?: McpToolSet["mcpToolOrigin"];
+  /** `tools` resolves a codemode tool through the session's definitions. */
+  mcpToolOrigin?: (
+    piName: string,
+    tools?: Pick<AgentSession, "getToolDefinition">,
+  ) => ReturnType<McpToolSet["mcpToolOrigin"]>;
   /** `mcp.mode: codemode`: the servers Pi's own MCP support connects. */
   piServers?: PiMcpServerRegistration[];
   release?: () => Promise<void>;
@@ -525,8 +529,14 @@ async function configureSessionMcp(
 ): Promise<MaterializedSessionMcp> {
   const { runtime: selections, behind } = splitMcpSelections(recipe);
   const behindTools = piServersBehindTools(recipe, behind, cwd, env, opts);
-  const behindOrigin = (name: string) =>
-    piMcpToolOrigin({ version: 1, servers: behindTools.servers }, name);
+  const behindOrigin: NonNullable<MaterializedSessionMcp["mcpToolOrigin"]> = (
+    name,
+    tools,
+  ) =>
+    piMcpToolOrigin(
+      { version: 1, servers: behindTools.servers },
+      tools?.getToolDefinition(name),
+    );
   if (selections.length === 0) {
     return behindTools.piServers.length > 0
       ? {
@@ -616,7 +626,8 @@ async function configureSessionMcp(
         available: true,
         materialized: !hostProvisioned,
         piServers,
-        mcpToolOrigin: (name) => piMcpToolOrigin(session, name),
+        mcpToolOrigin: (name, tools) =>
+          piMcpToolOrigin(session, tools?.getToolDefinition(name)),
         release,
       };
     }
@@ -642,8 +653,8 @@ async function configureSessionMcp(
         tools: materialized.tools,
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
-        mcpToolOrigin: (name) =>
-          materialized.mcpToolOrigin(name) ?? behindOrigin(name),
+        mcpToolOrigin: (name, tools) =>
+          materialized.mcpToolOrigin(name) ?? behindOrigin(name, tools),
         piServers: behindTools.piServers,
         release,
       };
@@ -1057,7 +1068,7 @@ async function createSessionForAgent(
             setActiveTools: (names) => session?.setActiveToolsByName(names),
           },
           (mcp.deferredToolNames?.length ?? 0) > 0,
-          (name) => serverBehindTools(piServers, name) !== undefined,
+          (tool) => serverBehindTools(piServers, tool) !== undefined,
         )
       : [];
     const occupiedSearchTool = toolSearchTools.find((tool) =>
@@ -1075,8 +1086,10 @@ async function createSessionForAgent(
       ...toolSearchTools.map((tool) => tool.name),
       ...codemodeToolNames,
       // Naming the Recipe's servers keeps their tools and drops any other MCP
-      // server's; each tool's exposure then decides what the model sees.
-      ...piServers.map((server) => `${mcpToolName(server.id, "")}*`),
+      // server's; each tool's exposure then decides what the model sees. A
+      // prefix that also covers another of these servers is harmless, as only
+      // the Recipe's servers are on this session's MCP client.
+      ...piServers.map((server) => `${piMcpToolNamePrefix(server.id)}*`),
     ];
     // The bash tool runs in `env` when the session's MCP CLI lives there, and
     // in the Recipe's Python shell environment when it declares one.
@@ -1177,7 +1190,9 @@ async function createSessionForAgent(
     detachInstrumentation = otel
       ? instrumentSession(session, {
           ...otel,
-          ...(mcp.mcpToolOrigin ? { mcpTool: mcp.mcpToolOrigin } : {}),
+          ...(mcp.mcpToolOrigin
+            ? { mcpTool: sessionMcpToolOrigin(mcp.mcpToolOrigin, session) }
+            : {}),
         }).detach
       : undefined;
 
@@ -1214,6 +1229,13 @@ export async function createAgentSessionInternal(
   opts: CreateAgentSessionInternalOptions,
 ): Promise<RecipeSessionHandle> {
   return createSessionForAgent(opts.recipe.selectAgent(opts.agentName), opts);
+}
+
+function sessionMcpToolOrigin(
+  origin: NonNullable<MaterializedSessionMcp["mcpToolOrigin"]>,
+  session: Pick<AgentSession, "getToolDefinition">,
+) {
+  return (piName: string) => origin(piName, session);
 }
 
 /**

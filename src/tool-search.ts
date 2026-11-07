@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
   type ExtensionFactory,
   type ToolDefinition,
+  type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
 export const RECIPE_TOOL_SEARCH_NAME = "tool_search";
@@ -21,14 +22,14 @@ export type RecipeToolActivation = Pick<
 export function createRecipeToolSearchTools(
   tools: RecipeToolActivation,
   includeLegacyMcpAlias: boolean,
-  unsearchable: (name: string) => boolean = () => false,
+  unsearchable: (tool: ToolInfo) => boolean = () => false,
 ): ToolDefinition[] {
   let search: ToolDefinition | undefined;
   createToolSearchExtension()({
     getActiveTools: () => tools.getActiveTools(),
     setActiveTools: (names: string[]) => tools.setActiveTools(names),
     getAllTools: () =>
-      tools.getAllTools().filter((tool) => !unsearchable(tool.name)),
+      tools.getAllTools().filter((tool) => !unsearchable(tool)),
     registerTool: (definition: ToolDefinition) => {
       search = definition;
     },

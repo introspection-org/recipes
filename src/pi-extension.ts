@@ -72,7 +72,7 @@ import { createMcpToolSet } from "./mcp/tools.js";
 import {
   createMcpBehindGuard,
   hideServersBehindTools,
-  mcpToolName,
+  isPiMcpServerTool,
   piMcpServerRegistrations,
   serverBehindTools,
   waitForPiMcpServers,
@@ -1185,8 +1185,8 @@ export function createRecipesExtension(
       const toolSearchTools = createRecipeToolSearchTools(
         pi,
         launchState.mcpDeferredToolNames.length > 0,
-        (name) =>
-          serverBehindTools(launchState.piBehindServers, name) !== undefined,
+        (tool) =>
+          serverBehindTools(launchState.piBehindServers, tool) !== undefined,
       );
       for (const toolSearch of toolSearchTools) {
         launchState.extensionAllowedToolNames.add(toolSearch.name);
@@ -1209,7 +1209,7 @@ export function createRecipesExtension(
           (tool) =>
             tool.exposure === "direct" &&
             launchState.piMcpServerIds.some((id) =>
-              tool.name.startsWith(mcpToolName(id, "")),
+              isPiMcpServerTool(tool, id),
             ),
         )
         .map((tool) => tool.name),

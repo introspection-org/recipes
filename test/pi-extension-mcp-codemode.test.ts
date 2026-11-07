@@ -14,7 +14,8 @@ import {
 } from "./helpers/mcp-session.js";
 
 const ECHO = mcpToolName("hello-mcp", "echo");
-const GREETING = mcpToolName("hello-mcp", "get_greeting");
+// 60 characters: every tool name Pi gives this server is shortened with a hash.
+const LONG_ID = `hello-mcp-${"x".repeat(50)}`;
 
 describe("Pi extension MCP codemode", () => {
   const cleanups: Array<() => void | Promise<void>> = [];
@@ -23,22 +24,25 @@ describe("Pi extension MCP codemode", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(mode: string, server: string[], tools = ["read"]) {
+  async function fixture(
+    mode: string,
+    server: string[],
+    tools = ["read"],
+    id = "hello-mcp",
+  ) {
     const recipe = writeFixtureRecipe({
       tools,
       manifestPi: {
         ...(tools.includes("mail") ? { extensions: ["extensions/*.ts"] } : {}),
         mcp: {
-          servers: [
-            { id: "hello-mcp", required: true, tools: { include: ["*"] } },
-          ],
+          servers: [{ id, required: true, tools: { include: ["*"] } }],
         },
       },
       agentExtras: [
         "mcp:",
         `  mode: ${mode}`,
         "  servers:",
-        "    hello-mcp:",
+        `    ${id}:`,
         '      include: ["echo"]',
         ...server,
       ],
@@ -49,49 +53,63 @@ describe("Pi extension MCP codemode", () => {
     return { ...recipe, hello };
   }
 
-  it("registers the Recipe's servers with Pi's MCP support and runs a script", async () => {
-    const { recipeDir, workspaceDir, hello } = await fixture("codemode", []);
-    let output = "";
-    const session = await openPiCliSession({
-      recipeDir,
-      workspaceDir,
-      bindings: [{ id: "hello-mcp", url: hello.url }],
-      cleanups,
-      responses: [
-        fauxAssistantMessage(
-          [
-            fauxToolCall("codemode", {
-              code: [
-                `const a = await tools.${ECHO}({ message: "hello from the public MCP" });`,
-                `let hidden = "reachable";`,
-                `try { await tools.${GREETING}({}); } catch { hidden = "unreachable"; }`,
-                `return { echoed: a.content[0].text, hidden };`,
-              ].join("\n"),
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-        (context) => {
-          output = lastToolResult(context);
-          return fauxAssistantMessage("done");
-        },
-      ],
-    });
+  it.each([
+    { id: "hello-mcp", eager: false },
+    { id: LONG_ID, eager: true },
+  ])(
+    "registers the Recipe's servers with Pi's MCP support and runs a script (server $id, eager $eager)",
+    async ({ id, eager }) => {
+      const echo = mcpToolName(id, "echo");
+      const greeting = mcpToolName(id, "get_greeting");
+      const { recipeDir, workspaceDir, hello } = await fixture(
+        "codemode",
+        eager ? ["      eager: [echo]"] : [],
+        ["read"],
+        id,
+      );
+      let output = "";
+      const session = await openPiCliSession({
+        recipeDir,
+        workspaceDir,
+        bindings: [{ id, url: hello.url }],
+        cleanups,
+        responses: [
+          fauxAssistantMessage(
+            [
+              fauxToolCall("codemode", {
+                code: [
+                  `const a = await tools.${echo}({ message: "hello from the public MCP" });`,
+                  `let hidden = "reachable";`,
+                  `try { await tools.${greeting}({}); } catch { hidden = "unreachable"; }`,
+                  `return { echoed: a.content[0].text, hidden };`,
+                ].join("\n"),
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          (context) => {
+            output = lastToolResult(context);
+            return fauxAssistantMessage("done");
+          },
+        ],
+      });
 
-    expect(session.getActiveToolNames()).toContain("codemode");
-    expect(session.getActiveToolNames()).not.toContain(ECHO);
-    expect(
-      session.getAllTools().find((tool) => tool.name === GREETING)?.exposure,
-    ).toBe("hidden");
+      expect(session.getActiveToolNames()).toContain("codemode");
+      // Eager tools are activated, matched to their server by Pi's namespace.
+      expect(session.getActiveToolNames().includes(echo)).toBe(eager);
+      expect(
+        session.getAllTools().find((tool) => tool.name === greeting)?.exposure,
+      ).toBe("hidden");
 
-    await session.prompt("go");
+      await session.prompt("go");
 
-    expect(output).toContain('"echoed":"Echo: hello from the public MCP"');
-    expect(output).toContain('"hidden":"unreachable"');
-    expect(hello.calls).toEqual([
-      { name: "echo", arguments: { message: "hello from the public MCP" } },
-    ]);
-  });
+      expect(output).toContain('"echoed":"Echo: hello from the public MCP"');
+      expect(output).toContain('"hidden":"unreachable"');
+      expect(hello.calls).toEqual([
+        { name: "echo", arguments: { message: "hello from the public MCP" } },
+      ]);
+    },
+  );
 
   for (const mode of ["cli", "codemode"]) {
     it(`keeps a server behind its tool in mode ${mode}`, async () => {
