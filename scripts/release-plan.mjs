@@ -60,6 +60,11 @@ export function readArtifacts(repo) {
       "packages/productivity/google",
       "recipe-productivity-google-v"
     ),
+    npmPackage(
+      "microsoft",
+      "packages/productivity/microsoft",
+      "recipe-productivity-microsoft-v"
+    ),
     {
       key: "crate",
       version: checker["packages/recipe-check"],
