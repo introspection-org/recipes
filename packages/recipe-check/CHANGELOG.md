@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.22.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.21.0...introspection-recipe-check-v0.22.0) (2026-11-07)
+
+
+### Features
+
+* **mcp:** add mcp.mode codemode on Pi's built-in MCP client ([#458](https://github.com/introspection-org/recipes/issues/458)) ([5a4b567](https://github.com/introspection-org/recipes/commit/5a4b56762d303103a0699aa11cc472f1db1fa418))
+* **mcp:** keep an MCP server behind a Recipe tool with `behind` ([#459](https://github.com/introspection-org/recipes/issues/459)) ([94048bf](https://github.com/introspection-org/recipes/commit/94048bf2152cf1de1595337ca5d23bae5dd5c4b1))
+* productivity tools host (mail, calendar, drive) and provider contract ([#455](https://github.com/introspection-org/recipes/issues/455)) ([a6062a6](https://github.com/introspection-org/recipes/commit/a6062a6cb535adf94c82f6d9fde753fe6f063989))
+* **productivity:** Microsoft 365 productivity provider over Microsoft Graph ([#456](https://github.com/introspection-org/recipes/issues/456)) ([#467](https://github.com/introspection-org/recipes/issues/467)) ([c94a5f0](https://github.com/introspection-org/recipes/commit/c94a5f0e486cc04683af724e2f6a6a49d1e6afa3))
+
+
+### Bug Fixes
+
+* **productivity:** land the Google provider with the review fixes and shared paging ([#462](https://github.com/introspection-org/recipes/issues/462)) ([c7bd145](https://github.com/introspection-org/recipes/commit/c7bd14520109289e7d0c29d9ab5956dd1dbb1802))
+
 ## [0.21.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.20.0...introspection-recipe-check-v0.21.0) (2026-11-06)
 
 
