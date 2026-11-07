@@ -172,7 +172,8 @@ Excel and PowerPoint files are the same problem.
   named in `unavailable`. An attachment's ID is its `partId`, since Gmail's
   `attachmentId` changes between reads. Draft bodies are sent as
   `text/plain` (the Markdown as written); `update_draft` without `body` keeps
-  an HTML draft's body as HTML. A header value containing a line break is
+  the draft's body (an HTML one as HTML, a stored one fetched) and refuses
+  the update when that body cannot be read. A header value containing a line break is
   refused. A reply drafted with no `to` goes to the parent's
   `Reply-To`, else its `From`, or to its `To` when the person sent it, as
   Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;

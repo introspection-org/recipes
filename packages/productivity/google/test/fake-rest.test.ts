@@ -523,6 +523,47 @@ describe("mail summaries and stored bodies", () => {
     expect(read.unavailable).toBeUndefined();
   });
 
+  it("keeps a draft's stored body on an update without body, or refuses the update", async () => {
+    const draft = () =>
+      json({
+        id: "d1",
+        message: {
+          id: "m3",
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "To", value: "a@example.com" },
+              { name: "Subject", value: "Plan" },
+            ],
+            body: { size: 5, attachmentId: "BODY" },
+          },
+        },
+      });
+    const kept = await backend([
+      ["GET", /\/drafts\/d1$/, draft],
+      ["GET", /\/attachments\/BODY$/, () => json({ data: b64("hello") })],
+      ["PUT", /\/drafts\/d1$/, () => json({ id: "d1", message: { id: "m3" } })],
+    ]);
+    await kept.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" });
+    const put = kept.calls.find((call) => call.method === "PUT")!;
+    const raw = new TextDecoder().decode(
+      decodeBase64Url(
+        (bodyJson(put) as { message: { raw: string } }).message.raw,
+      ),
+    );
+    expect(raw).toContain("Subject: Plan v2");
+    expect(raw).toContain(Buffer.from("hello").toString("base64"));
+
+    const failing = await backend([
+      ["GET", /\/drafts\/d1$/, draft],
+      ["GET", /\/attachments\/BODY$/, () => googleError(404, "notFound")],
+    ]);
+    await expect(
+      failing.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(failing.calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
   it("says so when a stored body is too large or cannot be fetched", async () => {
     const large = await backend([
       ["GET", /\/messages\/m2$/, () => json(stored(6 * 1024 * 1024))],

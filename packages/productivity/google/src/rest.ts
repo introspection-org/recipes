@@ -247,32 +247,38 @@ export class GoogleRestMail implements Required<MailSession> {
     message: GmailMessage,
     signal?: AbortSignal,
   ): Promise<{ message: MailMessage; unavailable?: string }> {
-    let parsed = parseMailPayload(message.payload);
-    let unavailable: string | undefined;
-    const stored = parsed.part?.body;
-    if (stored?.attachmentId && !stored.data) {
-      if ((stored.size ?? 0) > MAX_STORED_BODY_BYTES) {
-        unavailable = `A message body is larger than ${MAX_STORED_BODY_BYTES / (1024 * 1024)} MB, so it was not read.`;
-      } else {
-        try {
-          stored.data = encodeBase64Url(
-            await this.gmail.getAttachment(
-              message.id,
-              stored.attachmentId,
-              signal,
-            ),
-          );
-          parsed = parseMailPayload(message.payload);
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          unavailable = `A message body could not be read: ${(error as Error).message}`;
-        }
-      }
-    }
+    const { parsed, unavailable } = await this.parse(message, signal);
     return {
       message: await this.mailMessage(message, parsed, signal),
       ...(unavailable ? { unavailable } : {}),
     };
+  }
+
+  /** A message's body and attachments, fetching a body part Gmail stores apart. */
+  private async parse(
+    message: GmailMessage,
+    signal?: AbortSignal,
+  ): Promise<{ parsed: ParsedMailBody; unavailable?: string }> {
+    const parsed = parseMailPayload(message.payload);
+    const stored = parsed.part?.body;
+    if (!stored?.attachmentId || stored.data) return { parsed };
+    if ((stored.size ?? 0) > MAX_STORED_BODY_BYTES)
+      return {
+        parsed,
+        unavailable: `A message body is larger than ${MAX_STORED_BODY_BYTES / (1024 * 1024)} MB, so it was not read.`,
+      };
+    try {
+      stored.data = encodeBase64Url(
+        await this.gmail.getAttachment(message.id, stored.attachmentId, signal),
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return {
+        parsed,
+        unavailable: `A message body could not be read: ${(error as Error).message}`,
+      };
+    }
+    return { parsed: parseMailPayload(message.payload) };
   }
 
   private async mailMessage(
@@ -433,8 +439,17 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
-    const kept =
-      args.body === undefined ? parseMailPayload(payload).body : undefined;
+    let kept: ProductivityContent | undefined;
+    if (args.body === undefined && current.message) {
+      const { parsed, unavailable } = await this.parse(
+        current.message,
+        ctx.signal,
+      );
+      // Writing the draft without its body would erase it.
+      if (unavailable)
+        throw invalid(`${unavailable} The draft was not changed; give body.`);
+      kept = parsed.body;
+    }
     const fields = {
       to: args.to ? [...args.to] : splitAddresses(header(payload, "To")),
       cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
@@ -442,7 +457,7 @@ export class GoogleRestMail implements Required<MailSession> {
     };
     const raw = composeRawMessage({
       ...fields,
-      body: args.body ?? kept!.content,
+      body: args.body ?? kept?.content ?? "",
       html: kept?.content_type === "html",
       inReplyTo: {
         messageId: parent,
