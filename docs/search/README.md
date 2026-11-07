@@ -296,11 +296,18 @@ locator). The bootstrap carries only the URL. So:
 
 ## Modes
 
-`fast`, `default` and `deep` map to each provider's own setting. The rows for
+Callers only ever pass `mode: "fast" | "default" | "deep"`, the same for every
+provider. Each provider's adapter turns it into that provider's own request
+parameter; the table shows which parameter that is, and the value each mode
+sends. The model and Recipe code never see these provider names; the value
+actually sent is recorded on the call's span as `search.setting`. The rows for
 built providers are their descriptors' `modes` (`test/search.test.ts` checks
 this table against them); the others are the proposed mapping.
 
-| Provider | Parameter | `fast` | `default` | `deep` |
+For example, `web_search({ query, provider: "tavily", mode: "deep" })` sends
+Tavily `search_depth: "advanced"`.
+
+| Provider | Provider's request parameter that `mode` sets | `mode: "fast"` sends | `mode: "default"` sends | `mode: "deep"` sends |
 | --- | --- | --- | --- | --- |
 | `tavily` | `search_depth` | `fast` | `basic` | `advanced` |
 | `exa` | `type` | `fast` | `auto` | `deep` |
