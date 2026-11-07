@@ -1,4 +1,4 @@
-import { contractOf } from "@introspection-ai/mcp-fakes";
+import { contractOf } from "@introspection-ai/eval-simulate/mcp";
 import { answers } from "./answers.ts";
 import tools from "./tools.ts";
 
