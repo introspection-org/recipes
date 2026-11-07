@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "outDir": "dist",
+    "rootDir": "src",
+    "paths": {
+      "@introspection-ai/recipes/productivity": [
+        "../../../dist/productivity/index.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "src"
+  ]
+}

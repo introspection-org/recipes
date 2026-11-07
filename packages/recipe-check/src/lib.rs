@@ -920,10 +920,11 @@ fn validate_pi_config(
 /// productivity provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
-const COMPANION_PACKAGES: [&str; 3] = [
+const COMPANION_PACKAGES: [&str; 4] = [
     "@introspection-ai/recipe-channel-slack",
     "@introspection-ai/recipe-documents-docx",
     "@introspection-ai/recipe-documents-pdf",
+    "@introspection-ai/recipe-productivity-google",
 ];
 
 fn versioned_keys(value: Option<&JsonValue>) -> BTreeSet<String> {

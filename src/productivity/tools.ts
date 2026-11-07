@@ -56,6 +56,8 @@ import type {
   ProductivityFileContent,
   ProductivitySession,
   ProductivityTool,
+  ProductivityToolCallOutcome,
+  ProductivityToolCaller,
 } from "./types.js";
 
 /** The largest file `fetch_attachment`, `download` and `upload` move. */
@@ -1235,6 +1237,8 @@ export function registerProductivityTools(
         _toolCallId: string,
         params: { command: string } & Record<string, unknown>,
         signal?: AbortSignal,
+        _onUpdate?: unknown,
+        toolContext?: PiToolContext,
       ) {
         const { command, ...input } = params;
         try {
@@ -1246,8 +1250,12 @@ export function registerProductivityTools(
             definitions[tool] as Record<string, CommandDefinition>
           )[command]!;
           const current = await session();
+          const tools = toolCaller(toolContext);
           return toolResult(
-            await definition.run(input, current, signal ? { signal } : {}),
+            await definition.run(input, current, {
+              ...(signal ? { signal } : {}),
+              ...(tools ? { tools } : {}),
+            }),
           );
         } catch (error) {
           if (signal?.aborted) throw error;
@@ -1258,6 +1266,42 @@ export function registerProductivityTools(
       },
     } as never);
   }
+}
+
+/** What a tool's `execute` gets from Pi 1.3 on; typed here since the peer floor is older. */
+interface PiToolContext {
+  readonly tools?: readonly { readonly name: string }[];
+  executeTool?(
+    name: string,
+    args: unknown,
+  ): Promise<{
+    isError: boolean;
+    result: {
+      content: ProductivityToolCallOutcome["content"];
+      structuredContent?: unknown;
+    };
+  }>;
+}
+
+function toolCaller(
+  context: PiToolContext | undefined,
+): ProductivityToolCaller | undefined {
+  const executeTool = context?.executeTool;
+  if (typeof executeTool !== "function") return undefined;
+  return {
+    canCall: (name) =>
+      context!.tools?.some((tool) => tool.name === name) ?? false,
+    executeTool: async (name, args) => {
+      const outcome = await executeTool.call(context, name, args);
+      return {
+        isError: outcome.isError,
+        content: outcome.result.content,
+        ...(outcome.result.structuredContent !== undefined
+          ? { structuredContent: outcome.result.structuredContent }
+          : {}),
+      };
+    },
+  };
 }
 
 const TOOL_DESCRIPTIONS: Record<ProductivityTool, string> = {
