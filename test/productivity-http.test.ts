@@ -244,6 +244,39 @@ describe("productivity http: spans", () => {
     expect(recorded).not.toContain("introspection-egress");
   });
 
+  it("never records a pre-authenticated link: a write's answer only when asked, and redacted", async () => {
+    const uploadUrl =
+      "https://tenant.sharepoint.com/upload.aspx?tempauth=SECRET1&guid=1";
+    const { send, spans } = setup([
+      json({ uploadUrl, expirationDateTime: "2026-11-08T00:00:00Z" }),
+      json({ uploadUrl }),
+      json({
+        id: "f1",
+        "@microsoft.graph.downloadUrl": "https://x.example/d?SECRET2",
+        webUrl: "https://x.example/f1",
+        thumbnails: [{ url: "https://x.example/t?sig=SECRET3" }],
+      }),
+    ]);
+    // An upload session, as Graph's `createUploadSession` answers it.
+    await send({ method: "POST", read: false });
+    await send({ method: "POST", read: false, record: true });
+    await send();
+    expect(spans[0]!.attributes[RESPONSE_BODY_ATTRIBUTE]).toBeUndefined();
+    expect(spans[0]!.attributes["http.response.body.size"]).toBeGreaterThan(0);
+    expect(
+      JSON.parse(String(spans[1]!.attributes[RESPONSE_BODY_ATTRIBUTE])),
+    ).toEqual({ uploadUrl: "[redacted]" });
+    expect(
+      JSON.parse(String(spans[2]!.attributes[RESPONSE_BODY_ATTRIBUTE])),
+    ).toEqual({
+      id: "f1",
+      "@microsoft.graph.downloadUrl": "[redacted]",
+      webUrl: "https://x.example/f1",
+      thumbnails: [{ url: "[redacted]" }],
+    });
+    expect(JSON.stringify(spans)).not.toMatch(/SECRET/);
+  });
+
   it("records a large JSON body's size only, and bytes never", async () => {
     const large = "x".repeat(MAX_RECORDED_BODY_BYTES);
     const { send, spans } = setup([

@@ -262,7 +262,10 @@ channels:
   the host attaches the placeholder credential (none for a request marked
   `anonymous`, such as a pre-authenticated download URL), records each
   attempt as a client span named after the request's `template` and
-  `operation` with a JSON answer under `gen_ai.tool.call.result`, and
+  `operation` with a read's JSON answer under `gen_ai.tool.call.result` (a
+  write's only when the request sets `record`, and any pre-authenticated
+  link, such as Graph's `uploadUrl` or a URL signed in its query, redacted),
+  and
   retries a request marked `read` on `429` and `500`, `502`, `503`, `504`
   (plus what the provider's `throttled` adds), after `Retry-After` or 1, 2
   and 4 seconds, never waiting more than 30 seconds. A write is sent once.

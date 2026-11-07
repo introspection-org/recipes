@@ -206,9 +206,11 @@ Excel and PowerPoint files are the same problem.
   request by the discovery document's path from the host's root, such as
   `GET /gmail/v1/users/{userId}/messages/{id}`, and its method id as
   `introspection.api.operation_id` (such as `gmail.users.messages.get`). A
-  JSON answer up to 256 KiB is recorded under `gen_ai.tool.call.result`, so
-  the Introspection processor seals it as it seals tool results; bytes,
-  headers, paths and queries never are.
+  read's JSON answer up to 256 KiB is recorded under
+  `gen_ai.tool.call.result`, so the Introspection processor seals it as it
+  seals tool results; a write's answer, bytes, headers, paths and queries
+  never are. The resumable upload's session URI comes back in a header, and
+  the Drive fields the package asks for carry no signed link.
 - **Not yet:** a live-domain test.
 
 Request and response shapes come from Google's discovery documents as
