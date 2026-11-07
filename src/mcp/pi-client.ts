@@ -87,9 +87,12 @@ export function isPiMcpServerTool(
   tool: { namespace?: ToolNamespace },
   serverId: string,
 ): boolean {
+  // `aliases` is typed from Pi 1.3.0; the peer floor is older.
+  const namespace = tool.namespace as
+    (ToolNamespace & { aliases?: readonly string[] }) | undefined;
   return (
-    tool.namespace?.name === piMcpNamespace(serverId) &&
-    (tool.namespace.aliases?.includes(serverId) ?? false)
+    namespace?.name === piMcpNamespace(serverId) &&
+    (namespace.aliases?.includes(serverId) ?? false)
   );
 }
 
