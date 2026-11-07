@@ -100,15 +100,15 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: '>=1.1.0 <2.0.0'
         version: 1.4.0(@aws-sdk/credential-provider-node@3.972.92)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.7))(@smithy/signature-v4@5.7.5)(ws@8.22.0)(zod@4.6.7)
-      '@introspection-ai/mcp-fakes':
-        specifier: '>=0.2.1 <1.0.0'
-        version: 0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)
+      '@introspection-ai/eval-simulate':
+        specifier: '>=0.6.0'
+        version: 0.6.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)
       '@introspection-ai/recipes':
         specifier: workspace:*
         version: link:..
       '@introspection-ai/vitest-evals':
-        specifier: '>=0.2.0 <1.0.0'
-        version: 0.4.0(@introspection-ai/mcp-fakes@0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3))(vitest-evals@0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7))(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))
+        specifier: '>=0.8.0'
+        version: 0.8.0(@introspection-ai/eval-simulate@0.6.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3))(vitest-evals@0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7))(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))
       '@introspection-sdk/introspection-node':
         specifier: '>=0.35.0 <1.0.0'
         version: 0.43.0(@earendil-works/pi-agent-core@1.4.0(@aws-sdk/credential-provider-node@3.972.92)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.7))(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.22.0)(zod@4.6.7))(@earendil-works/pi-ai@1.4.0(@aws-sdk/credential-provider-node@3.972.92)(@modelcontextprotocol/sdk@1.29.0(zod@4.6.7))(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.22.0)(zod@4.6.7))(@opentelemetry/api-logs@0.221.0)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.10.0))(@opentelemetry/resources@2.10.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.10.0))(@opentelemetry/semantic-conventions@1.44.0)
@@ -589,25 +589,31 @@ packages:
   '@iarna/toml@2.2.5':
     resolution: {integrity: sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg==}
 
-  '@introspection-ai/mcp-fakes@0.5.0':
-    resolution: {integrity: sha512-4YcF2sRA2upgFpfSIestukNnrP6/9efAAcjv4O10qiZiUjOH0odBjaVzeVy09C3OgmZPmB7vtF2ld8M87laQjw==}
+  '@introspection-ai/eval-simulate@0.6.0':
+    resolution: {integrity: sha512-xEZXq0wqClAz/LEDQ0tDdfs2ASA+qn77neQBrTl/dV5QFwPTpCa14wm99YeycCmh39SVVlXLzv4pG+C+UR+TNA==}
     engines: {node: '>=22.18 <25'}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/client': 2.3.1
+      emulate: 0.13.0
       typebox: ^1
     peerDependenciesMeta:
       '@modelcontextprotocol/client':
         optional: true
+      emulate:
+        optional: true
 
-  '@introspection-ai/vitest-evals@0.4.0':
-    resolution: {integrity: sha512-IeFXMDYhDrIw7gChtdGTdTW5D2uK5/ibXExranMaZ8GGkMTvvHunG/d9TR+E1Ylkl37eRxQbruXZNXeEqKZOlg==}
+  '@introspection-ai/vitest-evals@0.8.0':
+    resolution: {integrity: sha512-J/Td8Vle9jpJ1rsQg191/5AP70LZsCd7WOX+vs/3QxiLnrdu+iAyHTLEbS9j7FiVcSm6IVnFCHwSFCpo3kGE2A==}
     engines: {node: '>=20 <25'}
     peerDependencies:
+      '@introspection-ai/eval-simulate': '>=0.6.0'
       '@introspection-ai/mcp-fakes': '>=0.2.2'
       vitest: '>=4.0.0 <5.0.0'
       vitest-evals: '>=0.16.1 <0.18.0'
     peerDependenciesMeta:
+      '@introspection-ai/eval-simulate':
+        optional: true
       '@introspection-ai/mcp-fakes':
         optional: true
 
@@ -3434,21 +3440,22 @@ snapshots:
 
   '@iarna/toml@2.2.5': {}
 
-  '@introspection-ai/mcp-fakes@0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)':
+  '@introspection-ai/eval-simulate@0.6.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)':
     dependencies:
       '@modelcontextprotocol/node': 2.1.1(@modelcontextprotocol/server@2.3.1)
       '@modelcontextprotocol/server': 2.3.1
       '@toon-format/toon': 2.3.1
+      js-yaml: 4.3.2
       typebox: 1.4.3
     optionalDependencies:
       '@modelcontextprotocol/client': 2.4.0
 
-  '@introspection-ai/vitest-evals@0.4.0(@introspection-ai/mcp-fakes@0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3))(vitest-evals@0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7))(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))':
+  '@introspection-ai/vitest-evals@0.8.0(@introspection-ai/eval-simulate@0.6.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3))(vitest-evals@0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7))(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))':
     dependencies:
       vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       vitest-evals: 0.17.0(tinyrainbow@3.2.0)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.0.16(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)))(zod@4.6.7)
     optionalDependencies:
-      '@introspection-ai/mcp-fakes': 0.5.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)
+      '@introspection-ai/eval-simulate': 0.6.0(@modelcontextprotocol/client@2.4.0)(typebox@1.4.3)
 
   '@introspection-sdk/http@0.43.0(@opentelemetry/api-logs@0.221.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.221.0(@opentelemetry/api@1.10.0))':
     dependencies:
