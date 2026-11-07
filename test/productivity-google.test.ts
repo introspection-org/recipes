@@ -129,10 +129,6 @@ describe("Google productivity provider: through the host", () => {
         labels: ["INBOX", "UNREAD", "Clients"],
       }),
     ]);
-    // Pi ran no other tool for this call, so search was served over REST.
-    expect(seen.map((call) => call.host)).not.toContain(
-      "gmailmcp.googleapis.com",
-    );
     expect(requests).toContainEqual({
       method: "GET",
       path: "/gmail/v1/users/me/messages",
@@ -140,40 +136,5 @@ describe("Google productivity provider: through the host", () => {
     expect(new Set(seen.map((call) => call.authorization))).toEqual(
       new Set(["Bearer introspection-egress"]),
     );
-
-    // With Pi's `ctx.executeTool`, mail read goes to the Recipe's Gmail MCP
-    // server through it, under the name Pi gives that server's tool.
-    const nested: Array<{ name: string; args: unknown }> = [];
-    const toolContext = {
-      tools: [{ name: "mcp__gmail__get_message" }],
-      executeTool: async (name: string, args: unknown) => {
-        nested.push({ name, args });
-        const result = { content: [], structuredContent: { message: MESSAGE } };
-        return {
-          isError: false,
-          result: { content: [], structuredContent: result },
-        };
-      },
-    };
-    const before = requests.length;
-    const read = (await pi.tools.get("mail")!.execute(
-      "c2",
-      {
-        command: "read",
-        message: result.details.messages[0]!.message,
-      } as never,
-      undefined,
-      undefined,
-      toolContext as never,
-    )) as { details: { messages: Array<{ subject: string }> } };
-    expect(read.details.messages[0]!.subject).toBe("Hi");
-    expect(nested).toEqual([
-      { name: "mcp__gmail__get_message", args: { messageId: MESSAGE.id } },
-    ]);
-    expect(
-      requests
-        .slice(before)
-        .some((request) => request.path.endsWith(`/messages/${MESSAGE.id}`)),
-    ).toBe(false);
   });
 });

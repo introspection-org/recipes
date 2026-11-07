@@ -157,7 +157,7 @@ export const DRIVE_EXPORT_LIMIT_BYTES = 10 * 1024 * 1024;
  * (docs/productivity/google.md, Errors). Rate limits are mapped here too; the
  * transport decides before calling this whether to retry them.
  */
-export function mapGoogleError(
+function mapGoogleError(
   status: number,
   body: GoogleErrorBody,
   options: { scope: string; retryAfter?: number; label: string },
