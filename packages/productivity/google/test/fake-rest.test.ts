@@ -411,6 +411,73 @@ describe("mail parsing", () => {
   const b64 = (text: string, encoding: BufferEncoding = "utf8") =>
     Buffer.from(text, encoding).toString("base64url");
 
+  /** An HTML body beside an attachment, or an attached message, that holds text/plain. */
+  const htmlBesideText = (enclosing: {
+    mimeType: string;
+    filename?: string;
+  }) => ({
+    mimeType: "multipart/mixed",
+    parts: [
+      {
+        partId: "0",
+        mimeType: "text/html",
+        body: { data: b64("<p>body</p>") },
+      },
+      {
+        partId: "1",
+        ...enclosing,
+        parts: [
+          {
+            partId: "1.0",
+            mimeType: "text/plain",
+            body: { data: b64("inner") },
+          },
+        ],
+      },
+    ],
+  });
+
+  for (const [name, enclosing] of [
+    [
+      "a multipart attachment",
+      { mimeType: "multipart/mixed", filename: "a.zip" },
+    ],
+    ["an attached message", { mimeType: "message/rfc822" }],
+  ] as const) {
+    it(`reads the body around ${name}, never the text inside it`, async () => {
+      expect(parseMailPayload(htmlBesideText(enclosing)).text).toBe("body");
+      const { backend: b, calls } = await backend([
+        [
+          "GET",
+          /\/drafts\/d1$/,
+          () =>
+            json({
+              id: "d1",
+              message: { id: "m1", payload: htmlBesideText(enclosing) },
+            }),
+        ],
+        [
+          "PUT",
+          /\/drafts\/d1$/,
+          () => json({ id: "d1", message: { id: "m1" } }),
+        ],
+      ]);
+      await b.mail.updateDraft({
+        draft_id: "d1",
+        to: ["a@example.com"],
+        subject: "Plan",
+      });
+      const raw = new TextDecoder().decode(
+        decodeBase64Url(
+          (bodyJson(calls[1]!) as { message: { raw: string } }).message.raw,
+        ),
+      );
+      // The body is base64 encoded: "body" is kept, "inner" is not.
+      expect(raw).toContain(Buffer.from("body").toString("base64"));
+      expect(raw).not.toContain(Buffer.from("inner").toString("base64"));
+    });
+  }
+
   it("prefers text/plain in a nested multipart, decoding its charset", () => {
     const parsed = parseMailPayload({
       mimeType: "multipart/mixed",

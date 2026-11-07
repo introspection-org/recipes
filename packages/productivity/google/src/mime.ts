@@ -122,12 +122,18 @@ function partText(part: GmailMessagePart): string {
   return decodeCharset(decodeBase64Url(data), charset);
 }
 
+/** Visit every part; `enclosed` is true inside an attachment or an attached message. */
 function walk(
   part: GmailMessagePart,
-  visit: (part: GmailMessagePart) => void,
+  visit: (part: GmailMessagePart, enclosed: boolean) => void,
+  enclosed = false,
 ): void {
-  visit(part);
-  for (const child of part.parts ?? []) walk(child, visit);
+  visit(part, enclosed);
+  const inner =
+    enclosed ||
+    isAttachment(part) ||
+    part.mimeType?.toLowerCase() === "message/rfc822";
+  for (const child of part.parts ?? []) walk(child, visit, inner);
 }
 
 /**
@@ -135,7 +141,8 @@ function walk(
  * first `text/html` part converted to text when it has none. Gmail has
  * already undone the transfer encoding; the part data is base64url bytes in
  * the part's charset. Parts with a file name or an attachment disposition are
- * listed, not read.
+ * listed, not read, and no part inside one or inside an attached message is
+ * read as the body.
  */
 export function parseMailPayload(
   payload: GmailMessagePart | undefined,
@@ -144,7 +151,7 @@ export function parseMailPayload(
   let html: GmailMessagePart | undefined;
   const attachments: ParsedAttachment[] = [];
   if (payload) {
-    walk(payload, (part) => {
+    walk(payload, (part, enclosed) => {
       const type = (part.mimeType ?? "").toLowerCase();
       if (isAttachment(part)) {
         if (part.partId !== undefined) {
@@ -157,6 +164,7 @@ export function parseMailPayload(
         }
         return;
       }
+      if (enclosed) return;
       if (type === "text/plain" && !plain) plain = part;
       if (type === "text/html" && !html) html = part;
     });
