@@ -393,6 +393,24 @@ Every provider honours `max_results` up to its own maximum. What one provider
 offers and the tool does not (answers, `topic`, language, safe search, Exa's
 `category`, Goggles beyond sites) is listed under [Later](#later).
 
+### Do site filters match subdomains?
+
+`sites: ["example.com"]` is sent as the provider's domain filter, and whether
+`blog.example.com` matches is the provider's rule, not the tool's. What each
+provider states:
+
+| Provider | Subdomains of a listed domain | Source |
+| --- | --- | --- |
+| `tavily` | Unknown: not stated in the API reference | [Search reference](https://docs.tavily.com/documentation/api-reference/endpoint/search) |
+| `exa` | A wildcard, `*.example.com`, matches every subdomain; whether a bare domain does is not stated. A path (`exa.ai/blog`) narrows to that section | [Domain and path filter changelog](https://exa.ai/docs/changelog/domain-path-filter) |
+| `brave` | Unknown: Goggles' `site=` matches on the hostname, and the quickstart does not say whether a parent domain covers its subdomains | [goggles-quickstart](https://github.com/brave/goggles-quickstart) |
+| `parallel` (design) | Unknown | |
+| `perplexity` (design) | Unknown | |
+| `keenable` (design) | Unknown | |
+
+The tool passes a domain as given; to be sure of a subdomain, list it, and
+read each result's `site`.
+
 ## Bound providers
 
 How a provider is bound depends on whether it has a hosted MCP server
@@ -465,6 +483,33 @@ key. The host's egress supplies it, as for the Slack channel
 Each endpoint is one host and one header, so binding a search provider is a
 CRUD call on `/v1/endpoints`, with no chart change. Brave and Parallel are
 already named there as runtime utility APIs.
+
+## Filtering results in codemode
+
+Under `mcp.mode: codemode` the model can call `web_search` from a script, as
+`await tools.web_search({ ... })`, and keep only what it needs before anything
+enters its context: one search per candidate run in parallel, results from a
+domain dropped, only URLs kept. The call resolves to the same text the model
+would read (the tool declares no output schema) and rejects with an `Error`
+carrying the one-line failure, so a script parses the numbered blocks:
+
+```js
+const queries = ["pgvector hnsw recall", "pgvector ivfflat recall"];
+const pages = await Promise.allSettled(
+  queries.map((query) => tools.web_search({ query, max_results: 10 })),
+);
+const urls = pages
+  .filter((page) => page.status === "fulfilled")
+  .flatMap((page) => page.value.split("\n").filter((line) => line.startsWith("https://")))
+  .filter((url) => !new URL(url).hostname.endsWith("medium.com"));
+return [...new Set(urls)].slice(0, 8).join("\n");
+```
+
+Only the script's return value reaches the model, so a filter here costs no
+tokens for what it drops. Each call is still a `web_search` call: it records
+its span and usage, counts against the Recipe's `maxUses`, and its results
+are untrusted ([Content is data](#content-is-data)). Recipe code that wants
+the structured result calls `createWebSearch` instead ([Recipe code](#recipe-code)).
 
 ## Content is data
 
