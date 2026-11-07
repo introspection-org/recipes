@@ -22,6 +22,7 @@ import {
   isDocumentProfilePath,
   recipeProfileSkill,
 } from "../documents/profile.js";
+import { PRODUCTIVITY_COMMANDS } from "../productivity/types.js";
 import { isCompanionPackage, isHostPeerPackage } from "./companions.js";
 
 export interface RecipePackageResources {
@@ -155,6 +156,27 @@ export function recipeDocumentPackageName(format: string): string {
   return `@introspection-ai/recipe-documents-${format}`;
 }
 
+/**
+ * A Recipe's productivity provider, served by
+ * `@introspection-ai/recipe-productivity-<provider>`. `tools` is an optional
+ * allowlist of commands per tool: an omitted tool exposes every command the
+ * provider supports, an empty list exposes none.
+ */
+export interface RecipePackageProductivity {
+  provider: string;
+  tools?: Partial<Record<"mail" | "calendar" | "drive", string[]>>;
+}
+
+export function recipeProductivityPackageName(provider: string): string {
+  return `@introspection-ai/recipe-productivity-${provider}`;
+}
+
+const PRODUCTIVITY_TOOL_NAMES = ["mail", "calendar", "drive"] as const;
+const PRODUCTIVITY_COMMAND_NAMES: Record<
+  string,
+  readonly string[] | undefined
+> = PRODUCTIVITY_COMMANDS;
+
 export interface RecipePythonRuntimeRequirement {
   project: string;
   lockfile: string;
@@ -176,6 +198,7 @@ export interface RecipePackageManifest {
   resourceDeclarations?: Record<keyof RecipePackageResources, boolean>;
   channels?: RecipePackageChannel[];
   documents?: RecipePackageDocument[];
+  productivity?: RecipePackageProductivity[];
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -225,6 +248,7 @@ const PI_KEYS = new Set([
   ...RESOURCE_KEYS,
   "channels",
   "documents",
+  "productivity",
   "evals",
   "mcp",
   "runtime",
@@ -378,6 +402,13 @@ function sourceShapeFindings(
       packageName,
       dependencies,
       packageDir,
+    ),
+  );
+  findings.push(
+    ...productivitySourceShapeFindings(
+      pi.productivity,
+      packageName,
+      dependencies,
     ),
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
@@ -553,6 +584,116 @@ function documentSourceShapeFindings(
     const problem = declarationPackageProblem(
       `package.json#pi.documents format '${format}'`,
       recipeDocumentPackageName(format),
+      dependencies,
+    );
+    if (problem) findings.push(invalid(problem));
+  }
+  return findings;
+}
+
+/**
+ * `pi.productivity` holds one provider declaration. Whether the provider
+ * supports each allowlisted command is checked when the host loads the
+ * provider's capability descriptor; the command names are checked here.
+ */
+function productivitySourceShapeFindings(
+  value: unknown,
+  packageName: string,
+  dependencies: DeclaredDependencies,
+): RecipeValidationFinding[] {
+  if (value === undefined) return [];
+  const invalid = (message: string) =>
+    finding("pi.productivity_invalid", message, packageName);
+  if (!Array.isArray(value)) {
+    return [invalid("package.json#pi.productivity must be an array")];
+  }
+  const findings: RecipeValidationFinding[] = [];
+  if (value.length > 1) {
+    findings.push(
+      invalid(
+        "package.json#pi.productivity declares more than one provider; a Recipe uses one productivity provider",
+      ),
+    );
+  }
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      findings.push(
+        invalid(`package.json#pi.productivity[${index}] must be an object`),
+      );
+      continue;
+    }
+    const declaration = raw as Record<string, unknown>;
+    const unknown = Object.keys(declaration).filter(
+      (key) => !["provider", "tools"].includes(key),
+    );
+    if (unknown.length > 0) {
+      findings.push(
+        invalid(
+          `package.json#pi.productivity[${index}] contains unknown field(s): ${unknown.join(", ")}`,
+        ),
+      );
+    }
+    const tools = declaration.tools;
+    if (tools !== undefined) {
+      if (!tools || typeof tools !== "object" || Array.isArray(tools)) {
+        findings.push(
+          invalid(
+            `package.json#pi.productivity[${index}].tools must be an object`,
+          ),
+        );
+      } else {
+        for (const [tool, commands] of Object.entries(tools)) {
+          const known = PRODUCTIVITY_COMMAND_NAMES[tool];
+          if (!known) {
+            findings.push(
+              invalid(
+                `package.json#pi.productivity[${index}].tools contains unknown tool '${tool}'; use mail, calendar or drive`,
+              ),
+            );
+            continue;
+          }
+          if (
+            !Array.isArray(commands) ||
+            commands.some(
+              (command) => typeof command !== "string" || !command.trim(),
+            ) ||
+            new Set(commands).size !== commands.length
+          ) {
+            findings.push(
+              invalid(
+                `package.json#pi.productivity[${index}].tools.${tool} must be an array of unique non-empty strings`,
+              ),
+            );
+            continue;
+          }
+          const unknownCommand = (commands as string[]).find(
+            (command) => !known.includes(command),
+          );
+          if (unknownCommand !== undefined) {
+            findings.push(
+              invalid(
+                `package.json#pi.productivity[${index}].tools.${tool} contains unknown command '${unknownCommand}'`,
+              ),
+            );
+          }
+        }
+      }
+    }
+    const provider =
+      typeof declaration.provider === "string" && declaration.provider.trim()
+        ? declaration.provider.trim()
+        : undefined;
+    if (!provider) {
+      findings.push(
+        invalid(
+          `package.json#pi.productivity[${index}].provider must be non-empty`,
+        ),
+      );
+      continue;
+    }
+    const problem = declarationPackageProblem(
+      `package.json#pi.productivity provider '${provider}'`,
+      recipeProductivityPackageName(provider),
       dependencies,
     );
     if (problem) findings.push(invalid(problem));
@@ -1098,6 +1239,26 @@ function parseDocuments(value: unknown): RecipePackageDocument[] {
   return documents;
 }
 
+function parseProductivity(value: unknown): RecipePackageProductivity[] {
+  const declarations: RecipePackageProductivity[] = [];
+  for (const raw of Array.isArray(value) ? value : []) {
+    const declaration = asRecord(raw);
+    const provider = stringValue(declaration.provider);
+    if (!provider) continue;
+    const tools = asRecord(declaration.tools);
+    const allowlists: RecipePackageProductivity["tools"] = {};
+    for (const tool of PRODUCTIVITY_TOOL_NAMES) {
+      if (Array.isArray(tools[tool]))
+        allowlists[tool] = stringArray(tools[tool]);
+    }
+    declarations.push({
+      provider,
+      ...(declaration.tools !== undefined ? { tools: allowlists } : {}),
+    });
+  }
+  return declarations;
+}
+
 function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
   const runtime = asRecord(value);
   const python = asRecord(runtime.python);
@@ -1171,6 +1332,7 @@ export function readPiPackageManifest(
     resourceDeclarations: resourceDeclarations(pi),
     channels: parseChannels(pi.channels),
     documents: parseDocuments(pi.documents),
+    productivity: parseProductivity(pi.productivity),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };

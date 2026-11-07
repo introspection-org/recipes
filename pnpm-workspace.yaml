@@ -2,4 +2,5 @@ packages:
   - packages/*
   - packages/channels/*
   - packages/documents/*
+  - packages/productivity/*
   - examples

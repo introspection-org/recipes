@@ -857,6 +857,7 @@ fn validate_pi_config(
         "prompts",
         "channels",
         "documents",
+        "productivity",
         "mcp",
         "runtime",
         "evals",
@@ -905,6 +906,9 @@ fn validate_pi_config(
     if let Some(documents) = pi.get("documents") {
         validate_documents_config(documents, package, ctx);
     }
+    if let Some(productivity) = pi.get("productivity") {
+        validate_productivity_config(productivity, package, ctx);
+    }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
@@ -912,8 +916,8 @@ fn validate_pi_config(
     resolved
 }
 
-/// The companion packages: the first-party channel and document format packages
-/// Recipes installs alongside itself, so a Recipe may omit them. They are the
+/// The companion packages: the first-party channel, document format and
+/// productivity provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
 const COMPANION_PACKAGES: [&str; 3] = [
@@ -1045,15 +1049,7 @@ fn validate_channel_config(value: &JsonValue, package: &Package, ctx: &mut Check
             );
         }
         if let Some(commands) = connector.get("commands") {
-            let valid = commands.as_array().is_some_and(|values| {
-                let mut seen = BTreeSet::new();
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            if unique_names(commands).is_none() {
                 ctx.error("pi.channels_invalid", PACKAGE_JSON,
                     format!("package.json#pi.channels[{index}].commands must be an array of unique non-empty strings"), Some("use a list of unique command names"));
             }
@@ -1168,23 +1164,17 @@ fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut Che
             );
         }
         if let Some(commands) = declaration.get("commands") {
-            let mut seen = BTreeSet::new();
-            let valid = commands.as_array().is_some_and(|values| {
-                values.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
-                })
-            });
-            if !valid {
+            let names = unique_names(commands);
+            if names.is_none() {
                 ctx.error(
                     CODE,
                     PACKAGE_JSON,
                     format!("package.json#pi.documents[{index}].commands must be an array of unique non-empty strings"),
                     Some("use a list of unique command names"),
                 );
-            } else if let Some(unknown) = seen
+            } else if let Some(unknown) = names
                 .iter()
+                .flatten()
                 .find(|command| !DOCUMENT_COMMANDS.contains(command))
             {
                 ctx.error(
@@ -1233,6 +1223,152 @@ fn validate_documents_config(value: &JsonValue, package: &Package, ctx: &mut Che
                 PACKAGE_JSON,
                 format!("package.json#pi.documents[{index}].format must be non-empty"),
                 Some("name the document format, such as docx or pdf"),
+            ),
+        }
+    }
+}
+
+/// The productivity tools and their commands, as the host names them.
+const PRODUCTIVITY_COMMANDS: [(&str, &[&str]); 3] = [
+    (
+        "mail",
+        &[
+            "search",
+            "read",
+            "fetch_attachment",
+            "draft",
+            "update_draft",
+            "send",
+            "move",
+            "label",
+        ],
+    ),
+    (
+        "calendar",
+        &[
+            "list",
+            "read",
+            "free_busy",
+            "create",
+            "update",
+            "respond",
+            "cancel",
+        ],
+    ),
+    ("drive", &["search", "read", "download", "upload"]),
+];
+
+/// `pi.productivity` holds one provider, served by
+/// `@introspection-ai/recipe-productivity-<provider>`, with an optional
+/// allowlist of commands per tool. Whether the provider supports each command
+/// is checked when the runtime loads the provider's capability descriptor.
+fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
+    const CODE: &str = "pi.productivity_invalid";
+    let JsonValue::Array(declarations) = value else {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.productivity must be an array",
+            Some(
+                "use a list with one provider declaration, like [{ \"provider\": \"microsoft\" }]",
+            ),
+        );
+        return;
+    };
+    if declarations.len() > 1 {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.productivity declares more than one provider; a Recipe uses one productivity provider",
+            Some("keep one provider declaration"),
+        );
+    }
+    for (index, declaration) in declarations.iter().enumerate() {
+        let JsonValue::Object(declaration) = declaration else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}] must be an object"),
+                Some("make it a provider declaration"),
+            );
+            continue;
+        };
+        for key in declaration
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "provider" | "tools"))
+        {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}] contains unknown field '{key}'"),
+                Some("use provider and optional tools"),
+            );
+        }
+        if let Some(tools) = declaration.get("tools") {
+            let Some(tools) = tools.as_object() else {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.productivity[{index}].tools must be an object"),
+                    Some("map mail, calendar or drive to a list of commands"),
+                );
+                continue;
+            };
+            for (tool, commands) in tools {
+                let Some((_, known)) = PRODUCTIVITY_COMMANDS
+                    .iter()
+                    .find(|(name, _)| *name == tool.as_str())
+                else {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools contains unknown tool '{tool}'"),
+                        Some("use mail, calendar or drive"),
+                    );
+                    continue;
+                };
+                let names = unique_names(commands);
+                if names.is_none() {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools.{tool} must be an array of unique non-empty strings"),
+                        Some("use a list of unique command names"),
+                    );
+                } else if let Some(unknown) = names
+                    .iter()
+                    .flatten()
+                    .find(|command| !known.contains(command))
+                {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        format!("package.json#pi.productivity[{index}].tools.{tool} contains unknown command '{unknown}'"),
+                        Some(format!("use {}", known.join(", "))),
+                    );
+                }
+            }
+        }
+        match string_value(declaration.get("provider")).as_deref() {
+            Some(provider) => {
+                if let Some(problem) = declaration_package_problem(
+                    &format!("package.json#pi.productivity provider '{provider}'"),
+                    &format!("@introspection-ai/recipe-productivity-{provider}"),
+                    package,
+                ) {
+                    ctx.error(
+                        CODE,
+                        PACKAGE_JSON,
+                        problem,
+                        Some("add the productivity provider package to package.json#dependencies and commit the lockfile"),
+                    );
+                }
+            }
+            None => ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.productivity[{index}].provider must be non-empty"),
+                Some("name the provider, such as microsoft or google"),
             ),
         }
     }
@@ -4546,6 +4682,20 @@ fn validate_relative_pattern(pattern: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The strings in `value` when it is an array of unique non-empty strings.
+fn unique_names(value: &JsonValue) -> Option<BTreeSet<&str>> {
+    let mut seen = BTreeSet::new();
+    value
+        .as_array()?
+        .iter()
+        .all(|value| {
+            value
+                .as_str()
+                .is_some_and(|value| !value.trim().is_empty() && seen.insert(value))
+        })
+        .then_some(seen)
+}
+
 fn string_value(value: Option<&JsonValue>) -> Option<String> {
     match value {
         Some(JsonValue::String(value)) if !value.trim().is_empty() => Some(value.trim().to_owned()),
@@ -5056,6 +5206,114 @@ mod tests {
                 report.diagnostics
             );
         }
+    }
+
+    fn productivity_recipe(productivity: JsonValue, dependencies: JsonValue) -> RecipeFiles {
+        let package = json!({
+            "name": "productivity-test",
+            "version": "0.1.0",
+            "dependencies": dependencies,
+            "pi": { "agents": ["agents/*.yaml"], "productivity": productivity }
+        });
+        recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string(&package).expect("serialize package"),
+            ),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\ntools: [mail, calendar]\n",
+            ),
+        ])
+    }
+
+    fn productivity_invalid(report: &Report) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "pi.productivity_invalid")
+    }
+
+    #[test]
+    fn productivity_declaration_shape() {
+        let pinned = json!({ "@introspection-ai/recipe-productivity-acme": "0.1.0" });
+        for (productivity, valid) in [
+            (json!([{ "provider": "acme" }]), true),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["search", "read", "draft"], "calendar": [], "drive": ["search"] } }]),
+                true,
+            ),
+            (json!({ "provider": "acme" }), false),
+            (json!(["acme"]), false),
+            (json!([{ "provider": "" }]), false),
+            (
+                json!([{ "provider": "acme" }, { "provider": "acme" }]),
+                false,
+            ),
+            (json!([{ "provider": "acme", "commands": ["read"] }]), false),
+            (json!([{ "provider": "acme", "tools": ["mail"] }]), false),
+            (
+                json!([{ "provider": "acme", "tools": { "chat": ["read"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": "send" } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["send", "send"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "mail": ["forward"] } }]),
+                false,
+            ),
+            (
+                json!([{ "provider": "acme", "tools": { "drive": ["share"] } }]),
+                false,
+            ),
+        ] {
+            let report =
+                check_recipe_files(&productivity_recipe(productivity.clone(), pinned.clone()));
+            assert_eq!(
+                !productivity_invalid(&report),
+                valid,
+                "{productivity}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn productivity_refuses_a_second_provider() {
+        let report = check_recipe_files(&productivity_recipe(
+            json!([{ "provider": "acme" }, { "provider": "other" }]),
+            json!({
+                "@introspection-ai/recipe-productivity-acme": "0.1.0",
+                "@introspection-ai/recipe-productivity-other": "0.1.0"
+            }),
+        ));
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "pi.productivity_invalid"
+                && diagnostic.message.contains("more than one provider")
+        }));
+    }
+
+    #[test]
+    fn productivity_provider_without_a_companion_requires_its_package() {
+        let report = check_recipe_files(&productivity_recipe(
+            json!([{ "provider": "acme" }]),
+            json!({}),
+        ));
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "pi.productivity_invalid"
+                    && diagnostic.message.contains("recipe-productivity-acme")
+            }),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     /// `connector_recipe` with its package.json changed by `edit`.

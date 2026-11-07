@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
+import { commandParameters } from "../command-parameters.js";
 
 import { ChannelRefStore } from "./refs.js";
 import type {
@@ -688,25 +689,7 @@ export function registerChannelTools(
       },
     );
   });
-  // Providers expect a top-level object. Branches retain command-specific required fields.
-  const fields = new Map<string, TSchema[]>();
-  for (const variant of variants) {
-    for (const [key, schema] of Object.entries(variant.properties)) {
-      fields.set(key, [...(fields.get(key) ?? []), schema]);
-    }
-  }
-  const properties = Object.fromEntries(
-    [...fields].map(([key, schemas]) => [
-      key,
-      key === "command"
-        ? Type.Union(schemas)
-        : Type.Optional(Type.Union(schemas)),
-    ]),
-  );
-  const parameters = Type.Object(properties, {
-    additionalProperties: false,
-    anyOf: variants,
-  });
+  const parameters = commandParameters(variants);
   pi.registerTool({
     name: "channels",
     label: "Channels",
