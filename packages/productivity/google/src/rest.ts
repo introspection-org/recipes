@@ -85,16 +85,14 @@ const SYSTEM_LABELS = new Set([
 /** Labels Gmail sets itself, which `mail move` and `mail label` may not. */
 const IMMUTABLE_LABELS = new Set(["SENT", "DRAFT"]);
 const FOLDER_TYPE = "application/vnd.google-apps.folder";
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 function invalid(message: string): GoogleProductivityError {
   return new GoogleProductivityError("invalid_request", message);
 }
 
-function epochSeconds(value: string, name: string): number {
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) throw invalid(`${name} must be an RFC 3339 time.`);
-  return Math.floor(ms / 1000);
+/** The host has checked `value` is an RFC 3339 time with an offset. */
+function epochSeconds(value: string): number {
+  return Math.floor(Date.parse(value) / 1000);
 }
 
 /** A Gmail search operand, quoted only when it holds whitespace. */
@@ -201,9 +199,8 @@ export class GoogleRestMail implements Required<MailSession> {
     const terms: string[] = [];
     if (args.query?.trim()) terms.push(args.query.trim());
     if (args.from?.trim()) terms.push(`from:${gmailOperand(args.from.trim())}`);
-    if (args.after) terms.push(`after:${epochSeconds(args.after, "after")}`);
-    if (args.before)
-      terms.push(`before:${epochSeconds(args.before, "before")}`);
+    if (args.after) terms.push(`after:${epochSeconds(args.after)}`);
+    if (args.before) terms.push(`before:${epochSeconds(args.before)}`);
     if (args.unread === true) terms.push("is:unread");
     if (args.unread === false) terms.push("-is:unread");
     const label = args.folder
@@ -576,31 +573,13 @@ const GOOGLE_RESPONSES = {
   decline: "declined",
 } as const;
 
-function assertTimeZone(timeZone: string): void {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
-  } catch {
-    throw invalid(
-      `time_zone must be an IANA time zone name, not '${timeZone}'.`,
-    );
-  }
-}
-
+/** The host has checked the time against `all_day` and the zone's name. */
 function eventDateTime(
   value: string,
   timeZone: string,
   allDay: boolean | undefined,
-  name: string,
 ): CalendarDateTime {
-  if (allDay || DATE_ONLY.test(value)) {
-    if (!DATE_ONLY.test(value))
-      throw invalid(`${name} must be a date for an all-day event.`);
-    return { date: value };
-  }
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
-    throw invalid(`${name} must be an RFC 3339 date-time or a date.`);
-  }
-  return { dateTime: value, timeZone };
+  return allDay ? { date: value } : { dateTime: value, timeZone };
 }
 
 function looksLikeHtml(text: string): boolean {
@@ -763,7 +742,6 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
     args: CalendarFreeBusyArgs,
     ctx: ProductivityCallContext = {},
   ): Promise<CalendarFreeBusyResult> {
-    assertTimeZone(args.time_zone);
     const result = await this.calendar.freeBusy(
       {
         timeMin: args.from,
@@ -793,25 +771,13 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
 
   /** The `Event` body for a create, or for a patch of only the fields given. */
   private eventBody(args: Partial<CalendarCreateArgs>): GoogleEvent {
-    if (
-      (args.start !== undefined || args.end !== undefined) &&
-      !args.time_zone
-    ) {
-      throw invalid("time_zone is required with start and end.");
-    }
-    if (args.time_zone) assertTimeZone(args.time_zone);
     const event: GoogleEvent = {};
     if (args.title !== undefined) event.summary = args.title;
     if (args.start !== undefined) {
-      event.start = eventDateTime(
-        args.start,
-        args.time_zone!,
-        args.all_day,
-        "start",
-      );
+      event.start = eventDateTime(args.start, args.time_zone!, args.all_day);
     }
     if (args.end !== undefined) {
-      event.end = eventDateTime(args.end, args.time_zone!, args.all_day, "end");
+      event.end = eventDateTime(args.end, args.time_zone!, args.all_day);
     }
     if (args.location !== undefined) event.location = args.location;
     if (args.body !== undefined) event.description = args.body;
