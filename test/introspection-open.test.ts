@@ -120,10 +120,8 @@ describe("introspection_open targets", () => {
       ),
     ).toEqual(["connectors", "authorize", "notion", "--subject", "user"]);
     expect(introspectionOpenCliArgs(github as never, true)).toEqual([
-      "integrations",
-      "install",
-      "--type",
-      "github",
+      "open",
+      "--integrations",
       "--wait",
     ]);
     expect(introspectionOpenCliArgs(binding as never, true)).toEqual([

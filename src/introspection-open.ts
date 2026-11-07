@@ -181,13 +181,8 @@ export function introspectionOpenCliArgs(
         ? ["connectors", "authorize", target.provider, "--subject", "user"]
         : null;
     case "integration":
-      return [
-        "integrations",
-        "install",
-        "--type",
-        target.provider,
-        ...waitFlag,
-      ];
+      // The organization's integrations page installs every provider.
+      return ["open", "--integrations", ...waitFlag];
     case "binding":
     case "runtime":
       return ["open", "--runtime", target.runtime, ...waitFlag];
