@@ -87,6 +87,7 @@ export interface GraphEvent {
   organizer?: GraphRecipient;
   attendees?: GraphAttendee[];
   responseStatus?: GraphResponseStatus;
+  isOnlineMeeting?: boolean;
   onlineMeeting?: { joinUrl?: string } | null;
   webLink?: string;
 }

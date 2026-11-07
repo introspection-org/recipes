@@ -290,6 +290,19 @@ describe("Microsoft productivity provider: the Graph client", () => {
       ctx,
     );
     expect(next.messages[0]!.id).toBe("m3");
+
+    // A page longer than the limit comes back whole; the host keeps the rest.
+    on("GET", "/me/drive/root/search(q='x')", {
+      json: {
+        value: [{ id: "f1" }, { id: "f2" }, { id: "f3" }],
+        "@odata.nextLink": `${base}/v1.0/me/drive/root/search(q='x')?page=2`,
+      },
+    });
+    const files = await session().drive!.search!({ query: "x", limit: 2 }, ctx);
+    expect(files.files.map((file) => file.id)).toEqual(["f1", "f2", "f3"]);
+    expect(files.cursor).toBe(
+      `${base}/v1.0/me/drive/root/search(q='x')?page=2`,
+    );
     await expect(
       session().mail!.search!(
         { limit: 3, cursor: "https://evil.example/v1.0/me/messages" },
@@ -460,6 +473,38 @@ describe("Microsoft productivity provider: mail", () => {
     expect(text.messages.map((message) => message.id)).toEqual(["u"]);
   });
 
+  it("search applies the exact after and before instants with text as without", async () => {
+    const received = [
+      "2026-03-02T09:00:00Z",
+      "2026-03-02T12:00:00Z",
+      "2026-03-02T12:30:00Z",
+      "2026-03-02T13:00:00Z",
+    ];
+    on("GET", "/me/messages", {
+      json: {
+        value: received.map((at, n) => ({ id: `m${n}`, receivedDateTime: at })),
+      },
+    });
+    const bounds = {
+      after: "2026-03-02T12:00:00Z",
+      before: "2026-03-02T14:00:00+01:00",
+      limit: 10,
+    };
+    const text = await session().mail!.search!(
+      { query: "budget", ...bounds },
+      ctx,
+    );
+    expect(requests[0]!.query.get("$search")).toBe(
+      '"budget received>=2026-03-01 received<=2026-03-03"',
+    );
+    expect(text.messages.map((message) => message.id)).toEqual(["m1", "m2"]);
+    const plain = await session().mail!.search!(bounds, ctx);
+    expect(requests[1]!.query.get("$filter")).toBe(
+      "receivedDateTime ge 2026-03-02T12:00:00.000Z and receivedDateTime lt 2026-03-02T13:00:00.000Z",
+    );
+    expect(plain.messages.map((message) => message.id)).toEqual(["m1", "m2"]);
+  });
+
   it("search resolves a custom folder by display name", async () => {
     on("GET", "/me/mailFolders", {
       json: { value: [{ id: "F1", displayName: "Clients" }] },
@@ -507,7 +552,39 @@ describe("Microsoft productivity provider: mail", () => {
     });
     const thread = await session().mail!.read!({ thread_id: "c'1" }, ctx);
     expect(thread.messages.map((message) => message.id)).toEqual(["a", "b"]);
-    expect(requests[1]!.query.get("$filter")).toBe("conversationId eq 'c''1'");
+    expect(thread.unavailable).toBeUndefined();
+    expect(requests[1]!.query.get("$filter")).toBe(
+      "receivedDateTime ge 1900-01-01T00:00:00Z and conversationId eq 'c''1'",
+    );
+    expect(requests[1]!.query.get("$orderby")).toBe("receivedDateTime desc");
+  });
+
+  it("reads a long thread past one page, and says so when it is cut at 500", async () => {
+    // Pages of 50, newest first, for a thread of 520 messages.
+    const at = (n: number) =>
+      new Date(Date.UTC(2026, 0, 1) + (520 - n) * 60_000).toISOString();
+    on("GET", "/me/messages", (request) => {
+      const page = Number(request.query.get("page") ?? "0");
+      const ids = Array.from({ length: 50 }, (_, i) => page * 50 + i).filter(
+        (n) => n < 520,
+      );
+      return {
+        json: {
+          value: ids.map((n) => ({ id: `m${n}`, receivedDateTime: at(n) })),
+          ...((page + 1) * 50 < 520
+            ? {
+                "@odata.nextLink": `${base}/v1.0/me/messages?page=${page + 1}`,
+              }
+            : {}),
+        },
+      };
+    });
+    const thread = await session().mail!.read!({ thread_id: "c1" }, ctx);
+    expect(requests).toHaveLength(10);
+    expect(thread.messages).toHaveLength(500);
+    expect(thread.messages[0]!.id).toBe("m499");
+    expect(thread.messages.at(-1)!.id).toBe("m0");
+    expect(thread.unavailable).toContain("more than 500 messages");
   });
 
   it("fetch_attachment: metadata, then the raw $value", async () => {
@@ -642,12 +719,75 @@ describe("Microsoft productivity provider: calendar", () => {
     );
     expect(requests[1]!.query.get("endDateTime")).toBe("2026-03-03T00:00:00Z");
     expect(listed.events[0]).toMatchObject({
-      id: "e1",
+      id: "C1/e1",
       title: "Review",
       start: "2026-03-02T09:00:00",
       time_zone: "Europe/London",
       response: "organizer",
       online_meeting_url: "https://teams.example/j",
+    });
+  });
+
+  it("keeps a listed event's calendar for every later command", async () => {
+    // A calendar shared from another mailbox is not reachable as /me/events/{id}.
+    on("GET", "/me/calendars", {
+      json: { value: [{ id: "C/1", name: "Shared" }] },
+    });
+    on("GET", "/me/calendars/C/1/calendarView", { json: { value: [event] } });
+    on("GET", "/me/calendars/C/1/events/e1", { json: event });
+    on("PATCH", "/me/calendars/C/1/events/e1", { json: event });
+    on("POST", "/me/calendars/C/1/events/e1/accept", { status: 202 });
+    on("POST", "/me/calendars/C/1/events/e1/cancel", { status: 202 });
+    const s = session();
+    const listed = await s.calendar!.list!(
+      {
+        from: "2026-03-02T00:00:00Z",
+        to: "2026-03-03T00:00:00Z",
+        calendar: "Shared",
+        limit: 20,
+      },
+      ctx,
+    );
+    const id = listed.events[0]!.id;
+    expect((await s.calendar!.read!({ event_id: id }, ctx)).id).toBe(id);
+    expect(
+      (await s.calendar!.update!({ event_id: id, title: "x" }, ctx)).id,
+    ).toBe(id);
+    await s.calendar!.respond!({ event_id: id, response: "accept" }, ctx);
+    await s.calendar!.cancel!({ event_id: id }, ctx);
+    expect(requests.slice(2).map((r) => `${r.method} ${r.path}`)).toEqual([
+      "GET /v1.0/me/calendars/C/1/events/e1",
+      "PATCH /v1.0/me/calendars/C/1/events/e1",
+      "POST /v1.0/me/calendars/C/1/events/e1/accept",
+      "POST /v1.0/me/calendars/C/1/events/e1/cancel",
+    ]);
+    expect(requests[2]!.path).toBe("/v1.0/me/calendars/C/1/events/e1");
+  });
+
+  it("refuses a body change on an online meeting, whose join details live in the body", async () => {
+    on("GET", "/me/events/e1", (request) => ({
+      json: {
+        id: "e1",
+        isOnlineMeeting: request.query.get("$select") !== null,
+      },
+    }));
+    on("PATCH", "/me/events/e1", { json: event });
+    await expect(
+      session().calendar!.update!({ event_id: "e1", body: "New agenda" }, ctx),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(requests.map((r) => r.method)).toEqual(["GET"]);
+    expect(requests[0]!.query.get("$select")).toBe("id,isOnlineMeeting");
+
+    requests.length = 0;
+    routes = [];
+    on("GET", "/me/events/e1", { json: { id: "e1", isOnlineMeeting: false } });
+    on("PATCH", "/me/events/e1", { json: event });
+    await session().calendar!.update!(
+      { event_id: "e1", body: "New agenda" },
+      ctx,
+    );
+    expect(json(requests[1]!)).toEqual({
+      body: { contentType: "text", content: "New agenda" },
     });
   });
 

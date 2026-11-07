@@ -60,13 +60,25 @@ descriptor states this, since Outlook has no labels in Gmail's sense.
   `invalid_request`; `5xx` and network failures are `provider_error`.
 - **Mail.** `mail search` uses `$filter` and `$orderby` without text and a
   KQL `$search` with it (Graph combines neither with the other), filtering
-  `unread` from the page in that case. `folder` and `mail move` take a
+  `unread` from the page in that case. KQL's `received` takes only a date in
+  the mailbox's zone, so with text the dates are widened a day each way and
+  the exact `after` and `before` instants filter the page, as `$filter`
+  applies them without text. A thread read follows every page, newest first,
+  up to 500 messages; a longer thread returns its latest 500 and says so in
+  `unavailable`. `folder` and `mail move` take a
   well-known folder (`inbox`, `archive`, `sent`, `drafts`, `trash`, `junk`)
   or a top-level folder's display name. Draft bodies are sent as plain text;
   a reply's text goes in `createReply`'s `comment`, so the quoted thread is
   kept. `mail send` returns no sent-message id, since Graph answers `202`.
   `mail label` reads the message's categories and writes the new set.
-- **Calendar.** `calendar list` and `read` return times in UTC.
+- **Calendar.** `calendar list` and `read` return times in UTC. An event
+  listed from a named calendar carries that calendar in its id
+  (`<calendarId>/<eventId>`), so `read`, `update`, `respond` and `cancel`
+  reach it through `/me/calendars/{id}/events/{id}`, as a calendar shared from
+  another mailbox needs. `update` refuses a `body` change on an online
+  meeting: Graph replaces the whole body, which holds the Teams join details,
+  so the change would disable the meeting (`event-update.md`), and the
+  details have no documented delimiter to keep them by.
   `create` and `update` send wall-clock times in the event's IANA zone (a
   time with an offset is converted to it). `free_busy` treats
   `workingElsewhere` as busy and drops `free` slots.

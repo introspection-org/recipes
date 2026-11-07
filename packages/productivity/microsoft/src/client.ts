@@ -250,7 +250,9 @@ export class GraphClient {
 
   /**
    * Every page of a collection, following `@odata.nextLink`, until `limit`
-   * items. Returns the items and the next link when more remain.
+   * items. Returns every item of the pages read, which may be more than
+   * `limit` (the host keeps the rest for its next page), and the next link
+   * when more remain.
    */
   async page<T>(
     request: GraphRequest,

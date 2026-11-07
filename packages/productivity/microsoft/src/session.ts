@@ -45,6 +45,27 @@ const EVENT_SELECT =
 const DRIVE_SELECT =
   "id,name,size,webUrl,lastModifiedDateTime,lastModifiedBy,file,folder,package,parentReference,remoteItem";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** The most messages `mail read` returns for one thread. */
+const THREAD_MESSAGE_LIMIT = 500;
+
+const kqlDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/** Whether a message arrived in `[after, before)`, the bounds `$filter` applies. */
+function receivedWithin(
+  message: GraphMessage,
+  after: number | undefined,
+  before: number | undefined,
+): boolean {
+  if (after === undefined && before === undefined) return true;
+  const received = Date.parse(message.receivedDateTime ?? "");
+  if (!Number.isFinite(received)) return false;
+  return (
+    (after === undefined || received >= after) &&
+    (before === undefined || received < before)
+  );
+}
+
 /** Outlook's well-known folder names, and the everyday names that mean them. */
 const WELL_KNOWN_FOLDERS: Record<string, string> = {
   inbox: "inbox",
@@ -170,12 +191,26 @@ const RESPONSES: Record<
   declined: "declined",
 };
 
-function eventSummary(event: GraphEvent): CalendarEventSummary {
+/**
+ * The opaque event id behind an `evt_` handle. An event listed from a named
+ * calendar carries that calendar, since one shared from another mailbox is
+ * not reachable as `/me/events/{id}`.
+ */
+function eventId(event: GraphEvent, calendarId?: string): string {
+  return calendarId === undefined
+    ? event.id
+    : `${segment(calendarId)}/${segment(event.id)}`;
+}
+
+function eventSummary(
+  event: GraphEvent,
+  calendarId?: string,
+): CalendarEventSummary {
   const allDay = event.isAllDay === true;
   const organizer = address(event.organizer);
   const response = event.responseStatus?.response;
   return {
-    id: event.id,
+    id: eventId(event, calendarId),
     ...(event.subject !== undefined ? { title: event.subject } : {}),
     start: graphTime(event.start?.dateTime, allDay),
     end: graphTime(event.end?.dateTime, allDay),
@@ -197,9 +232,9 @@ function eventSummary(event: GraphEvent): CalendarEventSummary {
   };
 }
 
-function fullEvent(event: GraphEvent): CalendarEvent {
+function fullEvent(event: GraphEvent, calendarId?: string): CalendarEvent {
   return {
-    ...eventSummary(event),
+    ...eventSummary(event, calendarId),
     ...(event.attendees
       ? {
           attendees: event.attendees.flatMap((attendee) => {
@@ -300,8 +335,28 @@ const under = (base: GraphPath, path: string, template = path): GraphPath => ({
 const messagePath = (id: string): GraphPath =>
   route(`/me/messages/${segment(id)}`, "/me/messages/{message-id}");
 
-const eventPath = (id: string): GraphPath =>
-  route(`/me/events/${segment(id)}`, "/me/events/{event-id}");
+/** A calendar's or event's Graph path, with the calendar it names, if any. */
+interface CalendarRoute {
+  at: GraphPath;
+  calendarId?: string;
+}
+
+/** The Graph path of an event id from `eventId`. */
+function eventRoute(id: string): CalendarRoute {
+  const slash = id.indexOf("/");
+  if (slash === -1)
+    return {
+      at: route(`/me/events/${segment(id)}`, "/me/events/{event-id}"),
+    };
+  const calendarId = decodeURIComponent(id.slice(0, slash));
+  return {
+    at: route(
+      `/me/calendars/${segment(calendarId)}/events/${id.slice(slash + 1)}`,
+      "/me/calendars/{calendar-id}/events/{event-id}",
+    ),
+    calendarId,
+  };
+}
 
 /** The Graph path of an item id from `driveItemId`. */
 function itemPath(id: string): GraphPath {
@@ -409,13 +464,19 @@ export function createMicrosoftSession(
         $top: String(args.limit),
       };
       let unreadAfter = false;
+      const after = args.after ? Date.parse(args.after) : undefined;
+      const before = args.before ? Date.parse(args.before) : undefined;
       if (args.query?.trim()) {
         // Graph does not combine $search with $filter or $orderby on messages,
         // so every other criterion becomes a KQL term (user-list-messages.md).
+        // KQL's received takes a date in the mailbox's zone, so the terms are
+        // widened a day each way and the exact instants filter the results.
         const terms = [args.query.trim()];
         if (args.from) terms.push(`from:${args.from}`);
-        if (args.after) terms.push(`received>=${args.after.slice(0, 10)}`);
-        if (args.before) terms.push(`received<=${args.before.slice(0, 10)}`);
+        if (after !== undefined)
+          terms.push(`received>=${kqlDate(after - DAY_MS)}`);
+        if (before !== undefined)
+          terms.push(`received<=${kqlDate(before + DAY_MS)}`);
         query.$search = `"${terms.join(" ").replaceAll('"', '\\"')}"`;
         unreadAfter = args.unread !== undefined;
       } else {
@@ -446,8 +507,11 @@ export function createMicrosoftSession(
       );
       return {
         messages: page.items
-          .filter((message) => !unreadAfter || !message.isRead === args.unread)
-          .slice(0, args.limit)
+          .filter(
+            (message) =>
+              (!unreadAfter || !message.isRead === args.unread) &&
+              receivedWithin(message, after, before),
+          )
           .map(messageSummary),
         ...(page.next ? { cursor: page.next } : {}),
       };
@@ -465,24 +529,38 @@ export function createMicrosoftSession(
         );
         return { messages: [fullMessage(message)] };
       }
+      // Newest first, so a thread past the cap keeps its latest messages;
+      // $orderby's property must lead $filter (user-list-messages.md).
       const page = await graph.page<GraphMessage>(
         get(
           route("/me/messages"),
           {
-            $filter: `conversationId eq ${odata(args.thread_id)}`,
+            $filter: `receivedDateTime ge 1900-01-01T00:00:00Z and conversationId eq ${odata(args.thread_id)}`,
+            $orderby: "receivedDateTime desc",
             $select: `${MESSAGE_SELECT},body`,
             $expand: ATTACHMENT_EXPAND,
             $top: "50",
           },
           MICROSOFT_SCOPES.mail.read,
         ),
-        100,
+        THREAD_MESSAGE_LIMIT,
         signal,
       );
-      const messages = [...page.items].sort((a, b) =>
-        (a.receivedDateTime ?? "").localeCompare(b.receivedDateTime ?? ""),
-      );
-      return { messages: messages.map(fullMessage) };
+      const cut =
+        page.next !== undefined || page.items.length > THREAD_MESSAGE_LIMIT;
+      const messages = page.items
+        .slice(0, THREAD_MESSAGE_LIMIT)
+        .sort((a, b) =>
+          (a.receivedDateTime ?? "").localeCompare(b.receivedDateTime ?? ""),
+        );
+      return {
+        messages: messages.map(fullMessage),
+        ...(cut
+          ? {
+              unavailable: `The thread has more than ${THREAD_MESSAGE_LIMIT} messages; only the latest ${THREAD_MESSAGE_LIMIT} are shown.`,
+            }
+          : {}),
+      };
     },
 
     async fetchAttachment(args, { signal }) {
@@ -654,8 +732,8 @@ export function createMicrosoftSession(
   const calendarPath = async (
     name: string | undefined,
     signal?: AbortSignal,
-  ): Promise<GraphPath> => {
-    if (!name) return route("/me");
+  ): Promise<CalendarRoute> => {
+    if (!name) return { at: route("/me") };
     const found = await graph.json<{ value?: GraphCalendar[] }>(
       get(
         route("/me/calendars"),
@@ -666,7 +744,10 @@ export function createMicrosoftSession(
     );
     const id = found?.value?.[0]?.id;
     if (!id) throw invalidRequest(`No calendar named '${name}'.`);
-    return route(`/me/calendars/${segment(id)}`, "/me/calendars/{calendar-id}");
+    return {
+      at: route(`/me/calendars/${segment(id)}`, "/me/calendars/{calendar-id}"),
+      calendarId: id,
+    };
   };
 
   const eventBody = (args: {
@@ -732,10 +813,10 @@ export function createMicrosoftSession(
 
   const calendar: CalendarSession = {
     async list(args, { signal }) {
-      const base = await calendarPath(args.calendar, signal);
+      const { at, calendarId } = await calendarPath(args.calendar, signal);
       const page = await graph.page<GraphEvent>(
         get(
-          under(base, "/calendarView"),
+          under(at, "/calendarView"),
           {
             startDateTime: args.from,
             endDateTime: args.to,
@@ -750,21 +831,23 @@ export function createMicrosoftSession(
         args.cursor,
       );
       return {
-        events: page.items.slice(0, args.limit).map(eventSummary),
+        events: page.items.map((event) => eventSummary(event, calendarId)),
         ...(page.next ? { cursor: page.next } : {}),
       };
     },
 
     async read(args, { signal }) {
+      const { at, calendarId } = eventRoute(args.event_id);
       return fullEvent(
         await graph.json<GraphEvent>(
           get(
-            eventPath(args.event_id),
+            at,
             { $select: `${EVENT_SELECT},attendees,body` },
             MICROSOFT_SCOPES.calendar.read,
           ),
           signal,
         ),
+        calendarId,
       );
     },
 
@@ -823,12 +906,30 @@ export function createMicrosoftSession(
     },
 
     async update(args, { signal }) {
-      const { event_id: eventId, ...changes } = args;
+      const { event_id: id, ...changes } = args;
+      const { at, calendarId } = eventRoute(id);
+      if (changes.body !== undefined) {
+        // Graph replaces the whole body, and a Teams meeting's join details
+        // live in it: dropping them disables the meeting (event-update.md).
+        // The blob has no documented delimiter to keep it by, so refuse.
+        const current = await graph.json<GraphEvent>(
+          get(
+            at,
+            { $select: "id,isOnlineMeeting" },
+            MICROSOFT_SCOPES.calendar.read,
+          ),
+          signal,
+        );
+        if (current?.isOnlineMeeting)
+          throw invalidRequest(
+            "This event is an online meeting, whose join details live in its body; changing the body would disable the meeting. Change the other fields, or put the note in the attendees' invitation another way.",
+          );
+      }
       return fullEvent(
         await graph.json<GraphEvent>(
           {
             method: "PATCH",
-            ...eventPath(eventId),
+            ...at,
             ...(args.time_zone ? { headers: preferZone(args.time_zone) } : {}),
             body: eventBody(changes),
             scope: MICROSOFT_SCOPES.calendar.update,
@@ -836,6 +937,7 @@ export function createMicrosoftSession(
           },
           signal,
         ),
+        calendarId,
       );
     },
 
@@ -848,7 +950,7 @@ export function createMicrosoftSession(
       await graph.send(
         {
           method: "POST",
-          ...under(eventPath(args.event_id), `/${action}`),
+          ...under(eventRoute(args.event_id).at, `/${action}`),
           body: {
             ...(args.comment !== undefined ? { comment: args.comment } : {}),
             sendResponse: true,
@@ -864,7 +966,7 @@ export function createMicrosoftSession(
       await graph.send(
         {
           method: "POST",
-          ...under(eventPath(args.event_id), "/cancel"),
+          ...under(eventRoute(args.event_id).at, "/cancel"),
           body: {
             ...(args.comment !== undefined ? { comment: args.comment } : {}),
           },
@@ -912,7 +1014,6 @@ export function createMicrosoftSession(
               (item.lastModifiedDateTime !== undefined &&
                 Date.parse(item.lastModifiedDateTime) > after),
           )
-          .slice(0, args.limit)
           .map(fileSummary),
         ...(page.next ? { cursor: page.next } : {}),
       };
