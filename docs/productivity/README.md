@@ -286,7 +286,12 @@ Where the host differs from, or settles, the design above:
   handles valid only with the same command and arguments. A page never holds
   more than `limit` items: when a provider returns more, the host keeps the
   rest in the cursor handle and serves them first on the next call, so a
-  provider's cursor never skips an item it returned. A handle whose item
+  provider's cursor never skips an item it returned. A provider that filters
+  its own pages may return a short page with a cursor; the host fills the page
+  from up to five further calls.
+- **Thread reads.** A provider reads a whole thread, up to a cap of its own;
+  when the cap cuts a thread, `mail read` returns the messages it read and
+  says so in `unavailable` rather than presenting the thread as complete. A handle whose item
   the provider reports `not_found` is dropped. `mail move` keeps the
   message's handle when the provider gives the moved message a new id.
 - **Arguments.** `mail draft` with `reply_to` may leave `to` empty: the

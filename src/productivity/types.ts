@@ -285,6 +285,8 @@ export interface MailMessage extends MailMessageSummary {
 /** One message, or a thread's messages oldest first. */
 export interface MailReadResult {
   readonly messages: readonly MailMessage[];
+  /** Why the thread is incomplete, such as one longer than the provider reads. */
+  readonly unavailable?: string;
 }
 
 export interface MailFetchAttachmentArgs {

@@ -1,5 +1,8 @@
 import type { ProductivityHandleStore } from "./handles.js";
 
+/** Provider calls one page may make, when a provider filters its pages short. */
+const MAX_FETCHES_PER_PAGE = 5;
+
 /** What a provider returned for one page: possibly more items than asked for. */
 export interface ProviderPage<T> {
   readonly items: readonly T[];
@@ -20,7 +23,10 @@ export interface HostPage<T> {
  * are kept in the cursor handle beside the provider's own cursor, and the next
  * call with that handle serves them first, so nothing a provider returned is
  * skipped and the provider's cursor only ever resumes after the last item it
- * returned.
+ * returned. A provider that filters its own pages may return fewer items
+ * than asked for with a cursor; the page is filled from the next call, up to
+ * `MAX_FETCHES_PER_PAGE` calls, so a short page still means more may follow
+ * only when it carries a cursor.
  */
 export async function collectPage<T>(
   handles: ProductivityHandleStore,
@@ -34,13 +40,19 @@ export async function collectPage<T>(
       : undefined;
   const items: T[] = [...(resumed?.overflow ?? [])];
   let cursor = resumed?.value;
-  if (items.length < request.limit && (!resumed || cursor !== undefined)) {
+  let more = !resumed || cursor !== undefined;
+  for (
+    let fetches = 0;
+    more && items.length < request.limit && fetches < MAX_FETCHES_PER_PAGE;
+    fetches += 1
+  ) {
     const page = await fetch({
       limit: request.limit - items.length,
       ...(cursor !== undefined ? { cursor } : {}),
     });
     items.push(...page.items);
     cursor = page.cursor || undefined;
+    more = cursor !== undefined;
   }
   const overflow = items.splice(request.limit);
   return {
