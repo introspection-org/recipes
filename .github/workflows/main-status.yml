@@ -1,0 +1,52 @@
+name: Main Status
+
+# Each run is titled with what it evaluates; the shared workflow reads these titles to
+# find the last evaluation that completed and re-detect a transition a lost one missed.
+run-name: >-
+  ${{ github.event_name == 'schedule' && 'Main Status: reconcile'
+  || github.event_name == 'workflow_dispatch' && !inputs.post_for_real && 'Main Status: rehearsal'
+  || format('Main Status: run {0} attempt {1} of workflow {2}',
+  github.event.workflow_run.id || inputs.run_id, github.event.workflow_run.run_attempt || inputs.run_attempt,
+  github.event.workflow_run.workflow_id) }}
+
+on:
+  workflow_run:
+    workflows:
+      - "ci"
+      - "checker portability"
+      - "release-please"
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Evaluate this run id; empty sends a test message instead"
+        required: false
+        type: string
+      run_attempt:
+        description: "Evaluate this attempt; empty selects the latest attempt"
+        required: false
+        type: string
+      post_for_real:
+        description: "Post to Slack instead of printing the message"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+
+jobs:
+  alert:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+    uses: introspection-org/introspection-action/.github/workflows/main-status.yml@v0
+    with:
+      run_id: ${{ inputs.run_id || '' }}
+      run_attempt: ${{ inputs.run_attempt || '' }}
+      # Every workflow subscribed above, by path, for the hourly reconcile.
+      reconcile_workflows: .github/workflows/ci.yml,.github/workflows/checker-portability.yml,.github/workflows/release-please.yml
+      post_for_real: ${{ github.event_name != 'workflow_dispatch' || inputs.post_for_real == true }}
+    secrets:
+      slack_webhook_url: ${{ secrets.MAIN_STATUS_SLACK_WEBHOOK_URL }}
