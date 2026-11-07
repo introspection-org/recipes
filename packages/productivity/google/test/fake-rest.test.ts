@@ -591,6 +591,41 @@ describe("mail summaries and stored bodies", () => {
     expect(failing.calls.some((call) => call.method === "PUT")).toBe(false);
   });
 
+  it("refuses to update a draft that has attachments", async () => {
+    const draft = () =>
+      json({
+        id: "d1",
+        message: {
+          id: "m3",
+          threadId: "t1",
+          payload: {
+            mimeType: "multipart/mixed",
+            headers: [{ name: "Subject", value: "Plan" }],
+            parts: [
+              {
+                partId: "0",
+                mimeType: "text/plain",
+                body: { size: 5, data: b64("hello") },
+              },
+              {
+                partId: "1",
+                mimeType: "application/pdf",
+                filename: "plan.pdf",
+                body: { size: 9, attachmentId: "A1" },
+              },
+            ],
+          },
+        },
+      });
+    const { backend: b, calls } = await backend([
+      ["GET", /\/drafts\/d1$/, draft],
+    ]);
+    await expect(
+      b.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
   it("says so when a stored body is too large or cannot be fetched", async () => {
     const large = await backend([
       ["GET", /\/messages\/m2$/, () => json(stored(6 * 1024 * 1024))],
@@ -665,26 +700,12 @@ describe("mail parsing", () => {
               message: { id: "m1", payload: htmlBesideText(enclosing) },
             }),
         ],
-        [
-          "PUT",
-          /\/drafts\/d1$/,
-          () => json({ id: "d1", message: { id: "m1" } }),
-        ],
       ]);
-      await b.mail.updateDraft({
-        draft_id: "d1",
-        to: ["a@example.com"],
-        subject: "Plan",
-      });
-      const raw = new TextDecoder().decode(
-        decodeBase64Url(
-          (bodyJson(calls[1]!) as { message: { raw: string } }).message.raw,
-        ),
-      );
-      // The body is base64 encoded: the HTML body is kept as HTML, "inner" is not.
-      expect(raw).toContain('Content-Type: text/html; charset="UTF-8"');
-      expect(raw).toContain(Buffer.from("<p>body</p>").toString("base64"));
-      expect(raw).not.toContain(Buffer.from("inner").toString("base64"));
+      // Updating would drop the enclosing part, so the draft is left as it was.
+      await expect(
+        b.mail.updateDraft({ draft_id: "d1", subject: "Plan" }),
+      ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+      expect(calls.some((call) => call.method === "PUT")).toBe(false);
     });
   }
 

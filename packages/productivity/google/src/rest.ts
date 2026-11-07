@@ -436,6 +436,11 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
+    // The rebuilt message carries only the body, and Gmail replaces the whole draft.
+    if (parseMailPayload(payload).attachments.length > 0)
+      throw invalid(
+        "This draft has attachments, which an update would remove. The draft was not changed.",
+      );
     let kept: ProductivityContent | undefined;
     if (args.body === undefined && current.message) {
       const { parsed, unavailable } = await this.parse(
