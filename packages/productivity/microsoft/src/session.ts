@@ -1,4 +1,3 @@
-import type { Tracer } from "@opentelemetry/api";
 import type {
   CalendarAttendeeResponse,
   CalendarBusyInterval,
@@ -405,19 +404,12 @@ const preferZone = (timeZone: string) => ({
  * served for the host's `mail`, `calendar` and `drive` tools.
  */
 export function createMicrosoftSession(
-  options: Pick<ProductivitySessionOptions, "env" | "fetch"> & {
-    baseUrl?: string;
-    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
-    tracer?: Tracer;
-  },
+  options: Pick<ProductivitySessionOptions, "http"> & { baseUrl?: string },
 ): ProductivitySession {
-  const graph = new GraphClient({
-    env: options.env,
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-    ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
-    ...(options.sleep ? { sleep: options.sleep } : {}),
-    ...(options.tracer ? { tracer: options.tracer } : {}),
-  });
+  const graph = new GraphClient(
+    options.http,
+    options.baseUrl ? { baseUrl: options.baseUrl } : {},
+  );
   const get = (
     target: GraphPath,
     query: GraphRequest["query"],

@@ -7,11 +7,9 @@ import type {
 import { createMicrosoftSession } from "./session.js";
 
 export {
-  EGRESS_INJECTED_TOKEN,
   GRAPH_BASE_URL,
   GraphClient,
   GraphError,
-  retryAfterSeconds,
   type GraphClientOptions,
   type GraphRequest,
 } from "./client.js";
@@ -98,8 +96,7 @@ export const microsoftProductivityModule: RecipeProductivityModule = {
   apiVersion: 1,
   provider: "microsoft",
   capabilities: MICROSOFT_PRODUCTIVITY_CAPABILITIES,
-  createSession: ({ env, fetch }) =>
-    createMicrosoftSession({ env, ...(fetch ? { fetch } : {}) }),
+  createSession: ({ http }) => createMicrosoftSession({ http }),
 };
 
 export default microsoftProductivityModule;

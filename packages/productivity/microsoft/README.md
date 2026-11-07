@@ -32,10 +32,10 @@ an exact version only to pin one. `X.Y.Z` stands for a released version.
 tools: [mail, calendar, drive]
 ```
 
-The package holds no credential. It sends a placeholder bearer to
-`graph.microsoft.com`, and the Introspection egress (or a host's request hook)
-attaches the person's own token. Reads follow `@odata.nextLink` and are
-retried on `429`, `503` and `504` after `Retry-After`; writes are sent once.
+The package holds no credential. It sends every request through the host,
+which adds a placeholder bearer that the Introspection egress (or a host's
+request hook) replaces with the person's own token, and retries a throttled
+read. Reads follow `@odata.nextLink`; writes are sent once.
 
 See the [Microsoft provider guide](https://github.com/introspection-org/recipes/blob/main/docs/productivity/microsoft.md)
 for the command-to-Graph mapping, scopes and setup.

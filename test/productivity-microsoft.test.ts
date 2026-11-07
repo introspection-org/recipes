@@ -20,13 +20,9 @@ import microsoft, {
   wallTime,
 } from "../packages/productivity/microsoft/src/index.js";
 import {
-  httpRequestSpan,
-  httpResponseAttributes,
-  MAX_RECORDED_BODY_BYTES,
-  RESPONSE_BODY_ATTRIBUTE,
-} from "../packages/productivity/microsoft/src/telemetry.js";
-import {
+  createProductivityHttp,
   loadRecipeProductivity,
+  RESPONSE_BODY_ATTRIBUTE,
   PRODUCTIVITY_COMMANDS,
   PRODUCTIVITY_MODULE_API_VERSION,
   productivityCapabilitiesProblem,
@@ -148,12 +144,15 @@ function session(
 ): ProductivitySession {
   waits.length = 0;
   return createMicrosoftSession({
-    env,
-    tracer: recordingTracer(spans),
+    http: createProductivityHttp({
+      provider: "microsoft",
+      env,
+      tracer: recordingTracer(spans),
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }),
     baseUrl: `${base}/v1.0`,
-    sleep: async (ms) => {
-      waits.push(ms);
-    },
   });
 }
 
@@ -239,26 +238,6 @@ describe("Microsoft productivity provider: descriptor", () => {
 });
 
 describe("Microsoft productivity provider: the Graph client", () => {
-  it("sends the placeholder bearer in proxy-native mode, and the session locator through the egress URL", async () => {
-    on("GET", "/me/messages", { json: { value: [] } });
-    await session().mail!.search!({ limit: 5 }, ctx);
-    expect(requests[0]!.headers.authorization).toBe(
-      "Bearer introspection-egress",
-    );
-
-    await session({
-      INTROSPECTION_TOKEN: "locator",
-      INTROSPECTION_EGRESS_URL: "http://egress:8080",
-    }).mail!.search!({ limit: 5 }, ctx);
-    expect(requests[1]!.headers.authorization).toBe("Bearer locator");
-
-    await expect(
-      session({}).mail!.search!({ limit: 5 }, ctx),
-    ).rejects.toMatchObject({
-      productivity: { code: "provider_error" },
-    });
-  });
-
   it("follows @odata.nextLink up to the limit and returns the next link as the cursor", async () => {
     on("GET", "/me/messages", (request) =>
       request.query.get("page") === "2"
@@ -1158,54 +1137,6 @@ describe("Microsoft productivity provider: drive", () => {
 });
 
 describe("Microsoft productivity provider: request spans", () => {
-  it("names a span after the method and the OpenAPI path template, recording no path or query", () => {
-    expect(
-      httpRequestSpan({
-        method: "GET",
-        url: "https://graph.microsoft.com/v1.0/me/messages/AAMk%3D?$search=%22secret%22",
-        template: "/me/messages/{message-id}",
-      }),
-    ).toEqual({
-      name: "GET /me/messages/{message-id}",
-      attributes: {
-        "http.request.method": "GET",
-        "server.address": "graph.microsoft.com",
-        "server.port": 443,
-        "url.template": "/me/messages/{message-id}",
-      },
-    });
-    expect(
-      httpRequestSpan({
-        method: "GET",
-        url: "https://tenant.sharepoint.com/download.aspx?tempauth=token",
-      }),
-    ).toEqual({
-      name: "GET",
-      attributes: {
-        "http.request.method": "GET",
-        "server.address": "tenant.sharepoint.com",
-        "server.port": 443,
-      },
-    });
-  });
-
-  it("records a JSON body up to the cap, and only its size above it", () => {
-    expect(httpResponseAttributes(200, '{"id":"m1"}')).toEqual({
-      "http.response.status_code": 200,
-      "http.response.body.size": 11,
-      [RESPONSE_BODY_ATTRIBUTE]: '{"id":"m1"}',
-    });
-    const large = "x".repeat(MAX_RECORDED_BODY_BYTES + 1);
-    expect(httpResponseAttributes(200, large)).toEqual({
-      "http.response.status_code": 200,
-      "http.response.body.size": MAX_RECORDED_BODY_BYTES + 1,
-    });
-    expect(httpResponseAttributes(404)).toEqual({
-      "http.response.status_code": 404,
-      "error.type": "404",
-    });
-  });
-
   it("records one span per Graph request, with the answer's body and never the bearer", async () => {
     on("GET", "/me/messages/m1", {
       json: {
