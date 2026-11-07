@@ -57,18 +57,24 @@ import {
   readMcpSessionConfig,
   restoreMcpEnvironment,
   resolveAgentMcpSelections,
+  resolveMcpSessionServers,
   snapshotMcpEnvironment,
   stopMcpDaemon,
   type McpLocalConfig,
+  type McpSessionServer,
   type ScopedMcpToolSelection,
 } from "./mcp/index.js";
+import { mcpServersBehindTools } from "./mcp/policy.js";
 import {
+  createMcpBehindGuard,
   createPiMcpServersExtension,
+  hideServersBehindTools,
   createRecipeMcpClientExtension,
   piMcpToolNamePrefix,
   PI_MCP_RESOURCE_TOOL_NAMES,
   piMcpServerRegistrations,
   piMcpToolOrigin,
+  serverBehindTools,
   waitForPiMcpServers,
   type PiMcpServerRegistration,
 } from "./mcp/pi-client.js";
@@ -438,7 +444,7 @@ export async function materializeRecipeSessionMcp(
   env: NodeJS.ProcessEnv,
   opts: Pick<CreateAgentSessionOptions, "mcpBindings" | "mcpBindingsPath"> = {},
 ): Promise<{ materialized: boolean }> {
-  const selections = scopedMcpSelections(recipe);
+  const selections = splitMcpSelections(recipe).runtime;
   if (selections.length === 0) return { materialized: false };
   if (opts.mcpBindingsPath) {
     env.PI_RECIPES_MCP_LOCAL_CONFIG = opts.mcpBindingsPath;
@@ -458,15 +464,88 @@ export async function materializeRecipeSessionMcp(
   return { materialized: true };
 }
 
+/**
+ * The selections the agent's MCP mode runs, and those kept on Pi's client
+ * behind a tool: every server is on Pi's client in codemode, so nothing is
+ * split off there.
+ */
+function splitMcpSelections(recipe: ResolvedRecipeAgent): {
+  runtime: ScopedMcpToolSelection[];
+  behind: ScopedMcpToolSelection[];
+} {
+  const selections = scopedMcpSelections(recipe);
+  const behind = mcpServersBehindTools(recipe.mcp);
+  if (recipe.mcp?.mode === "codemode" || behind.size === 0) {
+    return { runtime: selections, behind: [] };
+  }
+  return {
+    runtime: selections.filter((entry) => !behind.has(entry.serverId)),
+    behind: selections.filter((entry) => behind.has(entry.serverId)),
+  };
+}
+
+/** Servers behind a tool outside codemode: on Pi's client, never written for the `mcp` command or daemon. */
+function piServersBehindTools(
+  recipe: ResolvedRecipeAgent,
+  selections: readonly ScopedMcpToolSelection[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  opts: CreateAgentSessionInternalOptions,
+): { piServers: PiMcpServerRegistration[]; servers: McpSessionServer[] } {
+  if (selections.length === 0) return { piServers: [], servers: [] };
+  const bindingEnv = { ...env };
+  if (opts.mcpBindingsPath) {
+    bindingEnv.PI_RECIPES_MCP_LOCAL_CONFIG = opts.mcpBindingsPath;
+  } else if (!opts.mcpBindings) {
+    configureMcpLocalConfigPath({
+      cwd,
+      recipeDir: recipe.recipeDir,
+      env: bindingEnv,
+    });
+  }
+  const { servers } = resolveMcpSessionServers({
+    cwd: opts.mcpRuntimeDir ?? cwd,
+    manifest: recipe.manifest,
+    agentMcp: selections,
+    env: bindingEnv,
+    ...(opts.mcpBindings ? { localConfig: opts.mcpBindings } : {}),
+  });
+  return {
+    servers,
+    piServers: piMcpServerRegistrations({
+      session: { version: 1, servers },
+      bindings: endpointBindings(bindingEnv, cwd, opts.mcpBindings),
+      mcp: recipe.mcp!,
+      env: bindingEnv,
+    }),
+  };
+}
+
 async function configureSessionMcp(
   recipe: ResolvedRecipeAgent,
   cwd: string,
   env: NodeJS.ProcessEnv,
   opts: CreateAgentSessionInternalOptions,
 ): Promise<MaterializedSessionMcp> {
-  const selections = scopedMcpSelections(recipe);
+  const { runtime: selections, behind } = splitMcpSelections(recipe);
+  const behindTools = piServersBehindTools(recipe, behind, cwd, env, opts);
+  const behindOrigin: NonNullable<MaterializedSessionMcp["mcpToolOrigin"]> = (
+    name,
+    tools,
+  ) =>
+    piMcpToolOrigin(
+      { version: 1, servers: behindTools.servers },
+      tools?.getToolDefinition(name),
+    );
   if (selections.length === 0) {
-    return { available: false, materialized: false };
+    return behindTools.piServers.length > 0
+      ? {
+          available: false,
+          materialized: false,
+          piServers: behindTools.piServers,
+          mcpToolOrigin: behindOrigin,
+        }
+      : { available: false, materialized: false };
   }
   const mode = recipe.mcp?.mode ?? "cli";
   const hostProvisioned = opts.mcpProvisioning === "host";
@@ -574,7 +653,9 @@ async function configureSessionMcp(
         tools: materialized.tools,
         initialActiveToolNames: materialized.initialActiveToolNames,
         deferredToolNames: materialized.deferredToolNames,
-        mcpToolOrigin: materialized.mcpToolOrigin,
+        mcpToolOrigin: (name, tools) =>
+          materialized.mcpToolOrigin(name) ?? behindOrigin(name, tools),
+        piServers: behindTools.piServers,
         release,
       };
     }
@@ -586,6 +667,8 @@ async function configureSessionMcp(
     return {
       available: true,
       materialized: !hostProvisioned,
+      piServers: behindTools.piServers,
+      mcpToolOrigin: behindOrigin,
       release,
     };
   } catch (error) {
@@ -679,7 +762,7 @@ async function createSessionForAgent(
     codemodeToolNames,
     piMcpResourceToolNames,
     piMcpSessionOptions,
-  } = piMcpSessionTools(mcp.piServers);
+  } = piMcpSessionTools(mcp.piServers, recipe.mcp);
   let piMcp: ExtensionAPI | undefined;
 
   const cleanup = async (): Promise<void> => {
@@ -799,9 +882,15 @@ async function createSessionForAgent(
       );
     }
     inlineExtensions.push(
-      ...piMcpExtensions(piServers, opts.mcpRuntimeDir, cwd, (pi) => {
-        piMcp = pi;
-      }),
+      ...piMcpExtensions(
+        piServers,
+        codemodeToolNames.length > 0,
+        opts.mcpRuntimeDir,
+        cwd,
+        (pi) => {
+          piMcp = pi;
+        },
+      ),
     );
     // The first-party ask_user_question tool loads after the Recipe's own
     // extensions, so a Recipe that still ships its own keeps it.
@@ -979,6 +1068,7 @@ async function createSessionForAgent(
             setActiveTools: (names) => session?.setActiveToolsByName(names),
           },
           (mcp.deferredToolNames?.length ?? 0) > 0,
+          (tool) => serverBehindTools(piServers, tool) !== undefined,
         )
       : [];
     const occupiedSearchTool = toolSearchTools.find((tool) =>
@@ -1148,9 +1238,14 @@ function sessionMcpToolOrigin(
   return (piName: string) => origin(piName, session);
 }
 
-/** `mcp.mode: codemode`: Pi's codemode and MCP client, and the Recipe's servers on it. */
+/**
+ * Pi's MCP client with the Recipe's servers on it (every server in codemode,
+ * else those behind a tool), codemode in codemode, and the guard keeping
+ * servers behind their tools.
+ */
 function piMcpExtensions(
   piServers: PiMcpServerRegistration[],
+  codemode: boolean,
   runtimeDir: string | undefined,
   cwd: string,
   onPi: (pi: ExtensionAPI) => void,
@@ -1159,9 +1254,22 @@ function piMcpExtensions(
   // A script's `models.*` calls would spend on models the Recipe never
   // declared, so scripts get tools only.
   return [
-    createCodemodeExtension({ models: false }),
+    ...(codemode ? [createCodemodeExtension({ models: false })] : []),
     createRecipeMcpClientExtension(join(runtimeDir ?? cwd, ".pi", "mcp.log")),
     createPiMcpServersExtension(piServers, onPi),
+    ...(piServers.some((server) => server.behind)
+      ? [
+          createMcpBehindGuard(() => piServers),
+          (pi: ExtensionAPI) => {
+            pi.on("before_agent_start", (event) =>
+              hideServersBehindTools(
+                event.systemPromptOptions.sections,
+                piServers,
+              ),
+            );
+          },
+        ]
+      : []),
   ];
 }
 
@@ -1190,13 +1298,17 @@ async function waitForRequiredPiMcpServers(
 }
 
 /** What `mcp.mode: codemode` adds to a session's tools; nothing when no server is on Pi's client. */
-function piMcpSessionTools(servers: PiMcpServerRegistration[] | undefined) {
+function piMcpSessionTools(
+  servers: PiMcpServerRegistration[] | undefined,
+  mcp: ResolvedRecipeAgent["mcp"],
+) {
+  const codemode = mcp?.mode === "codemode";
   const piServers = servers ?? [];
   const usesPiMcp = piServers.length > 0;
   return {
     piServers,
     usesPiMcp,
-    codemodeToolNames: usesPiMcp ? [CODEMODE_TOOL_NAME] : [],
+    codemodeToolNames: usesPiMcp && codemode ? [CODEMODE_TOOL_NAME] : [],
     piMcpResourceToolNames: usesPiMcp ? [...PI_MCP_RESOURCE_TOOL_NAMES] : [],
     piMcpSessionOptions: usesPiMcp
       ? { excludeTools: [...PI_MCP_RESOURCE_TOOL_NAMES] }
