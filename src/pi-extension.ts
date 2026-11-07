@@ -68,7 +68,7 @@ import { type RecipeAgentDefinition } from "./recipe/agent.js";
 import type { RecipeAgentMcpMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
 import {
-  mcpToolName,
+  isPiMcpServerTool,
   piMcpServerRegistrations,
   waitForPiMcpServers,
 } from "./mcp/pi-client.js";
@@ -1149,7 +1149,7 @@ export function createRecipesExtension(
           (tool) =>
             tool.exposure === "direct" &&
             launchState.piMcpServerIds.some((id) =>
-              tool.name.startsWith(mcpToolName(id, "")),
+              isPiMcpServerTool(tool, id),
             ),
         )
         .map((tool) => tool.name),

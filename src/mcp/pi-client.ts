@@ -7,10 +7,13 @@ import {
   type McpExposure,
   type McpExtensionOptions,
   type McpServerConfig,
+  type ToolDefinition,
+  type ToolNamespace,
   VERSION,
 } from "@earendil-works/pi-coding-agent";
 
 import type { RecipeAgentMcp } from "../recipe/agent.js";
+import { mcpSelectionAllowsTool } from "./policy.js";
 import {
   explicitAllowedTools,
   interpolateEnv,
@@ -24,8 +27,10 @@ const MCP_CONNECT_TIMEOUT_ENV = "PI_RECIPES_MCP_CONNECT_TIMEOUT_MS";
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
 const DEFAULT_CALL_TIMEOUT_MS = 120_000;
 const CONNECT_POLL_MS = 50;
-// Pi's limit for a tool name, which its MCP tool names are shortened to.
+// Pi's limit for a tool name, which its MCP tool names are shortened to by
+// keeping the start and adding `_` and this many hex digits of a hash.
 const MAX_TOOL_NAME_LENGTH = 64;
+const HASH_LENGTH = 8;
 
 /** Pi's MCP resource tools, which no Recipe declares. */
 export const PI_MCP_RESOURCE_TOOL_NAMES = [
@@ -37,8 +42,11 @@ export const PI_MCP_RESOURCE_TOOL_NAMES = [
 /**
  * The Pi tool name of an MCP tool under `mcp.mode: codemode`, the name a
  * codemode script calls (`tools.<name>`) and `ctx.executeTool()` takes. It is
- * Pi's own rule: `mcp__<server>__<tool>`, every character outside
- * `[A-Za-z0-9_]` replaced by `_`, and a hash suffix past 64 characters.
+ * Pi's own rule (`createMcpToolName`, which Pi does not export):
+ * `mcp__<server>__<tool>`, every character outside `[A-Za-z0-9_]` replaced by
+ * `_`, and a hash suffix past 64 characters. Pi also adds the suffix when two
+ * of a server's tools sanitize to one name, which this cannot know; match a
+ * registered tool to its server with {@link isPiMcpServerTool}, never by name.
  */
 export function mcpToolName(serverId: string, toolName: string): string {
   const name = `mcp__${serverId}__${toolName}`.replace(/[^A-Za-z0-9_]/g, "_");
@@ -46,8 +54,43 @@ export function mcpToolName(serverId: string, toolName: string): string {
   const hash = createHash("sha256")
     .update(`${serverId}\0${toolName}`)
     .digest("hex")
-    .slice(0, 8);
-  return `${name.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1)}_${hash}`;
+    .slice(0, HASH_LENGTH);
+  return `${name.slice(0, MAX_TOOL_NAME_LENGTH - HASH_LENGTH - 1)}_${hash}`;
+}
+
+/**
+ * A prefix of every Pi tool name of the server's tools, hashed or not: a
+ * hashed name keeps the first 55 characters of the sanitized full name, and
+ * the sanitized `mcp__<server>__` cut at 55 is a prefix of those. It can also
+ * prefix another server's tools (`a` and `a__b`, or two ids that agree on
+ * their first 48 characters), so it only narrows a name allowlist; it never
+ * says which server a tool is from.
+ */
+export function piMcpToolNamePrefix(serverId: string): string {
+  return `mcp__${serverId}__`
+    .replace(/[^A-Za-z0-9_]/g, "_")
+    .slice(0, MAX_TOOL_NAME_LENGTH - HASH_LENGTH - 1);
+}
+
+/** Pi's namespace of a server's tools (`mcpNamespace`, which Pi does not export). */
+function piMcpNamespace(serverId: string): string {
+  return `mcp__${serverId.replace(/-/g, "_")}`;
+}
+
+/**
+ * Whether Pi registered the tool for this MCP server. Pi gives every MCP tool
+ * the server's namespace, aliased by the server's name, and refuses a second
+ * server whose namespace would clash, so this is exact where a name prefix is
+ * not.
+ */
+export function isPiMcpServerTool(
+  tool: { namespace?: ToolNamespace },
+  serverId: string,
+): boolean {
+  return (
+    tool.namespace?.name === piMcpNamespace(serverId) &&
+    (tool.namespace.aliases?.includes(serverId) ?? false)
+  );
 }
 
 /** Pi added `reachesTools`, which codemode's readiness rests on, in 1.3.0. */
@@ -90,6 +133,38 @@ function selectorsInclude(
   );
 }
 
+/**
+ * The tools of a session server the current agent may call. A host-provisioned
+ * session may have been written for a broader agent, so the agent's own
+ * selection narrows it, as `mode: tools` does.
+ */
+function agentAllowedTools(
+  server: McpSessionServer,
+  mcp: RecipeAgentMcp,
+): {
+  allows: (name: string) => boolean;
+  explicit: string[] | undefined;
+  excludes: string[];
+} {
+  const selection = mcp.servers[server.id] ?? {};
+  const allows = (name: string) =>
+    mcpSessionAllowsTool(server, name) &&
+    mcpSelectionAllowsTool(selection, name);
+  const agentIncludes = selection.include ?? [];
+  const candidates =
+    explicitAllowedTools(server) ??
+    (agentIncludes.includes("*") ? undefined : agentIncludes);
+  return {
+    allows,
+    explicit: candidates && [...new Set(candidates)].filter(allows),
+    excludes: [
+      ...(server.package_tools.exclude ?? []),
+      ...server.agent_tools.flatMap((entry) => entry.exclude ?? []),
+      ...(selection.exclude ?? []),
+    ],
+  };
+}
+
 function exposureConfig(
   server: McpSessionServer,
   mcp: RecipeAgentMcp,
@@ -97,7 +172,7 @@ function exposureConfig(
   const eager = mcp.servers[server.id]?.eager;
   const exposureOf = (name: string): McpExposure =>
     selectorsInclude(eager, name) ? "direct" : "codemode";
-  const explicit = explicitAllowedTools(server);
+  const { allows, explicit, excludes } = agentAllowedTools(server, mcp);
   if (explicit) {
     return {
       exposure: "codemode",
@@ -108,10 +183,7 @@ function exposureConfig(
     };
   }
   // Every tool is allowed but the excluded ones, which stay unreachable.
-  const excluded = [
-    ...(server.package_tools.exclude ?? []),
-    ...server.agent_tools.flatMap((selection) => selection.exclude ?? []),
-  ].filter((name) => !mcpSessionAllowsTool(server, name));
+  const excluded = excludes.filter((name) => !allows(name));
   return {
     exposure: eager?.includes("*") ? "direct" : "codemode",
     toolExposure: {
@@ -247,30 +319,30 @@ export async function waitForPiMcpServers(
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal,
 ): Promise<void> {
-  const prefixes = serverIds.map((id) => [id, mcpToolName(id, "")] as const);
   const deadline = Date.now() + connectTimeoutMs(env);
   for (;;) {
-    const names = pi.getAllTools().map((tool) => tool.name);
-    const waiting = prefixes.filter(
-      ([, prefix]) => !names.some((name) => name.startsWith(prefix)),
+    const tools = pi.getAllTools();
+    const waiting = serverIds.filter(
+      (id) => !tools.some((tool) => isPiMcpServerTool(tool, id)),
     );
     if (waiting.length === 0) return;
     if (signal?.aborted) throw new Error("MCP server connection was aborted");
     if (Date.now() >= deadline) {
       throw new Error(
-        `Required MCP server(s) did not connect within ${connectTimeoutMs(env)} ms: ${waiting
-          .map(([id]) => id)
-          .join(", ")}`,
+        `Required MCP server(s) did not connect within ${connectTimeoutMs(env)} ms: ${waiting.join(", ")}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, CONNECT_POLL_MS));
   }
 }
 
-/** The server and tool an MCP tool name stands for, for telemetry. */
+/**
+ * The server and tool a Pi MCP tool stands for, for telemetry: the server from
+ * the tool's namespace, the tool from Pi's `<server>/<tool>` label.
+ */
 export function piMcpToolOrigin(
   session: McpSessionConfig,
-  piName: string,
+  tool: Pick<ToolDefinition, "label" | "namespace"> | undefined,
 ):
   | {
       serverId: string;
@@ -278,14 +350,15 @@ export function piMcpToolOrigin(
       binding?: McpSessionServer["binding"];
     }
   | undefined {
-  for (const server of session.servers) {
-    const prefix = mcpToolName(server.id, "");
-    if (!piName.startsWith(prefix)) continue;
-    return {
-      serverId: server.id,
-      toolName: piName.slice(prefix.length),
-      ...(server.binding ? { binding: server.binding } : {}),
-    };
-  }
-  return undefined;
+  if (!tool) return undefined;
+  const server = session.servers.find((entry) =>
+    isPiMcpServerTool(tool, entry.id),
+  );
+  const labelPrefix = `${server?.id}/`;
+  if (!server || !tool.label.startsWith(labelPrefix)) return undefined;
+  return {
+    serverId: server.id,
+    toolName: tool.label.slice(labelPrefix.length),
+    ...(server.binding ? { binding: server.binding } : {}),
+  };
 }

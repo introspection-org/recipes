@@ -13,11 +13,15 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertPiSupportsMcpCodemode,
+  isPiMcpServerTool,
   mcpToolName,
+  piMcpToolNamePrefix,
+  piMcpToolOrigin,
 } from "../src/mcp/pi-client.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import {
   createAgentSession,
+  materializeRecipeSessionMcp,
   type RecipeSessionHandle,
 } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
@@ -25,6 +29,8 @@ import { startHelloMcp, type HelloMcp } from "./helpers/hello-mcp.js";
 
 const ECHO = mcpToolName("hello-mcp", "echo");
 const GREETING = mcpToolName("hello-mcp", "get_greeting");
+// 60 characters: every tool name Pi gives this server is shortened with a hash.
+const LONG_ID = `hello-mcp-${"x".repeat(50)}`;
 
 const lastToolResult = (context: { messages: readonly unknown[] }): string => {
   const message = [...context.messages]
@@ -49,7 +55,10 @@ describe("Recipe session MCP codemode on Pi's client", () => {
 
   async function open(options: {
     server: HelloMcp;
+    id?: string;
     servers?: string[];
+    /** The broader selection a host provisioned the session for. */
+    hostServers?: string[];
     required?: boolean;
     headers?: Record<string, string>;
     env?: NodeJS.ProcessEnv;
@@ -57,6 +66,8 @@ describe("Recipe session MCP codemode on Pi's client", () => {
     tools?: string[];
     responses?: FauxResponseStep[];
   }) {
+    const id = options.id ?? "hello-mcp";
+    const selection = options.servers ?? ['      include: ["echo"]'];
     const fixture = writeFixtureRecipe({
       tools: options.tools ?? ["read"],
       manifestPi: {
@@ -64,7 +75,7 @@ describe("Recipe session MCP codemode on Pi's client", () => {
         mcp: {
           servers: [
             {
-              id: "hello-mcp",
+              id,
               required: options.required ?? true,
               tools: { include: ["*"] },
             },
@@ -75,8 +86,8 @@ describe("Recipe session MCP codemode on Pi's client", () => {
         "mcp:",
         "  mode: codemode",
         "  servers:",
-        "    hello-mcp:",
-        ...(options.servers ?? ['      include: ["echo"]']),
+        `    ${id}:`,
+        ...(options.hostServers ?? selection),
       ],
     });
     cleanups.push(fixture.cleanup);
@@ -96,6 +107,32 @@ describe("Recipe session MCP codemode on Pi's client", () => {
         options.extension,
       );
     }
+    const env = options.env ?? cleanEnv();
+    const mcpBindings = {
+      servers: [
+        {
+          id,
+          transport: "streamable_http" as const,
+          url: options.server.url,
+          ...(options.headers ? { headers: options.headers } : {}),
+        },
+      ],
+    };
+    if (options.hostServers) {
+      await materializeRecipeSessionMcp(
+        resolveRecipe({ recipeDir: fixture.recipeDir }).selectAgent(),
+        fixture.workspaceDir,
+        env,
+        { mcpBindings },
+      );
+      writeFileSync(
+        agentPath,
+        readFileSync(agentPath, "utf8").replace(
+          options.hostServers.join("\n"),
+          selection.join("\n"),
+        ),
+      );
+    }
     faux = fauxProvider();
     faux.setResponses(options.responses ?? []);
     const model = faux.getModel();
@@ -107,20 +144,13 @@ describe("Recipe session MCP codemode on Pi's client", () => {
     const handle = await createAgentSession({
       recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
       cwd: fixture.workspaceDir,
-      env: options.env ?? cleanEnv(),
+      env,
       credentials,
       modelOverride: model,
       extensionFactories: [(pi) => pi.registerProvider(faux.provider)],
-      mcpBindings: {
-        servers: [
-          {
-            id: "hello-mcp",
-            transport: "streamable_http",
-            url: options.server.url,
-            ...(options.headers ? { headers: options.headers } : {}),
-          },
-        ],
-      },
+      ...(options.hostServers
+        ? { mcpProvisioning: "host" as const }
+        : { mcpBindings }),
     });
     handles.push(handle);
     return { handle, fixture };
@@ -256,6 +286,98 @@ describe("Recipe session MCP codemode on Pi's client", () => {
     );
   });
 
+  /** A codemode script calling `tools[name]` for each name, `refused` when it throws. */
+  function callEach(names: string[]): FauxResponseStep {
+    return fauxAssistantMessage(
+      [
+        fauxToolCall("codemode", {
+          code: [
+            "const out = {};",
+            ...names.map(
+              (name) =>
+                `try { out[${JSON.stringify(name)}] = (await tools[${JSON.stringify(name)}]({ message: "hi" })).content[0].text; } catch { out[${JSON.stringify(name)}] = "refused"; }`,
+            ),
+            "return out;",
+          ].join("\n"),
+        }),
+      ],
+      { stopReason: "toolUse" },
+    );
+  }
+
+  it.each([
+    {
+      agent: ['      include: ["echo"]'],
+      label: "includes fewer tools",
+    },
+    {
+      agent: ['      include: ["*"]', '      exclude: ["get_greeting"]'],
+      label: "excludes a tool",
+    },
+  ])(
+    "keeps to the agent's own selection when a host provisioned a broader session and the agent $label",
+    async ({ agent }) => {
+      const server = await hello();
+      let output = "";
+      const { handle } = await open({
+        server,
+        hostServers: ['      include: ["*"]'],
+        servers: agent,
+        responses: [
+          callEach([ECHO, GREETING]),
+          (context) => {
+            output = lastToolResult(context);
+            return fauxAssistantMessage("done");
+          },
+        ],
+      });
+
+      const tools = new Map(
+        handle.session.getAllTools().map((tool) => [tool.name, tool]),
+      );
+      expect(tools.get(ECHO)?.exposure).toBe("deferred");
+      expect(tools.get(GREETING)?.exposure).toBe("hidden");
+      await handle.session.prompt("go");
+      expect(output).toContain(`"${ECHO}":"Echo: hi"`);
+      expect(output).toContain(`"${GREETING}":"refused"`);
+      expect(server.calls.map((call) => call.name)).toEqual(["echo"]);
+    },
+  );
+
+  it("reaches a required server whose id is long enough to hash its tool names", async () => {
+    const echo = mcpToolName(LONG_ID, "echo");
+    const greeting = mcpToolName(LONG_ID, "get_greeting");
+    expect(echo).toHaveLength(64);
+    expect(echo.startsWith(mcpToolName(LONG_ID, ""))).toBe(false);
+    const server = await hello();
+    let output = "";
+    const { handle } = await open({
+      server,
+      id: LONG_ID,
+      servers: ['      include: ["echo"]', "      eager: [echo]"],
+      responses: [
+        callEach([echo, greeting]),
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+    });
+
+    // The required server's connect wait returned with its tools registered.
+    const tools = new Map(
+      handle.session.getAllTools().map((tool) => [tool.name, tool]),
+    );
+    expect(tools.get(echo)?.exposure).toBe("direct");
+    expect(tools.get(greeting)?.exposure).toBe("hidden");
+    expect(handle.session.getActiveToolNames()).toEqual(
+      expect.arrayContaining(["codemode", echo]),
+    );
+    await handle.session.prompt("go");
+    expect(output).toContain(`"${echo}":"Echo: hi"`);
+    expect(output).toContain(`"${greeting}":"refused"`);
+  });
+
   it("fails the session when a required server never connects", async () => {
     const server = await hello({ bearer: "nobody-has-this" });
     await expect(
@@ -266,6 +388,44 @@ describe("Recipe session MCP codemode on Pi's client", () => {
     ).rejects.toThrow(
       /Required MCP server\(s\) did not connect within 300 ms: hello-mcp/,
     );
+  });
+
+  it("names a prefix of every Pi tool name of a server, hashed or not", () => {
+    for (const id of ["a", "hello-mcp", LONG_ID, "y".repeat(120)]) {
+      for (const tool of ["echo", "a-b.c", "t".repeat(80)]) {
+        expect(mcpToolName(id, tool).startsWith(piMcpToolNamePrefix(id))).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it("matches a tool to its server by Pi's namespace, not its name", () => {
+    const tool = (server: string) => ({
+      label: `${server}/echo`,
+      namespace: {
+        name: `mcp__${server.replace(/-/g, "_")}`,
+        aliases: [server],
+      },
+    });
+    expect(isPiMcpServerTool(tool("a__b"), "a")).toBe(false);
+    expect(isPiMcpServerTool(tool("a__b"), "a__b")).toBe(true);
+    expect(isPiMcpServerTool(tool(LONG_ID), LONG_ID)).toBe(true);
+    const session = {
+      version: 1 as const,
+      servers: ["a", "a__b"].map((id) => ({
+        id,
+        name: id,
+        base_url: "http://127.0.0.1:9/mcp",
+        package_tools: { include: ["*"] },
+        agent_tools: [{ include: ["*"] }],
+      })),
+    };
+    expect(piMcpToolOrigin(session, tool("a__b"))).toEqual({
+      serverId: "a__b",
+      toolName: "echo",
+    });
+    expect(piMcpToolOrigin(session, undefined)).toBeUndefined();
   });
 
   it("refuses a Pi too old to hold calls for servers still connecting", () => {
