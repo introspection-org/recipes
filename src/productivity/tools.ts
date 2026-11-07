@@ -24,6 +24,7 @@ import {
   ProductivityHandleStore,
   type MessageIdentity,
 } from "./handles.js";
+import { collectPage } from "./paging.js";
 import {
   PRODUCTIVITY_COMMAND_EFFECTS,
   PRODUCTIVITY_COMMANDS,
@@ -559,30 +560,26 @@ export function registerProductivityTools(
     const { cursor: _cursor, limit: _limit, ...rest } = params;
     return JSON.stringify([tool, command, Object.entries(rest).sort()]);
   };
-  const page = (
+  const paged = <T>(
     tool: string,
     command: string,
     params: Record<string, unknown>,
-  ): { limit: number; cursor?: string } => ({
-    limit: (params.limit as number | undefined) ?? DEFAULT_LIMIT,
-    ...(params.cursor !== undefined
-      ? {
-          cursor: handles.resolveCursor(
-            params.cursor as string,
-            scope(tool, command, params),
-          ),
-        }
-      : {}),
-  });
-  const nextCursor = (
-    tool: string,
-    command: string,
-    params: Record<string, unknown>,
-    cursor: string | undefined,
+    fetch: (page: {
+      limit: number;
+      cursor?: string;
+    }) => Promise<{ items: readonly T[]; cursor?: string }>,
   ) =>
-    cursor
-      ? { cursor: handles.cursor(cursor, scope(tool, command, params)) }
-      : {};
+    collectPage(
+      handles,
+      scope(tool, command, params),
+      {
+        limit: (params.limit as number | undefined) ?? DEFAULT_LIMIT,
+        ...(params.cursor !== undefined
+          ? { cursor: params.cursor as string }
+          : {}),
+      },
+      fetch,
+    );
 
   const mail = options.capabilities.mail;
   const labelNoun = mail?.labels === "categories" ? "categories" : "labels";
@@ -628,28 +625,31 @@ export function registerProductivityTools(
           cursor: cursorField,
         }),
         async run(params, s, ctx) {
-          const result = await s.mail!.search!(
-            {
-              ...given<MailSearchArgs>(params, {
-                query: asIs,
-                folder: asIs,
-                from: asIs,
-                after: instant,
-                before: instant,
-                unread: asIs,
-              }),
-              ...page("mail", "search", params),
+          const args = given<MailSearchArgs>(params, {
+            query: asIs,
+            folder: asIs,
+            from: asIs,
+            after: instant,
+            before: instant,
+            unread: asIs,
+          });
+          const { items, cursor } = await paged(
+            "mail",
+            "search",
+            params,
+            async (page) => {
+              const result = await s.mail!.search!({ ...args, ...page }, ctx);
+              return { items: result.messages, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            messages: result.messages.map(mailSummary),
-            ...nextCursor("mail", "search", params, result.cursor),
+            messages: items.map(mailSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },
       read: {
-        description: `Read one message, or every message in a thread, as plain text with its attachments. Bodies are cut at ${BODY_LIMIT_CHARS} characters; a cut body says so.`,
+        description: `Read one message, or every message in a thread, as plain text with its attachments. Bodies are cut at ${BODY_LIMIT_CHARS} characters; a cut body says so, and a thread too long to read whole says so in unavailable.`,
         parameters: Type.Object({
           message: Type.Optional(
             Type.String({
@@ -672,7 +672,10 @@ export function registerProductivityTools(
               ? { message_id: handles.resolve("message", params.message).id }
               : { thread_id: handles.resolve("thread", params.thread).id };
           const result = await s.mail!.read!(args, ctx);
-          return { messages: result.messages.map(mailMessage) };
+          return {
+            messages: result.messages.map(mailMessage),
+            ...(result.unavailable ? { unavailable: result.unavailable } : {}),
+          };
         },
       },
       fetch_attachment: {
@@ -879,18 +882,23 @@ export function registerProductivityTools(
           cursor: cursorField,
         }),
         async run(params, s, ctx) {
-          const result = await s.calendar!.list!(
-            {
-              from: instant(params.from, "from"),
-              to: instant(params.to, "to"),
-              ...given<CalendarListArgs>(params, { calendar: asIs }),
-              ...page("calendar", "list", params),
+          const args = {
+            from: instant(params.from, "from"),
+            to: instant(params.to, "to"),
+            ...given<CalendarListArgs>(params, { calendar: asIs }),
+          };
+          const { items, cursor } = await paged(
+            "calendar",
+            "list",
+            params,
+            async (page) => {
+              const result = await s.calendar!.list!({ ...args, ...page }, ctx);
+              return { items: result.events, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            events: result.events.map(eventSummary),
-            ...nextCursor("calendar", "list", params, result.cursor),
+            events: items.map(eventSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },
@@ -1092,18 +1100,23 @@ export function registerProductivityTools(
         }),
         async run(params, s, ctx) {
           const folder = folderId(params.folder);
-          const result = await s.drive!.search!(
-            {
-              query: params.query as string,
-              ...(folder !== undefined ? { folder_id: folder } : {}),
-              ...given<DriveSearchArgs>(params, { modified_after: instant }),
-              ...page("drive", "search", params),
+          const args = {
+            query: params.query as string,
+            ...(folder !== undefined ? { folder_id: folder } : {}),
+            ...given<DriveSearchArgs>(params, { modified_after: instant }),
+          };
+          const { items, cursor } = await paged(
+            "drive",
+            "search",
+            params,
+            async (page) => {
+              const result = await s.drive!.search!({ ...args, ...page }, ctx);
+              return { items: result.files, cursor: result.cursor };
             },
-            ctx,
           );
           return {
-            files: result.files.map(fileSummary),
-            ...nextCursor("drive", "search", params, result.cursor),
+            files: items.map(fileSummary),
+            ...(cursor ? { cursor } : {}),
           };
         },
       },

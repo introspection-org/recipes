@@ -33,6 +33,10 @@ const ENTITIES: Record<string, string> = {
   copy: "©",
   reg: "®",
   trade: "™",
+  bull: "•",
+  middot: "·",
+  euro: "€",
+  pound: "£",
   zwnj: "",
   zwj: "",
 };

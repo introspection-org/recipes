@@ -956,16 +956,18 @@ describe("release train isolation", () => {
       join(root, "scripts", "release-plan.mjs"),
       "utf8",
     );
-    const adapters = ["channels", "documents"].flatMap((group) =>
-      readdirSync(join(root, "packages", group)).map(
-        (name) => `packages/${group}/${name}`,
-      ),
+    const adapters = ["channels", "documents", "productivity"].flatMap(
+      (group) =>
+        readdirSync(join(root, "packages", group)).map(
+          (name) => `packages/${group}/${name}`,
+        ),
     );
     expect(adapters).toEqual(
       expect.arrayContaining([
         "packages/channels/slack",
         "packages/documents/docx",
         "packages/documents/pdf",
+        "packages/productivity/google",
       ]),
     );
     for (const path of adapters) {

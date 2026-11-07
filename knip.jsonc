@@ -32,6 +32,12 @@
     "packages/*/*": {
       "project": ["src/**/*.ts!"]
     },
+    // Its integration tests run against the Google emulator and fake MCP
+    // servers, which are its own devDependencies.
+    "packages/productivity/google": {
+      "entry": ["test/**/*.test.ts"],
+      "project": ["src/**/*.ts!", "test/**/*.ts"]
+    },
     "examples": {
       // The docs snippets: extensions and evals a Recipe loads by path, and
       // the fakes its evals bind.

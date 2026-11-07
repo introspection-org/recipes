@@ -151,8 +151,8 @@ this, as the outbound review in `recipe-crm-agent` does.
 ## Authentication
 
 A provider package holds **no credential**. It calls the provider's API
-(`graph.microsoft.com`, `gmail.googleapis.com`, a Google Workspace MCP server)
-with a placeholder bearer, exactly as the Slack package does
+(`graph.microsoft.com`, `gmail.googleapis.com`) through the host's `http`,
+which sends a placeholder bearer exactly as the Slack package does
 (`packages/channels/slack/src/client.ts`), and the host replaces it on the
 way out:
 
@@ -177,14 +177,21 @@ capability descriptor records the choice so a review can see it:
 
 | Provider | Default backend | Fallback |
 | --- | --- | --- |
-| `google` | Google's Workspace MCP servers (Gmail, Calendar, Drive), through `packages/mcp-client` | Google's REST APIs for a command the MCP servers do not cover |
+| `google` | Google's REST APIs (Gmail, Calendar, Drive) | None. Workspace MCP later, below |
 | `microsoft` | Microsoft Graph REST v1.0, through a small client shaped like Slack's | None. Work IQ MCP stays available to a Recipe as an ordinary MCP binding |
 
 Both backends of one provider use the same connection, so a command can move
 from REST to MCP when the provider's server gains it, without a Recipe
 noticing. Contract tests pin each backend's request and response shapes,
-because Google's MCP servers are a developer preview and Graph changes by
-version.
+because Graph changes by version.
+
+**MCP later.** Google's Workspace MCP servers are in developer preview, with
+the Calendar and Drive hosts and every tool name unconfirmed, so the Google
+provider is REST-only for now. Once they are generally available and the
+tool names confirmed, an MCP path can return behind the Recipe's
+`mcp.servers.<id>.behind: [mail|calendar|drive]`
+([MCP configuration](../mcp-configuration.md#keep-a-server-behind-a-tool),
+[#459](https://github.com/introspection-org/recipes/pull/459)).
 
 Each provider's guide gives its command-to-API mapping, scopes, setup and
 errors: [Google](google.md) and
@@ -222,15 +229,15 @@ schema and description, so a Recipe never depends on which provider runs.
 
 ## Test productivity Recipes
 
-- **Unit:** each provider package tests its transport against a fake HTTP
-  server (and a fake MCP server for Google's), covering paging,
-  `Retry-After`, error mapping and the placeholder credential.
+- **Unit:** the host tests its `http` once (placeholder credential,
+  `Retry-After` and backoff, spans); each provider package tests its own
+  requests, paging and error mapping against a fake HTTP server.
 - **Recipe:** MCP fakes and recorded HTTP fixtures (as `recipe-crm-agent`
   does for its servers) let evals run a Recipe against a known mailbox and
   calendar without a real account.
 - **Live:** `introspection dev` with a connected test account: a Microsoft
   365 developer tenant with its sample data, and a Google Workspace test
-  domain in the MCP developer preview.
+  domain.
 
 ## Write a provider
 
@@ -245,13 +252,26 @@ channels:
   (`mcp` or `rest`) and an optional one-sentence `note` the host appends to
   the command's description. `mail` also says what `label` and `move` act on
   (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`);
-- `createSession({ config, env, cwd, fetch? })`: returns (or resolves to) a
+- `createSession({ config, env, cwd, http })`: returns (or resolves to) a
   `ProductivitySession` for one person's connection, with a `mail`,
   `calendar` and `drive` object whose methods serve the enabled commands
   (`PRODUCTIVITY_SESSION_METHODS` names them). The host calls it on the first
   command, checks every enabled command is implemented, and calls `close()`
   when the session shuts down. `config` carries the enabled commands per
-  tool; `fetch`, when a host passes one, replaces the global `fetch`.
+  tool. `http` (`ProductivityHttp`) is how the provider sends every request:
+  the host attaches the placeholder credential (none for a request marked
+  `anonymous`, such as a pre-authenticated download URL), records each
+  attempt as a client span named after the request's `template` and
+  `operation` with a read's JSON answer under `gen_ai.tool.call.result` (a
+  write's only when the request sets `record`, and any pre-authenticated
+  link, such as Graph's `uploadUrl` or a URL signed in its query, redacted),
+  and
+  retries a request marked `read` on `429` and `500`, `502`, `503`, `504`
+  (plus what the provider's `throttled` adds), after `Retry-After` or 1, 2
+  and 4 seconds, never waiting more than 30 seconds. A write is sent once.
+  It hands back the final answer, ok or not, with `retryAfterSeconds`; the
+  provider maps a failure to its error. A host with a request hook that
+  attaches the credential passes it to `loadRecipeProductivity` as `fetch`.
 
 A session takes and returns the provider's own ids. The host resolves each
 handle before the call and mints handles for what comes back, so a provider
@@ -271,10 +291,21 @@ Where the host differs from, or settles, the design above:
 - **Handles.** A draft is a `msg_…` handle that remembers the session
   created it; `mail update_draft` and `mail send` take only such a handle,
   and a sent draft's handle stops resolving. Pagination cursors are `cur_…`
-  handles valid only with the same command and arguments. A handle whose item
-  the provider reports `not_found` is dropped. `mail move` keeps the
-  message's handle when the provider gives the moved message a new id.
-- **Arguments.** `mail search` `folder` is a folder (or Gmail label) name.
+  handles valid only with the same command and arguments. A page never holds
+  more than `limit` items: when a provider returns more, the host keeps the
+  rest in the cursor handle and serves them first on the next call, so a
+  provider's cursor never skips an item it returned. A provider that filters
+  its own pages may return a short page with a cursor; the host fills the page
+  from up to five further calls. A handle whose item the provider reports
+  `not_found` is dropped. `mail move` keeps the message's handle when the
+  provider gives the moved message a new id.
+- **Thread reads.** A provider reads a whole thread, up to a cap of its own;
+  when the cap cuts a thread, `mail read` returns the messages it read and
+  says so in `unavailable` rather than presenting the thread as complete.
+- **Arguments.** `mail draft` with `reply_to` may leave `to` empty: the
+  reply then goes to the parent's sender (its `Reply-To`, else `From`), as
+  the provider's own Reply does, never to every recipient.
+  `mail search` `folder` is a folder (or Gmail label) name.
   `drive search` and `drive upload` take `folder` as a folder's `file_…`
   handle. `calendar list` and `calendar free_busy` take absolute RFC 3339
   times with an offset, and `free_busy` takes the `time_zone` of its result.

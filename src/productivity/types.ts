@@ -213,7 +213,12 @@ export interface ProductivityFileContent {
   readonly bytes: Uint8Array;
 }
 
-/** A page of results. `cursor` is the provider's own; the host wraps it in a handle. */
+/**
+ * A page of results. `cursor` is the provider's own and resumes after the last
+ * item returned; the host wraps it in a handle. A provider may return more
+ * items than `limit` rather than cut a page: the host shows `limit` and serves
+ * the rest from its cursor handle before calling the provider again.
+ */
 export interface ProductivityPage {
   readonly cursor?: string;
 }
@@ -280,6 +285,8 @@ export interface MailMessage extends MailMessageSummary {
 /** One message, or a thread's messages oldest first. */
 export interface MailReadResult {
   readonly messages: readonly MailMessage[];
+  /** Why the thread is incomplete, such as one longer than the provider reads. */
+  readonly unavailable?: string;
 }
 
 export interface MailFetchAttachmentArgs {
@@ -618,9 +625,9 @@ export interface ProductivityConfig {
 }
 
 /**
- * The `fetch` a provider uses. A host that attaches the person's credential
- * with a request hook passes its own; absent, the provider uses the global
- * `fetch` with its placeholder bearer, which the egress replaces.
+ * The `fetch` under the host's `http`: a host that attaches the person's
+ * credential with a request hook passes its own; absent, the global `fetch`
+ * with the placeholder bearer, which the egress replaces.
  */
 export type ProductivityFetch = (
   url: string,
@@ -640,9 +647,53 @@ export type ProductivityFetch = (
   arrayBuffer(): Promise<ArrayBuffer>;
 }>;
 
+/** One request a provider sends through the host's `http`. */
+export interface ProductivityHttpRequest {
+  readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  readonly url: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string | Uint8Array;
+  readonly signal?: AbortSignal;
+  /** The API's path template, such as `/me/messages/{message-id}`, which names the span. */
+  readonly template?: string;
+  /** The API's id for the method, such as `gmail.users.messages.get`. */
+  readonly operation?: string;
+  /** A read, retried while the provider is throttled; anything else is sent once. */
+  readonly read?: boolean;
+  /**
+   * Whether the JSON answer may be recorded on the request's span. Default:
+   * only for a read. A write's answer (an upload session's URL, say) can carry
+   * a credential, so it is recorded only when the provider says it is safe.
+   */
+  readonly record?: boolean;
+  /** Whether a failed answer also means throttled, beyond 429 and 5xx (such as Google's 403 `rateLimitExceeded`). */
+  readonly throttled?: (status: number, body: string) => boolean;
+  /** A pre-authenticated URL, which carries its own credential: no `Authorization` is added. */
+  readonly anonymous?: boolean;
+  /** `manual` returns a redirect; by default one is refused. */
+  readonly redirect?: "error" | "manual";
+}
+
+/** An answer, ok or not; a failed one's body is readable for the provider to map. */
+export type ProductivityHttpResponse = Awaited<
+  ReturnType<ProductivityFetch>
+> & {
+  /** The answer's `Retry-After`, in seconds. */
+  readonly retryAfterSeconds?: number;
+};
+
+/**
+ * The host's HTTP for a provider: it attaches the placeholder credential,
+ * records each attempt as a client span, and retries a throttled read.
+ */
+export type ProductivityHttp = (
+  request: ProductivityHttpRequest,
+) => Promise<ProductivityHttpResponse>;
+
 export interface ProductivitySessionOptions {
   readonly config: ProductivityConfig;
   readonly env: NodeJS.ProcessEnv;
   readonly cwd: string;
-  readonly fetch?: ProductivityFetch;
+  /** Every request the provider sends goes through it. */
+  readonly http: ProductivityHttp;
 }
