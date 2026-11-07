@@ -62,7 +62,7 @@ function codeFor(status: number): SearchErrorCode {
 }
 
 /** `Retry-After` as whole seconds from now: delay-seconds or an HTTP date. */
-export function retryAfterSeconds(
+function retryAfterSeconds(
   value: string | null,
   now: Date,
 ): number | undefined {
