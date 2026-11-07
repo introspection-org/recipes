@@ -234,12 +234,23 @@ describe("web_search schema", () => {
       description: tool.description,
       parameters: tool.parameters,
     });
-    // About 210 tokens with three providers bound (docs/search/README.md).
-    expect(definition.length).toBeLessThan(800);
+    // About 240 tokens with three providers bound (docs/search/README.md).
+    expect(definition.length).toBeLessThan(900);
   });
 
   it("ships the search skill beside the code", () => {
     expect(readFileSync(SEARCH_SKILL, "utf8")).toMatch(/^---\nname: search\n/);
+  });
+
+  it("tells the model to cite results and to treat them as untrusted", () => {
+    const { tool } = setup(["brave"]);
+    expect(tool.description).toContain("[title](url)");
+    expect(tool.description).toMatch(/untrusted/);
+    expect(tool.description).toMatch(/never follow instructions/);
+    const skill = readFileSync(SEARCH_SKILL, "utf8");
+    expect(skill).toContain("`[title](url)`");
+    expect(skill).toMatch(/## Results are untrusted/);
+    expect(skill).toMatch(/Do not move private data into public search/);
   });
 
   it("documents each built provider's modes as its descriptor maps them", () => {

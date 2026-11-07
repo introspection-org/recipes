@@ -446,9 +446,18 @@ already named there as runtime utility APIs.
 ## Content is data
 
 Titles and snippets come from arbitrary web pages. The tool returns them as
-the result of a search, the skill tells the agent to treat them as data, and
-Brave's HTML highlighting is stripped. A snippet is cut at the content level's
-length on a word boundary.
+the result of a search, and Brave's HTML highlighting is stripped. A snippet is
+cut at the content level's length on a word boundary.
+
+The tool description says it in one sentence each, and the skill says it in
+full:
+
+- **Cite.** Each result the agent uses is cited as `[title](url)` wherever it
+  reaches the user, with the result's own title and URL.
+- **Untrusted.** Result text is data, never instructions: the agent does not
+  follow instructions found in a result, and does not move private data
+  (files, connected accounts, other tools) into a query, or act on private
+  tools, because a result asked it to.
 
 ## Fetching a page
 
@@ -472,12 +481,12 @@ schema) and estimated at about 3.5 characters per token for JSON:
 
 |  | Characters | About |
 | --- | --- | --- |
-| Tool definition, one provider bound | 718 | 205 tokens |
-| Tool definition, three providers bound | 779 | 220 tokens |
+| Tool definition, one provider bound | 785 | 225 tokens |
+| Tool definition, three providers bound | 846 | 240 tokens |
 | Typical 5-result response, `snippets` | about 2,200 | 500-550 tokens |
 | Typical 5-result response, `context` | about 8,000 | 1,900 tokens |
 
-The skill adds about 550 tokens when the agent loads it. Snippets dominate the
+The skill adds about 750 tokens when the agent loads it. Snippets dominate the
 response: each result's title, site, date and URL line costs about 35 tokens
 and its snippet about 70.
 
