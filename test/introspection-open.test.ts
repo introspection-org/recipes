@@ -122,6 +122,7 @@ describe("introspection_open targets", () => {
     expect(introspectionOpenCliArgs(github as never, true)).toEqual([
       "open",
       "--integrations",
+      "github",
       "--wait",
     ]);
     expect(introspectionOpenCliArgs(binding as never, true)).toEqual([
