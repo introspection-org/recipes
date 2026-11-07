@@ -1,4 +1,4 @@
-import { labelId } from "@introspection-ai/mcp-fakes";
+import { labelId } from "@introspection-ai/eval-simulate/mcp";
 import type { World } from "./index.ts";
 
 // Every record is fictional, and every date would be computed from the clock.
