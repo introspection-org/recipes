@@ -31,12 +31,20 @@ interface BraveWeb {
   };
 }
 
+/** A Goggles rule for a site: `site=` takes a domain alone, so a path leads the rule. */
+function siteRule(site: string, options: string): string {
+  const slash = site.indexOf("/");
+  const domain = slash < 0 ? site : site.slice(0, slash);
+  const path = slash < 0 ? "" : site.slice(slash);
+  return `${path}$${options}site=${domain}`;
+}
+
 /** Inline Goggles: an allowlist discards everything but the named sites. */
 function goggles(request: SearchRequest): string | undefined {
   const rules = [
     ...(request.include_sites.length > 0 ? ["$discard"] : []),
-    ...request.include_sites.map((site) => `$site=${site}`),
-    ...request.exclude_sites.map((site) => `$discard,site=${site}`),
+    ...request.include_sites.map((site) => siteRule(site, "")),
+    ...request.exclude_sites.map((site) => siteRule(site, "discard,")),
   ];
   return rules.length > 0 ? rules.join("\n") : undefined;
 }

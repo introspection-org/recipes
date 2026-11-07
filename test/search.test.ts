@@ -355,6 +355,19 @@ describe("web_search providers", () => {
     ]);
   });
 
+  it("puts a site's path ahead of Brave's site= option, which takes a domain alone", async () => {
+    const api = await fakeApi(() => ({ body: braveContext }));
+    const { call } = setup(["brave"], { baseUrls: { brave: api.baseUrl } });
+    await call({
+      query: "agent search",
+      sites: ["github.com/openai", "-example.com/spam/"],
+      content: "context",
+    });
+    expect(api.requests[0]!.url.searchParams.get("goggles")).toBe(
+      "$discard\n/openai$site=github.com\n/spam$discard,site=example.com",
+    );
+  });
+
   it("serves Brave snippets from the Web Search API, and notes a mode it cannot honour", async () => {
     const api = await fakeApi(() => ({ body: braveWeb }));
     const { call } = setup(["brave"], { baseUrls: { brave: api.baseUrl } });
@@ -873,6 +886,39 @@ describe("web_search over a provider's MCP server", () => {
       "gen_ai.tool.name": "tavily_search",
       "search.mcp.server": "tavily",
     });
+  });
+
+  it("keeps a Tavily MCP result's content across its own newlines", async () => {
+    const multiline = [
+      "Detailed Results:",
+      "",
+      "Title: A",
+      "URL: https://news.example.org/a",
+      "Content: first line",
+      "second line",
+      "",
+      "third line",
+      "",
+      "Title: B",
+      "URL: https://b.example.com/b",
+      "Content: only line",
+      "",
+      "Images:",
+      "",
+      "[1] URL: https://img.example/x.png",
+    ].join("\n");
+    const { ctx } = fakePiMcp({ [TAVILY]: () => text(multiline) });
+    const { call } = setup(
+      ["tavily"],
+      { mcpServers: { tavily: "tavily" } },
+      ctx,
+    );
+    const result = await call({ query: "agents" });
+    const snippets = (result.details as any).results.map((r: any) => r.snippet);
+    expect(snippets).toEqual([
+      "first line second line third line",
+      "only line",
+    ]);
   });
 
   it("falls back to REST for what the MCP tool cannot express, or notes it when REST is not bound", async () => {

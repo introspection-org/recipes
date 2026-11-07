@@ -49,24 +49,43 @@ function tavilyResults(
 
 /**
  * The results Tavily's MCP server writes as text (`format-results.ts` in
- * tavily-ai/tavily-mcp): `Title:`, `URL:`, `Content:` lines per result. The
- * text carries no date, score or credits.
+ * tavily-ai/tavily-mcp): `Title:`, `ID:`, `URL:`, `Content:` lines per result,
+ * where content keeps its own newlines. The text carries no date, score or
+ * credits.
  */
 function tavilyTextResults(text: string): TavilyResponse {
   const results: NonNullable<TavilyResponse["results"]> = [];
+  let content: string[] | undefined;
+  const endContent = () => {
+    const current = results.at(-1);
+    if (current && content) current.content = content.join("\n").trimEnd();
+    content = undefined;
+  };
   for (const line of text.split("\n")) {
-    const match = /^(Title|URL|Content): (.*)$/.exec(line);
-    if (!match) continue;
+    const match = /^(Title|ID|URL|Content|Raw Content|Favicon): (.*)$/.exec(
+      line,
+    );
+    if (!match) {
+      if (line === "Images:") endContent();
+      else content?.push(line);
+      continue;
+    }
+    endContent();
     const [, key, value] = match;
     let current = results.at(-1);
-    if (!current || key === "Title" || (key === "URL" && current.url)) {
+    if (
+      key === "Title" ||
+      ((key === "URL" || key === "ID") && (!current || current.url))
+    ) {
       current = {};
       results.push(current);
     }
+    if (!current) continue;
     if (key === "Title") current.title = value;
     else if (key === "URL") current.url = value;
-    else current.content = value;
+    else if (key === "Content") content = [value];
   }
+  endContent();
   return { results };
 }
 
