@@ -31,6 +31,20 @@ export {
   type ShowArtifactDetails,
 } from "./artifact.js";
 
+export {
+  INTROSPECTION_OPEN_ANSWER,
+  INTROSPECTION_OPEN_TARGET_KINDS,
+  INTROSPECTION_OPEN_TOOL_NAME,
+  introspectionOpenAction,
+  introspectionOpenDone,
+  introspectionOpenFailed,
+  introspectionOpenTargetOf,
+  parseIntrospectionOpenTarget,
+  providerName,
+  type IntrospectionOpenTarget,
+  type IntrospectionOpenTargetKind,
+} from "./open.js";
+
 export const REVIEW_ARTIFACTS_TOOL_NAME = "review_artifacts";
 
 /** At most this many files in one review, so the user can get through it. */

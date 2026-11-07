@@ -110,6 +110,10 @@ import {
   wantsAskUserQuestion,
 } from "./ask-user-question.js";
 import {
+  introspectionOpenExtension,
+  wantsIntrospectionOpen,
+} from "./introspection-open.js";
+import {
   artifactViewerExtension,
   recipeSubcommand,
   recipeSubcommandCompletions,
@@ -1082,6 +1086,12 @@ export function createRecipesExtension(
       // extensions, so a Recipe that still ships its own keeps it.
       if (wantsAskUserQuestion(launchState.resolved.tools)) {
         await askUserQuestionExtension(
+          launchState.extensionRegistrations,
+          env,
+        )(pi);
+      }
+      if (wantsIntrospectionOpen(launchState.resolved.tools)) {
+        await introspectionOpenExtension(
           launchState.extensionRegistrations,
           env,
         )(pi);
