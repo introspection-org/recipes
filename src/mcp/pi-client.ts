@@ -123,6 +123,8 @@ export interface PiMcpServerRegistration {
   required: boolean;
   /** The package marks the server's discovery deferrable (a bake may start without it). */
   deferrableDiscovery: boolean;
+  /** The tools whose calls alone may reach the server (`behind`). */
+  behind?: readonly string[];
   config: McpServerConfig;
 }
 
@@ -172,13 +174,17 @@ function exposureConfig(
   server: McpSessionServer,
   mcp: RecipeAgentMcp,
 ): Pick<McpServerConfig, "exposure" | "toolExposure"> {
-  const eager = mcp.servers[server.id]?.eager;
+  const policy = mcp.servers[server.id];
+  // A server behind a tool is off the model's declarations and codemode's
+  // listings; only `ctx.executeTool` reaches a `deferred` tool.
+  const allowed: McpExposure = policy?.behind ? "deferred" : "codemode";
+  const eager = policy?.behind ? undefined : policy?.eager;
   const exposureOf = (name: string): McpExposure =>
-    selectorsInclude(eager, name) ? "direct" : "codemode";
+    selectorsInclude(eager, name) ? "direct" : allowed;
   const { allows, explicit, excludes } = agentAllowedTools(server, mcp);
   if (explicit) {
     return {
-      exposure: "codemode",
+      exposure: allowed,
       toolExposure: {
         ...Object.fromEntries(explicit.map((name) => [name, exposureOf(name)])),
         "*": "hidden",
@@ -188,7 +194,7 @@ function exposureConfig(
   // Every tool is allowed but the excluded ones, which stay unreachable.
   const excluded = excludes.filter((name) => !allows(name));
   return {
-    exposure: eager?.includes("*") ? "direct" : "codemode",
+    exposure: eager?.includes("*") ? "direct" : allowed,
     toolExposure: {
       ...Object.fromEntries(
         (eager ?? [])
@@ -246,14 +252,16 @@ export function piMcpServerRegistrations(options: {
       const binding = options.bindings.find((entry) => entry.id === server.id);
       if (binding?.localOAuth) {
         throw new Error(
-          `MCP server '${server.id}' is bound with an OAuth flow, which mcp.mode codemode does not support; bind it with a header, or use mode cli or tools`,
+          `MCP server '${server.id}' is bound with an OAuth flow, which Pi's MCP client (mcp.mode codemode, or a server behind a tool) does not support; bind it with a header`,
         );
       }
       const headers = resolvedHeaders(binding, options.env);
+      const behind = options.mcp.servers[server.id]?.behind;
       return {
         id: server.id,
         required: server.required === true,
         deferrableDiscovery: server.discovery === "defer",
+        ...(behind ? { behind } : {}),
         config: {
           url: server.base_url,
           ...(headers ? { headers } : {}),
@@ -364,4 +372,108 @@ export function piMcpToolOrigin(
     toolName: tool.label.slice(labelPrefix.length),
     ...(server.binding ? { binding: server.binding } : {}),
   };
+}
+
+type BehindServer = Pick<PiMcpServerRegistration, "id" | "behind">;
+
+const MCP_SERVERS_SECTION = "mcp_servers";
+
+/** The server kept behind tools that a Pi tool belongs to, if any. */
+export function serverBehindTools(
+  servers: readonly BehindServer[],
+  tool: { namespace?: ToolNamespace } | undefined,
+): BehindServer | undefined {
+  return tool
+    ? servers.find(
+        (server) => server.behind && isPiMcpServerTool(tool, server.id),
+      )
+    : undefined;
+}
+
+/** Pi's `mcp_servers` prompt section without the servers kept behind tools. */
+function sectionWithoutServersBehindTools(
+  section: string,
+  servers: readonly BehindServer[],
+): string | undefined {
+  // A listed server reads `- <namespace> (<how>)`.
+  const hidden = servers.map((server) => `- ${piMcpNamespace(server.id)} (`);
+  const [, ...lines] = section.split("\n");
+  const kept = lines.filter(
+    (line) => !hidden.some((prefix) => line.startsWith(prefix)),
+  );
+  if (!kept.some((line) => / \((codemode|tool_search)\)/.test(line))) {
+    return undefined;
+  }
+  // Pi's intro names how the listed servers are reached; rebuild it for those kept.
+  let intro = "MCP servers whose tools are not declared to you.";
+  if (kept.some((line) => line.includes(" (codemode)")))
+    intro += " Call the tools of `codemode` servers from codemode scripts.";
+  if (kept.some((line) => line.includes(" (tool_search)")))
+    intro += " Load the tools of `tool_search` servers with `tool_search`.";
+  return [intro, ...kept].join("\n");
+}
+
+/**
+ * Keeps each server registered with `behind` behind its tools: a call to one
+ * of its tools is refused unless a tool named in `behind` issued it, directly
+ * or through calls nested inside that tool's call. The model, codemode scripts
+ * and every other tool are refused.
+ */
+export function createMcpBehindGuard(
+  servers: () => readonly BehindServer[],
+): ExtensionFactory {
+  return (pi) => {
+    const calls = new Map<
+      string,
+      { toolName: string; parentToolCallId: string | undefined }
+    >();
+    pi.on("tool_call", (event) => {
+      calls.set(event.toolCallId, {
+        toolName: event.toolName,
+        parentToolCallId: event.parentToolCallId,
+      });
+      const server = serverBehindTools(
+        servers(),
+        pi.getAllTools().find((tool) => tool.name === event.toolName),
+      );
+      if (!server?.behind) return undefined;
+      const front = new Set(server.behind);
+      // An ancestor this guard never saw ends the walk: the call is refused.
+      for (
+        let call = calls.get(event.parentToolCallId ?? "");
+        call;
+        call = calls.get(call.parentToolCallId ?? "")
+      ) {
+        if (front.has(call.toolName)) return undefined;
+      }
+      const tools = server.behind.join(", ");
+      return {
+        block: true,
+        reason: `MCP server '${server.id}' is reachable only through the ${tools} tool${server.behind.length === 1 ? "" : "s"}; call ${server.behind[0]} instead.`,
+      };
+    });
+    pi.on("tool_result", (event) => {
+      calls.delete(event.toolCallId);
+    });
+    pi.on("agent_end", () => {
+      calls.clear();
+    });
+  };
+}
+
+/**
+ * Drops the servers kept behind tools from Pi's `mcp_servers` prompt section,
+ * from a `before_agent_start` handler that runs after Pi's MCP extension's.
+ */
+export function hideServersBehindTools(
+  sections: Record<string, string>,
+  servers: readonly BehindServer[],
+): void {
+  const behind = servers.filter((server) => server.behind);
+  if (behind.length === 0) return;
+  const section = sections[MCP_SERVERS_SECTION];
+  if (!section) return;
+  const kept = sectionWithoutServersBehindTools(section, behind);
+  if (kept) sections[MCP_SERVERS_SECTION] = kept;
+  else delete sections[MCP_SERVERS_SECTION];
 }

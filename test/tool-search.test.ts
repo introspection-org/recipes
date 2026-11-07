@@ -74,6 +74,22 @@ describe("Recipe tool search", () => {
     expect(second.details).toEqual({ loaded: ["candidate_search"] });
   });
 
+  it("never finds a tool it is told to leave out", async () => {
+    const pi = session(
+      [
+        tool("mcp__gmail__search", "Search mail messages."),
+        tool("mail_digest", "Summarize mail messages."),
+      ],
+      ["tool_search"],
+    );
+    const [toolSearch] = createRecipeToolSearchTools(pi, false, (entry) =>
+      entry.name.startsWith("mcp__gmail__"),
+    );
+
+    const result = await search(toolSearch!, "search mail messages");
+    expect(result.details).toEqual({ loaded: ["mail_digest"] });
+  });
+
   it("matches deferred tools by input property names", async () => {
     const pi = session(
       [
