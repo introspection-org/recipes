@@ -107,6 +107,8 @@ describe("release plan", () => {
     ) as Record<string, string>;
     expect(manifest["packages/productivity/google"]).toBeUndefined();
     expect(artifacts.map((a) => a.key)).not.toContain("google");
+    expect(manifest["packages/productivity/microsoft"]).toBeUndefined();
+    expect(artifacts.map((a) => a.key)).not.toContain("microsoft");
   });
 
   it("publishes nothing when every registry has its version", async () => {

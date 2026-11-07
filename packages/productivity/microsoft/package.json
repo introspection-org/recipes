@@ -1,0 +1,41 @@
+{
+  "name": "@introspection-ai/recipe-productivity-microsoft",
+  "version": "0.1.0",
+  "description": "Microsoft 365 mail, calendar and OneDrive over Microsoft Graph for the Introspection Recipes productivity tools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/introspection-org/recipes.git",
+    "directory": "packages/productivity/microsoft"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
+  },
+  "devDependencies": {
+    "@introspection-ai/recipes": "workspace:^",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}
