@@ -888,6 +888,50 @@ describe("mail parsing", () => {
     });
   }
 
+  it("keeps a draft's Bcc on an update, and refuses one that would drop Reply-To", async () => {
+    const draft = (extra: Array<{ name: string; value: string }>) => () =>
+      json({
+        id: "d1",
+        message: {
+          id: "m4",
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "To", value: "a@example.com" },
+              { name: "Bcc", value: "Boss <boss@example.com>, c@example.com" },
+              { name: "Subject", value: "Plan" },
+              ...extra,
+            ],
+            body: { data: Buffer.from("hi").toString("base64url") },
+          },
+        },
+      });
+    const kept = await backend([
+      ["GET", /\/drafts\/d1$/, draft([])],
+      ["PUT", /\/drafts\/d1$/, () => json({ id: "d1", message: { id: "m4" } })],
+    ]);
+    await kept.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" });
+    const raw = new TextDecoder().decode(
+      decodeBase64Url(
+        (bodyJson(kept.calls[1]!) as { message: { raw: string } }).message.raw,
+      ),
+    );
+    expect(raw).toContain("Bcc: Boss <boss@example.com>, c@example.com\r\n");
+    expect(raw).toContain("Subject: Plan v2\r\n");
+
+    const replyTo = await backend([
+      [
+        "GET",
+        /\/drafts\/d1$/,
+        draft([{ name: "Reply-To", value: "list@example.com" }]),
+      ],
+    ]);
+    await expect(
+      replyTo.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(replyTo.calls).toHaveLength(1);
+  });
+
   it("composes a draft whose headers cannot be injected", () => {
     const raw = Buffer.from(
       composeRawMessage({

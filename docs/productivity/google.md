@@ -173,8 +173,10 @@ Excel and PowerPoint files are the same problem.
   `attachmentId` changes between reads. Draft bodies are sent as
   `text/plain` (the Markdown as written); `update_draft` without `body` keeps
   the draft's body (an HTML one as HTML, a stored one fetched) and refuses
-  the update when that body cannot be read. A header value containing a line break is
-  refused. A reply drafted with no `to` goes to the parent's
+  the update when that body cannot be read. `update_draft` keeps the draft's
+  `Bcc`, and refuses a draft with attachments or with a `Reply-To` or
+  `Resent-*` header, which the rebuilt draft would drop. A header value
+  containing a line break is refused. A reply drafted with no `to` goes to the parent's
   `Reply-To`, else its `From`, or to its `To` when the person sent it, as
   Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;
   `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.

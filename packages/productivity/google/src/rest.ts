@@ -142,6 +142,14 @@ function textContent(text: string): ProductivityContent {
   return { content_type: "text", content: text };
 }
 
+/** Recipient headers a draft update cannot carry, so it refuses rather than drop them. */
+const UNKEPT_RECIPIENT_HEADERS = [
+  "Reply-To",
+  "Resent-To",
+  "Resent-Cc",
+  "Resent-Bcc",
+];
+
 /** The largest body part Gmail stores apart from the message that a read fetches. */
 const MAX_STORED_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -436,10 +444,18 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
-    // The rebuilt message carries only the body, and Gmail replaces the whole draft.
+    // The rebuilt message carries only the body, To, Cc and Bcc, and Gmail
+    // replaces the whole draft.
     if (parseMailPayload(payload).attachments.length > 0)
       throw invalid(
         "This draft has attachments, which an update would remove. The draft was not changed.",
+      );
+    const lost = UNKEPT_RECIPIENT_HEADERS.filter((name) =>
+      header(payload, name)?.trim(),
+    );
+    if (lost.length > 0)
+      throw invalid(
+        `This draft has ${lost.join(", ")}, which an update would remove. The draft was not changed.`,
       );
     let kept: ProductivityContent | undefined;
     if (args.body === undefined && current.message) {
@@ -457,8 +473,10 @@ export class GoogleRestMail implements Required<MailSession> {
       cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
       subject: args.subject ?? header(payload, "Subject") ?? "",
     };
+    const bcc = splitAddresses(header(payload, "Bcc"));
     const raw = composeRawMessage({
       ...fields,
+      ...(bcc.length ? { bcc } : {}),
       body: args.body ?? kept?.content ?? "",
       html: kept?.content_type === "html",
       inReplyTo: {

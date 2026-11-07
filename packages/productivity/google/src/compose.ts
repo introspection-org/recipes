@@ -4,6 +4,8 @@ import { encodeBase64Url } from "./mime.js";
 export interface ComposedDraft {
   to: string[];
   cc?: string[];
+  /** Kept from a draft being updated; the contract offers no way to set it. */
+  bcc?: string[];
   subject: string;
   /** Markdown, sent as the `text/plain` body. */
   body: string;
@@ -56,6 +58,7 @@ export function composeRawMessage(draft: ComposedDraft): string {
   const lines = [
     `To: ${addressList("to", draft.to)}`,
     ...(draft.cc?.length ? [`Cc: ${addressList("cc", draft.cc)}`] : []),
+    ...(draft.bcc?.length ? [`Bcc: ${addressList("bcc", draft.bcc)}`] : []),
     `Subject: ${encodeHeaderText(safeHeaderValue("subject", draft.subject))}`,
   ];
   const parent = draft.inReplyTo?.messageId?.trim();
