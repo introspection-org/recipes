@@ -499,6 +499,9 @@ describe("productivity tools", () => {
         '<a href="https://x.test/a">docs</a> &amp; <script>evil()</script>',
       ),
     ).toBe("docs (https://x.test/a) &");
+    expect(htmlToText("<p>&euro;5 &bull; &pound;4&middot;</p>")).toBe(
+      "€5 • £4·",
+    );
   });
 
   it("saves an attachment under the downloads folder, never outside it", async () => {

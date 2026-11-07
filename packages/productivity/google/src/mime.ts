@@ -1,4 +1,4 @@
-import { htmlToText } from "./html.js";
+import type { ProductivityContent } from "@introspection-ai/recipes/productivity";
 
 /** A Gmail `MessagePart` (gmail/v1 discovery, schema `MessagePart`). */
 export interface GmailMessagePart {
@@ -104,11 +104,9 @@ interface ParsedAttachment {
 }
 
 export interface ParsedMailBody {
-  text: string;
+  body: ProductivityContent;
   /** The part the body is read from. */
   part?: GmailMessagePart;
-  /** Whether the text was converted from the message's HTML part. */
-  fromHtml: boolean;
   attachments: ParsedAttachment[];
 }
 
@@ -139,8 +137,8 @@ function walk(
 }
 
 /**
- * A Gmail message payload as text: its first `text/plain` body part, or its
- * first `text/html` part converted to text when it has none. Gmail has
+ * A Gmail message payload's body: its first `text/plain` part, or its first
+ * `text/html` part when it has none, which the host converts to text. Gmail has
  * already undone the transfer encoding; the part data is base64url bytes in
  * the part's charset. Parts with a file name or an attachment disposition are
  * listed, not read, and no part inside one or inside an attached message is
@@ -171,16 +169,12 @@ export function parseMailPayload(
       if (type === "text/html" && !html) html = part;
     });
   }
-  if (plain)
-    return { text: partText(plain), part: plain, fromHtml: false, attachments };
-  if (html)
-    return {
-      text: htmlToText(partText(html)),
-      part: html,
-      fromHtml: true,
-      attachments,
-    };
-  return { text: "", fromHtml: false, attachments };
+  const part = plain ?? html;
+  const body: ProductivityContent = {
+    content_type: part && part === html ? "html" : "text",
+    content: part ? partText(part) : "",
+  };
+  return { body, ...(part ? { part } : {}), attachments };
 }
 
 export function findPart(

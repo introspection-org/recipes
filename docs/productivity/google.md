@@ -165,15 +165,15 @@ Excel and PowerPoint files are the same problem.
   `folder` to a label ID. Summaries come from `format=full` reads with a
   `fields` mask that keeps the headers and part structure but no part data
   (`format=metadata` has no parts, so it cannot tell attachments). Bodies
-  are returned as text: the `text/plain` part, else the HTML part converted
-  with images, scripts, styles, frames and embeds dropped and link targets
-  kept in angle brackets. No part inside an attachment or an attached message
+  are the `text/plain` part, else the HTML part, which the host converts to
+  text as it does Microsoft's (`src/productivity/content.ts`). No part inside an attachment or an attached message
   is read as the body. A body part Gmail stores apart (`body.attachmentId`)
   is fetched up to 5 MB; a larger one, or one that cannot be fetched, is
   named in `unavailable`. An attachment's ID is its `partId`, since Gmail's
   `attachmentId` changes between reads. Draft bodies are sent as
-  `text/plain` (the Markdown as written), and a header value containing a
-  line break is refused. A reply drafted with no `to` goes to the parent's
+  `text/plain` (the Markdown as written); `update_draft` without `body` keeps
+  an HTML draft's body as HTML. A header value containing a line break is
+  refused. A reply drafted with no `to` goes to the parent's
   `Reply-To`, else its `From`, or to its `To` when the person sent it, as
   Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;
   `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.

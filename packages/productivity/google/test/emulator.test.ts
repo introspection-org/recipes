@@ -213,16 +213,16 @@ describe("mail, against the Google emulator", () => {
     ]);
   });
 
-  it("reads HTML mail as text without remote content, and fetches its attachment", async () => {
+  it("reads an HTML-only message as HTML for the host, and fetches its attachment", async () => {
     const { messages } = await google.mail.read({ message_id: "m_html" });
     const message = messages[0]!;
     expect(message.subject).toBe("Quarterly notes – draft");
-    expect(message.body?.content_type).toBe("text");
-    expect(message.body?.content).toContain("Hello there & welcome.");
-    expect(message.body?.content).toContain(
-      "the Q3 plan <https://example.com/q3>",
-    );
-    expect(message.body?.content).not.toContain("track.example.com");
+    expect(message.body).toEqual({
+      content_type: "html",
+      content: expect.stringContaining(
+        "<p>Hello <b>there</b> &amp; welcome.</p>",
+      ),
+    });
     expect(message.has_attachments).toBe(true);
     expect(message.attachments).toEqual([
       expect.objectContaining({ name: "notes.txt", mime_type: "text/plain" }),

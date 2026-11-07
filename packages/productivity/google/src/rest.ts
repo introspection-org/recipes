@@ -277,7 +277,7 @@ export class GoogleRestMail implements Required<MailSession> {
   ): Promise<MailMessage> {
     return {
       ...(await this.summary(message, signal)),
-      body: textContent(parsed.text),
+      body: parsed.body,
       attachments: parsed.attachments.map((attachment) => ({
         id: attachment.partId,
         name: attachment.filename,
@@ -428,6 +428,8 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
+    const kept =
+      args.body === undefined ? parseMailPayload(payload).body : undefined;
     const fields = {
       to: args.to ? [...args.to] : splitAddresses(header(payload, "To")),
       cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
@@ -435,7 +437,8 @@ export class GoogleRestMail implements Required<MailSession> {
     };
     const raw = composeRawMessage({
       ...fields,
-      body: args.body ?? parseMailPayload(payload).text,
+      body: args.body ?? kept!.content,
+      html: kept?.content_type === "html",
       inReplyTo: {
         messageId: parent,
         // References already ends with the parent, which composing appends again.

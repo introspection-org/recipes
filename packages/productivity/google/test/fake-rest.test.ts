@@ -6,7 +6,6 @@ import {
   decodeEncodedWords,
   DRIVE_EXPORT_LIMIT_BYTES,
   createGoogleProductivitySession,
-  htmlToText,
   MULTIPART_UPLOAD_LIMIT_BYTES,
   NATIVE_EXPORTS,
   parseMailPayload,
@@ -526,7 +525,10 @@ describe("mail parsing", () => {
     ["an attached message", { mimeType: "message/rfc822" }],
   ] as const) {
     it(`reads the body around ${name}, never the text inside it`, async () => {
-      expect(parseMailPayload(htmlBesideText(enclosing)).text).toBe("body");
+      expect(parseMailPayload(htmlBesideText(enclosing)).body).toEqual({
+        content_type: "html",
+        content: "<p>body</p>",
+      });
       const { backend: b, calls } = await backend([
         [
           "GET",
@@ -553,8 +555,9 @@ describe("mail parsing", () => {
           (bodyJson(calls[1]!) as { message: { raw: string } }).message.raw,
         ),
       );
-      // The body is base64 encoded: "body" is kept, "inner" is not.
-      expect(raw).toContain(Buffer.from("body").toString("base64"));
+      // The body is base64 encoded: the HTML body is kept as HTML, "inner" is not.
+      expect(raw).toContain('Content-Type: text/html; charset="UTF-8"');
+      expect(raw).toContain(Buffer.from("<p>body</p>").toString("base64"));
       expect(raw).not.toContain(Buffer.from("inner").toString("base64"));
     });
   }
@@ -598,9 +601,8 @@ describe("mail parsing", () => {
       ],
     });
     expect(parsed).toEqual({
-      text: "café",
+      body: { content_type: "text", content: "café" },
       part: expect.objectContaining({ partId: "0.1" }),
-      fromHtml: false,
       attachments: [
         {
           partId: "1",
@@ -617,15 +619,6 @@ describe("mail parsing", () => {
       decodeEncodedWords("=?UTF-8?Q?Caf=C3=A9_au_lait?= =?UTF-8?B?4pyT?="),
     ).toBe("Café au lait✓");
     expect(new TextDecoder().decode(decodeBase64Url("aGk_"))).toBe("hi?");
-  });
-
-  it("drops remote content and scripts from HTML", () => {
-    const text = htmlToText(
-      "<html><head><style>p{}</style></head><body><script>x()</script><p>Hi&nbsp;you</p>" +
-        '<img src="https://t.example/p.gif"><iframe src="https://x.example"></iframe>' +
-        "<ul><li>one</li><li>two</li></ul></body></html>",
-    );
-    expect(text).toBe("Hi you\n\n- one\n- two");
   });
 
   for (const [name, labels, headers, expected] of [
