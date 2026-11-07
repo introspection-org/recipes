@@ -2,13 +2,13 @@
 
 **Status: prototype.** `@introspection-ai/recipes/search` implements the
 `web_search` tool, its provider contract, and three providers (Brave, Exa,
-Tavily). Tavily and Exa call their hosted MCP servers through Pi's built-in
-MCP client when the Recipe binds one, and their REST APIs otherwise; Brave is
-REST only. Tests run against local HTTP fakes and a fake Pi tool context.
-Parallel, Perplexity and Keenable are designed here, not built. Nothing
-registers the tool yet: [Wiring](#wiring) says what a host does. The MCP path
-depends on PR #375 ([MCP transport](#mcp-transport)). [Open
-questions](#open-questions) lists what needs a decision.
+Tavily). Tavily and Exa call their hosted MCP servers, kept behind
+`web_search` ([Declare the servers](#declare-the-servers)), through Pi's
+built-in MCP client, and their REST APIs only as a fallback; Brave is REST
+only. Tests run against local HTTP fakes, a fake Pi tool context, and a Recipe
+session with a fake MCP server. Parallel, Perplexity and Keenable are designed
+here, not built. Nothing registers the tool yet: [Wiring](#wiring) says what a
+host does. [Open questions](#open-questions) lists what needs a decision.
 
 An agent searches the web with one tool, `web_search`, whatever provider
 serves it. A call names the query and, when it wants to, the provider, a mode
@@ -166,7 +166,8 @@ mode, or means omitting `mode`, is an open question.
 
 Where a provider runs a hosted MCP server, `web_search` calls the server's
 search tool and falls back to the REST API only for what the tool cannot
-express. Researched from each server's source (cloned from GitHub) or, where
+express. MCP first is decided for Tavily and Exa, knowing that Tavily's MCP
+results carry no date or score (below). Researched from each server's source (cloned from GitHub) or, where
 noted, the provider's docs as a search returned them; nothing was connected
 live.
 
@@ -183,7 +184,8 @@ Notes:
 
 - **Tavily's MCP result loses the date.** Over MCP a Tavily result has no
   published date or score, so the compact line shows the site only. That is
-  the cost of preferring MCP for Tavily; see [Open questions](#open-questions).
+  the accepted cost of preferring MCP for Tavily; a call that needs dates can
+  name another provider.
 - **Exa needs its advanced tool listed.** The binding's URL names the tools
   (`?tools=web_search_advanced_exa,web_search_exa`); without the advanced
   tool, a call that filters goes to REST, or, with no REST endpoint, runs on
@@ -222,42 +224,59 @@ maps the tool's answer onto the same results REST returns. The host chooses:
 
 ### Pi's built-in MCP client
 
-Pi 1.4 ships an MCP client (`createMcpExtension`, `pi.registerMcpServer`,
-Streamable HTTP and stdio, OAuth unless headers are given). Its tools are Pi
-tools named `mcp__<server>__<tool>`, exposed to the model directly, through
-`codemode`, deferred or hidden. An extension tool calls one with
-`ctx.executeTool(name, args)`, which runs it through the same validation,
-hooks and permission checks as a model's call and returns the whole MCP
-`CallToolResult` as the nested result's `structuredContent`. Pi 1.3 added
-`reachesTools`, which makes such a call wait for a server still connecting.
+Pi ships an MCP client (`createMcpExtension`, `pi.registerMcpServer`,
+Streamable HTTP and stdio). Its tools are Pi tools named
+`mcpToolName(server, tool)` (`@introspection-ai/recipes/mcp`), exposed to the
+model directly, through `codemode`, deferred or hidden. An extension tool
+calls one with `ctx.executeTool(name, args)`, which runs it through the same
+validation, hooks and permission checks as a model's call and returns the
+whole MCP `CallToolResult` as the nested result's `structuredContent`. A
+tool's `reachesTools` makes such a call wait for a server still connecting.
 
-PR #375 (draft, `feat(mcp): add mcp.mode codemode on Pi's built-in MCP
-client`) puts a Recipe's MCP servers on that client: under
-`mcp: { mode: codemode, servers: { <id>: { include, eager } } }` each bound
-server is registered with `pi.registerMcpServer`, and `mcpToolName(server,
-tool)` from `@introspection-ai/recipes/mcp` gives the tool's name. It needs
-Pi 1.3.0 or newer.
+A Recipe's server runs on that client under `mcp.mode: codemode`, and in
+every mode when it is kept `behind` a tool
+([MCP configuration](../mcp-configuration.md#keep-a-server-behind-a-tool)),
+which is how `web_search` uses it.
 
-`piSearchMcpClient(ctx)` backs the interface with exactly that:
-`hasTool` looks for `mcpToolName(server, tool)` in `ctx.tools`, and
-`callTool` is `ctx.executeTool(mcpToolName(server, tool), args)`, reading the
+`piSearchMcpClient(ctx, toolInfos)` backs the interface with exactly that.
+`hasTool` looks for `mcpToolName(server, tool)` in `ctx.tools` and, given
+`toolInfos` (the extension's `pi.getAllTools`), takes it as the server's only
+when Pi's namespace for the tool is the server's (`isPiMcpServerTool`), since
+Pi hashes long names and may hash two that collide. `callTool` is
+`ctx.executeTool(mcpToolName(server, tool), args)`, reading the
 `CallToolResult` back from `structuredContent`; a call Pi refuses (an unknown
 or blocked tool) has none and fails as `unavailable`. `registerWebSearchTool`
 builds it from each call's context and declares `reachesTools` with the MCP
-tools it may call. Until #375 lands, `src/search/mcp.ts` carries a copy of
-`mcpToolName`, to be replaced by the import.
+tools it may call.
 
-The interface also fits the other clients, none of which needs a provider to
-change:
+A host outside Pi can back the same interface with the MCP SDK's client over
+Streamable HTTP, as the Google productivity provider does (`connectGoogleMcp`
+in PR #457), with the egress injecting the key; no provider changes.
 
-- **Recipes' `mcp.mode: tools` today** registers MCP tools through the native
-  MCP daemon as Pi tools named by `piMcpToolName` (`src/mcp/tools.ts`), so a
-  backing that calls `ctx.executeTool(piMcpToolName(...))` would work on the
-  current client. Not built: its result shape differs from Pi's, and the
-  platform is moving to Pi's client.
-- **A host outside Pi** can back it with the MCP SDK's client over Streamable
-  HTTP, as the Google productivity provider does (`connectGoogleMcp` in PR
-  #457), with the egress injecting the key.
+### Declare the servers
+
+A Recipe declares each provider's server in `package.json` and keeps it behind
+`web_search` in the agent file, in any `mcp.mode`:
+
+```yaml
+tools: [web_search]
+mcp:
+  mode: tools # or cli, or codemode
+  servers:
+    tavily:
+      include: [tavily_search]
+      behind: [web_search]
+    exa:
+      include: [web_search_advanced_exa, web_search_exa]
+      behind: [web_search]
+```
+
+The model then sees one tool, `web_search`. The servers' tools are not
+declared to it, codemode does not list them, `tool_search` does not find them,
+and the system prompt's list of MCP servers leaves them out. A direct call,
+from the model, a codemode script or another tool, is refused; only the calls
+`web_search` nests reach the server. `test/search-mcp-behind.test.ts` checks
+this in every mode against a fake Tavily server.
 
 ### Credentials for a hosted MCP server
 
@@ -272,8 +291,8 @@ locator). The bootstrap carries only the URL. So:
 - **Header, never query string.** Tavily's `?tavilyApiKey=` and Exa's
   `?exaApiKey=` put the key in the URL the sandbox sees; bind with the header.
   Exa's `?tools=` is not secret and belongs in the URL.
-- **OAuth is not used.** Pi's client stores no OAuth state under #375, and the
-  key is the project's, not a member's.
+- **OAuth is not used.** A server on Pi's client is bound with a header, and
+  the key is the project's, not a member's.
 
 ## Modes
 
@@ -337,25 +356,29 @@ search, Exa's `category`, Goggles beyond sites) is listed under
 
 ## Bound providers
 
-A provider is bound in either of two ways, and may be both:
+How a provider is bound depends on whether it has a hosted MCP server
+adapter:
 
-- **By MCP server**: the Recipe declares the provider's hosted MCP server
-  under its agent's `mcp.servers` (PR #375's codemode) and the runtime binds
-  it. `mcpServers` maps provider to server id (`{ tavily: "tavily" }`); a host
-  derives it from the declared servers whose bound URL's host is an adapter's
-  host (`mcp.tavily.com`, `mcp.exa.ai`). The Recipe then lists the server, as
-  any MCP dependency.
-- **By REST endpoint**, as below.
+- **A provider with a hosted MCP server** (Tavily, Exa; Perplexity once
+  built) is bound when the Recipe declares its server behind `web_search`
+  ([Declare the servers](#declare-the-servers)) and the runtime binds it.
+  `mcpServers` maps provider to server id (`{ tavily: "tavily" }`). The server
+  is the provider's when its bound URL has the adapter's host
+  (`mcp.tavily.com`, `mcp.exa.ai`), or, for an evaluation fake on another
+  host, when its id is the provider's id. A REST endpoint for its host is then
+  the fallback, and on its own does not bind it.
+- **A REST-only provider** (Brave; Parallel and Keenable for now) is bound
+  when the runtime holds an endpoint for its host with a credential: a
+  `kind='api'` endpoint row (introspection-cloud `docs/design/endpoints.md`,
+  "Runtime HTTP APIs"), at project, runtime, runtime group or environment
+  scope. The bound set is what the egress will authenticate. It needs no
+  declaration in the Recipe: a search provider is interchangeable and chosen
+  per call.
 
-A provider is **REST-bound** when the runtime holds an endpoint for its host with
-a credential: a `kind='api'` endpoint row
-(introspection-cloud `docs/design/endpoints.md`, "Runtime HTTP APIs"), at
-project, runtime, runtime group or environment scope. The bound set is what
-the egress will authenticate, so it is what `web_search` offers.
-
-The tool takes the REST-bound set as an input (`bound`), and
-`searchProvidersForHosts(hosts)` maps endpoint hosts to provider ids through
-each descriptor's `host`. The host discovers the hosts:
+`boundSearchProviders({ hosts, mcpServers })` applies both rules and returns
+the `bound` (REST) and `mcpServers` options for the tool: `hosts` are the
+egress's credentialed endpoint hosts, `mcpServers` the servers the Recipe keeps
+behind `web_search` with their bound URLs. The host discovers the hosts:
 
 - **Legacy provider lane:** the sandbox receives the credential-injected
   hosts as `INTROSPECTION_ENDPOINT_HOSTS` (comma-separated), which the data
@@ -367,14 +390,11 @@ each descriptor's `host`. The host discovers the hosts:
   today. The proposal is that the data plane keeps a non-secret list of
   credentialed endpoint hosts in the bootstrap (or keeps the variable as
   information only), and that the runtime passes it to Recipes. This needs a
-  platform decision.
+  platform decision; it no longer affects Tavily or Exa.
 - **Other hosts** pass `bound` themselves, and `credentialHeaders` when they
   attach credentials their own way.
 
-A REST-only provider needs no declaration in the Recipe: a search provider is
-interchangeable and chosen per call. A provider over MCP is declared, because
-its server is. A bound provider this package does not implement is not
-offered.
+A bound provider this package does not implement is not offered.
 
 ## Credentials
 
@@ -452,8 +472,8 @@ Not built. The intended shape:
 - An agent selects the tool as any other: `tools: [web_search]` in its
   agent file.
 - The host computes the bound set ([Bound providers](#bound-providers)) and,
-  when it is not empty, calls `registerWebSearchTool(pi, { bound,
-  mcpServers })` and
+  when it is not empty, calls `registerWebSearchTool(pi,
+  boundSearchProviders({ hosts, mcpServers }))` and
   offers `SEARCH_SKILL` (`skills/search/SKILL.md`), as it offers the
   documents skill with `documents`. The skill joins the Recipe isolation
   rule in `AGENTS.md`.
@@ -494,6 +514,10 @@ companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
   does, with each server's real output format (Tavily's text, Exa's text and
   JSON): tool name and arguments, MCP or REST per argument, notes, tool
   errors, refused calls and the MCP span. No live calls and no keys.
+- **Session:** `test/search-mcp-behind.test.ts` runs a Recipe session in each
+  `mcp.mode` with a fake Tavily MCP server behind `web_search`: the tool's
+  nested call reaches the server, and a direct call from the model or a
+  codemode script is refused.
 - **Evals:** a search provider is a REST API, so it fits eval-simulate's API
   fakes (introspection-cli `integrations/eval-simulate/docs/api-fakes.md`):
   one fake per provider under `fakes/api/<id>/`, its manifest naming the host
@@ -543,13 +567,6 @@ Possible additions, each only once a real Recipe needs it:
    `default` to `advanced`.
 6. **Exa `fast`.** Keep the legacy `fast` type, or move to `lite` and accept
    that it rejects some arguments?
-7. **MCP first for Tavily.** Tavily's MCP tool returns no date or score, so
-   its results lose the date that REST gives. Prefer MCP anyway, or call
-   REST whenever both are bound?
-8. **PR #375.** The MCP path assumes it lands as described: `codemode`
-   servers on Pi's client, `mcpToolName` exported, Pi 1.3.0 or newer. Should
-   `web_search`'s MCP servers also work under `mcp.mode: tools`, through a
-   second backing?
-9. **Parallel's and Keenable's MCP tools.** Their tool arguments and result
+7. **Parallel's and Keenable's MCP tools.** Their tool arguments and result
    shapes need a `tools/list` and one call against the live servers before
    their adapters are written.

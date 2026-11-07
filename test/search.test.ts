@@ -5,13 +5,13 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  boundSearchProviders,
   BUILTIN_SEARCH_PROVIDERS,
   createWebSearch,
   piSearchMcpClient,
   registerWebSearchTool,
   SEARCH_PROVIDER_API_VERSION,
   SEARCH_SKILL,
-  searchProvidersForHosts,
   webSearchParameters,
   type McpCallToolResult,
   type SearchProviderId,
@@ -19,7 +19,7 @@ import {
   type WebSearchOptions,
   type WebSearchResult,
 } from "../src/search/index.js";
-import { mcpToolName } from "../src/search/mcp.js";
+import { mcpToolName } from "../src/mcp/pi-client.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 interface Recorded {
@@ -257,14 +257,30 @@ describe("web_search schema", () => {
     }
   });
 
-  it("finds the bound providers from the egress hosts", () => {
+  it("binds REST-only providers by egress host, and MCP providers by their bound server", () => {
+    const hosts = [
+      "api.anthropic.com",
+      "API.SEARCH.BRAVE.COM",
+      "api.exa.ai",
+      "api.tavily.com",
+    ];
+    expect(boundSearchProviders({ hosts })).toEqual({
+      bound: ["brave"],
+      mcpServers: {},
+    });
     expect(
-      searchProvidersForHosts([
-        "api.anthropic.com",
-        "API.SEARCH.BRAVE.COM",
-        "api.exa.ai",
-      ]),
-    ).toEqual(["brave", "exa"]);
+      boundSearchProviders({
+        hosts,
+        mcpServers: [
+          { id: "web", url: "https://mcp.tavily.com/mcp/" },
+          { id: "exa", url: "http://127.0.0.1:7353/exa/mcp" },
+          { id: "other", url: "https://mcp.example.com/mcp" },
+        ],
+      }),
+    ).toEqual({
+      bound: ["brave", "exa", "tavily"],
+      mcpServers: { exa: "exa", tavily: "web" },
+    });
   });
 });
 
@@ -624,12 +640,6 @@ describe("web_search over a provider's MCP server", () => {
   const EXA_ADVANCED = mcpToolName("exa", "web_search_advanced_exa");
   const EXA_DEFAULT = mcpToolName("exa", "web_search_exa");
 
-  it("names MCP tools as Pi does", () => {
-    expect(TAVILY).toBe("mcp__tavily__tavily_search");
-    expect(mcpToolName("my-search", "x.y")).toBe("mcp__my_search__x_y");
-    expect(mcpToolName("s".repeat(40), "t".repeat(40))).toHaveLength(64);
-  });
-
   it("calls Tavily's MCP tool through Pi's executeTool, with an MCP span", async () => {
     const rest = await fakeApi(() => ({ body: tavilyBody }));
     const { ctx, calls } = fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) });
@@ -777,6 +787,30 @@ describe("web_search over a provider's MCP server", () => {
     const filtered = await call({ query: "q", freshness: "day" });
     expect(filtered.details.transport).toBe("rest");
     expect(rest.requests).toHaveLength(1);
+  });
+
+  it("takes an MCP tool as its server's only when Pi's namespace says so", () => {
+    const { ctx } = fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) });
+    const namespaced = (name: string, aliases: string[]) => () => [
+      { name: TAVILY, namespace: { name, aliases } as never },
+    ];
+    expect(piSearchMcpClient(ctx).hasTool("tavily", "tavily_search")).toBe(
+      true,
+    );
+    expect(
+      piSearchMcpClient(ctx, namespaced("mcp__tavily", ["tavily"])).hasTool(
+        "tavily",
+        "tavily_search",
+      ),
+    ).toBe(true);
+    // Another server's tool that Pi happened to give the same name.
+    expect(
+      piSearchMcpClient(ctx, namespaced("mcp__tavily", ["other"])).hasTool(
+        "tavily",
+        "tavily_search",
+      ),
+    ).toBe(false);
+    expect(piSearchMcpClient(ctx).hasTool("exa", "web_search_exa")).toBe(false);
   });
 
   it("reports a tool error, a call Pi refused, and an MCP-only provider with no client", async () => {

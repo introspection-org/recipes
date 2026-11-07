@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
-
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { SpanKind, SpanStatusCode, type Tracer } from "@opentelemetry/api";
 
+import { isPiMcpServerTool, mcpToolName } from "../mcp/pi-client.js";
 import { SearchProviderError } from "./types.js";
 
 /** An MCP `CallToolResult`, without `_meta`: what a search provider's MCP tool answers. */
@@ -26,25 +26,6 @@ export interface SearchMcpClient {
   ): Promise<McpCallToolResult>;
 }
 
-// Pi's limit for a tool name, which its MCP tool names are shortened to.
-const MAX_TOOL_NAME_LENGTH = 64;
-
-/**
- * The Pi tool name of an MCP tool: `mcp__<server>__<tool>`, every character
- * outside `[A-Za-z0-9_]` replaced by `_`, and a hash suffix past 64
- * characters. The same rule as `mcpToolName` in PR #375
- * (`src/mcp/pi-client.ts`), which this replaces once that lands.
- */
-export function mcpToolName(serverId: string, toolName: string): string {
-  const name = `mcp__${serverId}__${toolName}`.replace(/[^A-Za-z0-9_]/g, "_");
-  if (name.length <= MAX_TOOL_NAME_LENGTH) return name;
-  const hash = createHash("sha256")
-    .update(`${serverId}\0${toolName}`)
-    .digest("hex")
-    .slice(0, 8);
-  return `${name.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1)}_${hash}`;
-}
-
 /** The part of Pi's tool context `web_search` uses (`ExtensionToolContext`). */
 export interface PiToolContext {
   readonly tools: readonly { name: string }[];
@@ -61,19 +42,30 @@ export interface PiToolContext {
   }>;
 }
 
+/** What Pi says of a registered tool (`pi.getAllTools()`), enough to tell its MCP server. */
+export type PiToolInfo = Pick<ToolInfo, "name" | "namespace">;
+
 /**
- * The MCP client over Pi's built-in one: each server a Recipe binds under
- * `mcp.mode: codemode` (PR #375) is connected in the Pi process, and its
- * tools are reachable as `mcp__<server>__<tool>` through `ctx.executeTool`.
- * Pi returns the whole `CallToolResult` as the nested call's
- * `structuredContent`; a call Pi refuses (unknown tool, blocked) has none.
+ * The MCP client over Pi's built-in one: each server a Recipe binds on Pi's
+ * client (`mcp.mode: codemode`, or any mode with `behind`) is connected in
+ * the Pi process, and its tools are reachable as `mcpToolName(server, tool)`
+ * through `ctx.executeTool`. `toolInfos` (the extension's `pi.getAllTools`)
+ * confirms that a tool so named is the server's by Pi's namespace; without
+ * it, the name alone decides. Pi returns the whole `CallToolResult` as the
+ * nested call's `structuredContent`; a call Pi refuses (unknown tool,
+ * blocked) has none.
  */
-export function piSearchMcpClient(ctx: PiToolContext): SearchMcpClient {
+export function piSearchMcpClient(
+  ctx: PiToolContext,
+  toolInfos?: () => readonly PiToolInfo[],
+): SearchMcpClient {
   return {
-    hasTool: (server, tool) =>
-      ctx.tools.some(
-        (candidate) => candidate.name === mcpToolName(server, tool),
-      ),
+    hasTool(server, tool) {
+      const name = mcpToolName(server, tool);
+      if (!ctx.tools.some((candidate) => candidate.name === name)) return false;
+      const info = toolInfos?.().find((candidate) => candidate.name === name);
+      return info ? isPiMcpServerTool(info, server) : true;
+    },
     async callTool(server, tool, args, signal) {
       const outcome = await ctx.executeTool(
         mcpToolName(server, tool),

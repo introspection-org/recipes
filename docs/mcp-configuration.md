@@ -147,7 +147,8 @@ derived agent. Every resolved agent owns its mode independently.
 
 A server can sit behind one of the agent's own tools, so the model sees that
 one stable tool and the Recipe can change or compare the providers behind it.
-The productivity tools (`mail`, `calendar`, `drive`) work this way:
+The productivity tools (`mail`, `calendar`, `drive`) work this way, as does
+`web_search` with its providers' servers ([Web search](search/README.md#declare-the-servers)):
 
 ```yaml
 tools: [mail]

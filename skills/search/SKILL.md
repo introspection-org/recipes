@@ -29,6 +29,9 @@ call.
 | Only some sites, or none from some | `sites: ["docs.python.org"]`, `sites: ["-pinterest.com"]` |
 | More candidates | `max_results` up to 10; default 5 |
 
+`web_search` is the only way to search. A search provider's own tools, if you see their
+names, are reachable only through it, and a direct call is refused.
+
 When `provider` is offered, each call may use a different one. Name one when several are
 offered: a call without it fails and lists them. Prefer one provider for a task, and try
 another when it returns nothing useful.

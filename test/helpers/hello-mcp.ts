@@ -11,9 +11,42 @@ export interface HelloMcp {
   close(): Promise<void>;
 }
 
+/** A tool the server lists, and the text its call answers. */
+export interface HelloMcpTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  answer(args: Record<string, unknown>): string;
+}
+
+const HELLO_TOOLS: HelloMcpTool[] = [
+  {
+    name: "echo",
+    description: "Echo a message back.",
+    inputSchema: {
+      type: "object",
+      properties: { message: { type: "string" } },
+      required: ["message"],
+    },
+    answer: (args) => `Echo: ${String(args.message)}`,
+  },
+  {
+    name: "get_greeting",
+    description: "Return a fixed greeting.",
+    inputSchema: { type: "object", properties: {} },
+    answer: () => "hello from the local MCP",
+  },
+];
+
 export async function startHelloMcp(
-  options: { bearer?: string; initializeDelayMs?: number } = {},
+  options: {
+    bearer?: string;
+    initializeDelayMs?: number;
+    /** In place of `echo` and `get_greeting`. */
+    tools?: HelloMcpTool[];
+  } = {},
 ): Promise<HelloMcp> {
+  const tools = options.tools ?? HELLO_TOOLS;
   const calls: HelloMcp["calls"] = [];
   let sessions = 0;
   const server: Server = createServer((req, res) => {
@@ -66,22 +99,11 @@ export async function startHelloMcp(
           return;
         case "tools/list":
           reply({
-            tools: [
-              {
-                name: "echo",
-                description: "Echo a message back.",
-                inputSchema: {
-                  type: "object",
-                  properties: { message: { type: "string" } },
-                  required: ["message"],
-                },
-              },
-              {
-                name: "get_greeting",
-                description: "Return a fixed greeting.",
-                inputSchema: { type: "object", properties: {} },
-              },
-            ],
+            tools: tools.map(({ name, description, inputSchema }) => ({
+              name,
+              description,
+              inputSchema,
+            })),
           });
           return;
         case "tools/call": {
@@ -92,9 +114,7 @@ export async function startHelloMcp(
           >;
           calls.push({ name, arguments: args });
           const text =
-            name === "echo"
-              ? `Echo: ${String(args.message)}`
-              : "hello from the local MCP";
+            tools.find((tool) => tool.name === name)?.answer(args) ?? "";
           reply({
             content: [{ type: "text", text }],
             structuredContent: { result: text },

@@ -1,15 +1,16 @@
 export {
+  boundSearchProviders,
   BUILTIN_SEARCH_PROVIDERS,
   createWebSearch,
   formatWebSearch,
   registerWebSearchTool,
   SEARCH_SKILL,
   SEARCH_TOOL_NAME,
-  searchProvidersForHosts,
   webSearchMcpToolNames,
   webSearchParameters,
 } from "./tool.js";
 export type {
+  SearchBindings,
   SearchProviders,
   WebSearch,
   WebSearchCall,
@@ -19,6 +20,7 @@ export { piSearchMcpClient } from "./mcp.js";
 export type {
   McpCallToolResult,
   PiToolContext,
+  PiToolInfo,
   SearchMcpClient,
 } from "./mcp.js";
 export { egressCredentialHeaders } from "./egress.js";
