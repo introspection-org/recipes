@@ -3486,6 +3486,8 @@ fn validate_agent_string_array(
     }
 }
 
+const AGENT_MCP_SERVER_KEYS: [&str; 4] = ["include", "exclude", "defer", "eager"];
+
 fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Option<AgentMcpConfig> {
     let value = map.get("mcp")?;
     let Some(mcp) = value.as_object() else {
@@ -3569,17 +3571,7 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             );
             continue;
         };
-        for key in server
-            .keys()
-            .filter(|key| !matches!(key.as_str(), "include" | "exclude" | "defer" | "eager"))
-        {
-            ctx.error(
-                "agent.mcp_key_unknown",
-                path,
-                format!("Agent mcp server '{server_id}' contains unknown field '{key}'"),
-                Some("use only include, exclude, defer, and eager"),
-            );
-        }
+        reject_unknown_mcp_server_keys(server, server_id, path, ctx);
         let mut selectors = McpToolSelectors::default();
         for key in ["include", "exclude", "defer", "eager"] {
             let Some(value) = server.get(key) else {
@@ -3685,6 +3677,25 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
         mode,
         servers: parsed,
     })
+}
+
+fn reject_unknown_mcp_server_keys(
+    server: &JsonMap,
+    server_id: &str,
+    path: &str,
+    ctx: &mut CheckContext,
+) {
+    for key in server
+        .keys()
+        .filter(|key| !AGENT_MCP_SERVER_KEYS.contains(&key.as_str()))
+    {
+        ctx.error(
+            "agent.mcp_key_unknown",
+            path,
+            format!("Agent mcp server '{server_id}' contains unknown field '{key}'"),
+            Some("use only include, exclude, defer, and eager"),
+        );
+    }
 }
 
 fn validate_agent_system_instructions(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
