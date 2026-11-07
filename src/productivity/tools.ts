@@ -651,7 +651,7 @@ export function registerProductivityTools(
         },
       },
       read: {
-        description: `Read one message, or every message in a thread, as plain text with its attachments. Bodies are cut at ${BODY_LIMIT_CHARS} characters; a cut body says so.`,
+        description: `Read one message, or every message in a thread, as plain text with its attachments. Bodies are cut at ${BODY_LIMIT_CHARS} characters; a cut body says so, and a thread too long to read whole says so in unavailable.`,
         parameters: Type.Object({
           message: Type.Optional(
             Type.String({
@@ -674,7 +674,10 @@ export function registerProductivityTools(
               ? { message_id: handles.resolve("message", params.message).id }
               : { thread_id: handles.resolve("thread", params.thread).id };
           const result = await s.mail!.read!(args, ctx);
-          return { messages: result.messages.map(mailMessage) };
+          return {
+            messages: result.messages.map(mailMessage),
+            ...(result.unavailable ? { unavailable: result.unavailable } : {}),
+          };
         },
       },
       fetch_attachment: {

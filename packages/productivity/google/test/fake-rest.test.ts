@@ -376,6 +376,21 @@ describe("drive exports (the emulator has no files.export)", () => {
     expect(elsewhere.calls).toHaveLength(1);
   });
 
+  it("keeps mail search bounds to the second, with or without text", async () => {
+    const { backend: b, calls } = await backend([
+      ["GET", /\/messages$/, () => json({ messages: [] })],
+    ]);
+    const after = "2026-03-02T12:00:00Z";
+    const before = "2026-03-02T13:30:00+01:00";
+    await b.mail.search({ after, before, limit: 5 });
+    await b.mail.search({ query: "plan", after, before, limit: 5 });
+    const bounds = `after:${Date.parse(after) / 1000} before:${Date.parse(before) / 1000}`;
+    expect(calls.map((call) => call.url.searchParams.get("q"))).toEqual([
+      bounds,
+      `plan ${bounds}`,
+    ]);
+  });
+
   it("builds a Drive query with escaped literals", async () => {
     const { backend: b, calls } = await backend([
       ["GET", /\/drive\/v3\/files$/, () => json({ files: [] })],
