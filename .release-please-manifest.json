@@ -1,6 +1,8 @@
 {
-  ".": "0.49.0",
+  ".": "0.50.0",
   "packages/channels/slack": "0.7.0",
   "packages/documents/docx": "0.4.0",
-  "packages/documents/pdf": "0.3.0"
+  "packages/documents/pdf": "0.3.0",
+  "packages/productivity/google": "0.1.0",
+  "packages/productivity/microsoft": "0.1.0"
 }
