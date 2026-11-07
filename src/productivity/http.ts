@@ -126,15 +126,56 @@ function httpRequestSpan(
   };
 }
 
-/** The attributes a response adds: its status and, for JSON, its body up to the cap. */
-function httpResponseAttributes(status: number, body?: string): Attributes {
+/** Keys whose value is a link that carries its own credential. */
+const CREDENTIAL_KEYS =
+  /^(uploadUrl|@microsoft\.graph\.downloadUrl|downloadUrl)$/i;
+
+/** Query parameters that make a URL a credential. */
+const CREDENTIAL_QUERY =
+  /[?&](tempauth|sig|signature|token|access_token|x-amz-signature|x-goog-signature|x-goog-credential)=/i;
+
+const REDACTED = "[redacted]";
+
+/** A JSON body with every pre-authenticated link replaced, or undefined when it is not JSON. */
+function redactedBody(text: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const redact = (value: unknown, key?: string): unknown => {
+    if (typeof value === "string")
+      return (key !== undefined && CREDENTIAL_KEYS.test(key)) ||
+        CREDENTIAL_QUERY.test(value)
+        ? REDACTED
+        : value;
+    if (Array.isArray(value)) return value.map((item) => redact(item));
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value).map(([k, v]) => [k, redact(v, k)]),
+      );
+    return value;
+  };
+  return JSON.stringify(redact(parsed));
+}
+
+/** The attributes a response adds: its status and, when recorded, its redacted JSON body up to the cap. */
+function httpResponseAttributes(
+  status: number,
+  body?: string,
+  record = false,
+): Attributes {
   const attributes: Attributes = { "http.response.status_code": status };
   if (status >= 400) attributes["error.type"] = String(status);
   if (body !== undefined) {
     const size = Buffer.byteLength(body);
     attributes["http.response.body.size"] = size;
-    if (size <= MAX_RECORDED_BODY_BYTES)
-      attributes[RESPONSE_BODY_ATTRIBUTE] = body;
+    const recorded =
+      record && size <= MAX_RECORDED_BODY_BYTES
+        ? redactedBody(body)
+        : undefined;
+    if (recorded !== undefined) attributes[RESPONSE_BODY_ATTRIBUTE] = recorded;
   }
   return attributes;
 }
@@ -224,6 +265,7 @@ export function createProductivityHttp(
         httpResponseAttributes(
           response.status,
           isJson(response) ? text : undefined,
+          request.record ?? request.read === true,
         ),
       );
       return buffered(response, bytes, text);

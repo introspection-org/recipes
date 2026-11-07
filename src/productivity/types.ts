@@ -660,6 +660,12 @@ export interface ProductivityHttpRequest {
   readonly operation?: string;
   /** A read, retried while the provider is throttled; anything else is sent once. */
   readonly read?: boolean;
+  /**
+   * Whether the JSON answer may be recorded on the request's span. Default:
+   * only for a read. A write's answer (an upload session's URL, say) can carry
+   * a credential, so it is recorded only when the provider says it is safe.
+   */
+  readonly record?: boolean;
   /** Whether a failed answer also means throttled, beyond 429 and 5xx (such as Google's 403 `rateLimitExceeded`). */
   readonly throttled?: (status: number, body: string) => boolean;
   /** A pre-authenticated URL, which carries its own credential: no `Authorization` is added. */

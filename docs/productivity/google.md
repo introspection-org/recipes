@@ -173,8 +173,10 @@ Excel and PowerPoint files are the same problem.
   `attachmentId` changes between reads. Draft bodies are sent as
   `text/plain` (the Markdown as written); `update_draft` without `body` keeps
   the draft's body (an HTML one as HTML, a stored one fetched) and refuses
-  the update when that body cannot be read. A header value containing a line break is
-  refused. A reply drafted with no `to` goes to the parent's
+  the update when that body cannot be read. `update_draft` keeps the draft's
+  `Bcc`, and refuses a draft with attachments or with a `Reply-To` or
+  `Resent-*` header, which the rebuilt draft would drop. A header value
+  containing a line break is refused. A reply drafted with no `to` goes to the parent's
   `Reply-To`, else its `From`, or to its `To` when the person sent it, as
   Gmail's own Reply does; it never adds the other recipients. `mail move` adds the label and removes `INBOX`;
   `archive` only removes `INBOX`; `SENT` and `DRAFT` cannot be set.
@@ -184,7 +186,11 @@ Excel and PowerPoint files are the same problem.
   `respond` and `cancel` address the calendar it came from (`create` always
   writes to the primary calendar). An event without its own zone is shown in
   its calendar's zone: `list` takes it from `events.list`, and `read` and
-  `update` from `calendars.get`, read once per calendar per session.
+  `update` from `calendars.get`, read once per calendar per session. When
+  `calendars.get` is refused (a connection with only `calendar.events`), the
+  zone is the fixed one of the event's own offset (`Etc/GMT-1` for
+  `+01:00`), or UTC, so neither a read nor a write that already happened
+  fails on it.
   `create` and `update` send local times with
   `timeZone`, which Calendar reads in that zone. `respond` patches the
   attendee list with only the person's own `responseStatus` and comment
@@ -206,9 +212,11 @@ Excel and PowerPoint files are the same problem.
   request by the discovery document's path from the host's root, such as
   `GET /gmail/v1/users/{userId}/messages/{id}`, and its method id as
   `introspection.api.operation_id` (such as `gmail.users.messages.get`). A
-  JSON answer up to 256 KiB is recorded under `gen_ai.tool.call.result`, so
-  the Introspection processor seals it as it seals tool results; bytes,
-  headers, paths and queries never are.
+  read's JSON answer up to 256 KiB is recorded under
+  `gen_ai.tool.call.result`, so the Introspection processor seals it as it
+  seals tool results; a write's answer, bytes, headers, paths and queries
+  never are. The resumable upload's session URI comes back in a header, and
+  the Drive fields the package asks for carry no signed link.
 - **Not yet:** a live-domain test.
 
 Request and response shapes come from Google's discovery documents as

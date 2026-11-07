@@ -103,6 +103,44 @@ describe("calendar commands the emulator lacks (events.get, events.patch)", () =
     );
   });
 
+  it("falls back to the event's own offset when the calendar's zone is refused, after a write as on a read", async () => {
+    const zoneless = {
+      id: "e3",
+      summary: "Sync",
+      start: { dateTime: "2025-11-10T10:00:00+01:00" },
+      end: { dateTime: "2025-11-10T10:30:00+01:00" },
+    };
+    const { backend: b, calls } = await backend([
+      [
+        "PATCH",
+        /\/events\/e3$/,
+        () => json({ ...zoneless, summary: "Sync 2" }),
+      ],
+      ["GET", /\/events\/e3$/, () => json(zoneless)],
+      [
+        "GET",
+        /\/calendars\/primary$/,
+        () => googleError(403, "insufficientPermissions"),
+      ],
+    ]);
+    const updated = await b.calendar.update({
+      event_id: "e3",
+      title: "Sync 2",
+    });
+    expect(updated).toMatchObject({
+      title: "Sync 2",
+      start: "2025-11-10T10:00:00+01:00",
+      time_zone: "Etc/GMT-1",
+    });
+    const read = await b.calendar.read({ event_id: "e3" });
+    expect(read.time_zone).toBe("Etc/GMT-1");
+    expect(calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
+    // A refused zone is not asked for again.
+    expect(
+      calls.filter((call) => call.url.pathname.endsWith("/calendars/primary")),
+    ).toHaveLength(1);
+  });
+
   it("finds a calendar by name or ID on a later page of the person's list", async () => {
     const late = "late@group.calendar.google.com";
     const { backend: b, calls } = await backend([
@@ -405,22 +443,31 @@ describe("drive exports (the emulator has no files.export)", () => {
         () =>
           json({
             id: "new",
-            name: "big.bin",
-            mimeType: "application/octet-stream",
+            name: "big.txt",
+            mimeType: "text/plain",
           }),
       ],
     ]);
     await expect(
       b.drive.upload({
-        name: "big.bin",
-        mime_type: "application/octet-stream",
+        name: "big.txt",
+        mime_type: "text/plain",
         bytes: big,
         folder_id: "f",
       }),
     ).resolves.toMatchObject({ id: "new" });
     expect(calls[0]!.url.searchParams.get("uploadType")).toBe("resumable");
-    expect(bodyJson(calls[0]!)).toEqual({ name: "big.bin", parents: ["f"] });
+    expect(bodyJson(calls[0]!)).toEqual({
+      name: "big.txt",
+      parents: ["f"],
+      mimeType: "text/plain",
+    });
+    expect(calls[0]!.init.headers).toMatchObject({
+      "X-Upload-Content-Type": "text/plain",
+      "X-Upload-Content-Length": String(big.byteLength),
+    });
     expect(calls[1]!.url.toString()).toBe(session);
+    expect(calls[1]!.init.headers["Content-Type"]).toBe("text/plain");
 
     const elsewhere = await backend([
       [
@@ -840,6 +887,50 @@ describe("mail parsing", () => {
       expect(raw).toContain("Subject: Re: Plan\r\n");
     });
   }
+
+  it("keeps a draft's Bcc on an update, and refuses one that would drop Reply-To", async () => {
+    const draft = (extra: Array<{ name: string; value: string }>) => () =>
+      json({
+        id: "d1",
+        message: {
+          id: "m4",
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "To", value: "a@example.com" },
+              { name: "Bcc", value: "Boss <boss@example.com>, c@example.com" },
+              { name: "Subject", value: "Plan" },
+              ...extra,
+            ],
+            body: { data: Buffer.from("hi").toString("base64url") },
+          },
+        },
+      });
+    const kept = await backend([
+      ["GET", /\/drafts\/d1$/, draft([])],
+      ["PUT", /\/drafts\/d1$/, () => json({ id: "d1", message: { id: "m4" } })],
+    ]);
+    await kept.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" });
+    const raw = new TextDecoder().decode(
+      decodeBase64Url(
+        (bodyJson(kept.calls[1]!) as { message: { raw: string } }).message.raw,
+      ),
+    );
+    expect(raw).toContain("Bcc: Boss <boss@example.com>, c@example.com\r\n");
+    expect(raw).toContain("Subject: Plan v2\r\n");
+
+    const replyTo = await backend([
+      [
+        "GET",
+        /\/drafts\/d1$/,
+        draft([{ name: "Reply-To", value: "list@example.com" }]),
+      ],
+    ]);
+    await expect(
+      replyTo.backend.mail.updateDraft({ draft_id: "d1", subject: "Plan v2" }),
+    ).rejects.toMatchObject({ productivity: { code: "invalid_request" } });
+    expect(replyTo.calls).toHaveLength(1);
+  });
 
   it("composes a draft whose headers cannot be injected", () => {
     const raw = Buffer.from(

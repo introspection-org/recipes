@@ -142,6 +142,14 @@ function textContent(text: string): ProductivityContent {
   return { content_type: "text", content: text };
 }
 
+/** Recipient headers a draft update cannot carry, so it refuses rather than drop them. */
+const UNKEPT_RECIPIENT_HEADERS = [
+  "Reply-To",
+  "Resent-To",
+  "Resent-Cc",
+  "Resent-Bcc",
+];
+
 /** The largest body part Gmail stores apart from the message that a read fetches. */
 const MAX_STORED_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -436,10 +444,18 @@ export class GoogleRestMail implements Required<MailSession> {
     const current = await this.gmail.getDraft(args.draft_id, ctx.signal);
     const payload = current.message?.payload;
     const parent = header(payload, "In-Reply-To");
-    // The rebuilt message carries only the body, and Gmail replaces the whole draft.
+    // The rebuilt message carries only the body, To, Cc and Bcc, and Gmail
+    // replaces the whole draft.
     if (parseMailPayload(payload).attachments.length > 0)
       throw invalid(
         "This draft has attachments, which an update would remove. The draft was not changed.",
+      );
+    const lost = UNKEPT_RECIPIENT_HEADERS.filter((name) =>
+      header(payload, name)?.trim(),
+    );
+    if (lost.length > 0)
+      throw invalid(
+        `This draft has ${lost.join(", ")}, which an update would remove. The draft was not changed.`,
       );
     let kept: ProductivityContent | undefined;
     if (args.body === undefined && current.message) {
@@ -457,8 +473,10 @@ export class GoogleRestMail implements Required<MailSession> {
       cc: args.cc ? [...args.cc] : splitAddresses(header(payload, "Cc")),
       subject: args.subject ?? header(payload, "Subject") ?? "",
     };
+    const bcc = splitAddresses(header(payload, "Bcc"));
     const raw = composeRawMessage({
       ...fields,
+      ...(bcc.length ? { bcc } : {}),
       body: args.body ?? kept?.content ?? "",
       html: kept?.content_type === "html",
       inReplyTo: {
@@ -587,6 +605,13 @@ function eventDateTime(
   return allDay ? { date: value } : { dateTime: value, timeZone };
 }
 
+/** `Etc/GMT-1` for `+01:00`: the IANA zone of a whole-hour offset; UTC otherwise. */
+function offsetZone(dateTime: string | undefined): string | undefined {
+  const match = /([+-])(\d{2}):00$/.exec(dateTime ?? "");
+  if (!match || match[2] === "00") return undefined;
+  return `Etc/GMT${match[1] === "+" ? "-" : "+"}${Number(match[2])}`;
+}
+
 function looksLikeHtml(text: string): boolean {
   return /<\/?[a-z][^>]*>/i.test(text);
 }
@@ -672,20 +697,30 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
 
   constructor(readonly calendar: CalendarClient) {}
 
-  /** The zone an event without its own is shown in: its calendar's, as `events.list` gives it. */
-  private zoneFor(
+  /**
+   * The zone an event without its own is shown in: its calendar's, as
+   * `events.list` gives it. When `calendars.get` is refused (a connection with
+   * only `calendar.events`), the fixed zone of the event's own offset, so a
+   * read degrades and a write that already happened never reports failure.
+   */
+  private async zoneFor(
     calendarId: string,
     event: GoogleEvent,
     signal?: AbortSignal,
   ): Promise<string | undefined> {
-    if (event.start?.timeZone) return Promise.resolve(undefined);
+    if (event.start?.timeZone) return undefined;
     let zone = this.zones.get(calendarId);
     if (!zone) {
-      zone = this.calendar.calendarZone(calendarId, signal);
-      zone.catch(() => this.zones.delete(calendarId));
+      zone = this.calendar.calendarZone(calendarId, signal).catch((error) => {
+        if (signal?.aborted) {
+          this.zones.delete(calendarId);
+          throw error;
+        }
+        return undefined;
+      });
       this.zones.set(calendarId, zone);
     }
-    return zone;
+    return (await zone) ?? offsetZone(event.start?.dateTime);
   }
 
   /** A calendar named by its title (or ID) on the person's list; absent means primary. */
