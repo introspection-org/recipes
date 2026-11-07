@@ -23,7 +23,9 @@ export type IntrospectionOpenTarget =
   /** A Runtime's page. */
   | { kind: "runtime"; runtime: string }
   /** A task's chat. */
-  | { kind: "task"; task: string };
+  | { kind: "task"; task: string }
+  /** A new repository the person creates on GitHub, registered once the App reaches it. */
+  | { kind: "repository"; provider: "github"; name: string; template?: string };
 
 export type IntrospectionOpenTargetKind = IntrospectionOpenTarget["kind"];
 
@@ -36,6 +38,7 @@ export const INTROSPECTION_OPEN_TARGET_KINDS: readonly IntrospectionOpenTargetKi
     "binding",
     "runtime",
     "task",
+    "repository",
   ];
 
 /** The answers a host resumes an `introspection_open` interrupt with, as `payload.answer`. */
@@ -107,6 +110,19 @@ export function parseIntrospectionOpenTarget(
       const task = text(raw.task);
       return task ? { kind: "task", task } : null;
     }
+    case "repository": {
+      const name = text(raw.name);
+      const template = text(raw.template);
+      if (!name || (raw.provider !== undefined && raw.provider !== "github")) {
+        return null;
+      }
+      return {
+        kind: "repository",
+        provider: "github",
+        name,
+        ...(template ? { template } : {}),
+      };
+    }
     default:
       return null;
   }
@@ -165,5 +181,7 @@ export function introspectionOpenAction(
       return "Open the runtime";
     case "task":
       return "Open the task";
+    case "repository":
+      return `Create ${target.name} on GitHub`;
   }
 }

@@ -138,6 +138,34 @@ describe("introspection_open targets", () => {
       introspectionOpenCliArgs({ kind: "sso", provider: "google" }, true),
     ).toBeNull();
   });
+
+  it("reads a new GitHub repository and opens it with its template", () => {
+    expect(
+      parseIntrospectionOpenTarget({
+        kind: "repository",
+        name: " my-agent ",
+        template: "introspection-recipes/template-starter",
+      }),
+    ).toEqual({
+      kind: "repository",
+      provider: "github",
+      name: "my-agent",
+      template: "introspection-recipes/template-starter",
+    });
+    expect(
+      parseIntrospectionOpenTarget({
+        kind: "repository",
+        provider: "gitlab",
+        name: "x",
+      }),
+    ).toBeNull();
+    expect(
+      introspectionOpenCliArgs(
+        { kind: "repository", provider: "github", name: "my-agent" },
+        true,
+      ),
+    ).toEqual(["open", "--repository", "--name", "my-agent", "--wait"]);
+  });
 });
 
 describe("introspection_open on a pause/resume host", () => {

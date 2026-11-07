@@ -142,6 +142,23 @@ const target = Type.Union([
     },
     { additionalProperties: false, description: "Show a task's chat." },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal("repository"),
+      provider: Type.Literal("github"),
+      name: Type.String({ description: "The new repository's name." }),
+      template: Type.Optional(
+        Type.String({
+          description: "`owner/repo` of a template repository to start from.",
+        }),
+      ),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "The person creates a new repository on GitHub, which is then registered with the project.",
+    },
+  ),
 ]);
 
 const parameters = Type.Object(
@@ -162,7 +179,7 @@ const parameters = Type.Object(
 );
 
 const description = [
-  "Ask the person to open an Introspection page: install an integration (GitHub, Slack), add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, or look at a Runtime or task.",
+  "Ask the person to open an Introspection page: install an integration (GitHub, Slack), create a GitHub repository, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, or look at a Runtime or task.",
   "Name the target; never write a link yourself. With wait: true the conversation pauses until they finish, and the result is `Answer: connected`, `Answer: returned` (for a page), `Answer: failed: <reason>`, or a decline.",
   "The answer is what the person did, not proof: after `connected`, read the real state with the CLI (`introspection integrations list`, `introspection connectors connections list`, `introspection bindings mcp list`) before saying it is connected.",
   "Call it on its own in a turn, not beside a question, so the person does one thing at a time.",
@@ -188,6 +205,15 @@ export function introspectionOpenCliArgs(
       return ["open", "--runtime", target.runtime, ...waitFlag];
     case "task":
       return ["open", "--task", target.task, ...waitFlag];
+    case "repository":
+      return [
+        "open",
+        "--repository",
+        "--name",
+        target.name,
+        ...(target.template ? ["--template", target.template] : []),
+        ...waitFlag,
+      ];
     case "connector":
     case "sso":
       return null;
