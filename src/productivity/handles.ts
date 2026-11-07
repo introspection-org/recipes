@@ -26,6 +26,12 @@ interface AttachmentIdentity {
   name: string;
 }
 
+/** Where a listing resumes: the provider's cursor, and items it returned past the last page's limit. */
+export interface CursorState<T = unknown> {
+  value?: string;
+  overflow: readonly T[];
+}
+
 interface FileIdentity {
   id: string;
   is_folder?: boolean;
@@ -37,7 +43,7 @@ interface Identities {
   attachment: AttachmentIdentity;
   event: { id: string };
   file: FileIdentity;
-  cursor: { value: string; scope: string };
+  cursor: CursorState & { scope: string };
 }
 
 const NAMES: Record<ProductivityHandleKind, string> = {
@@ -109,21 +115,21 @@ export class ProductivityHandleStore {
     }
   }
 
-  /** A provider cursor, wrapped in a handle valid only for the same command and arguments. */
-  cursor(value: string, scope: string): string {
+  /** Where a listing resumes, wrapped in a handle valid only for the same command and arguments. */
+  cursor(state: CursorState, scope: string): string {
     const handle = mint(PREFIXES.cursor);
-    this.items.set(handle, { value, scope });
+    this.items.set(handle, { ...state, scope });
     return handle;
   }
 
-  resolveCursor(handle: string, scope: string): string {
-    const cursor = this.resolve("cursor", handle);
-    if (cursor.scope !== scope) {
+  resolveCursor<T = unknown>(handle: string, scope: string): CursorState<T> {
+    const { scope: owner, ...state } = this.resolve("cursor", handle);
+    if (owner !== scope) {
       throw new ProductivityHandleError(
         `Cursor '${handle}' belongs to another search. Repeat the original arguments with it.`,
       );
     }
-    return cursor.value;
+    return state as CursorState<T>;
   }
 
   resolve<K extends ProductivityHandleKind>(

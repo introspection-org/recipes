@@ -92,6 +92,14 @@ function fakeSession(calls: Calls): ProductivitySession {
             status: 403,
           });
         if (args.query === "boom") throw new Error("socket hang up");
+        if (args.query === "many") {
+          // A provider page it cannot cut: five items whatever the limit.
+          const ids = args.cursor === "after-5" ? [6] : [1, 2, 3, 4, 5];
+          return {
+            messages: ids.map((n) => ({ id: `m-${n}`, subject: `#${n}` })),
+            ...(args.cursor ? {} : { cursor: "after-5" }),
+          };
+        }
         return {
           messages: [
             {
@@ -349,6 +357,33 @@ describe("productivity tools", () => {
       cursor: page.details.cursor,
     });
     expect(wrong.details.error.message).toContain("another search");
+  });
+
+  it("keeps a provider's items past the limit for the next page", async () => {
+    const { run, calls } = setup();
+    const subjects: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await run("mail", {
+        command: "search",
+        query: "many",
+        limit: 2,
+        ...(cursor ? { cursor } : {}),
+      });
+      expect(page.details.messages.length).toBeLessThanOrEqual(2);
+      subjects.push(
+        ...page.details.messages.map((m: { subject: string }) => m.subject),
+      );
+      cursor = page.details.cursor;
+      pages += 1;
+    } while (cursor && pages < 10);
+    expect(subjects).toEqual(["#1", "#2", "#3", "#4", "#5", "#6"]);
+    // The overflow is served from the cursor, not fetched again.
+    expect(calls.map(([, args]) => args)).toEqual([
+      { query: "many", limit: 2 },
+      { query: "many", limit: 1, cursor: "after-5" },
+    ]);
   });
 
   it("sends only a draft this session created, and only once", async () => {

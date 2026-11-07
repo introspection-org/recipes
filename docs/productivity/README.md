@@ -283,10 +283,16 @@ Where the host differs from, or settles, the design above:
 - **Handles.** A draft is a `msg_…` handle that remembers the session
   created it; `mail update_draft` and `mail send` take only such a handle,
   and a sent draft's handle stops resolving. Pagination cursors are `cur_…`
-  handles valid only with the same command and arguments. A handle whose item
+  handles valid only with the same command and arguments. A page never holds
+  more than `limit` items: when a provider returns more, the host keeps the
+  rest in the cursor handle and serves them first on the next call, so a
+  provider's cursor never skips an item it returned. A handle whose item
   the provider reports `not_found` is dropped. `mail move` keeps the
   message's handle when the provider gives the moved message a new id.
-- **Arguments.** `mail search` `folder` is a folder (or Gmail label) name.
+- **Arguments.** `mail draft` with `reply_to` may leave `to` empty: the
+  reply then goes to the parent's sender (its `Reply-To`, else `From`), as
+  the provider's own Reply does, never to every recipient.
+  `mail search` `folder` is a folder (or Gmail label) name.
   `drive search` and `drive upload` take `folder` as a folder's `file_…`
   handle. `calendar list` and `calendar free_busy` take absolute RFC 3339
   times with an offset, and `free_busy` takes the `time_zone` of its result.

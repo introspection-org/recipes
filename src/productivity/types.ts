@@ -213,7 +213,12 @@ export interface ProductivityFileContent {
   readonly bytes: Uint8Array;
 }
 
-/** A page of results. `cursor` is the provider's own; the host wraps it in a handle. */
+/**
+ * A page of results. `cursor` is the provider's own and resumes after the last
+ * item returned; the host wraps it in a handle. A provider may return more
+ * items than `limit` rather than cut a page: the host shows `limit` and serves
+ * the rest from its cursor handle before calling the provider again.
+ */
 export interface ProductivityPage {
   readonly cursor?: string;
 }
