@@ -78,6 +78,8 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
+      "microsoft",
       "crate",
       "python",
     ]);
@@ -98,17 +100,20 @@ describe("release plan", () => {
     );
   });
 
-  it("leaves out a package that has never been released", () => {
+  it("covers a package once release-please has released it", () => {
     const manifest = JSON.parse(
       readFileSync(
         join(import.meta.dirname, "..", ".release-please-manifest.json"),
         "utf8",
       ),
     ) as Record<string, string>;
-    expect(manifest["packages/productivity/google"]).toBeUndefined();
-    expect(artifacts.map((a) => a.key)).not.toContain("google");
-    expect(manifest["packages/productivity/microsoft"]).toBeUndefined();
-    expect(artifacts.map((a) => a.key)).not.toContain("microsoft");
+    const keys = artifacts.map((a) => a.key);
+    for (const [path, key] of [
+      ["packages/productivity/google", "google"],
+      ["packages/productivity/microsoft", "microsoft"],
+    ]) {
+      expect(keys.includes(key)).toBe(manifest[path] !== undefined);
+    }
   });
 
   it("publishes nothing when every registry has its version", async () => {
@@ -225,6 +230,8 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
+      "microsoft",
       "python",
     ]);
     expect(results.find((r) => r.key === "crate")).toMatchObject({
