@@ -332,6 +332,11 @@ describe("web_search providers", () => {
           "search.provider": "brave",
           "search.mode": "default",
           "search.content": "context",
+          "introspection.usage.service": "brave/search",
+          "introspection.usage.unit": "request",
+          "introspection.usage.quantity": 1,
+          "introspection.usage.variant": "search",
+          "introspection.usage.key_owner": "customer",
         }),
       }),
     ]);
@@ -418,7 +423,15 @@ describe("web_search providers", () => {
       "search.setting": "advanced",
       "search.units.name": "credits",
       "search.units.count": 2,
+      "introspection.usage.service": "tavily/search",
+      "introspection.usage.unit": "credit",
+      "introspection.usage.quantity": 2,
+      "introspection.usage.variant": "advanced",
+      "introspection.usage.key_owner": "customer",
     });
+    expect(spans[0]!.attributes).not.toHaveProperty(
+      "introspection.usage.cost_usd",
+    );
 
     await call({ query: "agents" });
     expect(api.requests[1]!.body).toEqual({
@@ -444,7 +457,7 @@ describe("web_search providers", () => {
         costDollars: { total: 0.005 },
       },
     }));
-    const { call } = setup(["exa"], { baseUrls: { exa: api.baseUrl } });
+    const { call, spans } = setup(["exa"], { baseUrls: { exa: api.baseUrl } });
     const result = await call({
       query: "q",
       freshness: "week",
@@ -462,6 +475,14 @@ describe("web_search providers", () => {
       /\(approximated: freshness — Exa filters on published date/,
     );
     expect(result.details.usage.units).toEqual({ name: "usd", count: 0.005 });
+    expect(spans[0]!.attributes).toMatchObject({
+      "introspection.usage.service": "exa/search",
+      "introspection.usage.unit": "request",
+      "introspection.usage.quantity": 1,
+      "introspection.usage.variant": "auto",
+      "introspection.usage.cost_usd": 0.005,
+      "introspection.usage.key_owner": "customer",
+    });
     await call({ query: "q", mode: "fast", content: "context" });
     expect(api.requests[1]!.body).toMatchObject({
       type: "fast",

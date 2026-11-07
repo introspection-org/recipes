@@ -442,6 +442,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
                 ),
               }
             : {}),
+          ...usageAttributes(result),
         });
         return result;
       } catch (error) {
@@ -457,6 +458,32 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         span.end();
       }
     });
+}
+
+/**
+ * The platform's standard usage record for a metered call, which prices it
+ * against the rate catalog (introspection-cloud `docs/design/service-rates.md`).
+ * The key is the customer's, since a project endpoint is the only way a
+ * provider is bound.
+ */
+function usageAttributes(
+  result: WebSearchResult,
+): Record<string, string | number> {
+  const units = result.usage.units;
+  const measured =
+    units?.name === "credits"
+      ? { unit: "credit", quantity: units.count }
+      : { unit: "request", quantity: result.usage.requests };
+  return {
+    "introspection.usage.service": `${result.provider}/search`,
+    "introspection.usage.unit": measured.unit,
+    "introspection.usage.quantity": measured.quantity,
+    "introspection.usage.variant": result.setting,
+    "introspection.usage.key_owner": "customer",
+    ...(units?.name === "usd"
+      ? { "introspection.usage.cost_usd": units.count }
+      : {}),
+  };
 }
 
 /** The text the model reads: numbered results, then a line per ignored or approximated argument. */

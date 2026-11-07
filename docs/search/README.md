@@ -108,6 +108,15 @@ failed call sets `error.type` to the error code. Cost
 per provider and mode is therefore a query over spans. The span does not carry
 the query, which can hold personal data.
 
+A successful call also records the platform's standard usage record:
+`introspection.usage.service` (`<provider>/search`), `.unit` (`credit` when
+the provider reported credits, else `request`), `.quantity`, `.variant` (the
+`search.setting`), `.cost_usd` (Exa's reported dollars) and `.key_owner`
+(`customer`, since a project endpoint holds the key). The platform prices it
+against its vendor rate catalog, `services/<vendor>.yaml` in
+introspection-cloud ([service-rates.md](https://github.com/introspection-org/introspection-cloud/blob/claude/service-rates/docs/design/service-rates.md));
+`search.units.*` stays as the provider's own unit.
+
 ### Recipe code
 
 Recipe code calls the same function with the same arguments:
