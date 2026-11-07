@@ -38,6 +38,11 @@ interface RecipeAgentMcpServer {
   defer?: string[];
   /** Deferred tools made visible at session start. */
   eager?: string[];
+  /**
+   * The tools whose own calls alone may reach this server. The model, codemode
+   * scripts and every other tool are refused.
+   */
+  behind?: string[];
 }
 
 export type RecipeAgentMcpMode = "cli" | "tools" | "codemode";
@@ -296,6 +301,21 @@ function validActivationSelectors(selectors: string[] | undefined): boolean {
   );
 }
 
+/** A non-empty list of exact tool names, never with `defer` or `eager`. */
+function validBehind(server: Record<string, unknown>): boolean {
+  const behind = server.behind;
+  return (
+    Array.isArray(behind) &&
+    behind.length > 0 &&
+    behind.every(
+      (name) =>
+        typeof name === "string" && Boolean(name.trim()) && !name.includes("*"),
+    ) &&
+    !Object.hasOwn(server, "defer") &&
+    !Object.hasOwn(server, "eager")
+  );
+}
+
 function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
   if (!Object.hasOwn(data, "mcp")) return undefined;
   const value = data.mcp;
@@ -322,6 +342,9 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
             ),
           }
         : {}),
+      ...(Object.hasOwn(serverRaw, "behind")
+        ? { behind: stringArray(serverRaw.behind) }
+        : {}),
     };
   }
   const mode =
@@ -340,9 +363,10 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
         typeof serverValue !== "object" ||
         Array.isArray(serverValue) ||
         Object.keys(server).some(
-          (key) => !["include", "exclude", "defer", "eager"].includes(key),
+          (key) =>
+            !["include", "exclude", "defer", "eager", "behind"].includes(key),
         ) ||
-        ["include", "exclude", "defer", "eager"].some((key) => {
+        ["include", "exclude", "defer", "eager", "behind"].some((key) => {
           if (!Object.hasOwn(server, key)) return false;
           const values = stringArray(server[key]);
           return new Set(values).size !== values.length;
@@ -367,7 +391,8 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
         ) ||
         (mode === "cli" &&
           (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager"))) ||
-        (mode === "codemode" && Object.hasOwn(server, "defer"))
+        (mode === "codemode" && Object.hasOwn(server, "defer")) ||
+        (Object.hasOwn(server, "behind") && !validBehind(server))
       );
     },
   );
@@ -686,6 +711,17 @@ function validateResolvedRecipeAgentSource(
     return mergeMcp(base, definition.mcp);
   }
 
+  function resolvedTools(name: string, stack: string[] = []): string[] {
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return [];
+    const definition = rawDefinitions.get(name);
+    if (!definition) return [];
+    if (definition.tools) return definition.tools;
+    return definition.from
+      ? resolvedTools(definition.from, [...stack, name])
+      : [];
+  }
+
   function rawMcpChainInvalid(name: string, stack: string[] = []): boolean {
     if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
       return false;
@@ -768,6 +804,17 @@ function validateResolvedRecipeAgentSource(
       field: "mcp",
       code: "mcp_invalid",
       message: `Recipe agent "${agentName}" has an invalid MCP policy`,
+    });
+  }
+  const tools = new Set(resolvedTools(agentName));
+  for (const [serverId, selection] of Object.entries(mcp?.servers ?? {})) {
+    const missing = (selection.behind ?? []).filter((name) => !tools.has(name));
+    if (missing.length === 0) continue;
+    findings.push({
+      agentName,
+      field: "mcp",
+      code: "mcp_invalid",
+      message: `Recipe agent "${agentName}" puts MCP server '${serverId}' behind tool(s) it does not declare: ${missing.join(", ")}`,
     });
   }
 

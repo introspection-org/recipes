@@ -61,16 +61,22 @@ import {
   materializeMcpSession,
   materializeSessionMcpCli,
   resolveAgentMcpSelections,
+  resolveMcpSessionServers,
   stopMcpDaemon,
 } from "./mcp/index.js";
+import { mcpServersBehindTools } from "./mcp/policy.js";
 import { clearMcpCatalogPreload, preloadMcpCatalogs } from "./mcp/catalog.js";
 import { type RecipeAgentDefinition } from "./recipe/agent.js";
-import type { RecipeAgentMcpMode } from "./recipe/agent.js";
+import type { RecipeAgentMcp, RecipeAgentMcpMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
 import {
+  createMcpBehindGuard,
+  hideServersBehindTools,
   isPiMcpServerTool,
   piMcpServerRegistrations,
+  serverBehindTools,
   waitForPiMcpServers,
+  type PiMcpServerRegistration,
 } from "./mcp/pi-client.js";
 import {
   applyRecipeAgentPayloadPolicy,
@@ -190,6 +196,8 @@ interface RecipeLaunchState {
   mcpDeferredToolNames: string[];
   /** `mcp.mode: codemode`: the servers registered with Pi's MCP support. */
   piMcpServerIds: string[];
+  /** Servers kept behind a tool, on Pi's MCP support in every mode. */
+  piBehindServers: PiMcpServerRegistration[];
   initialConnectorToolNames: string[];
   connectorToolNames: string[];
   connectorDeferredToolNames: string[];
@@ -252,8 +260,57 @@ function visibleSubagents(state: RecipeLaunchState): RecipeAgentDefinition[] {
   return [...state.resolved.subagents.values()];
 }
 
-function mcpSelectionsForAgent(agent: RecipeAgentDefinition) {
-  return resolveAgentMcpSelections(agent.mcp);
+/** Selections the agent's mode runs: outside codemode, servers behind a tool are on Pi's client instead. */
+function mcpSelectionsForAgent(mcp: RecipeAgentMcp | undefined) {
+  const behind = mcpServersBehindTools(mcp);
+  return resolveAgentMcpSelections(mcp).filter(
+    (selection) => mcp?.mode === "codemode" || !behind.has(selection.serverId),
+  );
+}
+
+/** Whether Recipe extension tools may reach MCP tools on Pi's client. */
+function usesPiMcp(state: RecipeLaunchState): boolean {
+  return (
+    state.resolved.mcp?.mode === "codemode" ||
+    mcpServersBehindTools(state.resolved.mcp).size > 0
+  );
+}
+
+/**
+ * Outside codemode, registers the servers the agent keeps behind a tool with
+ * Pi's MCP support and waits for the required ones.
+ */
+async function registerServersBehindTools(
+  pi: ExtensionAPI,
+  state: RecipeLaunchState,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const mcp = state.resolved.mcp;
+  const behind = mcpServersBehindTools(mcp);
+  if (!mcp || mcp.mode === "codemode" || behind.size === 0) return;
+  const { servers } = resolveMcpSessionServers({
+    cwd: state.cwd,
+    manifest: state.resolved.manifest,
+    agentMcp: resolveAgentMcpSelections(mcp).filter((selection) =>
+      behind.has(selection.serverId),
+    ),
+    env,
+  });
+  const piServers = piMcpServerRegistrations({
+    session: { version: 1, servers },
+    bindings: endpointBindings(env, state.cwd),
+    mcp,
+    env,
+  });
+  for (const server of piServers) {
+    pi.registerMcpServer(server.id, server.config);
+  }
+  state.piBehindServers = piServers;
+  await waitForPiMcpServers(
+    pi,
+    piServers.filter((server) => server.required).map((server) => server.id),
+    env,
+  );
 }
 
 function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentMcpMode {
@@ -811,6 +868,7 @@ export function createRecipesExtension(
       initialMcpToolNames: [],
       mcpDeferredToolNames: [],
       piMcpServerIds: [],
+      piBehindServers: [],
       initialConnectorToolNames: [],
       connectorToolNames: [],
       connectorDeferredToolNames: [],
@@ -994,7 +1052,7 @@ export function createRecipesExtension(
           launchState.extensionRegistrations,
           connector.owner,
           launchState.extensionAllowedToolNames,
-          launchState.resolved.mcp?.mode === "codemode",
+          usesPiMcp(launchState),
         );
         await factory(pi);
       }
@@ -1015,7 +1073,7 @@ export function createRecipesExtension(
           launchState.extensionRegistrations,
           extensionPath,
           launchState.extensionAllowedToolNames,
-          launchState.resolved.mcp?.mode === "codemode",
+          usesPiMcp(launchState),
         );
         await factory(pi);
         loadedCount += 1;
@@ -1127,6 +1185,8 @@ export function createRecipesExtension(
       const toolSearchTools = createRecipeToolSearchTools(
         pi,
         launchState.mcpDeferredToolNames.length > 0,
+        (tool) =>
+          serverBehindTools(launchState.piBehindServers, tool) !== undefined,
       );
       for (const toolSearch of toolSearchTools) {
         launchState.extensionAllowedToolNames.add(toolSearch.name);
@@ -1182,14 +1242,16 @@ export function createRecipesExtension(
     launchState.initialMcpToolNames = [];
     launchState.mcpDeferredToolNames = [];
     launchState.piMcpServerIds = [];
+    launchState.piBehindServers = [];
     configureMcpLocalConfigPath({
       cwd: launchState.cwd,
       recipeDir: launchState.resolved.recipeDir,
       env,
     });
+    await registerServersBehindTools(pi, launchState, env);
 
     if (launchState.agentMcpMode === "cli") {
-      const mcpSelections = resolveAgentMcpSelections(launchState.resolved.mcp);
+      const mcpSelections = mcpSelectionsForAgent(launchState.resolved.mcp);
       if (mcpSelections.length === 0) {
         await clearMcpSession(env, launchState.cwd);
         launchState.mcpConfigured = true;
@@ -1249,9 +1311,7 @@ export function createRecipesExtension(
     const clearedCli = await clearSessionMcpCli(env, launchState.cwd);
     launchState.mcpAmbientMcporterConfig = clearedCli.previousMcporterConfig;
     const rootMcp = launchState.resolved.mcp;
-    const rootSelections = mcpSelectionsForAgent(
-      launchState.resolved.definition,
-    );
+    const rootSelections = mcpSelectionsForAgent(launchState.resolved.mcp);
     if (!rootMcp || rootSelections.length === 0) {
       launchState.mcpConfigured = true;
       return;
@@ -1292,6 +1352,7 @@ export function createRecipesExtension(
         env,
       );
       launchState.piMcpServerIds = piServers.map((server) => server.id);
+      launchState.piBehindServers = piServers.filter((server) => server.behind);
       if (piServers.length > 0) {
         launchState.initialMcpToolNames = [CODEMODE_TOOL_NAME];
         launchState.extensionAllowedToolNames.add(CODEMODE_TOOL_NAME);
@@ -1593,6 +1654,7 @@ export function createRecipesExtension(
     // Rendered from the session's entries for now; these should become
     // `instrumentSession` spans: https://github.com/introspection-org/recipes/issues/340
     registerGenAiSpansFile(pi, env);
+    void createMcpBehindGuard(() => state?.piBehindServers ?? [])(pi);
 
     pi.on("before_provider_request", (event, ctx) => {
       ensureManagedFetch();
@@ -1879,6 +1941,10 @@ export function createRecipesExtension(
     pi.on("before_agent_start", (event, ctx) => {
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return {};
+      hideServersBehindTools(
+        event.systemPromptOptions.sections,
+        launchState.piBehindServers,
+      );
       offerOnlyRecipeSkills(event, recipeSkills(launchState));
       return {
         systemPrompt: createSystemPrompt(event, launchState),

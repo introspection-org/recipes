@@ -131,6 +131,7 @@ struct RawAgent {
     fields: HashSet<AgentField>,
     skills: Option<Vec<String>>,
     subagents: Option<Vec<String>>,
+    tools: Option<Vec<String>>,
     mcp: Option<AgentMcpConfig>,
 }
 
@@ -140,6 +141,8 @@ struct McpToolSelectors {
     exclude: Option<BTreeSet<String>>,
     defer: Option<BTreeSet<String>>,
     eager: Option<BTreeSet<String>>,
+    /// The tools whose own calls alone may reach the server.
+    behind: Option<BTreeSet<String>>,
 }
 
 type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
@@ -2925,6 +2928,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         fields,
         skills,
         subagents,
+        tools,
         mcp,
     })
 }
@@ -3624,7 +3628,7 @@ fn validate_agent_string_array(
     }
 }
 
-const AGENT_MCP_SERVER_KEYS: [&str; 4] = ["include", "exclude", "defer", "eager"];
+const AGENT_MCP_SERVER_KEYS: [&str; 5] = ["include", "exclude", "defer", "eager", "behind"];
 
 fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Option<AgentMcpConfig> {
     let value = map.get("mcp")?;
@@ -3710,7 +3714,10 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             continue;
         };
         reject_unknown_mcp_server_keys(server, server_id, path, ctx);
-        let mut selectors = McpToolSelectors::default();
+        let mut selectors = McpToolSelectors {
+            behind: validate_mcp_behind(server, server_id, path, ctx),
+            ..McpToolSelectors::default()
+        };
         for key in ["include", "exclude", "defer", "eager"] {
             let Some(value) = server.get(key) else {
                 continue;
@@ -3831,9 +3838,76 @@ fn reject_unknown_mcp_server_keys(
             "agent.mcp_key_unknown",
             path,
             format!("Agent mcp server '{server_id}' contains unknown field '{key}'"),
-            Some("use only include, exclude, defer, and eager"),
+            Some("use only include, exclude, defer, eager, and behind"),
         );
     }
+}
+
+/// `behind` puts a server behind the named tools: a non-empty list of exact tool names, and never
+/// with `defer` or `eager`, since the model is not to see the server's tools at all.
+fn validate_mcp_behind(
+    server: &JsonMap,
+    server_id: &str,
+    path: &str,
+    ctx: &mut CheckContext,
+) -> Option<BTreeSet<String>> {
+    let value = server.get("behind")?;
+    let items = match (string_array(value), value.as_array()) {
+        (Ok(()), Some(items)) if !items.is_empty() => items,
+        (Err(message), _) => {
+            ctx.error(
+                "agent.mcp_invalid",
+                path,
+                format!("mcp.{server_id}.behind: {message}"),
+                Some("list the tools that call the server, such as [mail]"),
+            );
+            return None;
+        }
+        _ => {
+            ctx.error(
+                "agent.mcp_invalid",
+                path,
+                format!("Agent mcp server '{server_id}' behind must name at least one tool"),
+                Some("list the tools that call the server, or remove behind"),
+            );
+            return None;
+        }
+    };
+    let names = items
+        .iter()
+        .filter_map(JsonValue::as_str)
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    if names.iter().collect::<BTreeSet<_>>().len() != names.len() {
+        ctx.error(
+            "agent.mcp_selector_duplicate",
+            path,
+            format!("Agent mcp server '{server_id}' behind must not contain duplicates"),
+            Some("remove duplicate tool names"),
+        );
+    }
+    for name in names.iter().filter(|name| name.contains('*')) {
+        ctx.error(
+            "agent.mcp_selector_invalid",
+            path,
+            format!(
+                "Agent mcp server '{server_id}' behind entry '{name}' must be an exact tool name"
+            ),
+            None::<String>,
+        );
+    }
+    for key in ["defer", "eager"]
+        .into_iter()
+        .filter(|key| server.contains_key(*key))
+    {
+        ctx.error(
+            "agent.mcp_behind_activation",
+            path,
+            format!("Agent mcp server '{server_id}' may not use {key} with behind"),
+            Some("a server behind a tool is never declared to the model; remove defer and eager"),
+        );
+    }
+    Some(names.into_iter().map(str::to_owned).collect())
 }
 
 fn validate_agent_system_instructions(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
@@ -4184,6 +4258,23 @@ fn portable_agent_name(value: &str) -> bool {
     parts.all(valid_part)
 }
 
+fn resolved_agent_tools(name: &str, raw_by_name: &HashMap<String, &RawAgent>) -> Vec<String> {
+    let mut current = raw_by_name.get(name);
+    for _ in 0..MAX_INHERITANCE_DEPTH {
+        let Some(agent) = current else {
+            break;
+        };
+        if let Some(tools) = &agent.tools {
+            return tools.clone();
+        }
+        current = agent
+            .from
+            .as_deref()
+            .and_then(|parent| raw_by_name.get(parent));
+    }
+    Vec::new()
+}
+
 fn validate_resolved_agent_mcp(
     name: &str,
     raw_by_name: &HashMap<String, &RawAgent>,
@@ -4197,6 +4288,25 @@ fn validate_resolved_agent_mcp(
         .get(name)
         .map(|agent| agent.path.clone())
         .unwrap_or_default();
+
+    let tools = resolved_agent_tools(name, raw_by_name);
+    for (server_id, selection) in &mcp.servers {
+        for tool in selection
+            .behind
+            .iter()
+            .flatten()
+            .filter(|tool| !tools.contains(tool))
+        {
+            ctx.error(
+                "agent.mcp_behind_tool_undeclared",
+                path.clone(),
+                format!(
+                    "Recipe agent '{name}' puts MCP server '{server_id}' behind tool '{tool}', which it does not declare"
+                ),
+                Some("add the tool to the agent's tools, or name a tool it declares"),
+            );
+        }
+    }
 
     for (key, used) in [
         (
@@ -4525,6 +4635,7 @@ fn mcp_tool_policy(value: Option<&JsonValue>) -> Option<McpToolPolicy> {
                 exclude: exclude.and_then(json_string_set),
                 defer: None,
                 eager: None,
+                behind: None,
             },
         );
     }
@@ -5732,6 +5843,78 @@ mod tests {
         assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.code
             == "agent.mcp_activation_invalid"
             && diagnostic.message.contains("codemode")));
+    }
+
+    fn behind_report(mode: &str, server: &str) -> Report {
+        let agent = codemode_agent(&format!(
+            "    salesforce:\n      include: [\"*\"]\n{server}"
+        ))
+        .replace("tools: []", "tools: [crm]")
+        .replace("mode: codemode", &format!("mode: {mode}"));
+        let package = json!({
+            "name": "mcp-behind",
+            "version": "0.1.0",
+            "pi": {
+                "agents": ["agents/*.yaml"],
+                "mcp": {
+                    "servers": [{
+                        "id": "salesforce",
+                        "tools": { "include": ["search_profiles", "get_profile"] }
+                    }]
+                }
+            }
+        });
+        check_recipe_files(&recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string_pretty(&package).expect("serialize package"),
+            ),
+            ("agents/root.yaml", &agent),
+        ]))
+    }
+
+    fn has_code(report: &Report, code: &str) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code)
+    }
+
+    #[test]
+    fn accepts_behind_naming_a_declared_tool_in_every_mode() {
+        for mode in ["cli", "tools", "codemode"] {
+            let report = behind_report(mode, "      behind: [crm]\n");
+            assert!(report.valid, "{mode}: {:?}", report.diagnostics);
+        }
+    }
+
+    #[test]
+    fn rejects_behind_naming_an_undeclared_tool() {
+        let report = behind_report("cli", "      behind: [mail]\n");
+        assert!(!report.valid);
+        assert!(has_code(&report, "agent.mcp_behind_tool_undeclared"));
+    }
+
+    #[test]
+    fn rejects_malformed_behind() {
+        for (server, code) in [
+            ("      behind: []\n", "agent.mcp_invalid"),
+            ("      behind: crm\n", "agent.mcp_invalid"),
+            ("      behind: [\"*\"]\n", "agent.mcp_selector_invalid"),
+            ("      behind: [crm, crm]\n", "agent.mcp_selector_duplicate"),
+            (
+                "      behind: [crm]\n      eager: [search_profiles]\n",
+                "agent.mcp_behind_activation",
+            ),
+        ] {
+            let report = behind_report("codemode", server);
+            assert!(!report.valid, "{server}");
+            assert!(
+                has_code(&report, code),
+                "{server}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

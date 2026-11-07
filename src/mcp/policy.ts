@@ -24,6 +24,19 @@ export function resolveAgentMcpSelections(
   }));
 }
 
+/** The servers an agent keeps behind wrapper tools: server id to the tools in front of it. */
+export function mcpServersBehindTools(
+  mcp: RecipeAgentMcp | undefined,
+): Map<string, readonly string[]> {
+  return new Map(
+    Object.entries(mcp?.servers ?? {}).flatMap(([serverId, selection]) =>
+      selection.behind
+        ? [[normalizeMcpServerId(serverId), selection.behind] as const]
+        : [],
+    ),
+  );
+}
+
 export function executableRecipeToolNames(tools: readonly string[]): string[] {
   return [...tools];
 }
