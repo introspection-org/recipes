@@ -1112,7 +1112,7 @@ describe("Microsoft productivity provider: drive", () => {
     const size = UPLOAD_CHUNK_BYTES + 1000;
     expect(size).toBeGreaterThan(SIMPLE_UPLOAD_LIMIT_BYTES);
     on("POST", "/me/drive/root:/big.bin:/createUploadSession", {
-      json: { uploadUrl: `${base}/upload/session-1` },
+      json: { uploadUrl: `${base}/upload/session-1?tempauth=SECRET` },
     });
     routes.push((request) =>
       request.path === "/upload/session-1"
@@ -1145,6 +1145,9 @@ describe("Microsoft productivity provider: drive", () => {
     expect(
       ranges.every((request) => request.headers.authorization === undefined),
     ).toBe(true);
+    // The upload URL is a credential: it never reaches a span.
+    expect(spans.length).toBeGreaterThan(0);
+    expect(JSON.stringify(spans)).not.toContain("SECRET");
   });
 
   it("does not retry a failed upload range", async () => {
