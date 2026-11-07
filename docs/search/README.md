@@ -76,8 +76,30 @@ An example…
 ```
 
 A note line appears only when an argument was ignored or approximated. A
-failure is one line: `web_search failed (rate_limited): tavily answered 429 …
-Retry after 30s.`
+failure is one line: `web_search failed (too_many_requests): tavily answered
+429 … Retry after 30s.`, and the tool result's `details.error` carries the
+same typed error, `{ code, message, status?, retry_after_seconds?, limit? }`:
+
+| Code | When | What the model can do |
+| --- | --- | --- |
+| `not_bound` | No provider named when several are bound, or the one named is not bound | Name one of those the message lists |
+| `not_configured` | No credential path for the provider, or it answered 401 or 403 | Use another provider, or say search is unavailable |
+| `invalid_request` | An argument fails the schema, or the provider answered 400 or 422 | Fix the argument |
+| `query_too_long` | The query is longer than the provider accepts (`limit`), checked before calling it: Tavily 400 characters, Brave 400 characters and 50 words | Shorten the query |
+| `max_uses_exceeded` | The task has made as many calls as the Recipe allows (`limit`) | Work with the results it has |
+| `too_many_requests` | The provider answered 429; `retry_after_seconds` from `Retry-After`, in seconds or as a date | Wait, or use another provider |
+| `unavailable` | The provider could not be reached or answered 5xx | Retry later or use another provider |
+| `provider_error` | Anything else | Report it |
+
+### Search budget
+
+A Recipe caps how many calls one task may make with `maxUses` on
+`createWebSearch` or `registerWebSearchTool` (the host creates one per task
+session). It is not a model argument. A call past the cap fails with
+`max_uses_exceeded` and the limit, before any provider request; a call refused
+earlier (unbound provider, invalid argument, query too long) does not count.
+Unset, there is no cap: the default is none, because a sensible number depends
+on the Recipe, and the platform's per-call pricing is where cost is governed.
 
 ### Result for the host and the trace
 
@@ -585,8 +607,9 @@ Possible additions, each only once a real Recipe needs it:
 3. **Answers.** Do answer-style providers (Perplexity Sonar, Tavily's
    answer, Exa's answer endpoint) belong in `web_search`, in a separate
    `web_answer` tool, or nowhere?
-4. **Cost limits.** The span records billed units per call; does a Recipe or
-   the platform need a budget per task that refuses `deep` once spent?
+4. **Cost limits.** A Recipe can cap calls per task (`maxUses`). Does the
+   platform also need a budget in money, or one that refuses only `deep` once
+   spent?
 5. **Tavily `default`.** It maps to Tavily's own default, `basic`, so the
    named pairing "tavily / advanced" is `mode: "deep"`. Confirm, or map
    `default` to `advanced`.

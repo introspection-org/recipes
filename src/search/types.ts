@@ -68,6 +68,9 @@ export interface SearchCapabilities {
   options: Readonly<Record<SearchOption, SearchSupport>>;
   /** One sentence per approximated option, saying what it becomes. */
   notes?: Partial<Record<SearchOption, string>>;
+  /** The longest query the provider accepts, in characters and in words, where it states one. */
+  max_query_chars?: number;
+  max_query_words?: number;
   /** The host the provider calls: the endpoint the runtime must bind. */
   host: string;
   /** The header the provider's key travels in, and its prefix. */
@@ -149,7 +152,9 @@ export const SEARCH_ERROR_CODES = [
   "not_bound",
   "not_configured",
   "invalid_request",
-  "rate_limited",
+  "query_too_long",
+  "max_uses_exceeded",
+  "too_many_requests",
   "unavailable",
   "provider_error",
 ] as const;
@@ -160,6 +165,8 @@ export interface SearchErrorInfo {
   message: string;
   status?: number;
   retry_after_seconds?: number;
+  /** For `query_too_long` and `max_uses_exceeded`: the limit the call passed. */
+  limit?: number;
 }
 
 /** Thrown by a provider (or the host) to report a typed failure. */

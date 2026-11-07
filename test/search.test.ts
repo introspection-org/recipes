@@ -604,8 +604,72 @@ describe("web_search routing", () => {
     }).call({ query: "x" });
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toBe(
-      'web_search failed (rate_limited): tavily answered 429: {"detail":"slow down"} Retry after 30s.',
+      'web_search failed (too_many_requests): tavily answered 429: {"detail":"slow down"} Retry after 30s.',
     );
+    expect(result.details.error).toMatchObject({
+      code: "too_many_requests",
+      status: 429,
+      retry_after_seconds: 30,
+    });
+  });
+
+  it("reads a Retry-After date as seconds from now", async () => {
+    const brave = await fakeApi(() => ({
+      status: 429,
+      headers: {
+        "retry-after": new Date(NOW().getTime() + 90_000).toUTCString(),
+      },
+      body: {},
+    }));
+    const result = await setup(["brave"], {
+      baseUrls: { brave: brave.baseUrl },
+    }).call({ query: "x" });
+    expect(result.details.error).toMatchObject({
+      code: "too_many_requests",
+      retry_after_seconds: 90,
+    });
+  });
+
+  it("refuses a query longer than the provider accepts, before calling it", async () => {
+    const brave = await fakeApi(() => ({ body: braveWeb }));
+    const { call } = setup(["brave"], { baseUrls: { brave: brave.baseUrl } });
+    const long = await call({ query: "x".repeat(401) });
+    expect(long.isError).toBe(true);
+    expect(long.details.error).toMatchObject({
+      code: "query_too_long",
+      limit: 400,
+    });
+    const wordy = await call({ query: Array(51).fill("w").join(" ") });
+    expect(wordy.details.error).toMatchObject({
+      code: "query_too_long",
+      limit: 50,
+    });
+    expect(brave.requests).toHaveLength(0);
+  });
+
+  it("refuses calls past the Recipe's budget with the limit it set", async () => {
+    const brave = await fakeApi(() => ({ body: braveWeb }));
+    const { call, spans } = setup(["brave"], {
+      baseUrls: { brave: brave.baseUrl },
+      maxUses: 2,
+    });
+    expect((await call({ query: "a" })).isError).toBeUndefined();
+    expect((await call({ query: "b" })).isError).toBeUndefined();
+    const third = await call({ query: "c" });
+    expect(third.isError).toBe(true);
+    expect(third.details.error).toMatchObject({
+      code: "max_uses_exceeded",
+      limit: 2,
+    });
+    expect(third.content[0]!.text).toMatch(
+      /^web_search failed \(max_uses_exceeded\): This task may search at most 2 times/,
+    );
+    expect(brave.requests).toHaveLength(2);
+    expect(spans[2]!.attributes["error.type"]).toBe("max_uses_exceeded");
+  });
+
+  it("refuses a budget that is not a whole number", () => {
+    expect(() => setup(["brave"], { maxUses: -1 })).toThrow(/maxUses/);
   });
 });
 

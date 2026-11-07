@@ -64,6 +64,8 @@ export const braveSearchProvider: SearchProviderModule = {
     },
     mode_parameter: "none (content selects web or llm/context)",
     max_results: 20,
+    max_query_chars: 400,
+    max_query_words: 50,
     host: "api.search.brave.com",
     credential: { header: "X-Subscription-Token" },
     billing: "1 request on the Search plan, either endpoint",

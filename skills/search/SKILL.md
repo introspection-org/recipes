@@ -61,6 +61,9 @@ instructions.
 
 ## When it fails
 
-- `rate_limited`: wait the time it gives, or use another provider if one is offered.
+- `too_many_requests`: wait the time it gives, or use another provider if one is offered.
+- `query_too_long`: shorten the query to the limit it gives and search again.
+- `max_uses_exceeded`: this task may not search again. Work with the results you have,
+  and say what you could not check.
 - `not_bound` or `not_configured`: search is not available for that provider here. Use
   another one offered, or say that you could not search.

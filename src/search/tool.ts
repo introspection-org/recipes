@@ -189,6 +189,12 @@ export interface WebSearchOptions {
   ) => Record<string, string>;
   now?: () => Date;
   tracer?: Tracer;
+  /**
+   * The most calls this function sends to providers, for the task it serves;
+   * the next is refused with `max_uses_exceeded`. Set by Recipe code, never
+   * by the model. Unset: no cap.
+   */
+  maxUses?: number;
 }
 
 /** A call refused before any provider request. */
@@ -258,6 +264,12 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
   const offered = offeredProviders(options);
   const parameters = webSearchParameters(offered, true);
   const tracer = options.tracer ?? defaultTracer;
+  if (
+    options.maxUses !== undefined &&
+    !(Number.isInteger(options.maxUses) && options.maxUses >= 0)
+  )
+    throw new Error("web_search maxUses must be a whole number, 0 or more");
+  let uses = 0;
 
   const run = async (
     args: WebSearchArgs,
@@ -284,6 +296,26 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       );
     const module = providers[id]!;
     const capabilities = module.capabilities;
+    const query = args.query.trim();
+    if (
+      capabilities.max_query_chars !== undefined &&
+      query.length > capabilities.max_query_chars
+    )
+      throw new SearchProviderError({
+        code: "query_too_long",
+        message: `${id} accepts queries of at most ${capabilities.max_query_chars} characters; this one has ${query.length}. Shorten it.`,
+        limit: capabilities.max_query_chars,
+      });
+    const words = query.split(/\s+/).length;
+    if (
+      capabilities.max_query_words !== undefined &&
+      words > capabilities.max_query_words
+    )
+      throw new SearchProviderError({
+        code: "query_too_long",
+        message: `${id} accepts queries of at most ${capabilities.max_query_words} words; this one has ${words}. Shorten it.`,
+        limit: capabilities.max_query_words,
+      });
     const mode = args.mode ?? "default";
     const mapping = capabilities.modes[mode];
     const notes: SearchNote[] = [];
@@ -372,6 +404,13 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
           ? `${id}'s MCP server does not offer its search tool (${module.mcp?.tools.join(" or ") ?? "none"}).`
           : `${id} is bound only as an MCP server, and this call has no MCP client.`,
       });
+    if (options.maxUses !== undefined && uses >= options.maxUses)
+      throw new SearchProviderError({
+        code: "max_uses_exceeded",
+        message: `This task may search at most ${options.maxUses} times, and has. Work with the results you have.`,
+        limit: options.maxUses,
+      });
+    uses += 1;
     let result: SearchProviderResult;
     if (viaMcp) {
       for (const option of plan.unsupported) {

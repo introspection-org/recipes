@@ -39,25 +39,41 @@ export async function requestJson(
   }
   if (!response.ok) {
     const detail = (await response.text().catch(() => "")).slice(0, 200);
-    const retryAfter = Number(response.headers.get("retry-after"));
+    const retryAfter = retryAfterSeconds(
+      response.headers.get("retry-after"),
+      context.now(),
+    );
     throw new SearchProviderError({
       code: codeFor(response.status),
       message: `${provider} answered ${response.status}${detail ? `: ${detail}` : ""}`,
       status: response.status,
-      ...(Number.isFinite(retryAfter) && retryAfter > 0
-        ? { retry_after_seconds: retryAfter }
-        : {}),
+      ...(retryAfter ? { retry_after_seconds: retryAfter } : {}),
     });
   }
   return response.json();
 }
 
 function codeFor(status: number): SearchErrorCode {
-  if (status === 429) return "rate_limited";
+  if (status === 429) return "too_many_requests";
   if (status === 401 || status === 403) return "not_configured";
   if (status === 400 || status === 422) return "invalid_request";
   if (status >= 500) return "unavailable";
   return "provider_error";
+}
+
+/** `Retry-After` as whole seconds from now: delay-seconds or an HTTP date. */
+export function retryAfterSeconds(
+  value: string | null,
+  now: Date,
+): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds))
+    return seconds > 0 ? Math.ceil(seconds) : undefined;
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return undefined;
+  const wait = Math.ceil((at - now.getTime()) / 1000);
+  return wait > 0 ? wait : undefined;
 }
 
 /** A text cut to `limit` characters, on a word boundary where one is near. */
