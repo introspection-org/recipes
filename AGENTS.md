@@ -144,6 +144,9 @@ a result that silently stops at the first page is the bug reviews keep finding.
   helper rather than a new loop, and test each rule above against a fake that
   pages.
 
+The rest of what wiring a provider takes, with the code that shows it, is
+[Wiring a provider](docs/providers.md#10-wiring-a-provider).
+
 ## Recipe isolation
 
 - **A Recipe run sees only the Recipe's skills.** That means its own, its

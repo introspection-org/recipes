@@ -240,3 +240,31 @@ family's contract does not bump another's.
   alias on the declaration (`{ "provider": "jira", "id": "jira-eu", "options":
   { "server": "atlassian-eu" } }`, handles `jira-eu:PROJ-1`) adds it
   without changing anything here.
+
+## 10. Wiring a provider
+
+What wiring Linear and Jira taught, in the order to do it. Each step names the
+code that does it.
+
+1. **Capture the server's tool list before writing the adapter**
+   (`introspection bindings mcp capture <id>`) and commit the tools it calls as
+   its fixture ([`linear-tools.json`](../test/fixtures/issues/linear-tools.json)).
+   A map written from the vendor's docs named a comment tool Linear does not have.
+2. **Map each command to the captured names and arguments**, and mark the map
+   `verified` only against a capture
+   ([`LINEAR_MCP_TOOLS`](../packages/issues/src/linear.ts)). Translate the
+   family's words into the vendor's before the call: a status category becomes
+   the state types it spans, not a filter applied afterwards.
+3. **Page as the rules in [AGENTS.md](../AGENTS.md#paging-in-provider-modules)
+   say**, with the package's own helper
+   ([`common.ts`](../packages/issues/src/common.ts)).
+4. **Declare every host and option in `capabilities`** (sections 2 and 4).
+5. **Test against a fake built from the capture** that refuses an argument the
+   schema lacks or a value of the wrong type, including one that pages
+   (`fakeServer` and "pages and status categories" in
+   [`issues-providers.test.ts`](../test/issues-providers.test.ts)).
+6. **Record once against real, dummy data** with Polly
+   ([`linear.recording.test.ts`](../packages/issues/test/linear.recording.test.ts),
+   [`polly.ts`](../test/helpers/polly.ts)). Scope every request to the dummy
+   items (a label, a separate calendar, a named folder), let the helper
+   anonymize, read the cassette before committing it, and replay it in CI.
