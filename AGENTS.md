@@ -24,6 +24,11 @@
   tagged but missing from npm, crates.io or PyPI. A failed publish is finished
   by the next run; to finish it now, dispatch the workflow. Never publish a
   version by hand that has no tag.
+- **Adding a package:** list it in `release-please-config.json` and
+  `scripts/release-plan.mjs`, and before its first release reserve its npm
+  name and add the trusted publisher, as introspection-cloud's
+  `docs/design/package-publishing.md` "Adding a package" describes. Without
+  that, its first publish fails with `E404 Not Found - PUT`.
 
 ## Dependencies
 
