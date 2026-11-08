@@ -1,10 +1,7 @@
+import { egressCredentialLane } from "../egress.js";
 import { SearchProviderError, type SearchCapabilities } from "./types.js";
 
 export type SearchEnvironment = Record<string, string | undefined>;
-
-function configured(value: string | undefined): value is string {
-  return Boolean(value && value !== "undefined" && value !== "null");
-}
 
 /**
  * The headers that carry a provider's credential, which the Recipe never
@@ -19,16 +16,11 @@ export function egressCredentialHeaders(
   capabilities: SearchCapabilities,
   env: SearchEnvironment,
 ): Record<string, string> {
-  const egressUrl = env.INTROSPECTION_EGRESS_URL?.trim();
-  if (
-    env.INTROSPECTION_EGRESS_PROXY_NATIVE?.trim() === "1" ||
-    (!configured(egressUrl) && configured(env.INTROSPECTION_TASK_ID?.trim()))
-  )
-    return {};
-  const locator = env.INTROSPECTION_TOKEN?.trim();
-  if (configured(locator) && configured(egressUrl)) {
+  const lane = egressCredentialLane(env);
+  if (lane?.kind === "proxy_native") return {};
+  if (lane) {
     const { header, prefix } = capabilities.credential;
-    return { [header]: `${prefix ?? ""}${locator}` };
+    return { [header]: `${prefix ?? ""}${lane.locator}` };
   }
   throw new SearchProviderError({
     code: "not_configured",

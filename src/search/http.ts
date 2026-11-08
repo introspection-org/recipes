@@ -1,3 +1,4 @@
+import { parseRetryAfter } from "../egress.js";
 import {
   SearchProviderError,
   type SearchCallContext,
@@ -70,19 +71,13 @@ function codeFor(status: number): SearchErrorCode {
   return "provider_error";
 }
 
-/** `Retry-After` as whole seconds from now: delay-seconds or an HTTP date. */
+/** `Retry-After` as whole seconds from now, when there is a wait left. */
 function retryAfterSeconds(
   value: string | null,
   now: Date,
 ): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds))
-    return seconds > 0 ? Math.ceil(seconds) : undefined;
-  const at = Date.parse(value);
-  if (Number.isNaN(at)) return undefined;
-  const wait = Math.ceil((at - now.getTime()) / 1000);
-  return wait > 0 ? wait : undefined;
+  const seconds = parseRetryAfter(value, now.getTime());
+  return seconds !== undefined && seconds > 0 ? Math.ceil(seconds) : undefined;
 }
 
 const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });

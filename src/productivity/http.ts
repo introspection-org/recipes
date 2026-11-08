@@ -8,6 +8,7 @@ import {
   type Tracer,
 } from "@opentelemetry/api";
 
+import { egressCredentialLane, parseRetryAfter } from "../egress.js";
 import type {
   ProductivityFetch,
   ProductivityHttp,
@@ -52,32 +53,23 @@ export interface ProductivityHttpOptions {
   tracer?: Tracer;
 }
 
-function configured(value: string | undefined): value is string {
-  return Boolean(value && value !== "undefined" && value !== "null");
-}
-
 /**
  * The `Authorization` a request leaving the sandbox carries: the placeholder
  * the egress (or a host's hook) replaces, or the session locator the provider
- * listener named by `INTROSPECTION_EGRESS_URL` exchanges for the token. The
- * same rule as the Slack channel package.
+ * listener exchanges for the token.
  */
 function productivityAuthorization(
   env: Env,
   hostAttachesCredential: boolean,
 ): string {
-  const native =
-    env.INTROSPECTION_EGRESS_PROXY_NATIVE?.trim() === "1" ||
-    (!configured(env.INTROSPECTION_EGRESS_URL?.trim()) &&
-      configured(env.INTROSPECTION_TASK_ID?.trim()));
-  if (hostAttachesCredential || native)
+  const lane = egressCredentialLane(env);
+  if (hostAttachesCredential || lane?.kind === "proxy_native")
     return `Bearer ${PRODUCTIVITY_EGRESS_TOKEN}`;
-  const locator = env.INTROSPECTION_TOKEN?.trim();
-  if (!configured(locator) || !configured(env.INTROSPECTION_EGRESS_URL?.trim()))
+  if (!lane)
     throw new Error(
       "Productivity tools need the Introspection cloud egress, or a host that attaches the person's credential. Use introspection dev to test them.",
     );
-  return `Bearer ${locator}`;
+  return `Bearer ${lane.locator}`;
 }
 
 /** Seconds from a `Retry-After` header: delta-seconds or an HTTP date. */
@@ -85,13 +77,8 @@ export function retryAfterSeconds(
   value: string | null | undefined,
   now = Date.now(),
 ): number | undefined {
-  if (!value?.trim()) return undefined;
-  const seconds = Number(value.trim());
-  if (Number.isFinite(seconds)) return Math.max(0, seconds);
-  const date = Date.parse(value);
-  return Number.isFinite(date)
-    ? Math.max(0, Math.ceil((date - now) / 1000))
-    : undefined;
+  const seconds = parseRetryAfter(value, now);
+  return seconds === undefined ? undefined : Math.max(0, seconds);
 }
 
 /** The span name and start attributes for one request, after the HTTP client conventions. */
