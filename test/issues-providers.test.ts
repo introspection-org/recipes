@@ -1208,6 +1208,51 @@ describe("pages and status categories", () => {
     expect(issue.comments?.map((c) => c.body)).toEqual(["c1", "c2"]);
   });
 
+  it("keeps reading Jira comments when the server caps the page below what was asked", async () => {
+    const comment = (id: string) => ({
+      id,
+      author: { displayName: "Bo" },
+      created: "2026-11-02T11:00:00.000+0000",
+      body: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: id }] }],
+      },
+    });
+    const { caller, calls } = fakeServer(toolList("jira"), {
+      getAccessibleAtlassianResources: () => RESOURCES,
+      getJiraIssue: () => ({
+        ...JIRA_ISSUE,
+        fields: {
+          ...JIRA_ISSUE.fields,
+          comment: { comments: [comment("c1")], total: 2 },
+        },
+      }),
+      listJiraIssueComments: (args) =>
+        args.startAt === 0
+          ? {
+              comments: [comment("c1")],
+              maxResults: 1,
+              total: 2,
+              isLast: false,
+            }
+          : {
+              comments: [comment("c2")],
+              maxResults: 1,
+              total: 2,
+              isLast: true,
+            },
+    });
+    const issue = await (
+      await session(jiraIssuesProvider)
+    ).get!({ ref: "PROJ-45" }, { mcp: caller });
+    expect(issue.comments?.map((c) => c.body)).toEqual(["c1", "c2"]);
+    expect(
+      calls
+        .filter((call) => call.tool === "listJiraIssueComments")
+        .map((call) => call.args.startAt),
+    ).toEqual([0, 1]);
+  });
+
   it("follows the event pages an Introspection issue's comments span", async () => {
     const fake = fakeIntrospection();
     const pages: Record<

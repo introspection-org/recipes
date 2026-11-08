@@ -406,33 +406,36 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
         if (complete || !ctx.mcp?.hasTool("listJiraIssueComments"))
           return { ...issue, comments: embedded };
         const comments: IssueComment[] = [];
+        let startAt = 0;
         for (let page = 0; page < MAX_PAGES; page += 1) {
           const answer = record(
             await call(
               "get",
-              {
-                cloudId,
-                issueIdOrKey: ref,
-                startAt: comments.length,
-                maxResults: 100,
-              },
+              { cloudId, issueIdOrKey: ref, startAt, maxResults: 100 },
               ctx,
               ["listJiraIssueComments"],
             ),
           );
-          const found = listOf(answer, ["comments", "values"])
-            .map(jiraComment)
-            .filter(
-              (comment): comment is IssueComment => comment !== undefined,
-            );
-          comments.push(...found);
+          const rows = listOf(answer, ["comments", "values"]);
+          comments.push(
+            ...rows
+              .map(jiraComment)
+              .filter(
+                (comment): comment is IssueComment => comment !== undefined,
+              ),
+          );
+          // The offset counts what the server returned, not what converted.
+          startAt += rows.length;
+          // The server's own metadata decides; a page shorter than asked is
+          // the last only when it gives none, since it may cap the page size.
           const all = typeof answer.total === "number" ? answer.total : total;
-          if (
-            found.length < 100 ||
+          const last =
+            rows.length === 0 ||
             answer.isLast === true ||
-            (typeof all === "number" && comments.length >= all)
-          )
-            break;
+            (typeof all === "number"
+              ? startAt >= all
+              : answer.isLast === undefined && rows.length < 100);
+          if (last) break;
         }
         return { ...issue, comments };
       },
