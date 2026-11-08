@@ -125,6 +125,12 @@ One `issues` tool with these commands:
 | `comment` | add a comment |
 | `transition` | move to another status |
 
+An Introspection issue is like a task: a row the issues API changes (title,
+status, priority, tags), with immutable values attached to it, its conversation
+(the issue's worker task chat) and its events (history, requests, comments). A
+comment is one more attached event, never a change to the row, and not a
+message in the issue's chat, which its worker agent would answer.
+
 Every issue is returned in one shape, with a provider-scoped handle that every
 later command takes:
 
