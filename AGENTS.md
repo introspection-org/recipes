@@ -120,6 +120,30 @@
   `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
   that file is missing.
 
+## Paging in provider modules
+
+A provider that lists anything from its vendor follows the vendor's pages, and
+a result that silently stops at the first page is the bug reviews keep finding.
+
+- **A read the model treats as complete follows every page:** an issue's
+  comments, a thread's messages. Bound it with a page cap; never return the
+  first page alone.
+- **A search or list returns up to `limit`** and, when more were available,
+  the vendor's cursor as the family's `cursor`, so the model can ask again.
+- **The server's metadata ends a list:** `isLast`, a reported `total`,
+  `hasNextPage`. A page shorter than asked ends it only when the server
+  reports none of these, since servers cap a page below what was asked.
+- **An offset advances by the rows the server returned,** not by how many
+  survived conversion or filtering.
+- **Filtering after the fetch keeps paging** until `limit` matches or the
+  pages run out, then cuts to `limit`.
+- **Guard every loop:** stop on an empty page, on a cursor or token equal to
+  the last one, and at the page cap.
+- **Each package pages its vendor's way once** (`packages/issues/src/common.ts`,
+  Google's `collectPages`, Microsoft's `@odata.nextLink`): use that package's
+  helper rather than a new loop, and test each rule above against a fake that
+  pages.
+
 ## Recipe isolation
 
 - **A Recipe run sees only the Recipe's skills.** That means its own, its
