@@ -97,6 +97,7 @@ export const exaSearchProvider: SearchProviderModule = {
     mode_parameter: "type",
     max_results: 100,
     host: "api.exa.ai",
+    hosts: ["api.exa.ai", "mcp.exa.ai"],
     credential: { header: "x-api-key" },
     billing:
       "dollars per request by type and contents, reported in costDollars",

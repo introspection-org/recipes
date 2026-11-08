@@ -77,6 +77,7 @@ export const MICROSOFT_PRODUCTIVITY_CAPABILITIES: ProductivityCapabilities = {
       ),
     },
   },
+  hosts: ["graph.microsoft.com"],
 };
 
 /**

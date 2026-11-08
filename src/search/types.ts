@@ -8,7 +8,10 @@ import type { McpCallToolResult } from "./mcp.js";
  */
 export const SEARCH_PROVIDER_API_VERSION = 1 as const;
 
-/** The providers `web_search` knows, by the id a call names. */
+/**
+ * The first-party providers, served by `@introspection-ai/recipe-search`.
+ * Ids are open: a Recipe's own provider (`pi.search`) takes any other slug.
+ */
 export const SEARCH_PROVIDER_IDS = [
   "tavily",
   "parallel",
@@ -17,7 +20,8 @@ export const SEARCH_PROVIDER_IDS = [
   "perplexity",
   "brave",
 ] as const;
-export type SearchProviderId = (typeof SEARCH_PROVIDER_IDS)[number];
+/** The id a call names: a first-party provider's or a Recipe's own. */
+export type SearchProviderId = string;
 
 /** One quality scale for every provider; each maps it to its own setting. */
 export const SEARCH_MODES = ["fast", "default", "deep"] as const;
@@ -93,6 +97,12 @@ export interface SearchCapabilities {
   max_query_words?: number;
   /** The host the provider calls: the endpoint the runtime must bind. */
   host: string;
+  /**
+   * Every host the provider sends to, REST and MCP, so the egress can attach
+   * a credential for each and a provider the platform does not know is
+   * explicit about where a call goes.
+   */
+  hosts?: readonly string[];
   /** The header the provider's key travels in, and its prefix. */
   credential: { header: string; prefix?: string };
   /** How the provider bills a request, per setting where it differs. */
@@ -265,7 +275,7 @@ export interface SearchProviderModule {
 }
 
 export type SearchProviders = Readonly<
-  Partial<Record<SearchProviderId, SearchProviderModule>>
+  Record<SearchProviderId, SearchProviderModule>
 >;
 
 /**

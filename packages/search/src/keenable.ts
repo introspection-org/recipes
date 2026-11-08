@@ -83,6 +83,7 @@ export const keenableSearchProvider: SearchProviderModule = {
     mode_parameter: "mode",
     max_results: 50,
     host: "api.keenable.ai",
+    hosts: ["api.keenable.ai"],
     credential: { header: "X-API-Key" },
     billing: "credits: 1 per realtime or pro search, reported in usage on REST",
     combine_sites: false,

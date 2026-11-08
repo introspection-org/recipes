@@ -69,6 +69,7 @@ export const GOOGLE_PRODUCTIVITY_CAPABILITIES = {
       upload: { effect: "reversible", backend: "rest" },
     },
   },
+  hosts: ["gmail.googleapis.com", "www.googleapis.com"],
 } as const satisfies ProductivityCapabilities;
 
 /** What tests may override: Google's base URLs, for an emulator or a fake. */

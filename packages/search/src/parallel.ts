@@ -103,6 +103,7 @@ export const parallelSearchProvider: SearchProviderModule = {
     // The API states no maximum; web_search never asks for more than 10.
     max_results: 10,
     host: "api.parallel.ai",
+    hosts: ["api.parallel.ai", "search.parallel.ai"],
     credential: { header: "x-api-key" },
     billing: "per request; the response's usage lists SKUs and counts",
     combine_sites: false,

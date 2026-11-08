@@ -861,6 +861,7 @@ fn validate_pi_config(
         "channels",
         "documents",
         "productivity",
+        "search",
         "mcp",
         "runtime",
         "evals",
@@ -911,6 +912,9 @@ fn validate_pi_config(
     }
     if let Some(productivity) = pi.get("productivity") {
         validate_productivity_config(productivity, package, ctx);
+    }
+    if let Some(search) = pi.get("search") {
+        validate_search_config(search, package, ctx);
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
@@ -1301,15 +1305,16 @@ fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut 
         };
         for key in declaration
             .keys()
-            .filter(|key| !matches!(key.as_str(), "provider" | "tools"))
+            .filter(|key| !matches!(key.as_str(), "provider" | "tools" | "package"))
         {
             ctx.error(
                 CODE,
                 PACKAGE_JSON,
                 format!("package.json#pi.productivity[{index}] contains unknown field '{key}'"),
-                Some("use provider and optional tools"),
+                Some("use provider, optional tools, and an optional package"),
             );
         }
+        let sourced = validate_provider_source("productivity", index, declaration, package, ctx);
         if let Some(tools) = declaration.get("tools") {
             let Some(tools) = tools.as_object() else {
                 ctx.error(
@@ -1356,6 +1361,7 @@ fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut 
             }
         }
         match string_value(declaration.get("provider")).as_deref() {
+            Some(_) if sourced => {}
             Some(provider) => {
                 if let Some(problem) = declaration_package_problem(
                     &format!("package.json#pi.productivity provider '{provider}'"),
@@ -1376,6 +1382,132 @@ fn validate_productivity_config(value: &JsonValue, package: &Package, ctx: &mut 
                 format!("package.json#pi.productivity[{index}].provider must be non-empty"),
                 Some("name the provider, such as microsoft or google"),
             ),
+        }
+    }
+}
+
+/// The first-party search providers `@introspection-ai/recipe-search` serves; a
+/// Recipe's own provider names a `package` or `module` instead.
+const FIRST_PARTY_SEARCH_PROVIDERS: [&str; 6] = [
+    "tavily",
+    "parallel",
+    "exa",
+    "keenable",
+    "perplexity",
+    "brave",
+];
+
+/// Checks a provider declaration's own `package`, and returns whether it has
+/// one, so the caller skips the first-party package.
+fn validate_provider_source(
+    family: &str,
+    index: usize,
+    declaration: &JsonMap,
+    package: &Package,
+    ctx: &mut CheckContext,
+) -> bool {
+    let code = format!("pi.{family}_invalid");
+    let package_name = declaration.get("package");
+    if let Some(value) = package_name {
+        match value.as_str().map(str::trim).filter(|name| !name.is_empty()) {
+            // A Recipe's own provider is a third-party package: an ordinary,
+            // versioned dependency, never a peer or an omitted companion,
+            // since a managed install installs neither.
+            Some(name) if !package.dependencies.contains(name) => ctx.error(
+                &code,
+                PACKAGE_JSON,
+                format!(
+                    "package.json#pi.{family}[{index}].package requires '{name}' in package.json#dependencies with a version"
+                ),
+                Some("add the provider package to package.json#dependencies with a version and commit the lockfile"),
+            ),
+            Some(_) => {}
+            None => ctx.error(
+                &code,
+                PACKAGE_JSON,
+                format!("package.json#pi.{family}[{index}].package must be a non-empty package name"),
+                Some("name the npm package that serves the provider"),
+            ),
+        }
+        return true;
+    }
+    false
+}
+
+/// `pi.search` names the providers `web_search` may use: first-party ones by id,
+/// a Recipe's own by `package`. Without it, the runtime's bindings
+/// decide, as before.
+fn validate_search_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
+    const CODE: &str = "pi.search_invalid";
+    let JsonValue::Array(declarations) = value else {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.search must be an array",
+            Some("use a list of provider declarations, like [{ \"provider\": \"brave\" }]"),
+        );
+        return;
+    };
+    let mut seen = HashSet::new();
+    for (index, declaration) in declarations.iter().enumerate() {
+        let JsonValue::Object(declaration) = declaration else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.search[{index}] must be an object"),
+                Some("make it a provider declaration"),
+            );
+            continue;
+        };
+        for key in declaration
+            .keys()
+            .filter(|key| !matches!(key.as_str(), "provider" | "package"))
+        {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.search[{index}] contains unknown field '{key}'"),
+                Some("use provider and an optional package"),
+            );
+        }
+        let sourced = validate_provider_source("search", index, declaration, package, ctx);
+        let Some(provider) = string_value(declaration.get("provider")) else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.search[{index}].provider must be non-empty"),
+                Some("name the provider, such as brave"),
+            );
+            continue;
+        };
+        if !seen.insert(provider.clone()) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.search declares provider '{provider}' more than once"),
+                Some("declare each provider once"),
+            );
+        }
+        if !sourced {
+            if !FIRST_PARTY_SEARCH_PROVIDERS.contains(&provider.as_str()) {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.search provider '{provider}' is not first-party and names no package"),
+                    Some(format!("use one of {}, or give it a package", FIRST_PARTY_SEARCH_PROVIDERS.join(", "))),
+                );
+            } else if let Some(problem) = declaration_package_problem(
+                &format!("package.json#pi.search provider '{provider}'"),
+                "@introspection-ai/recipe-search",
+                package,
+            ) {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    problem,
+                    Some("add @introspection-ai/recipe-search to package.json#dependencies and commit the lockfile"),
+                );
+            }
         }
     }
 }
@@ -5427,6 +5559,127 @@ mod tests {
             }),
             "{:?}",
             report.diagnostics
+        );
+    }
+
+    /// A Recipe whose `pi` carries `key: value`, with an optional provider file.
+    fn provider_recipe(key: &str, value: JsonValue, dependencies: JsonValue) -> RecipeFiles {
+        let package = json!({
+            "name": "provider-test",
+            "version": "0.1.0",
+            "dependencies": dependencies,
+            "pi": { "agents": ["agents/*.yaml"], key: value }
+        });
+        let package = serde_json::to_string(&package).expect("serialize package");
+        recipe_files(&[
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\n",
+            ),
+        ])
+    }
+
+    fn invalid_with(report: &Report, code: &str, text: &str) -> bool {
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code && diagnostic.message.contains(text))
+    }
+
+    #[test]
+    fn search_declarations_take_first_party_ids_or_a_source() {
+        let ok = check_recipe_files(&provider_recipe(
+            "search",
+            json!([
+                { "provider": "brave" },
+                { "provider": "beta", "package": "@acme/search" }
+            ]),
+            json!({ "@acme/search": "1.0.0" }),
+        ));
+        assert!(
+            !ok.diagnostics
+                .iter()
+                .any(|d| d.code == "pi.search_invalid" || d.code == "pi.unknown_key"),
+            "{:?}",
+            ok.diagnostics
+        );
+        for (declarations, text) in [
+            (json!([{ "provider": "acme" }]), "not first-party"),
+            (
+                json!([{ "provider": "brave" }, { "provider": "brave" }]),
+                "more than once",
+            ),
+            (
+                json!([{ "provider": "acme", "package": "@acme/search" }]),
+                "@acme/search",
+            ),
+            (
+                json!([{ "provider": "acme", "module": "./x.ts" }]),
+                "unknown field 'module'",
+            ),
+            (
+                json!([{ "provider": "brave", "extra": true }]),
+                "unknown field",
+            ),
+        ] {
+            let report = check_recipe_files(&provider_recipe("search", declarations, json!({})));
+            assert!(
+                invalid_with(&report, "pi.search_invalid", text),
+                "{text}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn productivity_declarations_accept_a_package_source() {
+        let ok = check_recipe_files(&provider_recipe(
+            "productivity",
+            json!([{ "provider": "acme-mail", "package": "@acme/mail" }]),
+            json!({ "@acme/mail": "1.0.0" }),
+        ));
+        assert!(
+            !ok.diagnostics
+                .iter()
+                .any(|d| d.code == "pi.productivity_invalid"),
+            "{:?}",
+            ok.diagnostics
+        );
+        let missing = check_recipe_files(&provider_recipe(
+            "productivity",
+            json!([{ "provider": "acme-mail", "package": "@acme/mail" }]),
+            json!({}),
+        ));
+        assert!(
+            invalid_with(&missing, "pi.productivity_invalid", "@acme/mail"),
+            "{:?}",
+            missing.diagnostics
+        );
+        let mut peer_only = provider_recipe(
+            "productivity",
+            json!([{ "provider": "acme-mail", "package": "@acme/mail" }]),
+            json!({}),
+        );
+        let package_file = peer_only
+            .files
+            .iter_mut()
+            .find(|file| file.path == PACKAGE_JSON)
+            .expect("package.json");
+        let mut package: JsonValue =
+            serde_json::from_str(package_file.content.as_deref().expect("content")).expect("parse");
+        package["peerDependencies"] = json!({ "@acme/mail": ">=1.0.0" });
+        package_file.content = Some(serde_json::to_string(&package).expect("serialize"));
+        let peer_only = check_recipe_files(&peer_only);
+        assert!(
+            invalid_with(
+                &peer_only,
+                "pi.productivity_invalid",
+                "package.json#dependencies"
+            ),
+            "{:?}",
+            peer_only.diagnostics
         );
     }
 

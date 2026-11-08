@@ -23,7 +23,9 @@ import {
   recipeProfileSkill,
 } from "../documents/profile.js";
 import { PRODUCTIVITY_COMMANDS } from "../productivity/types.js";
+import { SEARCH_PROVIDER_IDS } from "../search/types.js";
 import { isCompanionPackage, isHostPeerPackage } from "./companions.js";
+import { type RecipeProviderDeclaration } from "./providers.js";
 
 export interface RecipePackageResources {
   agents: string[];
@@ -158,14 +160,20 @@ export function recipeDocumentPackageName(format: string): string {
 
 /**
  * A Recipe's productivity provider, served by
- * `@introspection-ai/recipe-productivity-<provider>`. `tools` is an optional
+ * `@introspection-ai/recipe-productivity-<provider>`, or by its `package`
+ * (`docs/providers.md`). `tools` is an optional
  * allowlist of commands per tool: an omitted tool exposes every command the
  * provider supports, an empty list exposes none.
  */
-export interface RecipePackageProductivity {
-  provider: string;
+export interface RecipePackageProductivity extends RecipeProviderDeclaration {
   tools?: Partial<Record<"mail" | "calendar" | "drive", string[]>>;
 }
+
+/**
+ * A provider `web_search` offers: first-party by id, from
+ * `@introspection-ai/recipe-search`, or the Recipe's own by `package`.
+ */
+export type RecipePackageSearch = RecipeProviderDeclaration;
 
 export function recipeProductivityPackageName(provider: string): string {
   return `@introspection-ai/recipe-productivity-${provider}`;
@@ -199,6 +207,8 @@ export interface RecipePackageManifest {
   channels?: RecipePackageChannel[];
   documents?: RecipePackageDocument[];
   productivity?: RecipePackageProductivity[];
+  /** Absent without `pi.search`: `web_search` then offers the providers the runtime binds. */
+  search?: RecipePackageSearch[];
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -249,6 +259,7 @@ const PI_KEYS = new Set([
   "channels",
   "documents",
   "productivity",
+  "search",
   "evals",
   "mcp",
   "runtime",
@@ -410,6 +421,9 @@ function sourceShapeFindings(
       packageName,
       dependencies,
     ),
+  );
+  findings.push(
+    ...searchSourceShapeFindings(pi.search, packageName, dependencies),
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
@@ -624,7 +638,7 @@ function productivitySourceShapeFindings(
     }
     const declaration = raw as Record<string, unknown>;
     const unknown = Object.keys(declaration).filter(
-      (key) => !["provider", "tools"].includes(key),
+      (key) => !["provider", "tools", "package"].includes(key),
     );
     if (unknown.length > 0) {
       findings.push(
@@ -691,12 +705,114 @@ function productivitySourceShapeFindings(
       );
       continue;
     }
+    findings.push(
+      ...providerSourceProblems(
+        declaration,
+        `package.json#pi.productivity[${index}]`,
+        dependencies,
+      ).map(invalid),
+    );
+    if (declaration.package !== undefined) continue;
     const problem = declarationPackageProblem(
       `package.json#pi.productivity provider '${provider}'`,
       recipeProductivityPackageName(provider),
       dependencies,
     );
     if (problem) findings.push(invalid(problem));
+  }
+  return findings;
+}
+
+/**
+ * Why a provider declaration's `package` is wrong: empty, or not in
+ * `dependencies` with a version.
+ */
+function providerSourceProblems(
+  declaration: Record<string, unknown>,
+  at: string,
+  dependencies: DeclaredDependencies,
+): string[] {
+  const pkg = declaration.package;
+  if (pkg === undefined) return [];
+  if (typeof pkg !== "string" || !pkg.trim())
+    return [`${at}.package must be a non-empty package name`];
+  if (!versioned(asRecord(dependencies.dependencies)[pkg]))
+    return [
+      `${at}.package '${pkg}' must be listed in package.json#dependencies`,
+    ];
+  return [];
+}
+
+/**
+ * `pi.search` names the providers `web_search` offers, each by a unique id. A
+ * first-party id needs no source; any other needs a `package`.
+ */
+function searchSourceShapeFindings(
+  value: unknown,
+  packageName: string,
+  dependencies: DeclaredDependencies,
+): RecipeValidationFinding[] {
+  if (value === undefined) return [];
+  const invalid = (message: string) =>
+    finding("pi.search_invalid", message, packageName);
+  if (!Array.isArray(value)) {
+    return [invalid("package.json#pi.search must be an array")];
+  }
+  const findings: RecipeValidationFinding[] = [];
+  const providers = new Set<string>();
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      findings.push(
+        invalid(`package.json#pi.search[${index}] must be an object`),
+      );
+      continue;
+    }
+    const declaration = raw as Record<string, unknown>;
+    const unknown = Object.keys(declaration).filter(
+      (key) => !["provider", "package"].includes(key),
+    );
+    if (unknown.length > 0) {
+      findings.push(
+        invalid(
+          `package.json#pi.search[${index}] contains unknown field(s): ${unknown.join(", ")}`,
+        ),
+      );
+    }
+    findings.push(
+      ...providerSourceProblems(
+        declaration,
+        `package.json#pi.search[${index}]`,
+        dependencies,
+      ).map(invalid),
+    );
+    const provider =
+      typeof declaration.provider === "string" && declaration.provider.trim()
+        ? declaration.provider.trim()
+        : undefined;
+    if (!provider) {
+      findings.push(
+        invalid(`package.json#pi.search[${index}].provider must be non-empty`),
+      );
+      continue;
+    }
+    if (providers.has(provider)) {
+      findings.push(
+        invalid(
+          `package.json#pi.search contains duplicate provider '${provider}'`,
+        ),
+      );
+      continue;
+    }
+    providers.add(provider);
+    if (
+      declaration.package === undefined &&
+      !(SEARCH_PROVIDER_IDS as readonly string[]).includes(provider)
+    )
+      findings.push(
+        invalid(
+          `package.json#pi.search provider '${provider}' is not a first-party provider (${SEARCH_PROVIDER_IDS.join(", ")}); give it a package`,
+        ),
+      );
   }
   return findings;
 }
@@ -1239,6 +1355,26 @@ function parseDocuments(value: unknown): RecipePackageDocument[] {
   return documents;
 }
 
+function parseProviderSource(
+  declaration: Record<string, unknown>,
+): Omit<RecipeProviderDeclaration, "provider"> {
+  const pkg = stringValue(declaration.package);
+  return pkg !== undefined ? { package: pkg } : {};
+}
+
+function parseSearch(value: unknown[]): RecipePackageSearch[] {
+  const seen = new Set<string>();
+  const declarations: RecipePackageSearch[] = [];
+  for (const raw of value) {
+    const declaration = asRecord(raw);
+    const provider = stringValue(declaration.provider);
+    if (!provider || seen.has(provider)) continue;
+    seen.add(provider);
+    declarations.push({ provider, ...parseProviderSource(declaration) });
+  }
+  return declarations;
+}
+
 function parseProductivity(value: unknown): RecipePackageProductivity[] {
   const declarations: RecipePackageProductivity[] = [];
   for (const raw of Array.isArray(value) ? value : []) {
@@ -1253,6 +1389,7 @@ function parseProductivity(value: unknown): RecipePackageProductivity[] {
     }
     declarations.push({
       provider,
+      ...parseProviderSource(declaration),
       ...(declaration.tools !== undefined ? { tools: allowlists } : {}),
     });
   }
@@ -1333,6 +1470,7 @@ export function readPiPackageManifest(
     channels: parseChannels(pi.channels),
     documents: parseDocuments(pi.documents),
     productivity: parseProductivity(pi.productivity),
+    ...(Array.isArray(pi.search) ? { search: parseSearch(pi.search) } : {}),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };

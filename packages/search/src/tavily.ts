@@ -273,6 +273,7 @@ export const tavilySearchProvider: SearchProviderModule = {
     max_results: 20,
     max_query_chars: 400,
     host: "api.tavily.com",
+    hosts: ["api.tavily.com", "mcp.tavily.com"],
     credential: { header: "Authorization", prefix: "Bearer " },
     billing:
       "credits: basic and fast 1, advanced 2 (reported with include_usage)",

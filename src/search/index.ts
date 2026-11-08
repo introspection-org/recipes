@@ -17,7 +17,12 @@ export type {
 export type { McpCallToolResult, PiToolInfo } from "./mcp.js";
 export { egressCredentialHeaders } from "./egress.js";
 export type { SearchEnvironment } from "./egress.js";
-export { loadSearchProviders, SEARCH_PROVIDERS_PACKAGE } from "./module.js";
+export {
+  loadSearchProviders,
+  SEARCH_PROVIDER_FAMILY,
+  SEARCH_PROVIDERS_PACKAGE,
+} from "./module.js";
+export type { RecipePackageSearch } from "../recipe/package.js";
 export {
   SEARCH_CONTENT,
   SEARCH_CONTENT_CHARS,

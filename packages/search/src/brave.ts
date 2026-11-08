@@ -75,6 +75,7 @@ export const braveSearchProvider: SearchProviderModule = {
     max_query_chars: 400,
     max_query_words: 50,
     host: "api.search.brave.com",
+    hosts: ["api.search.brave.com"],
     credential: { header: "X-Subscription-Token" },
     billing: "1 request on the Search plan, either endpoint",
     combine_sites: true,
