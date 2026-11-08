@@ -836,6 +836,16 @@ describe("mail parsing", () => {
       "elise@example.com",
     ],
     [
+      "a Reply-To with a long run of spaces, parsed promptly",
+      ["INBOX"],
+      [
+        { name: "From", value: "Ada <ada@example.com>" },
+        { name: "Reply-To", value: `"${" ".repeat(80_000)}x` },
+        { name: "To", value: "person@example.com" },
+      ],
+      `"${" ".repeat(80_000)}x`,
+    ],
+    [
       "the parent's To when the person sent it",
       ["SENT"],
       [

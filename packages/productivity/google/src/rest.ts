@@ -101,14 +101,23 @@ function gmailOperand(value: string): string {
   return /\s/.test(bare) ? `"${bare}"` : bare;
 }
 
-/** `Name <a@b>` or `a@b` as an address. */
+/**
+ * `Name <a@b>` or `a@b` as an address. Parsed without a regular expression: a
+ * header comes from whoever sent the mail, and a backtracking pattern stalls on
+ * a long run of spaces.
+ */
 function parseAddress(value: string): ProductivityAddress {
-  const match = /^\s*(?:"?([^"<]*?)"?\s*)?<([^>]+)>\s*$/.exec(value);
-  if (match) {
-    const name = match[1]?.trim();
-    return { email: match[2]!.trim(), ...(name ? { name } : {}) };
-  }
-  return { email: value.trim() };
+  const trimmed = value.trim();
+  const open = trimmed.indexOf("<");
+  const email =
+    open < 0 || !trimmed.endsWith(">") ? "" : trimmed.slice(open + 1, -1);
+  let name = open < 0 ? "" : trimmed.slice(0, open).trimEnd();
+  if (name.startsWith('"')) name = name.slice(1);
+  if (name.endsWith('"')) name = name.slice(0, -1);
+  if (email === "" || email.includes(">") || name.includes('"'))
+    return { email: trimmed };
+  name = name.trim();
+  return { email: email.trim(), ...(name ? { name } : {}) };
 }
 
 function addresses(value: string | undefined): ProductivityAddress[] {
