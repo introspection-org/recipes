@@ -200,9 +200,11 @@ function redactHeaders(headers: Array<{ name: string; value: string }>) {
 /** A JSON-RPC body without its per-run `id`, so a replay matches by method and params. */
 function rpcKey(body: string): string {
   try {
+    // The handshake names the client's own version, which a Pi bump changes;
+    // what it negotiates is not what a replay checks.
     const strip = (message: Record<string, unknown>) => {
       const { id: _id, ...rest } = message;
-      return rest;
+      return rest.method === "initialize" ? { method: rest.method } : rest;
     };
     const parsed = JSON.parse(body) as unknown;
     return JSON.stringify(
