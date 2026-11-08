@@ -1,4 +1,5 @@
 import type {
+  Pages,
   ProductivityHttp,
   ProductivityHttpResponse,
 } from "@introspection-ai/recipes/productivity";
@@ -175,6 +176,8 @@ export class GoogleTransport {
 
   constructor(
     private readonly http: ProductivityHttp,
+    /** The host's pager, for every list that follows `nextPageToken`. */
+    readonly pages: Pages,
     endpoints: Partial<GoogleEndpoints> = {},
   ) {
     this.endpoints = { ...GOOGLE_ENDPOINTS, ...endpoints };
@@ -257,30 +260,4 @@ function tooLarge(limitBytes: number): GoogleProductivityError {
 export interface GooglePage<T> {
   items: T[];
   nextPageToken?: string;
-}
-
-/**
- * Follow `nextPageToken` until `limit` items are collected or the pages run
- * out, asking each page for no more than the room left so a page is never cut
- * and the returned token resumes exactly after the last item returned.
- */
-export async function collectPages<T>(
-  fetchPage: (
-    pageToken: string | undefined,
-    pageSize: number,
-  ) => Promise<GooglePage<T>>,
-  limit: number,
-  pageToken?: string,
-): Promise<GooglePage<T>> {
-  const items: T[] = [];
-  let token = pageToken;
-  for (;;) {
-    const page = await fetchPage(token, limit - items.length);
-    items.push(...page.items.slice(0, limit - items.length));
-    if (!page.nextPageToken) return { items };
-    if (items.length >= limit) {
-      return { items, nextPageToken: page.nextPageToken };
-    }
-    token = page.nextPageToken;
-  }
 }

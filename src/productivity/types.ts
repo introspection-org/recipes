@@ -13,6 +13,8 @@
  * provider never sees or mints a handle.
  */
 
+import type { Pages } from "../providers/pages.js";
+
 /** The tools a productivity provider can serve. */
 export const PRODUCTIVITY_TOOLS = ["mail", "calendar", "drive"] as const;
 
@@ -698,4 +700,6 @@ export interface ProductivitySessionOptions {
   readonly cwd: string;
   /** Every request the provider sends goes through it. */
   readonly http: ProductivityHttp;
+  /** Follows a list's pages. */
+  readonly pages: Pages;
 }

@@ -73,29 +73,27 @@ export class CalendarClient {
       primary?: boolean;
     }>
   > {
-    const items: Array<{ id: string; summary?: string; primary?: boolean }> =
-      [];
-    let pageToken: string | undefined;
-    for (let page = 0; page < 10; page += 1) {
-      const body = await this.transport.json<{
-        items?: Array<{
-          id: string;
-          summary?: string;
-          timeZone?: string;
-          primary?: boolean;
-        }>;
-        nextPageToken?: string;
-      }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
-        operation: "calendar.calendarList.list",
-        template: "/calendar/v3/users/me/calendarList",
-        query: { maxResults: 250, pageToken },
-        scope: CALENDAR_SCOPES.read,
-        signal,
-      });
-      items.push(...(body.items ?? []));
-      pageToken = body.nextPageToken;
-      if (!pageToken) break;
-    }
+    const { items } = await this.transport.pages({
+      fetch: (pageToken) =>
+        this.transport.json<{
+          items?: Array<{
+            id: string;
+            summary?: string;
+            timeZone?: string;
+            primary?: boolean;
+          }>;
+          nextPageToken?: string;
+        }>(`${this.transport.endpoints.calendar}/users/me/calendarList`, {
+          operation: "calendar.calendarList.list",
+          template: "/calendar/v3/users/me/calendarList",
+          query: { maxResults: 250, pageToken },
+          scope: CALENDAR_SCOPES.read,
+          signal,
+        }),
+      items: (page) => page.items ?? [],
+      next: "nextPageToken",
+      maxPages: 10,
+    });
     return items;
   }
 

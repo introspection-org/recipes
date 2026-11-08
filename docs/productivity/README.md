@@ -257,7 +257,7 @@ channels:
   the command's description. `mail` also says what `label` and `move` act on
   (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`), and
   `hosts` lists every host the provider sends to;
-- `createSession({ config, env, cwd, http })`: returns (or resolves to) a
+- `createSession({ config, env, cwd, http, pages })`: returns (or resolves to) a
   `ProductivitySession` for one person's connection, with a `mail`,
   `calendar` and `drive` object whose methods serve the enabled commands
   (`PRODUCTIVITY_SESSION_METHODS` names them). The host calls it on the first
@@ -277,6 +277,8 @@ channels:
   It hands back the final answer, ok or not, with `retryAfterSeconds`; the
   provider maps a failure to its error. A host with a request hook that
   attaches the credential passes it to `loadRecipeProductivity` as `fetch`.
+  `pages` follows a list's pages (`nextPageToken`, `@odata.nextLink`, a
+  cursor or an offset) up to a limit and returns the cursor to resume from.
 
 A session takes and returns the provider's own ids. The host resolves each
 handle before the call and mints handles for what comes back, so a provider

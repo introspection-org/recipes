@@ -1,3 +1,4 @@
+import { pages } from "@introspection-ai/recipes/productivity";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -73,6 +74,7 @@ async function backend(
     env: { INTROSPECTION_TASK_ID: "t" },
     cwd: process.cwd(),
     http: fakeHttp(fake.fetchImpl),
+    pages,
   });
   return { calls: fake.calls, backend: session };
 }

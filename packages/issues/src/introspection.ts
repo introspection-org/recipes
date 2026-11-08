@@ -11,7 +11,6 @@ import {
   firstText,
   IssuesError,
   isStatusCategory,
-  MAX_PAGES,
   record,
   text,
 } from "./common.js";
@@ -106,8 +105,9 @@ const FROM_CATEGORY: Record<IssueStatusCategory, IntrospectionStatus> = {
 };
 const STATUSES: readonly string[] = ["open", "waiting", "closed", "cancelled"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** How many issues a text search reads before matching, since `/v1/issues` has no text filter. */
-const TEXT_SEARCH_WINDOW = 200;
+
+/** How many issues each page of a text search reads, since `/v1/issues` has no text filter. */
+const TEXT_SEARCH_PAGE = 200;
 
 /** The Data Plane URL and token the runtime injects into the task's sandbox. */
 export function introspectionEnvironment(
@@ -259,7 +259,7 @@ export function createIntrospectionIssuesProvider(
       hosts: [],
     },
     available: (env) => introspectionEnvironment(env) !== undefined,
-    async createSession({ env }): Promise<IssuesSession> {
+    async createSession({ env, pages }): Promise<IssuesSession> {
       const client = await clientFor(env);
       const find = async (ref: string): Promise<IntrospectionIssue> => {
         if (UUID.test(ref))
@@ -286,26 +286,29 @@ export function createIntrospectionIssuesProvider(
       const comments = async (
         issue: IntrospectionIssue,
       ): Promise<IssueComment[]> => {
-        const rows: IntrospectionEventRow[] = [];
-        let next: string | undefined;
-        for (let pages = 0; pages < MAX_PAGES; pages += 1) {
-          let page: Page<IntrospectionEventRow>;
-          try {
-            page = await client.events.list({
-              event_name: INTROSPECTION_ISSUE_EVENT,
-              issue_id: issue.id,
-              limit: 100,
-              ...(next ? { next } : {}),
-            } as Parameters<IntrospectionIssuesClient["events"]["list"]>[0]);
-          } catch (error) {
-            // A data plane that does not record issue events yet refuses the family.
-            const status = (error as { status?: unknown })?.status;
-            if (status === 400 || status === 422) return [];
-            throw error;
-          }
-          rows.push(...page.records);
-          next = page.next ?? undefined;
-          if (!next) break;
+        let rows: IntrospectionEventRow[];
+        try {
+          ({ items: rows } = await pages({
+            fetch: (next, limit) =>
+              Promise.resolve(
+                client.events.list({
+                  event_name: INTROSPECTION_ISSUE_EVENT,
+                  issue_id: issue.id,
+                  limit,
+                  ...(next ? { next } : {}),
+                } as Parameters<
+                  IntrospectionIssuesClient["events"]["list"]
+                >[0]),
+              ),
+            items: (page: Page<IntrospectionEventRow>) => page.records,
+            next: "next",
+            pageSize: 100,
+          }));
+        } catch (error) {
+          // A data plane that does not record issue events yet refuses the family.
+          const status = (error as { status?: unknown })?.status;
+          if (status === 400 || status === 422) return [];
+          throw error;
         }
         return rows
           .map(commentOf)
@@ -321,25 +324,39 @@ export function createIntrospectionIssuesProvider(
               "not_supported",
               "Introspection issues have no assignee to filter by",
             );
-          const limit = args.limit ?? 20;
           const query = args.query?.trim().toLowerCase();
-          const page = await Promise.resolve(
-            client.issues.list({
-              limit: query ? TEXT_SEARCH_WINDOW : limit,
-              ...(args.status !== undefined
-                ? { status: statusOf(args.status) }
-                : {}),
-              ...(args.label !== undefined ? { tag: args.label } : {}),
-            }),
-          ).catch((error: unknown) => sdkError(error, "the issues"));
-          const matched = query
-            ? page.records.filter((issue) =>
-                `${issue.title}\n${issue.description}`
-                  .toLowerCase()
-                  .includes(query),
-              )
-            : page.records;
-          return { issues: matched.slice(0, limit).map(toIssue) };
+          // `/v1/issues` has no text filter, so a text search reads pages
+          // until enough issues match.
+          const found = await pages({
+            fetch: (next, limit) =>
+              Promise.resolve(
+                client.issues.list({
+                  ...(limit !== undefined ? { limit } : {}),
+                  ...(next ? { next } : {}),
+                  ...(args.status !== undefined
+                    ? { status: statusOf(args.status) }
+                    : {}),
+                  ...(args.label !== undefined ? { tag: args.label } : {}),
+                }),
+              ),
+            items: (page: Page<IntrospectionIssue>) => page.records,
+            next: "next",
+            limit: args.limit ?? 20,
+            ...(args.cursor ? { cursor: args.cursor } : {}),
+            ...(query
+              ? {
+                  pageSize: TEXT_SEARCH_PAGE,
+                  keep: (issue: IntrospectionIssue) =>
+                    `${issue.title}\n${issue.description}`
+                      .toLowerCase()
+                      .includes(query),
+                }
+              : {}),
+          }).catch((error: unknown) => sdkError(error, "the issues"));
+          return {
+            issues: found.items.map(toIssue),
+            ...(found.cursor ? { cursor: found.cursor } : {}),
+          };
         },
         async get({ ref }) {
           const issue = await find(ref);

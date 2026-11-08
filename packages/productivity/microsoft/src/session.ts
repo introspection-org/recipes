@@ -406,10 +406,13 @@ const preferZone = (timeZone: string) => ({
  * served for the host's `mail`, `calendar` and `drive` tools.
  */
 export function createMicrosoftSession(
-  options: Pick<ProductivitySessionOptions, "http"> & { baseUrl?: string },
+  options: Pick<ProductivitySessionOptions, "http" | "pages"> & {
+    baseUrl?: string;
+  },
 ): ProductivitySession {
   const graph = new GraphClient(
     options.http,
+    options.pages,
     options.baseUrl ? { baseUrl: options.baseUrl } : {},
   );
   const get = (

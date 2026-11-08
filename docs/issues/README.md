@@ -100,14 +100,14 @@ sandbox. `create` files the issue on the calling task
 
 ## Commands
 
-| Command      | Takes                                                                               | Does                        |
-| ------------ | ----------------------------------------------------------------------------------- | --------------------------- |
-| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit`                        | find issues                 |
-| `get`        | `handle`                                                                            | one issue with its comments |
-| `create`     | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` | a new issue                 |
-| `update`     | `handle`, `title`, `description`, `priority`, `labels`, `assignee`                  | change fields               |
-| `comment`    | `handle`, `body`                                                                    | add a comment               |
-| `transition` | `handle`, `status` (a name or a category)                                           | move to another status      |
+| Command      | Takes                                                                               | Does                                    |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------- |
+| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit`, `cursor`              | find issues; a `cursor` when more match |
+| `get`        | `handle`                                                                            | one issue with its comments             |
+| `create`     | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` | a new issue                             |
+| `update`     | `handle`, `title`, `description`, `priority`, `labels`, `assignee`                  | change fields                           |
+| `comment`    | `handle`, `body`                                                                    | add a comment                           |
+| `transition` | `handle`, `status` (a name or a category)                                           | move to another status                  |
 
 ## The shape
 
@@ -129,14 +129,14 @@ Every issue comes back in one shape, with a handle every later command takes:
 
 ## What each provider supports
 
-|              | `linear`                                                       | `jira`                                                  | `introspection`                                                |
-| ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
-| `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text matches the 200 most recent issues; no assignee filter |
-| `get`        | ✓                                                              | ✓                                                       | ✓                                                              |
-| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on the calling task                                         |
-| `update`     | ✓                                                              | ✓                                                       | ✓, no assignee                                                 |
-| `comment`    | ✓                                                              | ✓                                                       | not yet                                                        |
-| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                  |
+|              | `linear`                                                       | `jira`                                                  | `introspection`                                          |
+| ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text is matched over pages of 200; no assignee filter |
+| `get`        | ✓                                                              | ✓                                                       | ✓                                                        |
+| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on the calling task                                   |
+| `update`     | ✓                                                              | ✓                                                       | ✓, no assignee                                           |
+| `comment`    | ✓                                                              | ✓                                                       | not yet                                                  |
+| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                            |
 
 An Introspection comment is an event attached to the issue. The provider reads
 comments from `GET /v1/events?event_name=introspection.issue&issue_id=…`
@@ -177,7 +177,9 @@ mcp?, available?, createSession }` (`RecipeIssuesProviderModule`), importing
 only types from `@introspection-ai/recipes/issues`. `capabilities` lists the
 commands it serves, the fields it fills, every host it calls, and the options
 it takes. Its session receives the declaration's options as `config.options`.
-`createSession` returns one method per command; each receives the provider's
+`createSession({ config, env, pages })` returns one method per command;
+`pages` follows a server's pages (a token, a cursor or an offset) and returns
+the cursor `search` hands back. Each method receives the provider's
 own reference (the handle without its prefix) and, for an MCP provider, a
 caller bound to its server. A failure the model should read throws an
 `Error` carrying `issues: { code, message }`.

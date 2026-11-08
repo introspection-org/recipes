@@ -137,15 +137,3 @@ export function categoryFromName(name: string): IssueStatusCategory {
     return "in_progress";
   return "open";
 }
-
-/** How many pages one command follows before it stops, so a runaway list cannot hold a call open. */
-export const MAX_PAGES = 20;
-
-/** The cursor a list page names for the next one, or undefined when it says it is the last. */
-export function nextCursor(answer: unknown): string | undefined {
-  const page = record(answer);
-  const info = record(page.pageInfo);
-  const more = page.hasNextPage ?? info.hasNextPage;
-  const cursor = firstText(page.cursor, page.nextCursor, info.endCursor);
-  return more === true ? cursor : undefined;
-}

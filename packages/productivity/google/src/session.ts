@@ -97,7 +97,7 @@ export async function createGoogleProductivitySession(
   overrides: GoogleSessionOverrides = {},
 ): Promise<GoogleProductivitySession> {
   const rest = new GoogleRestBackend(
-    new GoogleTransport(options.http, overrides.endpoints),
+    new GoogleTransport(options.http, options.pages, overrides.endpoints),
   );
   return {
     provider: "google",

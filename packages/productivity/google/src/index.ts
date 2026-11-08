@@ -23,7 +23,6 @@ export {
 export { GoogleProductivityError } from "./errors.js";
 export { GMAIL_SCOPES, GmailClient, type GmailMessage } from "./gmail.js";
 export {
-  collectPages,
   DRIVE_EXPORT_LIMIT_BYTES,
   GOOGLE_ENDPOINTS,
   type GoogleEndpoints,

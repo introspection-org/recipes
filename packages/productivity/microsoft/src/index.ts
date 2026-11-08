@@ -97,7 +97,7 @@ export const microsoftProductivityModule: RecipeProductivityModule = {
   apiVersion: 1,
   provider: "microsoft",
   capabilities: MICROSOFT_PRODUCTIVITY_CAPABILITIES,
-  createSession: ({ http }) => createMicrosoftSession({ http }),
+  createSession: ({ http, pages }) => createMicrosoftSession({ http, pages }),
 };
 
 export default microsoftProductivityModule;

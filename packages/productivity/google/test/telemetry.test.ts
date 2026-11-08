@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   OPERATION_ID_ATTRIBUTE,
   RESPONSE_BODY_ATTRIBUTE,
+  pages,
 } from "@introspection-ai/recipes/productivity";
 
 import { createGoogleProductivitySession } from "../src/index.js";
@@ -97,6 +98,7 @@ describe("request spans from a session", () => {
       env: { INTROSPECTION_TASK_ID: "task-1" },
       cwd: process.cwd(),
       http: fakeHttp(rest.fetchImpl, { tracer }),
+      pages,
     });
     const file = await withFake.drive.download({ file_id: "f1" });
     expect(Buffer.from(file.bytes).toString()).toBe("PK");

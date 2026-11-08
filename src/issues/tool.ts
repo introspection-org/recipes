@@ -28,6 +28,7 @@ import {
   type ProviderIssue,
   type RecipeIssuesProviderModule,
 } from "./types.js";
+import { pages } from "../providers/pages.js";
 
 const defaultTracer = trace.getTracer("@introspection-ai/recipes/issues");
 
@@ -71,6 +72,7 @@ export interface IssuesToolArgs {
   container?: string;
   label?: string;
   limit?: number;
+  cursor?: string;
   title?: string;
   description?: string;
   priority?: IssuePriority;
@@ -80,7 +82,7 @@ export interface IssuesToolArgs {
 }
 
 export type IssuesToolResult =
-  | { command: "search"; provider: string; issues: Issue[] }
+  | { command: "search"; provider: string; issues: Issue[]; cursor?: string }
   | {
       command: "get" | "create" | "update" | "transition";
       provider: string;
@@ -179,6 +181,12 @@ export function issuesParameters(
       label: Type.Optional(Type.String({ description: "search filter." })),
       limit: Type.Optional(
         Type.Integer({ minimum: 1, maximum: ISSUES_SEARCH_MAX_RESULTS }),
+      ),
+      cursor: Type.Optional(
+        Type.String({
+          description:
+            "search: the previous result's cursor, with the same arguments, for the next page.",
+        }),
       ),
       title: Type.Optional(Type.String({ minLength: 1 })),
       description: Type.Optional(Type.String({ description: "Markdown." })),
@@ -436,7 +444,7 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
     const id = provider.config.provider;
     if (!sessions.has(id)) {
       const created = Promise.resolve().then(() =>
-        provider.module.createSession({ config: provider.config, env }),
+        provider.module.createSession({ config: provider.config, env, pages }),
       );
       created.catch(() => sessions.delete(id));
       sessions.set(id, created);
@@ -507,6 +515,7 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
               ? { container: args.container }
               : {}),
             ...(args.label !== undefined ? { label: args.label } : {}),
+            ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
           },
           context,
         );
@@ -516,6 +525,7 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
           issues: result.issues
             .slice(0, limit)
             .map((issue) => toIssue(id, issue)),
+          ...(result.cursor ? { cursor: result.cursor } : {}),
         };
       }
       case "get":
@@ -667,7 +677,12 @@ export function formatIssuesResult(result: IssuesToolResult): string {
     case "search":
       return result.issues.length === 0
         ? `No ${result.provider} issues found.`
-        : result.issues.flatMap((issue) => issueLines(issue, false)).join("\n");
+        : [
+            ...result.issues.flatMap((issue) => issueLines(issue, false)),
+            ...(result.cursor
+              ? [`More: search again with cursor ${result.cursor}`]
+              : []),
+          ].join("\n");
     case "comment":
       return `Commented on ${result.handle}.`;
     default:

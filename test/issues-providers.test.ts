@@ -16,6 +16,7 @@ import {
 } from "../packages/issues/src/index.js";
 import {
   ISSUES_FIRST_PARTY_OPTIONS,
+  pages as hostPages,
   type IssuesMcpCaller,
   type IssuesSession,
   type RecipeIssuesProviderModule,
@@ -99,6 +100,7 @@ async function session(
   return module.createSession({
     config: { provider: module.id, options },
     env: {},
+    pages: hostPages,
   });
 }
 
@@ -896,6 +898,7 @@ describe("introspection", () => {
     }).createSession({
       config: { provider: "introspection", options: {} },
       env: sessionEnv,
+      pages: hostPages,
     });
 
   it("declares comment and assignee unsupported, and needs the task's session", () => {
@@ -1293,6 +1296,7 @@ describe("pages and status categories", () => {
         INTROSPECTION_TOKEN: "locator",
         INTROSPECTION_TASK_ID: "task-1",
       },
+      pages: hostPages,
     });
     const issue = await opened.get!({ ref: "12" }, {});
     expect(issue.comments?.map((comment) => comment.body)).toEqual([

@@ -36,6 +36,7 @@ import type {
   MailSendResult,
   MailSession,
   MailUpdateDraftArgs,
+  Pages,
   ProductivityAddress,
   ProductivityCallContext,
   ProductivityContent,
@@ -61,7 +62,7 @@ import {
 import { GoogleProductivityError, isSizeLimit } from "./errors.js";
 import { decodeEventId, encodeEventId, PRIMARY_CALENDAR } from "./event-id.js";
 import { GmailClient, type GmailLabel, type GmailMessage } from "./gmail.js";
-import { collectPages, type GoogleTransport } from "./http.js";
+import type { GoogleTransport } from "./http.js";
 import {
   decodeBase64Url,
   encodeBase64Url,
@@ -176,7 +177,10 @@ function readResult(
 export class GoogleRestMail implements Required<MailSession> {
   private labels?: Promise<GmailLabel[]>;
 
-  constructor(readonly gmail: GmailClient) {}
+  constructor(
+    readonly gmail: GmailClient,
+    private readonly pages: Pages,
+  ) {}
 
   private labelList(signal?: AbortSignal): Promise<GmailLabel[]> {
     this.labels ??= this.gmail.listLabels(signal).catch((error: unknown) => {
@@ -317,15 +321,17 @@ export class GoogleRestMail implements Required<MailSession> {
     ctx: ProductivityCallContext = {},
   ): Promise<MailSearchResult> {
     const query = await this.searchQuery(args, ctx.signal);
-    const page = await collectPages(
-      (pageToken, maxResults) =>
+    const page = await this.pages({
+      fetch: (pageToken, maxResults) =>
         this.gmail.listMessages(
           { ...query, maxResults, pageToken },
           ctx.signal,
         ),
-      args.limit,
-      args.cursor,
-    );
+      items: (found) => found.items,
+      next: "nextPageToken",
+      limit: args.limit,
+      ...(args.cursor ? { cursor: args.cursor } : {}),
+    });
     const messages = await Promise.all(
       page.items.map(async (ref) =>
         this.summary(
@@ -334,7 +340,7 @@ export class GoogleRestMail implements Required<MailSession> {
         ),
       ),
     );
-    return { messages, cursor: page.nextPageToken };
+    return { messages, cursor: page.cursor };
   }
 
   async read(
@@ -704,7 +710,10 @@ function eventDetail(
 export class GoogleRestCalendar implements Required<CalendarSession> {
   private readonly zones = new Map<string, Promise<string | undefined>>();
 
-  constructor(readonly calendar: CalendarClient) {}
+  constructor(
+    readonly calendar: CalendarClient,
+    private readonly pages: Pages,
+  ) {}
 
   /**
    * The zone an event without its own is shown in: its calendar's, as
@@ -755,8 +764,8 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
   ): Promise<CalendarListResult> {
     const calendarId = await this.calendarId(args.calendar, ctx.signal);
     let zone: string | undefined;
-    const page = await collectPages(
-      async (pageToken, maxResults) => {
+    const page = await this.pages({
+      fetch: async (pageToken, maxResults) => {
         const result = await this.calendar.listEvents(
           calendarId,
           { timeMin: args.from, timeMax: args.to, maxResults, pageToken },
@@ -765,12 +774,14 @@ export class GoogleRestCalendar implements Required<CalendarSession> {
         zone ??= result.timeZone;
         return result;
       },
-      args.limit,
-      args.cursor,
-    );
+      items: (found) => found.items,
+      next: "nextPageToken",
+      limit: args.limit,
+      ...(args.cursor ? { cursor: args.cursor } : {}),
+    });
     return {
       events: page.items.map((event) => eventSummary(event, zone, calendarId)),
-      cursor: page.nextPageToken,
+      cursor: page.cursor,
     };
   }
 
@@ -945,7 +956,10 @@ function decodePrefix(bytes: Uint8Array): string {
 
 /** Google Drive over REST (`drive/v3`, `upload/drive/v3`): every `drive` command. */
 export class GoogleRestDrive implements Required<DriveSession> {
-  constructor(readonly drive: DriveClient) {}
+  constructor(
+    readonly drive: DriveClient,
+    private readonly pages: Pages,
+  ) {}
 
   async search(
     args: DriveSearchArgs,
@@ -956,15 +970,17 @@ export class GoogleRestDrive implements Required<DriveSession> {
       folderId: args.folder_id,
       modifiedAfter: args.modified_after,
     });
-    const page = await collectPages(
-      (pageToken, pageSize) =>
+    const page = await this.pages({
+      fetch: (pageToken, pageSize) =>
         this.drive.listFiles({ q, pageSize, pageToken }, ctx.signal),
-      args.limit,
-      args.cursor,
-    );
+      items: (found) => found.items,
+      next: "nextPageToken",
+      limit: args.limit,
+      ...(args.cursor ? { cursor: args.cursor } : {}),
+    });
     return {
       files: page.items.map(driveFileSummary),
-      cursor: page.nextPageToken,
+      cursor: page.cursor,
     };
   }
 
@@ -1067,8 +1083,14 @@ export class GoogleRestBackend {
   readonly drive: GoogleRestDrive;
 
   constructor(transport: GoogleTransport) {
-    this.mail = new GoogleRestMail(new GmailClient(transport));
-    this.calendar = new GoogleRestCalendar(new CalendarClient(transport));
-    this.drive = new GoogleRestDrive(new DriveClient(transport));
+    this.mail = new GoogleRestMail(new GmailClient(transport), transport.pages);
+    this.calendar = new GoogleRestCalendar(
+      new CalendarClient(transport),
+      transport.pages,
+    );
+    this.drive = new GoogleRestDrive(
+      new DriveClient(transport),
+      transport.pages,
+    );
   }
 }

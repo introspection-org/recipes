@@ -6,6 +6,7 @@ import {
   PRODUCTIVITY_TOOLS,
   productivityCapabilitiesProblem,
   productivityCommandsFor,
+  pages,
 } from "@introspection-ai/recipes/productivity";
 import { describe, expect, it } from "vitest";
 
@@ -60,6 +61,7 @@ describe("the Google productivity module", () => {
       env: { INTROSPECTION_TASK_ID: "t" },
       cwd: process.cwd(),
       http: fakeHttp(fakeGoogle([]).fetchImpl),
+      pages,
     });
     expect(session.provider).toBe("google");
     for (const tool of PRODUCTIVITY_TOOLS) {

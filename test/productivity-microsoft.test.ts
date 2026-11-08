@@ -28,6 +28,7 @@ import {
   productivityCapabilitiesProblem,
   productivityCommandsFor,
   type ProductivitySession,
+  pages,
 } from "../src/productivity/index.js";
 import { readPiPackageManifest } from "../src/recipe/package.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
@@ -144,6 +145,7 @@ function session(
 ): ProductivitySession {
   waits.length = 0;
   return createMicrosoftSession({
+    pages,
     http: createProductivityHttp({
       provider: "microsoft",
       env,

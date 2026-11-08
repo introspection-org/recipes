@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadRecipeConnectors } from "../src/connector-tools.js";
 import {
   createIssuesTool,
+  formatIssuesResult,
   issuesParameters,
   issuesProviderDeclarations,
   loadRecipeIssues,
@@ -508,5 +509,39 @@ describe("choosing a provider", () => {
     expect(failed.content[0]!.text).toBe(
       "issues failed (not_supported): introspection does not support comment.",
     );
+  });
+});
+
+describe("search pages", () => {
+  it("hands back a provider's cursor, and passes it on the next search", async () => {
+    const seen: Array<string | undefined> = [];
+    const paged: RecipeIssuesProviderModule = {
+      ...fakeModule("introspection"),
+      createSession: () => ({
+        search: async (args) => {
+          seen.push(args.cursor);
+          return args.cursor
+            ? { issues: [issue("2")] }
+            : { issues: [issue("1")], cursor: "c2" };
+        },
+      }),
+    };
+    const tool = createIssuesTool({
+      providers: [
+        {
+          module: paged,
+          config: { provider: "introspection", options: {} },
+          fallback: true,
+        },
+      ],
+    });
+    const first = await tool({ command: "search" });
+    expect(first).toMatchObject({ cursor: "c2" });
+    expect(formatIssuesResult(first)).toContain(
+      "More: search again with cursor c2",
+    );
+    const second = await tool({ command: "search", cursor: "c2" });
+    expect(seen).toEqual([undefined, "c2"]);
+    expect(second).not.toHaveProperty("cursor");
   });
 });

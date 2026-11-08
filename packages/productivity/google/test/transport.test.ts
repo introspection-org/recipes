@@ -1,7 +1,7 @@
+import { pages } from "@introspection-ai/recipes/productivity";
 import { describe, expect, it } from "vitest";
 
 import {
-  collectPages,
   GoogleProductivityError,
   GoogleTransport,
   GMAIL_SCOPES,
@@ -23,7 +23,7 @@ function transport(responses: Response[]) {
   return {
     ...fake,
     waits,
-    transport: new GoogleTransport(fakeHttp(fake.fetchImpl, { waits })),
+    transport: new GoogleTransport(fakeHttp(fake.fetchImpl, { waits }), pages),
   };
 }
 
@@ -130,42 +130,5 @@ describe("rate limits", () => {
       status: 503,
     });
     expect(failing.calls).toHaveLength(1);
-  });
-});
-
-describe("collectPages", () => {
-  const pages: Record<string, { items: number[]; nextPageToken?: string }> = {
-    start: { items: [1, 2, 3], nextPageToken: "p2" },
-    p2: { items: [4, 5], nextPageToken: "p3" },
-    p3: { items: [6] },
-  };
-  const fetchPage = async (token: string | undefined, size: number) => {
-    const page = pages[token ?? "start"]!;
-    return {
-      items: page.items.slice(0, size),
-      nextPageToken:
-        page.items.length > size
-          ? `${token ?? "start"}+${size}`
-          : page.nextPageToken,
-    };
-  };
-
-  it("follows nextPageToken across pages up to the limit", async () => {
-    await expect(collectPages(fetchPage, 10)).resolves.toEqual({
-      items: [1, 2, 3, 4, 5, 6],
-    });
-    await expect(collectPages(fetchPage, 5)).resolves.toEqual({
-      items: [1, 2, 3, 4, 5],
-      nextPageToken: "p3",
-    });
-  });
-
-  it("asks a page for only the room left, so the cursor never skips items", async () => {
-    const sizes: number[] = [];
-    await collectPages(async (token, size) => {
-      sizes.push(size);
-      return fetchPage(token, size);
-    }, 4);
-    expect(sizes).toEqual([4, 1]);
   });
 });

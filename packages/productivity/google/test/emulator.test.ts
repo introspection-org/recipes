@@ -1,4 +1,7 @@
-import { createProductivityHttp } from "@introspection-ai/recipes/productivity";
+import {
+  createProductivityHttp,
+  pages,
+} from "@introspection-ai/recipes/productivity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -165,6 +168,7 @@ beforeAll(async () => {
       env: EGRESS_ENV,
       cwd: process.cwd(),
       http: createProductivityHttp({ provider: "google", env: EGRESS_ENV }),
+      pages,
     },
     { endpoints: emulator.endpoints },
   );

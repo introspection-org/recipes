@@ -28,6 +28,7 @@ import {
   type ProductivitySessionOptions,
   type ProductivityTool,
 } from "./types.js";
+import { pages } from "../providers/pages.js";
 
 /**
  * The productivity contract this host implements. A provider module declares
@@ -217,6 +218,7 @@ export async function loadRecipeProductivity(
                 env,
                 ...(options.fetch ? { fetch: options.fetch } : {}),
               }),
+              pages,
             }),
         });
         pi.on("resources_discover", () => ({ skillPaths }));

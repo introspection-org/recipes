@@ -17,8 +17,6 @@ import {
   IssuesError,
   isStatusCategory,
   listOf,
-  MAX_PAGES,
-  nextCursor,
   record,
   text,
   toolsFor,
@@ -222,7 +220,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
     server: "linear",
     tools: LINEAR_MCP_TOOLS,
   },
-  createSession({ config }): IssuesSession {
+  createSession({ config, pages }): IssuesSession {
     const call = (
       use: IssuesMcpToolMapping["serves"][number],
       args: Record<string, unknown>,
@@ -281,56 +279,62 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
             : category && isStatusCategory(category)
               ? SEARCH_STATE_TYPES[category]
               : [args.status];
-        const pages = await Promise.all(
-          states.map((state) =>
-            call(
-              "search",
-              {
-                limit,
-                ...(args.query !== undefined ? { query: args.query } : {}),
-                ...(state !== undefined ? { state } : {}),
-                ...(args.assignee !== undefined
-                  ? { assignee: args.assignee }
-                  : {}),
-                ...(args.container !== undefined
-                  ? { team: args.container }
-                  : {}),
-                ...(args.label !== undefined ? { label: args.label } : {}),
-              },
-              ctx,
-            ),
-          ),
+        const search = (state: string | undefined, cursor?: string) =>
+          pages({
+            fetch: (after, size) =>
+              call(
+                "search",
+                {
+                  limit: size,
+                  ...(args.query !== undefined ? { query: args.query } : {}),
+                  ...(state !== undefined ? { state } : {}),
+                  ...(args.assignee !== undefined
+                    ? { assignee: args.assignee }
+                    : {}),
+                  ...(args.container !== undefined
+                    ? { team: args.container }
+                    : {}),
+                  ...(args.label !== undefined ? { label: args.label } : {}),
+                  ...(after ? { cursor: after } : {}),
+                },
+                ctx,
+              ),
+            items: (page) =>
+              listOf(page, ["issues", "nodes", "results"]).map(linearIssue),
+            next: "cursor",
+            limit,
+            ...(cursor ? { cursor } : {}),
+          });
+        if (states.length === 1) {
+          const found = await search(states[0], args.cursor);
+          return {
+            issues: found.items,
+            ...(found.cursor ? { cursor: found.cursor } : {}),
+          };
+        }
+        // Several state types are several searches, merged newest first; the
+        // merge has no single place to resume from.
+        const issues = (
+          await Promise.all(states.map((state) => search(state)))
+        ).flatMap((found) => found.items);
+        issues.sort((a, b) =>
+          (b.updated_at ?? "").localeCompare(a.updated_at ?? ""),
         );
-        const issues = pages.flatMap((found) =>
-          listOf(found, ["issues", "nodes", "results"]).map(linearIssue),
-        );
-        if (states.length > 1)
-          issues.sort((a, b) =>
-            (b.updated_at ?? "").localeCompare(a.updated_at ?? ""),
-          );
         return { issues: issues.slice(0, limit) };
       },
       async get({ ref }, ctx) {
         const issue = await getIssue(ref, ctx);
-        const comments: IssueComment[] = [];
-        let cursor: string | undefined;
-        for (let page = 0; page < MAX_PAGES; page += 1) {
-          const answer = await call(
-            "get",
-            { issueId: ref, ...(cursor ? { cursor } : {}) },
-            ctx,
-            ["list_comments"],
-          );
-          comments.push(
-            ...listOf(answer, ["comments", "nodes"])
-              .map(linearComment)
-              .filter(
-                (comment): comment is IssueComment => comment !== undefined,
-              ),
-          );
-          cursor = nextCursor(answer);
-          if (!cursor) break;
-        }
+        const { items } = await pages({
+          fetch: (cursor) =>
+            call("get", { issueId: ref, ...(cursor ? { cursor } : {}) }, ctx, [
+              "list_comments",
+            ]),
+          items: (page) => listOf(page, ["comments", "nodes"]),
+          next: "cursor",
+        });
+        const comments = items
+          .map(linearComment)
+          .filter((comment): comment is IssueComment => comment !== undefined);
         return { ...issue, comments };
       },
       async create(args, ctx) {

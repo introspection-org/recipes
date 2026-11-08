@@ -1,4 +1,5 @@
 import type {
+  Pages,
   ProductivityErrorCode,
   ProductivityErrorInfo,
   ProductivityHttp,
@@ -80,6 +81,7 @@ export class GraphClient {
 
   constructor(
     private readonly http: ProductivityHttp,
+    private readonly pages: Pages,
     options: GraphClientOptions = {},
   ) {
     this.baseUrl = (options.baseUrl ?? GRAPH_BASE_URL).replace(/\/+$/, "");
@@ -157,20 +159,26 @@ export class GraphClient {
     signal?: AbortSignal,
     cursor?: string,
   ): Promise<{ items: T[]; next?: string }> {
-    const items: T[] = [];
-    let url = cursor ? this.ownLink(cursor) : undefined;
-    for (;;) {
-      const response = await this.send(request, signal, url);
-      const page = await this.decode<{
-        value?: T[];
-        "@odata.nextLink"?: string;
-      }>(response);
-      items.push(...(page?.value ?? []));
-      const next = page?.["@odata.nextLink"];
-      if (!next) return { items };
-      if (items.length >= limit) return { items, next: this.ownLink(next) };
-      url = this.ownLink(next);
-    }
+    const found = await this.pages({
+      fetch: async (link) =>
+        this.decode<{ value?: T[]; "@odata.nextLink"?: string }>(
+          await this.send(
+            request,
+            signal,
+            link ? this.ownLink(link) : undefined,
+          ),
+        ),
+      items: (page) => page?.value ?? [],
+      next: (page) => {
+        const link = page?.["@odata.nextLink"];
+        return link ? this.ownLink(link) : undefined;
+      },
+      limit,
+      ...(cursor ? { cursor } : {}),
+    });
+    return found.cursor
+      ? { items: found.items, next: found.cursor }
+      : { items: found.items };
   }
 
   /** Fetch bytes, following a redirect to a pre-authenticated URL without the bearer. */

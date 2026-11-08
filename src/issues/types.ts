@@ -9,6 +9,8 @@
  * provider again.
  */
 
+import type { Pages } from "../providers/pages.js";
+
 /**
  * The issues contract this host implements. A provider module, and the bundle
  * that exports it, declare the version they were written against, and the
@@ -168,10 +170,14 @@ export interface IssuesSearchArgs {
   readonly container?: string;
   readonly label?: string;
   readonly limit?: number;
+  /** A previous result's `cursor`: the same search, resumed after it. */
+  readonly cursor?: string;
 }
 
 export interface IssuesSearchResult {
   readonly issues: readonly ProviderIssue[];
+  /** Present when more match: pass it back, with the same arguments, for the next page. */
+  readonly cursor?: string;
 }
 
 export interface IssuesGetArgs {
@@ -348,6 +354,8 @@ export interface IssuesProviderConfig {
 export interface IssuesSessionOptions {
   readonly config: IssuesProviderConfig;
   readonly env: NodeJS.ProcessEnv;
+  /** Follows a list's pages, the server's or the Data Plane's. */
+  readonly pages: Pages;
 }
 
 /**

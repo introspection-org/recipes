@@ -24,3 +24,10 @@ export type {
 } from "./tool.js";
 export type { RecipePackageIssues } from "../recipe/package.js";
 export * from "./types.js";
+export {
+  pages,
+  type PageNext,
+  type Pages,
+  type PagesRequest,
+  type PagesResult,
+} from "../providers/pages.js";
