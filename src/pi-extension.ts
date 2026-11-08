@@ -70,7 +70,7 @@ import {
   platformToolExposure,
   type RecipeAgentDefinition,
 } from "./recipe/agent.js";
-import type { RecipeAgentMcp, RecipeAgentMcpMode } from "./recipe/agent.js";
+import type { RecipeAgentMcp, RecipeAgentToolMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
 import {
   createMcpBehindGuard,
@@ -199,7 +199,7 @@ interface RecipeLaunchState {
   extensionFailure?: string;
   configured: boolean;
   mcpConfigured: boolean;
-  agentMcpMode: RecipeAgentMcpMode;
+  agentMcpMode: RecipeAgentToolMode;
   initialMcpToolNames: string[];
   mcpDeferredToolNames: string[];
   /** `mcp.mode: codemode`: the servers registered with Pi's MCP support. */
@@ -321,7 +321,7 @@ async function registerServersBehindTools(
   );
 }
 
-function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentMcpMode {
+function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentToolMode {
   return state.resolved.mcp?.mode ?? "cli";
 }
 
@@ -1029,14 +1029,14 @@ export function createRecipesExtension(
             ? { python: launchState.python.packages }
             : {}),
           exposure: (name) =>
-            platformToolExposure(launchState.resolved.platform, name),
+            platformToolExposure(launchState.resolved.toolPolicy, name),
         },
       );
       launchState.initialConnectorToolNames =
         connectors.loadout.initialActiveToolNames;
-      if (launchState.resolved.platform?.mode === "codemode") {
+      if (launchState.resolved.toolPolicy?.mode === "codemode") {
         // First-party tools in codemode need the codemode tool even with no MCP server.
-        assertPiSupportsCodemode("platform.mode codemode");
+        assertPiSupportsCodemode("tools.mode codemode");
         if (!pi.getAllTools().some((tool) => tool.name === CODEMODE_TOOL_NAME))
           await createCodemodeExtension({ models: false })(pi);
         launchState.initialConnectorToolNames = [

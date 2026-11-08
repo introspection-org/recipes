@@ -28,6 +28,7 @@ import {
   type ProductivitySessionOptions,
   type ProductivityTool,
 } from "./types.js";
+import type { RecipeToolExposure } from "../recipe/agent.js";
 
 /**
  * The productivity contract this host implements. A provider module declares
@@ -130,8 +131,8 @@ export async function loadRecipeProductivity(
     hostDir?: string;
     /** The `fetch` providers use; a host attaching credentials with a request hook passes its own. */
     fetch?: ProductivityFetch;
-    /** How a first-party tool registers for the agent (`platform.mode`). Default: declared. */
-    exposure?: (tool: string) => "direct" | "codemode";
+    /** How a first-party tool registers for the agent (`tools.mode`). Default: declared. */
+    exposure?: (tool: string) => RecipeToolExposure;
   },
 ): Promise<LoadedRecipeProductivity> {
   if (declarations.length === 0) return { toolNames: [] };

@@ -36,6 +36,7 @@ import {
   type WebSearchArgs,
   type WebSearchResult,
 } from "./types.js";
+import type { RecipeToolExposure } from "../recipe/agent.js";
 
 export const SEARCH_TOOL_NAME = "web_search";
 
@@ -170,8 +171,8 @@ export function webSearchParameters(
 }
 
 export interface WebSearchOptions {
-  /** `codemode`: callable from codemode scripts only, not declared to the model (`platform.mode`). */
-  exposure?: "direct" | "codemode";
+  /** `codemode`: callable from codemode scripts only; `deferred`: loaded by tool search (`tools.mode`, `defer`). */
+  exposure?: RecipeToolExposure;
   /**
    * The providers whose REST API is bound to this runtime (an endpoint and
    * credential on its egress). One not implemented here is not offered.

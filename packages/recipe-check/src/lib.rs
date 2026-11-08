@@ -131,7 +131,7 @@ struct RawAgent {
     fields: HashSet<AgentField>,
     skills: Option<Vec<String>>,
     subagents: Option<Vec<String>>,
-    tools: Option<Vec<String>>,
+    tools: Option<McpToolSelectors>,
     mcp: Option<AgentMcpConfig>,
 }
 
@@ -148,7 +148,7 @@ struct McpToolSelectors {
 type McpToolPolicy = BTreeMap<String, McpToolSelectors>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AgentMcpMode {
+enum ToolMode {
     Cli,
     Tools,
     Codemode,
@@ -156,7 +156,7 @@ enum AgentMcpMode {
 
 #[derive(Debug, Clone, Default)]
 struct AgentMcpConfig {
-    mode: Option<AgentMcpMode>,
+    mode: Option<ToolMode>,
     servers: BTreeMap<String, McpToolSelectors>,
 }
 
@@ -351,6 +351,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             &resources,
             &dependency_skills,
             mcp_tool_policy.as_ref(),
+            &agent_tool_catalog(&package),
             &mut ctx,
         );
     }
@@ -3004,6 +3005,7 @@ fn validate_agents(
     resources: &HashMap<&'static str, Vec<String>>,
     dependency_skills: &DependencySkills,
     mcp_tool_policy: Option<&McpToolPolicy>,
+    tool_catalog: &[String],
     ctx: &mut CheckContext,
 ) {
     let mut sources = Vec::new();
@@ -3017,6 +3019,9 @@ fn validate_agents(
     }
 
     validate_agent_names(&sources, ctx);
+    for source in &sources {
+        validate_agent_tool_activation(source, tool_catalog, ctx);
+    }
 
     let mut raw_by_name = HashMap::new();
     for source in &sources {
@@ -3061,7 +3066,7 @@ fn validate_agents(
                 ctx,
             );
         }
-        validate_resolved_agent_mcp(&name, &raw_by_name, mcp_tool_policy, ctx);
+        validate_resolved_agent_mcp(&name, &raw_by_name, mcp_tool_policy, tool_catalog, ctx);
     }
 }
 
@@ -3108,7 +3113,6 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         "session",
         "tools",
         "mcp",
-        "platform",
         "skills",
         "phases",
         "subagents",
@@ -3201,11 +3205,11 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     validate_agent_model(map, path, &name, &mut fields, ctx);
     validate_agent_ai(map, path, &name, &mut fields, ctx);
     validate_agent_session(map, path, ctx);
-    let tools = validate_agent_string_array(map, "tools", path, ctx);
+    let tools = validate_agent_tools(map, path, ctx);
     let reserved_tools = tools
-        .as_deref()
-        .unwrap_or_default()
         .iter()
+        .filter_map(|tools| tools.include.as_ref())
+        .flatten()
         .filter(|tool| tool.as_str() == "agent")
         .cloned()
         .collect::<Vec<_>>();
@@ -3221,7 +3225,6 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         );
     }
     let mcp = validate_agent_mcp(map, path, ctx);
-    validate_agent_platform(map, path, tools.as_deref(), ctx);
     let skills = validate_agent_string_array(map, "skills", path, ctx);
     validate_agent_string_array(map, "phases", path, ctx);
     let subagents = validate_agent_string_array(map, "subagents", path, ctx);
@@ -3239,105 +3242,182 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     })
 }
 
-/// The tools Recipes owns, which an agent's `platform` block governs.
+/// The tools Recipes owns: the only names an agent's `tools.defer` and `tools.eager` may hold.
 const PLATFORM_TOOL_NAMES: [&str; 5] = ["issues", "mail", "calendar", "drive", "web_search"];
 
-/// `platform`: how the selected first-party tools reach the model. `mode` is
-/// `tools` (declared, the default) or `codemode` (scripts only); `eager`, in
-/// codemode, names selected first-party tools declared as well. An agent that
-/// inherits its tools has `eager` checked against them when the Recipe loads.
-fn validate_agent_platform(
-    map: &JsonMap,
-    path: &str,
-    tools: Option<&[String]>,
-    ctx: &mut CheckContext,
-) {
-    const CODE: &str = "agent.platform_invalid";
-    let Some(value) = map.get("platform") else {
-        return;
-    };
-    let Some(platform) = value.as_object() else {
-        ctx.error(
-            CODE,
-            path,
-            "platform must be a mapping",
-            Some("use mode and, in codemode, eager"),
-        );
-        return;
-    };
-    for key in platform
-        .keys()
-        .filter(|key| !matches!(key.as_str(), "mode" | "eager"))
-    {
-        ctx.error(
-            CODE,
-            path,
-            format!("platform contains unknown field '{key}'"),
-            Some("use mode and, in codemode, eager"),
+/// Tools every agent session has, which `tools.include: ["*"]` selects.
+const BUILTIN_TOOL_NAMES: [&str; 11] = [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "grep",
+    "find",
+    "ls",
+    "ask_user_question",
+    "show_artifact",
+    "review_artifacts",
+    "introspection_open",
+];
+
+/// What `tools.include: ["*"]` selects: the built-ins plus the first-party tools `package.json#pi`
+/// declares. A Recipe's own extension and connector tools are never in it and must be named.
+fn agent_tool_catalog(package: &Package) -> Vec<String> {
+    let pi = package.pi.as_ref().and_then(JsonValue::as_object);
+    let declared = |key: &str| pi.and_then(|pi| pi.get(key)).is_some();
+    let mut catalog: Vec<String> = BUILTIN_TOOL_NAMES
+        .iter()
+        .map(|tool| (*tool).to_owned())
+        .collect();
+    if declared("issues") {
+        catalog.push("issues".to_owned());
+    }
+    if declared("productivity") {
+        let allowed = pi
+            .and_then(|pi| pi.get("productivity"))
+            .and_then(JsonValue::as_array)
+            .and_then(|declarations| declarations.first())
+            .and_then(|declaration| declaration.get("tools"))
+            .and_then(JsonValue::as_object);
+        catalog.extend(
+            PRODUCTIVITY_COMMANDS
+                .iter()
+                .map(|(tool, _)| *tool)
+                .filter(|tool| allowed.is_none_or(|allowed| allowed.contains_key(*tool)))
+                .map(str::to_owned),
         );
     }
-    let mode = platform.get("mode");
-    match mode {
-        None => {}
-        Some(JsonValue::String(value)) if value == "tools" || value == "codemode" => {}
-        Some(JsonValue::String(value)) if value == "cli" => ctx.error(
-            CODE,
-            path,
-            "platform.mode cli needs the tools command, which this release does not have",
-            Some("use tools or codemode"),
-        ),
-        Some(_) => ctx.error(
-            CODE,
-            path,
-            "platform.mode must be tools or codemode",
-            None::<String>,
-        ),
+    if declared("search") {
+        catalog.push("web_search".to_owned());
     }
-    let Some(eager) = platform.get("eager") else {
-        return;
-    };
-    let Some(names) = eager.as_array().and_then(|items| {
-        items
-            .iter()
-            .map(JsonValue::as_str)
-            .collect::<Option<Vec<_>>>()
-    }) else {
-        ctx.error(
-            CODE,
-            path,
-            "platform.eager must be a list of tool names",
-            None::<String>,
-        );
-        return;
-    };
-    if mode.and_then(JsonValue::as_str) != Some("codemode") {
-        ctx.error(
-            CODE,
-            path,
-            "platform.eager applies only with platform.mode codemode",
-            Some("remove eager, or set mode to codemode"),
-        );
-    }
-    let not_selected: Vec<&str> = names
-        .into_iter()
-        .filter(|name| {
-            !PLATFORM_TOOL_NAMES.contains(name)
-                || tools.is_some_and(|tools| !tools.iter().any(|tool| tool == name))
+    catalog
+}
+
+/// The tools a selector set picks: `include`, with `*` expanded from the catalog, minus `exclude`.
+fn selected_tools(selectors: &McpToolSelectors, catalog: &[String]) -> BTreeSet<String> {
+    let include = selectors.include.iter().flatten();
+    let expanded: BTreeSet<String> = include
+        .flat_map(|tool| {
+            if tool == "*" {
+                catalog.to_vec()
+            } else {
+                vec![tool.clone()]
+            }
         })
         .collect();
-    if !not_selected.is_empty() {
+    expanded
+        .into_iter()
+        .filter(|tool| {
+            !selectors
+                .exclude
+                .as_ref()
+                .is_some_and(|exclude| exclude.contains(tool))
+        })
+        .collect()
+}
+
+/// `tools`: a list of names, short for `include`, or a mapping of `mode` and the selectors an
+/// `mcp.servers` entry takes. `defer` and `eager` hold only first-party tools.
+fn validate_agent_tools(
+    map: &JsonMap,
+    path: &str,
+    ctx: &mut CheckContext,
+) -> Option<McpToolSelectors> {
+    const CODE: &str = "agent.tools_invalid";
+    let Some(tools) = map.get("tools")?.as_object() else {
+        let include = validate_agent_string_array(map, "tools", path, ctx)?;
+        return Some(McpToolSelectors {
+            include: Some(include.into_iter().collect()),
+            ..McpToolSelectors::default()
+        });
+    };
+    for key in tools.keys().filter(|key| {
+        !matches!(
+            key.as_str(),
+            "mode" | "include" | "exclude" | "defer" | "eager"
+        )
+    }) {
         ctx.error(
             CODE,
             path,
-            format!(
-                "platform.eager names tool(s) that are not selected first-party tools: {}",
-                not_selected.join(", ")
-            ),
-            Some(format!(
-                "name tools the agent selects from {}",
-                PLATFORM_TOOL_NAMES.join(", ")
-            )),
+            format!("Agent tools contains unknown field '{key}'"),
+            Some("use only mode, include, exclude, defer and eager"),
         );
+    }
+    let mode = match tools.get("mode") {
+        None => Some(ToolMode::Tools),
+        Some(value) => match parse_tool_mode(value) {
+            Some(ToolMode::Cli) => {
+                ctx.error(
+                    CODE,
+                    path,
+                    "tools.mode cli needs the tools command, which this release does not have",
+                    Some("use tools or codemode"),
+                );
+                Some(ToolMode::Cli)
+            }
+            Some(mode) => Some(mode),
+            None => {
+                ctx.error(
+                    CODE,
+                    path,
+                    "Agent tools.mode must be 'tools' or 'codemode'",
+                    Some("set tools.mode to tools or codemode"),
+                );
+                None
+            }
+        },
+    };
+    let selectors = validate_tool_selectors(tools, mode, SelectorOwner::Tools, path, ctx);
+    for (key, names) in [("defer", &selectors.defer), ("eager", &selectors.eager)] {
+        let foreign: Vec<&str> = names
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .filter(|name| *name != "*" && !PLATFORM_TOOL_NAMES.contains(name))
+            .collect();
+        if !foreign.is_empty() {
+            ctx.error(
+                CODE,
+                path,
+                format!(
+                    "Agent tools.{key} names tool(s) that are not first-party tools: {}",
+                    foreign.join(", ")
+                ),
+                Some(format!(
+                    "name tools from {}",
+                    PLATFORM_TOOL_NAMES.join(", ")
+                )),
+            );
+        }
+    }
+    Some(selectors)
+}
+
+/// `tools.defer` and `tools.eager` name only tools the same block selects.
+fn validate_agent_tool_activation(agent: &RawAgent, catalog: &[String], ctx: &mut CheckContext) {
+    let Some(tools) = &agent.tools else {
+        return;
+    };
+    let selected = selected_tools(tools, catalog);
+    for (key, names) in [("defer", &tools.defer), ("eager", &tools.eager)] {
+        let unselected: Vec<&str> = names
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .filter(|name| *name != "*" && !selected.contains(*name))
+            .collect();
+        if !unselected.is_empty() {
+            ctx.error(
+                "agent.tools_invalid",
+                agent.path.clone(),
+                format!(
+                    "Agent tools.{key} names tool(s) the agent does not select: {}",
+                    unselected.join(", ")
+                ),
+                Some("select the tool with include, or remove it"),
+            );
+        }
     }
 }
 
@@ -4049,21 +4129,18 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
         );
         return Some(AgentMcpConfig::default());
     };
-    let mode = match mcp.get("mode") {
-        Some(JsonValue::String(value)) if value == "cli" => Some(AgentMcpMode::Cli),
-        Some(JsonValue::String(value)) if value == "tools" => Some(AgentMcpMode::Tools),
-        Some(JsonValue::String(value)) if value == "codemode" => Some(AgentMcpMode::Codemode),
-        Some(_) => {
+    let mode = mcp.get("mode").and_then(|value| {
+        let mode = parse_tool_mode(value);
+        if mode.is_none() {
             ctx.error(
                 "agent.mcp_mode_invalid",
                 path,
                 "Agent mcp.mode must be 'cli', 'tools' or 'codemode'",
                 Some("set mcp.mode to cli, tools or codemode"),
             );
-            None
         }
-        None => None,
-    };
+        mode
+    });
     let empty_servers = JsonMap::new();
     let servers = match mcp.get("servers") {
         Some(JsonValue::Object(servers)) => servers,
@@ -4122,96 +4199,11 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
             continue;
         };
         reject_unknown_mcp_server_keys(server, server_id, path, ctx);
-        let mut selectors = McpToolSelectors {
-            behind: validate_mcp_behind(server, server_id, path, ctx),
-            ..McpToolSelectors::default()
+        let behind = validate_mcp_behind(server, server_id, path, ctx);
+        let selectors = McpToolSelectors {
+            behind,
+            ..validate_tool_selectors(server, mode, SelectorOwner::McpServer(server_id), path, ctx)
         };
-        for key in ["include", "exclude", "defer", "eager"] {
-            let Some(value) = server.get(key) else {
-                continue;
-            };
-            if matches!(key, "defer" | "eager") && mode.is_some() && !activation_allowed(key, mode)
-            {
-                ctx.error(
-                    "agent.mcp_activation_invalid",
-                    path,
-                    format!(
-                        "Agent mcp server '{server_id}' {key} is not valid when mcp.mode is {}",
-                        mode_name(mode)
-                    ),
-                    Some(activation_help(key)),
-                );
-            }
-            if let Err(message) = string_array(value) {
-                ctx.error(
-                    "agent.mcp_invalid",
-                    path,
-                    format!("mcp.{server_id}.{key}: {message}"),
-                    Some("use a list containing only non-empty tool names"),
-                );
-                continue;
-            }
-            let Some(items) = value.as_array() else {
-                continue;
-            };
-            let authored_values = items
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::trim)
-                .collect::<Vec<_>>();
-            if authored_values.iter().collect::<BTreeSet<_>>().len() != authored_values.len() {
-                ctx.error(
-                    "agent.mcp_selector_duplicate",
-                    path,
-                    format!("Agent mcp server '{server_id}' {key} must not contain duplicates"),
-                    Some("remove duplicate selectors"),
-                );
-            }
-            let values = items
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::trim)
-                .map(str::to_owned)
-                .collect::<BTreeSet<_>>();
-            for selector in &values {
-                let valid = match key {
-                    "include" | "defer" | "eager" => {
-                        !selector.is_empty() && (selector == "*" || !selector.contains('*'))
-                    }
-                    _ => !selector.is_empty() && !selector.contains('*'),
-                };
-                if !valid {
-                    ctx.error(
-                        "agent.mcp_selector_invalid",
-                        path,
-                        format!(
-                            "Agent mcp server '{server_id}' {key} entry '{selector}' must be {}",
-                            if matches!(key, "include" | "defer" | "eager") {
-                                "an exact tool name or '*'"
-                            } else {
-                                "an exact tool name"
-                            }
-                        ),
-                        None::<String>,
-                    );
-                }
-            }
-            if matches!(key, "defer" | "eager") && values.contains("*") && items.len() != 1 {
-                ctx.error(
-                    "agent.mcp_activation_selector_invalid",
-                    path,
-                    format!("Agent mcp server '{server_id}' {key} must use '*' by itself"),
-                    None::<String>,
-                );
-            }
-            match key {
-                "include" => selectors.include = Some(values),
-                "exclude" => selectors.exclude = Some(values),
-                "defer" => selectors.defer = Some(values),
-                "eager" => selectors.eager = Some(values),
-                _ => unreachable!(),
-            }
-        }
         let normalized_server_id = safe_mcp_server_id(server_id);
         if parsed.contains_key(&normalized_server_id) {
             ctx.error(
@@ -4230,6 +4222,148 @@ fn validate_agent_mcp(map: &JsonMap, path: &str, ctx: &mut CheckContext) -> Opti
         mode,
         servers: parsed,
     })
+}
+
+fn parse_tool_mode(value: &JsonValue) -> Option<ToolMode> {
+    match value.as_str()? {
+        "cli" => Some(ToolMode::Cli),
+        "tools" => Some(ToolMode::Tools),
+        "codemode" => Some(ToolMode::Codemode),
+        _ => None,
+    }
+}
+
+/// Where a selector set is declared, which names its diagnostics.
+#[derive(Debug, Clone, Copy)]
+enum SelectorOwner<'a> {
+    McpServer(&'a str),
+    Tools,
+}
+
+impl SelectorOwner<'_> {
+    fn code(self, mcp_code: &'static str) -> &'static str {
+        match self {
+            Self::McpServer(_) => mcp_code,
+            Self::Tools => "agent.tools_invalid",
+        }
+    }
+
+    fn subject(self) -> String {
+        match self {
+            Self::McpServer(id) => format!("Agent mcp server '{id}'"),
+            Self::Tools => "Agent tools".to_owned(),
+        }
+    }
+
+    fn field(self, key: &str) -> String {
+        match self {
+            Self::McpServer(id) => format!("mcp.{id}.{key}"),
+            Self::Tools => format!("tools.{key}"),
+        }
+    }
+
+    const fn mode_field(self) -> &'static str {
+        match self {
+            Self::McpServer(_) => "mcp.mode",
+            Self::Tools => "tools.mode",
+        }
+    }
+}
+
+/// `include`, `exclude`, `defer` and `eager`, as an `mcp.servers` entry and the `tools` block take
+/// them: unique non-empty names, `*` only in `include` or alone in `defer`/`eager`, and `defer` and
+/// `eager` only in a mode that declares tools to the model.
+fn validate_tool_selectors(
+    object: &JsonMap,
+    mode: Option<ToolMode>,
+    owner: SelectorOwner<'_>,
+    path: &str,
+    ctx: &mut CheckContext,
+) -> McpToolSelectors {
+    let subject = owner.subject();
+    let mut selectors = McpToolSelectors::default();
+    for key in ["include", "exclude", "defer", "eager"] {
+        let Some(value) = object.get(key) else {
+            continue;
+        };
+        if matches!(key, "defer" | "eager") && mode.is_some() && !activation_allowed(key, mode) {
+            ctx.error(
+                owner.code("agent.mcp_activation_invalid"),
+                path,
+                format!(
+                    "{subject} {key} is not valid when {} is {}",
+                    owner.mode_field(),
+                    mode_name(mode)
+                ),
+                Some(activation_help(key, owner.mode_field())),
+            );
+        }
+        if let Err(message) = string_array(value) {
+            ctx.error(
+                owner.code("agent.mcp_invalid"),
+                path,
+                format!("{}: {message}", owner.field(key)),
+                Some("use a list containing only non-empty tool names"),
+            );
+            continue;
+        }
+        let Some(items) = value.as_array() else {
+            continue;
+        };
+        let authored_values = items
+            .iter()
+            .filter_map(JsonValue::as_str)
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        if authored_values.iter().collect::<BTreeSet<_>>().len() != authored_values.len() {
+            ctx.error(
+                owner.code("agent.mcp_selector_duplicate"),
+                path,
+                format!("{subject} {key} must not contain duplicates"),
+                Some("remove duplicate selectors"),
+            );
+        }
+        let values = authored_values
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let star_allowed = matches!(key, "include" | "defer" | "eager");
+        for selector in &values {
+            let valid = !selector.is_empty()
+                && (selector == "*" && star_allowed || !selector.contains('*'));
+            if !valid {
+                ctx.error(
+                    owner.code("agent.mcp_selector_invalid"),
+                    path,
+                    format!(
+                        "{subject} {key} entry '{selector}' must be {}",
+                        if star_allowed {
+                            "an exact tool name or '*'"
+                        } else {
+                            "an exact tool name"
+                        }
+                    ),
+                    None::<String>,
+                );
+            }
+        }
+        if matches!(key, "defer" | "eager") && values.contains("*") && items.len() != 1 {
+            ctx.error(
+                owner.code("agent.mcp_activation_selector_invalid"),
+                path,
+                format!("{subject} {key} must use '*' by itself"),
+                None::<String>,
+            );
+        }
+        match key {
+            "include" => selectors.include = Some(values),
+            "exclude" => selectors.exclude = Some(values),
+            "defer" => selectors.defer = Some(values),
+            "eager" => selectors.eager = Some(values),
+            _ => unreachable!(),
+        }
+    }
+    selectors
 }
 
 fn reject_unknown_mcp_server_keys(
@@ -4632,26 +4766,28 @@ fn resolved_agent_mcp(
 
 /// `defer` hides a declared tool behind tool search, so it needs `tools`; `eager` declares a tool
 /// directly, which `tools` and `codemode` both do. A resolved mode is never absent: it defaults to cli.
-fn activation_allowed(key: &str, mode: Option<AgentMcpMode>) -> bool {
+fn activation_allowed(key: &str, mode: Option<ToolMode>) -> bool {
     match key {
-        "defer" => mode == Some(AgentMcpMode::Tools),
-        _ => matches!(mode, Some(AgentMcpMode::Tools | AgentMcpMode::Codemode)),
+        "defer" => mode == Some(ToolMode::Tools),
+        _ => matches!(mode, Some(ToolMode::Tools | ToolMode::Codemode)),
     }
 }
 
-fn mode_name(mode: Option<AgentMcpMode>) -> &'static str {
+fn mode_name(mode: Option<ToolMode>) -> &'static str {
     match mode {
-        Some(AgentMcpMode::Tools) => "tools",
-        Some(AgentMcpMode::Codemode) => "codemode",
-        Some(AgentMcpMode::Cli) | None => "cli",
+        Some(ToolMode::Tools) => "tools",
+        Some(ToolMode::Codemode) => "codemode",
+        Some(ToolMode::Cli) | None => "cli",
     }
 }
 
-fn activation_help(key: &str) -> &'static str {
+fn activation_help(key: &str, mode_field: &str) -> String {
     if key == "defer" {
-        "defer needs mcp.mode tools; in codemode every tool is already off the model's declarations"
+        format!(
+            "defer needs {mode_field} tools; in codemode every tool is already off the model's declarations"
+        )
     } else {
-        "eager needs mcp.mode tools or codemode"
+        format!("eager needs {mode_field} tools or codemode")
     }
 }
 
@@ -4666,27 +4802,32 @@ fn portable_agent_name(value: &str) -> bool {
     parts.all(valid_part)
 }
 
-fn resolved_agent_tools(name: &str, raw_by_name: &HashMap<String, &RawAgent>) -> Vec<String> {
+fn resolved_agent_tools(
+    name: &str,
+    raw_by_name: &HashMap<String, &RawAgent>,
+    catalog: &[String],
+) -> BTreeSet<String> {
     let mut current = raw_by_name.get(name);
     for _ in 0..MAX_INHERITANCE_DEPTH {
         let Some(agent) = current else {
             break;
         };
         if let Some(tools) = &agent.tools {
-            return tools.clone();
+            return selected_tools(tools, catalog);
         }
         current = agent
             .from
             .as_deref()
             .and_then(|parent| raw_by_name.get(parent));
     }
-    Vec::new()
+    BTreeSet::new()
 }
 
 fn validate_resolved_agent_mcp(
     name: &str,
     raw_by_name: &HashMap<String, &RawAgent>,
     mcp_tool_policy: Option<&McpToolPolicy>,
+    tool_catalog: &[String],
     ctx: &mut CheckContext,
 ) {
     let Some(mcp) = resolved_agent_mcp(name, raw_by_name, &mut Vec::new()) else {
@@ -4697,13 +4838,13 @@ fn validate_resolved_agent_mcp(
         .map(|agent| agent.path.clone())
         .unwrap_or_default();
 
-    let tools = resolved_agent_tools(name, raw_by_name);
+    let tools = resolved_agent_tools(name, raw_by_name, tool_catalog);
     for (server_id, selection) in &mcp.servers {
         for tool in selection
             .behind
             .iter()
             .flatten()
-            .filter(|tool| !tools.contains(tool))
+            .filter(|tool| !tools.contains(*tool))
         {
             ctx.error(
                 "agent.mcp_behind_tool_undeclared",
@@ -4738,7 +4879,7 @@ fn validate_resolved_agent_mcp(
                     "Recipe agent '{name}' may not use {key} when its resolved mcp.mode is {}",
                     mode_name(mcp.mode)
                 ),
-                Some(activation_help(key)),
+                Some(activation_help(key, "mcp.mode")),
             );
         }
     }
@@ -6222,24 +6363,16 @@ mod tests {
         }));
     }
 
-    fn platform_recipe(platform: &str) -> RecipeFiles {
-        let package = json!({
-            "name": "platform-test",
+    fn tools_recipe(pi: JsonValue, tools: &str) -> RecipeFiles {
+        let mut package = json!({
+            "name": "tools-test",
             "version": "0.1.0",
             "pi": { "agents": ["agents/*.yaml"] }
         });
-        let agent = format!(
-            concat!(
-                "name: agent\n",
-                "model:\n",
-                "  name: test/provider-model\n",
-                "tools:\n",
-                "  - read\n",
-                "  - issues\n",
-                "{}",
-            ),
-            platform
-        );
+        if let (Some(target), Some(extra)) = (package["pi"].as_object_mut(), pi.as_object()) {
+            target.extend(extra.clone());
+        }
+        let agent = format!("name: agent\nmodel:\n  name: test/provider-model\n{tools}");
         recipe_files(&[
             (
                 "package.json",
@@ -6250,55 +6383,137 @@ mod tests {
         ])
     }
 
+    fn tools_diagnostics(pi: JsonValue, tools: &str) -> Vec<Diagnostic> {
+        check_recipe_files(&tools_recipe(pi, tools))
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "agent.tools_invalid" || d.code == "agent.key_unknown")
+            .collect()
+    }
+
     #[test]
-    fn platform_takes_a_mode_and_eager_selected_first_party_tools() {
-        for platform in [
-            "",
-            "platform:\n  mode: tools\n",
-            "platform:\n  mode: codemode\n",
-            "platform:\n  mode: codemode\n  eager: [issues]\n",
+    fn tools_accepts_the_list_shorthand_and_the_selector_mapping() {
+        for tools in [
+            "tools: [read, issues]\n",
+            "tools:\n  include: [read, issues]\n",
+            "tools:\n  mode: tools\n  include: [read, issues]\n  defer: [issues]\n",
+            "tools:\n  mode: codemode\n  include: [read, issues]\n  eager: [issues]\n",
+            "tools:\n  include: [read, issues, bash]\n  exclude: [bash]\n  defer: ['*']\n",
         ] {
-            let report = check_recipe_files(&platform_recipe(platform));
-            assert!(
-                !report
-                    .diagnostics
-                    .iter()
-                    .any(|d| d.code == "agent.platform_invalid"),
-                "{platform}: {:?}",
-                report.diagnostics
-            );
+            let diagnostics = tools_diagnostics(json!({}), tools);
+            assert!(diagnostics.is_empty(), "{tools}: {diagnostics:?}");
         }
-        for (platform, text) in [
-            ("platform:\n  mode: cli\n", "needs the tools command"),
-            ("platform:\n  mode: direct\n", "must be tools or codemode"),
+    }
+
+    #[test]
+    fn tools_star_selects_builtins_and_declared_first_party_tools() {
+        let productivity = json!({ "productivity": [{ "provider": "acme" }] });
+        let star = "tools:\n  include: ['*']\n  defer: [mail, calendar]\n";
+        assert!(tools_diagnostics(productivity.clone(), star).is_empty());
+        let undeclared = tools_diagnostics(json!({}), star);
+        assert!(
+            undeclared
+                .iter()
+                .any(|d| d.message.contains("does not select: calendar, mail")),
+            "{undeclared:?}"
+        );
+
+        let limited =
+            json!({ "productivity": [{ "provider": "acme", "tools": { "calendar": [] } }] });
+        let only_calendar = tools_diagnostics(limited, star);
+        assert!(
+            only_calendar
+                .iter()
+                .any(|d| d.message.contains("does not select: mail")
+                    && !d.message.contains("calendar")),
+            "{only_calendar:?}"
+        );
+
+        let behind = check_recipe_files(&tools_recipe(
+            json!({ "mcp": { "servers": [{ "id": "docs", "url": "https://example.test/mcp", "tools": { "include": ["*"] } }] } }),
+            "tools:\n  include: ['*']\nmcp:\n  servers:\n    docs:\n      include: ['*']\n      behind: [read]\n",
+        ));
+        assert!(
+            !behind
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "agent.mcp_behind_tool_undeclared"),
+            "{:?}",
+            behind.diagnostics
+        );
+    }
+
+    #[test]
+    fn tools_exclude_removes_a_selected_tool() {
+        let diagnostics = tools_diagnostics(
+            json!({ "issues": [{ "provider": "acme" }] }),
+            "tools:\n  include: ['*']\n  exclude: [issues]\n  defer: [issues]\n",
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.message.contains("does not select: issues")),
+            "{diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn tools_rejects_invalid_mappings() {
+        for (tools, text) in [
             (
-                "platform:\n  mode: tools\n  eager: [issues]\n",
-                "only with platform.mode codemode",
+                "tools:\n  mode: codemode\n  include: [issues]\n  defer: [issues]\n",
+                "defer is not valid when tools.mode is codemode",
             ),
             (
-                "platform:\n  mode: codemode\n  eager: [mail]\n",
-                "not selected first-party tools: mail",
+                "tools:\n  mode: cli\n  include: [issues]\n  eager: [issues]\n",
+                "eager is not valid when tools.mode is cli",
             ),
             (
-                "platform:\n  mode: codemode\n  eager: [read]\n",
-                "not selected first-party tools: read",
+                "tools:\n  mode: cli\n  include: [read]\n",
+                "tools.mode cli needs the tools command, which this release does not have",
             ),
             (
-                "platform:\n  mode: codemode\n  expose: all\n",
+                "tools:\n  include: [read]\n  defer: [read]\n",
+                "not first-party tools: read",
+            ),
+            (
+                "tools:\n  include: [read]\n  eager: [issues]\n",
+                "does not select: issues",
+            ),
+            (
+                "tools:\n  include: [read]\n  expose: all\n",
                 "unknown field 'expose'",
             ),
-            ("platform: codemode\n", "must be a mapping"),
+            (
+                "tools:\n  include: [read]\n  exclude: ['*']\n",
+                "entry '*' must be an exact tool name",
+            ),
+            (
+                "tools:\n  include: [issues]\n  defer: ['*', issues]\n",
+                "must use '*' by itself",
+            ),
+            ("tools:\n  mode: direct\n", "must be 'tools' or 'codemode'"),
         ] {
-            let report = check_recipe_files(&platform_recipe(platform));
+            let diagnostics = tools_diagnostics(json!({}), tools);
             assert!(
-                report
-                    .diagnostics
+                diagnostics
                     .iter()
-                    .any(|d| d.code == "agent.platform_invalid" && d.message.contains(text)),
-                "{text}: {:?}",
-                report.diagnostics
+                    .any(|d| d.code == "agent.tools_invalid" && d.message.contains(text)),
+                "{text}: {diagnostics:?}"
             );
         }
+    }
+
+    #[test]
+    fn platform_is_an_unknown_agent_field() {
+        let diagnostics = tools_diagnostics(json!({}), "platform:\n  mode: codemode\n");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "agent.key_unknown"
+                    && d.message.contains("unknown field 'platform'")),
+            "{diagnostics:?}"
+        );
     }
 
     #[test]

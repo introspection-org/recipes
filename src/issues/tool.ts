@@ -28,6 +28,7 @@ import {
   type ProviderIssue,
   type RecipeIssuesProviderModule,
 } from "./types.js";
+import type { RecipeToolExposure } from "../recipe/agent.js";
 
 const defaultTracer = trace.getTracer("@introspection-ai/recipes/issues");
 
@@ -98,7 +99,7 @@ export interface IssuesToolOptions {
   env?: NodeJS.ProcessEnv;
   tracer?: Tracer;
   /** `codemode`: callable from codemode scripts only, not declared to the model. */
-  exposure?: "direct" | "codemode";
+  exposure?: RecipeToolExposure;
 }
 
 class IssuesToolError extends Error {

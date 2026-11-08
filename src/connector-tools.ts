@@ -15,6 +15,7 @@ import {
   type RecipePackageChannel,
   type RecipePackageManifest,
 } from "./recipe/package.js";
+import type { RecipeToolExposure } from "./recipe/agent.js";
 
 interface RecipeConnectorToolDefinition {
   readonly id: string;
@@ -35,15 +36,15 @@ export interface RecipeConnectorExtensionOptions {
   python?: Readonly<Record<string, { interpreter: string }>>;
   /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
   hostDir?: string;
-  /** How a first-party tool registers for the agent (`platform.mode`). Default: declared. */
-  exposure?: (tool: string) => "direct" | "codemode";
+  /** How a first-party tool registers for the agent (`tools.mode`, `defer`). Default: declared. */
+  exposure?: (tool: string) => RecipeToolExposure;
 }
 
 interface RecipeConnectorToolLoadout {
   toolNames: string[];
   initialActiveToolNames: string[];
   deferredToolNames: string[];
-  /** Registered for codemode scripts only (`platform.mode: codemode`). */
+  /** Registered for codemode scripts only (`tools.mode: codemode`). */
   scriptOnlyToolNames: string[];
 }
 
@@ -230,18 +231,19 @@ export async function loadRecipeConnectors(
   // A first-party tool in codemode is registered but neither declared nor
   // deferred to tool search: codemode lists it for scripts.
   const scriptOnly = (name: string) => options.exposure?.(name) === "codemode";
+  const active = (name: string) => options.exposure?.(name) !== "deferred";
   const selected = [
     ...loaded.flatMap((connector) => connector.selected),
     ...issues.toolNames.map((name) => ({
       id: name,
       name,
-      defaultActive: true,
+      defaultActive: active(name),
       scriptOnly: scriptOnly(name),
     })),
     ...productivity.toolNames.map((name) => ({
       id: name,
       name,
-      defaultActive: true,
+      defaultActive: active(name),
       scriptOnly: scriptOnly(name),
     })),
     ...documents.toolNames.map((name) => ({

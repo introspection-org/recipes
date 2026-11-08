@@ -769,7 +769,7 @@ async function createSessionForAgent(
     codemodeToolNames,
     piMcpResourceToolNames,
     piMcpSessionOptions,
-  } = piMcpSessionTools(mcp.piServers, recipe.mcp, recipe.platform);
+  } = piMcpSessionTools(mcp.piServers, recipe.mcp, recipe.toolPolicy);
   let piMcp: ExtensionAPI | undefined;
 
   const cleanup = async (): Promise<void> => {
@@ -834,7 +834,7 @@ async function createSessionForAgent(
         env,
         cwd,
         python: python.packages,
-        exposure: (name) => platformToolExposure(recipe.platform, name),
+        exposure: (name) => platformToolExposure(recipe.toolPolicy, name),
       },
     );
     const connectorLoadout = connectors.loadout;
@@ -898,7 +898,7 @@ async function createSessionForAgent(
       ...piMcpExtensions(
         piServers,
         codemodeToolNames.length > 0,
-        recipe.platform?.mode === "codemode",
+        recipe.toolPolicy?.mode === "codemode",
         opts.mcpRuntimeDir,
         cwd,
         (pi) => {
@@ -1160,7 +1160,10 @@ async function createSessionForAgent(
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));
     const missingDeclaredTools = selectedToolNames.filter(
-      (name) => !name.includes("*") && !registered.has(name),
+      (name) =>
+        !name.includes("*") &&
+        !registered.has(name) &&
+        !recipe.wildcardTools?.includes(name),
     );
     if (missingDeclaredTools.length > 0) {
       throw new Error(
@@ -1317,17 +1320,17 @@ async function waitForRequiredPiMcpServers(
   );
 }
 
-/** What codemode adds to a session's tools: from `mcp.mode` when a server is on Pi's client, or from `platform.mode`. */
+/** What codemode adds to a session's tools: from `mcp.mode` when a server is on Pi's client, or from `tools.mode`. */
 function piMcpSessionTools(
   servers: PiMcpServerRegistration[] | undefined,
   mcp: ResolvedRecipeAgent["mcp"],
-  platform: ResolvedRecipeAgent["platform"],
+  toolPolicy: ResolvedRecipeAgent["toolPolicy"],
 ) {
   const codemode = mcp?.mode === "codemode";
   const piServers = servers ?? [];
   const usesPiMcp = piServers.length > 0;
-  const platformCodemode = platform?.mode === "codemode";
-  if (platformCodemode) assertPiSupportsCodemode("platform.mode codemode");
+  const platformCodemode = toolPolicy?.mode === "codemode";
+  if (platformCodemode) assertPiSupportsCodemode("tools.mode codemode");
   return {
     piServers,
     usesPiMcp,
