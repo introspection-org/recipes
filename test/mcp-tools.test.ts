@@ -16,8 +16,8 @@ const session: McpSessionConfig = {
   version: 1,
   servers: [
     {
-      id: "nextplay",
-      name: "NextPlay",
+      id: "talent",
+      name: "Talent",
       base_url: "https://example.test/mcp",
       binding: "live",
       package_tools: { include: ["*"] },
@@ -28,8 +28,8 @@ const session: McpSessionConfig = {
 
 const catalogs = [
   {
-    id: "nextplay",
-    name: "NextPlay",
+    id: "talent",
+    name: "Talent",
     tools: [
       {
         name: "search_talent",
@@ -88,7 +88,7 @@ describe("MCP tools mode", () => {
   it("registers every authorized tool and defaults all of them active", () => {
     const { materialized } = createTools({
       mode: "tools",
-      servers: { nextplay: { include: ["*"] } },
+      servers: { talent: { include: ["*"] } },
     });
     expect(materialized.toolNames).toHaveLength(2);
     expect(materialized.initialActiveToolNames).toEqual(materialized.toolNames);
@@ -98,13 +98,13 @@ describe("MCP tools mode", () => {
   it("reapplies the selected agent policy to a broader host catalog", () => {
     const { materialized } = createTools({
       mode: "tools",
-      servers: { nextplay: { include: ["get_profiles"] } },
+      servers: { talent: { include: ["get_profiles"] } },
     });
 
     expect(materialized.toolNames).toEqual([
-      piMcpToolName("nextplay", "get_profiles"),
+      piMcpToolName("talent", "get_profiles"),
     ]);
-    expect(materialized.canonicalToPiName.has("nextplay.search_talent")).toBe(
+    expect(materialized.canonicalToPiName.has("talent.search_talent")).toBe(
       false,
     );
   });
@@ -112,12 +112,12 @@ describe("MCP tools mode", () => {
   it("names the MCP origin of each tool for its span", () => {
     const { materialized } = createTools({
       mode: "tools",
-      servers: { nextplay: { include: ["*"] } },
+      servers: { talent: { include: ["*"] } },
     });
-    const piName = materialized.canonicalToPiName.get("nextplay.get_profiles")!;
+    const piName = materialized.canonicalToPiName.get("talent.get_profiles")!;
 
     expect(materialized.mcpToolOrigin(piName)).toEqual({
-      serverId: "nextplay",
+      serverId: "talent",
       toolName: "get_profiles",
       binding: "live",
     });
@@ -128,7 +128,7 @@ describe("MCP tools mode", () => {
     const { materialized } = createTools({
       mode: "tools",
       servers: {
-        nextplay: {
+        talent: {
           include: ["*"],
           defer: ["*"],
           eager: ["get_profiles"],
@@ -136,7 +136,7 @@ describe("MCP tools mode", () => {
       },
     });
     expect(materialized.deferredToolNames).toEqual([
-      materialized.canonicalToPiName.get("nextplay.search_talent"),
+      materialized.canonicalToPiName.get("talent.search_talent"),
     ]);
     expect(materialized.tools.map((tool) => tool.name)).not.toContain(
       "tool_search",
@@ -153,12 +153,12 @@ describe("MCP tools mode", () => {
     });
     const { materialized } = createTools({
       mode: "tools",
-      servers: { nextplay: { include: ["*"] } },
+      servers: { talent: { include: ["*"] } },
     });
     const tool = materialized.tools.find(
       (entry) =>
         entry.name ===
-        materialized.canonicalToPiName.get("nextplay.search_talent"),
+        materialized.canonicalToPiName.get("talent.search_talent"),
     )!;
     const result = await (tool.execute as any)(
       "call-2",
@@ -200,8 +200,8 @@ describe("MCP tools mode", () => {
   it("dereferences local input schemas and rejects unusable initial wildcards", async () => {
     const referencedCatalogs = [
       {
-        id: "nextplay",
-        name: "NextPlay",
+        id: "talent",
+        name: "Talent",
         tools: [
           {
             name: "search_talent",
@@ -233,12 +233,12 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"], defer: ["*"], eager: ["*"] },
+            talent: { include: ["*"], defer: ["*"], eager: ["*"] },
           },
         },
         env: {},
       }),
-    ).toThrow("includes unusable tool 'nextplay.broken'");
+    ).toThrow("includes unusable tool 'talent.broken'");
 
     const materialized = createMcpToolSet({
       session,
@@ -246,7 +246,7 @@ describe("MCP tools mode", () => {
       mcp: {
         mode: "tools",
         servers: {
-          nextplay: {
+          talent: {
             include: ["search_talent"],
             defer: ["*"],
             eager: ["search_talent"],
@@ -266,8 +266,8 @@ describe("MCP tools mode", () => {
       session,
       catalogs: [
         {
-          id: "nextplay",
-          name: "NextPlay",
+          id: "talent",
+          name: "Talent",
           tools: [
             {
               name: "create_record",
@@ -304,7 +304,7 @@ describe("MCP tools mode", () => {
       ],
       mcp: {
         mode: "tools",
-        servers: { nextplay: { include: ["create_record"] } },
+        servers: { talent: { include: ["create_record"] } },
       },
       env: {},
     });
@@ -318,8 +318,8 @@ describe("MCP tools mode", () => {
       session,
       catalogs: [
         {
-          id: "nextplay",
-          name: "NextPlay",
+          id: "talent",
+          name: "Talent",
           tools: [
             {
               name: "create_record",
@@ -338,7 +338,7 @@ describe("MCP tools mode", () => {
       ],
       mcp: {
         mode: "tools",
-        servers: { nextplay: { include: ["create_record"] } },
+        servers: { talent: { include: ["create_record"] } },
       },
       env: {},
     });
@@ -352,8 +352,8 @@ describe("MCP tools mode", () => {
         session,
         catalogs: [
           {
-            id: "nextplay",
-            name: "NextPlay",
+            id: "talent",
+            name: "Talent",
             tools: [
               {
                 name: "create_record",
@@ -374,7 +374,7 @@ describe("MCP tools mode", () => {
         ],
         mcp: {
           mode: "tools",
-          servers: { nextplay: { include: ["create_record"] } },
+          servers: { talent: { include: ["create_record"] } },
         },
         env: {},
       });
@@ -390,7 +390,7 @@ describe("MCP tools mode", () => {
     const { materialized } = createTools(
       {
         mode: "tools",
-        servers: { nextplay: { include: ["*"] } },
+        servers: { talent: { include: ["*"] } },
       },
       {
         PI_RECIPES_MCP_MAX_OUTPUT_BYTES: "64",
@@ -400,7 +400,7 @@ describe("MCP tools mode", () => {
     const tool = materialized.tools.find(
       (entry) =>
         entry.name ===
-        materialized.canonicalToPiName.get("nextplay.get_profiles"),
+        materialized.canonicalToPiName.get("talent.get_profiles"),
     )!;
     mocks.callMcpDaemonTool.mockResolvedValueOnce({
       isError: true,
@@ -460,7 +460,7 @@ describe("MCP tools mode", () => {
       mcp: {
         mode: "tools",
         servers: {
-          nextplay: { include: ["*"] },
+          talent: { include: ["*"] },
           optional: { include: ["*"] },
         },
       },
@@ -475,7 +475,7 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"] },
+            talent: { include: ["*"] },
             optional: { include: ["*"], defer: ["*"], eager: ["*"] },
           },
         },
@@ -495,7 +495,7 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"] },
+            talent: { include: ["*"] },
             optional: { include: ["*"] },
           },
         },
@@ -517,7 +517,7 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"] },
+            talent: { include: ["*"] },
             optional: { include: ["*"] },
           },
         },
@@ -543,7 +543,7 @@ describe("MCP tools mode", () => {
       mcp: {
         mode: "tools",
         servers: {
-          nextplay: { include: ["*"] },
+          talent: { include: ["*"] },
           optional: { include: ["*"], defer: ["*"], eager: ["*"] },
         },
       },
@@ -559,7 +559,7 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"] },
+            talent: { include: ["*"] },
             optional: { include: ["*"] },
           },
         },
@@ -599,7 +599,7 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"] },
+            talent: { include: ["*"] },
             optional: { include: ["*"], defer: ["*"], eager: ["*"] },
           },
         },
@@ -617,12 +617,12 @@ describe("MCP tools mode", () => {
         mcp: {
           mode: "tools",
           servers: {
-            nextplay: { include: ["*"], defer: ["*"], eager: ["missing_tool"] },
+            talent: { include: ["*"], defer: ["*"], eager: ["missing_tool"] },
           },
         },
         env: {},
         discovery: "defer",
       }),
-    ).toThrow("Eager MCP tool 'nextplay.missing_tool' is not authorized");
+    ).toThrow("Eager MCP tool 'talent.missing_tool' is not authorized");
   });
 });

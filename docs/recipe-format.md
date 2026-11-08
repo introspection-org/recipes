@@ -474,8 +474,7 @@ dependencies from its lockfile, and nothing is fetched at run time. A check
 run without `node_modules` cannot see dependency skills, so a skill an agent
 selects that is not in the Recipe is a warning there rather than an error.
 
-Document profiles use a different path. A Recipe such as
-[`introspection-org/recipe-redlining`](https://github.com/introspection-org/recipe-redlining)
+Document profiles use a different path. A Recipe that reviews redlines, say,
 selects a profile in `pi.documents`, from a pinned docx package or the host
 default (see [First-party packages](#first-party-packages)); the `documents`
 tool delivers the core `documents` skill and that profile itself, for agents

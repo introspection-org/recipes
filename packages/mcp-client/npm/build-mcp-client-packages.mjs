@@ -10,7 +10,7 @@
 //   mcp-client-<os>-<cpu>/   one per target, gated by npm `os`/`cpu` so a
 //                            consumer downloads only the binary it can run.
 //
-// This mirrors npm/build-platform-packages.mjs in introspection-cli, with one
+// This mirrors the CLI's own platform-package build, with one
 // difference: the CLI stages a separate launcher package, while recipes
 // publishes the repository root, so the optionalDependencies map is written
 // back into the root package.json rather than into a staged copy.

@@ -2,8 +2,8 @@
 
 Every write reads `source`, applies what it can, and saves to `output` with patch_save, so parts it
 did not touch stay byte for byte. One failed edit never stops the rest: it is rolled back and
-reported with its reason. The accept/reject/reply logic is recipe-redlining's
-skills/responding-to-a-redline/respond.py; the "Reserved." section removal follows RedlineBench's
+reported with its reason. The accept/reject/reply logic comes from an earlier
+redlining Recipe; the "Reserved." section removal follows RedlineBench's
 redline_engine/reserved.py (MIT, see LICENSE-redline-bench).
 """
 

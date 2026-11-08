@@ -58,7 +58,7 @@ The normative contract is documented in [Recipe Format](docs/recipe-format.md).
 
 ## Use a Recipe
 
-The [`introspection`](https://github.com/introspection-org/introspection-cli)
+The [`introspection`](https://www.npmjs.com/package/@introspection-ai/cli)
 CLI owns the end-to-end local workflow:
 
 ```bash

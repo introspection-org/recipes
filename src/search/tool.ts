@@ -590,7 +590,7 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
 
 /**
  * The platform's standard usage record for a metered call, which prices it
- * against the rate catalog (introspection-cloud `docs/design/service-rates.md`).
+ * against the platform's rate catalog.
  * The key is the customer's, since a project endpoint is the only way a
  * provider is bound.
  */

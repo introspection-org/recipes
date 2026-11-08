@@ -8954,7 +8954,7 @@ mod tests {
         assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     }
 
-    /// recipe-redlining's layout (main after #14): a draft case file per
+    /// A redlining Recipe's layout: a draft case file per
     /// Harbor task, named by the task's folder, and no `pi.evals`.
     fn redlining_layout(case: fn(&str) -> String) -> Vec<(String, String)> {
         let task = "schema_version = \"1.4\"\n\n[task]\nname = \"introspection-recipes/redlining-ID\"\n\n[verifier]\ntimeout_sec = 1800.0\n\n[verifier.env]\nOPENAI_API_KEY = \"${OPENAI_API_KEY}\"\n";

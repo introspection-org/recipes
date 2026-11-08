@@ -158,9 +158,8 @@ the provider reported credits, Tavily's and Keenable's over REST, else
 an allowance), `.cost_usd` (Exa's reported dollars, over REST and over its
 advanced MCP tool) and `.key_owner`
 (`customer`, since a project endpoint holds the key). The platform prices it
-against its vendor rate catalog, `services/<vendor>.yaml` in
-introspection-cloud ([service-rates.md](https://github.com/introspection-org/introspection-cloud/blob/claude/service-rates/docs/design/service-rates.md));
-`search.units.*` stays as the provider's own unit.
+against its vendor rate catalog; `search.units.*` stays as the provider's own
+unit.
 
 ### Recipe code
 
@@ -358,10 +357,8 @@ A provider's hosted MCP server is a Recipe MCP binding like any other: a
 credential reference (`Authorization: Bearer ${TAVILY_API_KEY}`,
 `x-api-key: ${EXA_API_KEY}`, `X-API-Key: ${KEENABLE_API_KEY}`,
 `Authorization: Bearer ${PERPLEXITY_API_KEY}` or
-`${PARALLEL_API_KEY}`), injected by the egress outside the sandbox
-(introspection-cloud `docs/design/endpoints.md` § MCP servers per runtime, and
-`sandbox-egress-proxy-native.md`, where MCP bindings dial the edge and send no
-locator). The bootstrap carries only the URL. So:
+`${PARALLEL_API_KEY}`), injected by the egress outside the sandbox, where MCP bindings dial the edge
+and send no locator. The bootstrap carries only the URL. So:
 
 - **Header, never query string.** Tavily's `?tavilyApiKey=` and Exa's
   `?exaApiKey=` put the key in the URL the sandbox sees; bind with the header.
@@ -496,9 +493,8 @@ adapter:
   the fallback, and on its own does not bind it.
 - **A REST-only provider** (Brave) is bound
   when the runtime holds an endpoint for its host with a credential: a
-  `kind='api'` endpoint row (introspection-cloud `docs/design/endpoints.md`,
-  "Runtime HTTP APIs"), at project, runtime, runtime group or environment
-  scope. The bound set is what the egress will authenticate. It needs no
+  `kind='api'` endpoint row, at project, runtime, runtime group or
+  environment scope. The bound set is what the egress will authenticate. It needs no
   declaration in the Recipe: a search provider is interchangeable and chosen
   per call.
 
@@ -540,8 +536,7 @@ key. The host's egress supplies it, as for the Slack channel
 
 - **Proxy-native egress** (`INTROSPECTION_EGRESS_PROXY_NATIVE=1`): the request
   leaves without the header. The egress intercepts the bound host and, finding
-  the endpoint's header absent, injects it (introspection-cloud
-  `docs/design/sandbox-egress-proxy-native.md`, "Credential placeholders").
+  the endpoint's header absent, injects it.
 - **Legacy provider lane** (`INTROSPECTION_EGRESS_URL` and
   `INTROSPECTION_TOKEN`): the session locator travels in the provider's own
   header, with its prefix, and ext_proc swaps it for the key. The runtime's
@@ -740,7 +735,7 @@ of its own under the companion rule in `AGENTS.md`.
   nested call reaches the server, and a direct call from the model or a
   codemode script is refused.
 - **Evals:** a search provider is a REST API, so it fits eval-simulate's API
-  fakes (introspection-cli `integrations/eval-simulate/docs/api-fakes.md`):
+  fakes (`@introspection-ai/eval-simulate`):
   one fake per provider under `fakes/api/<id>/`, its manifest naming the host
   above, and a scenario's world holding the pages each query finds. Parallel
   and Perplexity generate their SDKs from OpenAPI documents the trim could

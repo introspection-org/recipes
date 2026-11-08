@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 /**
  * An MCP server over streamable HTTP (JSON responses), shaped like
- * recipe-harbor-mcp-agent's hello server: `echo` and `get_greeting`.
+ * the Harbor MCP example's hello server: `echo` and `get_greeting`.
  */
 export interface HelloMcp {
   url: string;

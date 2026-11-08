@@ -145,7 +145,7 @@ interface AgentCallParams {
 
 /** Mid-turn completion delivery retries on this cadence until the session idles. */
 const COMPLETION_DELIVERY_RETRY_MS = 100;
-/** Published by the Runtime's proxy-preload.js (introspection-cloud managed-fetch.ts). */
+/** Published by the hosted runtime's proxy preload. */
 const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
   "introspection.installManagedFetch",
 );

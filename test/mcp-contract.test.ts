@@ -37,7 +37,7 @@ describe("compact MCP contracts", () => {
       properties: { found: { type: "integer", minimum: 0 } },
       required: ["found"],
     };
-    const contract = renderToolContract("nextplay", {
+    const contract = renderToolContract("talent", {
       name: "search_profiles",
       description: "Search profiles.",
       inputSchema,
@@ -45,7 +45,7 @@ describe("compact MCP contracts", () => {
     });
     expect(contract).toBe(
       [
-        "nextplay.search_profiles",
+        "talent.search_profiles",
         "Search profiles.",
         "",
         "input",
@@ -57,8 +57,8 @@ describe("compact MCP contracts", () => {
         "  found: integer [0..]",
         "",
         "call",
-        "  mcp call nextplay.search_profiles q='<q>'",
-        `  structured: mcp call nextplay.search_profiles --json '{"q":"<q>","group":{"field":"<field>"}}'`,
+        "  mcp call talent.search_profiles q='<q>'",
+        `  structured: mcp call talent.search_profiles --json '{"q":"<q>","group":{"field":"<field>"}}'`,
         "",
       ].join("\n"),
     );
@@ -76,14 +76,14 @@ describe("compact MCP contracts", () => {
       ]),
     );
     expect(
-      renderToolSignature("nextplay", {
+      renderToolSignature("talent", {
         name: "search",
         inputSchema: { type: "object", properties },
       }),
     ).toContain("… +3 optional");
     expect(
       renderToolSignature(
-        "nextplay",
+        "talent",
         { name: "search", inputSchema: { type: "object", properties } },
         { allParameters: true },
       ),
@@ -97,7 +97,7 @@ describe("compact MCP contracts", () => {
         { type: "string" },
       ]),
     );
-    const signature = renderToolSignature("nextplay", {
+    const signature = renderToolSignature("talent", {
       name: "ordered",
       inputSchema: {
         type: "object",

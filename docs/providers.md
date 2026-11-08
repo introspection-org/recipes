@@ -172,7 +172,7 @@ The providers differ, so each declares the commands and fields it supports in
 - **Comments:** Linear and Jira have them. An Introspection comment is an
   attached event, written like every other change to an issue: `PATCH
   /v1/issues/{id}` with a nested `comment`, which the issue command writer
-  records as an `introspection.issue.comment` event (introspection-cloud#3863).
+  records as an `introspection.issue.comment` event.
   The issues API stays CRUD on Postgres and never returns comments; the
   provider reads them straight from the event log
   (`GET /v1/events?event_name=introspection.issue&issue_id=…`, `payload.comment`)
