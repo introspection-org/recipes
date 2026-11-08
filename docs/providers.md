@@ -125,9 +125,42 @@ One `issues` tool with these commands:
 | `comment` | add a comment |
 | `transition` | move to another status |
 
-Every issue is returned in one shape (handle, title, status, assignee, labels,
-URL, updated time), with a provider-scoped handle (`linear:ENG-123`,
-`jira:PROJ-45`, `introspection:<id>`) that every later command takes.
+Every issue is returned in one shape, with a provider-scoped handle that every
+later command takes:
+
+| Field | Linear | Jira | Introspection (`/v1/issues`) |
+| --- | --- | --- | --- |
+| `handle` | `linear:ENG-123` (identifier) | `jira:PROJ-45` (key) | `introspection:<display index>` |
+| `title` | title | summary | title |
+| `description` (markdown) | description | description, from Atlassian Document Format | description |
+| `status.name` | workflow state | status | status |
+| `status.category` (`open`, `in_progress`, `done`, `cancelled`) | state type: backlog and unstarted → open, started → in_progress, completed → done, canceled → cancelled | status category: To Do → open, In Progress → in_progress, Done → done | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
+| `priority` (`none`, `low`, `medium`, `high`, `urgent`) | 0–4 | Highest → urgent … Lowest → low | the same scale, without `none` |
+| `assignee` | assignee | assignee | none |
+| `labels` | labels | labels | tags |
+| `container` | team | project and issue type | the Recipe's project |
+| `url`, `created_at`, `updated_at` | ✓ | ✓ | ✓ |
+
+The providers differ, so each declares the commands and fields it supports in
+`capabilities`, as productivity providers do:
+
+- **Comments:** Linear and Jira have them; Introspection's issues do not, so
+  its provider does not offer `comment` until `/v1/issues` has comments.
+  `open_requests` are questions put to a person, not comments.
+- **Assignee:** Introspection's issues have an owner (`member_id`), not an
+  assignee, so `update` takes no assignee there.
+- **Moving an issue:** `transition` takes a status name or category. Linear
+  sets the state, Jira applies the workflow transition that reaches it, and
+  Introspection sets `status`.
+- **Where to create:** Linear needs a team and Jira a project and issue type,
+  from the declaration (`{ "provider": "jira", "project": "OPS", "issueType":
+  "Task" }`) or the call. Introspection creates in the Recipe's project, on the
+  calling task.
+
+The `introspection` provider calls `/v1/issues` through the JavaScript SDK
+(`@introspection-sdk/introspection-node`) on the task's own session, not
+through the CLI: it runs in the agent's process, with typed responses and no
+CLI to install.
 
 All three ship in one package, `@introspection-ai/recipe-issues`, a companion of
 Recipes like `@introspection-ai/recipe-search`. Nothing about issues loads, and
