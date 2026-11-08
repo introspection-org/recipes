@@ -6,12 +6,10 @@ import type {
 } from "@introspection-ai/recipes/search";
 
 import {
-  capText,
-  dateOf,
   freshnessStart,
-  hostOf,
   mcpResultText,
   parsedJson,
+  searchResult,
 } from "./text.js";
 
 interface ParallelResponse {
@@ -56,21 +54,17 @@ function parallelResults(
   body: ParallelResponse,
   request: SearchRequest,
 ): SearchProviderResult {
-  const results = (body.results ?? []).flatMap((item) => {
-    if (typeof item.url !== "string") return [];
-    const text = (item.excerpts ?? []).join(" … ");
-    const published = dateOf(item.publish_date);
-    const site = hostOf(item.url);
-    return [
+  const results = (body.results ?? []).flatMap((item) =>
+    searchResult(
       {
         url: item.url,
-        ...(item.title ? { title: item.title } : {}),
-        ...(text ? { snippet: capText(text, request.max_chars) } : {}),
-        ...(published ? { published_at: published } : {}),
-        ...(site ? { site } : {}),
+        title: item.title,
+        text: (item.excerpts ?? []).join(" … "),
+        published: item.publish_date,
       },
-    ];
-  });
+      request.max_chars,
+    ),
+  );
   // The usage SKUs differ by request; the search SKU is the billed request.
   const usage =
     body.usage?.find((item) => item.name === "sku_search") ?? body.usage?.[0];

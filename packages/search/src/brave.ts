@@ -4,7 +4,7 @@ import type {
   SearchResultItem,
 } from "@introspection-ai/recipes/search";
 
-import { capText, dateOf, hostOf } from "./text.js";
+import { searchResult } from "./text.js";
 
 const FRESHNESS = { day: "pd", week: "pw", month: "pm", year: "py" } as const;
 
@@ -103,45 +103,37 @@ export const braveSearchProvider: SearchProviderModule = {
       method: "GET",
     });
     const items: SearchResultItem[] = web
-      ? ((body as BraveWeb).web?.results ?? []).flatMap((item) => {
-          if (typeof item.url !== "string") return [];
-          const snippet = stripTags(
-            [item.description, ...(item.extra_snippets ?? [])]
-              .filter(Boolean)
-              .join(" … "),
-          );
-          const published = dateOf(item.page_age);
-          const site = item.meta_url?.hostname ?? hostOf(item.url);
-          return [
+      ? ((body as BraveWeb).web?.results ?? []).flatMap((item) =>
+          searchResult(
             {
               url: item.url,
-              ...(item.title ? { title: stripTags(item.title) } : {}),
-              ...(snippet
-                ? { snippet: capText(snippet, request.max_chars) }
-                : {}),
-              ...(published ? { published_at: published } : {}),
-              ...(site ? { site: site.replace(/^www\./, "") } : {}),
+              title: item.title ? stripTags(item.title) : undefined,
+              text: stripTags(
+                [item.description, ...(item.extra_snippets ?? [])]
+                  .filter(Boolean)
+                  .join(" … "),
+              ),
+              published: item.page_age,
+              site: item.meta_url?.hostname?.replace(/^www\./, ""),
             },
-          ];
-        })
+            request.max_chars,
+          ),
+        )
       : ((body as BraveContext).grounding?.generic ?? []).flatMap((item) => {
-          if (typeof item.url !== "string") return [];
-          const source = (body as BraveContext).sources?.[item.url];
-          const snippet = (item.snippets ?? []).join(" … ");
-          const published = dateOf(source?.age?.[1]);
-          const site = source?.hostname ?? hostOf(item.url);
-          const title = item.title || source?.title;
-          return [
+          const source =
+            typeof item.url === "string"
+              ? (body as BraveContext).sources?.[item.url]
+              : undefined;
+          return searchResult(
             {
               url: item.url,
-              ...(title ? { title } : {}),
-              ...(snippet
-                ? { snippet: capText(snippet, request.max_chars) }
-                : {}),
-              ...(published ? { published_at: published } : {}),
-              ...(site ? { site } : {}),
+              title: item.title || source?.title,
+              text: (item.snippets ?? []).join(" … "),
+              published: source?.age?.[1],
+              site: source?.hostname,
             },
-          ];
+            request.max_chars,
+          );
         });
     return { results: items.slice(0, request.max_results) };
   },

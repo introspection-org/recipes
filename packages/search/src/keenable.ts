@@ -4,7 +4,7 @@ import type {
   SearchRequest,
 } from "@introspection-ai/recipes/search";
 
-import { capText, dateOf, hostOf, mcpResultText, parsedJson } from "./text.js";
+import { mcpResultText, parsedJson, searchResult } from "./text.js";
 
 /** Relative offsets Keenable's `published_after` takes back from the request time. */
 const FRESHNESS = { day: "1d", week: "7d", month: "1mo", year: "1y" } as const;
@@ -28,21 +28,17 @@ function keenableResults(
   body: KeenableResponse,
   request: SearchRequest,
 ): SearchProviderResult {
-  const results = (body.results ?? []).flatMap((item) => {
-    if (typeof item.url !== "string") return [];
-    const text = item.snippet || item.description;
-    const published = dateOf(item.published_at);
-    const site = hostOf(item.url);
-    return [
+  const results = (body.results ?? []).flatMap((item) =>
+    searchResult(
       {
         url: item.url,
-        ...(item.title ? { title: item.title } : {}),
-        ...(text ? { snippet: capText(text, request.max_chars) } : {}),
-        ...(published ? { published_at: published } : {}),
-        ...(site ? { site } : {}),
+        title: item.title,
+        text: item.snippet || item.description,
+        published: item.published_at,
       },
-    ];
-  });
+      request.max_chars,
+    ),
+  );
   return {
     results,
     ...(typeof body.usage?.credits === "number"

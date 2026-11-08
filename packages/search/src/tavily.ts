@@ -5,12 +5,10 @@ import type {
 } from "@introspection-ai/recipes/search";
 
 import {
-  capText,
   countryName,
-  dateOf,
-  hostOf,
   mcpResultText,
   parsedJson,
+  searchResult,
 } from "./text.js";
 
 interface TavilyResponse {
@@ -28,23 +26,18 @@ function tavilyResults(
   body: TavilyResponse,
   request: SearchRequest,
 ): SearchProviderResult {
-  const results = (body.results ?? []).flatMap((item) => {
-    if (typeof item.url !== "string") return [];
-    const published = dateOf(item.published_date);
-    const site = hostOf(item.url);
-    return [
+  const results = (body.results ?? []).flatMap((item) =>
+    searchResult(
       {
         url: item.url,
-        ...(item.title ? { title: item.title } : {}),
-        ...(item.content
-          ? { snippet: capText(item.content, request.max_chars) }
-          : {}),
-        ...(published ? { published_at: published } : {}),
-        ...(typeof item.score === "number" ? { score: item.score } : {}),
-        ...(site ? { site } : {}),
+        title: item.title,
+        text: item.content,
+        published: item.published_date,
+        score: item.score,
       },
-    ];
-  });
+      request.max_chars,
+    ),
+  );
   return {
     results,
     ...(typeof body.usage?.credits === "number"

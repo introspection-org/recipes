@@ -6,12 +6,10 @@ import type {
 } from "@introspection-ai/recipes/search";
 
 import {
-  capText,
-  dateOf,
   freshnessStart,
-  hostOf,
   mcpResultText,
   parsedJson,
+  searchResult,
 } from "./text.js";
 
 interface ExaResponse {
@@ -30,24 +28,18 @@ function exaResults(
   body: ExaResponse,
   request: SearchRequest,
 ): SearchProviderResult {
-  const results = (body.results ?? []).flatMap((item) => {
-    if (typeof item.url !== "string") return [];
-    const text = item.highlights?.length
-      ? item.highlights.join(" … ")
-      : item.text;
-    const published = dateOf(item.publishedDate);
-    const site = hostOf(item.url);
-    return [
+  const results = (body.results ?? []).flatMap((item) =>
+    searchResult(
       {
         url: item.url,
-        ...(item.title ? { title: item.title } : {}),
-        ...(text ? { snippet: capText(text, request.max_chars) } : {}),
-        ...(published ? { published_at: published } : {}),
-        ...(typeof item.score === "number" ? { score: item.score } : {}),
-        ...(site ? { site } : {}),
+        title: item.title,
+        text: item.highlights?.length ? item.highlights.join(" … ") : item.text,
+        published: item.publishedDate,
+        score: item.score,
       },
-    ];
-  });
+      request.max_chars,
+    ),
+  );
   return {
     results,
     ...(typeof body.costDollars?.total === "number"

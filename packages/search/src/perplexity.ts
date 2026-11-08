@@ -5,7 +5,7 @@ import type {
   SearchRequest,
 } from "@introspection-ai/recipes/search";
 
-import { capText, dateOf, hostOf, mcpResultText } from "./text.js";
+import { mcpResultText, searchResult } from "./text.js";
 
 /** Tokens extracted per page; the MCP tool takes 256 to 2048. */
 const TOKENS_PER_PAGE: Readonly<Record<SearchContent, number>> = {
@@ -28,22 +28,17 @@ function perplexityResults(
   request: SearchRequest,
 ): SearchProviderResult {
   return {
-    results: (body.results ?? []).flatMap((item) => {
-      if (typeof item.url !== "string") return [];
-      const published = dateOf(item.date);
-      const site = hostOf(item.url);
-      return [
+    results: (body.results ?? []).flatMap((item) =>
+      searchResult(
         {
           url: item.url,
-          ...(item.title ? { title: item.title } : {}),
-          ...(item.snippet
-            ? { snippet: capText(item.snippet, request.max_chars) }
-            : {}),
-          ...(published ? { published_at: published } : {}),
-          ...(site ? { site } : {}),
+          title: item.title,
+          text: item.snippet,
+          published: item.date,
         },
-      ];
-    }),
+        request.max_chars,
+      ),
+    ),
   };
 }
 
