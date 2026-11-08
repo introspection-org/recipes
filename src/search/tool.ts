@@ -390,6 +390,18 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
         });
         continue;
       }
+      if (
+        option === "country" &&
+        capabilities.countries &&
+        !capabilities.countries.includes(args.country!)
+      ) {
+        notes.push({
+          option,
+          outcome: "ignored",
+          detail: `${id} has no country setting for ${args.country}`,
+        });
+        continue;
+      }
       if (support === "approximate")
         notes.push({
           option,
@@ -567,7 +579,8 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
           "search.mode": args.mode ?? "default",
           "error.type": info.code,
         });
-        span.setStatus({ code: SpanStatusCode.ERROR, message: info.message });
+        // The message can echo the query or a site; the span carries the code alone.
+        span.setStatus({ code: SpanStatusCode.ERROR, message: info.code });
         throw error;
       } finally {
         span.end();
