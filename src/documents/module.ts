@@ -135,11 +135,7 @@ function parseFormatModule(
   declaration: RecipePackageDocument,
 ): RecipeDocumentFormatModule {
   const packageName = recipeDocumentPackageName(declaration.format);
-  const module = (
-    value && typeof value === "object" && "default" in value
-      ? (value as { default: unknown }).default
-      : value
-  ) as Partial<RecipeDocumentFormatModule> | undefined;
+  const module = value as Partial<RecipeDocumentFormatModule> | undefined;
   if (
     !module ||
     module.kind !== "documents" ||

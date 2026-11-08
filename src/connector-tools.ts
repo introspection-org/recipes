@@ -152,7 +152,7 @@ async function loadRecipeConnectorModule(
   channel: RecipePackageChannel,
   hostDir: string | undefined,
 ): Promise<RecipeConnectorModule> {
-  const imported = await loadRecipePackageModule(
+  const connectorModule = await loadRecipePackageModule(
     recipeDir,
     recipeChannelPackageName(channel.provider),
     {
@@ -161,10 +161,6 @@ async function loadRecipeConnectorModule(
       ...(hostDir !== undefined ? { hostDir } : {}),
     },
   );
-  const connectorModule =
-    imported && typeof imported === "object" && "default" in imported
-      ? imported.default
-      : imported;
   return parseRecipeConnectorModule(
     fromChannelModule(connectorModule, channel),
     channel,
