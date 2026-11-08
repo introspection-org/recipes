@@ -1,0 +1,119 @@
+{
+  "model": "anthropic/claude-haiku-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 1448,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 166,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1356,
+      "cache_read_input_tokens": 1448,
+      "output_tokens": 101,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema; date",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 2687,
+      "cache_read_input_tokens": 2804,
+      "output_tokens": 323,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json '{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\",\"limit\":50}'; echo ---; tools call mail.search --json '{\"query\":\"budget\",\"from\":\"Dana\",\"limit\":10}'; echo ---; tools call drive.search --json '{\"query\":\"budget\",\"limit\":10}'",
+            "timeout": 90
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1046,
+      "cache_read_input_tokens": 5491,
+      "output_tokens": 371,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json '{\"message\":\"msg_45244645bb99488d\"}'; echo ---; tools call calendar.read --json '{\"event\":\"evt_2a8dee3ef8bb43aa\"}'",
+            "timeout": 90
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1033,
+      "cache_read_input_tokens": 6537,
+      "output_tokens": 202,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json '{\"reply_to\":\"msg_45244645bb99488d\",\"to\":[\"dana@example.test\"],\"body\":\"Hi Dana,\\n\\nYes, I will bring the Q3 budget sheet to the planning review tomorrow. Here is the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"}'",
+            "timeout": 90
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 395,
+      "cache_read_input_tokens": 7570,
+      "output_tokens": 219,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json '{\"reply_to\":\"msg_45244645bb99488d\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nYes, I will bring the Q3 budget sheet to the planning review tomorrow. Here is the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"}'",
+            "timeout": 90
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 320,
+      "cache_read_input_tokens": 7965,
+      "output_tokens": 406,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 7,
+    "tool_calls": 6,
+    "input_tokens": 16,
+    "cache_creation_input_tokens": 8285,
+    "cache_read_input_tokens": 31815,
+    "output_tokens": 1788
+  }
+}
