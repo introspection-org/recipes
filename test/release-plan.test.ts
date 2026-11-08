@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -77,6 +78,8 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
+      "microsoft",
       "crate",
       "python",
     ]);
@@ -95,6 +98,22 @@ describe("release plan", () => {
     expect(byKey.python.tag).toBe(
       `introspection-recipe-check-python-v${byKey.python.version}`,
     );
+  });
+
+  it("covers a package once release-please has released it", () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "..", ".release-please-manifest.json"),
+        "utf8",
+      ),
+    ) as Record<string, string>;
+    const keys = artifacts.map((a) => a.key);
+    for (const [path, key] of [
+      ["packages/productivity/google", "google"],
+      ["packages/productivity/microsoft", "microsoft"],
+    ]) {
+      expect(keys.includes(key)).toBe(manifest[path] !== undefined);
+    }
   });
 
   it("publishes nothing when every registry has its version", async () => {
@@ -211,6 +230,8 @@ describe("release plan", () => {
       "slack",
       "docx",
       "pdf",
+      "google",
+      "microsoft",
       "python",
     ]);
     expect(results.find((r) => r.key === "crate")).toMatchObject({

@@ -20,6 +20,15 @@ export type {
 } from "./tools.js";
 export { ProductivityHandleStore } from "./handles.js";
 export {
+  createProductivityHttp,
+  MAX_RECORDED_BODY_BYTES,
+  OPERATION_ID_ATTRIBUTE,
+  PRODUCTIVITY_EGRESS_TOKEN,
+  RESPONSE_BODY_ATTRIBUTE,
+  retryAfterSeconds,
+} from "./http.js";
+export type { ProductivityHttpOptions } from "./http.js";
+export {
   BODY_LIMIT_CHARS,
   capText,
   contentText,

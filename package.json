@@ -1,6 +1,6 @@
 {
 	"name": "@introspection-ai/recipes",
-	"version": "0.49.0",
+	"version": "0.50.0",
 	"description": "The open format for vertical agents, built on Pi.",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -137,7 +137,9 @@
 	"optionalDependencies": {
 		"@introspection-ai/recipe-channel-slack": "workspace:>=0.6.0",
 		"@introspection-ai/recipe-documents-docx": "workspace:>=0.3.0",
-		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0"
+		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0",
+		"@introspection-ai/recipe-productivity-google": "workspace:>=0.1.0",
+		"@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",

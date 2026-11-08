@@ -92,6 +92,22 @@ function fakeSession(calls: Calls): ProductivitySession {
             status: 403,
           });
         if (args.query === "boom") throw new Error("socket hang up");
+        if (args.query === "sparse") {
+          // A provider that filters its pages: one item each, three pages.
+          const n = Number(args.cursor ?? "0") + 1;
+          return {
+            messages: [{ id: `s-${n}`, subject: `#${n}` }],
+            ...(n < 3 ? { cursor: String(n) } : {}),
+          };
+        }
+        if (args.query === "many") {
+          // A provider page it cannot cut: five items whatever the limit.
+          const ids = args.cursor === "after-5" ? [6] : [1, 2, 3, 4, 5];
+          return {
+            messages: ids.map((n) => ({ id: `m-${n}`, subject: `#${n}` })),
+            ...(args.cursor ? {} : { cursor: "after-5" }),
+          };
+        }
         return {
           messages: [
             {
@@ -120,6 +136,9 @@ function fakeSession(calls: Calls): ProductivitySession {
               attachments: [{ id: "att-9", name: "../../report.pdf", size: 3 }],
             },
           ],
+          ...("thread_id" in args
+            ? { unavailable: "Only the latest 500 messages were read." }
+            : {}),
         };
       },
       async fetchAttachment(args) {
@@ -312,8 +331,14 @@ describe("productivity tools", () => {
     expect(message.thread).toMatch(/^thr_/);
     expect(JSON.stringify(search.details)).not.toContain("AAMk-1");
 
-    await run("mail", { command: "read", thread: message.thread });
+    const thread = await run("mail", {
+      command: "read",
+      thread: message.thread,
+    });
     expect(calls.at(-1)).toEqual(["mail.read", { thread_id: "conv-1" }]);
+    expect(thread.details.unavailable).toBe(
+      "Only the latest 500 messages were read.",
+    );
 
     const again = await run("mail", { command: "search", query: "hello" });
     expect(again.details.messages[0].message).toBe(message.message);
@@ -334,7 +359,7 @@ describe("productivity tools", () => {
 
   it("scopes a cursor to the search that returned it", async () => {
     const { run, calls } = setup();
-    const page = await run("mail", { command: "search", query: "a" });
+    const page = await run("mail", { command: "search", query: "a", limit: 1 });
     expect(page.details.cursor).toMatch(/^cur_/);
     const next = await run("mail", {
       command: "search",
@@ -349,6 +374,51 @@ describe("productivity tools", () => {
       cursor: page.details.cursor,
     });
     expect(wrong.details.error.message).toContain("another search");
+  });
+
+  it("keeps a provider's items past the limit for the next page", async () => {
+    const { run, calls } = setup();
+    const subjects: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await run("mail", {
+        command: "search",
+        query: "many",
+        limit: 2,
+        ...(cursor ? { cursor } : {}),
+      });
+      expect(page.details.messages.length).toBeLessThanOrEqual(2);
+      subjects.push(
+        ...page.details.messages.map((m: { subject: string }) => m.subject),
+      );
+      cursor = page.details.cursor;
+      pages += 1;
+    } while (cursor && pages < 10);
+    expect(subjects).toEqual(["#1", "#2", "#3", "#4", "#5", "#6"]);
+    // The overflow is served from the cursor, not fetched again.
+    expect(calls.map(([, args]) => args)).toEqual([
+      { query: "many", limit: 2 },
+      { query: "many", limit: 1, cursor: "after-5" },
+    ]);
+  });
+
+  it("fills a page from further calls when a provider filters its pages short", async () => {
+    const { run, calls } = setup();
+    const page = await run("mail", {
+      command: "search",
+      query: "sparse",
+      limit: 3,
+    });
+    expect(
+      page.details.messages.map((m: { subject: string }) => m.subject),
+    ).toEqual(["#1", "#2", "#3"]);
+    expect(page.details.cursor).toBeUndefined();
+    expect(calls.map(([, args]) => args)).toEqual([
+      { query: "sparse", limit: 3 },
+      { query: "sparse", limit: 2, cursor: "1" },
+      { query: "sparse", limit: 1, cursor: "2" },
+    ]);
   });
 
   it("sends only a draft this session created, and only once", async () => {
@@ -429,6 +499,9 @@ describe("productivity tools", () => {
         '<a href="https://x.test/a">docs</a> &amp; <script>evil()</script>',
       ),
     ).toBe("docs (https://x.test/a) &");
+    expect(htmlToText("<p>&euro;5 &bull; &pound;4&middot;</p>")).toBe(
+      "€5 • £4·",
+    );
   });
 
   it("saves an attachment under the downloads folder, never outside it", async () => {

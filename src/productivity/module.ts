@@ -8,6 +8,7 @@ import {
   recipeProductivityPackageName,
   type RecipePackageProductivity,
 } from "../recipe/package.js";
+import { createProductivityHttp } from "./http.js";
 import {
   productivityCapabilitiesProblem,
   productivityCommandsFor,
@@ -209,7 +210,11 @@ export async function loadRecipeProductivity(
               config: { provider: declaration.provider, tools: enabled },
               env,
               cwd,
-              ...(options.fetch ? { fetch: options.fetch } : {}),
+              http: createProductivityHttp({
+                provider: declaration.provider,
+                env,
+                ...(options.fetch ? { fetch: options.fetch } : {}),
+              }),
             }),
         });
         pi.on("resources_discover", () => ({ skillPaths }));

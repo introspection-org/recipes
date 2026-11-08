@@ -110,6 +110,8 @@ jobs:
       slack: ${{ steps.plan.outputs.slack }}
       docx: ${{ steps.plan.outputs.docx }}
       pdf: ${{ steps.plan.outputs.pdf }}
+      google: ${{ steps.plan.outputs.google }}
+      microsoft: ${{ steps.plan.outputs.microsoft }}
       crate: ${{ steps.plan.outputs.crate }}
       python: ${{ steps.plan.outputs.python }}
       python_wheels: ${{ steps.plan.outputs.python_wheels }}
@@ -257,6 +259,8 @@ jobs:
           publish_slack: ${{ needs.plan.outputs.slack }}
           publish_docx: ${{ needs.plan.outputs.docx }}
           publish_pdf: ${{ needs.plan.outputs.pdf }}
+          publish_google: ${{ needs.plan.outputs.google }}
+          publish_microsoft: ${{ needs.plan.outputs.microsoft }}
           NATIVE_BUILD_RESULT: ${{ needs.build-native-tools.result }}
         shell: bash
         run: |
@@ -317,6 +321,12 @@ jobs:
           fi
           if [[ "$publish_pdf" == "true" ]]; then
             channel_dirs+=("packages/documents/pdf")
+          fi
+          if [[ "$publish_google" == "true" ]]; then
+            channel_dirs+=("packages/productivity/google")
+          fi
+          if [[ "$publish_microsoft" == "true" ]]; then
+            channel_dirs+=("packages/productivity/microsoft")
           fi
 
           if [[ "${#channel_dirs[@]}" -gt 0 ]]; then
