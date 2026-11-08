@@ -183,8 +183,8 @@ export type RecipePackageSearch = RecipeProviderDeclaration;
 
 /**
  * A provider the `issues` tool offers: first-party by id, from
- * `@introspection-ai/recipe-issues`, or the Recipe's own by `package` or
- * `module`. `team` (Linear) and `project` and `issueType` (Jira) say where
+ * `@introspection-ai/recipe-issues`, or the Recipe's own by `package`.
+ * `team` (Linear) and `project` and `issueType` (Jira) say where
  * `create` puts an issue; `server` names the Recipe's MCP server for the
  * provider when it is not the adapter's default id. `enabled: false` excludes
  * the `introspection` fallback.
@@ -448,14 +448,19 @@ function sourceShapeFindings(
     ),
   );
   findings.push(
-    ...searchSourceShapeFindings(pi.search, packageName, dependencies),
+    ...providerFamilyFindings(
+      SEARCH_DECLARATIONS,
+      pi.search,
+      packageName,
+      dependencies,
+    ),
   );
   findings.push(
-    ...issuesSourceShapeFindings(
+    ...providerFamilyFindings(
+      ISSUES_DECLARATIONS,
       pi.issues,
       packageName,
       dependencies,
-      packageDir,
     ),
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
@@ -777,112 +782,59 @@ function providerSourceProblems(
 }
 
 /**
- * `pi.search` names the providers `web_search` offers, each by a unique id. A
- * first-party id needs no source; any other needs a `package`.
+ * A provider family's declarations (`pi.search`, `pi.issues`): its first-party
+ * ids, and the options each takes beside `provider` and `package`.
+ * A Recipe's own provider may take any of the family's options.
  */
-function searchSourceShapeFindings(
-  value: unknown,
-  packageName: string,
-  dependencies: DeclaredDependencies,
-): RecipeValidationFinding[] {
-  if (value === undefined) return [];
-  const invalid = (message: string) =>
-    finding("pi.search_invalid", message, packageName);
-  if (!Array.isArray(value)) {
-    return [invalid("package.json#pi.search must be an array")];
-  }
-  const findings: RecipeValidationFinding[] = [];
-  const providers = new Set<string>();
-  for (const [index, raw] of value.entries()) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      findings.push(
-        invalid(`package.json#pi.search[${index}] must be an object`),
-      );
-      continue;
-    }
-    const declaration = raw as Record<string, unknown>;
-    const unknown = Object.keys(declaration).filter(
-      (key) => !["provider", "package"].includes(key),
-    );
-    if (unknown.length > 0) {
-      findings.push(
-        invalid(
-          `package.json#pi.search[${index}] contains unknown field(s): ${unknown.join(", ")}`,
-        ),
-      );
-    }
-    findings.push(
-      ...providerSourceProblems(
-        declaration,
-        `package.json#pi.search[${index}]`,
-        dependencies,
-      ).map(invalid),
-    );
-    const provider =
-      typeof declaration.provider === "string" && declaration.provider.trim()
-        ? declaration.provider.trim()
-        : undefined;
-    if (!provider) {
-      findings.push(
-        invalid(`package.json#pi.search[${index}].provider must be non-empty`),
-      );
-      continue;
-    }
-    if (providers.has(provider)) {
-      findings.push(
-        invalid(
-          `package.json#pi.search contains duplicate provider '${provider}'`,
-        ),
-      );
-      continue;
-    }
-    providers.add(provider);
-    if (
-      declaration.package === undefined &&
-      !(SEARCH_PROVIDER_IDS as readonly string[]).includes(provider)
-    )
-      findings.push(
-        invalid(
-          `package.json#pi.search provider '${provider}' is not a first-party provider (${SEARCH_PROVIDER_IDS.join(", ")}); give it a package`,
-        ),
-      );
-  }
-  return findings;
+interface ProviderFamilyDeclarations {
+  key: "search" | "issues";
+  firstParty: readonly string[];
+  /** Options by first-party id. */
+  options: Readonly<Record<string, readonly string[]>>;
+  /** Every option, in the order it is checked. */
+  allOptions: readonly string[];
+  /** The one provider that takes `enabled`, if the family has a fallback. */
+  fallback?: string;
 }
 
-/**
- * `pi.issues` names the providers the `issues` tool offers, each by a unique
- * id. A first-party id takes only its own options; a Recipe's own provider
- * needs a `package` or `module` and may take any of them.
- */
-function issuesSourceShapeFindings(
+const SEARCH_DECLARATIONS: ProviderFamilyDeclarations = {
+  key: "search",
+  firstParty: SEARCH_PROVIDER_IDS,
+  options: {},
+  allOptions: [],
+};
+
+const ISSUES_DECLARATIONS: ProviderFamilyDeclarations = {
+  key: "issues",
+  firstParty: ISSUES_PROVIDER_IDS,
+  options: ISSUES_PROVIDER_OPTIONS,
+  allOptions: ISSUES_DECLARATION_OPTIONS,
+  fallback: ISSUES_FALLBACK_PROVIDER,
+};
+
+function providerFamilyFindings(
+  family: ProviderFamilyDeclarations,
   value: unknown,
   packageName: string,
   dependencies: DeclaredDependencies,
-  packageDir?: string,
 ): RecipeValidationFinding[] {
   if (value === undefined) return [];
   const invalid = (message: string) =>
-    finding("pi.issues_invalid", message, packageName);
+    finding(`pi.${family.key}_invalid`, message, packageName);
   if (!Array.isArray(value)) {
-    return [invalid("package.json#pi.issues must be an array")];
+    return [invalid(`package.json#pi.${family.key} must be an array`)];
   }
   const findings: RecipeValidationFinding[] = [];
   const providers = new Set<string>();
   for (const [index, raw] of value.entries()) {
-    const at = `package.json#pi.issues[${index}]`;
+    const at = `package.json#pi.${family.key}[${index}]`;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       findings.push(invalid(`${at} must be an object`));
       continue;
     }
     const declaration = raw as Record<string, unknown>;
     const unknown = Object.keys(declaration).filter(
-      (key) =>
-        ![
-          "provider",
-          ...PROVIDER_SOURCE_FIELDS,
-          ...ISSUES_DECLARATION_OPTIONS,
-        ].includes(key),
+      (key) => !["provider", "package", ...family.allOptions].includes(key),
     );
     if (unknown.length > 0) {
       findings.push(
@@ -890,9 +842,7 @@ function issuesSourceShapeFindings(
       );
     }
     findings.push(
-      ...providerSourceProblems(declaration, at, dependencies, packageDir).map(
-        invalid,
-      ),
+      ...providerSourceProblems(declaration, at, dependencies).map(invalid),
     );
     const provider =
       typeof declaration.provider === "string" && declaration.provider.trim()
@@ -905,32 +855,29 @@ function issuesSourceShapeFindings(
     if (providers.has(provider)) {
       findings.push(
         invalid(
-          `package.json#pi.issues contains duplicate provider '${provider}'`,
+          `package.json#pi.${family.key} contains duplicate provider '${provider}'`,
         ),
       );
       continue;
     }
     providers.add(provider);
-    const ownSource = hasProviderSource(declaration);
-    const firstParty = (ISSUES_PROVIDER_IDS as readonly string[]).includes(
-      provider,
-    );
-    if (!ownSource && !firstParty) {
+    const ownSource = declaration.package !== undefined;
+    if (!ownSource && !family.firstParty.includes(provider)) {
       findings.push(
         invalid(
-          `package.json#pi.issues provider '${provider}' is not a first-party provider (${ISSUES_PROVIDER_IDS.join(", ")}); give it a package or module`,
+          `package.json#pi.${family.key} provider '${provider}' is not a first-party provider (${family.firstParty.join(", ")}); give it a package`,
         ),
       );
       continue;
     }
-    for (const option of ISSUES_DECLARATION_OPTIONS) {
+    for (const option of family.allOptions) {
       const optionValue = declaration[option];
       if (optionValue === undefined) continue;
       if (option === "enabled") {
-        if (provider !== ISSUES_FALLBACK_PROVIDER)
+        if (provider !== family.fallback)
           findings.push(
             invalid(
-              `${at}.enabled applies only to '${ISSUES_FALLBACK_PROVIDER}'; remove the declaration to leave '${provider}' out`,
+              `${at}.enabled applies only to '${family.fallback}'; remove the declaration to leave '${provider}' out`,
             ),
           );
         else if (typeof optionValue !== "boolean")
@@ -941,7 +888,7 @@ function issuesSourceShapeFindings(
         findings.push(invalid(`${at}.${option} must be a non-empty string`));
         continue;
       }
-      if (!ownSource && !ISSUES_PROVIDER_OPTIONS[provider]?.includes(option))
+      if (!ownSource && !family.options[provider]?.includes(option))
         findings.push(
           invalid(`${at}: provider '${provider}' takes no ${option}`),
         );
