@@ -144,12 +144,16 @@ later command takes:
 The providers differ, so each declares the commands and fields it supports in
 `capabilities`, as productivity providers do:
 
-- **Comments:** Linear and Jira have them. Introspection's issues keep their
-  history as `introspection.issue` events, and comments belong there too,
-  behind the issues API: a `PATCH /v1/issues/{id}` with a nested `comment`
-  appends one, as a nested `request` appends a request, and the issue's
-  history reads them back. Until `/v1/issues` has them, its provider does not
-  offer `comment`. `open_requests` are questions put to a person, not comments.
+- **Comments:** Linear and Jira have them. Introspection's issues take
+  comments as an event family of their own, `introspection.issue_comment`
+  (`issue_id`, `body`), written through the SDK like feedback
+  (`logs.issueComment(issueId, body)` in `@introspection-sdk/introspection-node`)
+  and read with `GET /v1/events?event_name=introspection.issue_comment&issue_id=…`.
+  It sits outside the reserved `introspection.issue.*` family, because a
+  comment changes no state and grants no access, so any agent may write one;
+  anyone who can read the issue can read its comments. Until the platform
+  serves the family, the provider does not offer `comment`. `open_requests`
+  are questions put to a person, not comments.
 - **Assignee:** Introspection's issues have an owner (`member_id`), not an
   assignee, so `update` takes no assignee there.
 - **Moving an issue:** `transition` takes a status name or category. Linear
