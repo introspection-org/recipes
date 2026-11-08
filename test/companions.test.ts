@@ -393,13 +393,19 @@ describe("Recipes' optionalDependencies", () => {
     "packages/documents",
     "packages/productivity",
   ].filter((root) => existsSync(resolve(root)));
-  const workspacePackages = companionRoots.flatMap((root) =>
-    readdirSync(resolve(root)).map(
-      (name) =>
-        JSON.parse(
-          readFileSync(resolve(root, name, "package.json"), "utf8"),
-        ) as { name: string; version: string },
+  // A companion that is one package rather than a family of them.
+  const companionDirs = [
+    ...companionRoots.flatMap((root) =>
+      readdirSync(resolve(root)).map((name) => join(root, name)),
     ),
+    "packages/search",
+  ];
+  const workspacePackages = companionDirs.map(
+    (dir) =>
+      JSON.parse(readFileSync(resolve(dir, "package.json"), "utf8")) as {
+        name: string;
+        version: string;
+      },
   );
 
   // A release stamps the MCP client's platform binaries in beside the companions
@@ -434,34 +440,31 @@ describe("Recipes' optionalDependencies", () => {
   it("are never a run-time dependency of Recipes' companions: no cycle back to Recipes", () => {
     const recipesImport =
       /\b(import|export)\s+(type\s+)?[^;]*?from\s+["']@introspection-ai\/recipes[^"']*["']/gs;
-    for (const root of companionRoots) {
-      for (const name of readdirSync(resolve(root))) {
-        const dir = resolve(root, name);
-        const pkg = JSON.parse(
-          readFileSync(join(dir, "package.json"), "utf8"),
-        ) as Record<string, Record<string, string> | undefined>;
-        for (const block of [
-          "dependencies",
-          "peerDependencies",
-          "optionalDependencies",
-        ]) {
+    for (const name of companionDirs) {
+      const dir = resolve(name);
+      const pkg = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      ) as Record<string, Record<string, string> | undefined>;
+      for (const block of [
+        "dependencies",
+        "peerDependencies",
+        "optionalDependencies",
+      ]) {
+        expect(Object.keys(pkg[block] ?? {}), `${name} ${block}`).not.toContain(
+          "@introspection-ai/recipes",
+        );
+      }
+      for (const file of readdirSync(join(dir, "src")).filter((entry) =>
+        entry.endsWith(".ts"),
+      )) {
+        for (const match of readFileSync(
+          join(dir, "src", file),
+          "utf8",
+        ).matchAll(recipesImport)) {
           expect(
-            Object.keys(pkg[block] ?? {}),
-            `${name} ${block}`,
-          ).not.toContain("@introspection-ai/recipes");
-        }
-        for (const file of readdirSync(join(dir, "src")).filter((entry) =>
-          entry.endsWith(".ts"),
-        )) {
-          for (const match of readFileSync(
-            join(dir, "src", file),
-            "utf8",
-          ).matchAll(recipesImport)) {
-            expect(
-              match[2],
-              `${name}/src/${file}: ${match[0].slice(0, 80)}`,
-            ).toBeTruthy();
-          }
+            match[2],
+            `${name}/src/${file}: ${match[0].slice(0, 80)}`,
+          ).toBeTruthy();
         }
       }
     }

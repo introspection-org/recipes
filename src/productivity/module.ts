@@ -78,11 +78,7 @@ function parseProductivityModule(
   declaration: RecipePackageProductivity,
 ): RecipeProductivityModule {
   const packageName = recipeProductivityPackageName(declaration.provider);
-  const module = (
-    value && typeof value === "object" && "default" in value
-      ? (value as { default: unknown }).default
-      : value
-  ) as Partial<RecipeProductivityModule> | undefined;
+  const module = value as Partial<RecipeProductivityModule> | undefined;
   const problem =
     !module ||
     module.kind !== "productivity" ||

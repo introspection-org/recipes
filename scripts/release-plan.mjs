@@ -65,6 +65,7 @@ export function readArtifacts(repo) {
       "packages/productivity/microsoft",
       "recipe-productivity-microsoft-v"
     ),
+    npmPackage("search", "packages/search", "recipe-search-v"),
     {
       key: "crate",
       version: checker["packages/recipe-check"],

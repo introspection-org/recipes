@@ -1,0 +1,191 @@
+import type {
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
+import {
+  countryName,
+  mcpResultText,
+  parsedJson,
+  searchResult,
+} from "./text.js";
+
+interface TavilyResponse {
+  results?: Array<{
+    url?: string;
+    title?: string;
+    content?: string;
+    score?: number;
+    published_date?: string;
+  }>;
+  usage?: { credits?: number };
+}
+
+function tavilyResults(
+  body: TavilyResponse,
+  request: SearchRequest,
+): SearchProviderResult {
+  const results = (body.results ?? []).flatMap((item) =>
+    searchResult(
+      {
+        url: item.url,
+        title: item.title,
+        text: item.content,
+        published: item.published_date,
+        score: item.score,
+      },
+      request.max_chars,
+    ),
+  );
+  return {
+    results,
+    ...(typeof body.usage?.credits === "number"
+      ? { units: { name: "credits", count: body.usage.credits } }
+      : {}),
+  };
+}
+
+/**
+ * The results older Tavily MCP servers write as text (`format-results.ts` in
+ * tavily-ai/tavily-mcp): `Title:`, `ID:`, `URL:`, `Content:` lines per result,
+ * where content keeps its own newlines. The text carries no date, score or
+ * credits. Current servers answer `structuredContent` and the same JSON as text.
+ */
+function tavilyTextResults(text: string): TavilyResponse {
+  const results: NonNullable<TavilyResponse["results"]> = [];
+  let content: string[] | undefined;
+  const endContent = () => {
+    const current = results.at(-1);
+    if (current && content) current.content = content.join("\n").trimEnd();
+    content = undefined;
+  };
+  for (const line of text.split("\n")) {
+    const match = /^(Title|ID|URL|Content|Raw Content|Favicon): (.*)$/.exec(
+      line,
+    );
+    if (!match) {
+      if (line === "Images:") endContent();
+      else content?.push(line);
+      continue;
+    }
+    endContent();
+    const [, key, value] = match;
+    let current = results.at(-1);
+    if (
+      key === "Title" ||
+      ((key === "URL" || key === "ID") && (!current || current.url))
+    ) {
+      current = {};
+      results.push(current);
+    }
+    if (!current) continue;
+    if (key === "Title") current.title = value;
+    else if (key === "URL") current.url = value;
+    else if (key === "Content") content = [value];
+  }
+  endContent();
+  return { results };
+}
+
+/**
+ * Tavily Search. REST `POST /search`, or the `tavily_search` tool of
+ * Tavily's hosted MCP server, which answers the API's results with scores,
+ * and dates when asked (`include_published_date`), but no credits; the mode
+ * sets `search_depth` on either.
+ */
+export const tavilySearchProvider: SearchProviderModule = {
+  kind: "search",
+  apiVersion: 1,
+  id: "tavily",
+  capabilities: {
+    modes: {
+      fast: { setting: "fast" },
+      default: { setting: "basic" },
+      deep: { setting: "advanced" },
+    },
+    mode_parameter: "search_depth",
+    max_results: 20,
+    max_query_chars: 400,
+    host: "api.tavily.com",
+    credential: { header: "Authorization", prefix: "Bearer " },
+    billing:
+      "credits: basic and fast 1, advanced 2 (reported with include_usage)",
+    combine_sites: true,
+    options: {
+      freshness: "native",
+      include_sites: "native",
+      exclude_sites: "native",
+      context: "approximate",
+      country: "native",
+    },
+    notes: {
+      context:
+        "Tavily returns up to 3 relevant chunks per result (chunks_per_source) only in deep mode; other modes return one snippet.",
+    },
+  },
+  mcp: {
+    url: "https://mcp.tavily.com/mcp/",
+    credential: { header: "Authorization", prefix: "Bearer " },
+    tools: ["tavily_search"],
+    plan(request, hasTool) {
+      if (!hasTool("tavily_search")) return undefined;
+      return {
+        tool: "tavily_search",
+        args: {
+          query: request.query,
+          search_depth: request.setting,
+          max_results: request.max_results,
+          include_published_date: true,
+          ...(request.freshness ? { time_range: request.freshness } : {}),
+          ...(request.include_sites.length
+            ? { include_domains: request.include_sites }
+            : {}),
+          ...(request.exclude_sites.length
+            ? { exclude_domains: request.exclude_sites }
+            : {}),
+          ...(request.country ? { country: countryName(request.country) } : {}),
+        },
+        // The tool takes no chunks_per_source, so context needs REST.
+        unsupported:
+          request.content === "context" && request.setting === "advanced"
+            ? ["context"]
+            : [],
+      };
+    },
+    parse(result, request) {
+      const structured = result.structuredContent as TavilyResponse | undefined;
+      if (Array.isArray(structured?.results))
+        return tavilyResults(structured, request);
+      const text = mcpResultText(result);
+      const json = parsedJson(text) as TavilyResponse | undefined;
+      return tavilyResults(
+        Array.isArray(json?.results) ? json : tavilyTextResults(text),
+        request,
+      );
+    },
+  },
+  async search(request, context) {
+    const body = (await context.request("/search", {
+      method: "POST",
+      body: {
+        query: request.query,
+        search_depth: request.setting,
+        max_results: request.max_results,
+        include_usage: true,
+        ...(request.content === "context" && request.setting === "advanced"
+          ? { chunks_per_source: 3 }
+          : {}),
+        ...(request.freshness ? { time_range: request.freshness } : {}),
+        ...(request.include_sites.length
+          ? { include_domains: request.include_sites }
+          : {}),
+        ...(request.exclude_sites.length
+          ? { exclude_domains: request.exclude_sites }
+          : {}),
+        ...(request.country ? { country: countryName(request.country) } : {}),
+      },
+    })) as TavilyResponse;
+    return tavilyResults(body, request);
+  },
+};
