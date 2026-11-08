@@ -130,6 +130,8 @@ export async function loadRecipeProductivity(
     hostDir?: string;
     /** The `fetch` providers use; a host attaching credentials with a request hook passes its own. */
     fetch?: ProductivityFetch;
+    /** How a first-party tool registers for the agent (`platform.mode`). Default: declared. */
+    exposure?: (tool: string) => "direct" | "codemode";
   },
 ): Promise<LoadedRecipeProductivity> {
   if (declarations.length === 0) return { toolNames: [] };
@@ -198,6 +200,7 @@ export async function loadRecipeProductivity(
         const env = options.env ?? process.env;
         const cwd = options.cwd ?? process.cwd();
         registerProductivityTools(pi, {
+          ...(options.exposure ? { exposure: options.exposure } : {}),
           provider: declaration.provider,
           capabilities: module.capabilities,
           tools,

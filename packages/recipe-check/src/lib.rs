@@ -3108,6 +3108,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         "session",
         "tools",
         "mcp",
+        "platform",
         "skills",
         "phases",
         "subagents",
@@ -3220,6 +3221,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         );
     }
     let mcp = validate_agent_mcp(map, path, ctx);
+    validate_agent_platform(map, path, tools.as_deref(), ctx);
     let skills = validate_agent_string_array(map, "skills", path, ctx);
     validate_agent_string_array(map, "phases", path, ctx);
     let subagents = validate_agent_string_array(map, "subagents", path, ctx);
@@ -3235,6 +3237,108 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         tools,
         mcp,
     })
+}
+
+/// The tools Recipes owns, which an agent's `platform` block governs.
+const PLATFORM_TOOL_NAMES: [&str; 5] = ["issues", "mail", "calendar", "drive", "web_search"];
+
+/// `platform`: how the selected first-party tools reach the model. `mode` is
+/// `tools` (declared, the default) or `codemode` (scripts only); `eager`, in
+/// codemode, names selected first-party tools declared as well. An agent that
+/// inherits its tools has `eager` checked against them when the Recipe loads.
+fn validate_agent_platform(
+    map: &JsonMap,
+    path: &str,
+    tools: Option<&[String]>,
+    ctx: &mut CheckContext,
+) {
+    const CODE: &str = "agent.platform_invalid";
+    let Some(value) = map.get("platform") else {
+        return;
+    };
+    let Some(platform) = value.as_object() else {
+        ctx.error(
+            CODE,
+            path,
+            "platform must be a mapping",
+            Some("use mode and, in codemode, eager"),
+        );
+        return;
+    };
+    for key in platform
+        .keys()
+        .filter(|key| !matches!(key.as_str(), "mode" | "eager"))
+    {
+        ctx.error(
+            CODE,
+            path,
+            format!("platform contains unknown field '{key}'"),
+            Some("use mode and, in codemode, eager"),
+        );
+    }
+    let mode = platform.get("mode");
+    match mode {
+        None => {}
+        Some(JsonValue::String(value)) if value == "tools" || value == "codemode" => {}
+        Some(JsonValue::String(value)) if value == "cli" => ctx.error(
+            CODE,
+            path,
+            "platform.mode cli needs the tools command, which this release does not have",
+            Some("use tools or codemode"),
+        ),
+        Some(_) => ctx.error(
+            CODE,
+            path,
+            "platform.mode must be tools or codemode",
+            None::<String>,
+        ),
+    }
+    let Some(eager) = platform.get("eager") else {
+        return;
+    };
+    let Some(names) = eager.as_array().and_then(|items| {
+        items
+            .iter()
+            .map(JsonValue::as_str)
+            .collect::<Option<Vec<_>>>()
+    }) else {
+        ctx.error(
+            CODE,
+            path,
+            "platform.eager must be a list of tool names",
+            None::<String>,
+        );
+        return;
+    };
+    if mode.and_then(JsonValue::as_str) != Some("codemode") {
+        ctx.error(
+            CODE,
+            path,
+            "platform.eager applies only with platform.mode codemode",
+            Some("remove eager, or set mode to codemode"),
+        );
+    }
+    let not_selected: Vec<&str> = names
+        .into_iter()
+        .filter(|name| {
+            !PLATFORM_TOOL_NAMES.contains(name)
+                || tools.is_some_and(|tools| !tools.iter().any(|tool| tool == name))
+        })
+        .collect();
+    if !not_selected.is_empty() {
+        ctx.error(
+            CODE,
+            path,
+            format!(
+                "platform.eager names tool(s) that are not selected first-party tools: {}",
+                not_selected.join(", ")
+            ),
+            Some(format!(
+                "name tools the agent selects from {}",
+                PLATFORM_TOOL_NAMES.join(", ")
+            )),
+        );
+    }
 }
 
 fn validate_agent_model(
@@ -6116,6 +6220,85 @@ mod tests {
             diagnostic.code == "pi.channels_invalid"
                 && diagnostic.message.contains("unknown field 'tools'")
         }));
+    }
+
+    fn platform_recipe(platform: &str) -> RecipeFiles {
+        let package = json!({
+            "name": "platform-test",
+            "version": "0.1.0",
+            "pi": { "agents": ["agents/*.yaml"] }
+        });
+        let agent = format!(
+            concat!(
+                "name: agent\n",
+                "model:\n",
+                "  name: test/provider-model\n",
+                "tools:\n",
+                "  - read\n",
+                "  - issues\n",
+                "{}",
+            ),
+            platform
+        );
+        recipe_files(&[
+            (
+                "package.json",
+                &serde_json::to_string(&package).expect("package"),
+            ),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            ("agents/agent.yaml", &agent),
+        ])
+    }
+
+    #[test]
+    fn platform_takes_a_mode_and_eager_selected_first_party_tools() {
+        for platform in [
+            "",
+            "platform:\n  mode: tools\n",
+            "platform:\n  mode: codemode\n",
+            "platform:\n  mode: codemode\n  eager: [issues]\n",
+        ] {
+            let report = check_recipe_files(&platform_recipe(platform));
+            assert!(
+                !report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "agent.platform_invalid"),
+                "{platform}: {:?}",
+                report.diagnostics
+            );
+        }
+        for (platform, text) in [
+            ("platform:\n  mode: cli\n", "needs the tools command"),
+            ("platform:\n  mode: direct\n", "must be tools or codemode"),
+            (
+                "platform:\n  mode: tools\n  eager: [issues]\n",
+                "only with platform.mode codemode",
+            ),
+            (
+                "platform:\n  mode: codemode\n  eager: [mail]\n",
+                "not selected first-party tools: mail",
+            ),
+            (
+                "platform:\n  mode: codemode\n  eager: [read]\n",
+                "not selected first-party tools: read",
+            ),
+            (
+                "platform:\n  mode: codemode\n  expose: all\n",
+                "unknown field 'expose'",
+            ),
+            ("platform: codemode\n", "must be a mapping"),
+        ] {
+            let report = check_recipe_files(&platform_recipe(platform));
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "agent.platform_invalid" && d.message.contains(text)),
+                "{text}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

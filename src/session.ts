@@ -81,6 +81,7 @@ import {
   serverBehindTools,
   waitForPiMcpServers,
   type PiMcpServerRegistration,
+  assertPiSupportsCodemode,
 } from "./mcp/pi-client.js";
 import {
   createMcpToolSet,
@@ -99,6 +100,7 @@ import {
   RecipeModelTransportError,
   resolveRecipeCredentials,
 } from "./model-binding.js";
+import { platformToolExposure } from "./recipe/agent.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import { recipeSkillMatcher } from "./recipe/skills.js";
 import {
@@ -767,7 +769,7 @@ async function createSessionForAgent(
     codemodeToolNames,
     piMcpResourceToolNames,
     piMcpSessionOptions,
-  } = piMcpSessionTools(mcp.piServers, recipe.mcp);
+  } = piMcpSessionTools(mcp.piServers, recipe.mcp, recipe.platform);
   let piMcp: ExtensionAPI | undefined;
 
   const cleanup = async (): Promise<void> => {
@@ -827,7 +829,13 @@ async function createSessionForAgent(
     const connectors = await loadRecipeConnectors(
       recipe.manifest,
       recipe.tools,
-      { recipeDir: recipe.recipeDir, env, cwd, python: python.packages },
+      {
+        recipeDir: recipe.recipeDir,
+        env,
+        cwd,
+        python: python.packages,
+        exposure: (name) => platformToolExposure(recipe.platform, name),
+      },
     );
     const connectorLoadout = connectors.loadout;
     for (const toolName of [
@@ -890,6 +898,7 @@ async function createSessionForAgent(
       ...piMcpExtensions(
         piServers,
         codemodeToolNames.length > 0,
+        recipe.platform?.mode === "codemode",
         opts.mcpRuntimeDir,
         cwd,
         (pi) => {
@@ -1176,10 +1185,13 @@ async function createSessionForAgent(
         );
       }
       const activeTools = [
-        ...tools,
+        ...tools.filter(
+          (name) => !connectorLoadout.scriptOnlyToolNames.includes(name),
+        ),
         ...connectorLoadout.initialActiveToolNames,
         ...(mcp.initialActiveToolNames ?? []),
         ...toolSearchTools.map((tool) => tool.name),
+        ...codemodeToolNames,
       ];
       session.setActiveToolsByName(activeTools);
       const applied = new Set(session.getActiveToolNames());
@@ -1251,11 +1263,14 @@ function sessionMcpToolOrigin(
 function piMcpExtensions(
   piServers: PiMcpServerRegistration[],
   codemode: boolean,
+  platformCodemode: boolean,
   runtimeDir: string | undefined,
   cwd: string,
   onPi: (pi: ExtensionAPI) => void,
 ): ExtensionFactory[] {
-  if (piServers.length === 0) return [];
+  // First-party tools in codemode need the codemode tool even with no server.
+  if (piServers.length === 0)
+    return platformCodemode ? [createCodemodeExtension({ models: false })] : [];
   // A script's `models.*` calls would spend on models the Recipe never
   // declared, so scripts get tools only.
   return [
@@ -1302,18 +1317,22 @@ async function waitForRequiredPiMcpServers(
   );
 }
 
-/** What `mcp.mode: codemode` adds to a session's tools; nothing when no server is on Pi's client. */
+/** What codemode adds to a session's tools: from `mcp.mode` when a server is on Pi's client, or from `platform.mode`. */
 function piMcpSessionTools(
   servers: PiMcpServerRegistration[] | undefined,
   mcp: ResolvedRecipeAgent["mcp"],
+  platform: ResolvedRecipeAgent["platform"],
 ) {
   const codemode = mcp?.mode === "codemode";
   const piServers = servers ?? [];
   const usesPiMcp = piServers.length > 0;
+  const platformCodemode = platform?.mode === "codemode";
+  if (platformCodemode) assertPiSupportsCodemode("platform.mode codemode");
   return {
     piServers,
     usesPiMcp,
-    codemodeToolNames: usesPiMcp && codemode ? [CODEMODE_TOOL_NAME] : [],
+    codemodeToolNames:
+      (usesPiMcp && codemode) || platformCodemode ? [CODEMODE_TOOL_NAME] : [],
     piMcpResourceToolNames: usesPiMcp ? [...PI_MCP_RESOURCE_TOOL_NAMES] : [],
     piMcpSessionOptions: usesPiMcp
       ? { excludeTools: [...PI_MCP_RESOURCE_TOOL_NAMES] }

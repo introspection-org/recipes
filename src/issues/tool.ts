@@ -97,6 +97,8 @@ export interface IssuesToolOptions {
   providers: readonly IssuesToolProvider[];
   env?: NodeJS.ProcessEnv;
   tracer?: Tracer;
+  /** `codemode`: callable from codemode scripts only, not declared to the model. */
+  exposure?: "direct" | "codemode";
 }
 
 class IssuesToolError extends Error {
@@ -689,6 +691,7 @@ export function registerIssuesTool(
   const mcpTools = issuesMcpToolNames(options.providers);
   pi.registerTool({
     name: ISSUES_TOOL_NAME,
+    ...(options.exposure ? { exposure: options.exposure } : {}),
     label: "Issues",
     description: issuesDescription(options.providers),
     parameters: issuesParameters(options.providers),
