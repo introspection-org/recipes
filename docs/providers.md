@@ -33,14 +33,13 @@ Every family is declared the same way, in `package.json#pi`:
   "pi": {
     "issues": [
       { "provider": "linear" },
-      { "provider": "jira" }
+      { "provider": "acme-tracker", "package": "@acme/recipe-issues-tracker", "project": "OPS" }
     ],
     "search": [
       { "provider": "brave" },
       { "provider": "acme", "package": "@acme/recipe-search" }
     ],
     "productivity": [
-      { "provider": "google" },
       { "provider": "acme-mail", "package": "@acme/recipe-productivity-mail" }
     ]
   }
@@ -64,7 +63,9 @@ resolve from the Recipe's `node_modules`; there is no fallback to a path.
 Ids are open: any slug, unique within the family, because a handle such as
 `jira:PROJ-45` must route to exactly one provider. A first-party id with a
 `package` replaces the first-party provider. Family-specific options
-stay beside the provider (productivity's `tools` allowlist, for example).
+stay beside the provider (productivity's `tools` allowlist, issues' `project`),
+and a Recipe's own provider may take any of its family's. Productivity takes
+one provider per Recipe; search and issues take several.
 
 `pi.search` is new. Without it, a Recipe keeps today's behaviour: the providers
 the runtime binds, from `@introspection-ai/recipe-search`.
