@@ -27,8 +27,11 @@ interface CapturedToolList {
   tools: Array<{
     name: string;
     inputSchema: {
-      properties: Record<string, { type: string | string[] }>;
-      required: string[];
+      properties: Record<
+        string,
+        { type?: string | string[]; anyOf?: Array<{ type: string }> }
+      >;
+      required?: string[];
     };
   }>;
 }
@@ -63,14 +66,16 @@ function fakeServer(
     async callTool(tool, args) {
       const entry = list.tools.find((candidate) => candidate.name === tool);
       if (!entry) throw new Error(`the server offers no ${tool}`);
-      const { properties, required } = entry.inputSchema;
+      const { properties, required = [] } = entry.inputSchema;
       for (const name of required)
         if (args[name] === undefined)
           throw new Error(`${tool}: missing required ${name}`);
       for (const [name, value] of Object.entries(args)) {
         const property = properties[name];
         if (!property) throw new Error(`${tool}: unknown argument ${name}`);
-        const types = [property.type].flat();
+        const types = property.anyOf
+          ? property.anyOf.map((option) => option.type)
+          : [property.type].flat();
         const actual = typeOf(value);
         if (!types.includes(actual))
           throw new Error(
@@ -109,22 +114,24 @@ describe("first-party options", () => {
 });
 
 describe("adapter tool maps", () => {
-  it("name only tools the captured tool lists offer, all unverified", () => {
+  it("name only tools the tool lists offer, verified once a list is captured", () => {
     for (const [map, list] of [
       [LINEAR_MCP_TOOLS, toolList("linear")],
       [JIRA_MCP_TOOLS, toolList("jira")],
     ] as const) {
-      expect(map.every((entry) => entry.verified === false)).toBe(true);
-      expect(list.captured).toBe(false);
+      expect(map.every((entry) => entry.verified === list.captured)).toBe(true);
+      const offered = (entry: (typeof map)[number]) =>
+        list.tools.some((tool) => tool.name === entry.tool);
+      if (list.captured) {
+        // A captured list is the server's: every mapped tool is on it.
+        expect(map.filter((entry) => !offered(entry))).toEqual([]);
+        continue;
+      }
       // Each use has at least one tool the list offers; older names may be absent.
       const uses = new Set(map.flatMap((entry) => entry.serves));
       for (const use of uses)
         expect(
-          map.some(
-            (entry) =>
-              entry.serves.includes(use) &&
-              list.tools.some((tool) => tool.name === entry.tool),
-          ),
+          map.some((entry) => entry.serves.includes(use) && offered(entry)),
         ).toBe(true);
     }
   });
@@ -278,13 +285,13 @@ describe("linear", () => {
     ]);
   });
 
-  it("creates in the declared team, updates and comments through save_issue and create_comment", async () => {
+  it("creates in the declared team, updates and comments through save_issue and save_comment", async () => {
     const { caller, calls } = fakeServer(list, {
       save_issue: (args) => ({
         ...LINEAR_ISSUE,
         title: args.title ?? LINEAR_ISSUE.title,
       }),
-      create_comment: (args) => ({ comment: { id: "c2", body: args.body } }),
+      save_comment: (args) => ({ comment: { id: "c2", body: args.body } }),
     });
     const opened = await session(linearIssuesProvider, { team: "ENG" });
     await opened.create!(
@@ -321,7 +328,7 @@ describe("linear", () => {
         tool: "save_issue",
         args: { id: "ENG-123", priority: 4, assignee: null },
       },
-      { tool: "create_comment", args: { issueId: "ENG-123", body: "On it" } },
+      { tool: "save_comment", args: { issueId: "ENG-123", body: "On it" } },
     ]);
     expect(comment).toEqual({ id: "c2", body: "On it" });
   });
@@ -364,31 +371,6 @@ describe("linear", () => {
       { tool: "save_issue", args: { id: "ENG-123", state: "Todo" } },
     ]);
     expect(moved.status).toEqual({ name: "Shipped", category: "done" });
-  });
-
-  it("falls back to create_issue and update_issue on a server without save_issue", async () => {
-    const older: CapturedToolList = {
-      ...list,
-      tools: [
-        ...list.tools.filter((tool) => tool.name !== "save_issue"),
-        ...["create_issue", "update_issue"].map((name) => ({
-          name,
-          inputSchema: list.tools.find((tool) => tool.name === "save_issue")!
-            .inputSchema,
-        })),
-      ],
-    };
-    const { caller, calls } = fakeServer(older, {
-      create_issue: () => LINEAR_ISSUE,
-      update_issue: () => LINEAR_ISSUE,
-    });
-    const opened = await session(linearIssuesProvider, { team: "ENG" });
-    await opened.create!({ title: "New" }, { mcp: caller });
-    await opened.update!({ ref: "ENG-123", title: "T" }, { mcp: caller });
-    expect(calls.map((call) => call.tool)).toEqual([
-      "create_issue",
-      "update_issue",
-    ]);
   });
 });
 

@@ -23,23 +23,20 @@ import {
 } from "./common.js";
 
 /**
- * Linear's remote MCP server tools the adapter calls, in order of preference
- * per use. The names come from Linear's public listings (Linear documents no
- * tool reference); none is checked against a captured tool list yet.
+ * Linear's remote MCP server tools the adapter calls, per use, as its captured
+ * tool list names them (`test/fixtures/issues/linear-tools.json`).
  */
 export const LINEAR_MCP_TOOLS: readonly IssuesMcpToolMapping[] = [
-  { tool: "list_issues", serves: ["search"], verified: false },
-  { tool: "get_issue", serves: ["get", "transition"], verified: false },
-  { tool: "list_comments", serves: ["get"], verified: false },
+  { tool: "list_issues", serves: ["search"], verified: true },
+  { tool: "get_issue", serves: ["get", "transition"], verified: true },
+  { tool: "list_comments", serves: ["get"], verified: true },
   {
     tool: "save_issue",
     serves: ["create", "update", "transition"],
-    verified: false,
+    verified: true,
   },
-  { tool: "create_issue", serves: ["create"], verified: false },
-  { tool: "update_issue", serves: ["update", "transition"], verified: false },
-  { tool: "create_comment", serves: ["comment"], verified: false },
-  { tool: "list_issue_statuses", serves: ["transition"], verified: false },
+  { tool: "save_comment", serves: ["comment"], verified: true },
+  { tool: "list_issue_statuses", serves: ["transition"], verified: true },
 ];
 
 /** Linear's priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low. */
@@ -239,16 +236,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
       use: "create" | "update" | "transition",
       args: Record<string, unknown>,
       ctx: IssuesCallContext,
-    ) =>
-      linearIssue(
-        writtenIssue(
-          await call(use, args, ctx, [
-            "save_issue",
-            "create_issue",
-            "update_issue",
-          ]),
-        ),
-      );
+    ) => linearIssue(writtenIssue(await call(use, args, ctx, ["save_issue"])));
     const fields = (args: {
       title?: string;
       description?: string;
