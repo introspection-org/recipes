@@ -1419,31 +1419,23 @@ fn validate_provider_source(
         return true;
     }
     if let Some(value) = package_name {
-        match value
-            .as_str()
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-        {
-            Some(name) => {
-                if let Some(problem) = declaration_package_problem(
-                    &format!("package.json#pi.{family}[{index}].package"),
-                    name,
-                    package,
-                ) {
-                    ctx.error(
-                        &code,
-                        PACKAGE_JSON,
-                        problem,
-                        Some("add the provider package to package.json#dependencies and commit the lockfile"),
-                    );
-                }
-            }
-            None => ctx.error(
+        match value.as_str().map(str::trim).filter(|name| !name.is_empty()) {
+            // A Recipe's own provider is a third-party package: an ordinary,
+            // versioned dependency, never a peer or an omitted companion,
+            // since a managed install installs neither.
+            Some(name) if !package.dependencies.contains(name) => ctx.error(
                 &code,
                 PACKAGE_JSON,
                 format!(
-                    "package.json#pi.{family}[{index}].package must be a non-empty package name"
+                    "package.json#pi.{family}[{index}].package requires '{name}' in package.json#dependencies with a version"
                 ),
+                Some("add the provider package to package.json#dependencies with a version and commit the lockfile"),
+            ),
+            Some(_) => {}
+            None => ctx.error(
+                &code,
+                PACKAGE_JSON,
+                format!("package.json#pi.{family}[{index}].package must be a non-empty package name"),
                 Some("name the npm package that serves the provider"),
             ),
         }
@@ -5731,6 +5723,31 @@ mod tests {
             invalid_with(&missing, "pi.productivity_invalid", "@acme/mail"),
             "{:?}",
             missing.diagnostics
+        );
+        let mut peer_only = provider_recipe(
+            "productivity",
+            json!([{ "provider": "acme-mail", "package": "@acme/mail" }]),
+            json!({}),
+            None,
+        );
+        let package_file = peer_only
+            .files
+            .iter_mut()
+            .find(|file| file.path == PACKAGE_JSON)
+            .expect("package.json");
+        let mut package: JsonValue =
+            serde_json::from_str(package_file.content.as_deref().expect("content")).expect("parse");
+        package["peerDependencies"] = json!({ "@acme/mail": ">=1.0.0" });
+        package_file.content = Some(serde_json::to_string(&package).expect("serialize"));
+        let peer_only = check_recipe_files(&peer_only);
+        assert!(
+            invalid_with(
+                &peer_only,
+                "pi.productivity_invalid",
+                "package.json#dependencies"
+            ),
+            "{:?}",
+            peer_only.diagnostics
         );
     }
 
