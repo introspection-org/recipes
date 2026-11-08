@@ -54,11 +54,11 @@ dependency; nothing is loaded from a file in the Recipe at run time.
 | Source | Resolves to |
 | --- | --- |
 | none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
-| `package` | an installed module by specifier, `@acme/recipe-search` or a subpath export such as `@acme/recipes/providers/search`; its package is in the Recipe's `dependencies` with a version, never only as a peer |
+| `package` | an installed package by name, such as `@acme/recipe-search`, which the Recipe lists in `dependencies` with a version, never only as a peer |
 
 A provider kept with the Recipe's own code is a local package it depends on
 (`"@acme/recipe-search": "file:./providers/search"`, or a workspace package),
-built like any other. Loading or checking fails when the specifier does not
+built like any other. Loading or checking fails when the package does not
 resolve from the Recipe's `node_modules`; there is no fallback to a path.
 
 Ids are open: any slug, unique within the family, because a handle such as
