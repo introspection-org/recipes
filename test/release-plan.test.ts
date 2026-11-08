@@ -73,16 +73,26 @@ const toPublish = (results: Planned[]) =>
 describe("release plan", () => {
   it("covers every package with release-please's tag names", () => {
     const byKey = Object.fromEntries(artifacts.map((a) => [a.key, a]));
-    expect(Object.keys(byKey)).toEqual([
-      "root",
-      "slack",
-      "docx",
-      "pdf",
-      "google",
-      "microsoft",
-      "crate",
-      "python",
-    ]);
+    // Every package release-please versions has exactly one npm artifact.
+    const manifest = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "..", ".release-please-manifest.json"),
+        "utf8",
+      ),
+    ) as Record<string, string>;
+    const npm = artifacts.filter((a) => a.registry === "npm");
+    expect(npm).toHaveLength(Object.keys(manifest).length);
+    for (const dir of Object.keys(manifest)) {
+      const { name } = JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, "..", dir, "package.json"),
+          "utf8",
+        ),
+      ) as { name: string };
+      expect(npm.find((a) => a.names[0] === name)?.version).toBe(manifest[dir]);
+    }
+    expect(byKey.crate.registry).toBe("crates.io");
+    expect(byKey.python.registry).toBe("pypi");
     expect(byKey.root.tag).toBe(`v${byKey.root.version}`);
     expect(byKey.root.names).toEqual([
       "@introspection-ai/recipes",
@@ -226,15 +236,9 @@ describe("release plan", () => {
       [...allTags].filter((t) => !t.startsWith("introspection-recipe-check-v")),
     );
     const results = await plan(artifacts, { tags, ...registry([], []) });
-    expect(toPublish(results)).toEqual([
-      "root",
-      "slack",
-      "docx",
-      "pdf",
-      "google",
-      "microsoft",
-      "python",
-    ]);
+    expect(toPublish(results)).toEqual(
+      artifacts.map((a) => a.key).filter((key) => key !== "crate"),
+    );
     expect(results.find((r) => r.key === "crate")).toMatchObject({
       tagged: false,
       publish: false,
