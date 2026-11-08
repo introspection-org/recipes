@@ -127,9 +127,10 @@ One `issues` tool with these commands:
 
 An Introspection issue is like a task: a row the issues API changes (title,
 status, priority, tags), with immutable values attached to it, its conversation
-(the issue's worker task chat) and its events (history, requests, comments). A
-comment is one more attached event, never a change to the row, and not a
-message in the issue's chat, which its worker agent would answer.
+(the issue's worker task chat) and its events (history, requests, comments).
+The issues API writes the events for every change through one command writer;
+a comment is one more, never a change to the row, and not a message in the
+issue's chat, which its worker agent would answer.
 
 Every issue is returned in one shape, with a provider-scoped handle that every
 later command takes:
@@ -150,15 +151,14 @@ later command takes:
 The providers differ, so each declares the commands and fields it supports in
 `capabilities`, as productivity providers do:
 
-- **Comments:** Linear and Jira have them. Introspection's issues take
-  comments as an event family of their own, `introspection.issue_comment`
-  (`issue_id`, `body`), written through the SDK like feedback
-  (`logs.issueComment(issueId, body)` in `@introspection-sdk/introspection-node`)
-  and read with `GET /v1/events?event_name=introspection.issue_comment&issue_id=…`.
-  It sits outside the reserved `introspection.issue.*` family, because a
-  comment changes no state and grants no access, so any agent may write one;
-  anyone who can read the issue can read its comments. Until the platform
-  serves the family, the provider does not offer `comment`. `open_requests`
+- **Comments:** Linear and Jira have them. An Introspection comment is an
+  attached event, written like every other change to an issue: `PATCH
+  /v1/issues/{id}` with a nested `comment`, applied by the issue command
+  writer as an `introspection.issue.comment` event, so access, authorship and
+  ordering are the issue's own. It reads back from the issue's history as
+  `payload.comment`. The JavaScript SDK wraps both (`issues.comment(id,
+  body)` and `issues.comments(id)`), and the provider calls those. Until the
+  platform accepts `comment`, the provider does not offer it. `open_requests`
   are questions put to a person, not comments.
 - **Assignee:** Introspection's issues have an owner (`member_id`), not an
   assignee, so `update` takes no assignee there.
