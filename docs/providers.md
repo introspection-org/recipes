@@ -153,11 +153,12 @@ The providers differ, so each declares the commands and fields it supports in
 
 - **Comments:** Linear and Jira have them. An Introspection comment is an
   attached event, written like every other change to an issue: `PATCH
-  /v1/issues/{id}` with a nested `comment`, applied by the issue command
-  writer as an `introspection.issue.comment` event, so access, authorship and
-  ordering are the issue's own. It reads back from the issue's history as
-  `payload.comment`. The JavaScript SDK wraps both (`issues.comment(id,
-  body)` and `issues.comments(id)`), and the provider calls those. Until the
+  /v1/issues/{id}` with a nested `comment`, which the issue command writer
+  records as an `introspection.issue.comment` event (introspection-cloud#3863).
+  The issues API stays CRUD on Postgres and never returns comments; the
+  provider reads them straight from the event log
+  (`GET /v1/events?event_name=introspection.issue&issue_id=…`, `payload.comment`)
+  through the SDK's events client, with no helper of its own. Until the
   platform accepts `comment`, the provider does not offer it. `open_requests`
   are questions put to a person, not comments.
 - **Assignee:** Introspection's issues have an owner (`member_id`), not an
@@ -170,10 +171,11 @@ The providers differ, so each declares the commands and fields it supports in
   "Task" }`) or the call. Introspection creates in the Recipe's project, on the
   calling task.
 
-The `introspection` provider calls `/v1/issues` through the JavaScript SDK
-(`@introspection-sdk/introspection-node`) on the task's own session, not
-through the CLI: it runs in the agent's process, with typed responses and no
-CLI to install.
+The `introspection` provider uses the JavaScript SDK
+(`@introspection-sdk/introspection-node`) on the task's own session, not the
+CLI: its issues client for the row and its events client for comments and
+history. It runs in the agent's process, with typed responses and no CLI to
+install.
 
 All three ship in one package, `@introspection-ai/recipe-issues`, a companion of
 Recipes like `@introspection-ai/recipe-search`. Nothing about issues loads, and
