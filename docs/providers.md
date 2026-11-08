@@ -102,8 +102,12 @@ it, else the provider is not offered.
 ## 6. Choosing a provider at run time
 
 The providers a call may name are the declared ones with a working credential
-path: a bound MCP server, a connection, or an endpoint. A call names one when
-several are on offer, and the tool's schema lists only those.
+path: a bound MCP server, a connection, or an endpoint. MCP servers connect
+after the tool is registered, so availability is checked on each call: the
+tool's schema lists every declared provider, and a call to one that is not
+connected fails with `not_connected`, naming `introspection_open` as the way to
+connect it. A call names a provider when several are on offer; a command on an
+existing issue goes to the provider its handle names.
 
 A family may have a **fallback**: a provider offered only when no other
 provider of the family is. For issues it is `introspection`, included whenever
@@ -171,7 +175,9 @@ The providers differ, so each declares the commands and fields it supports in
   "Task" }`) or the call. Introspection creates in the Recipe's project, on the
   calling task.
 
-The `introspection` provider uses the JavaScript SDK
+Introspection issues have no `url` yet, and `/v1/issues` has no text filter, so
+the `introspection` provider's `search` matches text against the most recent
+issues it lists. The `introspection` provider uses the JavaScript SDK
 (`@introspection-sdk/introspection-node`) on the task's own session, not the
 CLI: its issues client for the row and its events client for comments and
 history. It runs in the agent's process, with typed responses and no CLI to
@@ -188,8 +194,10 @@ don't, and the Operator does.
 | `jira` | MCP adapter | Atlassian's Rovo MCP server (`mcp.atlassian.com`), its Jira tools |
 | `introspection` | REST | the data plane's `/v1/issues` |
 
-Linear and Atlassian are OAuth MCP servers, connected per member through an MCP
-connector binding; an agent asks a member to connect with `introspection_open`.
+Linear and Atlassian are OAuth MCP servers. A declaration names the Recipe's
+MCP server for its provider with `server` (default `linear`, `atlassian`), since
+a Recipe names its servers freely. An agent asks a person to connect with
+`introspection_open`.
 Each adapter maps commands to the server's tools as its live tool list names
 them (`introspection bindings mcp capture`), not as its documentation does, and
 the adapter's tests run against a captured tool list.
