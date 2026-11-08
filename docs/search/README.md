@@ -674,15 +674,14 @@ returns the providers. With the package not installed it returns none, and
 
 A Recipe that declares nothing gets the first-party providers the runtime
 binds. `pi.search` names the providers instead, first-party by id or the
-Recipe's own by `package` (listed in `dependencies`) or `module` (a file in
-the Recipe):
+Recipe's own by `package` (an installed package listed in `dependencies`):
 
 ```json
 {
   "pi": {
     "search": [
       { "provider": "brave" },
-      { "provider": "acme", "module": "./providers/acme-search.ts" }
+      { "provider": "acme", "package": "@acme/recipe-search" }
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -52,6 +52,19 @@ function recipe(
   return dir;
 }
 
+/** An installed package `name` whose entry point is `body`. */
+function installed(name: string, body: string): Record<string, string> {
+  return {
+    [`node_modules/${name}/package.json`]: JSON.stringify({
+      name,
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+    }),
+    [`node_modules/${name}/index.js`]: body,
+  };
+}
+
 function searchModule(
   fields: { kind?: string; apiVersion?: number; id?: string } = {},
 ): string {
@@ -71,8 +84,8 @@ export default {
   apiVersion: ${fields.apiVersion ?? 1},
   id: ${JSON.stringify(fields.id ?? "acme")},
   capabilities,
-  async search(request: { query: string; setting: string }, context: { request(path: string, init: unknown): Promise<unknown> }) {
-    const body = (await context.request("/search", { method: "POST", body: { q: request.query, depth: request.setting } })) as { hits: Array<{ url: string; title: string }> };
+  async search(request, context) {
+    const body = await context.request("/search", { method: "POST", body: { q: request.query, depth: request.setting } });
     return { results: body.hits.map((hit) => ({ url: hit.url, title: hit.title })) };
   },
 };
@@ -95,15 +108,16 @@ function productivityModule(provider: string): string {
 }
 
 describe("pi.search", () => {
-  it("offers and calls a Recipe-local module beside a first-party provider", async () => {
+  it("offers and calls an installed package beside a first-party provider", async () => {
     const recipeDir = recipe(
       {
         search: [
           { provider: "brave" },
-          { provider: "acme", module: "./providers/acme-search.ts" },
+          { provider: "acme", package: "@acme/recipe-search" },
         ],
       },
-      { "providers/acme-search.ts": searchModule() },
+      installed("@acme/recipe-search", searchModule()),
+      { "@acme/recipe-search": "1.0.0" },
     );
     const manifest = readPiPackageManifest(recipeDir);
     expect(validatePiPackageManifest(manifest).findings).toEqual([]);
@@ -167,7 +181,7 @@ describe("pi.search", () => {
         declarations: readPiPackageManifest(recipeDir).search!,
       }),
     ).rejects.toThrow(
-      "Recipe search provider 'acme': @introspection-ai/recipe-search has no provider 'acme'; give the declaration a package or module",
+      "Recipe search provider 'acme': @introspection-ai/recipe-search has no provider 'acme'; give the declaration a package",
     );
   });
 
@@ -187,17 +201,7 @@ describe("pi.productivity sources", () => {
     const name = "@acme/recipe-productivity-mail";
     const recipeDir = recipe(
       { productivity: [{ provider: "acme-mail", package: name }] },
-      {
-        "node_modules/@acme/recipe-productivity-mail/package.json":
-          JSON.stringify({
-            name,
-            version: "1.0.0",
-            type: "module",
-            main: "index.js",
-          }),
-        "node_modules/@acme/recipe-productivity-mail/index.js":
-          productivityModule("acme-mail"),
-      },
+      installed(name, productivityModule("acme-mail")),
       { [name]: "1.0.0" },
     );
     const manifest = readPiPackageManifest(recipeDir);
@@ -216,19 +220,6 @@ describe("pi.productivity sources", () => {
     expect([...pi.tools.keys()]).toEqual(["mail"]);
   });
 
-  it("loads a provider from a module in the Recipe", async () => {
-    const recipeDir = recipe(
-      { productivity: [{ provider: "acme", module: "providers/mail.js" }] },
-      { "providers/mail.js": productivityModule("acme") },
-    );
-    const loaded = await loadRecipeProductivity(
-      readPiPackageManifest(recipeDir).productivity!,
-      ["mail"],
-      { recipeDir },
-    );
-    expect(loaded.toolNames).toEqual(["mail"]);
-  });
-
   it("declares the hosts of the first-party providers", () => {
     for (const module of [
       googleProductivityModule,
@@ -244,77 +235,64 @@ describe("pi.productivity sources", () => {
 
 describe("loadProviderModules", () => {
   const load = (body: string, provider = "acme") => {
-    const recipeDir = recipe({}, { "providers/acme.ts": body });
+    const recipeDir = recipe({}, installed("@acme/p", body));
     return loadProviderModules(
       SEARCH_PROVIDER_FAMILY,
-      [{ provider, module: "./providers/acme.ts" }],
+      [{ provider, package: "@acme/p" }],
       { recipeDir },
     );
   };
 
   it("refuses a wrong kind, apiVersion or id", async () => {
     await expect(load(searchModule({ kind: "issues" }))).rejects.toThrow(
-      "Recipe search provider 'acme': ./providers/acme.ts exports kind 'issues', not 'search'",
+      "Recipe search provider 'acme': @acme/p exports kind 'issues', not 'search'",
     );
     await expect(load(searchModule({ apiVersion: 2 }))).rejects.toThrow(
-      "Recipe search provider 'acme': ./providers/acme.ts implements search provider API 2, but this host implements search provider API 1",
+      "implements search provider API 2",
     );
     await expect(load(searchModule({ id: "other" }))).rejects.toThrow(
-      "Recipe search provider 'acme': ./providers/acme.ts declares id 'other', not 'acme'",
+      "Recipe search provider 'acme': @acme/p declares id 'other', not 'acme'",
     );
   });
 
-  it("refuses a productivity module declaring another provider", async () => {
-    const recipeDir = recipe({}, { "p.js": productivityModule("other") });
+  it("refuses a productivity package declaring another provider", async () => {
+    const recipeDir = recipe(
+      {},
+      installed("@acme/p", productivityModule("other")),
+    );
     await expect(
       loadProviderModules(
         PRODUCTIVITY_PROVIDER_FAMILY,
-        [{ provider: "acme", module: "p.js" }],
+        [{ provider: "acme", package: "@acme/p" }],
         { recipeDir },
       ),
-    ).rejects.toThrow("p.js declares id 'other', not 'acme'");
+    ).rejects.toThrow("@acme/p declares id 'other', not 'acme'");
   });
 
-  it("refuses a module outside the Recipe, by path or by symlink", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "provider-outside-"));
-    write(join(outside, "acme.ts"), searchModule());
-    const recipeDir = recipe({});
-    symlinkSync(join(outside, "acme.ts"), join(recipeDir, "linked.ts"));
+  it("refuses a package that is not installed", async () => {
     await expect(
       loadProviderModules(
         SEARCH_PROVIDER_FAMILY,
-        [{ provider: "acme", module: "../outside/acme.ts" }],
-        { recipeDir },
+        [{ provider: "acme", package: "@acme/missing" }],
+        { recipeDir: recipe({}) },
       ),
-    ).rejects.toThrow("module '../outside/acme.ts' is outside the Recipe");
-    await expect(
-      loadProviderModules(
-        SEARCH_PROVIDER_FAMILY,
-        [{ provider: "acme", module: "linked.ts" }],
-        { recipeDir },
-      ),
-    ).rejects.toThrow("module 'linked.ts' resolves outside the Recipe");
+    ).rejects.toThrow(
+      "Recipe search provider 'acme' requires @acme/missing in the Recipe dependencies",
+    );
   });
 
-  it("refuses a duplicate id and a declaration naming two sources", async () => {
-    const recipeDir = recipe({}, { "a.ts": searchModule() });
+  it("refuses a duplicate id", async () => {
+    const recipeDir = recipe({}, installed("@acme/p", searchModule()));
     await expect(
       loadProviderModules(
         SEARCH_PROVIDER_FAMILY,
         [
-          { provider: "acme", module: "a.ts" },
-          { provider: "acme", module: "a.ts" },
+          { provider: "acme", package: "@acme/p" },
+          { provider: "acme", package: "@acme/p" },
         ],
         { recipeDir },
       ),
     ).rejects.toThrow("pi.search declares provider 'acme' more than once");
-    await expect(
-      loadProviderModules(
-        SEARCH_PROVIDER_FAMILY,
-        [{ provider: "acme", module: "a.ts", package: "acme" }],
-        { recipeDir },
-      ),
-    ).rejects.toThrow("names both a package and a module");
   });
 });
 
@@ -328,20 +306,18 @@ describe("provider declaration findings", () => {
     expect(
       messages({
         search: [
-          { provider: "acme", module: "../acme.ts" },
-          { provider: "brave", package: "@acme/search", module: "a.ts" },
+          { provider: "acme", package: "" },
+          { provider: "brave", package: "@acme/search" },
           { provider: "brave" },
           { provider: "other" },
           { provider: "exa", source: "x" },
         ],
       }),
     ).toEqual([
-      "package.json#pi.search[0].module '../acme.ts' is outside the Recipe; name a file under the Recipe root",
-      "package.json#pi.search[1] names both a package and a module; name one",
+      "package.json#pi.search[0].package must be a non-empty package name",
       "package.json#pi.search[1].package '@acme/search' must be listed in package.json#dependencies",
-      "package.json#pi.search[1]: module 'a.ts' does not exist",
       "package.json#pi.search contains duplicate provider 'brave'",
-      "package.json#pi.search provider 'other' is not a first-party provider (tavily, parallel, exa, keenable, perplexity, brave); give it a package or module",
+      "package.json#pi.search provider 'other' is not a first-party provider (tavily, parallel, exa, keenable, perplexity, brave); give it a package",
       "package.json#pi.search[4] contains unknown field(s): source",
     ]);
   });
@@ -350,13 +326,15 @@ describe("provider declaration findings", () => {
     expect(
       messages({
         productivity: [
-          { provider: "acme", package: "@acme/mail", module: "/abs.js" },
+          { provider: "acme", package: "@acme/mail" },
+          { provider: "other", module: "./mail.js" },
         ],
       }),
     ).toEqual([
-      "package.json#pi.productivity[0] names both a package and a module; name one",
+      "package.json#pi.productivity declares more than one provider; a Recipe uses one productivity provider",
       "package.json#pi.productivity[0].package '@acme/mail' must be listed in package.json#dependencies",
-      "package.json#pi.productivity[0].module '/abs.js' is outside the Recipe; name a file under the Recipe root",
+      "package.json#pi.productivity[1] contains unknown field(s): module",
+      "package.json#pi.productivity provider 'other' requires dependency '@introspection-ai/recipe-productivity-other'",
     ]);
   });
 });

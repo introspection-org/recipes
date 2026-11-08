@@ -1,20 +1,14 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
-
 import { loadRecipePackageModule } from "./companions.js";
-import { loadRecipeModule } from "./extensions.js";
 
 /**
  * One provider a Recipe declares for a family (`pi.search`, `pi.productivity`):
- * its id and at most one source. With neither `package` nor `module`, the
- * first-party provider of that id is used.
+ * its id and, for a provider of the Recipe's own, the installed package that
+ * serves it. Without `package`, the first-party provider of that id is used.
  */
 export interface RecipeProviderDeclaration {
   provider: string;
   /** A package the Recipe lists in `dependencies`. */
   package?: string;
-  /** A file in the Recipe, relative to its root. */
-  module?: string;
 }
 
 /**
@@ -40,7 +34,7 @@ export interface ProviderFamily<Module> {
   idOf(module: Module): unknown;
 }
 
-export type ProviderSource = "first-party" | "package" | "module";
+export type ProviderSource = "first-party" | "package";
 
 export interface LoadedProviderModule<Module> {
   declaration: RecipeProviderDeclaration;
@@ -48,44 +42,10 @@ export interface LoadedProviderModule<Module> {
   source: ProviderSource;
 }
 
-function defaultExport(imported: unknown): unknown {
-  return imported && typeof imported === "object" && "default" in imported
-    ? (imported as { default: unknown }).default
-    : imported;
-}
-
 function fieldOf(value: unknown, field: string): unknown {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)[field]
     : undefined;
-}
-
-function escapesRoot(rel: string): boolean {
-  return isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`);
-}
-
-/**
- * The file a `module` declaration names, refused when it is absolute, leaves
- * the Recipe (lexically or through a symlink) or is missing.
- */
-export function recipeProviderModulePath(
-  recipeDir: string,
-  modulePath: string,
-  what: string,
-): string {
-  const root = realpathSync(recipeDir);
-  const target = resolve(root, modulePath);
-  if (isAbsolute(modulePath) || escapesRoot(relative(root, target)))
-    throw new Error(
-      `${what}: module '${modulePath}' is outside the Recipe; name a file under the Recipe root`,
-    );
-  if (!existsSync(target) || !statSync(target).isFile())
-    throw new Error(`${what}: module '${modulePath}' does not exist`);
-  if (escapesRoot(relative(root, realpathSync(target))))
-    throw new Error(
-      `${what}: module '${modulePath}' resolves outside the Recipe; name a file under the Recipe root`,
-    );
-  return target;
 }
 
 /** Whether `loaded` is a family bundle (`{ kind, apiVersion, providers }`) rather than one provider. */
@@ -135,7 +95,7 @@ export function checkProviderModule<Module>(
     if (module === undefined)
       throw new Error(
         source === "first-party"
-          ? `${what}: ${from} has no provider '${id}'; give the declaration a package or module for a provider of the Recipe's own`
+          ? `${what}: ${from} has no provider '${id}'; give the declaration a package for a provider of the Recipe's own`
           : `${what}: ${from} has no provider '${id}'`,
       );
   } else if (source === "first-party" && family.firstPartyBundle)
@@ -157,9 +117,8 @@ export function checkProviderModule<Module>(
 
 /**
  * Load every provider a Recipe declares for one family, in declaration order.
- * Each comes from its first-party package (or the family's bundle), a package
- * the Recipe depends on, or a file in the Recipe, and is checked by
- * `checkProviderModule`. Ids are open slugs, unique within the family.
+ * Each comes from its first-party package (or the family's bundle) or a
+ * package the Recipe depends on, and is checked by `checkProviderModule`. Ids are open slugs, unique within the family.
  */
 export async function loadProviderModules<Module>(
   family: ProviderFamily<Module>,
@@ -183,30 +142,6 @@ export async function loadProviderModules<Module>(
     declarations.map(async (declaration) => {
       const id = declaration.provider;
       const what = `Recipe ${family.kind} provider '${id}'`;
-      if (declaration.package !== undefined && declaration.module !== undefined)
-        throw new Error(`${what} names both a package and a module; name one`);
-      if (declaration.module !== undefined) {
-        const from = declaration.module;
-        const path = recipeProviderModulePath(options.recipeDir, from, what);
-        let loaded: unknown;
-        try {
-          loaded = defaultExport(
-            await once(`module:${path}`, () =>
-              loadRecipeModule(options.recipeDir, path),
-            ),
-          );
-        } catch (error) {
-          throw new Error(`${what}: failed to load ${from}`, { cause: error });
-        }
-        return {
-          declaration,
-          module: checkProviderModule(family, loaded, declaration, {
-            from,
-            source: "module",
-          }),
-          source: "module" as const,
-        };
-      }
       const source =
         declaration.package !== undefined ? "package" : "first-party";
       const from = declaration.package ?? family.firstPartyPackage(id);

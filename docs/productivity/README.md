@@ -54,8 +54,8 @@ tools: [mail, calendar, drive]
   `@introspection-ai/recipe-productivity-<provider>`. The first two are
   `microsoft` (Outlook mail, Outlook calendar, OneDrive and SharePoint) and
   `google` (Gmail, Google Calendar, Google Drive).
-- A provider of the Recipe's own adds `package` (a package listed in
-  `dependencies`) or `module` (a file in the Recipe), and any id:
+- A provider of the Recipe's own adds `package` (an installed package listed
+  in `dependencies`), and any id:
   `{ "provider": "acme-mail", "package": "@acme/recipe-productivity-mail" }`.
   See [providers.md](../providers.md).
 - `tools` is an optional allowlist per tool, like the channels `commands`

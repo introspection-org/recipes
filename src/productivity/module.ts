@@ -91,9 +91,7 @@ function parseProductivityModule(
   declaration: RecipePackageProductivity,
 ): RecipeProductivityModule {
   const from =
-    declaration.module ??
-    declaration.package ??
-    recipeProductivityPackageName(declaration.provider);
+    declaration.package ?? recipeProductivityPackageName(declaration.provider);
   const problem =
     typeof module.createSession !== "function"
       ? "has an invalid module contract"
