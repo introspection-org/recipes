@@ -10,7 +10,6 @@ import {
   boundSearchProviders,
   createWebSearch,
   loadSearchProviders,
-  piSearchMcpClient,
   registerWebSearchTool,
   SEARCH_PROVIDER_API_VERSION,
   SEARCH_SKILL,
@@ -23,6 +22,7 @@ import {
   type WebSearchResult,
 } from "../src/search/index.js";
 import { mcpToolName } from "../src/mcp/pi-client.js";
+import { piSearchMcpClient } from "../src/search/mcp.js";
 import searchProviders from "../packages/search/src/index.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
@@ -1278,17 +1278,8 @@ describe("web_search over a provider's MCP server", () => {
       tracer: fakeTracer().tracer,
     });
     await expect(search({ query: "x" })).rejects.toThrow(
-      /bound only as an MCP server, and this call has no MCP client/,
+      /bound only as an MCP server, which only the web_search tool reaches/,
     );
-    const served = await search(
-      { query: "x" },
-      {
-        mcp: piSearchMcpClient(
-          fakePiMcp({ [TAVILY]: () => text(TAVILY_MCP_TEXT) }).ctx,
-        ),
-      },
-    );
-    expect(served.transport).toBe("mcp");
   });
 });
 

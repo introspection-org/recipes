@@ -228,14 +228,24 @@ function errorInfo(error: unknown): SearchErrorInfo {
 /** What one call may carry beside its arguments. */
 export interface WebSearchCall {
   signal?: AbortSignal;
-  /** The MCP client for this call; in a Pi tool, `piSearchMcpClient(ctx)`. */
-  mcp?: SearchMcpClient;
 }
 
 export type WebSearch = (
   args: WebSearchArgs,
   call?: WebSearchCall,
 ) => Promise<WebSearchResult>;
+
+/** A call from the registered tool, which also carries Pi's MCP client. */
+type ToolSearch = (
+  args: WebSearchArgs,
+  call: WebSearchCall & { mcp?: SearchMcpClient },
+) => Promise<WebSearchResult>;
+
+/** The function Recipe code calls: REST only, since it has no MCP client. */
+function restOnly(search: ToolSearch): WebSearch {
+  return (args, call = {}) =>
+    search(args, call.signal ? { signal: call.signal } : {});
+}
 
 /** Bound providers this package implements: by REST endpoint, or by an MCP server it can call. */
 function offeredProviders(options: WebSearchOptions): SearchProviderId[] {
@@ -259,11 +269,16 @@ export function webSearchMcpToolNames(options: WebSearchOptions): string[] {
 }
 
 /**
- * `web_search` as a function, for the tool and for Recipe code alike. Each
- * call may name any bound provider and any mode, and records a span with
- * the provider, mode, setting and billed units.
+ * `web_search` as a function for Recipe code. Each call may name any bound
+ * provider and any mode, reaches it over REST, and records a span with the
+ * provider, mode, setting and billed units. A provider's MCP server is
+ * reached only through the registered `web_search` tool.
  */
 export function createWebSearch(options: WebSearchOptions): WebSearch {
+  return restOnly(toolSearch(options));
+}
+
+function toolSearch(options: WebSearchOptions): ToolSearch {
   const { providers } = options;
   for (const module of Object.values(providers)) {
     if (
@@ -287,7 +302,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
 
   const run = async (
     args: WebSearchArgs,
-    call: WebSearchCall,
+    call: Parameters<ToolSearch>[1],
   ): Promise<WebSearchResult> => {
     const signal = call.signal;
     const id = args.provider ?? (offered.length === 1 ? offered[0] : undefined);
@@ -448,7 +463,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         code: "not_bound",
         message: call.mcp
           ? `${id}'s MCP server does not offer its search tool (${module.mcp?.tools.join(" or ") ?? "none"}).`
-          : `${id} is bound only as an MCP server, and this call has no MCP client.`,
+          : `${id} is bound only as an MCP server, which only the web_search tool reaches.`,
       });
     if (options.maxUses !== undefined && uses >= options.maxUses)
       throw new SearchProviderError({
@@ -514,7 +529,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
     };
   };
 
-  return (args, call = {}) =>
+  return (args, call) =>
     tracer.startActiveSpan(SEARCH_TOOL_NAME, async (span) => {
       try {
         const result = await run(args, call);
@@ -619,7 +634,7 @@ export function registerWebSearchTool(
   const offered = offeredProviders(options);
   if (offered.length === 0)
     throw new Error("web_search needs at least one bound search provider");
-  const search = createWebSearch(options);
+  const search = toolSearch(options);
   const mcpTools = webSearchMcpToolNames(options);
   pi.registerTool({
     name: SEARCH_TOOL_NAME,
@@ -671,5 +686,5 @@ export function registerWebSearchTool(
       }
     },
   } as never);
-  return search;
+  return restOnly(search);
 }

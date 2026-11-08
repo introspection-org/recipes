@@ -14,13 +14,7 @@ export type {
   WebSearchCall,
   WebSearchOptions,
 } from "./tool.js";
-export { piSearchMcpClient } from "./mcp.js";
-export type {
-  McpCallToolResult,
-  PiToolContext,
-  PiToolInfo,
-  SearchMcpClient,
-} from "./mcp.js";
+export type { McpCallToolResult, PiToolInfo } from "./mcp.js";
 export { egressCredentialHeaders } from "./egress.js";
 export type { SearchEnvironment } from "./egress.js";
 export { loadSearchProviders, SEARCH_PROVIDERS_PACKAGE } from "./module.js";

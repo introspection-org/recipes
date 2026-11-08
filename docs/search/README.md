@@ -182,16 +182,9 @@ const { results } = await search({
 ```
 
 A host that registers the tool returns the same function from
-`registerWebSearchTool`, so an extension can share it. To reach a provider's
-MCP server, a call passes an MCP client, which inside a Pi tool is
-`piSearchMcpClient(ctx)`:
-
-```ts
-await search(
-  { query: "…", provider: "tavily" },
-  { signal, mcp: piSearchMcpClient(ctx) },
-);
-```
+`registerWebSearchTool`, so an extension can share it. Calling the function
+from Recipe code reaches providers over REST; MCP servers are reached
+through the `web_search` tool.
 
 ## Providers
 
@@ -263,8 +256,8 @@ Notes:
 
 ## MCP transport
 
-A provider's MCP path sits behind one small interface, so it runs on
-whichever MCP client the host has:
+Inside the tool, a provider's MCP path sits behind one small internal
+interface:
 
 ```ts
 interface SearchMcpClient {
@@ -286,14 +279,16 @@ setting other than the mode's, says which (`setting`, or `null` when the
 server does not report it), and a `parse(result)` that maps the tool's answer
 onto the same results REST returns. The host chooses:
 
-1. If the provider's MCP server is bound, the call carries an MCP client, and
+1. If the provider's MCP server is bound, the call comes through the
+   `web_search` tool (which carries Pi's MCP client), and
    the server offers one of the adapter's tools: MCP, unless the tool cannot
    express an argument **and** the REST API is bound too, in which case REST.
 2. With MCP chosen and something it cannot express, each dropped argument is
    an `ignored` note, and a mode it cannot run an `approximated` one naming
    the setting that ran.
 3. Otherwise REST, through the egress as before. A provider bound only as an
-   MCP server whose tool is missing fails with `not_bound`.
+   MCP server fails with `not_bound` when its tool is missing, or when Recipe
+   code calls the function directly.
 
 ### Pi's built-in MCP client
 
@@ -311,7 +306,7 @@ every mode when it is kept `behind` a tool
 ([MCP configuration](../mcp-configuration.md#keep-a-server-behind-a-tool)),
 which is how `web_search` uses it.
 
-`piSearchMcpClient(ctx, toolInfos)` backs the interface with exactly that.
+The tool backs the interface with exactly that.
 `hasTool` looks for `mcpToolName(server, tool)` in `ctx.tools` and, given
 `toolInfos` (the extension's `pi.getAllTools`), takes it as the server's only
 when Pi's namespace for the tool is the server's (`isPiMcpServerTool`), since
@@ -321,10 +316,6 @@ Pi hashes long names and may hash two that collide. `callTool` is
 or blocked tool) has none and fails as `unavailable`. `registerWebSearchTool`
 builds it from each call's context and declares `reachesTools` with the MCP
 tools it may call.
-
-A host outside Pi can back the same interface with the MCP SDK's client over
-Streamable HTTP, as the Google productivity provider does (`connectGoogleMcp`
-in PR #457), with the egress injecting the key; no provider changes.
 
 ### Declare the servers
 
@@ -737,8 +728,8 @@ of its own under the companion rule in `AGENTS.md`.
 - **Evals over MCP:** the provider's MCP server is an ordinary binding, so
   an eval binds an MCP fake for it, as for any MCP server.
 - **Live:** `introspection dev` with a bound endpoint per provider, or a
-  script calling `createWebSearch` with an MCP client and a proxy that
-  injects the keys ([Live checks](#live-checks)).
+  script calling `createWebSearch` over REST through a proxy that injects
+  the keys ([Live checks](#live-checks)).
 
 ## Later
 
@@ -763,8 +754,8 @@ Possible additions, each only once a real Recipe needs it:
 ## Live checks
 
 Run from a session whose egress proxy injected the Keenable, Tavily, Exa and
-Brave keys, with `createWebSearch` and a minimal Streamable HTTP MCP client
-(not committed). Every call below returned results in the shape the tests'
+Brave keys, with a script around `web_search` and a minimal Streamable HTTP
+MCP client (not committed). Every call below returned results in the shape the tests'
 fakes use:
 
 | Provider | Transport | Call | Came back |
