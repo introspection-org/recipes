@@ -2,7 +2,7 @@
 
 **Status: proposed.** One way for every provider-neutral tool family (search,
 productivity, issues) to take its providers: first-party ones by id, and a
-Recipe's own by package or by path. Adds the `issues` family, served by Linear's
+Recipe's own by package. Adds the `issues` family, served by Linear's
 and Atlassian's MCP servers, or by Introspection's own issues when neither is
 connected.
 
@@ -37,7 +37,7 @@ Every family is declared the same way, in `package.json#pi`:
     ],
     "search": [
       { "provider": "brave" },
-      { "provider": "acme", "module": "./providers/acme-search.ts" }
+      { "provider": "acme", "package": "@acme/recipe-search" }
     ],
     "productivity": [
       { "provider": "google" },
@@ -47,16 +47,22 @@ Every family is declared the same way, in `package.json#pi`:
 }
 ```
 
-A declaration names one provider id and at most one source:
+A declaration names one provider id and at most one source. A provider is
+always a compiled package resolved from `node_modules`, like any other
+dependency; nothing is loaded from a file in the Recipe at run time.
 
 | Source | Resolves to |
 | --- | --- |
 | none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
-| `package` | that package, which the Recipe lists in `dependencies` |
-| `module` | a file in the Recipe, relative to its root, like a document profile |
+| `package` | that package, which the Recipe lists in `dependencies` with a version, never only as a peer |
 
-Ids are open: any slug, unique within the family. A first-party id with a
-`package` or `module` replaces the first-party provider. Family-specific options
+A provider kept with the Recipe's own code is a local package it depends on
+(`"@acme/recipe-search": "file:./providers/search"`, or a workspace package),
+built like any other.
+
+Ids are open: any slug, unique within the family, because a handle such as
+`jira:PROJ-45` must route to exactly one provider. A first-party id with a
+`package` replaces the first-party provider. Family-specific options
 stay beside the provider (productivity's `tools` allowlist, for example).
 
 `pi.search` is new. Without it, a Recipe keeps today's behaviour: the providers
@@ -71,8 +77,7 @@ family, whose `apiVersion` differs from the host's, or whose `id` differs from
 the declaration's. There is no fixed list of ids.
 
 `introspection check` loads every declared provider and reports one that does
-not load, a duplicate id, a `module` path outside the Recipe, a `package` not in
-`dependencies`, and an MCP-backed provider (5) whose server the Recipe does not
+not load, a duplicate id, a `package` not in `dependencies`, and an MCP-backed provider (5) whose server the Recipe does not
 bind.
 
 ## 4. Credentials
@@ -85,7 +90,7 @@ explicit about where it sends a member's data:
 | Provider | Credential |
 | --- | --- |
 | First-party SaaS (Google, Microsoft, Linear, Atlassian) | the platform's integrations and members' own connections |
-| A Recipe's own (`package` or `module`) | a project endpoint or connector for its declared hosts |
+| A Recipe's own (`package`) | a project endpoint or connector for its declared hosts |
 | `introspection` | the task's own session against the Introspection API; no third-party key |
 
 ## 5. Transports: REST and MCP
@@ -207,15 +212,21 @@ the adapter's tests run against a captured tool list.
 | Family | Change |
 | --- | --- |
 | `search` | the fixed `SEARCH_PROVIDER_IDS` filter goes; `pi.search` is added; `recipe-search` serves the first-party providers through the shared loader |
-| `productivity` | gains `package` and `module` sources; loads through the shared loader |
+| `productivity` | gains the `package` source; loads through the shared loader |
 | `issues` | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-issues` with `linear`, `jira` and `introspection` |
 
 The contract version of each family stays separate, so a breaking change to one
 family's contract does not bump another's.
 
-## 9. Open questions
+## 9. Decisions
 
-1. Whether a `module` provider is TypeScript compiled by the host, or must be
-   JavaScript in the Recipe.
-2. Whether one Recipe may declare the same first-party id twice under different
-   sources (for example two Jira sites); assumed no.
+- **Providers are compiled packages.** There is no source for a file in the
+  Recipe: everything a Recipe uses is built and resolved from `node_modules`,
+  and nothing is loaded dynamically.
+- **One declaration per id.** A Recipe does not declare the same id twice.
+  Several Jira sites do not need it: Atlassian's server reaches every site the
+  person's account can, and the adapter chooses one per call (`container`, or a
+  `site` option on the declaration). If two separate servers or accounts are
+  ever needed, an `id` alias on the declaration (`{ "provider": "jira", "id":
+  "jira-eu", "server": "atlassian-eu" }`, handles `jira-eu:PROJ-1`) adds it
+  without changing anything here.
