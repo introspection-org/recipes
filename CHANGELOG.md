@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.51.0](https://github.com/introspection-org/recipes/compare/v0.50.0...v0.51.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **search:** @introspection-ai/recipes/search no longer exports the provider modules or BUILTIN_SEARCH_PROVIDERS; load them with loadSearchProviders and pass them as `providers`.
+
+### Features
+
+* **search:** one web_search tool across providers ([#464](https://github.com/introspection-org/recipes/issues/464)) ([1e1395b](https://github.com/introspection-org/recipes/commit/1e1395bfc8831af638eb8050f4ccbc36c5090eb6))
+
+
+### Bug Fixes
+
+* **productivity-google:** parse an address header without a backtracking pattern ([#469](https://github.com/introspection-org/recipes/issues/469)) ([2ff3a45](https://github.com/introspection-org/recipes/commit/2ff3a45f2a1eca56b79945a60054040b3c5b3ac3))
+* **search:** keep error text out of span status, and send Tavily its own country names ([#472](https://github.com/introspection-org/recipes/issues/472)) ([e4280fc](https://github.com/introspection-org/recipes/commit/e4280fc446c19deff047c0de0a820aabcfecac10))
+
 ## [0.50.0](https://github.com/introspection-org/recipes/compare/v0.49.0...v0.50.0) (2026-11-07)
 
 
