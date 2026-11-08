@@ -18,6 +18,7 @@ import {
   IssuesError,
   isStatusCategory,
   listOf,
+  MAX_PAGES,
   record,
   text,
   toolsFor,
@@ -348,36 +349,91 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
         if (project) clauses.push(`project = ${jqlString(project)}`);
         if (args.label) clauses.push(`labels = ${jqlString(args.label)}`);
         const jql = `${clauses.join(" AND ")}${clauses.length ? " " : ""}ORDER BY updated DESC`;
-        const answer = await call(
-          "search",
-          { cloudId, jql, maxResults: args.limit ?? 20, fields: JIRA_FIELDS },
-          ctx,
-        );
-        return {
-          issues: listOf(answer, ["issues", "values"])
-            .map((issue) => {
-              const { comments: _comments, ...rest } = jiraIssue(issue, url);
-              return rest;
-            })
-            .filter(
-              (issue) =>
-                !wantCategory || issue.status.category === wantCategory,
+        const limit = args.limit ?? 20;
+        const issues: ReturnType<typeof jiraIssue>[] = [];
+        let nextPageToken: string | undefined;
+        // Telling done from cancelled happens after the search, so a page
+        // can come back short; later pages fill it up to the limit.
+        for (let page = 0; page < MAX_PAGES; page += 1) {
+          const answer = record(
+            await call(
+              "search",
+              {
+                cloudId,
+                jql,
+                maxResults: limit,
+                fields: JIRA_FIELDS,
+                ...(nextPageToken ? { nextPageToken } : {}),
+              },
+              ctx,
             ),
-        };
+          );
+          issues.push(
+            ...listOf(answer, ["issues", "values"])
+              .map((issue) => {
+                const { comments: _comments, ...rest } = jiraIssue(issue, url);
+                return rest;
+              })
+              .filter(
+                (issue) =>
+                  !wantCategory || issue.status.category === wantCategory,
+              ),
+          );
+          const token =
+            answer.isLast === true ? undefined : text(answer.nextPageToken);
+          // A server that ignores the token would hand back the same page.
+          nextPageToken = token === nextPageToken ? undefined : token;
+          if (!wantCategory || !nextPageToken || issues.length >= limit) break;
+        }
+        return { issues: issues.slice(0, limit) };
       },
       async get({ ref }, ctx) {
-        const issue = await getIssue(ref, ctx);
-        if (issue.comments || !ctx.mcp?.hasTool("listJiraIssueComments"))
-          return { ...issue, comments: issue.comments ?? [] };
-        const { cloudId } = await resource(ctx);
-        const comments = listOf(
-          await call("get", { cloudId, issueIdOrKey: ref }, ctx, [
-            "listJiraIssueComments",
-          ]),
-          ["comments", "values"],
-        )
-          .map(jiraComment)
-          .filter((comment): comment is IssueComment => comment !== undefined);
+        const { cloudId, url } = await resource(ctx);
+        const raw = await call(
+          "get",
+          { cloudId, issueIdOrKey: ref, fields: JIRA_FIELDS },
+          ctx,
+          ["getJiraIssue"],
+        );
+        const issue = jiraIssue(raw, url);
+        // The issue embeds one page of comments and says how many there are.
+        const total = record(record(record(raw).fields).comment).total;
+        const embedded = issue.comments ?? [];
+        const complete =
+          typeof total === "number"
+            ? embedded.length >= total
+            : issue.comments !== undefined;
+        if (complete || !ctx.mcp?.hasTool("listJiraIssueComments"))
+          return { ...issue, comments: embedded };
+        const comments: IssueComment[] = [];
+        for (let page = 0; page < MAX_PAGES; page += 1) {
+          const answer = record(
+            await call(
+              "get",
+              {
+                cloudId,
+                issueIdOrKey: ref,
+                startAt: comments.length,
+                maxResults: 100,
+              },
+              ctx,
+              ["listJiraIssueComments"],
+            ),
+          );
+          const found = listOf(answer, ["comments", "values"])
+            .map(jiraComment)
+            .filter(
+              (comment): comment is IssueComment => comment !== undefined,
+            );
+          comments.push(...found);
+          const all = typeof answer.total === "number" ? answer.total : total;
+          if (
+            found.length < 100 ||
+            answer.isLast === true ||
+            (typeof all === "number" && comments.length >= all)
+          )
+            break;
+        }
         return { ...issue, comments };
       },
       async create(args, ctx) {

@@ -11,6 +11,7 @@ import {
   firstText,
   IssuesError,
   isStatusCategory,
+  MAX_PAGES,
   record,
   text,
 } from "./common.js";
@@ -285,20 +286,28 @@ export function createIntrospectionIssuesProvider(
       const comments = async (
         issue: IntrospectionIssue,
       ): Promise<IssueComment[]> => {
-        let page: Page<IntrospectionEventRow>;
-        try {
-          page = await client.events.list({
-            event_name: INTROSPECTION_ISSUE_EVENT,
-            issue_id: issue.id,
-            limit: 100,
-          } as Parameters<IntrospectionIssuesClient["events"]["list"]>[0]);
-        } catch (error) {
-          // A data plane that does not record issue events yet refuses the family.
-          const status = (error as { status?: unknown })?.status;
-          if (status === 400 || status === 422) return [];
-          throw error;
+        const rows: IntrospectionEventRow[] = [];
+        let next: string | undefined;
+        for (let pages = 0; pages < MAX_PAGES; pages += 1) {
+          let page: Page<IntrospectionEventRow>;
+          try {
+            page = await client.events.list({
+              event_name: INTROSPECTION_ISSUE_EVENT,
+              issue_id: issue.id,
+              limit: 100,
+              ...(next ? { next } : {}),
+            } as Parameters<IntrospectionIssuesClient["events"]["list"]>[0]);
+          } catch (error) {
+            // A data plane that does not record issue events yet refuses the family.
+            const status = (error as { status?: unknown })?.status;
+            if (status === 400 || status === 422) return [];
+            throw error;
+          }
+          rows.push(...page.records);
+          next = page.next ?? undefined;
+          if (!next) break;
         }
-        return page.records
+        return rows
           .map(commentOf)
           .filter((comment): comment is IssueComment => comment !== undefined)
           .sort((a, b) =>

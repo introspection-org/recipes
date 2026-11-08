@@ -1080,3 +1080,179 @@ describe("introspection", () => {
     });
   });
 });
+
+describe("pages and status categories", () => {
+  const jiraIssueIn = (key: string, status: string, category: string) => ({
+    ...JIRA_ISSUE,
+    key,
+    fields: {
+      ...JIRA_ISSUE.fields,
+      status: { name: status, statusCategory: { key: category, name: "Done" } },
+    },
+  });
+
+  it("searches Linear by every state type a category spans, newest first", async () => {
+    const { caller, calls } = fakeServer(toolList("linear"), {
+      list_issues: (args) => ({
+        issues: [
+          {
+            ...LINEAR_ISSUE,
+            identifier: `ENG-${String(args.state)}`,
+            updatedAt:
+              args.state === "backlog"
+                ? "2026-11-03T00:00:00.000Z"
+                : "2026-11-01T00:00:00.000Z",
+            state: { name: String(args.state), type: String(args.state) },
+          },
+        ],
+      }),
+    });
+    const found = await (
+      await session(linearIssuesProvider)
+    ).search!({ status: "open", limit: 2 }, { mcp: caller });
+    expect(calls.map((call) => call.args.state)).toEqual([
+      "unstarted",
+      "backlog",
+      "triage",
+    ]);
+    expect(found.issues.map((issue) => issue.ref)).toEqual([
+      "ENG-backlog",
+      "ENG-unstarted",
+    ]);
+  });
+
+  it("follows Linear's comment pages to the end", async () => {
+    const { caller, calls } = fakeServer(toolList("linear"), {
+      get_issue: () => LINEAR_ISSUE,
+      list_comments: (args) =>
+        args.cursor === "p2"
+          ? { comments: [{ id: "c2", body: "Two" }], hasNextPage: false }
+          : {
+              comments: [{ id: "c1", body: "One" }],
+              hasNextPage: true,
+              cursor: "p2",
+            },
+    });
+    const issue = await (
+      await session(linearIssuesProvider)
+    ).get!({ ref: "ENG-123" }, { mcp: caller });
+    expect(issue.comments?.map((comment) => comment.body)).toEqual([
+      "One",
+      "Two",
+    ]);
+    expect(
+      calls
+        .filter((call) => call.tool === "list_comments")
+        .map((call) => call.args.cursor),
+    ).toEqual([undefined, "p2"]);
+  });
+
+  it("fills a Jira cancelled search from later pages after telling it from done", async () => {
+    const { caller, calls } = fakeServer(toolList("jira"), {
+      getAccessibleAtlassianResources: () => RESOURCES,
+      searchJiraIssuesUsingJql: (args) =>
+        args.nextPageToken === "t2"
+          ? {
+              issues: [jiraIssueIn("PROJ-3", "Cancelled", "done")],
+              isLast: true,
+            }
+          : {
+              issues: [
+                jiraIssueIn("PROJ-1", "Done", "done"),
+                jiraIssueIn("PROJ-2", "Won't do", "done"),
+              ],
+              nextPageToken: "t2",
+            },
+    });
+    const found = await (
+      await session(jiraIssuesProvider)
+    ).search!({ status: "cancelled", limit: 2 }, { mcp: caller });
+    expect(found.issues.map((issue) => issue.ref)).toEqual([
+      "PROJ-2",
+      "PROJ-3",
+    ]);
+    expect(
+      calls
+        .filter((call) => call.tool === "searchJiraIssuesUsingJql")
+        .map((call) => call.args.nextPageToken),
+    ).toEqual([undefined, "t2"]);
+  });
+
+  it("reads the Jira comments an issue embeds only the first page of", async () => {
+    const comment = (id: string) => ({
+      id,
+      author: { displayName: "Bo" },
+      created: "2026-11-02T11:00:00.000+0000",
+      body: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: id }] }],
+      },
+    });
+    const { caller } = fakeServer(toolList("jira"), {
+      getAccessibleAtlassianResources: () => RESOURCES,
+      getJiraIssue: () => ({
+        ...JIRA_ISSUE,
+        fields: {
+          ...JIRA_ISSUE.fields,
+          comment: { comments: [comment("c1")], total: 2 },
+        },
+      }),
+      listJiraIssueComments: () => ({
+        comments: [comment("c1"), comment("c2")],
+        total: 2,
+      }),
+    });
+    const issue = await (
+      await session(jiraIssuesProvider)
+    ).get!({ ref: "PROJ-45" }, { mcp: caller });
+    expect(issue.comments?.map((c) => c.body)).toEqual(["c1", "c2"]);
+  });
+
+  it("follows the event pages an Introspection issue's comments span", async () => {
+    const fake = fakeIntrospection();
+    const pages: Record<
+      string,
+      { records: IntrospectionEventRow[]; next: string | null }
+    > = {
+      first: {
+        records: [
+          {
+            id: "e1",
+            timestamp: "2026-11-02T10:00:00Z",
+            event_name: "introspection.issue",
+            payload: { comment: "One" },
+          },
+        ],
+        next: "n2",
+      },
+      n2: {
+        records: [
+          {
+            id: "e2",
+            timestamp: "2026-11-02T11:00:00Z",
+            event_name: "introspection.issue",
+            payload: { comment: "Two" },
+          },
+        ],
+        next: null,
+      },
+    };
+    fake.client.events.list = (params) =>
+      Promise.resolve(pages[params.next ?? "first"]!);
+    const opened = await createIntrospectionIssuesProvider({
+      client: () => fake.client,
+    }).createSession({
+      config: { provider: "introspection", options: {} },
+      env: {
+        INTROSPECTION_BASE_API_URL: "http://dp.internal",
+        INTROSPECTION_TOKEN: "locator",
+        INTROSPECTION_TASK_ID: "task-1",
+      },
+    });
+    const issue = await opened.get!({ ref: "12" }, {});
+    expect(issue.comments?.map((comment) => comment.body)).toEqual([
+      "One",
+      "Two",
+    ]);
+  });
+});

@@ -17,6 +17,8 @@ import {
   IssuesError,
   isStatusCategory,
   listOf,
+  MAX_PAGES,
+  nextCursor,
   record,
   text,
   toolsFor,
@@ -66,6 +68,14 @@ const STATE_TYPES: Record<string, IssueStatusCategory> = {
   cancelled: "cancelled",
 };
 /** The state types that serve a category, most likely first. */
+/** The state types `list_issues` takes for each category, one call each. */
+const SEARCH_STATE_TYPES: Record<IssueStatusCategory, readonly string[]> = {
+  open: ["unstarted", "backlog", "triage"],
+  in_progress: ["started"],
+  done: ["completed"],
+  cancelled: ["canceled"],
+};
+
 const CATEGORY_STATE_TYPES: Record<IssueStatusCategory, readonly string[]> = {
   open: ["unstarted", "backlog", "triage"],
   in_progress: ["started"],
@@ -258,32 +268,69 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
     });
     return {
       async search(args, ctx) {
-        const found = await call(
-          "search",
-          {
-            limit: args.limit ?? 20,
-            ...(args.query !== undefined ? { query: args.query } : {}),
-            ...(args.status !== undefined ? { state: args.status } : {}),
-            ...(args.assignee !== undefined ? { assignee: args.assignee } : {}),
-            ...(args.container !== undefined ? { team: args.container } : {}),
-            ...(args.label !== undefined ? { label: args.label } : {}),
-          },
-          ctx,
-        );
-        return {
-          issues: listOf(found, ["issues", "nodes", "results"]).map(
-            linearIssue,
+        const limit = args.limit ?? 20;
+        const category = args.status
+          ?.trim()
+          .toLowerCase()
+          .replace(/[\s-]+/g, "_");
+        // Linear filters by one state type, name or id: a category is the
+        // types it spans, searched in turn and merged newest first.
+        const states =
+          args.status === undefined
+            ? [undefined]
+            : category && isStatusCategory(category)
+              ? SEARCH_STATE_TYPES[category]
+              : [args.status];
+        const pages = await Promise.all(
+          states.map((state) =>
+            call(
+              "search",
+              {
+                limit,
+                ...(args.query !== undefined ? { query: args.query } : {}),
+                ...(state !== undefined ? { state } : {}),
+                ...(args.assignee !== undefined
+                  ? { assignee: args.assignee }
+                  : {}),
+                ...(args.container !== undefined
+                  ? { team: args.container }
+                  : {}),
+                ...(args.label !== undefined ? { label: args.label } : {}),
+              },
+              ctx,
+            ),
           ),
-        };
+        );
+        const issues = pages.flatMap((found) =>
+          listOf(found, ["issues", "nodes", "results"]).map(linearIssue),
+        );
+        if (states.length > 1)
+          issues.sort((a, b) =>
+            (b.updated_at ?? "").localeCompare(a.updated_at ?? ""),
+          );
+        return { issues: issues.slice(0, limit) };
       },
       async get({ ref }, ctx) {
         const issue = await getIssue(ref, ctx);
-        const comments = listOf(
-          await call("get", { issueId: ref }, ctx, ["list_comments"]),
-          ["comments", "nodes"],
-        )
-          .map(linearComment)
-          .filter((comment): comment is IssueComment => comment !== undefined);
+        const comments: IssueComment[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < MAX_PAGES; page += 1) {
+          const answer = await call(
+            "get",
+            { issueId: ref, ...(cursor ? { cursor } : {}) },
+            ctx,
+            ["list_comments"],
+          );
+          comments.push(
+            ...listOf(answer, ["comments", "nodes"])
+              .map(linearComment)
+              .filter(
+                (comment): comment is IssueComment => comment !== undefined,
+              ),
+          );
+          cursor = nextCursor(answer);
+          if (!cursor) break;
+        }
         return { ...issue, comments };
       },
       async create(args, ctx) {
