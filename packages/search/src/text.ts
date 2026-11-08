@@ -3,13 +3,6 @@ import type {
   SearchResultItem,
 } from "@introspection-ai/recipes/search";
 
-const REGIONS = new Intl.DisplayNames(["en"], { type: "region" });
-
-/** A country's English name in lower case (`US` → `united states`), as Tavily takes it. */
-export function countryName(code: string): string {
-  return (REGIONS.of(code) ?? code).toLowerCase();
-}
-
 /** A text cut to `limit` characters, on a word boundary where one is near. */
 function capText(text: string, limit: number): string {
   const clean = text.replace(/\s+/g, " ").trim();
