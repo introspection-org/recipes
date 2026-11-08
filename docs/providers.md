@@ -33,8 +33,7 @@ Every family is declared the same way, in `package.json#pi`:
   "pi": {
     "issues": [
       { "provider": "linear" },
-      { "provider": "jira" },
-      { "provider": "introspection", "fallback": true }
+      { "provider": "jira" }
     ],
     "search": [
       { "provider": "brave" },
@@ -52,7 +51,7 @@ A declaration names one provider id and at most one source:
 
 | Source | Resolves to |
 | --- | --- |
-| none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`) |
+| none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
 | `package` | that package, which the Recipe lists in `dependencies` |
 | `module` | a file in the Recipe, relative to its root, like a document profile |
 
@@ -104,10 +103,14 @@ it, else the provider is not offered.
 
 The providers a call may name are the declared ones with a working credential
 path: a bound MCP server, a connection, or an endpoint. A call names one when
-several are on offer, and the tool's schema lists only those. A declaration
-marked `fallback` is offered only when no other provider of its family is, so a
-Recipe always has somewhere to track work, and the same commands reach Linear or
-Jira once someone connects one.
+several are on offer, and the tool's schema lists only those.
+
+A family may have a **fallback**: a provider offered only when no other
+provider of the family is. For issues it is `introspection`, included whenever
+a Recipe declares `pi.issues` without being listed, so a Recipe always has
+somewhere to track work, and the same commands reach Linear or Jira once
+someone connects one. A Recipe excludes it with `{ "provider":
+"introspection", "enabled": false }`.
 
 ## 7. The `issues` family
 
@@ -125,6 +128,11 @@ One `issues` tool with these commands:
 Every issue is returned in one shape (handle, title, status, assignee, labels,
 URL, updated time), with a provider-scoped handle (`linear:ENG-123`,
 `jira:PROJ-45`, `introspection:<id>`) that every later command takes.
+
+All three ship in one package, `@introspection-ai/recipe-issues`, a companion of
+Recipes like `@introspection-ai/recipe-search`. Nothing about issues loads, and
+no `issues` tool is offered, unless a Recipe declares `pi.issues`; most Recipes
+don't, and the Operator does.
 
 | Provider | Transport | Server |
 | --- | --- | --- |
@@ -144,16 +152,14 @@ the adapter's tests run against a captured tool list.
 | --- | --- |
 | `search` | the fixed `SEARCH_PROVIDER_IDS` filter goes; `pi.search` is added; `recipe-search` serves the first-party providers through the shared loader |
 | `productivity` | gains `package` and `module` sources; loads through the shared loader |
-| `issues` | new: the contract, the tool, `@introspection-ai/recipe-issues-linear`, `-jira` and `-introspection` |
+| `issues` | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-issues` with `linear`, `jira` and `introspection` |
 
 The contract version of each family stays separate, so a breaking change to one
 family's contract does not bump another's.
 
 ## 9. Open questions
 
-1. Whether `fallback` belongs on the declaration or is the family's default
-   (`introspection` always last for issues).
-2. Whether a `module` provider is TypeScript compiled by the host, or must be
+1. Whether a `module` provider is TypeScript compiled by the host, or must be
    JavaScript in the Recipe.
-3. Whether one Recipe may declare the same first-party id twice under different
+2. Whether one Recipe may declare the same first-party id twice under different
    sources (for example two Jira sites); assumed no.
