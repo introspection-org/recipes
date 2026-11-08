@@ -32,7 +32,7 @@ export async function loadSearchProviders(options: {
     )
   )
     return {};
-  const imported = await loadRecipePackageModule(
+  const module = (await loadRecipePackageModule(
     options.recipeDir,
     SEARCH_PROVIDERS_PACKAGE,
     {
@@ -40,12 +40,7 @@ export async function loadSearchProviders(options: {
       api: { name: "search provider", version: SEARCH_PROVIDER_API_VERSION },
       ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
     },
-  );
-  const module = (
-    imported && typeof imported === "object" && "default" in imported
-      ? (imported as { default: unknown }).default
-      : imported
-  ) as Partial<RecipeSearchModule> | undefined;
+  )) as Partial<RecipeSearchModule> | undefined;
   if (
     !module ||
     module.kind !== "search" ||

@@ -170,14 +170,10 @@ export interface RecipeModuleApi {
  */
 function assertModuleApi(
   pkg: ResolvedRecipePackage,
-  imported: unknown,
+  module: unknown,
   api: RecipeModuleApi,
   running: string = recipesVersion(),
 ): void {
-  const module =
-    imported && typeof imported === "object" && "default" in imported
-      ? (imported as { default: unknown }).default
-      : imported;
   const declared =
     module && typeof module === "object"
       ? (module as { apiVersion?: unknown }).apiVersion
@@ -193,7 +189,8 @@ function assertModuleApi(
  * from the Recipe or the host (see `resolveRecipePackage`), checking it accepts
  * the running Recipes version: its Recipes peer range when it declares one,
  * and the contract version (`apiVersion`) its module declares. `what` names the declaration in errors,
- * such as `Recipe channel 'slack'`.
+ * such as `Recipe channel 'slack'`. Resolves to the module's default export,
+ * or the module itself when it has none.
  */
 export async function loadRecipePackageModule(
   recipeDir: string,
@@ -223,6 +220,10 @@ export async function loadRecipePackageModule(
       { cause: error },
     );
   }
-  assertModuleApi(resolved, imported, options.api);
-  return imported;
+  const module =
+    imported && typeof imported === "object" && "default" in imported
+      ? (imported as { default: unknown }).default
+      : imported;
+  assertModuleApi(resolved, module, options.api);
+  return module;
 }
