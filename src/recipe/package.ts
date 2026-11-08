@@ -22,6 +22,12 @@ import {
   isDocumentProfilePath,
   recipeProfileSkill,
 } from "../documents/profile.js";
+import {
+  ISSUES_DECLARATION_OPTIONS,
+  ISSUES_FALLBACK_PROVIDER,
+  ISSUES_PROVIDER_IDS,
+  ISSUES_PROVIDER_OPTIONS,
+} from "../issues/types.js";
 import { PRODUCTIVITY_COMMANDS } from "../productivity/types.js";
 import { SEARCH_PROVIDER_IDS } from "../search/types.js";
 import { isCompanionPackage, isHostPeerPackage } from "./companions.js";
@@ -175,6 +181,22 @@ export interface RecipePackageProductivity extends RecipeProviderDeclaration {
  */
 export type RecipePackageSearch = RecipeProviderDeclaration;
 
+/**
+ * A provider the `issues` tool offers: first-party by id, from
+ * `@introspection-ai/recipe-issues`, or the Recipe's own by `package` or
+ * `module`. `team` (Linear) and `project` and `issueType` (Jira) say where
+ * `create` puts an issue; `server` names the Recipe's MCP server for the
+ * provider when it is not the adapter's default id. `enabled: false` excludes
+ * the `introspection` fallback.
+ */
+export interface RecipePackageIssues extends RecipeProviderDeclaration {
+  team?: string;
+  project?: string;
+  issueType?: string;
+  server?: string;
+  enabled?: boolean;
+}
+
 export function recipeProductivityPackageName(provider: string): string {
   return `@introspection-ai/recipe-productivity-${provider}`;
 }
@@ -209,6 +231,8 @@ export interface RecipePackageManifest {
   productivity?: RecipePackageProductivity[];
   /** Absent without `pi.search`: `web_search` then offers the providers the runtime binds. */
   search?: RecipePackageSearch[];
+  /** Absent without `pi.issues`: then nothing about issues loads. */
+  issues?: RecipePackageIssues[];
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -260,6 +284,7 @@ const PI_KEYS = new Set([
   "documents",
   "productivity",
   "search",
+  "issues",
   "evals",
   "mcp",
   "runtime",
@@ -424,6 +449,14 @@ function sourceShapeFindings(
   );
   findings.push(
     ...searchSourceShapeFindings(pi.search, packageName, dependencies),
+  );
+  findings.push(
+    ...issuesSourceShapeFindings(
+      pi.issues,
+      packageName,
+      dependencies,
+      packageDir,
+    ),
   );
   findings.push(...mcpSourceShapeFindings(pi.mcp, packageName));
   findings.push(...runtimeSourceShapeFindings(pi.runtime, packageName));
@@ -813,6 +846,106 @@ function searchSourceShapeFindings(
           `package.json#pi.search provider '${provider}' is not a first-party provider (${SEARCH_PROVIDER_IDS.join(", ")}); give it a package`,
         ),
       );
+  }
+  return findings;
+}
+
+/**
+ * `pi.issues` names the providers the `issues` tool offers, each by a unique
+ * id. A first-party id takes only its own options; a Recipe's own provider
+ * needs a `package` or `module` and may take any of them.
+ */
+function issuesSourceShapeFindings(
+  value: unknown,
+  packageName: string,
+  dependencies: DeclaredDependencies,
+  packageDir?: string,
+): RecipeValidationFinding[] {
+  if (value === undefined) return [];
+  const invalid = (message: string) =>
+    finding("pi.issues_invalid", message, packageName);
+  if (!Array.isArray(value)) {
+    return [invalid("package.json#pi.issues must be an array")];
+  }
+  const findings: RecipeValidationFinding[] = [];
+  const providers = new Set<string>();
+  for (const [index, raw] of value.entries()) {
+    const at = `package.json#pi.issues[${index}]`;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      findings.push(invalid(`${at} must be an object`));
+      continue;
+    }
+    const declaration = raw as Record<string, unknown>;
+    const unknown = Object.keys(declaration).filter(
+      (key) =>
+        ![
+          "provider",
+          ...PROVIDER_SOURCE_FIELDS,
+          ...ISSUES_DECLARATION_OPTIONS,
+        ].includes(key),
+    );
+    if (unknown.length > 0) {
+      findings.push(
+        invalid(`${at} contains unknown field(s): ${unknown.join(", ")}`),
+      );
+    }
+    findings.push(
+      ...providerSourceProblems(declaration, at, dependencies, packageDir).map(
+        invalid,
+      ),
+    );
+    const provider =
+      typeof declaration.provider === "string" && declaration.provider.trim()
+        ? declaration.provider.trim()
+        : undefined;
+    if (!provider) {
+      findings.push(invalid(`${at}.provider must be non-empty`));
+      continue;
+    }
+    if (providers.has(provider)) {
+      findings.push(
+        invalid(
+          `package.json#pi.issues contains duplicate provider '${provider}'`,
+        ),
+      );
+      continue;
+    }
+    providers.add(provider);
+    const ownSource = hasProviderSource(declaration);
+    const firstParty = (ISSUES_PROVIDER_IDS as readonly string[]).includes(
+      provider,
+    );
+    if (!ownSource && !firstParty) {
+      findings.push(
+        invalid(
+          `package.json#pi.issues provider '${provider}' is not a first-party provider (${ISSUES_PROVIDER_IDS.join(", ")}); give it a package or module`,
+        ),
+      );
+      continue;
+    }
+    for (const option of ISSUES_DECLARATION_OPTIONS) {
+      const optionValue = declaration[option];
+      if (optionValue === undefined) continue;
+      if (option === "enabled") {
+        if (provider !== ISSUES_FALLBACK_PROVIDER)
+          findings.push(
+            invalid(
+              `${at}.enabled applies only to '${ISSUES_FALLBACK_PROVIDER}'; remove the declaration to leave '${provider}' out`,
+            ),
+          );
+        else if (typeof optionValue !== "boolean")
+          findings.push(invalid(`${at}.enabled must be true or false`));
+        continue;
+      }
+      if (typeof optionValue !== "string" || !optionValue.trim()) {
+        findings.push(invalid(`${at}.${option} must be a non-empty string`));
+        continue;
+      }
+      if (!ownSource && !ISSUES_PROVIDER_OPTIONS[provider]?.includes(option))
+        findings.push(
+          invalid(`${at}: provider '${provider}' takes no ${option}`),
+        );
+    }
   }
   return findings;
 }
@@ -1375,6 +1508,30 @@ function parseSearch(value: unknown[]): RecipePackageSearch[] {
   return declarations;
 }
 
+function parseIssues(value: unknown[]): RecipePackageIssues[] {
+  const seen = new Set<string>();
+  const declarations: RecipePackageIssues[] = [];
+  for (const raw of value) {
+    const declaration = asRecord(raw);
+    const provider = stringValue(declaration.provider);
+    if (!provider || seen.has(provider)) continue;
+    seen.add(provider);
+    const options: Omit<RecipePackageIssues, "provider"> = {};
+    for (const option of ["team", "project", "issueType", "server"] as const) {
+      const optionValue = stringValue(declaration[option]);
+      if (optionValue !== undefined) options[option] = optionValue;
+    }
+    if (typeof declaration.enabled === "boolean")
+      options.enabled = declaration.enabled;
+    declarations.push({
+      provider,
+      ...parseProviderSource(declaration),
+      ...options,
+    });
+  }
+  return declarations;
+}
+
 function parseProductivity(value: unknown): RecipePackageProductivity[] {
   const declarations: RecipePackageProductivity[] = [];
   for (const raw of Array.isArray(value) ? value : []) {
@@ -1471,6 +1628,7 @@ export function readPiPackageManifest(
     documents: parseDocuments(pi.documents),
     productivity: parseProductivity(pi.productivity),
     ...(Array.isArray(pi.search) ? { search: parseSearch(pi.search) } : {}),
+    ...(Array.isArray(pi.issues) ? { issues: parseIssues(pi.issues) } : {}),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };

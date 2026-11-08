@@ -10,7 +10,7 @@ import { resolveDependencyDir } from "./package.js";
 
 /**
  * Companion packages: the first-party channel, document format,
- * productivity provider and search provider packages Recipes installs
+ * productivity, search and issues provider packages Recipes installs
  * alongside itself, as its
  * `optionalDependencies`. Installing
  * `@introspection-ai/recipes` (Pi's npm folder, a runtime image, npm or npx)

@@ -1,0 +1,148 @@
+{
+  "server": "https://mcp.linear.app/mcp",
+  "captured": false,
+  "source": "Authored from Linear's public tool listings (linear.app/docs/mcp names no tools; names from third-party listings and Linear's changelog). Replace with `introspection bindings mcp capture` output.",
+  "tools": [
+    {
+      "name": "list_issues",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "orderBy": {
+            "type": "string"
+          },
+          "includeArchived": {
+            "type": "boolean"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "get_issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "list_comments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string"
+          }
+        },
+        "required": ["issueId"]
+      }
+    },
+    {
+      "name": "save_issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "number"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assignee": {
+            "type": ["string", "null"]
+          },
+          "state": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "create_comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": ["issueId", "body"]
+      }
+    },
+    {
+      "name": "list_issue_statuses",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "type": "string"
+          }
+        },
+        "required": ["team"]
+      }
+    },
+    {
+      "name": "list_teams",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    }
+  ]
+}

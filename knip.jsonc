@@ -6,7 +6,8 @@
     // A companion exports its module by name and as the default export the
     // host's loader imports.
     "packages/*/*/src/index.ts": ["duplicates"],
-    "packages/search/src/index.ts": ["duplicates"]
+    "packages/search/src/index.ts": ["duplicates"],
+    "packages/issues/src/index.ts": ["duplicates"]
   },
   "workspaces": {
     ".": {
@@ -34,6 +35,9 @@
       "project": ["src/**/*.ts!"]
     },
     "packages/search": {
+      "project": ["src/**/*.ts!"]
+    },
+    "packages/issues": {
       "project": ["src/**/*.ts!"]
     },
     // Its integration tests run against the Google emulator and fake MCP

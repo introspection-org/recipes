@@ -399,6 +399,7 @@ describe("Recipes' optionalDependencies", () => {
       readdirSync(resolve(root)).map((name) => join(root, name)),
     ),
     "packages/search",
+    "packages/issues",
   ];
   const workspacePackages = companionDirs.map(
     (dir) =>

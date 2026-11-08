@@ -6,6 +6,7 @@ import {
   type RecipeChannelModule,
 } from "./channels/module.js";
 import { loadRecipeDocuments } from "./documents/module.js";
+import { loadRecipeIssues } from "./issues/module.js";
 import { loadRecipeProductivity } from "./productivity/module.js";
 import { loadRecipePackageModule } from "./recipe/companions.js";
 import { deferTools } from "./tool-search.js";
@@ -217,8 +218,14 @@ export async function loadRecipeConnectors(
     agentTools,
     options,
   );
+  const issues = await loadRecipeIssues(manifest.issues, agentTools, options);
   const selected = [
     ...loaded.flatMap((connector) => connector.selected),
+    ...issues.toolNames.map((name) => ({
+      id: name,
+      name,
+      defaultActive: true,
+    })),
     ...productivity.toolNames.map((name) => ({
       id: name,
       name,
@@ -243,6 +250,7 @@ export async function loadRecipeConnectors(
       ...loaded.map((connector) => connector.extension),
       ...(documents.extension ? [documents.extension] : []),
       ...(productivity.extension ? [productivity.extension] : []),
+      ...(issues.extension ? [issues.extension] : []),
     ],
     loadout: {
       toolNames: selected.map((tool) => tool.name),

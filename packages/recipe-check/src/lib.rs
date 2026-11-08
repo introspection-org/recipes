@@ -862,6 +862,7 @@ fn validate_pi_config(
         "documents",
         "productivity",
         "search",
+        "issues",
         "mcp",
         "runtime",
         "evals",
@@ -927,12 +928,13 @@ fn validate_pi_config(
 /// productivity provider and search provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
-const COMPANION_PACKAGES: [&str; 6] = [
+const COMPANION_PACKAGES: [&str; 7] = [
     "@introspection-ai/recipe-channel-slack",
     "@introspection-ai/recipe-documents-docx",
     "@introspection-ai/recipe-documents-pdf",
     "@introspection-ai/recipe-productivity-google",
     "@introspection-ai/recipe-productivity-microsoft",
+    "@introspection-ai/recipe-issues",
     "@introspection-ai/recipe-search",
 ];
 

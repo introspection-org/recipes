@@ -54,7 +54,7 @@
   default when it is a companion package** (or omitted), **and a dependency with an exact version
   only to pin it.** Third-party ones are dependencies. The companions are the
   first-party ones published here (`recipe-channel-*`, `recipe-documents-*`,
-  `recipe-productivity-*`, `recipe-search`),
+  `recipe-productivity-*`, `recipe-search`, `recipe-issues`),
   listed in Recipes' `optionalDependencies` so installing Recipes installs
   them beside it. A Recipe may declare one as a peer (the platform provides
   it) or omit it (the copy beside Recipes is used); listing one in
@@ -101,7 +101,8 @@
   went stale twice in one change.
 - **Where the packages come from.** `@introspection-ai/recipes`,
   `@introspection-ai/recipe-channel-*`, `@introspection-ai/recipe-documents-*`,
-  `@introspection-ai/recipe-productivity-*`, `@introspection-ai/mcp-client-*` and
+  `@introspection-ai/recipe-productivity-*`, `@introspection-ai/recipe-search`,
+  `@introspection-ai/recipe-issues`, `@introspection-ai/mcp-client-*` and
   `introspection-recipe-check` are all published from THIS repository, but on
   **two release trains**: `release-please-config.json` covers the npm packages
   and `release-please-checker-config.json` the checker and its Python binding,
