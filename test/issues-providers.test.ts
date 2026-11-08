@@ -552,6 +552,51 @@ describe("jira", () => {
     })();
   });
 
+  it("finds the cancelled category by status name, not as a literal status", async () => {
+    const withStatus = (name: string, key: string) => ({
+      ...JIRA_ISSUE,
+      fields: {
+        ...JIRA_ISSUE.fields,
+        status: { name, statusCategory: { key } },
+      },
+    });
+    const { caller, calls } = fakeServer(list, {
+      getAccessibleAtlassianResources: () => RESOURCES,
+      searchJiraIssuesUsingJql: () => ({
+        issues: [withStatus("Done", "done"), withStatus("Won't Do", "done")],
+      }),
+    });
+    const opened = await session(jiraIssuesProvider);
+    const cancelled = await opened.search!(
+      { status: "cancelled" },
+      { mcp: caller },
+    );
+    expect(cancelled.issues.map((issue) => issue.status.name)).toEqual([
+      "Won't Do",
+    ]);
+    expect(String(calls.at(-1)!.args.jql)).toContain('statusCategory = "Done"');
+    const done = await opened.search!({ status: "done" }, { mcp: caller });
+    expect(done.issues.map((issue) => issue.status.name)).toEqual(["Done"]);
+  });
+
+  it("assigns to the signed-in Jira account for me", async () => {
+    const { caller, calls } = fakeServer(list, {
+      getAccessibleAtlassianResources: () => RESOURCES,
+      atlassianUserInfo: () => ({ account_id: "self-1" }),
+      editJiraIssue: () => ({}),
+      getJiraIssue: () => JIRA_ISSUE,
+    });
+    await (
+      await session(jiraIssuesProvider)
+    ).update!({ ref: "PROJ-45", assignee: "me" }, { mcp: caller });
+    expect(calls.some((call) => call.tool === "lookupJiraAccountId")).toBe(
+      false,
+    );
+    expect(
+      JSON.stringify(calls.find((call) => call.tool === "editJiraIssue")!.args),
+    ).toContain("self-1");
+  });
+
   it("gets an issue and its comments, rendering ADF", async () => {
     const { caller } = fakeServer(list, {
       getAccessibleAtlassianResources: () => RESOURCES,

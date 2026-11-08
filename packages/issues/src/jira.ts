@@ -36,6 +36,7 @@ export const JIRA_MCP_TOOLS: readonly IssuesMcpToolMapping[] = [
     verified: false,
   },
   { tool: "lookupJiraAccountId", serves: ["setup"], verified: false },
+  { tool: "atlassianUserInfo", serves: ["setup"], verified: false },
   { tool: "searchJiraIssuesUsingJql", serves: ["search"], verified: false },
   {
     tool: "getJiraIssue",
@@ -278,6 +279,16 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
       cloudId: string,
       ctx: IssuesCallContext,
     ) => {
+      if (who === "me") {
+        const me = record(await call("setup", {}, ctx, ["atlassianUserInfo"]));
+        const id = text(me.account_id) ?? text(me.accountId);
+        if (!id)
+          throw new IssuesError(
+            "not_found",
+            "Could not resolve the current Jira user",
+          );
+        return id;
+      }
       const found = listOf(
         await call("setup", { cloudId, searchString: who }, ctx, [
           "lookupJiraAccountId",
@@ -305,6 +316,7 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
       async search(args, ctx) {
         const { cloudId, url } = await resource(ctx);
         const clauses: string[] = [];
+        let wantCategory: IssueStatusCategory | undefined;
         if (args.query) clauses.push(`text ~ ${jqlString(args.query)}`);
         if (args.status) {
           const category = args.status
@@ -312,10 +324,14 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
             .toLowerCase()
             .replace(/[\s-]+/g, "_");
           clauses.push(
-            isStatusCategory(category) && category !== "cancelled"
+            isStatusCategory(category)
               ? `statusCategory = ${jqlString(CATEGORY_NAMES[category])}`
               : `status = ${jqlString(args.status)}`,
           );
+          // Jira has no cancelled category: cancellation statuses sit in Done,
+          // so done and cancelled are told apart by name after the search.
+          if (category === "done" || category === "cancelled")
+            wantCategory = category;
         }
         if (args.assignee) {
           const who = args.assignee.trim();
@@ -337,10 +353,15 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
           ctx,
         );
         return {
-          issues: listOf(answer, ["issues", "values"]).map((issue) => {
-            const { comments: _comments, ...rest } = jiraIssue(issue, url);
-            return rest;
-          }),
+          issues: listOf(answer, ["issues", "values"])
+            .map((issue) => {
+              const { comments: _comments, ...rest } = jiraIssue(issue, url);
+              return rest;
+            })
+            .filter(
+              (issue) =>
+                !wantCategory || issue.status.category === wantCategory,
+            ),
         };
       },
       async get({ ref }, ctx) {

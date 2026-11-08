@@ -12,6 +12,14 @@
       }
     },
     {
+      "name": "atlassianUserInfo",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
       "name": "lookupJiraAccountId",
       "inputSchema": {
         "type": "object",
