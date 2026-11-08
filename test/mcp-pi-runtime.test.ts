@@ -219,6 +219,37 @@ describe("the pi-mcp runtime behind the mcp command", () => {
     ).toHaveLength(1);
   });
 
+  it("never sends a call once its timeout ran out while connecting", async () => {
+    const { mcp, runtime } = await fixture({ fail: { initialize: [503] } });
+
+    // The retry waits 250 ms, longer than the call may take in all.
+    await expect(
+      runtime.callTool("hello", "delete_everything", {
+        args: {},
+        timeoutMs: 50,
+      }),
+    ).rejects.toThrow(/timed out before it could be sent/);
+    expect(mcp.seen.map((request) => request.method)).not.toContain(
+      "tools/call",
+    );
+  });
+
+  it("never sends a call cancelled while it waits to connect again", async () => {
+    const { mcp, runtime } = await fixture({ fail: { initialize: [503] } });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("cancelled")), 20);
+
+    await expect(
+      runtime.callTool("hello", "delete_everything", {
+        args: {},
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/cancelled/);
+    expect(mcp.seen.map((request) => request.method)).not.toContain(
+      "tools/call",
+    );
+  });
+
   it("retries a read, and a connect the server answered with a transient status", async () => {
     const { mcp, runtime } = await fixture({
       fail: { initialize: [503], "tools/list": [502] },

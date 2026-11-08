@@ -24,7 +24,26 @@ export interface PiMcpCallOptions {
 const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const READ_RETRY_DELAYS_MS = [250, 1_000];
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** How long to wait before another attempt: cut short by the deadline or the signal. */
+function pause(ms: number, deadline?: number, signal?: AbortSignal) {
+  const wait =
+    deadline === undefined ? ms : Math.min(ms, deadline - Date.now());
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, Math.max(0, wait));
+    signal?.addEventListener("abort", done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+  });
+}
+
+/** A call's limits across every attempt: an absolute deadline and the caller's signal. */
+interface RequestBounds {
+  deadline?: number;
+  signal?: AbortSignal;
+}
 
 function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
   return value.replace(
@@ -121,9 +140,25 @@ class ServerConnection {
    */
   async request<T>(
     read: boolean,
-    request: (client: McpClient) => Promise<T>,
+    request: (client: McpClient, remainingMs?: number) => Promise<T>,
+    bounds: RequestBounds = {},
   ): Promise<T> {
+    const { deadline, signal } = bounds;
+    // Checked before every attempt, so a retry never sends a call after the
+    // caller's time ran out or it was cancelled.
+    const remaining = () => {
+      if (signal?.aborted)
+        throw describedError(signal.reason ?? new Error("aborted"), this.id);
+      if (deadline === undefined) return undefined;
+      const left = deadline - Date.now();
+      if (left <= 0)
+        throw new Error(
+          `MCP call to '${this.id}' timed out before it could be sent`,
+        );
+      return left;
+    };
     for (let attempt = 0; ; attempt += 1) {
+      remaining();
       let client: McpClient;
       try {
         client = await this.connect();
@@ -136,11 +171,11 @@ class ServerConnection {
         if (!answeredTransient || attempt >= READ_RETRY_DELAYS_MS.length) {
           throw describedError(error, this.id);
         }
-        await sleep(READ_RETRY_DELAYS_MS[attempt]!);
+        await pause(READ_RETRY_DELAYS_MS[attempt]!, deadline, signal);
         continue;
       }
       try {
-        return await request(client);
+        return await request(client, remaining());
       } catch (error) {
         // An HTTP error status leaves the session usable; a lost connection
         // or an expired session does not.
@@ -154,7 +189,7 @@ class ServerConnection {
         }
         if (notRun(error) && attempt === 0) continue;
         if (read && transient(error) && attempt < READ_RETRY_DELAYS_MS.length) {
-          await sleep(READ_RETRY_DELAYS_MS[attempt]!);
+          await pause(READ_RETRY_DELAYS_MS[attempt]!, deadline, signal);
           continue;
         }
         throw describedError(error, this.id);
@@ -240,11 +275,21 @@ export class PiMcpRuntime {
         `MCP tool '${server}.${tool}' is not in this session's allowed tools.`,
       );
     }
-    return await this.server(server).request(false, (client) =>
-      client.callTool(tool, options.args ?? {}, {
-        ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    // The timeout covers connecting and any retry, not only the call itself.
+    const deadline = options.timeoutMs
+      ? Date.now() + options.timeoutMs
+      : undefined;
+    return await this.server(server).request(
+      false,
+      (client, remainingMs) =>
+        client.callTool(tool, options.args ?? {}, {
+          ...(remainingMs !== undefined ? { timeoutMs: remainingMs } : {}),
+          ...(options.signal ? { signal: options.signal } : {}),
+        }),
+      {
+        ...(deadline !== undefined ? { deadline } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
-      }),
+      },
     );
   }
 
