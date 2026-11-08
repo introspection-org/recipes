@@ -917,6 +917,9 @@ fn validate_pi_config(
     if let Some(search) = pi.get("search") {
         validate_search_config(search, package, ctx);
     }
+    if let Some(issues) = pi.get("issues") {
+        validate_issues_config(issues, package, ctx);
+    }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
@@ -1510,6 +1513,103 @@ fn validate_search_config(value: &JsonValue, package: &Package, ctx: &mut CheckC
                     Some("add @introspection-ai/recipe-search to package.json#dependencies and commit the lockfile"),
                 );
             }
+        }
+    }
+}
+
+/// `pi.issues` names where the Recipe's agents track work: first-party
+/// providers by id (with their options), a Recipe's own by `package` or
+/// `module`. `introspection` is the family's fallback and is the only one that
+/// takes `enabled`.
+fn validate_issues_config(value: &JsonValue, package: &Package, ctx: &mut CheckContext) {
+    const CODE: &str = "pi.issues_invalid";
+    const FIRST_PARTY: [&str; 3] = ["linear", "jira", "introspection"];
+    let JsonValue::Array(declarations) = value else {
+        ctx.error(
+            CODE,
+            PACKAGE_JSON,
+            "package.json#pi.issues must be an array",
+            Some("use a list of provider declarations, like [{ \"provider\": \"linear\" }]"),
+        );
+        return;
+    };
+    let mut seen = HashSet::new();
+    for (index, declaration) in declarations.iter().enumerate() {
+        let JsonValue::Object(declaration) = declaration else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.issues[{index}] must be an object"),
+                Some("make it a provider declaration"),
+            );
+            continue;
+        };
+        let Some(provider) = string_value(declaration.get("provider")) else {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.issues[{index}].provider must be non-empty"),
+                Some("name the provider, such as linear"),
+            );
+            continue;
+        };
+        let options: &[&str] = match provider.as_str() {
+            "linear" => &["team", "server"],
+            "jira" => &["project", "issueType", "server"],
+            "introspection" => &["enabled"],
+            _ => &["server"],
+        };
+        for key in declaration.keys().filter(|key| {
+            !matches!(key.as_str(), "provider" | "package" | "module")
+                && !options.contains(&key.as_str())
+        }) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.issues[{index}] contains unknown field '{key}' for provider '{provider}'"),
+                Some(format!("use provider, package or module, and {}", options.join(", "))),
+            );
+        }
+        if let Some(enabled) = declaration.get("enabled") {
+            if !enabled.is_boolean() {
+                ctx.error(
+                    CODE,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.issues[{index}].enabled must be a boolean"),
+                    Some("use true or false"),
+                );
+            }
+        }
+        if !seen.insert(provider.clone()) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.issues declares provider '{provider}' more than once"),
+                Some("declare each provider once"),
+            );
+        }
+        let sourced = validate_provider_source("issues", index, declaration, package, ctx);
+        if sourced {
+            continue;
+        }
+        if !FIRST_PARTY.contains(&provider.as_str()) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                format!("package.json#pi.issues provider '{provider}' is not first-party and names no package or module"),
+                Some(format!("use one of {}, or give it a package or module", FIRST_PARTY.join(", "))),
+            );
+        } else if let Some(problem) = declaration_package_problem(
+            &format!("package.json#pi.issues provider '{provider}'"),
+            "@introspection-ai/recipe-issues",
+            package,
+        ) {
+            ctx.error(
+                CODE,
+                PACKAGE_JSON,
+                problem,
+                Some("add @introspection-ai/recipe-issues to package.json#dependencies and commit the lockfile"),
+            );
         }
     }
 }
@@ -5629,6 +5729,53 @@ mod tests {
             let report = check_recipe_files(&provider_recipe("search", declarations, json!({})));
             assert!(
                 invalid_with(&report, "pi.search_invalid", text),
+                "{text}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn issues_declarations_take_first_party_ids_with_their_options() {
+        let ok = check_recipe_files(&provider_recipe(
+            "issues",
+            json!([
+                { "provider": "linear", "team": "ENG" },
+                { "provider": "jira", "project": "OPS", "issueType": "Task" },
+                { "provider": "introspection", "enabled": false }
+            ]),
+            json!({}),
+        ));
+        assert!(
+            !ok.diagnostics
+                .iter()
+                .any(|d| d.code == "pi.issues_invalid" || d.code == "pi.unknown_key"),
+            "{:?}",
+            ok.diagnostics
+        );
+        for (declarations, text) in [
+            (json!([{ "provider": "acme" }]), "not first-party"),
+            (
+                json!([{ "provider": "linear", "project": "OPS" }]),
+                "unknown field 'project'",
+            ),
+            (
+                json!([{ "provider": "linear", "enabled": false }]),
+                "unknown field 'enabled'",
+            ),
+            (
+                json!([{ "provider": "introspection", "enabled": "no" }]),
+                "must be a boolean",
+            ),
+            (
+                json!([{ "provider": "linear" }, { "provider": "linear" }]),
+                "more than once",
+            ),
+        ] {
+            let report =
+                check_recipe_files(&provider_recipe("issues", declarations, json!({})));
+            assert!(
+                invalid_with(&report, "pi.issues_invalid", text),
                 "{text}: {:?}",
                 report.diagnostics
             );
