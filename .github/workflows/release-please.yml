@@ -350,7 +350,22 @@ jobs:
                   core_is_current_release=true
                 fi
               fi
-              if [[ "$core_is_current_release" != "true" ]] && ! npm view "@introspection-ai/recipes@$core_range" version >/dev/null 2>&1; then
+              # A recipes version published moments ago takes a while to become
+              # visible; wait for it rather than fail the companions behind it.
+              core_visible=false
+              if [[ "$core_is_current_release" == "true" ]]; then
+                core_visible=true
+              else
+                for attempt in $(seq 1 30); do
+                  if npm view "@introspection-ai/recipes@$core_range" version >/dev/null 2>&1; then
+                    core_visible=true
+                    break
+                  fi
+                  echo "waiting for @introspection-ai/recipes@$core_range on npm ($attempt/30)"
+                  sleep 10
+                done
+              fi
+              if [[ "$core_visible" != "true" ]]; then
                 echo "$channel_name@$channel_version requires an unpublished @introspection-ai/recipes version." >&2
                 exit 1
               fi
