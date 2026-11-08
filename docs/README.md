@@ -27,6 +27,7 @@ at run time.
 | Read and mark up Word and PDF files from a Recipe | [Document tools](documents/README.md) |
 | Work with a person's mail, calendar and files | [Productivity tools](productivity/README.md) |
 | Search the web from a Recipe | [Web search](search/README.md) |
+| Bring a provider for search, productivity or issues | [Provider modules](providers.md) |
 | Define portable evaluation judges | [Recipe judges](recipe-judges.md) |
 
 ## Boundary
