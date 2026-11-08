@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PiMcpRuntime } from "../src/mcp/pi-runtime.js";
+import { PiMcpRuntime } from "../src/mcp/pi-mcp-runtime.js";
 
 interface Behaviour {
   /** Statuses to answer the next requests of a method with, in order. */
@@ -13,7 +13,11 @@ interface Behaviour {
 }
 
 async function startServer(behaviour: Behaviour = {}) {
-  const seen: Array<{ method: string; authorization?: string; session?: string }> = [];
+  const seen: Array<{
+    method: string;
+    authorization?: string;
+    session?: string;
+  }> = [];
   const cancelled: unknown[] = [];
   const sessions = new Set<string>();
   let nextSession = 0;
@@ -31,13 +35,20 @@ async function startServer(behaviour: Behaviour = {}) {
         params?: Record<string, unknown>;
       };
       const session = req.headers["mcp-session-id"] as string | undefined;
-      seen.push({ method: message.method, authorization: req.headers.authorization, session });
+      seen.push({
+        method: message.method,
+        authorization: req.headers.authorization,
+        session,
+      });
       const failure = behaviour.fail?.[message.method]?.shift();
       if (failure) {
         res.writeHead(failure).end("failing on purpose");
         return;
       }
-      if (message.method !== "initialize" && (!session || !sessions.has(session))) {
+      if (
+        message.method !== "initialize" &&
+        (!session || !sessions.has(session))
+      ) {
         res.writeHead(404).end("unknown session");
         return;
       }
@@ -55,7 +66,7 @@ async function startServer(behaviour: Behaviour = {}) {
               capabilities: { tools: {} },
               serverInfo: { name: "fixture", version: "1" },
             },
-            { "mcp-session-id": id }
+            { "mcp-session-id": id },
           );
           return;
         }
@@ -78,9 +89,14 @@ async function startServer(behaviour: Behaviour = {}) {
           setTimeout(
             () =>
               reply({
-                content: [{ type: "text", text: `Echo: ${String((message.params?.arguments as { message?: string })?.message)}` }],
+                content: [
+                  {
+                    type: "text",
+                    text: `Echo: ${String((message.params?.arguments as { message?: string })?.message)}`,
+                  },
+                ],
               }),
-            behaviour.callDelayMs ?? 0
+            behaviour.callDelayMs ?? 0,
           );
           return;
         default:
@@ -109,16 +125,23 @@ describe("the pi-mcp runtime behind the mcp command", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(behaviour?: Behaviour, server: Record<string, unknown> = {}) {
+  async function fixture(
+    behaviour?: Behaviour,
+    server: Record<string, unknown> = {},
+  ) {
     const mcp = await startServer(behaviour);
     const runtime = new PiMcpRuntime(
       {
         imports: [],
         mcpServers: {
-          hello: { baseUrl: mcp.url, headers: { Authorization: "Bearer ${HELLO_TOKEN}" }, ...server },
+          hello: {
+            baseUrl: mcp.url,
+            headers: { Authorization: "Bearer ${HELLO_TOKEN}" },
+            ...server,
+          },
         },
       },
-      { HELLO_TOKEN: "secret" }
+      { HELLO_TOKEN: "secret" },
     );
     cleanups.push(async () => {
       await runtime.close();
@@ -131,28 +154,33 @@ describe("the pi-mcp runtime behind the mcp command", () => {
     const { mcp, runtime } = await fixture();
 
     expect(runtime.listServers()).toEqual(["hello"]);
-    expect((await runtime.listTools("hello")).map((tool) => (tool as { name: string }).name)).toEqual([
-      "echo",
-      "delete_everything",
-    ]);
+    expect(
+      (await runtime.listTools("hello")).map(
+        (tool) => (tool as { name: string }).name,
+      ),
+    ).toEqual(["echo", "delete_everything"]);
     await runtime.callTool("hello", "echo", { args: { message: "one" } });
     await runtime.callTool("hello", "echo", { args: { message: "two" } });
 
-    expect(mcp.seen.filter((request) => request.method === "initialize")).toHaveLength(1);
+    expect(
+      mcp.seen.filter((request) => request.method === "initialize"),
+    ).toHaveLength(1);
     expect(new Set(mcp.seen.map((request) => request.authorization))).toEqual(
-      new Set(["Bearer secret"])
+      new Set(["Bearer secret"]),
     );
   });
 
   it("holds calls to the session's allowed tools", async () => {
     const { runtime } = await fixture(undefined, { allowedTools: ["echo"] });
 
-    expect((await runtime.listTools("hello")).map((tool) => (tool as { name: string }).name)).toEqual([
-      "echo",
-    ]);
-    await expect(runtime.callTool("hello", "delete_everything")).rejects.toThrow(
-      /not in this session's allowed tools/
-    );
+    expect(
+      (await runtime.listTools("hello")).map(
+        (tool) => (tool as { name: string }).name,
+      ),
+    ).toEqual(["echo"]);
+    await expect(
+      runtime.callTool("hello", "delete_everything"),
+    ).rejects.toThrow(/not in this session's allowed tools/);
   });
 
   it("sends a call once more on a new session when the server forgot the old one", async () => {
@@ -160,35 +188,49 @@ describe("the pi-mcp runtime behind the mcp command", () => {
     await runtime.callTool("hello", "echo", { args: { message: "before" } });
     mcp.expireSessions();
 
-    const result = (await runtime.callTool("hello", "echo", { args: { message: "after" } })) as {
+    const result = (await runtime.callTool("hello", "echo", {
+      args: { message: "after" },
+    })) as {
       content: Array<{ text: string }>;
     };
 
     expect(result.content[0]!.text).toBe("Echo: after");
-    expect(mcp.seen.filter((request) => request.method === "initialize")).toHaveLength(2);
+    expect(
+      mcp.seen.filter((request) => request.method === "initialize"),
+    ).toHaveLength(2);
   });
 
   it("never sends a tools/call twice after it may have run", async () => {
     const { mcp, runtime } = await fixture({ fail: { "tools/call": [503] } });
 
-    await expect(runtime.callTool("hello", "echo", { args: { message: "once" } })).rejects.toThrow(
-      /HTTP 503/
-    );
-    expect(mcp.seen.filter((request) => request.method === "tools/call")).toHaveLength(1);
+    await expect(
+      runtime.callTool("hello", "echo", { args: { message: "once" } }),
+    ).rejects.toThrow(/HTTP 503/);
+    expect(
+      mcp.seen.filter((request) => request.method === "tools/call"),
+    ).toHaveLength(1);
   });
 
   it("retries a read, and a connect the server answered with a transient status", async () => {
-    const { mcp, runtime } = await fixture({ fail: { initialize: [503], "tools/list": [502] } });
+    const { mcp, runtime } = await fixture({
+      fail: { initialize: [503], "tools/list": [502] },
+    });
 
     expect(await runtime.listTools("hello")).toHaveLength(2);
-    expect(mcp.seen.filter((request) => request.method === "initialize")).toHaveLength(2);
-    expect(mcp.seen.filter((request) => request.method === "tools/list")).toHaveLength(2);
+    expect(
+      mcp.seen.filter((request) => request.method === "initialize"),
+    ).toHaveLength(2);
+    expect(
+      mcp.seen.filter((request) => request.method === "tools/list"),
+    ).toHaveLength(2);
   });
 
   it("fails at once on a server that refuses connections", async () => {
     const runtime = new PiMcpRuntime({
       imports: [],
-      mcpServers: { offline: { baseUrl: "http://127.0.0.1:9/mcp", headers: {} } },
+      mcpServers: {
+        offline: { baseUrl: "http://127.0.0.1:9/mcp", headers: {} },
+      },
     });
     const startedAt = Date.now();
 
@@ -200,7 +242,10 @@ describe("the pi-mcp runtime behind the mcp command", () => {
     const { mcp, runtime } = await fixture({ callDelayMs: 2_000 });
     const controller = new AbortController();
 
-    const call = runtime.callTool("hello", "echo", { args: {}, signal: controller.signal });
+    const call = runtime.callTool("hello", "echo", {
+      args: {},
+      signal: controller.signal,
+    });
     setTimeout(() => controller.abort(), 100);
 
     await expect(call).rejects.toThrow();
@@ -213,8 +258,14 @@ describe("the pi-mcp runtime behind the mcp command", () => {
       () =>
         new PiMcpRuntime({
           imports: [],
-          mcpServers: { oauth: { baseUrl: "https://example.test/mcp", headers: {}, auth: "oauth" } },
-        })
+          mcpServers: {
+            oauth: {
+              baseUrl: "https://example.test/mcp",
+              headers: {},
+              auth: "oauth",
+            },
+          },
+        }),
     ).toThrow(/OAuth flow, which the pi-mcp client does not run/);
   });
 });
