@@ -96,6 +96,9 @@ export function platformToolExposure(
 ): RecipeToolExposure {
   if (!(PLATFORM_TOOL_NAMES as readonly string[]).includes(toolName))
     return "direct";
+  // In cli the `tools` command calls them through the bash call, so they stay
+  // callable without being declared, as in codemode.
+  if (policy?.mode === "cli") return "codemode";
   if (selects(policy?.eager, toolName)) return "direct";
   if (policy?.mode === "codemode") return "codemode";
   return selects(policy?.defer, toolName) ? "deferred" : "direct";
@@ -593,8 +596,13 @@ function parseTools(data: Record<string, unknown>): {
           raw.mode !== "codemode" &&
           raw.mode !== "cli"
         ? "tools.mode must be tools, codemode or cli"
-        : raw.mode === "cli"
-          ? "tools.mode cli needs the tools command, which this release does not have; use tools or codemode"
+        : raw.mode === "cli" &&
+            !(
+              (stringArray(raw.include).includes("bash") ||
+                stringArray(raw.include).includes("*")) &&
+              !(policy.exclude ?? []).includes("bash")
+            )
+          ? "tools.mode cli runs the tools command from bash; select bash"
           : (toolSelectorsProblem(raw, raw.mode ?? "tools", ["mode"]) ??
             (firstPartyOnly.length > 0
               ? `defer and eager apply only to first-party tools (${PLATFORM_TOOL_NAMES.join(", ")}): ${firstPartyOnly.join(", ")}`

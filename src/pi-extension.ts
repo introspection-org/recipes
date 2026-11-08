@@ -1017,6 +1017,10 @@ export function createRecipesExtension(
       launchState.extensionRegistrations.claim("tool", tool.name, "<host>");
     }
     let loadedCount = 0;
+    if (launchState.resolved.toolPolicy?.mode === "cli")
+      throw new Error(
+        "tools.mode cli serves first-party tools to the tools command, which this Pi extension host does not provide yet; use tools or codemode here",
+      );
     try {
       const connectors = await loadRecipeConnectors(
         launchState.resolved.manifest,
