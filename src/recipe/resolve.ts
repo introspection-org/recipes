@@ -7,8 +7,9 @@ import {
   loadRecipeSystemPrompt,
   type RecipeAgentDefinition,
   type RecipeAgentMcp,
-  type RecipeAgentMcpMode,
-  type RecipeAgentPlatform,
+  type RecipeAgentToolMode,
+  type RecipeAgentToolPolicy,
+  selectedAgentTools,
   type RecipeSystemInstructions,
 } from "./agent.js";
 import type { RecipeAgentModelConfig } from "./model.js";
@@ -25,7 +26,7 @@ import {
 } from "./package.js";
 
 export type { RecipePackageManifest } from "./package.js";
-export type { RecipeAgentMcp, RecipeAgentPlatform } from "./agent.js";
+export type { RecipeAgentMcp, RecipeAgentToolPolicy } from "./agent.js";
 export {
   activateRecipePython,
   prepareRecipePython,
@@ -49,7 +50,7 @@ export type {
 export { validateRecipePythonPackage } from "./package.js";
 
 export interface ResolvedRecipeAgentMcp extends Omit<RecipeAgentMcp, "mode"> {
-  mode: RecipeAgentMcpMode;
+  mode: RecipeAgentToolMode;
 }
 
 export interface ResolvedRecipeAgent {
@@ -64,8 +65,10 @@ export interface ResolvedRecipeAgent {
   readonly thinkingLevel?: ThinkingLevel;
   readonly tools: readonly string[];
   readonly mcp?: ResolvedRecipeAgentMcp;
-  /** How the selected first-party tools reach the model (`platform`). */
-  readonly platform?: RecipeAgentPlatform;
+  /** The `tools` mapping's `mode`, `defer` and `eager`: how first-party tools reach the model. */
+  readonly toolPolicy?: RecipeAgentToolPolicy;
+  /** The `tools` that `include: ["*"]` added, dropped when the host does not offer them. */
+  readonly wildcardTools?: readonly string[];
   readonly skillPaths: readonly string[];
   readonly promptPaths: readonly string[];
   readonly extensionPaths: readonly string[];
@@ -364,6 +367,7 @@ function buildResolvedRecipeAgent(
     }
   }
 
+  const selected = selectedAgentTools(agent.tools, agent.toolPolicy, manifest);
   return deepFreeze({
     recipeDir,
     manifest,
@@ -376,11 +380,14 @@ function buildResolvedRecipeAgent(
     ...(agent.model?.thinkingLevel
       ? { thinkingLevel: agent.model.thinkingLevel as ThinkingLevel }
       : {}),
-    tools: [...new Set(executableRecipeToolNames(agent.tools))],
+    tools: [...new Set(executableRecipeToolNames(selected.tools))],
+    ...(selected.wildcard.length > 0
+      ? { wildcardTools: selected.wildcard }
+      : {}),
     ...(agent.mcp
       ? { mcp: { ...agent.mcp, mode: agent.mcp.mode ?? "cli" } }
       : {}),
-    ...(agent.platform ? { platform: agent.platform } : {}),
+    ...(agent.toolPolicy ? { toolPolicy: agent.toolPolicy } : {}),
     skillPaths,
     promptPaths,
     extensionPaths: [...extensionPaths],

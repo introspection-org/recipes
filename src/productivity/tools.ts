@@ -58,6 +58,7 @@ import type {
   ProductivitySession,
   ProductivityTool,
 } from "./types.js";
+import type { RecipeToolExposure } from "../recipe/agent.js";
 
 /** The largest file `fetch_attachment`, `download` and `upload` move. */
 export const PRODUCTIVITY_FILE_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -142,7 +143,7 @@ export interface ProductivityToolHost {
 export interface RegisterProductivityToolsOptions {
   provider: string;
   /** How each tool registers: `codemode` keeps it to codemode scripts. Default: declared. */
-  exposure?: (tool: ProductivityTool) => "direct" | "codemode";
+  exposure?: (tool: ProductivityTool) => RecipeToolExposure;
   capabilities: ProductivityCapabilities;
   /** The tools to register, each with the commands it exposes (supported and allowed). */
   tools: Partial<{

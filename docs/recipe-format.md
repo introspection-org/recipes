@@ -532,27 +532,50 @@ catalog of a required server declared `"discovery": "defer"`.
 See [MCP configuration](mcp-configuration.md) for the complete authored and
 binding grammar.
 
-The agent `platform` block chooses how the first-party tools it selects
-(`issues`, `mail`, `calendar`, `drive`, `web_search`) reach the model:
+`tools` takes two forms. A list names the tools the agent may call, each
+declared to the model; `tools: []` is an agent with none. A mapping adds
+how they reach the model, with the selectors an [`mcp` server
+entry](mcp-configuration.md) takes and the same `mode`:
 
 ```yaml
-tools: [read, issues, mail]
-platform:
-  mode: codemode # tools (default) | codemode
-  eager: [issues] # in codemode, also declared to the model
+tools: [read, bash, issues, mail]
+
+tools:
+  mode: codemode # tools (default) | codemode | cli
+  include: [read, bash, issues, mail]
+  eager: [issues]
 ```
 
-- `tools` declares each selected tool, as without the block.
+| Key       | Takes                        | Meaning                                                                               |
+| --------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `include` | names, or `"*"`              | The tools the agent may call: the list form is exactly this.                          |
+| `exclude` | names                        | Removed after `include`.                                                              |
+| `defer`   | first-party names, or `"*"`  | In `tools` mode, hidden from the model until Pi's `tool_search` loads them.           |
+| `eager`   | first-party names, or `"*"`  | Exceptions to `defer`; in `codemode`, also declared to the model.                     |
+| `mode`    | `tools`, `codemode` or `cli` | How the first-party tools reach the model. Built-ins and a Recipe's own are declared. |
+
+`include: ["*"]` selects Pi's tools, the Recipes built-ins above, and the
+first-party tools the Recipe declares in `package.json#pi`: `issues` with
+`pi.issues`, `mail`, `calendar` and `drive` with `pi.productivity` (only the
+ones its `tools` names, when it names any), and `web_search` with `pi.search`.
+A Recipe's own extension and connector tools are never in `*`; name them. A
+tool `*` selects that the host does not offer is left out rather than refused.
+
+`mode`, `defer` and `eager` govern only the first-party tools (`issues`,
+`mail`, `calendar`, `drive`, `web_search`):
+
+- `tools` declares each one, except those `defer` holds back for tool search.
 - `codemode` keeps each one to codemode scripts (`tools.issues({...})`): it is
   named in the `codemode` tool's description and not declared, so its schema
   costs nothing until a script reads it with `describeTool()`. The agent gets
-  the `codemode` tool whenever `platform` or `mcp` asks for codemode, and the
+  the `codemode` tool whenever `tools` or `mcp` asks for codemode, and the
   mode needs Pi 1.3 or newer.
-- `eager` applies only in codemode and names selected first-party tools to
-  declare as well.
+- `cli` is reserved for the `tools` command and refused until it ships.
 
-`tools` still selects what exists; `platform` decides only how a selected tool
-is reached. A child agent's `platform` replaces its parent's.
+The rules are an `mcp` server's: `defer` is invalid in `codemode` and `cli`,
+`eager` in `cli`, and every `defer` or `eager` name must be one `include`
+selects. A child agent that declares `tools` replaces its parent's whole
+block, mode included, as one that declares `mcp` does.
 
 ## Host responsibilities
 
