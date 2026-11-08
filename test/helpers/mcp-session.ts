@@ -41,6 +41,39 @@ export function lastToolResult(context: {
     : "";
 }
 
+/** What the model is handed: the prompt and tool declarations, carried by the system messages. */
+export function modelView(context: { messages: readonly unknown[] }): {
+  prompt: string;
+  tools: Array<{ name: string; description?: string; parameters?: unknown }>;
+} {
+  const system = (
+    context.messages as unknown as Array<{
+      role: string;
+      content: string | Array<{ text?: string }>;
+      sections?: Record<string, string | null>;
+      toolsAdded?: Array<{
+        name: string;
+        description?: string;
+        parameters?: unknown;
+      }>;
+    }>
+  ).filter((message) => message.role === "system");
+  const prompt = system
+    .map((message) =>
+      [
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => part.text ?? "").join(""),
+        ...Object.values(message.sections ?? {}).filter((s): s is string =>
+          Boolean(s),
+        ),
+      ].join("\n"),
+    )
+    .join("\n");
+  const tools = system.flatMap((message) => message.toolsAdded ?? []);
+  return { prompt, tools };
+}
+
 /** Points the fixture's agent at the scripted faux model. */
 function useFauxModel(recipeDir: string): void {
   const agentPath = join(recipeDir, "agents", "agent.yaml");

@@ -22,7 +22,7 @@ export const TOOLS_SOCKET_ENV = "PI_RECIPES_TOOLS_SOCKET";
 export type ToolsBridgeRequestBody =
   { op: "list" } | { op: "call"; tool: string; args: Record<string, unknown> };
 
-export type ToolsBridgeRequest = ToolsBridgeRequestBody & { id: number };
+type ToolsBridgeRequest = ToolsBridgeRequestBody & { id: number };
 
 export interface ToolsBridgeTool {
   name: string;

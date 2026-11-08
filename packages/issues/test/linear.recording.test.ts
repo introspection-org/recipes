@@ -12,6 +12,7 @@ import { type RecipeSessionHandle } from "../../../src/session.js";
 import { writeFixtureRecipe } from "../../../src/test-utils.js";
 import {
   lastToolResult,
+  modelView,
   openRecipeSession,
 } from "../../../test/helpers/mcp-session.js";
 import {
@@ -58,36 +59,6 @@ interface Turn {
   tools: string[];
   lastToolResultBytes: number;
   mcpCallsSinceLastTurn: string[];
-}
-
-/** What the model is handed: the prompt and tool declarations, carried by the system messages. */
-function modelView(context: Context) {
-  const system = (
-    context.messages as unknown as Array<{
-      role: string;
-      content: string | Array<{ text?: string }>;
-      sections?: Record<string, string | null>;
-      toolsAdded?: Array<{
-        name: string;
-        description?: string;
-        parameters?: unknown;
-      }>;
-    }>
-  ).filter((message) => message.role === "system");
-  const prompt = system
-    .map((message) =>
-      [
-        typeof message.content === "string"
-          ? message.content
-          : message.content.map((part) => part.text ?? "").join(""),
-        ...Object.values(message.sections ?? {}).filter((s): s is string =>
-          Boolean(s),
-        ),
-      ].join("\n"),
-    )
-    .join("\n");
-  const tools = system.flatMap((message) => message.toolsAdded ?? []);
-  return { prompt, tools };
 }
 
 function recorder(calls: readonly string[]) {

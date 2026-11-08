@@ -15,7 +15,7 @@ function shellQuote(value: string): string {
 }
 
 /** The compiled `tools` command, beside the `mcp` command's entry points. */
-export function toolsEntrypointPath(): string {
+function toolsEntrypointPath(): string {
   return fileURLToPath(
     new URL("tools/entry.js", import.meta.resolve("@introspection-ai/recipes")),
   );

@@ -12,29 +12,35 @@ Polly.register(FetchAdapter as unknown as Registrable);
 Polly.register(FSPersister as unknown as Registrable);
 
 /**
- * `record` talks to the live MCP server with the token in
- * `MCP_RECORD_TOKEN_FILE`; anything else replays the committed cassette, so
- * CI needs no credential.
+ * `record` talks to the live service (an MCP server with the token in
+ * `MCP_RECORD_TOKEN_FILE`, a model API with its key); anything else replays
+ * the committed cassette, so CI needs no credential.
  */
 export const RECORDING = process.env.POLLY_MODE === "record";
 
 // The same redaction the JS SDK applies to its cassettes
 // (introspection-js-sdk `tests/polly-setup.ts`), plus email addresses, since
-// an MCP server's answers name the people in the workspace.
+// an MCP server's answers name the people in the workspace, and the headers
+// that name a model API account (organization, workspace, rate-limit tier)
+// or trace back to it (request and edge ids).
 const SENSITIVE_HEADER =
-  /(authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|\btoken\b|secret|password|credential|cookie|session)/i;
+  /(authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|\btoken\b|secret|password|credential|cookie|session|organization|workspace|request[-_]?id|ratelimit|cf-ray)/i;
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
     "REDACTED_JWT",
   ],
   [/lin_(?:api|oauth)_[A-Za-z0-9]{20,}/g, "REDACTED_LINEAR_TOKEN"],
+  [/sk-ant-[A-Za-z0-9_-]{20,}/g, "REDACTED_ANTHROPIC_KEY"],
   [/tvly-[A-Za-z0-9_-]{20,}/g, "REDACTED_TAVILY_KEY"],
   [
     /("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]+(")/g,
     "$1REDACTED_SECRET$2",
   ],
-  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "person@example.com"],
+  [
+    /[A-Za-z0-9._%+-]+@(?!example\.(?:com|test)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+    "person@example.com",
+  ],
 ];
 
 function scrub(text: string): string {
@@ -231,13 +237,19 @@ export function hasRecording(dir: string, name: string): boolean {
 
 /**
  * A Polly instance over `fetch` for calls to `host`; every other request
- * passes through. Cassettes go under `dir`, scrubbed before they are written.
+ * passes through. A replay matches requests in order, and by `body` when it
+ * is given. Headers are redacted and bodies rewritten by `rewrite` before a
+ * cassette is written.
  */
-export function startMcpRecording(
+function startRecording(
   name: string,
   dir: string,
   host: string,
-): { polly: Polly; calls: string[] } {
+  options: {
+    body?: (body: string) => string;
+    rewrite: (text: string) => string;
+  },
+): Polly {
   const polly = new Polly(name, {
     mode: RECORDING ? "record" : "replay",
     adapters: ["fetch"],
@@ -250,13 +262,39 @@ export function startMcpRecording(
     matchRequestsBy: {
       headers: false,
       order: true,
-      body: (body: string) => rpcKey(body),
+      body: options.body ?? false,
     },
   });
   polly.server
     .any()
     .filter((request) => new URL(request.url).host !== host)
     .passthrough();
+  polly.server.any().on("beforePersist", (_request, recording: Entry) => {
+    redactHeaders(recording.request.headers);
+    redactHeaders(recording.response.headers);
+    if (recording.request.postData?.text)
+      recording.request.postData.text = options.rewrite(
+        recording.request.postData.text,
+      );
+    if (recording.response.content?.text)
+      recording.response.content.text = options.rewrite(
+        recording.response.content.text,
+      );
+  });
+  return polly;
+}
+
+/** An MCP server's recording, matched by JSON-RPC call and anonymized. */
+export function startMcpRecording(
+  name: string,
+  dir: string,
+  host: string,
+): { polly: Polly; calls: string[] } {
+  const anonymizer = new Anonymizer();
+  const polly = startRecording(name, dir, host, {
+    body: rpcKey,
+    rewrite: (text) => anonymizer.body(text),
+  });
   // Each JSON-RPC call to the server, in order: `initialize`, `tools/list`,
   // `tools/call <tool>`.
   const calls: string[] = [];
@@ -272,20 +310,46 @@ export function startMcpRecording(
         : (rpc.method ?? "?"),
     );
   });
-  const anonymizer = new Anonymizer();
-  polly.server.any().on("beforePersist", (_request, recording: Entry) => {
-    redactHeaders(recording.request.headers);
-    redactHeaders(recording.response.headers);
-    if (recording.request.postData?.text)
-      recording.request.postData.text = anonymizer.body(
-        recording.request.postData.text,
-      );
-    if (recording.response.content?.text)
-      recording.response.content.text = anonymizer.body(
-        recording.response.content.text,
-      );
-  });
   return { polly, calls };
+}
+
+/**
+ * A model API's recording, matched by order alone: a request carries the
+ * date and the run's paths, so no two runs send the same body. Bodies are
+ * kept, as the evidence of what the model was sent and answered, after the
+ * secret scrubber and `replace` (local paths, say) have run over them.
+ * `responses` collects each response body from `host`, recorded or replayed,
+ * rewritten the same way so a recording and its replay read alike.
+ */
+export function startModelRecording(
+  name: string,
+  dir: string,
+  host: string,
+  replace: ReadonlyArray<readonly [string, string]> = [],
+): { polly: Polly; responses: string[] } {
+  const rewrite = (text: string) =>
+    replace.reduce((out, [from, to]) => out.split(from).join(to), scrub(text));
+  const polly = startRecording(name, dir, host, { rewrite });
+  const responses: string[] = [];
+  polly.server.any().on("response", (request, response) => {
+    if (new URL(request.url).host === host)
+      responses.push(rewrite(String(response.body ?? "")));
+  });
+  return { polly, responses };
+}
+
+/** How many requests the cassette for `name` under `dir` holds. */
+export function recordedRequests(dir: string, name: string): number {
+  const entry = readdirSync(dir).find(
+    (item) =>
+      item.startsWith(`${name}_`) &&
+      existsSync(join(dir, item, "recording.har")),
+  );
+  if (!entry) throw new Error(`No recording ${name} under ${dir}`);
+  const har = JSON.parse(
+    readFileSync(join(dir, entry, "recording.har"), "utf8"),
+  ) as { log: { entries: unknown[] } };
+  return har.log.entries.length;
 }
 
 /** The bearer token a recording sends: the live one, or a placeholder a replay never sends anywhere. */

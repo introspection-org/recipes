@@ -35,7 +35,7 @@ export interface RecipeSystemInstructions {
  * The selectors an agent's `tools` block and each of its `mcp.servers` share:
  * `include`/`exclude` authorize, `defer`/`eager` choose what the model sees.
  */
-export interface RecipeAgentToolSelectors extends RecipeMcpToolSelection {
+interface RecipeAgentToolSelectors extends RecipeMcpToolSelection {
   /** Authorized tools hidden from the model until tool search loads them. */
   defer?: string[];
   /** Exceptions to `defer`, or in codemode tools declared as well. */
@@ -105,7 +105,7 @@ export function platformToolExposure(
 }
 
 /** Pi's built-in tools and the Recipe built-ins: what `include: ["*"]` always selects. */
-export const BUILTIN_TOOL_NAMES = [
+const BUILTIN_TOOL_NAMES = [
   "read",
   "bash",
   "edit",
