@@ -88,9 +88,17 @@ export function productivityCapabilitiesProblem(
     return "capabilities must be an object";
   const descriptor = capabilities as Record<string, unknown>;
   for (const key of Object.keys(descriptor)) {
+    if (key === "hosts") continue;
     if (!(PRODUCTIVITY_TOOLS as readonly string[]).includes(key))
       return `capabilities name unknown tool '${key}'`;
   }
+  const hosts = descriptor.hosts;
+  if (
+    hosts !== undefined &&
+    (!Array.isArray(hosts) ||
+      hosts.some((host) => typeof host !== "string" || !host.trim()))
+  )
+    return "capabilities.hosts must be an array of host names";
   for (const tool of PRODUCTIVITY_TOOLS) {
     const entry = descriptor[tool] as
       | {

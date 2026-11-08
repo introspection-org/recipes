@@ -120,6 +120,7 @@ export const perplexitySearchProvider: SearchProviderModule = {
     mode_parameter: "search_type",
     max_results: 20,
     host: "api.perplexity.ai",
+    hosts: ["api.perplexity.ai"],
     credential: { header: "Authorization", prefix: "Bearer " },
     billing: "per request",
     combine_sites: false,

@@ -3,11 +3,14 @@ import { fileURLToPath } from "node:url";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { loadRecipePackageModule } from "../recipe/companions.js";
 import {
   recipeProductivityPackageName,
   type RecipePackageProductivity,
 } from "../recipe/package.js";
+import {
+  loadProviderModules,
+  type ProviderFamily,
+} from "../recipe/providers.js";
 import { createProductivityHttp } from "./http.js";
 import {
   productivityCapabilitiesProblem,
@@ -44,7 +47,7 @@ export interface RecipeProductivityModule {
   readonly kind: "productivity";
   /** The contract version, `PRODUCTIVITY_MODULE_API_VERSION` when written. */
   readonly apiVersion: typeof PRODUCTIVITY_MODULE_API_VERSION;
-  /** Served as `@introspection-ai/recipe-productivity-<provider>`. */
+  /** The provider's id: first-party ones are served as `@introspection-ai/recipe-productivity-<provider>`. */
   readonly provider: string;
   /** Static, so the loader can build the tools before any session exists. */
   readonly capabilities: ProductivityCapabilities;
@@ -73,24 +76,33 @@ export function productivityDownloadRoot(
   return resolve(runtimeFiles || resolve(cwd, "files"), provider);
 }
 
+/** The productivity family for `loadProviderModules`: one package per first-party provider. */
+export const PRODUCTIVITY_PROVIDER_FAMILY: ProviderFamily<RecipeProductivityModule> =
+  {
+    kind: "productivity",
+    apiName: "productivity module",
+    apiVersion: PRODUCTIVITY_MODULE_API_VERSION,
+    firstPartyPackage: recipeProductivityPackageName,
+    idOf: (module) => module.provider,
+  };
+
 function parseProductivityModule(
-  value: unknown,
+  module: RecipeProductivityModule,
   declaration: RecipePackageProductivity,
 ): RecipeProductivityModule {
-  const packageName = recipeProductivityPackageName(declaration.provider);
-  const module = value as Partial<RecipeProductivityModule> | undefined;
+  const from =
+    declaration.module ??
+    declaration.package ??
+    recipeProductivityPackageName(declaration.provider);
   const problem =
-    !module ||
-    module.kind !== "productivity" ||
-    module.provider !== declaration.provider ||
     typeof module.createSession !== "function"
       ? "has an invalid module contract"
       : productivityCapabilitiesProblem(module.capabilities);
   if (problem)
     throw new Error(
-      `Recipe productivity package ${packageName} ${problem.startsWith("has") ? problem : `has an invalid descriptor: ${problem}`}`,
+      `Recipe productivity provider '${declaration.provider}' (${from}) ${problem.startsWith("has") ? problem : `has an invalid descriptor: ${problem}`}`,
     );
-  return module as RecipeProductivityModule;
+  return module;
 }
 
 export interface LoadedRecipeProductivity {
@@ -130,19 +142,15 @@ export async function loadRecipeProductivity(
         .join(" and ")}`,
     );
   const declaration = declarations[0]!;
-  const imported = await loadRecipePackageModule(
-    options.recipeDir,
-    recipeProductivityPackageName(declaration.provider),
+  const [loaded] = await loadProviderModules(
+    PRODUCTIVITY_PROVIDER_FAMILY,
+    [declaration],
     {
-      what: `Recipe productivity provider '${declaration.provider}'`,
-      api: {
-        name: "productivity module",
-        version: PRODUCTIVITY_MODULE_API_VERSION,
-      },
+      recipeDir: options.recipeDir,
       ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
     },
   );
-  const module = parseProductivityModule(imported, declaration);
+  const module = parseProductivityModule(loaded!.module, declaration);
   const enabled: {
     [T in ProductivityTool]?: ProductivityCommand<T>[];
   } = {};

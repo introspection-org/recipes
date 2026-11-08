@@ -54,6 +54,10 @@ tools: [mail, calendar, drive]
   `@introspection-ai/recipe-productivity-<provider>`. The first two are
   `microsoft` (Outlook mail, Outlook calendar, OneDrive and SharePoint) and
   `google` (Gmail, Google Calendar, Google Drive).
+- A provider of the Recipe's own adds `package` (a package listed in
+  `dependencies`) or `module` (a file in the Recipe), and any id:
+  `{ "provider": "acme-mail", "package": "@acme/recipe-productivity-mail" }`.
+  See [providers.md](../providers.md).
 - `tools` is an optional allowlist per tool, like the channels `commands`
   list. Omitting a tool exposes all of its supported commands; an empty list
   exposes none of that tool. Unknown or unsupported commands fail at
@@ -251,7 +255,8 @@ channels:
   class (which must equal `PRODUCTIVITY_COMMAND_EFFECTS`), its backend
   (`mcp` or `rest`) and an optional one-sentence `note` the host appends to
   the command's description. `mail` also says what `label` and `move` act on
-  (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`);
+  (`labels: "labels" | "categories"`, `folders: "folders" | "labels"`), and
+  `hosts` lists every host the provider sends to;
 - `createSession({ config, env, cwd, http })`: returns (or resolves to) a
   `ProductivitySession` for one person's connection, with a `mail`,
   `calendar` and `drive` object whose methods serve the enabled commands

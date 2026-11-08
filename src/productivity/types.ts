@@ -149,6 +149,8 @@ export interface ProductivityCapabilities {
   readonly mail?: MailCapabilities;
   readonly calendar?: CalendarCapabilities;
   readonly drive?: DriveCapabilities;
+  /** Every host the provider sends to, where the egress attaches the person's credential. */
+  readonly hosts?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------

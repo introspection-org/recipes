@@ -665,24 +665,47 @@ Not built. The intended shape:
   `optionalDependency`, and a Recipe that lists it in `dependencies` pins
   its copy.
 
-`loadSearchProviders({ recipeDir, hostDir? })` resolves the package from the
-Recipe, then beside Recipes, checks its `apiVersion` and returns the
-providers. With the package not installed it returns none, and `web_search`
-offers no provider: a call fails with `not_bound`.
+`loadSearchProviders({ recipeDir, hostDir?, declarations? })` resolves the
+package from the Recipe, then beside Recipes, checks its `apiVersion` and
+returns the providers. With the package not installed it returns none, and
+`web_search` offers no provider: a call fails with `not_bound`.
+
+### Declare providers
+
+A Recipe that declares nothing gets the first-party providers the runtime
+binds. `pi.search` names the providers instead, first-party by id or the
+Recipe's own by `package` (listed in `dependencies`) or `module` (a file in
+the Recipe):
+
+```json
+{
+  "pi": {
+    "search": [
+      { "provider": "brave" },
+      { "provider": "acme", "module": "./providers/acme-search.ts" }
+    ]
+  }
+}
+```
+
+A host passes the manifest's `search` as `declarations`, and
+`loadSearchProviders` loads them through the shared provider loader
+([providers.md](../providers.md)). Ids are open slugs, unique in `pi.search`;
+`SEARCH_PROVIDER_IDS` lists the first-party ones.
 
 ## Write a provider
 
 A provider is a plain module, `SearchProviderModule`:
 
 - `kind: "search"`, `apiVersion` (`SEARCH_PROVIDER_API_VERSION`, checked
-  when the tool is built), and `id`, one of `SEARCH_PROVIDER_IDS`.
+  when it loads), and `id`, the id its declaration names.
 - `capabilities`: `modes` (each of `fast`, `default` and `deep` with the
   provider's `setting`, and `approximate` when the setting does not mean the
   mode), `mode_parameter`, `max_results`, `combine_sites`,
   `max_include_sites` where it takes fewer sites than a call lists, `options` (native, approximate or
   none for `freshness`, `include_sites`, `exclude_sites` and `context`, with a
-  one-sentence `note` for each approximation), `host`, `credential` (header
-  and prefix) and `billing`.
+  one-sentence `note` for each approximation), `host`, `hosts` (every host it
+  sends to, REST and MCP), `credential` (header and prefix) and `billing`.
 - `mcp` (optional): the hosted server's `url` and `credential`, the `tools`
   it may call, `plan` and `parse` ([MCP transport](#mcp-transport)).
 - `search(request, context)`: `request` is normalized, with the mode's
