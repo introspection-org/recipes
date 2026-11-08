@@ -222,7 +222,12 @@ describe("web_search schema", () => {
   });
 
   it("offers only bound providers this package implements", () => {
-    const { tool } = setup(["parallel", "tavily", "brave"]);
+    const { tool } = setup(["parallel", "tavily", "brave"], {
+      providers: {
+        tavily: BUILTIN_SEARCH_PROVIDERS.tavily!,
+        brave: BUILTIN_SEARCH_PROVIDERS.brave!,
+      },
+    });
     expect((tool.parameters as any).properties.provider.enum).toEqual([
       "tavily",
       "brave",
@@ -366,6 +371,30 @@ describe("web_search providers", () => {
     expect(api.requests[0]!.url.searchParams.get("goggles")).toBe(
       "$discard\n/openai$site=github.com\n/spam$discard,site=example.com",
     );
+  });
+
+  it("lowercases a site's domain but keeps its path as given", async () => {
+    const brave = await fakeApi(() => ({ body: braveWeb }));
+    const exa = await fakeApi(() => ({ body: { results: [] } }));
+    const { call } = setup(["brave", "exa"], {
+      baseUrls: { brave: brave.baseUrl, exa: exa.baseUrl },
+    });
+    await call({
+      query: "q",
+      provider: "brave",
+      sites: ["-Example.ORG/Spam/API/"],
+    });
+    await call({
+      query: "q",
+      provider: "exa",
+      sites: ["-Example.ORG/Spam/API"],
+    });
+    expect(brave.requests[0]!.url.searchParams.get("goggles")).toBe(
+      "/Spam/API$discard,site=example.org",
+    );
+    expect(exa.requests[0]!.body.excludeDomains).toEqual([
+      "example.org/Spam/API",
+    ]);
   });
 
   it("serves Brave snippets from the Web Search API, and notes a mode it cannot honour", async () => {
@@ -643,9 +672,22 @@ describe("web_search routing", () => {
     expect(excludeOnly.details.notes).toEqual([]);
   });
 
-  it("sends included and excluded sites together to the built providers, which combine them", () => {
-    for (const module of Object.values(BUILTIN_SEARCH_PROVIDERS))
-      expect(module.capabilities.combine_sites).toBe(true);
+  it("declares which built providers combine included and excluded sites", () => {
+    expect(
+      Object.fromEntries(
+        Object.values(BUILTIN_SEARCH_PROVIDERS).map((module) => [
+          module.id,
+          module.capabilities.combine_sites,
+        ]),
+      ),
+    ).toEqual({
+      brave: true,
+      exa: true,
+      keenable: false,
+      parallel: false,
+      perplexity: false,
+      tavily: true,
+    });
   });
 
   it("refuses an unnamed provider when several are bound, and an unbound one", async () => {
@@ -816,6 +858,46 @@ const TAVILY_MCP_TEXT = [
   "Content: Tavily content B",
 ].join("\n");
 
+/** What exa-search-server 3.5.0's `web_search_advanced_exa` answers as text, live. */
+const EXA_ADVANCED_JSON = {
+  requestId: "ff89f170df30f8b0482c4ad19e688a12",
+  resolvedSearchType: "",
+  results: [
+    {
+      id: "https://exa.example/p",
+      url: "https://exa.example/p",
+      publishedDate: "2026-11-01T00:00:00.000Z",
+      image: "https://exa.example/og.png",
+      title: "P",
+      highlights: ["one", "two"],
+    },
+  ],
+  searchTime: 2360.7,
+  costDollars: { total: 0.007, search: { neural: 0.007 } },
+};
+
+/** What tavily-mcp 4.1.5's `tavily_search` answers, live: structuredContent and the same JSON as text. */
+const TAVILY_MCP_JSON = {
+  query: "agents",
+  follow_up_questions: null,
+  answer: null,
+  images: [],
+  results: [
+    {
+      url: "https://news.example.org/a",
+      title: "A",
+      content: "## Recall\n\nTavily content A",
+      score: 0.90692574,
+      raw_content: null,
+      published_date: "Sun, 26 Apr 2026 00:00:00 GMT",
+      id: "3c9aac-00",
+    },
+  ],
+  response_time: 1.21,
+  request_id: "fa45ee95-8134-43ff-b99a-edcd5e53d0c7",
+  auth_mode: "keyed",
+};
+
 /** What exa-mcp-server's `web_search_exa` writes (src/tools/webSearch.ts). */
 const EXA_MCP_TEXT = [
   "Title: P",
@@ -853,6 +935,7 @@ describe("web_search over a provider's MCP server", () => {
           query: "agents",
           search_depth: "advanced",
           max_results: 5,
+          include_published_date: true,
           time_range: "week",
           include_domains: ["example.org"],
           exclude_domains: ["spam.com"],
@@ -947,20 +1030,7 @@ describe("web_search over a provider's MCP server", () => {
 
   it("prefers Exa's advanced MCP tool and reads its JSON", async () => {
     const { ctx, calls } = fakePiMcp({
-      [EXA_ADVANCED]: () =>
-        text(
-          JSON.stringify({
-            results: [
-              {
-                url: "https://exa.example/p",
-                title: "P",
-                publishedDate: "2026-11-01T00:00:00.000Z",
-                highlights: ["one", "two"],
-              },
-            ],
-            costDollars: { total: 0.007 },
-          }),
-        ),
+      [EXA_ADVANCED]: () => text(JSON.stringify(EXA_ADVANCED_JSON)),
       [EXA_DEFAULT]: () => text(EXA_MCP_TEXT),
     });
     const { call } = setup([], { mcpServers: { exa: "exa" } }, ctx);
@@ -1017,6 +1087,84 @@ describe("web_search over a provider's MCP server", () => {
     const located = await call({ query: "q", country: "JP" });
     expect(located.details.transport).toBe("rest");
     expect(rest.requests[1]!.body).toMatchObject({ userLocation: "JP" });
+  });
+
+  it("reads Tavily's structuredContent with scores and dates, or the same JSON as text", async () => {
+    const structured = fakePiMcp({
+      [TAVILY]: () => ({
+        ...text(JSON.stringify(TAVILY_MCP_JSON)),
+        structuredContent: TAVILY_MCP_JSON,
+      }),
+    });
+    const textOnly = fakePiMcp({
+      [TAVILY]: () => text(JSON.stringify(TAVILY_MCP_JSON)),
+    });
+    for (const { ctx } of [structured, textOnly]) {
+      const result = await setup(
+        [],
+        { mcpServers: { tavily: "tavily" } },
+        ctx,
+      ).call({ query: "agents" });
+      expect(result.details.results).toEqual([
+        {
+          url: "https://news.example.org/a",
+          title: "A",
+          snippet: "## Recall Tavily content A",
+          published_at: "2026-04-26",
+          score: 0.90692574,
+          site: "news.example.org",
+        },
+      ]);
+      expect(result.details.usage).toEqual({ requests: 1 });
+    }
+  });
+
+  it("runs Exa's deep mode on REST, since the advanced MCP tool's type has no deep", async () => {
+    const rest = await fakeApi(() => ({ body: { results: [] } }));
+    const { ctx, calls } = fakePiMcp({
+      [EXA_ADVANCED]: () => text(JSON.stringify(EXA_ADVANCED_JSON)),
+    });
+    const both = await setup(
+      ["exa"],
+      { mcpServers: { exa: "exa" }, baseUrls: { exa: rest.baseUrl } },
+      ctx,
+    ).call({ query: "q", mode: "deep" });
+    expect(both.details.transport).toBe("rest");
+    expect(rest.requests[0]!.body).toMatchObject({ type: "deep" });
+    expect(calls).toHaveLength(0);
+
+    const mcpOnly = await setup([], { mcpServers: { exa: "exa" } }, ctx).call({
+      query: "q",
+      mode: "deep",
+    });
+    expect(calls[0]!.args).toMatchObject({ type: "auto" });
+    expect(mcpOnly.details).toMatchObject({ mode: "deep", setting: "auto" });
+    expect(mcpOnly.details.notes).toEqual([
+      {
+        option: "mode",
+        outcome: "approximated",
+        detail:
+          "exa's MCP tool web_search_advanced_exa cannot run this mode, so it ran auto",
+      },
+    ]);
+  });
+
+  it("records the setting Exa's default MCP tool ran, not the mode's", async () => {
+    const { ctx } = fakePiMcp({ [EXA_DEFAULT]: () => text(EXA_MCP_TEXT) });
+    const { call, spans } = setup([], { mcpServers: { exa: "exa" } }, ctx);
+    const result = await call({ query: "q", mode: "deep" });
+    expect(result.details).toMatchObject({ mode: "deep", setting: "auto" });
+    expect(spans[0]!.attributes).toMatchObject({
+      "search.mode": "deep",
+      "search.setting": "auto",
+      "introspection.usage.variant": "auto",
+    });
+    expect(result.details.notes).toContainEqual({
+      option: "mode",
+      outcome: "approximated",
+      detail:
+        "exa's MCP tool web_search_exa cannot run this mode, so it ran auto",
+    });
   });
 
   it("takes an MCP tool as its server's only when Pi's namespace says so", () => {
@@ -1089,5 +1237,494 @@ describe("web_search over a provider's MCP server", () => {
       },
     );
     expect(served.transport).toBe("mcp");
+  });
+});
+
+/** What api.keenable.ai answers, live: REST adds `usage`; MCP's JSON text lacks it. */
+const keenableBody = {
+  query: "q",
+  mode: "realtime",
+  results: [
+    {
+      title: "Support RabitQ in pgvector",
+      url: "https://github.com/pgvector/pgvector/issues/1003",
+      description: "",
+      snippet: "We have implemented RaBitQ quantization for HNSW.",
+      published_at: "2026-07-28T08:58:47Z",
+      acquired_at: "2026-09-19T17:03:41Z",
+    },
+    {
+      title: "Undated",
+      url: "https://example.com/undated",
+      description: "Only a description",
+      snippet: "",
+      acquired_at: "2026-10-14T12:46:02Z",
+    },
+  ],
+};
+
+/** What perplexity_search writes (perplexityai/modelcontextprotocol `formatSearchResults`). */
+const PERPLEXITY_MCP_TEXT = [
+  "Found 2 search results:",
+  "",
+  "1. **Agents that search**",
+  "   URL: https://arxiv.org/abs/2601.00001",
+  "   First line of the snippet.",
+  "Second line, unindented.",
+  "   Date: 2026-10-02",
+  "   Last updated: 2026-10-05",
+  "",
+  "2. **Undated page**",
+  "   URL: https://example.com/p",
+  "   Just a snippet.",
+  "",
+].join("\n");
+
+describe("web_search over Keenable, Perplexity and Parallel", () => {
+  const KEENABLE = mcpToolName("keenable", "search_web_pages");
+  const PERPLEXITY = mcpToolName("perplexity", "perplexity_search");
+
+  it("maps Keenable's modes, one site and freshness onto REST, and records its credits", async () => {
+    const api = await fakeApi(() => ({
+      body: {
+        ...keenableBody,
+        usage: { sku: "search.realtime", amount: 1, credits: 1, paid: false },
+      },
+    }));
+    const { call, spans } = setup(["keenable"], {
+      baseUrls: { keenable: api.baseUrl },
+    });
+    const result = await call({
+      query: "pgvector",
+      mode: "fast",
+      freshness: "month",
+      sites: ["github.com", "arxiv.org", "-pinterest.com"],
+      country: "US",
+    });
+    expect(api.requests[0]!.path).toBe("/v1/search");
+    expect(api.requests[0]!.body).toEqual({
+      query: "pgvector",
+      mode: "realtime",
+      max_results: 5,
+      snippet_max_length: 300,
+      published_after: "1mo",
+      site: "github.com",
+    });
+    expect(api.requests[0]!.headers["x-api-key"]).toBeUndefined();
+    expect(result.content[0]!.text).toBe(
+      [
+        "[1] Support RabitQ in pgvector — github.com · 2026-07-28",
+        "https://github.com/pgvector/pgvector/issues/1003",
+        "We have implemented RaBitQ quantization for HNSW.",
+        "",
+        "[2] Undated — example.com",
+        "https://example.com/undated",
+        "Only a description",
+        "",
+        "(approximated: freshness — Keenable filters on publish time from the start of the window, so pages with no known publish date may drop out.)",
+        "(ignored: exclude sites — not supported by keenable)",
+        "(ignored: country — not supported by keenable)",
+        "(ignored: include sites — keenable restricts to at most 1 site, so arxiv.org did not apply)",
+      ].join("\n"),
+    );
+    expect(spans[0]!.attributes).toMatchObject({
+      "search.setting": "realtime",
+      "search.units.name": "credits",
+      "introspection.usage.service": "keenable/search",
+      "introspection.usage.unit": "credit",
+      "introspection.usage.quantity": 1,
+      "introspection.usage.variant": "realtime",
+    });
+
+    await call({ query: "q", mode: "deep", content: "context" });
+    expect(api.requests[1]!.body).toEqual({
+      query: "q",
+      mode: "pro",
+      max_results: 5,
+      snippet_max_length: 1500,
+    });
+  });
+
+  it("calls Keenable's MCP tool for JSON and reads it, and fails on text it cannot read", async () => {
+    const { ctx, calls } = fakePiMcp({
+      [KEENABLE]: () => text(JSON.stringify(keenableBody)),
+    });
+    const { call } = setup([], { mcpServers: { keenable: "keenable" } }, ctx);
+    const result = await call({
+      query: "q",
+      freshness: "day",
+      sites: ["github.com"],
+    });
+    expect(calls[0]).toEqual({
+      name: KEENABLE,
+      args: {
+        query: "q",
+        mode: "pro",
+        max_results: 5,
+        snippet_max_length: 300,
+        published_after: "1d",
+        site: "github.com",
+        output_format: "json",
+      },
+    });
+    expect(result.details).toMatchObject({
+      transport: "mcp",
+      usage: { requests: 1 },
+    });
+    expect(result.details.results[0]).toMatchObject({
+      published_at: "2026-07-28",
+      site: "github.com",
+    });
+
+    const readable = fakePiMcp({ [KEENABLE]: () => text("1. Some page") });
+    const failed = await setup(
+      [],
+      { mcpServers: { keenable: "keenable" } },
+      readable.ctx,
+    ).call({ query: "q" });
+    expect(failed.details.error).toMatchObject({ code: "provider_error" });
+  });
+
+  it("calls Perplexity's MCP tool and reads its formatted text", async () => {
+    const { ctx, calls } = fakePiMcp({
+      [PERPLEXITY]: () => ({
+        ...text(PERPLEXITY_MCP_TEXT),
+        structuredContent: { results: PERPLEXITY_MCP_TEXT },
+      }),
+    });
+    const { call } = setup(
+      [],
+      { mcpServers: { perplexity: "perplexity" } },
+      ctx,
+    );
+    const result = await call({
+      query: "agents",
+      mode: "fast",
+      freshness: "week",
+      sites: ["arxiv.org", "-spam.com"],
+      country: "DE",
+      content: "context",
+    });
+    expect(calls[0]).toEqual({
+      name: PERPLEXITY,
+      args: {
+        query: "agents",
+        max_results: 5,
+        max_tokens_per_page: 1024,
+        search_type: "fast",
+        country: "DE",
+        search_recency_filter: "week",
+        search_domain_filter: ["arxiv.org"],
+      },
+    });
+    expect(result.content[0]!.text).toBe(
+      [
+        "[1] Agents that search — arxiv.org · 2026-10-02",
+        "https://arxiv.org/abs/2601.00001",
+        "First line of the snippet. Second line, unindented.",
+        "",
+        "[2] Undated page — example.com",
+        "https://example.com/p",
+        "Just a snippet.",
+        "",
+        "(ignored: exclude sites — perplexity cannot combine included and excluded sites, so only the included ones apply)",
+      ].join("\n"),
+    );
+    // The text from structuredContent alone, as a client that drops content would see it.
+    const structuredOnly = fakePiMcp({
+      [PERPLEXITY]: () => ({
+        content: [],
+        structuredContent: { results: PERPLEXITY_MCP_TEXT },
+      }),
+    });
+    const fromStructured = await setup(
+      [],
+      { mcpServers: { perplexity: "perplexity" } },
+      structuredOnly.ctx,
+    ).call({ query: "agents", sites: ["-spam.com"], mode: "deep" });
+    expect(structuredOnly.calls[0]!.args).toMatchObject({
+      search_type: "web",
+      max_tokens_per_page: 256,
+      search_domain_filter: ["-spam.com"],
+    });
+    expect(fromStructured.details.results).toHaveLength(2);
+    expect(fromStructured.details.notes).toEqual([
+      {
+        option: "mode",
+        outcome: "approximated",
+        detail:
+          "Perplexity's Search API has nothing deeper than web, its default",
+      },
+    ]);
+  });
+
+  it("serves Perplexity over REST with the bearer on the legacy lane", async () => {
+    const api = await fakeApi(() => ({
+      body: {
+        results: [
+          {
+            title: "T",
+            url: "https://example.com/t",
+            snippet: "S",
+            date: "2026-10-01",
+            last_updated: "2026-10-03",
+          },
+        ],
+      },
+    }));
+    const { call } = setup(["perplexity"], {
+      env: LEGACY,
+      baseUrls: { perplexity: api.baseUrl },
+    });
+    const result = await call({ query: "q" });
+    expect(api.requests[0]!.path).toBe("/search");
+    expect(api.requests[0]!.headers.authorization).toBe("Bearer locator-jwt");
+    expect(api.requests[0]!.body).toEqual({
+      query: "q",
+      max_results: 5,
+      max_tokens_per_page: 256,
+      search_type: "web",
+    });
+    expect(result.content[0]!.text.split("\n")[0]).toBe(
+      "[1] T — example.com · 2026-10-01",
+    );
+  });
+
+  it("sends Parallel the query as objective and keyword query, with its settings", async () => {
+    const api = await fakeApi(() => ({
+      body: {
+        search_id: "search_1",
+        results: [
+          {
+            url: "https://www.example.com",
+            title: "Sample webpage title",
+            publish_date: "2024-01-15",
+            excerpts: ["Sample excerpt 1", "Sample excerpt 2"],
+          },
+        ],
+        usage: [{ name: "sku_search", count: 1 }],
+        session_id: "session_1",
+      },
+    }));
+    const { call, spans } = setup(["parallel"], {
+      env: LEGACY,
+      baseUrls: { parallel: api.baseUrl },
+      sessionId: "task-session",
+    });
+    const result = await call({
+      query: "agents that search",
+      mode: "deep",
+      freshness: "week",
+      sites: ["arxiv.org", "-spam.com"],
+      country: "GB",
+      content: "context",
+    });
+    expect(api.requests[0]!.path).toBe("/v1/search");
+    expect(api.requests[0]!.headers["x-api-key"]).toBe("locator-jwt");
+    expect(api.requests[0]!.body).toEqual({
+      objective: "agents that search",
+      search_queries: ["agents that search"],
+      mode: "advanced",
+      session_id: "task-session",
+      advanced_settings: {
+        max_results: 5,
+        excerpt_settings: { max_chars_per_result: 1500 },
+        source_policy: {
+          include_domains: ["arxiv.org"],
+          after_date: "2026-10-30",
+        },
+        location: "gb",
+      },
+    });
+    expect(result.content[0]!.text).toBe(
+      [
+        "[1] Sample webpage title — example.com · 2024-01-15",
+        "https://www.example.com",
+        "Sample excerpt 1 … Sample excerpt 2",
+        "",
+        "(approximated: mode — Parallel's Search API has nothing deeper than advanced, its default)",
+        "(approximated: freshness — Parallel filters on published date from the start of the window (after_date).)",
+        "(ignored: exclude sites — parallel cannot combine included and excluded sites, so only the included ones apply)",
+      ].join("\n"),
+    );
+    expect(result.details.usage.units).toEqual({
+      name: "sku_search",
+      count: 1,
+    });
+    expect(spans[0]!.attributes).toMatchObject({
+      "introspection.usage.service": "parallel/search",
+      "introspection.usage.unit": "request",
+      "introspection.usage.variant": "advanced",
+    });
+
+    await call({ query: "q", mode: "fast", sites: ["-spam.com"] });
+    expect(api.requests[1]!.body).toEqual({
+      objective: "q",
+      search_queries: ["q"],
+      mode: "fast",
+      session_id: "task-session",
+      advanced_settings: {
+        max_results: 5,
+        excerpt_settings: { max_chars_per_result: 300 },
+        source_policy: { exclude_domains: ["spam.com"] },
+      },
+    });
+  });
+
+  it("calls Parallel's MCP tool with site: queries, filters to the sites named, and leaves to REST what it cannot express", async () => {
+    const live = {
+      search_id: "search_9af9b97d1b9aa47fece60f7a41155ba6",
+      results: [
+        {
+          url: "https://workos.com/blog/mcp-enterprise-managed-authorization",
+          title: "Inside the ID-JAG",
+          publish_date: "2026-09-08",
+          excerpts: [`In this article\n\n${"word ".repeat(500)}`],
+        },
+        {
+          url: "https://docs.workos.com/sso",
+          title: "SSO",
+          publish_date: null,
+          excerpts: ["Docs excerpt"],
+        },
+        {
+          url: "https://supabase.com/docs/guides/platform/sso",
+          title: "Elsewhere",
+          publish_date: null,
+          excerpts: ["Not on the site"],
+        },
+      ],
+      warnings: null,
+      metadata: null,
+      session_id: "session_9af9b97d1b9aa47fece60f7a41155ba6",
+    };
+    const PARALLEL = mcpToolName("parallel", "web_search");
+    const rest = await fakeApi(() => ({ body: { results: [] } }));
+    const { ctx, calls } = fakePiMcp({
+      [PARALLEL]: () => ({
+        ...text(JSON.stringify(live)),
+        structuredContent: live,
+      }),
+    });
+    const { call } = setup(
+      ["parallel"],
+      {
+        mcpServers: { parallel: "parallel" },
+        baseUrls: { parallel: rest.baseUrl },
+        sessionId: "task-session",
+      },
+      ctx,
+    );
+    const result = await call({
+      query:
+        "how does enterprise managed authorization for MCP work in practice",
+      sites: ["workos.com", "-docs.workos.com"],
+    });
+    expect(calls[0]).toEqual({
+      name: PARALLEL,
+      args: {
+        objective:
+          "how does enterprise managed authorization for MCP work in practice",
+        session_id: "task-session",
+        search_queries: [
+          "how does enterprise managed authorization for site:workos.com",
+        ],
+      },
+    });
+    expect(result.details.transport).toBe("mcp");
+    expect(result.details.results.map((item) => item.url)).toEqual([
+      "https://workos.com/blog/mcp-enterprise-managed-authorization",
+      "https://docs.workos.com/sso",
+    ]);
+    expect(result.details.results[0]!.published_at).toBe("2026-09-08");
+    expect(result.details.results[0]!.snippet!.length).toBeLessThanOrEqual(301);
+
+    const excluded = await call({ query: "q", sites: ["-docs.workos.com"] });
+    expect(excluded.details.results.map((item) => item.site)).toEqual([
+      "workos.com",
+      "supabase.com",
+    ]);
+
+    for (const args of [
+      { query: "q", mode: "fast" },
+      { query: "q", freshness: "week" },
+      { query: "q", country: "US" },
+    ])
+      expect((await call(args)).details.transport).toBe("rest");
+    expect(rest.requests).toHaveLength(3);
+
+    const parallelOnly = setup(
+      [],
+      { mcpServers: { parallel: "parallel" } },
+      ctx,
+    );
+    const mcpOnly = await parallelOnly.call({
+      query: "q",
+      mode: "fast",
+      freshness: "day",
+    });
+    expect(mcpOnly.details.notes.map((note) => note.option)).toEqual([
+      "freshness",
+      "mode",
+      "freshness",
+    ]);
+    expect(mcpOnly.details.notes[1]!.detail).toBe(
+      "parallel's MCP tool web_search cannot run this mode, so it ran the server's default",
+    );
+    // The tool reports no setting, so none is recorded or priced.
+    expect(mcpOnly.details).toMatchObject({ mode: "fast", setting: null });
+    const span = parallelOnly.spans[0]!.attributes;
+    expect(span["search.mode"]).toBe("fast");
+    expect(span).not.toHaveProperty("search.setting");
+    expect(span).not.toHaveProperty("introspection.usage.variant");
+  });
+
+  it("reports an account out of credit, and keeps one session id per task", async () => {
+    const api = await fakeApi(() => ({
+      status: 402,
+      body: {
+        type: "error",
+        error: { ref_id: "r", message: "Insufficient credit in account" },
+      },
+    }));
+    const { call } = setup(["parallel", "keenable"], {
+      baseUrls: { parallel: api.baseUrl, keenable: api.baseUrl },
+    });
+    const parallel = await call({ query: "q", provider: "parallel" });
+    expect(parallel.details.error).toMatchObject({
+      code: "out_of_credit",
+      status: 402,
+    });
+    expect(parallel.content[0]!.text).toMatch(
+      /^web_search failed \(out_of_credit\): parallel answered 402: the provider account is out of credit: /,
+    );
+    expect(
+      (await call({ query: "q", provider: "keenable" })).details.error,
+    ).toMatchObject({ code: "out_of_credit" });
+    await call({ query: "r", provider: "parallel" });
+    const sessions = api.requests
+      .filter(
+        (request) => request.path === "/v1/search" && request.body.session_id,
+      )
+      .map((request) => request.body.session_id);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(sessions[1]).toBe(sessions[0]);
+  });
+
+  it("binds Keenable, Perplexity and Parallel by their MCP servers, and REST by host", () => {
+    expect(
+      boundSearchProviders({
+        hosts: ["api.parallel.ai", "api.keenable.ai"],
+        mcpServers: [
+          { id: "k", url: "https://api.keenable.ai/mcp" },
+          { id: "p", url: "https://api.perplexity.ai/mcp" },
+          { id: "par", url: "https://search.parallel.ai/mcp" },
+        ],
+      }),
+    ).toEqual({
+      bound: ["keenable", "parallel"],
+      mcpServers: { keenable: "k", parallel: "par", perplexity: "p" },
+    });
   });
 });

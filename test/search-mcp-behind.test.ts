@@ -25,7 +25,7 @@ const SEARCH_MODULE = join(
   "index.ts",
 );
 
-/** tavily-mcp's `tavily_search`, answering in its text format. */
+/** tavily-mcp's `tavily_search`, answering in its older text format, which the adapter still reads. */
 function fakeTavilyMcp(): Promise<HelloMcp> {
   return startHelloMcp({
     tools: [
@@ -142,7 +142,12 @@ describe("web_search with its MCP server behind it", () => {
       expect(server.calls).toEqual([
         {
           name: "tavily_search",
-          arguments: { query: "pi", search_depth: "basic", max_results: 5 },
+          arguments: {
+            query: "pi",
+            search_depth: "basic",
+            max_results: 5,
+            include_published_date: true,
+          },
         },
       ]);
     });

@@ -5,7 +5,7 @@ import {
   hostOf,
   requestJson,
 } from "../http.js";
-import { mcpResultText } from "../mcp.js";
+import { mcpResultText, parsedJson } from "../mcp.js";
 import {
   SEARCH_PROVIDER_API_VERSION,
   type SearchOption,
@@ -85,19 +85,12 @@ function exaTextResults(text: string): ExaResponse {
   };
 }
 
-function parsedJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Exa Search. REST `POST /search`, or Exa's hosted MCP server: its
- * `web_search_advanced_exa` tool takes every argument (the server offers it
- * when its URL lists it in `?tools=`), and its default `web_search_exa`
- * only a query and a count.
+ * `web_search_advanced_exa` tool takes every argument but `type: "deep"`
+ * (the server offers it when its URL lists it in `?tools=`), and answers the
+ * API's JSON as text; its default `web_search_exa` takes only a query and a
+ * count, and answers `Title:`/`URL:` text.
  */
 export const exaSearchProvider: SearchProviderModule = {
   kind: "search",
@@ -134,11 +127,13 @@ export const exaSearchProvider: SearchProviderModule = {
     tools: ["web_search_advanced_exa", "web_search_exa"],
     plan(request, hasTool, now) {
       if (hasTool("web_search_advanced_exa")) {
+        // The tool's `type` takes auto, lite, fast and instant, not deep.
+        const deep = request.setting === "deep";
         return {
           tool: "web_search_advanced_exa",
           args: {
             query: request.query,
-            type: request.setting,
+            type: deep ? "auto" : request.setting,
             numResults: request.max_results,
             enableHighlights: true,
             highlightsMaxCharacters: request.max_chars,
@@ -153,7 +148,8 @@ export const exaSearchProvider: SearchProviderModule = {
               : {}),
             ...(request.country ? { userLocation: request.country } : {}),
           },
-          unsupported: [],
+          unsupported: deep ? ["mode"] : [],
+          ...(deep ? { setting: "auto" } : {}),
         };
       }
       if (!hasTool("web_search_exa")) return undefined;
@@ -168,6 +164,7 @@ export const exaSearchProvider: SearchProviderModule = {
         tool: "web_search_exa",
         args: { query: request.query, numResults: request.max_results },
         unsupported,
+        setting: "auto",
       };
     },
     parse(result, request, plan) {

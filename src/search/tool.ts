@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { SpanStatusCode, trace, type Tracer } from "@opentelemetry/api";
@@ -16,6 +17,9 @@ import {
 } from "./mcp.js";
 import { braveSearchProvider } from "./providers/brave.js";
 import { exaSearchProvider } from "./providers/exa.js";
+import { keenableSearchProvider } from "./providers/keenable.js";
+import { parallelSearchProvider } from "./providers/parallel.js";
+import { perplexitySearchProvider } from "./providers/perplexity.js";
 import { tavilySearchProvider } from "./providers/tavily.js";
 import {
   SEARCH_CONTENT,
@@ -57,12 +61,23 @@ export type SearchProviders = Readonly<
 export const BUILTIN_SEARCH_PROVIDERS: SearchProviders = {
   brave: braveSearchProvider,
   exa: exaSearchProvider,
+  keenable: keenableSearchProvider,
+  parallel: parallelSearchProvider,
+  perplexity: perplexitySearchProvider,
   tavily: tavilySearchProvider,
 };
 
 const defaultTracer = trace.getTracer("@introspection-ai/recipes/search");
 
 const SITE = /^-?(?:\.?[a-z0-9-]+)+(?:\/\S*)?$/i;
+
+/** A site with its domain in lower case; a path is case-sensitive, so it is kept. */
+function siteKey(site: string): string {
+  const slash = site.indexOf("/");
+  return slash < 0
+    ? site.toLowerCase()
+    : `${site.slice(0, slash).toLowerCase()}${site.slice(slash)}`;
+}
 
 /** What a runtime binds that `web_search` can reach. */
 export interface SearchBindings {
@@ -197,6 +212,12 @@ export interface WebSearchOptions {
   now?: () => Date;
   tracer?: Tracer;
   /**
+   * The session id providers receive (Parallel's free-tier rate limit keys
+   * on it). Default: a random UUID per `createWebSearch`, which the host
+   * creates once per task.
+   */
+  sessionId?: string;
+  /**
    * The most calls this function sends to providers, for the task it serves;
    * the next is refused with `max_uses_exceeded`. Set by Recipe code, never
    * by the model. Unset: no cap.
@@ -277,6 +298,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
   )
     throw new Error("web_search maxUses must be a whole number, 0 or more");
   let uses = 0;
+  const session = options.sessionId ?? randomUUID();
 
   const run = async (
     args: WebSearchArgs,
@@ -341,8 +363,8 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         .replace(/^https?:\/\//i, "")
         .replace(/\/$/, "");
       if (!SITE.test(site)) throw new InvalidRequest(`'${raw}' is not a site`);
-      if (site.startsWith("-")) exclude_sites.push(site.slice(1).toLowerCase());
-      else include_sites.push(site.toLowerCase());
+      if (site.startsWith("-")) exclude_sites.push(siteKey(site.slice(1)));
+      else include_sites.push(siteKey(site));
     }
     if (args.country !== undefined && !isCountryCode(args.country))
       throw new InvalidRequest(
@@ -387,6 +409,19 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         detail: `${id} cannot combine included and excluded sites, so only the included ones apply`,
       });
     }
+    const siteLimit = capabilities.max_include_sites;
+    if (
+      siteLimit !== undefined &&
+      served.has("include_sites") &&
+      include_sites.length > siteLimit
+    ) {
+      const dropped = include_sites.splice(siteLimit);
+      notes.push({
+        option: "include_sites",
+        outcome: "ignored",
+        detail: `${id} restricts to at most ${siteLimit} ${siteLimit === 1 ? "site" : "sites"}, so ${dropped.join(", ")} did not apply`,
+      });
+    }
     const wanted = args.max_results ?? SEARCH_DEFAULT_RESULTS;
     const max_results = Math.min(wanted, capabilities.max_results);
     if (max_results < wanted)
@@ -405,6 +440,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       exclude_sites: served.has("exclude_sites") ? exclude_sites : [],
       content,
       max_chars: SEARCH_CONTENT_CHARS[content],
+      session,
       ...(served.has("freshness") ? { freshness: args.freshness! } : {}),
       ...(served.has("country") ? { country: args.country! } : {}),
     };
@@ -437,13 +473,16 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       });
     uses += 1;
     let result: SearchProviderResult;
+    // What ran: an MCP tool without the mode's setting runs its own.
+    const setting =
+      viaMcp && plan.setting !== undefined ? plan.setting : mapping.setting;
     if (viaMcp) {
       for (const option of plan.unsupported) {
         if (option === "mode")
           notes.push({
             option: "mode",
-            outcome: "ignored",
-            detail: `${id}'s MCP tool ${plan.tool} has one setting`,
+            outcome: "approximated",
+            detail: `${id}'s MCP tool ${plan.tool} cannot run this mode, so it ran ${setting ?? "the server's default"}`,
           });
         else
           notes.push({
@@ -477,7 +516,7 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       results: result.results.slice(0, max_results),
       provider: id,
       mode,
-      setting: mapping.setting,
+      setting,
       transport: viaMcp ? "mcp" : "rest",
       content,
       notes,
@@ -492,7 +531,9 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
         span.setAttributes({
           "search.provider": result.provider,
           "search.mode": result.mode,
-          "search.setting": result.setting,
+          ...(result.setting !== null
+            ? { "search.setting": result.setting }
+            : {}),
           "search.transport": result.transport,
           "search.content": result.content,
           "search.results": result.results.length,
@@ -546,7 +587,9 @@ function usageAttributes(
     "introspection.usage.service": `${result.provider}/search`,
     "introspection.usage.unit": measured.unit,
     "introspection.usage.quantity": measured.quantity,
-    "introspection.usage.variant": result.setting,
+    ...(result.setting !== null
+      ? { "introspection.usage.variant": result.setting }
+      : {}),
     "introspection.usage.results": result.results.length,
     "introspection.usage.key_owner": "customer",
     ...(units?.name === "usd"

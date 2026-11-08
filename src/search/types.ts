@@ -73,6 +73,12 @@ export interface SearchCapabilities {
    * with both sends only the included sites and notes the rest as ignored.
    */
   combine_sites: boolean;
+  /**
+   * The most sites a request may restrict to, where the provider takes fewer
+   * than a call may list (Keenable takes one): the first are sent, and the
+   * rest noted as ignored.
+   */
+  max_include_sites?: number;
   /** One sentence per approximated option, saying what it becomes. */
   notes?: Partial<Record<SearchOption, string>>;
   /** The longest query the provider accepts, in characters and in words, where it states one. */
@@ -101,6 +107,11 @@ export interface SearchRequest {
   max_chars: number;
   /** ISO 3166-1 alpha-2, upper case: results for this country. */
   country?: string;
+  /**
+   * Stable across the calls of one `createWebSearch`, the task it serves, for
+   * providers that group or rate-limit by session. Never the task id.
+   */
+  session: string;
 }
 
 export interface SearchResultItem {
@@ -160,6 +171,7 @@ export interface SearchCallContext {
 export const SEARCH_ERROR_CODES = [
   "not_bound",
   "not_configured",
+  "out_of_credit",
   "invalid_request",
   "query_too_long",
   "max_uses_exceeded",
@@ -194,6 +206,11 @@ export interface SearchMcpPlan {
   args: Record<string, unknown>;
   /** What the tool cannot express; with REST bound too, the call goes to REST instead. */
   unsupported: Array<SearchOption | "mode">;
+  /**
+   * The provider setting the tool runs, when it is not the mode's: its fixed
+   * setting, or null when the server picks one it does not report.
+   */
+  setting?: string | null;
 }
 
 /** A provider's hosted MCP server, which `web_search` prefers to its REST API. */
@@ -249,8 +266,11 @@ export interface WebSearchResult {
   results: SearchResultItem[];
   provider: SearchProviderId;
   mode: SearchMode;
-  /** The provider's own setting the mode mapped to. */
-  setting: string;
+  /**
+   * The provider's own setting that ran: the mode's, unless an MCP tool ran
+   * its own; null when the server does not report which.
+   */
+  setting: string | null;
   /** Whether the provider's MCP server or its REST API served the call. */
   transport: "mcp" | "rest";
   content: SearchContent;

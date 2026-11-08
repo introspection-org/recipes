@@ -27,6 +27,9 @@ export { egressCredentialHeaders } from "./egress.js";
 export type { SearchEnvironment } from "./egress.js";
 export { braveSearchProvider } from "./providers/brave.js";
 export { exaSearchProvider } from "./providers/exa.js";
+export { keenableSearchProvider } from "./providers/keenable.js";
+export { parallelSearchProvider } from "./providers/parallel.js";
+export { perplexitySearchProvider } from "./providers/perplexity.js";
 export { tavilySearchProvider } from "./providers/tavily.js";
 export {
   SEARCH_CONTENT,

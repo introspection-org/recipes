@@ -1,5 +1,5 @@
 import { capText, countryName, dateOf, hostOf, requestJson } from "../http.js";
-import { mcpResultText } from "../mcp.js";
+import { mcpResultText, parsedJson } from "../mcp.js";
 import {
   SEARCH_PROVIDER_API_VERSION,
   type SearchProviderModule,
@@ -48,10 +48,10 @@ function tavilyResults(
 }
 
 /**
- * The results Tavily's MCP server writes as text (`format-results.ts` in
+ * The results older Tavily MCP servers write as text (`format-results.ts` in
  * tavily-ai/tavily-mcp): `Title:`, `ID:`, `URL:`, `Content:` lines per result,
  * where content keeps its own newlines. The text carries no date, score or
- * credits.
+ * credits. Current servers answer `structuredContent` and the same JSON as text.
  */
 function tavilyTextResults(text: string): TavilyResponse {
   const results: NonNullable<TavilyResponse["results"]> = [];
@@ -91,7 +91,9 @@ function tavilyTextResults(text: string): TavilyResponse {
 
 /**
  * Tavily Search. REST `POST /search`, or the `tavily_search` tool of
- * Tavily's hosted MCP server; the mode sets `search_depth` on either.
+ * Tavily's hosted MCP server, which answers the API's results with scores,
+ * and dates when asked (`include_published_date`), but no credits; the mode
+ * sets `search_depth` on either.
  */
 export const tavilySearchProvider: SearchProviderModule = {
   kind: "search",
@@ -135,6 +137,7 @@ export const tavilySearchProvider: SearchProviderModule = {
           query: request.query,
           search_depth: request.setting,
           max_results: request.max_results,
+          include_published_date: true,
           ...(request.freshness ? { time_range: request.freshness } : {}),
           ...(request.include_sites.length
             ? { include_domains: request.include_sites }
@@ -153,10 +156,12 @@ export const tavilySearchProvider: SearchProviderModule = {
     },
     parse(result, request) {
       const structured = result.structuredContent as TavilyResponse | undefined;
+      if (Array.isArray(structured?.results))
+        return tavilyResults(structured, request);
+      const text = mcpResultText(result);
+      const json = parsedJson(text) as TavilyResponse | undefined;
       return tavilyResults(
-        Array.isArray(structured?.results)
-          ? structured
-          : tavilyTextResults(mcpResultText(result)),
+        Array.isArray(json?.results) ? json : tavilyTextResults(text),
         request,
       );
     },

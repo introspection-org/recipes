@@ -45,7 +45,7 @@ export async function requestJson(
     );
     throw new SearchProviderError({
       code: codeFor(response.status),
-      message: `${provider} answered ${response.status}${detail ? `: ${detail}` : ""}`,
+      message: `${provider} answered ${response.status}${response.status === 402 ? ": the provider account is out of credit" : ""}${detail ? `: ${detail}` : ""}`,
       status: response.status,
       ...(retryAfter ? { retry_after_seconds: retryAfter } : {}),
     });
@@ -56,6 +56,7 @@ export async function requestJson(
 function codeFor(status: number): SearchErrorCode {
   if (status === 429) return "too_many_requests";
   if (status === 401 || status === 403) return "not_configured";
+  if (status === 402) return "out_of_credit";
   if (status === 400 || status === 422) return "invalid_request";
   if (status >= 500) return "unavailable";
   return "provider_error";

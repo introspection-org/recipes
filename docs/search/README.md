@@ -1,14 +1,15 @@
 # Web search
 
 **Status: prototype.** `@introspection-ai/recipes/search` implements the
-`web_search` tool, its provider contract, and three providers (Brave, Exa,
-Tavily). Tavily and Exa call their hosted MCP servers, kept behind
+`web_search` tool, its provider contract, and six providers. Tavily, Exa,
+Keenable, Perplexity and Parallel call their hosted MCP servers, kept behind
 `web_search` ([Declare the servers](#declare-the-servers)), through Pi's
 built-in MCP client, and their REST APIs only as a fallback; Brave is REST
 only. Tests run against local HTTP fakes, a fake Pi tool context, and a Recipe
-session with a fake MCP server. Parallel, Perplexity and Keenable are designed
-here, not built. Nothing registers the tool yet: [Wiring](#wiring) says what a
-host does. [Open questions](#open-questions) lists what needs a decision.
+session with a fake MCP server, each fake answering in the format the live
+server or API returned ([Live checks](#live-checks)). Nothing registers the
+tool yet: [Wiring](#wiring) says what a host does.
+[Open questions](#open-questions) lists what needs a decision.
 
 An agent searches the web with one tool, `web_search`, whatever provider
 serves it. A call names the query and, when it wants to, the provider, a mode
@@ -54,7 +55,7 @@ web_search({
 | `freshness` | Pages from the last day, week, month or year. |
 | `sites` | Domains, optionally with a path, to keep (`arxiv.org`) or drop (`-pinterest.com`). |
 | `country` | Results for one country: an ISO 3166-1 alpha-2 code in upper case (`US`, `DE`). A code that is not an assigned country (`ZZ`, `EU`) fails with `invalid_request`. Each provider receives it in its own form ([Arguments by provider](#arguments-by-provider)). |
-| `content` | `snippets`: about 300 characters per result. `context`: about 1,500 characters of query-relevant text extracted from each page, for grounding (Brave's LLM Context API, Exa's highlights, Tavily's chunks, Parallel's excerpts, Perplexity's page content). |
+| `content` | `snippets`: about 300 characters per result. `context`: about 1,500 characters of query-relevant text extracted from each page, for grounding (Brave's LLM Context API, Exa's highlights, Tavily's chunks, Parallel's excerpts, Perplexity's page content, Keenable's longer snippets). |
 
 Every call chooses its own provider and mode. A Recipe that wants a cheap
 first pass and a thorough second one asks for `mode: "fast"` and then
@@ -86,6 +87,7 @@ same typed error, `{ code, message, status?, retry_after_seconds?, limit? }`:
 | --- | --- | --- |
 | `not_bound` | No provider named when several are bound, or the one named is not bound | Name one of those the message lists |
 | `not_configured` | No credential path for the provider, or it answered 401 or 403 | Use another provider, or say search is unavailable |
+| `out_of_credit` | The provider answered 402: its account is out of credit (Parallel and Keenable document it) | Use another provider, or say search is unavailable |
 | `invalid_request` | An argument fails the schema, or the provider answered 400 or 422 | Fix the argument |
 | `query_too_long` | The query is longer than the provider accepts (`limit`), checked before calling it: Tavily 400 characters, Brave 400 characters and 50 words | Shorten the query |
 | `max_uses_exceeded` | The task has made as many calls as the Recipe allows (`limit`) | Work with the results it has |
@@ -120,7 +122,7 @@ The tool result's `details`, and the return value for Recipe code, is a
   results: Array<{ url, title?, snippet?, published_at?, score?, site? }>;
   provider: "tavily";
   mode: "deep";
-  setting: "advanced";          // the provider's own value the mode mapped to
+  setting: "advanced";          // the provider's own setting that ran, or null
   transport: "mcp";             // the provider's MCP server, or "rest"
   content: "context";           // what was served, after any downgrade
   notes: Array<{ option, outcome: "ignored" | "approximated", detail }>;
@@ -128,8 +130,15 @@ The tool result's `details`, and the return value for Recipe code, is a
 }
 ```
 
+`setting` is what ran, which is the mode's setting unless an MCP tool cannot
+run it: Exa's `web_search_exa` always runs `auto`, and its advanced tool has
+no `deep`, so a call there records `auto` beside the `mode` it asked for, with
+an `approximated` note. Parallel's MCP tool takes no mode and its answer does
+not say which ran, so `setting` is `null` and no setting is recorded or
+priced.
+
 Each call records a `web_search` span with `search.provider`, `search.mode`,
-`search.setting`, `search.transport`, `search.content`, `search.results`,
+`search.setting` (left out when `null`), `search.transport`, `search.content`, `search.results`,
 `search.requests`, `search.units.name` and `search.units.count` when the
 provider reports them, and `search.notes`. A call over MCP adds a child client
 span, `tools/call <tool>`, with `mcp.method.name`, `gen_ai.tool.name` and
@@ -141,9 +150,11 @@ the query, which can hold personal data.
 
 A successful call also records the platform's standard usage record:
 `introspection.usage.service` (`<provider>/search`), `.unit` (`credit` when
-the provider reported credits, else `request`), `.quantity`, `.variant` (the
-`search.setting`), `.results` (results returned, for providers that price
-results beyond an allowance), `.cost_usd` (Exa's reported dollars) and `.key_owner`
+the provider reported credits, Tavily's and Keenable's over REST, else
+`request`), `.quantity`, `.variant` (the `search.setting`, left out when it is
+`null`), `.results` (results returned, for providers that price results beyond
+an allowance), `.cost_usd` (Exa's reported dollars, over REST and over its
+advanced MCP tool) and `.key_owner`
 (`customer`, since a project endpoint holds the key). The platform prices it
 against its vendor rate catalog, `services/<vendor>.yaml` in
 introspection-cloud ([service-rates.md](https://github.com/introspection-org/introspection-cloud/blob/claude/service-rates/docs/design/service-rates.md));
@@ -178,63 +189,71 @@ await search(
 
 ## Providers
 
-Researched from each provider's official SDK source or published skill, since
-the documentation hosts below were not reachable from the session that wrote
-this (`docs.tavily.com`, `api-dashboard.search.brave.com`, and so the other
-docs sites were not tried). Prices are list prices as last known and must be
-checked before they are relied on; nothing in the tool depends on them.
+Researched from each provider's official SDK source, API reference or
+published skill, and checked against the live API where this session could
+reach it ([Live checks](#live-checks)). Prices are list prices as last known
+and must be checked before they are relied on; nothing in the tool depends on
+them.
 
 | Provider | Endpoint | Credential header | Quality knob | Content | Filters | Max results | Billing | Sources |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Tavily | `POST https://api.tavily.com/search` | `Authorization: Bearer` | `search_depth`: `ultra-fast`, `fast`, `basic`, `advanced` | `content` per result; `chunks_per_source` 1-3 (advanced only); `include_raw_content`; `include_answer` | `time_range`, `start_date`/`end_date`, `include_domains`/`exclude_domains`, `topic` (general, news, finance), `country`, `exact_match` | 20 | Credits: 1 per basic, fast or ultra-fast search, 2 per advanced; `include_usage` reports them | [API reference](https://docs.tavily.com/documentation/api-reference/endpoint/search), [credits](https://docs.tavily.com/documentation/api-credits), [tavily-js](https://github.com/tavily-ai/tavily-js) |
 | Exa | `POST https://api.exa.ai/search` | `x-api-key` | `type`: `auto` (recommended), `lite` (beta), `fast` and `instant` (legacy), `neural`, `keyword`, `deep-lite`, `deep`, `deep-reasoning` | `contents.highlights` (query-relevant extracts), `contents.text`, `contents.summary` | `startPublishedDate`/`endPublishedDate`, `includeDomains`/`excludeDomains`, `category`, `userLocation`, `includeText`/`excludeText` | 100 | Dollars per request by type and contents; the response's `costDollars` reports them | [Search reference](https://docs.exa.ai/reference/search), [exa-js](https://github.com/exa-labs/exa-js) |
-| Parallel | `POST https://api.parallel.ai/v1/search` | `x-api-key` | `mode`: `turbo`, `fast`, `basic`, `advanced` (the default when omitted). Its older `processor` field is gone from the current SDK | `excerpts` per result (markdown); `advanced_settings.excerpt_settings.max_chars_per_result`, `max_chars_total` | `advanced_settings.source_policy`: `include_domains` (when set, `exclude_domains` is ignored), `exclude_domains`, `after_date`; `location` | `advanced_settings.max_results`, default 10 | Per request; `usage` lists SKUs and counts | [Advanced search settings](https://docs.parallel.ai/search/advanced-search-settings), [parallel-sdk-typescript](https://github.com/parallel-web/parallel-sdk-typescript) |
-| Perplexity | `POST https://api.perplexity.ai/search` (the Search API, not Sonar's chat completions) | `Authorization: Bearer` | `search_type`: `web`, `fast`, `people` | `snippet` per result; `max_tokens_per_page`, `max_tokens` | `search_recency_filter` (hour to year), `search_after_date_filter`/`search_before_date_filter`, `search_domain_filter` (`-` prefix denies), `country`, `search_language_filter`, `search_mode` (web, academic, sec) | `max_results` | Per request | [perplexity-node](https://github.com/perplexityai/perplexity-node) (`src/generated/api.ts`) |
-| Keenable | `POST https://api.keenable.ai/v1/search` (keyless `/v1/search/public`) | `X-API-Key` | `mode`: only `pro` is documented in the source found | `snippet`, `description`; page text through a separate fetch endpoint | `site` (one domain), `published_after`/`published_before`, `acquired_after`/`acquired_before` | not exposed in the source found | $4 per 1,000 requests (confirmed by Introspection; no public price list found); `402` means out of credits | [keenable.ai](https://keenable.ai), [llama-index-tools-keenable](https://pypi.org/project/llama-index-tools-keenable/) |
+| Parallel | `POST https://api.parallel.ai/v1/search` | `x-api-key` | `mode`: `turbo`, `fast`, `basic`, `advanced` (the default when omitted) | `excerpts` per result (markdown); `advanced_settings.excerpt_settings.max_chars_per_result`, `max_chars_total` | `objective` and `search_queries` (at least one, 3-6 words each); in `advanced_settings`: `source_policy` (`include_domains`, which when set makes `exclude_domains` ignored; `exclude_domains`; `after_date`), `location` (ISO 3166-1 alpha-2, lower case), `fetch_policy`. Unknown fields answer 422 | `advanced_settings.max_results`, default 10 | Per request; the response's `usage` lists SKUs (`sku_search`, …) and counts; `402` means the account is out of credit | [Search API reference](https://docs.parallel.ai/api-reference/search-beta/search), [parallel-sdk-typescript](https://github.com/parallel-web/parallel-sdk-typescript) |
+| Perplexity | `POST https://api.perplexity.ai/search` (the Search API, not Sonar's chat completions) | `Authorization: Bearer` | `search_type`: `web` (default), `fast` | `snippet` per result; `max_tokens_per_page`, `max_tokens` | `search_recency_filter` (hour to year), `search_after_date_filter`/`search_before_date_filter`, `search_domain_filter` (`-` prefix denies), `country`, `search_language_filter`, `search_mode` (web, academic, sec) | 20 | Per request | [perplexity-node](https://github.com/perplexityai/perplexity-node) (`src/generated/api.ts`), [modelcontextprotocol](https://github.com/perplexityai/modelcontextprotocol) (`src/server.ts`) |
+| Keenable | `POST https://api.keenable.ai/v1/search` (keyless `/v1/search/public` with an `X-Keenable-Title` header) | `X-API-Key` | `mode`: `realtime` (fastest), `pro` (the default) | `snippet` (`snippet_max_length` 180-10,000 characters), `description`; page text through `fetch_page_content` | `site` (one domain), `published_after`/`published_before` and `acquired_after`/`acquired_before` (a date, a timestamp or an offset such as `7d`), `query_time` | 50 | Credits: 1 per `realtime` or `pro` search, in the response's `usage` (`sku`, `amount`, `credits`, `paid`); $4 per 1,000 requests (confirmed by Introspection); `402` means out of credits | [keenable.ai](https://keenable.ai), the live API and MCP server |
 | Brave | `GET https://api.search.brave.com/res/v1/web/search` and `GET …/res/v1/llm/context` | `X-Subscription-Token` | none | Web Search: `description`, `extra_snippets` (up to 5). LLM Context: extracted `snippets` per URL, bounded by `maximum_number_of_tokens(_per_url)` and `maximum_number_of_snippets(_per_url)` | `freshness` (`pd`, `pw`, `pm`, `py` or a date range), Goggles (inline `$discard`, `$site=`), `country`, `search_lang`, `safesearch`, `context_threshold_mode` | Web Search 20, LLM Context 50 | Both on the Search plan; $5 of monthly credit covers about 1,000 requests | [LLM Context](https://api-dashboard.search.brave.com/app/documentation/llm-context/get-started), [brave-search-skills](https://github.com/brave/brave-search-skills) |
 
 **Rate limits** are per plan for every provider and none was confirmed from a
 reachable source. All answer `429` when exceeded; when the answer carries
-`Retry-After`, the tool passes it to the model as a retry delay.
-
-**Keenable** is identified with moderate confidence: a search API for agents
-with its own index, CLI and MCP server ([keenable.ai](https://keenable.ai)).
-Its only first-party source reachable here is its LlamaIndex integration, which
-sends `mode: "pro"` and names no other mode. Whether `default` is a Keenable
-mode, or means omitting `mode`, is an open question.
+`Retry-After`, the tool passes it to the model as a retry delay. Parallel's
+anonymous MCP tier is rate-limited by the `session_id` each call sends: one
+random id per `createWebSearch`, so per task, never the task id.
 
 ## MCP servers
 
 Where a provider runs a hosted MCP server, `web_search` calls the server's
 search tool and falls back to the REST API only for what the tool cannot
-express. MCP first is decided for Tavily and Exa, knowing that Tavily's MCP
-results carry no date or score (below). Researched from each server's source (cloned from GitHub) or, where
-noted, the provider's docs as a search returned them; nothing was connected
-live.
+express. MCP first is decided for Tavily, Exa, Keenable, Perplexity and
+Parallel. Each server's `tools/list` and one call were run live, except
+Perplexity's, which needs a key this session did not have; its row is from the
+server's source ([perplexityai/modelcontextprotocol](https://github.com/perplexityai/modelcontextprotocol)
+`src/server.ts`, 1.4.0).
 
 | Provider | Server | Auth | Search tool and its arguments | Cannot express | Result | Choice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Tavily | Hosted, `https://mcp.tavily.com/mcp/` ([tavily-mcp](https://github.com/tavily-ai/tavily-mcp)) | `Authorization: Bearer <key>`; also `?tavilyApiKey=` and OAuth | `tavily_search`: `query`, `search_depth`, `topic`, `time_range`, `start_date`/`end_date`, `max_results`, `include_domains`/`exclude_domains`, `country`, `include_raw_content`, `exact_match` | `chunks_per_source`, so `content: "context"` in `deep`; credits | Text only: `Title:`, `URL:`, `Content:` per result. **No date and no score** | MCP; REST for `context` in `deep` |
-| Exa | Hosted, `https://mcp.exa.ai/mcp` ([exa-mcp-server](https://github.com/exa-labs/exa-mcp-server)) | `x-api-key` or `Authorization: Bearer`; also `?exaApiKey=` and OAuth | Default `web_search_exa`: `query`, `numResults` only (type `auto`, highlights fixed). Opt-in `web_search_advanced_exa` (`?tools=web_search_advanced_exa,web_search_exa` on the URL): `type`, `numResults`, `includeDomains`/`excludeDomains`, `startPublishedDate`/`endPublishedDate`, `enableHighlights`, `highlightsMaxCharacters`, and more | Default tool: `mode` other than `default`, `freshness`, `sites` | Default: text with `Title:`, `URL:`, `Published:`, `Highlights:`. Advanced: the API's JSON as text, dates and cost included | MCP, advanced tool first; REST when only the default tool is offered and the call filters |
-| Perplexity | Hosted, `https://api.perplexity.ai/mcp` ([modelcontextprotocol](https://github.com/perplexityai/modelcontextprotocol)) | `Authorization: Bearer <key>` | `perplexity_search`: `query`, `max_results`, `max_tokens_per_page`, `country`, `search_recency_filter`, `search_domain_filter`, `search_type` | Nothing we send | Formatted text (`structuredContent` is that same text): title, URL, snippet, `Date:` | MCP (designed) |
-| Parallel | Hosted, `https://search-mcp.parallel.ai/mcp` per its docs ([Search MCP](https://docs.parallel.ai/search/search-mcp)); other pages name `search.parallel.ai/mcp` | `Authorization: Bearer <key>`; anonymous at lower limits | `web_search`; its arguments were not readable here | To confirm with `tools/list` | To confirm | REST until confirmed |
-| Keenable | Hosted, `https://api.keenable.ai/mcp` per its docs ([MCP server](https://docs.keenable.ai/mcp-server.md)) | `X-API-Key` | `search_web_pages` (also `fetch_page_content`); arguments not readable here | To confirm | URLs, titles, descriptions | REST until confirmed |
+| Tavily | `https://mcp.tavily.com/mcp/` (tavily-mcp 4.1.5) | `Authorization: Bearer <key>`; also `?tavilyApiKey=` and OAuth | `tavily_search`: `query`, `search_depth` (`basic`, `advanced`, `fast`, `ultra-fast`), `topic`, `time_range`, `start_date`/`end_date`, `max_results`, `include_domains`/`exclude_domains`, `country` (a country name; boosts rather than filters), `include_raw_content`, `include_published_date`, `filter_by_published_date`, `exact_match`, images and favicon. No other property is accepted | `chunks_per_source`, so `content: "context"` in `deep`; credits | `structuredContent` and the same JSON as text: `results[]` with `url`, `title`, `content`, `score`, `id`, and `published_date` when `include_published_date` is set; `response_time`, `request_id`. No credits | MCP; REST for `context` in `deep` |
+| Exa | `https://mcp.exa.ai/mcp` (exa-search-server 3.5.0) | `x-api-key` or `Authorization: Bearer`; also `?exaApiKey=` and OAuth | Default `web_search_exa`: `query`, `numResults` only (type `auto`, highlights fixed). Opt-in `web_search_advanced_exa` (`?tools=web_search_advanced_exa,web_search_exa` on the URL): `type` (`auto`, `lite`, `fast`, `instant`: no `deep`), `numResults`, `includeDomains`/`excludeDomains`, `startPublishedDate`/`endPublishedDate`, `userLocation`, `enableHighlights`, `highlightsMaxCharacters`, `textMaxCharacters`, `contextMaxCharacters`, `category`, `maxAgeHours` (cache age, not freshness), and more | Default tool: `mode` other than `default`, `freshness`, `sites`, `country`. Advanced tool: `mode: "deep"` | Default: text with `Title:`, `URL:`, `Published:`, `Author:`, `Highlights:`. Advanced: the API's JSON as text, no `structuredContent`: `results[]` (`id`, `url`, `title`, `publishedDate`, `highlights`; the whole page as `text` unless highlights or a text limit are set), `costDollars` | MCP, advanced tool first; REST for `deep`, and when only the default tool is offered and the call filters |
+| Keenable | `https://api.keenable.ai/mcp` (keenable-mcp-server 0.2.1) | `X-API-Key`; answers without a key at lower limits | `search_web_pages`: `query`, `mode` (`realtime`, `pro`), `max_results` (1-50), `snippet_max_length` (180-10,000), `site`, `published_after`/`published_before`, `acquired_after`/`acquired_before`, `query_time`, `output_format` (`text`, `json`), `session_id`, `disable_cards`. Also `fetch_page_content` | `exclude_sites`, `country`, more than one site | With `output_format: "json"`, the REST response as text (`results[]` with `title`, `url`, `description`, `snippet`, `published_at` when known, `acquired_at`), without `usage`; the credits travel in the result's `_meta` (`keenable/usage`), which Pi's client drops | MCP |
+| Perplexity | `https://api.perplexity.ai/mcp` | `Authorization: Bearer <key>` | `perplexity_search`: `query`, `max_results` (1-20), `max_tokens_per_page` (256-2048), `country` (ISO alpha-2), `search_recency_filter`, `search_domain_filter` (`-` prefix denies), `search_type` (`web`, `fast`) | Nothing we send | Formatted text, `structuredContent` `{ results: <the same text> }`: `N. **title**`, then indented `URL:`, snippet, `Date:`, `Last updated:` | MCP |
+| Parallel | `https://search.parallel.ai/mcp`; `search-mcp.parallel.ai` answers 401 to every call | `Authorization: Bearer <key>`; anonymous at free-tier limits, rate-limited by `session_id`. A key it does not recognize answers 401, so an anonymous call sends no key header | `web_search`: `objective`, `search_queries` (3-6 words each; `site:` with a bare domain, never a path or quoted phrase), `session_id`, `model_name`. Also `web_fetch` | `mode`, `freshness`, `country`; a result count (it returns about 10) | `structuredContent` and the same JSON as text: `search_id`, `results[]` (`url`, `title`, `publish_date` or null, `excerpts[]`, about 2,400 characters each), `warnings`, `metadata` (null), `session_id`. No mode, usage or cost | MCP; REST for `fast`, `freshness` and `country` |
 | Brave | **Local only**: `@brave/brave-search-mcp-server`, stdio or a self-run HTTP server ([brave-search-mcp-server](https://github.com/brave/brave-search-mcp-server)) | `BRAVE_API_KEY` in the server's environment | `brave_web_search`, `brave_llm_context`, … | n/a | n/a | REST: a local server would need the key in the sandbox, or a placeholder the egress swaps, and adds a process for the same request |
 
 Notes:
 
-- **Tavily's MCP result loses the date.** Over MCP a Tavily result has no
-  published date or score, so the compact line shows the site only. That is
-  the accepted cost of preferring MCP for Tavily; a call that needs dates can
-  name another provider.
+- **Tavily's MCP result carries scores and, asked, dates.** The adapter sends
+  `include_published_date: true`. It reads `structuredContent`, then the
+  JSON text, then the older `Title:`/`URL:`/`Content:` text format. Credits
+  are not reported, so the usage record counts one request.
 - **Exa needs its advanced tool listed.** The binding's URL names the tools
   (`?tools=web_search_advanced_exa,web_search_exa`); without the advanced
   tool, a call that filters goes to REST, or, with no REST endpoint, runs on
-  the default tool with a note for each argument it dropped.
+  the default tool with a note for each argument it dropped. The adapter
+  always sets `enableHighlights` and `highlightsMaxCharacters`, so the tool
+  never returns whole pages.
+- **Keenable's MCP tool is asked for JSON**, and a text answer fails as
+  `provider_error`. Over MCP its credits are not seen; Keenable bills one
+  credit per search either way, so the usage record's one request matches.
+- **Parallel's MCP tool takes only queries.** The adapter sends the query as
+  the `objective` and its first six words as the keyword query, one per
+  included domain with `site:` (up to five), and filters the results to the
+  included and excluded sites itself, by Parallel's own matching rule (a
+  domain covers its subdomains, a path matches at segment boundaries). It
+  cannot set a mode, a date or a country, so those go to REST when REST is
+  bound, and are noted otherwise.
 - **A hosted server's tool names are the server's**, so each adapter lists
   the tools it may call, and `web_search` calls only a tool the bound server
-  offers. Parallel's and Keenable's adapters wait for a `tools/list` against
-  the live server.
+  offers.
 
 ## MCP transport
 
@@ -244,22 +263,29 @@ whichever MCP client the host has:
 ```ts
 interface SearchMcpClient {
   hasTool(server: string, tool: string): boolean;
-  callTool(server: string, tool: string, args: Record<string, unknown>,
-           signal?: AbortSignal): Promise<McpCallToolResult>; // content, structuredContent, isError
+  callTool(
+    server: string,
+    tool: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<McpCallToolResult>; // content, structuredContent, isError
 }
 ```
 
 A provider adds an optional `mcp` adapter beside its REST `search`: the hosted
 URL and credential header (for docs and bindings), the tools it may call, a
 `plan(request, hasTool, now)` that maps the normalized request onto one tool's
-arguments and lists what that tool cannot express, and a `parse(result)` that
-maps the tool's answer onto the same results REST returns. The host chooses:
+arguments, lists what that tool cannot express and, when the tool runs a
+setting other than the mode's, says which (`setting`, or `null` when the
+server does not report it), and a `parse(result)` that maps the tool's answer
+onto the same results REST returns. The host chooses:
 
 1. If the provider's MCP server is bound, the call carries an MCP client, and
    the server offers one of the adapter's tools: MCP, unless the tool cannot
    express an argument **and** the REST API is bound too, in which case REST.
 2. With MCP chosen and something it cannot express, each dropped argument is
-   an `ignored` note.
+   an `ignored` note, and a mode it cannot run an `approximated` one naming
+   the setting that ran.
 3. Otherwise REST, through the egress as before. A provider bound only as an
    MCP server whose tool is missing fails with `not_bound`.
 
@@ -310,6 +336,15 @@ mcp:
     exa:
       include: [web_search_advanced_exa, web_search_exa]
       behind: [web_search]
+    keenable:
+      include: [search_web_pages]
+      behind: [web_search]
+    perplexity:
+      include: [perplexity_search]
+      behind: [web_search]
+    parallel:
+      include: [web_search]
+      behind: [web_search]
 ```
 
 The model then sees one tool, `web_search`. The servers' tools are not
@@ -324,7 +359,9 @@ this in every mode against a fake Tavily server.
 A provider's hosted MCP server is a Recipe MCP binding like any other: a
 `kind='mcp'` endpoint whose shared header carries the provider's key through a
 credential reference (`Authorization: Bearer ${TAVILY_API_KEY}`,
-`x-api-key: ${EXA_API_KEY}`), injected by the egress outside the sandbox
+`x-api-key: ${EXA_API_KEY}`, `X-API-Key: ${KEENABLE_API_KEY}`,
+`Authorization: Bearer ${PERPLEXITY_API_KEY}` or
+`${PARALLEL_API_KEY}`), injected by the egress outside the sandbox
 (introspection-cloud `docs/design/endpoints.md` § MCP servers per runtime, and
 `sandbox-egress-proxy-native.md`, where MCP bindings dial the edge and send no
 locator). The bootstrap carries only the URL. So:
@@ -334,6 +371,9 @@ locator). The bootstrap carries only the URL. So:
   Exa's `?tools=` is not secret and belongs in the URL.
 - **OAuth is not used.** A server on Pi's client is bound with a header, and
   the key is the project's, not a member's.
+- **Parallel and Keenable also serve anonymous calls**, at free-tier limits.
+  A binding without a credential works for evaluation; Parallel answers 401 to
+  a key it does not recognize, so such a binding sends no key header at all.
 
 ## Modes
 
@@ -352,10 +392,16 @@ Tavily `search_depth: "advanced"`.
 | --- | --- | --- | --- | --- |
 | `tavily` | `search_depth` | `fast` | `basic` | `advanced` |
 | `exa` | `type` | `fast` | `auto` | `deep` |
+| `keenable` | `mode` | `realtime` | `pro` | `pro` |
+| `perplexity` | `search_type` | `fast` | `web` | `web` |
+| `parallel` | `mode` | `fast` | `advanced` | `advanced` |
 | `brave` | none | one level (approximated) | one level | one level (approximated) |
-| `parallel` (design) | `mode` | `fast` | `advanced` | `advanced` (approximated: Parallel's deeper research is the Task API) |
-| `perplexity` (design) | `search_type` | `fast` | `web` | `web` (approximated) |
-| `keenable` (design) | `mode` | `pro` (approximated) | `pro` | `pro` (approximated) |
+
+A `deep` that sends the same setting as `default` is approximated, and the
+result says so. Over MCP, a tool that cannot run the setting runs its own
+([Result for the host](#result-for-the-host-and-the-trace)): Exa's advanced
+tool runs `auto` for `deep` (REST serves `deep` when bound), its default tool
+`auto` for every mode, and Parallel's tool an unreported setting.
 
 What each costs and means:
 
@@ -368,14 +414,18 @@ What each costs and means:
   `fast` is a legacy type Exa still accepts; it suggests `lite` for new code,
   but `lite` rejects some parameters, so `fast` maps to `fast` until `lite`
   accepts the ones this tool sends. `deep` runs several searches and costs
-  more. "exa / auto" is `mode: "default"`.
+  more, and only REST takes it. "exa / auto" is `mode: "default"`.
+- **Keenable.** `pro`, its default, gives the better results; `realtime` is
+  the fastest. Both cost one credit. Nothing is deeper than `pro`, so `deep`
+  is approximated.
+- **Perplexity.** `web` is the default search; `fast` its lower-latency,
+  lower-cost variant. Nothing is deeper, so `deep` is approximated.
+  "perplexity / default" is `mode: "default"`.
 - **Parallel.** The API defaults to `advanced`, so `default` is `advanced`
   and "parallel / advanced" is `mode: "default"`. `fast` targets about a
-  second. Nothing in the Search API is deeper than `advanced`.
-- **Perplexity.** `web` is the default search; `fast` its low-latency variant.
-  "perplexity / default" is `mode: "default"`.
-- **Keenable.** `pro` is the only mode found. "keenable / default" is
-  `mode: "default"`.
+  second; `turbo` and `basic` are not used. Nothing in the Search API is
+  deeper than `advanced` (deeper research is its Task API), so `deep` is
+  approximated.
 - **Brave.** One quality level, so `fast` and `deep` are approximated. What
   "brave / llm-context" named is not a quality level but a different endpoint
   returning extracted text, which is what `content: "context"` asks for.
@@ -393,17 +443,23 @@ a form close to its meaning, and the note line says how.
 | `tavily` | native (`time_range`) | native | native | approximate: chunks only in `deep` | native (`country`, the English name in lower case, `united states`; also on the MCP tool, which boosts rather than filters) |
 | `exa` | approximate: published-date start, so undated pages drop out | native | native | native (`highlights`) | native (`userLocation`; on MCP only `web_search_advanced_exa` takes it, so with the default tool a call goes to REST, or is ignored with a note) |
 | `brave` | native (`freshness`) | native (Goggles allowlist) | native (Goggles `$discard`) | native (LLM Context) | native (`country`) |
-| `parallel` (design) | approximate (`after_date`) | native | native, alone (`combine_sites: false`) | native (`max_chars_per_result`) | native (`location`) |
-| `perplexity` (design) | native (`search_recency_filter`) | native | native (`-domain`), alone (`combine_sites: false`) | native (`max_tokens_per_page`) | native (`country`, also on `perplexity_search`) |
-| `keenable` (design) | approximate (`published_after`) | one site only | none | none | none: ignored with a note |
+| `parallel` | approximate (`after_date`; REST only) | native (`include_domains`; over MCP, `site:` queries and a filter on the results) | native, alone (`combine_sites: false`; over MCP, a filter on the results) | native (`max_chars_per_result`; over MCP, excerpts cut to length) | native (`location`, lower case; REST only) |
+| `perplexity` | native (`search_recency_filter`) | native (`search_domain_filter`) | native (`-domain`), alone (`combine_sites: false`) | native (`max_tokens_per_page`: 256 for snippets, 1024 for context) | native (`country`) |
+| `keenable` | approximate (`published_after`: `1d`, `7d`, `1mo`, `1y`) | native for one site (`site`; `max_include_sites: 1`, the rest ignored with a note) | none | native (`snippet_max_length`) | none: ignored with a note |
 
 **Included and excluded sites together.** Each descriptor declares
 `combine_sites`. Tavily, Exa and Brave take both in one request. Parallel
-ignores exclusions once an inclusion is set and Perplexity answers 400 to
-both (per OpenRouter's notes on the same engines), so they declare `false`:
+ignores exclusions once an inclusion is set (its API reference says so),
+Perplexity answers 400 to both (per OpenRouter's notes on the same engines),
+and Keenable takes no exclusions, so they declare `false`:
 a call with both sends only the included sites and adds `(ignored: exclude
 sites — … cannot combine included and excluded sites …)`. Exclusions alone
 are sent as usual.
+
+A provider that restricts to fewer sites than a call lists declares
+`max_include_sites` (Keenable: 1): the first are sent, and the note names the
+rest. A site's domain is lower-cased and its path kept as given, since paths
+are case-sensitive.
 
 Every provider honours `max_results` up to its own maximum. What one provider
 offers and the tool does not (answers, `topic`, language, safe search, Exa's
@@ -420,9 +476,9 @@ provider states:
 | `tavily` | Unknown: not stated in the API reference | [Search reference](https://docs.tavily.com/documentation/api-reference/endpoint/search) |
 | `exa` | A wildcard, `*.example.com`, matches every subdomain; whether a bare domain does is not stated. A path (`exa.ai/blog`) narrows to that section | [Domain and path filter changelog](https://exa.ai/docs/changelog/domain-path-filter) |
 | `brave` | Unknown: Goggles' `site=` matches on the hostname, and the quickstart does not say whether a parent domain covers its subdomains | [goggles-quickstart](https://github.com/brave/goggles-quickstart) |
-| `parallel` (design) | Unknown | |
-| `perplexity` (design) | Unknown | |
-| `keenable` (design) | Unknown | |
+| `parallel` | Yes: a plain domain matches itself and its subdomains, and a path matches at segment boundaries. The MCP path filters its results by the same rule | [Search API reference](https://docs.parallel.ai/api-reference/search-beta/search) (`SourcePolicy`) |
+| `perplexity` | Unknown | |
+| `keenable` | Unknown | |
 
 The tool passes a domain as given; to be sure of a subdomain, list it, and
 read each result's `site`.
@@ -432,15 +488,16 @@ read each result's `site`.
 How a provider is bound depends on whether it has a hosted MCP server
 adapter:
 
-- **A provider with a hosted MCP server** (Tavily, Exa; Perplexity once
-  built) is bound when the Recipe declares its server behind `web_search`
+- **A provider with a hosted MCP server** (Tavily, Exa, Keenable,
+  Perplexity, Parallel) is bound when the Recipe declares its server behind `web_search`
   ([Declare the servers](#declare-the-servers)) and the runtime binds it.
   `mcpServers` maps provider to server id (`{ tavily: "tavily" }`). The server
   is the provider's when its bound URL has the adapter's host
-  (`mcp.tavily.com`, `mcp.exa.ai`), or, for an evaluation fake on another
+  (`mcp.tavily.com`, `mcp.exa.ai`, `api.keenable.ai`, `api.perplexity.ai`,
+  `search.parallel.ai`), or, for an evaluation fake on another
   host, when its id is the provider's id. A REST endpoint for its host is then
   the fallback, and on its own does not bind it.
-- **A REST-only provider** (Brave; Parallel and Keenable for now) is bound
+- **A REST-only provider** (Brave) is bound
   when the runtime holds an endpoint for its host with a credential: a
   `kind='api'` endpoint row (introspection-cloud `docs/design/endpoints.md`,
   "Runtime HTTP APIs"), at project, runtime, runtime group or environment
@@ -463,7 +520,7 @@ behind `web_search` with their bound URLs. The host discovers the hosts:
   today. The proposal is that the data plane keeps a non-secret list of
   credentialed endpoint hosts in the bootstrap (or keeps the variable as
   information only), and that the runtime passes it to Recipes. This needs a
-  platform decision; it no longer affects Tavily or Exa.
+  platform decision; it affects only Brave, and the REST fallbacks.
 - **Other hosts** pass `bound` themselves, and `credentialHeaders` when they
   attach credentials their own way.
 
@@ -479,9 +536,9 @@ key. The host's egress supplies it, as for the Slack channel
 | --- | --- | --- |
 | Tavily | `api.tavily.com` | `Authorization: Bearer <key>` |
 | Exa | `api.exa.ai` | `x-api-key: <key>` |
-| Parallel | `api.parallel.ai` | `x-api-key: <key>` |
-| Perplexity | `api.perplexity.ai` | `Authorization: Bearer <key>` |
-| Keenable | `api.keenable.ai` | `X-API-Key: <key>` |
+| Parallel | `api.parallel.ai` (MCP: `search.parallel.ai`, `Authorization: Bearer`) | `x-api-key: <key>` |
+| Perplexity | `api.perplexity.ai` (REST and MCP) | `Authorization: Bearer <key>` |
+| Keenable | `api.keenable.ai` (REST and MCP) | `X-API-Key: <key>` |
 | Brave | `api.search.brave.com` | `X-Subscription-Token: <key>` |
 
 - **Proxy-native egress** (`INTROSPECTION_EGRESS_PROXY_NATIVE=1`): the request
@@ -516,7 +573,9 @@ const pages = await Promise.allSettled(
 );
 const urls = pages
   .filter((page) => page.status === "fulfilled")
-  .flatMap((page) => page.value.split("\n").filter((line) => line.startsWith("https://")))
+  .flatMap((page) =>
+    page.value.split("\n").filter((line) => line.startsWith("https://")),
+  )
   .filter((url) => !new URL(url).hostname.endsWith("medium.com"));
 return [...new Set(urls)].slice(0, 8).join("\n");
 ```
@@ -552,8 +611,8 @@ web_fetch({ url: string; max_chars?: number })
 ```
 
 It returns the page's main text as Markdown, cut at a limit the result
-states. Tavily Extract, Exa's contents endpoint, Parallel Extract, Keenable's
-fetch endpoint can each serve it, as can a plain HTTP fetch through the
+states. Tavily Extract, Exa's contents endpoint, Parallel Extract (and its
+MCP `web_fetch`), Keenable's `fetch_page_content` can each serve it, as can a plain HTTP fetch through the
 general egress. It carries
 the same notes, span attributes and egress credentials. Keeping it separate
 keeps search results small: an agent fetches the one or two pages it needs.
@@ -563,7 +622,7 @@ keeps search results small: an agent fetches the one or two pages it needs.
 Measured from the generated definition (`name`, `description` and the JSON
 schema) and estimated at about 3.5 characters per token for JSON:
 
-|  | Characters | About |
+| | Characters | About |
 | --- | --- | --- |
 | Tool definition, one provider bound | 873 | 250 tokens |
 | Tool definition, three providers bound | 934 | 265 tokens |
@@ -582,7 +641,7 @@ Not built. The intended shape:
   agent file.
 - The host computes the bound set ([Bound providers](#bound-providers)) and,
   when it is not empty, calls `registerWebSearchTool(pi,
-  boundSearchProviders({ hosts, mcpServers }))` and
+boundSearchProviders({ hosts, mcpServers }))` and
   offers `SEARCH_SKILL` (`skills/search/SKILL.md`), as it offers the
   documents skill with `documents`. The skill joins the Recipe isolation
   rule in `AGENTS.md`.
@@ -597,7 +656,8 @@ A provider is a plain module, `SearchProviderModule`:
   when the tool is built), and `id`, one of `SEARCH_PROVIDER_IDS`.
 - `capabilities`: `modes` (each of `fast`, `default` and `deep` with the
   provider's `setting`, and `approximate` when the setting does not mean the
-  mode), `mode_parameter`, `max_results`, `combine_sites`, `options` (native, approximate or
+  mode), `mode_parameter`, `max_results`, `combine_sites`,
+  `max_include_sites` where it takes fewer sites than a call lists, `options` (native, approximate or
   none for `freshness`, `include_sites`, `exclude_sites` and `context`, with a
   one-sentence `note` for each approximation), `host`, `credential` (header
   and prefix) and `billing`.
@@ -605,12 +665,13 @@ A provider is a plain module, `SearchProviderModule`:
   it may call, `plan` and `parse` ([MCP transport](#mcp-transport)).
 - `search(request, context)`: `request` is normalized, with the mode's
   `setting`, the content level and its `max_chars`, and only the arguments the
-  descriptor serves. `context` carries `fetch`, `baseUrl`, the
+  descriptor serves, and a `session` id stable for the task.
+  `context` carries `fetch`, `baseUrl`, the
   `credentialHeaders` to send, `now` and the abort `signal`. It returns
   results and the billed `units`, and throws `SearchProviderError` with a code
   for a failure (`requestJson` in `src/search/http.ts` maps HTTP statuses).
 
-The three built providers live in this package, because each is one HTTP
+The six built providers live in this package, because each is one HTTP
 call with no SDK. A provider that needs its own dependencies would become a
 companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
 
@@ -620,9 +681,12 @@ companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
   server: request shape per mode and argument, the credential header on each
   egress lane, response mapping, notes, errors and spans. The MCP path runs
   against a fake Pi tool context whose `executeTool` answers as Pi's client
-  does, with each server's real output format (Tavily's text, Exa's text and
-  JSON): tool name and arguments, MCP or REST per argument, notes, tool
-  errors, refused calls and the MCP span. No live calls and no keys.
+  does, with each server's real output format as the live servers returned
+  it (Tavily's `structuredContent` and older text, Exa's JSON and text,
+  Keenable's JSON, Perplexity's formatted text, Parallel's
+  `structuredContent`): tool name and arguments, MCP or REST per argument,
+  the setting that ran, notes, tool errors, refused calls and the MCP span.
+  No live calls and no keys.
 - **Session:** `test/search-mcp-behind.test.ts` runs a Recipe session in each
   `mcp.mode` with a fake Tavily MCP server behind `web_search`: the tool's
   nested call reaches the server, and a direct call from the model or a
@@ -637,7 +701,9 @@ companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
   through `providers`.
 - **Evals over MCP:** the provider's MCP server is an ordinary binding, so
   an eval binds an MCP fake for it, as for any MCP server.
-- **Live:** `introspection dev` with a bound endpoint per provider.
+- **Live:** `introspection dev` with a bound endpoint per provider, or a
+  script calling `createWebSearch` with an MCP client and a proxy that
+  injects the keys ([Live checks](#live-checks)).
 
 ## Later
 
@@ -659,24 +725,51 @@ Possible additions, each only once a real Recipe needs it:
   (`search_queries`); others would fan out and merge.
 - **Pagination.**
 
+## Live checks
+
+Run from a session whose egress proxy injected the Keenable, Tavily, Exa and
+Brave keys, with `createWebSearch` and a minimal Streamable HTTP MCP client
+(not committed). Every call below returned results in the shape the tests'
+fakes use:
+
+| Provider | Transport | Call | Came back |
+| --- | --- | --- | --- |
+| Keenable | MCP | `fast`, `freshness: "year"` | `realtime`, 3 dated results; no credits over MCP |
+| Keenable | MCP | `context`, `sites: ["github.com"]` | `pro`, 2 github.com results |
+| Keenable | REST | default | `pro`, 3 results, `usage` 1 credit |
+| Tavily | MCP | `deep`, `country`, `freshness`, an exclusion | `advanced`, results with scores and dates |
+| Exa | MCP | advanced tool, `freshness: "year"` | `auto`, 3 dated results with highlights, $0.007 |
+| Exa | MCP | `deep` | ran `auto`, with the approximated note |
+| Parallel | MCP, anonymous | `sites: ["github.com"]` | 3 github.com results; no setting reported |
+| Brave | REST | `snippets` | 3 results from Web Search |
+| Brave | REST | `context`, `sites: ["github.com/modelcontextprotocol"]` | 3 github.com results from LLM Context; one of two runs also returned `github.com/jancurn/modelcontextprotocol/…`, since a Goggles path pattern is not anchored to the start of the path |
+
+Not run live: Perplexity (no key; built from its server's source), Parallel's
+REST API (the account had no credit, which answered 402), and Exa's and
+Tavily's REST APIs (unchanged, fake-tested).
+
 ## Open questions
 
-1. **Keenable's modes.** Only `pro` is documented in the source found; is
-   `default` a mode, and is there a fast or deep one?
-2. **Bound hosts under proxy-native egress.** Nothing in a proxy-native
+1. **Bound hosts under proxy-native egress.** Nothing in a proxy-native
    sandbox lists the bound endpoint hosts. Should the data plane keep
    `INTROSPECTION_ENDPOINT_HOSTS` (or a new non-secret list) for discovery?
-3. **Answers.** Do answer-style providers (Perplexity Sonar, Tavily's
+2. **Answers.** Do answer-style providers (Perplexity Sonar, Tavily's
    answer, Exa's answer endpoint) belong in `web_search`, in a separate
    `web_answer` tool, or nowhere?
-4. **Cost limits.** A Recipe can cap calls per task (`maxUses`). Does the
+3. **Cost limits.** A Recipe can cap calls per task (`maxUses`). Does the
    platform also need a budget in money, or one that refuses only `deep` once
    spent?
-5. **Tavily `default`.** It maps to Tavily's own default, `basic`, so the
+4. **Tavily `default`.** It maps to Tavily's own default, `basic`, so the
    named pairing "tavily / advanced" is `mode: "deep"`. Confirm, or map
    `default` to `advanced`.
-6. **Exa `fast`.** Keep the legacy `fast` type, or move to `lite` and accept
+5. **Exa `fast`.** Keep the legacy `fast` type, or move to `lite` and accept
    that it rejects some arguments?
-7. **Parallel's and Keenable's MCP tools.** Their tool arguments and result
-   shapes need a `tools/list` and one call against the live servers before
-   their adapters are written.
+6. **Credits over MCP.** Keenable reports credits in the result's `_meta`,
+   which Pi's client drops, and Tavily's MCP result reports none, so over MCP
+   both record one request. Should Pi pass `_meta` through to nested calls?
+7. **Parallel's MCP setting.** Its tool runs a mode it does not report, so
+   those calls carry no `setting` and no usage variant. Price them as
+   `advanced` (the API's default), or route every Parallel call that names a
+   mode to REST?
+8. **Perplexity live.** Its server's tool and output format are from source;
+   one keyed `tools/list` and call would confirm them.

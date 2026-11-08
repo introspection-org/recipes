@@ -68,3 +68,5 @@ instructions.
   and say what you could not check.
 - `not_bound` or `not_configured`: search is not available for that provider here. Use
   another one offered, or say that you could not search.
+- `out_of_credit`: the provider's account has run out. Use another provider if one is
+  offered, or say that you could not search.
