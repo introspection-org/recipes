@@ -12,6 +12,9 @@
       ],
       "@introspection-ai/recipes/productivity": [
         "./src/productivity/index.ts"
+      ],
+      "@introspection-ai/recipes/search": [
+        "./src/search/index.ts"
       ]
     }
   },

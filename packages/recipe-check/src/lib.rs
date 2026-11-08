@@ -919,16 +919,17 @@ fn validate_pi_config(
     resolved
 }
 
-/// The companion packages: the first-party channel, document format and
-/// productivity provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
+/// The companion packages: the first-party channel, document format,
+/// productivity provider and search provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
-const COMPANION_PACKAGES: [&str; 5] = [
+const COMPANION_PACKAGES: [&str; 6] = [
     "@introspection-ai/recipe-channel-slack",
     "@introspection-ai/recipe-documents-docx",
     "@introspection-ai/recipe-documents-pdf",
     "@introspection-ai/recipe-productivity-google",
     "@introspection-ai/recipe-productivity-microsoft",
+    "@introspection-ai/recipe-search",
 ];
 
 fn versioned_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
