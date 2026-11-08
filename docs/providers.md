@@ -240,3 +240,53 @@ family's contract does not bump another's.
   alias on the declaration (`{ "provider": "jira", "id": "jira-eu", "options":
   { "server": "atlassian-eu" } }`, handles `jira-eu:PROJ-1`) adds it
   without changing anything here.
+
+## 10. Wiring a provider
+
+What wiring Linear and Jira taught, in the order to do it. Each step names the
+code that does it.
+
+1. **Capture the server's tool list before writing the adapter**
+   (`introspection bindings mcp capture <id>`) and commit the tools it calls as
+   its fixture ([`linear-tools.json`](../test/fixtures/issues/linear-tools.json)).
+   A map written from the vendor's docs named a comment tool Linear does not have.
+2. **Map each command to the captured names and arguments**, and mark the map
+   `verified` only against a capture
+   ([`LINEAR_MCP_TOOLS`](../packages/issues/src/linear.ts)). Translate the
+   family's words into the vendor's before the call: a status category becomes
+   the state types it spans, not a filter applied afterwards.
+3. **Page by the rules below**, with the package's own helper
+   ([`common.ts`](../packages/issues/src/common.ts)).
+4. **Declare every host and option in `capabilities`** (sections 2 and 4).
+5. **Test against a fake built from the capture** that refuses an argument the
+   schema lacks or a value of the wrong type, including one that pages
+   (`fakeServer` and "pages and status categories" in
+   [`issues-providers.test.ts`](../test/issues-providers.test.ts)).
+6. **Record once against real, dummy data** with Polly
+   ([`linear.recording.test.ts`](../packages/issues/test/linear.recording.test.ts),
+   [`polly.ts`](../test/helpers/polly.ts)). Scope every request to the dummy
+   items (a label, a separate calendar, a named folder), let the helper
+   anonymize, read the cassette before committing it, and replay it in CI.
+
+### Paging
+
+A result that silently stops at the first page is the bug reviews kept finding.
+
+- **A read the model treats as complete follows every page:** an issue's
+  comments, a thread's messages. Bound it with a page cap; never return the
+  first page alone.
+- **A search or list returns up to `limit`** and, when more were available,
+  the vendor's cursor as the family's `cursor`, so the model can ask again.
+- **The server's metadata ends a list:** `isLast`, a reported `total`,
+  `hasNextPage`. A page shorter than asked ends it only when the server
+  reports none of these, since servers cap a page below what was asked.
+- **An offset advances by the rows the server returned,** not by how many
+  survived conversion or filtering.
+- **Filtering after the fetch keeps paging** until `limit` matches or the
+  pages run out, then cuts to `limit`.
+- **Guard every loop:** stop on an empty page, on a cursor or token equal to
+  the last one, and at the page cap.
+- **Each package pages its vendor's way once** (`packages/issues/src/common.ts`,
+  Google's `collectPages`, Microsoft's `@odata.nextLink`): use that package's
+  helper rather than a new loop, and test each rule above against a fake that
+  pages.
