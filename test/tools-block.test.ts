@@ -104,10 +104,13 @@ describe("tools block", () => {
     ).toEqual([]);
   });
 
-  it("refuses what an MCP server refuses, and cli until the tools command", () => {
+  it("refuses what an MCP server refuses, and cli without bash", () => {
     expect(one(block("mode: cli"))).toContain(
-      "tools.mode cli needs the tools command",
+      "tools.mode cli runs the tools command from bash; select bash",
     );
+    expect(
+      messages(["tools:", "  mode: cli", "  include: [read, bash, issues]"]),
+    ).toEqual([]);
     expect(one(block("mode: direct"))).toContain(
       "tools.mode must be tools, codemode or cli",
     );
@@ -241,4 +244,32 @@ describe("first-party tools by tools.mode", () => {
     expect(tools).not.toContain("issues");
     expect(tools).toContain("tool_search");
   });
+
+  for (const [how, command] of [
+    ["--json", `tools call issues.search --json '{"query":"found"}'`],
+    ["stdin", `echo '{"query":"found"}' | tools call issues.search --json -`],
+  ])
+    it(`serves the tool to bash's tools command in cli, undeclared (${how})`, async () => {
+      let tools: string[] = [];
+      let output = "";
+      await run(
+        ["tools:", "  mode: cli", "  include: [read, bash, issues]"],
+        [
+          (context) => {
+            tools = declared(context);
+            return fauxAssistantMessage([fauxToolCall("bash", { command })], {
+              stopReason: "toolUse",
+            });
+          },
+          (context) => {
+            output = lastToolResult(context);
+            return fauxAssistantMessage("done");
+          },
+        ],
+      );
+      expect(tools).toContain("bash");
+      expect(tools).not.toContain("issues");
+      expect(tools).not.toContain("codemode");
+      expect(output).toContain("acme:A-1");
+    });
 });

@@ -100,7 +100,7 @@ import {
   RecipeModelTransportError,
   resolveRecipeCredentials,
 } from "./model-binding.js";
-import { platformToolExposure } from "./recipe/agent.js";
+import { PLATFORM_TOOL_NAMES, platformToolExposure } from "./recipe/agent.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import { recipeSkillMatcher } from "./recipe/skills.js";
 import {
@@ -127,6 +127,11 @@ import {
   type MemoryContextSource,
 } from "./memory.js";
 import { recipeStepExtensions, type RecipeStep } from "./skill-progress.js";
+import {
+  materializeToolsShim,
+  toolsShellEnv,
+  withToolsCommand,
+} from "./tools/shell.js";
 
 function sessionSettingsManager(
   base: SettingsManager,
@@ -1111,26 +1116,16 @@ async function createSessionForAgent(
       (recipe.mcp?.mode ?? "cli") === "cli" &&
       mcp.available &&
       env !== process.env;
-    const environmentBash: ToolDefinition | undefined =
-      (mcpShellEnv || pythonActivation) &&
-      tools.includes("bash") &&
-      !(opts.customTools ?? []).some((tool) => tool.name === "bash")
-        ? (createBashToolDefinition(cwd, {
-            commandPrefix: settingsManager.getShellCommandPrefix(),
-            shellPath: settingsManager.getShellPath(),
-            spawnHook: (context) => {
-              const shellEnv = mcpShellEnv
-                ? { ...context.env, ...env }
-                : { ...context.env };
-              return {
-                ...context,
-                env: pythonActivation
-                  ? activateRecipePython(shellEnv, pythonActivation)
-                  : shellEnv,
-              };
-            },
-          }) as ToolDefinition)
-        : undefined;
+    const environmentBash = await sessionBash(recipe, {
+      cwd,
+      env,
+      tools,
+      mcpShellEnv,
+      pythonActivation,
+      settingsManager,
+      binRoot: opts.mcpRuntimeDir ?? cwd,
+      customTools: opts.customTools ?? [],
+    });
     const customTools = [
       ...(environmentBash ? [environmentBash] : []),
       ...(opts.customTools ?? []),
@@ -1357,4 +1352,55 @@ function interactionToolExtensions(
       ? [introspectionOpenExtension(registrations, env)]
       : []),
   ];
+}
+
+/**
+ * The session's own bash, when the shell needs the Recipe's environment, its
+ * Python or, with `tools.mode: cli`, the `tools` command on each call's PATH.
+ */
+async function sessionBash(
+  recipe: ResolvedRecipeAgent,
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    tools: readonly string[];
+    mcpShellEnv: boolean;
+    pythonActivation: Parameters<typeof activateRecipePython>[1] | undefined;
+    settingsManager: SettingsManager;
+    binRoot: string;
+    customTools: readonly ToolDefinition[];
+  },
+): Promise<ToolDefinition | undefined> {
+  const { cwd, env, mcpShellEnv, pythonActivation, settingsManager } = options;
+  const firstParty = (PLATFORM_TOOL_NAMES as readonly string[]).filter((name) =>
+    recipe.tools.includes(name),
+  );
+  const toolsBinDir =
+    recipe.toolPolicy?.mode === "cli" && firstParty.length > 0
+      ? join(options.binRoot, ".pi", "tools", "bin")
+      : undefined;
+  if (
+    !(mcpShellEnv || pythonActivation || toolsBinDir) ||
+    !options.tools.includes("bash") ||
+    options.customTools.some((tool) => tool.name === "bash")
+  )
+    return undefined;
+  if (toolsBinDir) await materializeToolsShim(toolsBinDir);
+  const bash = createBashToolDefinition(cwd, {
+    commandPrefix: settingsManager.getShellCommandPrefix(),
+    shellPath: settingsManager.getShellPath(),
+    spawnHook: (context) => {
+      const base = mcpShellEnv
+        ? { ...context.env, ...env }
+        : { ...context.env };
+      const shellEnv = toolsBinDir ? toolsShellEnv(base, toolsBinDir) : base;
+      return {
+        ...context,
+        env: pythonActivation
+          ? activateRecipePython(shellEnv, pythonActivation)
+          : shellEnv,
+      };
+    },
+  }) as ToolDefinition;
+  return toolsBinDir ? withToolsCommand(bash, firstParty) : bash;
 }

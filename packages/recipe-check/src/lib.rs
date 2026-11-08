@@ -3347,28 +3347,39 @@ fn validate_agent_tools(
     let mode = match tools.get("mode") {
         None => Some(ToolMode::Tools),
         Some(value) => match parse_tool_mode(value) {
-            Some(ToolMode::Cli) => {
-                ctx.error(
-                    CODE,
-                    path,
-                    "tools.mode cli needs the tools command, which this release does not have",
-                    Some("use tools or codemode"),
-                );
-                Some(ToolMode::Cli)
-            }
             Some(mode) => Some(mode),
             None => {
                 ctx.error(
                     CODE,
                     path,
-                    "Agent tools.mode must be 'tools' or 'codemode'",
-                    Some("set tools.mode to tools or codemode"),
+                    "Agent tools.mode must be 'tools', 'codemode' or 'cli'",
+                    Some("set tools.mode to tools, codemode or cli"),
                 );
                 None
             }
         },
     };
     let selectors = validate_tool_selectors(tools, mode, SelectorOwner::Tools, path, ctx);
+    if mode == Some(ToolMode::Cli) {
+        let names = |key: &str| -> Vec<&str> {
+            tools
+                .get(key)
+                .and_then(JsonValue::as_array)
+                .map(|items| items.iter().filter_map(JsonValue::as_str).collect())
+                .unwrap_or_default()
+        };
+        let (include, exclude) = (names("include"), names("exclude"));
+        let bash =
+            (include.contains(&"bash") || include.contains(&"*")) && !exclude.contains(&"bash");
+        if !bash {
+            ctx.error(
+                CODE,
+                path,
+                "tools.mode cli runs the tools command from bash; select bash",
+                Some("add bash to tools.include"),
+            );
+        }
+    }
     for (key, names) in [("defer", &selectors.defer), ("eager", &selectors.eager)] {
         let foreign: Vec<&str> = names
             .iter()
@@ -6399,6 +6410,8 @@ mod tests {
             "tools:\n  mode: tools\n  include: [read, issues]\n  defer: [issues]\n",
             "tools:\n  mode: codemode\n  include: [read, issues]\n  eager: [issues]\n",
             "tools:\n  include: [read, issues, bash]\n  exclude: [bash]\n  defer: ['*']\n",
+            "tools:\n  mode: cli\n  include: [bash, issues]\n",
+            "tools:\n  mode: cli\n  include: ['*']\n",
         ] {
             let diagnostics = tools_diagnostics(json!({}), tools);
             assert!(diagnostics.is_empty(), "{tools}: {diagnostics:?}");
@@ -6470,7 +6483,7 @@ mod tests {
             ),
             (
                 "tools:\n  mode: cli\n  include: [read]\n",
-                "tools.mode cli needs the tools command, which this release does not have",
+                "tools.mode cli runs the tools command from bash; select bash",
             ),
             (
                 "tools:\n  include: [read]\n  defer: [read]\n",
@@ -6492,7 +6505,10 @@ mod tests {
                 "tools:\n  include: [issues]\n  defer: ['*', issues]\n",
                 "must use '*' by itself",
             ),
-            ("tools:\n  mode: direct\n", "must be 'tools' or 'codemode'"),
+            (
+                "tools:\n  mode: direct\n",
+                "must be 'tools', 'codemode' or 'cli'",
+            ),
         ] {
             let diagnostics = tools_diagnostics(json!({}), tools);
             assert!(

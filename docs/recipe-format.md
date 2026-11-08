@@ -570,7 +570,15 @@ tool `*` selects that the host does not offer is left out rather than refused.
   costs nothing until a script reads it with `describeTool()`. The agent gets
   the `codemode` tool whenever `tools` or `mcp` asks for codemode, and the
   mode needs Pi 1.3 or newer.
-- `cli` is reserved for the `tools` command and refused until it ships.
+- `cli` keeps them undeclared and serves them to a `tools` command in each
+  `bash` call's shell: `tools list`, `tools search "words"`,
+  `tools call issues.search --json '{"query":"checkout"}'` (or `--json -` to
+  read the object from stdin) and `tools run` for a script
+  (`tools.issues.search({...})`). Each call is a nested call of that bash
+  call, so hooks, spans and `behind` apply as to any other. The agent selects
+  `bash`. The command reaches first-party tools only; a Recipe's MCP servers
+  stay on the `mcp` command. The SDK session host serves it; the `pi`
+  extension host does not yet.
 
 The rules are an `mcp` server's: `defer` is invalid in `codemode` and `cli`,
 `eager` in `cli`, and every `defer` or `eager` name must be one `include`
