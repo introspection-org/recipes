@@ -963,6 +963,7 @@ describe("release train isolation", () => {
         ),
       ),
       "packages/search",
+      "packages/issues",
     ];
     expect(adapters).toEqual(
       expect.arrayContaining([

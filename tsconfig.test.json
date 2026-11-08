@@ -15,6 +15,9 @@
       ],
       "@introspection-ai/recipes/search": [
         "./src/search/index.ts"
+      ],
+      "@introspection-ai/recipes/issues": [
+        "./src/issues/index.ts"
       ]
     }
   },

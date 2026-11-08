@@ -1,0 +1,209 @@
+{
+  "server": "https://mcp.atlassian.com/v2/mcp",
+  "captured": false,
+  "source": "Authored from Atlassian's supported-tools page (support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools), which names the tools but not their arguments; arguments follow the Jira REST API. Replace with `introspection bindings mcp capture` output.",
+  "tools": [
+    {
+      "name": "getAccessibleAtlassianResources",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "atlassianUserInfo",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "lookupJiraAccountId",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "searchString": {
+            "type": "string"
+          }
+        },
+        "required": ["cloudId", "searchString"]
+      }
+    },
+    {
+      "name": "searchJiraIssuesUsingJql",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "jql": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "number"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nextPageToken": {
+            "type": "string"
+          }
+        },
+        "required": ["cloudId", "jql"]
+      }
+    },
+    {
+      "name": "getJiraIssue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "listJiraIssueComments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "number"
+          },
+          "maxResults": {
+            "type": "number"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "createJiraIssue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "projectKey": {
+            "type": "string"
+          },
+          "issueTypeName": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "assignee_account_id": {
+            "type": "string"
+          },
+          "additional_fields": {
+            "type": "object"
+          }
+        },
+        "required": ["cloudId", "projectKey", "issueTypeName", "summary"]
+      }
+    },
+    {
+      "name": "editJiraIssue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey", "fields"]
+      }
+    },
+    {
+      "name": "addOrEditJiraIssueComment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "commentBody": {
+            "type": "string"
+          },
+          "commentId": {
+            "type": "string"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey", "commentBody"]
+      }
+    },
+    {
+      "name": "listJiraIssueTransitions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "transitionJiraIssue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "transition": {
+            "type": "object"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey", "transition"]
+      }
+    }
+  ]
+}

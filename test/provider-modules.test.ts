@@ -318,7 +318,7 @@ describe("provider declaration findings", () => {
       "package.json#pi.search[1].package '@acme/search' must be listed in package.json#dependencies",
       "package.json#pi.search contains duplicate provider 'brave'",
       "package.json#pi.search provider 'other' is not a first-party provider (tavily, parallel, exa, keenable, perplexity, brave); give it a package",
-      "package.json#pi.search[4] contains unknown field(s): source",
+      "package.json#pi.search[4] contains unknown field(s): source; it takes provider, package",
     ]);
   });
 

@@ -113,6 +113,7 @@ jobs:
       google: ${{ steps.plan.outputs.google }}
       microsoft: ${{ steps.plan.outputs.microsoft }}
       search: ${{ steps.plan.outputs.search }}
+      issues: ${{ steps.plan.outputs.issues }}
       crate: ${{ steps.plan.outputs.crate }}
       python: ${{ steps.plan.outputs.python }}
       python_wheels: ${{ steps.plan.outputs.python_wheels }}
@@ -263,6 +264,7 @@ jobs:
           publish_google: ${{ needs.plan.outputs.google }}
           publish_microsoft: ${{ needs.plan.outputs.microsoft }}
           publish_search: ${{ needs.plan.outputs.search }}
+          publish_issues: ${{ needs.plan.outputs.issues }}
           NATIVE_BUILD_RESULT: ${{ needs.build-native-tools.result }}
         shell: bash
         run: |
@@ -332,6 +334,9 @@ jobs:
           fi
           if [[ "$publish_search" == "true" ]]; then
             channel_dirs+=("packages/search")
+          fi
+          if [[ "$publish_issues" == "true" ]]; then
+            channel_dirs+=("packages/issues")
           fi
 
           if [[ "${#channel_dirs[@]}" -gt 0 ]]; then
