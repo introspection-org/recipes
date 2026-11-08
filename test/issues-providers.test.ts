@@ -14,10 +14,11 @@ import {
   type IntrospectionIssue,
   type IntrospectionIssuesClient,
 } from "../packages/issues/src/index.js";
-import type {
-  IssuesMcpCaller,
-  IssuesSession,
-  RecipeIssuesProviderModule,
+import {
+  ISSUES_FIRST_PARTY_OPTIONS,
+  type IssuesMcpCaller,
+  type IssuesSession,
+  type RecipeIssuesProviderModule,
 } from "../src/issues/index.js";
 
 interface CapturedToolList {
@@ -88,13 +89,24 @@ function fakeServer(
 
 async function session(
   module: RecipeIssuesProviderModule,
-  config: Record<string, string> = {},
+  options: Record<string, string> = {},
 ): Promise<IssuesSession> {
   return module.createSession({
-    config: { provider: module.id, ...config },
+    config: { provider: module.id, options },
     env: {},
   });
 }
+
+describe("first-party options", () => {
+  it("are the options each provider declares", () => {
+    expect({
+      linear: linearIssuesProvider.capabilities.options ?? {},
+      jira: jiraIssuesProvider.capabilities.options ?? {},
+      introspection:
+        createIntrospectionIssuesProvider().capabilities.options ?? {},
+    }).toEqual(ISSUES_FIRST_PARTY_OPTIONS);
+  });
+});
 
 describe("adapter tool maps", () => {
   it("name only tools the captured tool lists offer, all unverified", () => {
@@ -900,7 +912,7 @@ describe("introspection", () => {
     createIntrospectionIssuesProvider({
       client: () => fake.client,
     }).createSession({
-      config: { provider: "introspection" },
+      config: { provider: "introspection", options: {} },
       env: sessionEnv,
     });
 

@@ -228,6 +228,7 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
       "url",
     ],
     hosts: ["mcp.atlassian.com"],
+    options: { project: "string", issueType: "string", server: "string" },
   },
   mcp: {
     url: "https://mcp.atlassian.com/v2/mcp",
@@ -380,8 +381,8 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
         return { ...issue, comments };
       },
       async create(args, ctx) {
-        const projectKey = args.container ?? config.project;
-        const issueTypeName = args.issue_type ?? config.issueType;
+        const projectKey = args.container ?? text(config.options.project);
+        const issueTypeName = args.issue_type ?? text(config.options.issueType);
         if (!projectKey || !issueTypeName)
           throw new IssuesError(
             "invalid_request",

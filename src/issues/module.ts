@@ -62,6 +62,17 @@ function contractProblem(
     return `declares unknown command(s): ${unknown.join(", ")}`;
   if (!Array.isArray(fields)) return "declares no capabilities.fields";
   if (!Array.isArray(hosts)) return "declares no capabilities.hosts";
+  const { options } =
+    capabilities as RecipeIssuesProviderModule["capabilities"];
+  if (
+    options !== undefined &&
+    (!options ||
+      typeof options !== "object" ||
+      Object.values(options).some(
+        (type) => type !== "string" && type !== "boolean",
+      ))
+  )
+    return "declares capabilities.options that are not a map of option name to string or boolean";
   if (module.mcp !== undefined) {
     const { url, server, tools } = module.mcp;
     if (typeof url !== "string" || typeof server !== "string" || !server)
@@ -105,17 +116,27 @@ export async function loadRecipeIssues(
         throw new Error(
           `Recipe issues provider '${declaration.provider}' ${problem}`,
         );
-      const { team, project, issueType, server } =
-        declaration as RecipePackageIssues;
+      const settings = (declaration as RecipePackageIssues).options ?? {};
+      const schema = module.capabilities.options ?? {};
+      for (const [name, value] of Object.entries(settings)) {
+        if (schema[name] === undefined)
+          throw new Error(
+            `Recipe issues provider '${declaration.provider}' takes no option '${name}'${Object.keys(schema).length ? `; it takes ${Object.keys(schema).join(", ")}` : ""}`,
+          );
+        if (typeof value !== schema[name])
+          throw new Error(
+            `Recipe issues provider '${declaration.provider}' option '${name}' must be a ${schema[name]}`,
+          );
+      }
+      const server = settings.server;
       return {
         module,
-        config: {
-          provider: declaration.provider,
-          ...(team !== undefined ? { team } : {}),
-          ...(project !== undefined ? { project } : {}),
-          ...(issueType !== undefined ? { issueType } : {}),
-        },
-        ...(module.mcp ? { server: server ?? module.mcp.server } : {}),
+        config: { provider: declaration.provider, options: settings },
+        ...(module.mcp
+          ? {
+              server: typeof server === "string" ? server : module.mcp.server,
+            }
+          : {}),
         fallback: declaration.provider === ISSUES_FALLBACK_PROVIDER,
       };
     },

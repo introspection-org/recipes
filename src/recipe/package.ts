@@ -23,10 +23,11 @@ import {
   recipeProfileSkill,
 } from "../documents/profile.js";
 import {
-  ISSUES_DECLARATION_OPTIONS,
   ISSUES_FALLBACK_PROVIDER,
+  ISSUES_FIRST_PARTY_OPTIONS,
   ISSUES_PROVIDER_IDS,
-  ISSUES_PROVIDER_OPTIONS,
+  type IssuesOptionsSchema,
+  type IssuesProviderOptions,
 } from "../issues/types.js";
 import { PRODUCTIVITY_COMMANDS } from "../productivity/types.js";
 import { SEARCH_PROVIDER_IDS } from "../search/types.js";
@@ -183,18 +184,17 @@ export type RecipePackageSearch = RecipeProviderDeclaration;
 
 /**
  * A provider the `issues` tool offers: first-party by id, from
- * `@introspection-ai/recipe-issues`, or the Recipe's own by `package`.
- * `team` (Linear) and `project` and `issueType` (Jira) say where
- * `create` puts an issue; `server` names the Recipe's MCP server for the
- * provider when it is not the adapter's default id. `enabled: false` excludes
+ * `@introspection-ai/recipe-issues`, or the Recipe's own by `package`. Its
+ * `options` are the provider's own settings, such as Linear's `team` or Jira's
+ * `project` and `issueType` for `create`, and `server` for the Recipe's MCP
+ * server when it is not the adapter's default id. `enabled: false` excludes
  * the `introspection` fallback.
  */
 export interface RecipePackageIssues extends RecipeProviderDeclaration {
-  team?: string;
-  project?: string;
-  issueType?: string;
-  server?: string;
+  /** Only for the `introspection` fallback: `false` leaves it out. */
   enabled?: boolean;
+  /** What the provider reads, checked against its `capabilities.options`. */
+  options?: IssuesProviderOptions;
 }
 
 export function recipeProductivityPackageName(provider: string): string {
@@ -783,16 +783,15 @@ function providerSourceProblems(
 
 /**
  * A provider family's declarations (`pi.search`, `pi.issues`): its first-party
- * ids, and the options each takes beside `provider` and `package`.
- * A Recipe's own provider may take any of the family's options.
+ * ids and, for a family whose providers take `options`, the options each
+ * first-party provider takes. The top level of a declaration takes nothing
+ * else, beside the fallback's `enabled`.
  */
 interface ProviderFamilyDeclarations {
   key: "search" | "issues";
   firstParty: readonly string[];
-  /** Options by first-party id. */
-  options: Readonly<Record<string, readonly string[]>>;
-  /** Every option, in the order it is checked. */
-  allOptions: readonly string[];
+  /** The options schema of each first-party id; absent when the family takes no options. */
+  options?: Readonly<Record<string, IssuesOptionsSchema>>;
   /** The one provider that takes `enabled`, if the family has a fallback. */
   fallback?: string;
 }
@@ -800,15 +799,12 @@ interface ProviderFamilyDeclarations {
 const SEARCH_DECLARATIONS: ProviderFamilyDeclarations = {
   key: "search",
   firstParty: SEARCH_PROVIDER_IDS,
-  options: {},
-  allOptions: [],
 };
 
 const ISSUES_DECLARATIONS: ProviderFamilyDeclarations = {
   key: "issues",
   firstParty: ISSUES_PROVIDER_IDS,
-  options: ISSUES_PROVIDER_OPTIONS,
-  allOptions: ISSUES_DECLARATION_OPTIONS,
+  options: ISSUES_FIRST_PARTY_OPTIONS,
   fallback: ISSUES_FALLBACK_PROVIDER,
 };
 
@@ -824,6 +820,12 @@ function providerFamilyFindings(
   if (!Array.isArray(value)) {
     return [invalid(`package.json#pi.${family.key} must be an array`)];
   }
+  const allowed = [
+    "provider",
+    "package",
+    ...(family.options ? ["options"] : []),
+    ...(family.fallback ? ["enabled"] : []),
+  ];
   const findings: RecipeValidationFinding[] = [];
   const providers = new Set<string>();
   for (const [index, raw] of value.entries()) {
@@ -834,11 +836,13 @@ function providerFamilyFindings(
     }
     const declaration = raw as Record<string, unknown>;
     const unknown = Object.keys(declaration).filter(
-      (key) => !["provider", "package", ...family.allOptions].includes(key),
+      (key) => !allowed.includes(key),
     );
     if (unknown.length > 0) {
       findings.push(
-        invalid(`${at} contains unknown field(s): ${unknown.join(", ")}`),
+        invalid(
+          `${at} contains unknown field(s): ${unknown.join(", ")}; it takes ${allowed.join(", ")}`,
+        ),
       );
     }
     findings.push(
@@ -870,27 +874,44 @@ function providerFamilyFindings(
       );
       continue;
     }
-    for (const option of family.allOptions) {
-      const optionValue = declaration[option];
-      if (optionValue === undefined) continue;
-      if (option === "enabled") {
-        if (provider !== family.fallback)
-          findings.push(
-            invalid(
-              `${at}.enabled applies only to '${family.fallback}'; remove the declaration to leave '${provider}' out`,
-            ),
-          );
-        else if (typeof optionValue !== "boolean")
-          findings.push(invalid(`${at}.enabled must be true or false`));
-        continue;
-      }
-      if (typeof optionValue !== "string" || !optionValue.trim()) {
-        findings.push(invalid(`${at}.${option} must be a non-empty string`));
-        continue;
-      }
-      if (!ownSource && !family.options[provider]?.includes(option))
+    if (declaration.enabled !== undefined && family.fallback) {
+      if (provider !== family.fallback)
         findings.push(
-          invalid(`${at}: provider '${provider}' takes no ${option}`),
+          invalid(
+            `${at}.enabled applies only to '${family.fallback}'; remove the declaration to leave '${provider}' out`,
+          ),
+        );
+      else if (typeof declaration.enabled !== "boolean")
+        findings.push(invalid(`${at}.enabled must be true or false`));
+    }
+    if (declaration.options === undefined || !family.options) continue;
+    const options = declaration.options;
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      findings.push(invalid(`${at}.options must be an object`));
+      continue;
+    }
+    // A Recipe's own provider checks its options against its own schema when
+    // it loads; here only their shape is known.
+    const schema = ownSource ? undefined : family.options[provider];
+    for (const [name, optionValue] of Object.entries(options)) {
+      const type = schema ? schema[name] : undefined;
+      if (schema && type === undefined) {
+        const takes = Object.keys(schema);
+        findings.push(
+          invalid(
+            `${at}.options: provider '${provider}' takes no option '${name}'${takes.length ? `; it takes ${takes.join(", ")}` : ""}`,
+          ),
+        );
+        continue;
+      }
+      if (type === "boolean" || (!type && typeof optionValue === "boolean")) {
+        if (typeof optionValue !== "boolean")
+          findings.push(invalid(`${at}.options.${name} must be true or false`));
+        continue;
+      }
+      if (typeof optionValue !== "string" || !optionValue.trim())
+        findings.push(
+          invalid(`${at}.options.${name} must be a non-empty string`),
         );
     }
   }
@@ -1463,17 +1484,18 @@ function parseIssues(value: unknown[]): RecipePackageIssues[] {
     const provider = stringValue(declaration.provider);
     if (!provider || seen.has(provider)) continue;
     seen.add(provider);
-    const options: Omit<RecipePackageIssues, "provider"> = {};
-    for (const option of ["team", "project", "issueType", "server"] as const) {
-      const optionValue = stringValue(declaration[option]);
-      if (optionValue !== undefined) options[option] = optionValue;
-    }
-    if (typeof declaration.enabled === "boolean")
-      options.enabled = declaration.enabled;
+    const options = Object.fromEntries(
+      Object.entries(asRecord(declaration.options)).filter(
+        ([, value]) => typeof value === "string" || typeof value === "boolean",
+      ),
+    ) as IssuesProviderOptions;
     declarations.push({
       provider,
       ...parseProviderSource(declaration),
-      ...options,
+      ...(typeof declaration.enabled === "boolean"
+        ? { enabled: declaration.enabled }
+        : {}),
+      ...(Object.keys(options).length > 0 ? { options } : {}),
     });
   }
   return declarations;

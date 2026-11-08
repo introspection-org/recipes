@@ -1439,18 +1439,30 @@ fn validate_provider_source(
     false
 }
 
+/// The type of one value in a declaration's `options`.
+#[derive(Clone, Copy, PartialEq)]
+enum OptionType {
+    String,
+    Boolean,
+}
+
+/// The options a provider takes, by name and type.
+type OptionsSchema = &'static [(&'static str, OptionType)];
+
 /// A provider family's declarations: its first-party ids, the package that
-/// serves them, and the extra fields each one takes beside `provider` and
-/// `package`.
+/// serves them, and, for a family whose providers take `options`, the options
+/// each first-party provider takes. The top level takes nothing else beside
+/// the fallback's `enabled`.
 struct ProviderFamily {
     name: &'static str,
     first_party: &'static [&'static str],
     bundle: &'static str,
     example: &'static str,
-    /// The fields a first-party provider takes; a Recipe's own provider takes
-    /// any of `own_options`.
-    options: fn(&str) -> &'static [&'static str],
-    own_options: &'static [&'static str],
+    /// The options schema of a first-party id; `None` when the family takes
+    /// no `options`.
+    options: Option<fn(&str) -> OptionsSchema>,
+    /// The one provider that takes `enabled`, if the family has a fallback.
+    fallback: Option<&'static str>,
 }
 
 const SEARCH_FAMILY: ProviderFamily = ProviderFamily {
@@ -1458,8 +1470,8 @@ const SEARCH_FAMILY: ProviderFamily = ProviderFamily {
     first_party: &FIRST_PARTY_SEARCH_PROVIDERS,
     bundle: "@introspection-ai/recipe-search",
     example: "brave",
-    options: |_| &[],
-    own_options: &[],
+    options: None,
+    fallback: None,
 };
 
 const ISSUES_FAMILY: ProviderFamily = ProviderFamily {
@@ -1467,17 +1479,21 @@ const ISSUES_FAMILY: ProviderFamily = ProviderFamily {
     first_party: &["linear", "jira", "introspection"],
     bundle: "@introspection-ai/recipe-issues",
     example: "linear",
-    options: |provider| match provider {
-        "linear" => &["team", "server"],
-        "jira" => &["project", "issueType", "server"],
-        "introspection" => &["enabled"],
+    options: Some(|provider| match provider {
+        "linear" => &[("team", OptionType::String), ("server", OptionType::String)],
+        "jira" => &[
+            ("project", OptionType::String),
+            ("issueType", OptionType::String),
+            ("server", OptionType::String),
+        ],
         _ => &[],
-    },
-    own_options: &["team", "project", "issueType", "server"],
+    }),
+    fallback: Some("introspection"),
 };
 
 /// `pi.search` and `pi.issues`: first-party providers by id, with their
-/// options, and a Recipe's own by `package`.
+/// options, and a Recipe's own by `package`, whose options it checks itself
+/// when it loads.
 fn validate_provider_family(
     family: &ProviderFamily,
     value: &JsonValue,
@@ -1498,6 +1514,13 @@ fn validate_provider_family(
         );
         return;
     };
+    let mut allowed = vec!["provider", "package"];
+    if family.options.is_some() {
+        allowed.push("options");
+    }
+    if family.fallback.is_some() {
+        allowed.push("enabled");
+    }
     let mut seen = HashSet::new();
     for (index, declaration) in declarations.iter().enumerate() {
         let JsonValue::Object(declaration) = declaration else {
@@ -1518,30 +1541,29 @@ fn validate_provider_family(
             );
             continue;
         };
-        let sourced = declaration.contains_key("package");
-        let options = if sourced {
-            family.own_options
-        } else {
-            (family.options)(&provider)
-        };
-        for key in declaration.keys().filter(|key| {
-            !matches!(key.as_str(), "provider" | "package") && !options.contains(&key.as_str())
-        }) {
-            let allowed: Vec<&str> = ["provider", "package"]
-                .into_iter()
-                .chain(options.iter().copied())
-                .collect();
+        for key in declaration
+            .keys()
+            .filter(|key| !allowed.contains(&key.as_str()))
+        {
             ctx.error(
                 &code,
                 PACKAGE_JSON,
-                format!(
-                    "package.json#pi.{name}[{index}] contains unknown field '{key}' for provider '{provider}'"
-                ),
-                Some(format!("use {}", allowed.join(", "))),
+                format!("package.json#pi.{name}[{index}] contains unknown field '{key}'"),
+                Some(format!(
+                    "use {}; put the provider's own settings in options",
+                    allowed.join(", ")
+                )),
             );
         }
         if let Some(enabled) = declaration.get("enabled") {
-            if !enabled.is_boolean() {
+            if Some(provider.as_str()) != family.fallback {
+                ctx.error(
+                    &code,
+                    PACKAGE_JSON,
+                    format!("package.json#pi.{name}[{index}].enabled applies only to the fallback provider"),
+                    Some(format!("remove the declaration to leave '{provider}' out")),
+                );
+            } else if !enabled.is_boolean() {
                 ctx.error(
                     &code,
                     PACKAGE_JSON,
@@ -1549,6 +1571,16 @@ fn validate_provider_family(
                     Some("use true or false"),
                 );
             }
+        }
+        if let (Some(schema_of), Some(options)) = (family.options, declaration.get("options")) {
+            validate_provider_options(
+                &code,
+                &format!("package.json#pi.{name}[{index}].options"),
+                &provider,
+                options,
+                (!declaration.contains_key("package")).then(|| schema_of(&provider)),
+                ctx,
+            );
         }
         if !seen.insert(provider.clone()) {
             ctx.error(
@@ -1586,6 +1618,66 @@ fn validate_provider_family(
                     "add {} to package.json#dependencies and commit the lockfile",
                     family.bundle
                 )),
+            );
+        }
+    }
+}
+
+/// A declaration's `options`: an object, checked against `schema` for a
+/// first-party provider, and only for its value types for a Recipe's own,
+/// which checks its options against its own schema when it loads.
+fn validate_provider_options(
+    code: &str,
+    at: &str,
+    provider: &str,
+    options: &JsonValue,
+    schema: Option<OptionsSchema>,
+    ctx: &mut CheckContext,
+) {
+    let Some(options) = options.as_object() else {
+        ctx.error(
+            code,
+            PACKAGE_JSON,
+            format!("{at} must be an object"),
+            Some("map each option name to its value"),
+        );
+        return;
+    };
+    for (key, value) in options {
+        let expected = match schema {
+            Some(schema) => {
+                let Some((_, kind)) = schema.iter().find(|(name, _)| name == key) else {
+                    let takes: Vec<&str> = schema.iter().map(|(name, _)| *name).collect();
+                    ctx.error(
+                        code,
+                        PACKAGE_JSON,
+                        format!("{at}: provider '{provider}' takes no option '{key}'"),
+                        Some(if takes.is_empty() {
+                            "remove options".to_string()
+                        } else {
+                            format!("use {}", takes.join(", "))
+                        }),
+                    );
+                    continue;
+                };
+                *kind
+            }
+            None if value.is_boolean() => OptionType::Boolean,
+            None => OptionType::String,
+        };
+        let valid = match expected {
+            OptionType::Boolean => value.is_boolean(),
+            OptionType::String => value.as_str().is_some_and(|text| !text.trim().is_empty()),
+        };
+        if !valid {
+            ctx.error(
+                code,
+                PACKAGE_JSON,
+                match expected {
+                    OptionType::Boolean => format!("{at}.{key} must be a boolean"),
+                    OptionType::String => format!("{at}.{key} must be a non-empty string"),
+                },
+                None::<String>,
             );
         }
     }
@@ -5717,10 +5809,10 @@ mod tests {
         let ok = check_recipe_files(&provider_recipe(
             "issues",
             json!([
-                { "provider": "linear", "team": "ENG" },
-                { "provider": "jira", "project": "OPS", "issueType": "Task" },
+                { "provider": "linear", "options": { "team": "ENG", "server": "linear-mcp" } },
+                { "provider": "jira", "options": { "project": "OPS", "issueType": "Task" } },
                 { "provider": "introspection", "enabled": false },
-                { "provider": "acme", "package": "@acme/issues", "project": "X" }
+                { "provider": "acme", "package": "@acme/issues", "options": { "queue": "ops", "urgent": true } }
             ]),
             json!({ "@acme/issues": "1.0.0" }),
         ));
@@ -5734,12 +5826,32 @@ mod tests {
         for (declarations, text) in [
             (json!([{ "provider": "acme" }]), "not first-party"),
             (
-                json!([{ "provider": "linear", "project": "OPS" }]),
-                "unknown field 'project'",
+                json!([{ "provider": "linear", "team": "ENG" }]),
+                "unknown field 'team'",
+            ),
+            (
+                json!([{ "provider": "linear", "options": { "project": "OPS" } }]),
+                "takes no option 'project'",
+            ),
+            (
+                json!([{ "provider": "jira", "options": { "project": "" } }]),
+                "options.project must be a non-empty string",
+            ),
+            (
+                json!([{ "provider": "introspection", "options": { "x": "y" } }]),
+                "takes no option 'x'",
+            ),
+            (
+                json!([{ "provider": "linear", "options": ["ENG"] }]),
+                "options must be an object",
+            ),
+            (
+                json!([{ "provider": "acme", "package": "@acme/issues", "options": { "nested": {} } }]),
+                "options.nested must be a non-empty string",
             ),
             (
                 json!([{ "provider": "linear", "enabled": false }]),
-                "unknown field 'enabled'",
+                "applies only to the fallback",
             ),
             (
                 json!([{ "provider": "introspection", "enabled": "no" }]),

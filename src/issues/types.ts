@@ -41,27 +41,31 @@ export const ISSUES_PROVIDER_IDS = ["linear", "jira", "introspection"] as const;
  */
 export const ISSUES_FALLBACK_PROVIDER = "introspection";
 
-/**
- * The options a first-party provider takes beside its id: where `create`
- * puts a new issue. A Recipe's own provider (`package`) may take any of
- * them.
- */
-export const ISSUES_PROVIDER_OPTIONS: Readonly<
-  Record<string, readonly string[]>
-> = {
-  linear: ["team", "server"],
-  jira: ["project", "issueType", "server"],
-  introspection: ["enabled"],
-};
+/** The type of one value in a declaration's `options`. */
+export type IssuesOptionType = "string" | "boolean";
 
-/** Every option a declaration may carry beside `provider`, `package` and `module`. */
-export const ISSUES_DECLARATION_OPTIONS = [
-  "team",
-  "project",
-  "issueType",
-  "server",
-  "enabled",
-] as const;
+/**
+ * The options a provider takes, by name. A declaration's `options` may carry
+ * only these, each of its type; `server` names the Recipe's MCP server for a
+ * provider with an `mcp` adapter.
+ */
+export type IssuesOptionsSchema = Readonly<Record<string, IssuesOptionType>>;
+
+/** A declaration's `options`, checked against the provider's schema. */
+export type IssuesProviderOptions = Readonly<Record<string, string | boolean>>;
+
+/**
+ * The options each first-party provider takes, for `introspection check`,
+ * which does not load providers. Each equals its module's
+ * `capabilities.options`.
+ */
+export const ISSUES_FIRST_PARTY_OPTIONS: Readonly<
+  Record<string, IssuesOptionsSchema>
+> = {
+  linear: { team: "string", server: "string" },
+  jira: { project: "string", issueType: "string", server: "string" },
+  introspection: {},
+};
 
 export const ISSUE_STATUS_CATEGORIES = [
   "open",
@@ -231,6 +235,8 @@ export interface IssuesCapabilities {
    * explicit about where a call goes.
    */
   readonly hosts: readonly string[];
+  /** The options a declaration may set for it. Absent: none. */
+  readonly options?: IssuesOptionsSchema;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +280,7 @@ export interface IssuesMcpToolMapping {
 export interface IssuesMcpAdapter {
   /** The vendor's hosted server, for docs and bindings; the bound URL may differ. */
   readonly url: string;
-  /** The Recipe MCP server id it expects by default; a declaration's `server` overrides it. */
+  /** The Recipe MCP server id it expects by default; the `server` option overrides it. */
   readonly server: string;
   /** Every tool it may call. */
   readonly tools: readonly IssuesMcpToolMapping[];
@@ -336,9 +342,7 @@ export interface IssuesSession {
 /** The declaration a session is created for: its id and options. */
 export interface IssuesProviderConfig {
   readonly provider: string;
-  readonly team?: string;
-  readonly project?: string;
-  readonly issueType?: string;
+  readonly options: IssuesProviderOptions;
 }
 
 export interface IssuesSessionOptions {

@@ -208,6 +208,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
       "url",
     ],
     hosts: ["mcp.linear.app"],
+    options: { team: "string", server: "string" },
   },
   mcp: {
     url: "https://mcp.linear.app/mcp",
@@ -298,7 +299,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
         return { ...issue, comments };
       },
       async create(args, ctx) {
-        const team = args.container ?? config.team;
+        const team = args.container ?? text(config.options.team);
         if (!team)
           throw new IssuesError(
             "invalid_request",
@@ -326,7 +327,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
           const statuses = listOf(
             await call(
               "transition",
-              { team: current.container?.name ?? config.team },
+              { team: current.container?.name ?? text(config.options.team) },
               ctx,
               ["list_issue_statuses"],
             ),

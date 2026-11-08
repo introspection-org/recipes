@@ -15,8 +15,11 @@ the `issues` family of [provider modules](../providers.md).
 {
   "pi": {
     "issues": [
-      { "provider": "linear", "team": "ENG" },
-      { "provider": "jira", "project": "OPS", "issueType": "Task" }
+      { "provider": "linear", "options": { "team": "ENG" } },
+      {
+        "provider": "jira",
+        "options": { "project": "OPS", "issueType": "Task" }
+      }
     ]
   }
 }
@@ -39,25 +42,34 @@ mcp:
 Nothing about issues loads, and no `issues` tool is offered, unless a Recipe
 declares `pi.issues` and its agent selects `issues`.
 
-| Field | Applies to | Meaning |
-| --- | --- | --- |
-| `provider` | all | `linear`, `jira`, `introspection`, or a Recipe's own id |
-| `package` | a Recipe's own | where the provider comes from ([providers](../providers.md#2-declaring-providers)) |
-| `team` | `linear` | the team `create` files into |
-| `project`, `issueType` | `jira` | the project and issue type `create` files into |
-| `server` | `linear`, `jira` | the Recipe's MCP server id, when it is not `linear` or `atlassian` |
-| `enabled` | `introspection` | `false` leaves out the fallback |
+A declaration takes only these fields:
 
-Validation (`pi.issues_invalid`) reports an option a provider does not take,
-an unknown first-party id, a duplicate, and a bad source.
+| Field      | Applies to      | Meaning                                                                                   |
+| ---------- | --------------- | ----------------------------------------------------------------------------------------- |
+| `provider` | all             | `linear`, `jira`, `introspection`, or a Recipe's own id                                   |
+| `package`  | a Recipe's own  | the installed package that serves it ([providers](../providers.md#2-declaring-providers)) |
+| `options`  | all             | the provider's own settings, below                                                        |
+| `enabled`  | `introspection` | `false` leaves out the fallback                                                           |
+
+| Option                 | Provider         | Meaning                                                            |
+| ---------------------- | ---------------- | ------------------------------------------------------------------ |
+| `team`                 | `linear`         | the team `create` files into                                       |
+| `project`, `issueType` | `jira`           | the project and issue type `create` files into                     |
+| `server`               | `linear`, `jira` | the Recipe's MCP server id, when it is not `linear` or `atlassian` |
+
+Validation (`pi.issues_invalid`) reports any other field, an option a
+first-party provider does not take or of the wrong type, an unknown
+first-party id, a duplicate, and a bad source. A Recipe's own provider
+declares its options in `capabilities.options` (`{ queue: "string" }`), and
+loading it fails on an option it does not declare.
 
 ## Providers
 
-| Provider | Transport | Server | Credential |
-| --- | --- | --- | --- |
-| `linear` | MCP | `https://mcp.linear.app/mcp` | the member's MCP connector binding |
-| `jira` | MCP | `https://mcp.atlassian.com/v2/mcp`, its Jira tools | the member's MCP connector binding |
-| `introspection` | REST | the data plane's `/v1/issues` | the task's own session |
+| Provider        | Transport | Server                                             | Credential                         |
+| --------------- | --------- | -------------------------------------------------- | ---------------------------------- |
+| `linear`        | MCP       | `https://mcp.linear.app/mcp`                       | the member's MCP connector binding |
+| `jira`          | MCP       | `https://mcp.atlassian.com/v2/mcp`, its Jira tools | the member's MCP connector binding |
+| `introspection` | REST      | the data plane's `/v1/issues`                      | the task's own session             |
 
 **`introspection` is the fallback.** It is included whenever `pi.issues` is
 declared, unless declared with `"enabled": false`, and is offered only while
@@ -88,43 +100,43 @@ sandbox. `create` files the issue on the calling task
 
 ## Commands
 
-| Command | Takes | Does |
-| --- | --- | --- |
-| `search` | `query`, `status`, `assignee`, `container`, `label`, `limit` | find issues |
-| `get` | `handle` | one issue with its comments |
-| `create` | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` | a new issue |
-| `update` | `handle`, `title`, `description`, `priority`, `labels`, `assignee` | change fields |
-| `comment` | `handle`, `body` | add a comment |
-| `transition` | `handle`, `status` (a name or a category) | move to another status |
+| Command      | Takes                                                                               | Does                        |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------- |
+| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit`                        | find issues                 |
+| `get`        | `handle`                                                                            | one issue with its comments |
+| `create`     | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` | a new issue                 |
+| `update`     | `handle`, `title`, `description`, `priority`, `labels`, `assignee`                  | change fields               |
+| `comment`    | `handle`, `body`                                                                    | add a comment               |
+| `transition` | `handle`, `status` (a name or a category)                                           | move to another status      |
 
 ## The shape
 
 Every issue comes back in one shape, with a handle every later command takes:
 
-| Field | Linear | Jira | Introspection |
-| --- | --- | --- | --- |
-| `handle` | `linear:ENG-123` | `jira:PROJ-45` | `introspection:<display index>` |
-| `title` | title | summary | title |
-| `description` (markdown) | description | description, from Atlassian Document Format (best-effort) | description |
-| `status.name` | workflow state | status | status |
-| `status.category` | backlog, unstarted, triage → open; started → in_progress; completed → done; canceled → cancelled | To Do → open, In Progress → in_progress, Done → done; a done status named like cancelled, won't do or rejected → cancelled | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
-| `priority` | 0 none, 1 urgent, 2 high, 3 medium, 4 low | Highest → urgent, High → high, Medium → medium, Low and Lowest → low | low to urgent, no `none` |
-| `assignee` | assignee | assignee | none |
-| `labels` | labels | labels | tags |
-| `container` | team | project, with the issue type | the project |
-| `url` | ✓ | the site's `/browse/<key>` | not yet |
-| `comments` (on `get`) | ✓ | ✓ | from the issue's events |
+| Field                    | Linear                                                                                           | Jira                                                                                                                       | Introspection                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `handle`                 | `linear:ENG-123`                                                                                 | `jira:PROJ-45`                                                                                                             | `introspection:<display index>`                                          |
+| `title`                  | title                                                                                            | summary                                                                                                                    | title                                                                    |
+| `description` (markdown) | description                                                                                      | description, from Atlassian Document Format (best-effort)                                                                  | description                                                              |
+| `status.name`            | workflow state                                                                                   | status                                                                                                                     | status                                                                   |
+| `status.category`        | backlog, unstarted, triage → open; started → in_progress; completed → done; canceled → cancelled | To Do → open, In Progress → in_progress, Done → done; a done status named like cancelled, won't do or rejected → cancelled | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
+| `priority`               | 0 none, 1 urgent, 2 high, 3 medium, 4 low                                                        | Highest → urgent, High → high, Medium → medium, Low and Lowest → low                                                       | low to urgent, no `none`                                                 |
+| `assignee`               | assignee                                                                                         | assignee                                                                                                                   | none                                                                     |
+| `labels`                 | labels                                                                                           | labels                                                                                                                     | tags                                                                     |
+| `container`              | team                                                                                             | project, with the issue type                                                                                               | the project                                                              |
+| `url`                    | ✓                                                                                                | the site's `/browse/<key>`                                                                                                 | not yet                                                                  |
+| `comments` (on `get`)    | ✓                                                                                                | ✓                                                                                                                          | from the issue's events                                                  |
 
 ## What each provider supports
 
-| | `linear` | `jira` | `introspection` |
-| --- | --- | --- | --- |
-| `search` | ✓ | ✓ (JQL) | ✓; text matches the 200 most recent issues; no assignee filter |
-| `get` | ✓ | ✓ | ✓ |
-| `create` | ✓, needs a team | ✓, needs a project and issue type | ✓, on the calling task |
-| `update` | ✓ | ✓ | ✓, no assignee |
-| `comment` | ✓ | ✓ | not yet |
-| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status` |
+|              | `linear`                                                       | `jira`                                                  | `introspection`                                                |
+| ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text matches the 200 most recent issues; no assignee filter |
+| `get`        | ✓                                                              | ✓                                                       | ✓                                                              |
+| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on the calling task                                         |
+| `update`     | ✓                                                              | ✓                                                       | ✓, no assignee                                                 |
+| `comment`    | ✓                                                              | ✓                                                       | not yet                                                        |
+| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                  |
 
 An Introspection comment is an event attached to the issue. The provider reads
 comments from `GET /v1/events?event_name=introspection.issue&issue_id=…`
@@ -142,28 +154,29 @@ captured-tool-list fixtures in `test/fixtures/issues/`, authored from vendor
 documentation; replace them with captured lists, fix the maps, and set
 `verified: true`.
 
-| Provider | Use | Tool | Arguments sent |
-| --- | --- | --- | --- |
-| `linear` | search | `list_issues` | `query`, `state`, `assignee`, `team`, `label`, `limit` |
-| `linear` | get | `get_issue`, `list_comments` | `id`; `issueId` |
-| `linear` | create, update, transition | `save_issue` (else `create_issue`, `update_issue`) | `id`, `team`, `title`, `description`, `priority` (0–4), `labels`, `assignee`, `state` |
-| `linear` | comment | `create_comment` | `issueId`, `body` |
-| `linear` | transition by category | `list_issue_statuses` | `team` |
-| `jira` | every call | `getAccessibleAtlassianResources` | none; the first site with Jira scopes gives `cloudId` |
-| `jira` | assignee by name | `lookupJiraAccountId` | `cloudId`, `searchString` |
-| `jira` | search | `searchJiraIssuesUsingJql` | `cloudId`, `jql`, `maxResults`, `fields` |
-| `jira` | get | `getJiraIssue`, `listJiraIssueComments` | `cloudId`, `issueIdOrKey`, `fields` |
-| `jira` | create | `createJiraIssue` | `cloudId`, `projectKey`, `issueTypeName`, `summary`, `description`, `assignee_account_id`, `additional_fields` |
-| `jira` | update | `editJiraIssue` | `cloudId`, `issueIdOrKey`, `fields` |
-| `jira` | comment | `addOrEditJiraIssueComment` (else `addCommentToJiraIssue`) | `cloudId`, `issueIdOrKey`, `commentBody` |
-| `jira` | transition | `listJiraIssueTransitions` (else `getTransitionsForJiraIssue`), `transitionJiraIssue` | `cloudId`, `issueIdOrKey`, `transition: { id }` |
+| Provider | Use                        | Tool                                                                                  | Arguments sent                                                                                                 |
+| -------- | -------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `linear` | search                     | `list_issues`                                                                         | `query`, `state`, `assignee`, `team`, `label`, `limit`                                                         |
+| `linear` | get                        | `get_issue`, `list_comments`                                                          | `id`; `issueId`                                                                                                |
+| `linear` | create, update, transition | `save_issue` (else `create_issue`, `update_issue`)                                    | `id`, `team`, `title`, `description`, `priority` (0–4), `labels`, `assignee`, `state`                          |
+| `linear` | comment                    | `create_comment`                                                                      | `issueId`, `body`                                                                                              |
+| `linear` | transition by category     | `list_issue_statuses`                                                                 | `team`                                                                                                         |
+| `jira`   | every call                 | `getAccessibleAtlassianResources`                                                     | none; the first site with Jira scopes gives `cloudId`                                                          |
+| `jira`   | assignee by name           | `lookupJiraAccountId`                                                                 | `cloudId`, `searchString`                                                                                      |
+| `jira`   | search                     | `searchJiraIssuesUsingJql`                                                            | `cloudId`, `jql`, `maxResults`, `fields`                                                                       |
+| `jira`   | get                        | `getJiraIssue`, `listJiraIssueComments`                                               | `cloudId`, `issueIdOrKey`, `fields`                                                                            |
+| `jira`   | create                     | `createJiraIssue`                                                                     | `cloudId`, `projectKey`, `issueTypeName`, `summary`, `description`, `assignee_account_id`, `additional_fields` |
+| `jira`   | update                     | `editJiraIssue`                                                                       | `cloudId`, `issueIdOrKey`, `fields`                                                                            |
+| `jira`   | comment                    | `addOrEditJiraIssueComment` (else `addCommentToJiraIssue`)                            | `cloudId`, `issueIdOrKey`, `commentBody`                                                                       |
+| `jira`   | transition                 | `listJiraIssueTransitions` (else `getTransitionsForJiraIssue`), `transitionJiraIssue` | `cloudId`, `issueIdOrKey`, `transition: { id }`                                                                |
 
 ## A provider of your own
 
 A provider module is `{ kind: "issues", apiVersion: 1, id, capabilities,
 mcp?, available?, createSession }` (`RecipeIssuesProviderModule`), importing
 only types from `@introspection-ai/recipes/issues`. `capabilities` lists the
-commands it serves, the fields it fills, and every host it calls.
+commands it serves, the fields it fills, every host it calls, and the options
+it takes. Its session receives the declaration's options as `config.options`.
 `createSession` returns one method per command; each receives the provider's
 own reference (the handle without its prefix) and, for an MCP provider, a
 caller bound to its server. A failure the model should read throws an
