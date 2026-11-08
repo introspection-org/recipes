@@ -1,6 +1,6 @@
 # Web search
 
-**Status: prototype.** `@introspection-ai/recipes/search` implements the
+`@introspection-ai/recipes/search` implements the
 `web_search` tool and its provider contract; six providers (Tavily, Exa,
 Brave, Keenable, Parallel, Perplexity) ship in the companion package
 `@introspection-ai/recipe-search` ([Where things live](#where-things-live)). Tavily, Exa,
