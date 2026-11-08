@@ -1,0 +1,36 @@
+{
+  "tools": {
+    "systemPromptBytes": 849,
+    "toolsBytes": 22187,
+    "tools": [
+      "calendar",
+      "drive",
+      "mail",
+      "read"
+    ]
+  },
+  "tools-deferred": {
+    "systemPromptBytes": 849,
+    "toolsBytes": 1334,
+    "tools": [
+      "read",
+      "tool_search"
+    ]
+  },
+  "codemode": {
+    "systemPromptBytes": 849,
+    "toolsBytes": 11057,
+    "tools": [
+      "codemode",
+      "read"
+    ]
+  },
+  "cli": {
+    "systemPromptBytes": 849,
+    "toolsBytes": 1294,
+    "tools": [
+      "bash",
+      "read"
+    ]
+  }
+}

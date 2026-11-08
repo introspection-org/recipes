@@ -15,7 +15,11 @@ import {
 } from "../src/recipe/agent.js";
 import { type RecipeSessionHandle } from "../src/session.js";
 import { writeFixtureRecipe } from "../src/test-utils.js";
-import { lastToolResult, openRecipeSession } from "./helpers/mcp-session.js";
+import {
+  lastToolResult,
+  modelView,
+  openRecipeSession,
+} from "./helpers/mcp-session.js";
 
 type Context = Parameters<
   Extract<FauxResponseStep, (...args: never[]) => unknown>
@@ -252,11 +256,13 @@ describe("first-party tools by tools.mode", () => {
     it(`serves the tool to bash's tools command in cli, undeclared (${how})`, async () => {
       let tools: string[] = [];
       let output = "";
+      let prompt = "";
       await run(
         ["tools:", "  mode: cli", "  include: [read, bash, issues]"],
         [
           (context) => {
             tools = declared(context);
+            prompt = JSON.stringify(modelView(context).tools);
             return fauxAssistantMessage([fauxToolCall("bash", { command })], {
               stopReason: "toolUse",
             });
@@ -271,5 +277,6 @@ describe("first-party tools by tools.mode", () => {
       expect(tools).not.toContain("issues");
       expect(tools).not.toContain("codemode");
       expect(output).toContain("acme:A-1");
+      expect(prompt).toContain("reach them from bash with the `tools` command");
     });
 });

@@ -248,10 +248,11 @@ function startRecording(
   options: {
     body?: (body: string) => string;
     rewrite: (text: string) => string;
+    record?: boolean;
   },
 ): Polly {
   const polly = new Polly(name, {
-    mode: RECORDING ? "record" : "replay",
+    mode: (options.record ?? RECORDING) ? "record" : "replay",
     adapters: ["fetch"],
     adapterOptions: { fetch: { context: globalThis } },
     persister: "fs",
@@ -321,15 +322,64 @@ export function startMcpRecording(
  * `responses` collects each response body from `host`, recorded or replayed,
  * rewritten the same way so a recording and its replay read alike.
  */
+/**
+ * A streamed tool call's input as one `input_json_delta` per content block:
+ * the model splits it at arbitrary points, so a path or address it echoes
+ * would otherwise slip past a rewrite in pieces.
+ */
+function joinToolInputDeltas(text: string): string {
+  if (!text.includes("input_json_delta")) return text;
+  const events = text.split("\n\n");
+  const first = new Map<number, { at: number; json: string }>();
+  const kept: Array<string | undefined> = events.map((event, at) => {
+    const data = event.split("\n").find((line) => line.startsWith("data:"));
+    if (!data) return event;
+    let parsed: {
+      type?: string;
+      index?: number;
+      delta?: { type?: string; partial_json?: string };
+    };
+    try {
+      parsed = JSON.parse(data.slice(5));
+    } catch {
+      return event;
+    }
+    if (
+      parsed.type !== "content_block_delta" ||
+      parsed.delta?.type !== "input_json_delta" ||
+      parsed.index === undefined
+    )
+      return event;
+    const seen = first.get(parsed.index);
+    if (seen) {
+      seen.json += parsed.delta.partial_json ?? "";
+      return undefined;
+    }
+    first.set(parsed.index, { at, json: parsed.delta.partial_json ?? "" });
+    return event;
+  });
+  for (const [index, { at, json }] of first)
+    kept[at] = `event: content_block_delta\ndata: ${JSON.stringify({
+      type: "content_block_delta",
+      index,
+      delta: { type: "input_json_delta", partial_json: json },
+    })}`;
+  return kept.filter((event) => event !== undefined).join("\n\n");
+}
+
 export function startModelRecording(
   name: string,
   dir: string,
   host: string,
   replace: ReadonlyArray<readonly [string, string]> = [],
+  record = RECORDING,
 ): { polly: Polly; responses: string[] } {
   const rewrite = (text: string) =>
-    replace.reduce((out, [from, to]) => out.split(from).join(to), scrub(text));
-  const polly = startRecording(name, dir, host, { rewrite });
+    replace.reduce(
+      (out, [from, to]) => out.split(from).join(to),
+      scrub(joinToolInputDeltas(text)),
+    );
+  const polly = startRecording(name, dir, host, { rewrite, record });
   const responses: string[] = [];
   polly.server.any().on("response", (request, response) => {
     if (new URL(request.url).host === host)

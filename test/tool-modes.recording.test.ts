@@ -26,15 +26,18 @@ import {
 /**
  * One prompt needing Google's mail, calendar and drive, run through a real
  * Anthropic model once per first-party tool mode, so the cassettes carry
- * what each mode costs in tokens. Records with `POLLY_MODE=record` and
- * `ANTHROPIC_API_KEY`; replays the committed cassettes otherwise.
+ * what each mode costs in tokens, under a folder per model. Records with
+ * `POLLY_MODE=record` and `ANTHROPIC_API_KEY`, one model at a time
+ * (`RECORD_MODEL`, default the cheapest) and optionally one mode
+ * (`RECORD_MODE`); replays every committed cassette otherwise.
  * `<mode>.summary.json` beside each is Anthropic's `usage` per request and
  * the tool calls the model made; `tool-modes.test.ts` is the model-free
  * baseline.
  */
 const DIR = join(import.meta.dirname, "recordings", "tool-modes");
-// The newest Sonnet in the installed pi-ai catalog.
-const MODEL = "anthropic/claude-sonnet-5-5";
+const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5"] as const;
+const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0];
+const RECORD_MODE = process.env.RECORD_MODE;
 const PROMPT =
   "What's on my calendar tomorrow, and did Dana email about the budget? " +
   "Find the budget spreadsheet in my Drive, then draft a reply to Dana saying " +
@@ -117,12 +120,12 @@ function summarizeResponse(body: string): RequestSummary {
   };
 }
 
-function summarize(responses: readonly string[]): Summary {
+function summarize(responses: readonly string[], model: string): Summary {
   const requests = responses.map(summarizeResponse);
   const sum = (field: (typeof USAGE_FIELDS)[number]) =>
     requests.reduce((total, request) => total + request[field], 0);
   return {
-    model: MODEL,
+    model: `anthropic/${model}`,
     prompt: PROMPT,
     requests,
     totals: {
@@ -137,8 +140,8 @@ function summarize(responses: readonly string[]): Summary {
 }
 
 /** The live key when recording, never printed or written; a placeholder a replay never sends. */
-function anthropicKey(): string {
-  if (!RECORDING) return "replay";
+function anthropicKey(record: boolean): string {
+  if (!record) return "replay";
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("POLLY_MODE=record needs ANTHROPIC_API_KEY");
   return key;
@@ -165,56 +168,66 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  for (const mode of Object.keys(TOOL_MODES) as ToolMode[])
-    it.skipIf(!RECORDING && !hasRecording(DIR, mode))(
-      `${mode}: calendar, mail and drive, then a draft`,
-      async () => {
-        const { polly, responses } = startModelRecording(
-          mode,
-          DIR,
-          "api.anthropic.com",
-          localPaths(),
-        );
-        cleanups.push(() => polly.stop());
-        const fixture = googleToolModeRecipe(mode);
-        cleanups.push(fixture.cleanup);
-        const agentPath = join(fixture.recipeDir, "agents", "agent.yaml");
-        writeFileSync(
-          agentPath,
-          readFileSync(agentPath, "utf8").replace(
-            "anthropic/claude-sonnet-4-5",
-            MODEL,
-          ),
-        );
-        const credentials = new InMemoryCredentialStore();
-        await credentials.modify("anthropic", async () => ({
-          type: "api_key",
-          key: anthropicKey(),
-        }));
-        const handle = await createAgentSession({
-          recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
-          cwd: fixture.workspaceDir,
-          env: cleanEnv(),
-          credentials,
-          mcpBindings: { servers: [] },
-        });
-        handles.push(handle);
+  for (const model of MODELS)
+    for (const mode of Object.keys(TOOL_MODES) as ToolMode[]) {
+      const dir = join(DIR, model);
+      const record =
+        RECORDING &&
+        model === RECORD_MODEL &&
+        (RECORD_MODE === undefined || RECORD_MODE === mode);
+      it.skipIf(!record && !hasRecording(dir, mode))(
+        `${model} ${mode}: calendar, mail and drive, then a draft`,
+        async () => {
+          const { polly, responses } = startModelRecording(
+            mode,
+            dir,
+            "api.anthropic.com",
+            localPaths(),
+            record,
+          );
+          cleanups.push(() => polly.stop());
+          const fixture = googleToolModeRecipe(mode);
+          cleanups.push(fixture.cleanup);
+          const agentPath = join(fixture.recipeDir, "agents", "agent.yaml");
+          writeFileSync(
+            agentPath,
+            readFileSync(agentPath, "utf8").replace(
+              "anthropic/claude-sonnet-4-5",
+              `anthropic/${model}`,
+            ),
+          );
+          const credentials = new InMemoryCredentialStore();
+          await credentials.modify("anthropic", async () => ({
+            type: "api_key",
+            key: anthropicKey(record),
+          }));
+          const handle = await createAgentSession({
+            recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
+            cwd: fixture.workspaceDir,
+            env: cleanEnv(),
+            credentials,
+            mcpBindings: { servers: [] },
+          });
+          handles.push(handle);
 
-        await handle.session.prompt(PROMPT);
-        await polly.stop();
+          await handle.session.prompt(PROMPT);
+          await polly.stop();
 
-        const summary = summarize(responses);
-        const path = join(DIR, `${mode}.summary.json`);
-        if (RECORDING) {
-          mkdirSync(DIR, { recursive: true });
-          writeFileSync(path, `${JSON.stringify(summary, null, 2)}\n`);
-        } else {
-          const committed = JSON.parse(readFileSync(path, "utf8")) as Summary;
-          expect(committed.requests).toHaveLength(recordedRequests(DIR, mode));
-          expect(summary).toEqual(committed);
-        }
-        expect(summary.totals.tool_calls).toBeGreaterThan(0);
-      },
-      600_000,
-    );
+          const summary = summarize(responses, model);
+          const path = join(dir, `${mode}.summary.json`);
+          if (record) {
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(path, `${JSON.stringify(summary, null, 2)}\n`);
+          } else {
+            const committed = JSON.parse(readFileSync(path, "utf8")) as Summary;
+            expect(committed.requests).toHaveLength(
+              recordedRequests(dir, mode),
+            );
+            expect(summary).toEqual(committed);
+          }
+          expect(summary.totals.tool_calls).toBeGreaterThan(0);
+        },
+        600_000,
+      );
+    }
 });
