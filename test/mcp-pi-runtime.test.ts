@@ -1,9 +1,17 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { PiMcpRuntime } from "../src/mcp/pi-mcp-runtime.js";
+import {
+  createMcpRuntime,
+  MCP_CLIENT_ENV,
+  usesPiMcpClient,
+} from "../src/mcp/pi-runtime.js";
 
 interface Behaviour {
   /** Statuses to answer the next requests of a method with, in order. */
@@ -267,5 +275,60 @@ describe("the pi-mcp runtime behind the mcp command", () => {
           },
         }),
     ).toThrow(/OAuth flow, which the pi-mcp client does not run/);
+  });
+});
+
+describe("choosing the mcp command's client", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0))
+      rmSync(dir, { recursive: true, force: true });
+  });
+
+  function config(server: Record<string, unknown>): string {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-client-"));
+    dirs.push(dir);
+    const path = join(dir, "mcporter.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        imports: [],
+        mcpServers: {
+          hello: { baseUrl: "http://127.0.0.1:9/mcp", headers: {}, ...server },
+        },
+      }),
+    );
+    return path;
+  }
+
+  it("is pi-mcp by default, and mcporter when PI_RECIPES_MCP_CLIENT asks", () => {
+    expect(usesPiMcpClient({})).toBe(true);
+    expect(usesPiMcpClient({ [MCP_CLIENT_ENV]: "pi-mcp" })).toBe(true);
+    expect(usesPiMcpClient({ [MCP_CLIENT_ENV]: " mcporter " })).toBe(false);
+  });
+
+  it("serves a header-authenticated session on pi-mcp", async () => {
+    // The default, whatever the run's own setting.
+    const chosen = process.env[MCP_CLIENT_ENV];
+    delete process.env[MCP_CLIENT_ENV];
+    onTestFinished(() => {
+      if (chosen !== undefined) process.env[MCP_CLIENT_ENV] = chosen;
+    });
+    const runtime = await createMcpRuntime(
+      config({ headers: { Authorization: "Bearer ${HELLO_TOKEN}" } }),
+    );
+    expect(runtime).toBeInstanceOf(PiMcpRuntime);
+    await runtime.close();
+  });
+
+  it("keeps a session that needs an OAuth flow or HTTP/1 on mcporter", async () => {
+    for (const server of [
+      { auth: "oauth", oauthClientId: "client" },
+      { httpFetch: "node-http1" },
+    ]) {
+      const runtime = await createMcpRuntime(config(server));
+      expect(runtime).not.toBeInstanceOf(PiMcpRuntime);
+      await runtime.close();
+    }
   });
 });

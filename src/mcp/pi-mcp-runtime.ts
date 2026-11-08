@@ -185,7 +185,7 @@ export class PiMcpRuntime {
     for (const [id, server] of Object.entries(config.mcpServers)) {
       if (server.auth === "oauth") {
         throw new Error(
-          `MCP server '${id}' is bound with an OAuth flow, which the pi-mcp client does not run; unset ${MCP_CLIENT_ENV} to use mcporter for it`,
+          `MCP server '${id}' is bound with an OAuth flow, which the pi-mcp client does not run; set ${MCP_CLIENT_ENV}=mcporter to use mcporter for it`,
         );
       }
       this.servers.set(id, new ServerConnection(id, server, env));
