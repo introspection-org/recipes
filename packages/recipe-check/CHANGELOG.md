@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.22.0...introspection-recipe-check-v0.23.0) (2026-11-08)
+
+
+### Features
+
+* **search:** one web_search tool across providers ([#464](https://github.com/introspection-org/recipes/issues/464)) ([1e1395b](https://github.com/introspection-org/recipes/commit/1e1395bfc8831af638eb8050f4ccbc36c5090eb6))
+
 ## [0.22.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.21.0...introspection-recipe-check-v0.22.0) (2026-11-07)
 
 
