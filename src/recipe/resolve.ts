@@ -8,6 +8,7 @@ import {
   type RecipeAgentDefinition,
   type RecipeAgentMcp,
   type RecipeAgentMcpMode,
+  type RecipeAgentPlatform,
   type RecipeSystemInstructions,
 } from "./agent.js";
 import type { RecipeAgentModelConfig } from "./model.js";
@@ -24,7 +25,7 @@ import {
 } from "./package.js";
 
 export type { RecipePackageManifest } from "./package.js";
-export type { RecipeAgentMcp } from "./agent.js";
+export type { RecipeAgentMcp, RecipeAgentPlatform } from "./agent.js";
 export {
   activateRecipePython,
   prepareRecipePython,
@@ -63,6 +64,8 @@ export interface ResolvedRecipeAgent {
   readonly thinkingLevel?: ThinkingLevel;
   readonly tools: readonly string[];
   readonly mcp?: ResolvedRecipeAgentMcp;
+  /** How the selected first-party tools reach the model (`platform`). */
+  readonly platform?: RecipeAgentPlatform;
   readonly skillPaths: readonly string[];
   readonly promptPaths: readonly string[];
   readonly extensionPaths: readonly string[];
@@ -377,6 +380,7 @@ function buildResolvedRecipeAgent(
     ...(agent.mcp
       ? { mcp: { ...agent.mcp, mode: agent.mcp.mode ?? "cli" } }
       : {}),
+    ...(agent.platform ? { platform: agent.platform } : {}),
     skillPaths,
     promptPaths,
     extensionPaths: [...extensionPaths],

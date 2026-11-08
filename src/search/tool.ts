@@ -170,6 +170,8 @@ export function webSearchParameters(
 }
 
 export interface WebSearchOptions {
+  /** `codemode`: callable from codemode scripts only, not declared to the model (`platform.mode`). */
+  exposure?: "direct" | "codemode";
   /**
    * The providers whose REST API is bound to this runtime (an endpoint and
    * credential on its egress). One not implemented here is not offered.
@@ -652,6 +654,7 @@ export function registerWebSearchTool(
   const mcpTools = webSearchMcpToolNames(options);
   pi.registerTool({
     name: SEARCH_TOOL_NAME,
+    ...(options.exposure ? { exposure: options.exposure } : {}),
     label: "Web search",
     description: WEB_SEARCH_DESCRIPTION,
     parameters: webSearchParameters(offered),

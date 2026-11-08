@@ -56,6 +56,45 @@ export interface RecipeAgentMcp {
 
 const INVALID_AGENT_MCP = Symbol("invalidAgentMcp");
 
+/** How the first-party tools Recipes owns reach the model (`platform.mode`). */
+export type RecipeAgentPlatformMode = "tools" | "codemode";
+
+/** The tools Recipes owns, which `platform` governs. */
+export const PLATFORM_TOOL_NAMES = [
+  "issues",
+  "mail",
+  "calendar",
+  "drive",
+  "web_search",
+] as const;
+
+export interface RecipeAgentPlatform {
+  /** Omission means `tools`: each selected tool is declared to the model. */
+  mode?: RecipeAgentPlatformMode;
+  /** In codemode, tools declared to the model as well. */
+  eager?: string[];
+}
+
+/**
+ * How a first-party tool registers for an agent: declared (`direct`), or
+ * callable from codemode scripts only (`codemode`).
+ */
+export function platformToolExposure(
+  platform: RecipeAgentPlatform | undefined,
+  toolName: string,
+): "direct" | "codemode" {
+  return platform?.mode === "codemode" &&
+    !(platform.eager ?? []).includes(toolName)
+    ? "codemode"
+    : "direct";
+}
+
+const INVALID_AGENT_PLATFORM = Symbol("invalidAgentPlatform");
+
+type ParsedRecipeAgentPlatform = RecipeAgentPlatform & {
+  [INVALID_AGENT_PLATFORM]?: string;
+};
+
 type ParsedRecipeAgentMcp = RecipeAgentMcp & {
   [INVALID_AGENT_MCP]?: true;
 };
@@ -79,6 +118,8 @@ export interface RecipeAgentDefinition {
   tools: string[];
   /** MCP tool selection, separate from the exact Pi/extension tool allowlist. */
   mcp?: RecipeAgentMcp;
+  /** How the selected first-party tools reach the model. */
+  platform?: RecipeAgentPlatform;
   skills: string[];
   /**
    * The phases the agent moves through, in order (`[build, improve]`): each
@@ -99,6 +140,7 @@ export type RecipeAgentConfigField =
   | "session"
   | "tools"
   | "mcp"
+  | "platform"
   | "skills"
   | "phases"
   | "subagents"
@@ -115,7 +157,7 @@ type ParsedRecipeAgentDefinition = Omit<
 
 export interface RecipeAgentValidationFinding {
   agentName: string;
-  field: "name" | "from" | "file" | "mcp" | "model.name";
+  field: "name" | "from" | "file" | "mcp" | "platform" | "model.name";
   code?: string;
   message: string;
 }
@@ -133,6 +175,7 @@ const AGENT_YAML_KEYS = new Set([
   "session",
   "tools",
   "mcp",
+  "platform",
   "skills",
   "phases",
   "subagents",
@@ -418,6 +461,47 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
   return mcp;
 }
 
+function parsePlatform(
+  data: Record<string, unknown>,
+): RecipeAgentPlatform | undefined {
+  if (!Object.hasOwn(data, "platform")) return undefined;
+  const value = data.platform;
+  const raw = asRecord(value);
+  const platform: ParsedRecipeAgentPlatform = {
+    ...(raw.mode === "tools" || raw.mode === "codemode"
+      ? { mode: raw.mode }
+      : {}),
+    ...(Object.hasOwn(raw, "eager") ? { eager: stringArray(raw.eager) } : {}),
+  };
+  const unknown = Object.keys(raw).filter(
+    (key) => !["mode", "eager"].includes(key),
+  );
+  const problem =
+    !value || typeof value !== "object" || Array.isArray(value)
+      ? "platform must be a mapping"
+      : unknown.length > 0
+        ? `platform has unsupported key(s): ${unknown.join(", ")}; it takes mode and eager`
+        : raw.mode === "cli"
+          ? "platform.mode cli needs the tools command, which this release does not have; use tools or codemode"
+          : Object.hasOwn(raw, "mode") &&
+              raw.mode !== "tools" &&
+              raw.mode !== "codemode"
+            ? "platform.mode must be tools or codemode"
+            : Object.hasOwn(raw, "eager") &&
+                (!Array.isArray(raw.eager) ||
+                  raw.eager.some((name) => typeof name !== "string"))
+              ? "platform.eager must be a list of tool names"
+              : Object.hasOwn(raw, "eager") && raw.mode !== "codemode"
+                ? "platform.eager applies only with platform.mode codemode"
+                : undefined;
+  if (problem)
+    Object.defineProperty(platform, INVALID_AGENT_PLATFORM, {
+      value: problem,
+      enumerable: false,
+    });
+  return platform;
+}
+
 function mergeMcp(
   base: RecipeAgentMcp | undefined,
   child: RecipeAgentMcp | undefined,
@@ -535,6 +619,7 @@ function readRecipeAgentSources(
           ? stringArray(data.tools)
           : undefined,
         mcp: parseMcp(data),
+        platform: parsePlatform(data),
         skills: Object.hasOwn(data, "skills")
           ? stringArray(data.skills)
           : undefined,
@@ -552,6 +637,7 @@ function readRecipeAgentSources(
           "session",
           "tools",
           "mcp",
+          "platform",
           "skills",
           "phases",
           "subagents",
@@ -608,6 +694,9 @@ function definitionsFromSources(
       ...(sessionConfig ? { sessionConfig } : {}),
       tools: raw.tools ?? base?.tools ?? [],
       mcp: mergeMcp(base?.mcp, raw.mcp),
+      ...((raw.platform ?? base?.platform)
+        ? { platform: raw.platform ?? base?.platform }
+        : {}),
       skills: raw.skills ?? base?.skills ?? [],
       ...((raw.phases ?? base?.phases)
         ? { phases: raw.phases ?? base?.phases }
@@ -709,6 +798,22 @@ function validateResolvedRecipeAgentSource(
       ? resolvedMcp(definition.from, [...stack, name])
       : undefined;
     return mergeMcp(base, definition.mcp);
+  }
+
+  function resolvedPlatform(
+    name: string,
+    stack: string[] = [],
+  ): RecipeAgentPlatform | undefined {
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return undefined;
+    const definition = rawDefinitions.get(name);
+    if (!definition) return undefined;
+    return (
+      definition.platform ??
+      (definition.from
+        ? resolvedPlatform(definition.from, [...stack, name])
+        : undefined)
+    );
   }
 
   function resolvedTools(name: string, stack: string[] = []): string[] {
@@ -816,6 +921,32 @@ function validateResolvedRecipeAgentSource(
       code: "mcp_invalid",
       message: `Recipe agent "${agentName}" puts MCP server '${serverId}' behind tool(s) it does not declare: ${missing.join(", ")}`,
     });
+  }
+
+  const platform = resolvedPlatform(agentName);
+  const platformProblem = (platform as ParsedRecipeAgentPlatform | undefined)?.[
+    INVALID_AGENT_PLATFORM
+  ];
+  if (platformProblem) {
+    findings.push({
+      agentName,
+      field: "platform",
+      code: "platform_invalid",
+      message: `Recipe agent "${agentName}": ${platformProblem}`,
+    });
+  } else {
+    const notSelected = (platform?.eager ?? []).filter(
+      (name) =>
+        !tools.has(name) ||
+        !(PLATFORM_TOOL_NAMES as readonly string[]).includes(name),
+    );
+    if (notSelected.length > 0)
+      findings.push({
+        agentName,
+        field: "platform",
+        code: "platform_invalid",
+        message: `Recipe agent "${agentName}": platform.eager names tool(s) that are not selected first-party tools: ${notSelected.join(", ")}`,
+      });
   }
 
   return findings;

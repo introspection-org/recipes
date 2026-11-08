@@ -159,6 +159,7 @@ describe("Linear over its MCP server (recorded)", () => {
     mode: "tools" | "codemode",
     behind: boolean,
     responses: (calls: readonly string[]) => FauxResponseStep[],
+    platform: "tools" | "codemode" = "tools",
   ) {
     const { polly, calls } = startMcpRecording(name, DIR, "mcp.linear.app");
     cleanups.push(() => polly.stop());
@@ -179,6 +180,7 @@ describe("Linear over its MCP server (recorded)", () => {
         "    linear:",
         '      include: ["*"]',
         ...(behind ? ["      behind: [issues]"] : []),
+        ...(platform === "codemode" ? ["platform:", "  mode: codemode"] : []),
       ],
     });
     cleanups.push(fixture.cleanup);
@@ -190,7 +192,7 @@ describe("Linear over its MCP server (recorded)", () => {
           `import { registerIssuesTool } from ${JSON.stringify(ISSUES_MODULE)};`,
           `import { linearIssuesProvider } from ${JSON.stringify(PROVIDERS_MODULE)};`,
           "export default (pi) => {",
-          "  registerIssuesTool(pi, { providers: [{ module: linearIssuesProvider, config: { provider: 'linear', options: {} }, server: 'linear', fallback: false }] });",
+          `  registerIssuesTool(pi, { exposure: ${JSON.stringify(platform === "codemode" ? "codemode" : "direct")}, providers: [{ module: linearIssuesProvider, config: { provider: 'linear', options: {} }, server: 'linear', fallback: false }] });`,
           "};",
           "",
         ].join("\n"),
@@ -336,6 +338,48 @@ describe("Linear over its MCP server (recorded)", () => {
       expect(rec!.turns.at(-1)!.mcpCallsSinceLastTurn).toEqual([
         "tools/call list_issues",
       ]);
+    },
+  );
+  it.skipIf(!RECORDING && !hasRecording(DIR, "platform-codemode"))(
+    "the issues tool in codemode: search, get and the same search again, composed in one script",
+    async () => {
+      let rec: ReturnType<typeof recorder> | undefined;
+      const { handle: session, polly } = await open(
+        "platform-codemode",
+        "codemode",
+        true,
+        (p) => {
+          rec = recorder(p);
+          return [
+            (context) => (
+              rec!.turn("start", context),
+              call("codemode", {
+                code: [
+                  `const search = { command: "search", query: ${JSON.stringify(QUERY)}, label: ${JSON.stringify(LABEL)}, limit: 5 };`,
+                  `const found = await tools.issues(search);`,
+                  `const handle = /^(linear:\\S+)/m.exec(String(found))?.[1];`,
+                  `const issue = handle ? await tools.issues({ command: "get", handle }) : null;`,
+                  `const again = await tools.issues(search);`,
+                  `return { issue, again };`,
+                ].join("\n"),
+              })
+            ),
+            (context) => (
+              rec!.turn("composed", context),
+              fauxAssistantMessage("done")
+            ),
+          ];
+        },
+        "codemode",
+      );
+
+      await session.session.prompt("go");
+      await polly.stop();
+
+      writeSummary("platform-codemode", { turns: rec!.turns });
+      writeTranscript("platform-codemode", rec!.transcript);
+      expect(rec!.turns.at(-1)!.tools).toContain("codemode");
+      expect(rec!.turns.at(-1)!.tools).not.toContain("issues");
     },
   );
 });
