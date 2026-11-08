@@ -1,5 +1,12 @@
 # Agent Instructions
 
+## Public repository
+
+- **This repository is public: never name a private repository, app or
+  customer** in code, tests, docs, commits or PR text. Describe the behaviour
+  instead (the hosted runtime, the platform's egress), and use neutral names
+  (`acme`, `talent`) in examples and tests.
+
 ## Releases
 
 - **Conventional Commits drive release-please; never bump a version by hand.**

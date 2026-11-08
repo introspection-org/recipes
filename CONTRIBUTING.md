@@ -69,9 +69,8 @@ Recipes does not expose a standalone validation command. Run
   version by hand that has no tag.
 - **Adding a package:** list it in `release-please-config.json` and
   `scripts/release-plan.mjs`, and before its first release reserve its npm
-  name and add the trusted publisher, as introspection-cloud's
-  `docs/design/package-publishing.md` "Adding a package" describes. Without
-  that, its first publish fails with `E404 Not Found - PUT`.
+  name and add the package's trusted publisher on npm. Without that, its first
+  publish fails with `E404 Not Found - PUT`.
 
 ## Dependencies
 
@@ -151,8 +150,8 @@ Recipes does not expose a standalone validation command. Run
   and `release-please-checker-config.json` the checker and its Python binding,
   each with its own manifest and release PR. A change spanning both publishes
   twice and needs coordinating; it is not atomic.
-  `@introspection-ai/cli` comes from `introspection-cli`, the language SDKs
-  (`@introspection-sdk/*`) from `introspection-js-sdk`, and `@earendil-works/*`
+  `@introspection-ai/cli` is the CLI's own package, the language SDKs
+  (`@introspection-sdk/*`) come from `introspection-js-sdk`, and `@earendil-works/*`
   (Pi) is third-party.
 - **pnpm is the only JavaScript lockfile a Recipe commits.** The managed install
   honours `pnpm-lock.yaml` when present and resolves the declared ranges when it

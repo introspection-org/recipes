@@ -142,7 +142,7 @@ An Introspection comment is an event attached to the issue. The provider reads
 comments from `GET /v1/events?event_name=introspection.issue&issue_id=…`
 (`payload.comment`), and reads none from a data plane that does not record
 that family yet. It does not offer `comment` until the platform accepts one
-on `PATCH /v1/issues/{id}` (introspection-cloud#3863).
+on `PATCH /v1/issues/{id}`.
 
 ## Tool maps
 

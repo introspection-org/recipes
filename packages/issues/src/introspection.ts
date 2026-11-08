@@ -229,9 +229,8 @@ export interface IntrospectionProviderOptions {
 /**
  * The `introspection` provider: the Data Plane's `/v1/issues`, on the task's
  * own session, through the JavaScript SDK. `comment` is not offered until the
- * platform accepts a comment on `PATCH /v1/issues/{id}`
- * (introspection-cloud#3863); `get` reads comments already recorded on the
- * issue's events.
+ * platform accepts a comment on `PATCH /v1/issues/{id}`; `get` reads
+ * comments already recorded on the issue's events.
  */
 export function createIntrospectionIssuesProvider(
   options: IntrospectionProviderOptions = {},

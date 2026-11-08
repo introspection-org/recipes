@@ -390,7 +390,7 @@ describe("static MCP session materialization", () => {
       mkdirSync(recipeDir, { recursive: true });
       const local = writeLocalConfig(cwd, [
         {
-          id: "nextplay",
+          id: "talent",
           transport: "streamable_http",
           url: "https://mcp.example.test/mcp",
           headers: { Authorization: "Bearer ${SESSION_TOKEN}" },
@@ -407,7 +407,7 @@ describe("static MCP session materialization", () => {
         env,
         manifest: recipeManifest(recipeDir, [
           {
-            id: "nextplay",
+            id: "talent",
             required: true,
             include: ["*"],
             exclude: ["delete_everything"],
@@ -415,7 +415,7 @@ describe("static MCP session materialization", () => {
         ]),
         agentMcp: [
           {
-            serverId: "nextplay",
+            serverId: "talent",
             tools: { include: ["search_profiles", "get_profile"] },
           },
         ],
@@ -441,9 +441,9 @@ describe("static MCP session materialization", () => {
       expect(serializedSession).not.toContain("secret-value");
       expect(serializedTransport).not.toContain("secret-value");
       expect(serializedTransport).toContain("${SESSION_TOKEN}");
-      expect(
-        JSON.parse(serializedTransport).mcpServers.nextplay.httpFetch,
-      ).toBe("default");
+      expect(JSON.parse(serializedTransport).mcpServers.talent.httpFetch).toBe(
+        "default",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1255,8 +1255,8 @@ describe("MCP CLI helpers", () => {
       version: 1,
       servers: [
         {
-          id: "nextplay",
-          name: "Nextplay",
+          id: "talent",
+          name: "Talent",
           base_url: "https://mcp.example.test/mcp",
           package_tools: { include: ["*"] },
           agent_tools: [{ include: ["*"] }],
@@ -1275,10 +1275,10 @@ describe("MCP CLI helpers", () => {
       ],
     };
     expect(searchMcpTools(session, "candidate")[0]?.ref).toBe(
-      "nextplay.search_profiles",
+      "talent.search_profiles",
     );
     expect(searchMcpTools(session, "query", { regex: true })[0]?.ref).toBe(
-      "nextplay.search_profiles",
+      "talent.search_profiles",
     );
   });
 
@@ -1310,16 +1310,16 @@ describe("MCP CLI helpers", () => {
   });
 
   it("keeps concise recovery diagnostics", () => {
-    expect(describeUnknownRunServer("nxtplay", ["nextplay"])).toContain(
-      "Did you mean 'tools.nextplay'?",
+    expect(describeUnknownRunServer("talnt", ["talent"])).toContain(
+      "Did you mean 'tools.talent'?",
     );
     expect(
-      describeUnavailableRunTool("nextplay", "search_profils", [
+      describeUnavailableRunTool("talent", "search_profils", [
         "search_profiles",
       ]),
     ).toContain("Did you mean 'search_profiles'?");
     expect(
-      callJsonArgumentError(["nextplay.search_profiles", "--json"]),
+      callJsonArgumentError(["talent.search_profiles", "--json"]),
     ).toContain("expects a JSON object");
   });
 });

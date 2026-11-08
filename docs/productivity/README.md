@@ -361,5 +361,5 @@ Recipes that call Pipedream's per-app tools (`gmail-find-email`,
 neutral commands. Most map one to one (`*-find-email` to `mail search`,
 `*-create-draft*` to `mail draft`, `*-send-email` to a draft plus `mail
 send`); Pipedream's triggers have no equivalent until triggers are designed.
-Recipes that wrap those tools in their own adapters, as Ark's `mail.js`,
-`calendar.js` and `drive.js` do, replace each adapter call with one command.
+Recipes that wrap those tools in their own adapters (a `mail.js`,
+`calendar.js` and `drive.js`, say) replace each adapter call with one command.

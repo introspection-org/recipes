@@ -227,7 +227,7 @@ describe("Recipe session MCP codemode on Pi's client", () => {
         "",
       ].join("\n"),
       responses: [
-        fauxAssistantMessage([fauxToolCall("greet", { who: "ark" })], {
+        fauxAssistantMessage([fauxToolCall("greet", { who: "ada" })], {
           stopReason: "toolUse",
         }),
         (context) => {
@@ -239,7 +239,7 @@ describe("Recipe session MCP codemode on Pi's client", () => {
 
     await handle.session.prompt("go");
 
-    expect(output).toContain("Echo: hi ark");
+    expect(output).toContain("Echo: hi ada");
   });
 
   it("sends a binding's headers with ${VAR} resolved from the session env", async () => {

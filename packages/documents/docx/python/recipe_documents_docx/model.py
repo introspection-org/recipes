@@ -5,8 +5,8 @@ table cell is `p-012.r2c3` (`.2` after it for the cell's second paragraph, a nes
 control is one block: its paragraphs are `p-012`, `p-012.2`, `p-012.3` and so on. Edits never add or remove
 blocks, so the ids hold for the whole redline.
 
-The inline markup walk and the margin, change and thread listings are from recipe-redlining's
-lib/view_docx.py and skills/reading-a-redline/read_markup.py (Apache-2.0, Introspection).
+The inline markup walk and the margin, change and thread listings come from an earlier
+redlining Recipe's docx reader (Apache-2.0, Introspection).
 """
 
 from __future__ import annotations

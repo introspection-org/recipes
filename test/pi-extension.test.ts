@@ -393,7 +393,7 @@ describe("Recipes extension for Pi", () => {
           pi: {
             agents: ["agents/*.yaml"],
             mcp: {
-              servers: [{ id: "nextplay", tools: { include: ["search"] } }],
+              servers: [{ id: "talent", tools: { include: ["search"] } }],
             },
           },
         })}\n`,
@@ -410,7 +410,7 @@ describe("Recipes extension for Pi", () => {
           "mcp:",
           "  mode: cli",
           "  servers:",
-          "    nextplay:",
+          "    talent:",
           "      include:",
           "        - search",
           "skills: []",
