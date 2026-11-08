@@ -1,0 +1,59 @@
+{
+  "turns": [
+    {
+      "step": "start",
+      "systemPromptBytes": 148,
+      "toolsBytes": 2206,
+      "tools": [
+        "read",
+        "issues"
+      ],
+      "lastToolResultBytes": 0,
+      "mcpCallsSinceLastTurn": [
+        "initialize",
+        "notifications/initialized",
+        "tools/list"
+      ]
+    },
+    {
+      "step": "search",
+      "systemPromptBytes": 148,
+      "toolsBytes": 2206,
+      "tools": [
+        "read",
+        "issues"
+      ],
+      "lastToolResultBytes": 201,
+      "mcpCallsSinceLastTurn": [
+        "tools/call list_issues"
+      ]
+    },
+    {
+      "step": "get",
+      "systemPromptBytes": 148,
+      "toolsBytes": 2206,
+      "tools": [
+        "read",
+        "issues"
+      ],
+      "lastToolResultBytes": 297,
+      "mcpCallsSinceLastTurn": [
+        "tools/call get_issue",
+        "tools/call list_comments"
+      ]
+    },
+    {
+      "step": "search again",
+      "systemPromptBytes": 148,
+      "toolsBytes": 2206,
+      "tools": [
+        "read",
+        "issues"
+      ],
+      "lastToolResultBytes": 201,
+      "mcpCallsSinceLastTurn": [
+        "tools/call list_issues"
+      ]
+    }
+  ]
+}
