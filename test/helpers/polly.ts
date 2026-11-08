@@ -5,8 +5,11 @@ import FetchAdapter from "@pollyjs/adapter-fetch";
 import { Polly } from "@pollyjs/core";
 import FSPersister from "@pollyjs/persister-fs";
 
-Polly.register(FetchAdapter);
-Polly.register(FSPersister);
+// Both are CommonJS; under NodeNext their default import types as the module,
+// though at run time it is the class `register` takes.
+type Registrable = Parameters<typeof Polly.register>[0];
+Polly.register(FetchAdapter as unknown as Registrable);
+Polly.register(FSPersister as unknown as Registrable);
 
 /**
  * `record` talks to the live MCP server with the token in
@@ -34,7 +37,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "person@example.com"],
 ];
 
-export function scrub(text: string): string {
+function scrub(text: string): string {
   return SECRET_PATTERNS.reduce(
     (out, [pattern, replacement]) => out.replace(pattern, replacement),
     text,
@@ -76,7 +79,7 @@ const KEEP_NAME_UNDER = new Set(["state", "status", "priority"]);
  * and UUIDs map consistently within one recording, in requests and responses
  * alike, so a replayed request names what the replayed response named.
  */
-export class Anonymizer {
+class Anonymizer {
   private readonly keys = new Map<string, string>();
   private readonly uuids = new Map<string, string>();
 
