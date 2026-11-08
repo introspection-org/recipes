@@ -42,7 +42,7 @@ declares `pi.issues` and its agent selects `issues`.
 | Field | Applies to | Meaning |
 | --- | --- | --- |
 | `provider` | all | `linear`, `jira`, `introspection`, or a Recipe's own id |
-| `package` / `module` | a Recipe's own | where the provider comes from ([providers](../providers.md#2-declaring-providers)) |
+| `package` | a Recipe's own | where the provider comes from ([providers](../providers.md#2-declaring-providers)) |
 | `team` | `linear` | the team `create` files into |
 | `project`, `issueType` | `jira` | the project and issue type `create` files into |
 | `server` | `linear`, `jira` | the Recipe's MCP server id, when it is not `linear` or `atlassian` |

@@ -74,7 +74,7 @@ describe("pi.issues", () => {
           { provider: "introspection", enabled: "no" },
           { provider: "acme" },
           { provider: "linear" },
-          { provider: "github", enabled: false, module: "./gh.ts" },
+          { provider: "github", enabled: false, package: "@acme/gh" },
           { provider: "jira2", package: "@acme/jira", color: "red" },
           "linear",
         ],
@@ -84,9 +84,9 @@ describe("pi.issues", () => {
       "package.json#pi.issues[1]: provider 'jira' takes no team",
       "package.json#pi.issues[1].issueType must be a non-empty string",
       "package.json#pi.issues[2].enabled must be true or false",
-      "package.json#pi.issues provider 'acme' is not a first-party provider (linear, jira, introspection); give it a package or module",
+      "package.json#pi.issues provider 'acme' is not a first-party provider (linear, jira, introspection); give it a package",
       "package.json#pi.issues contains duplicate provider 'linear'",
-      "package.json#pi.issues[5]: module './gh.ts' does not exist",
+      "package.json#pi.issues[5].package '@acme/gh' must be listed in package.json#dependencies",
       "package.json#pi.issues[5].enabled applies only to 'introspection'; remove the declaration to leave 'github' out",
       "package.json#pi.issues[6] contains unknown field(s): color",
       "package.json#pi.issues[6].package '@acme/jira' must be listed in package.json#dependencies",
@@ -188,11 +188,17 @@ describe("registering the issues tool", () => {
     ).toContain(mcpToolName("linear", "list_issues"));
   });
 
-  it("loads a Recipe's own provider from a module", async () => {
+  it("loads a Recipe's own provider from an installed package", async () => {
     const recipeDir = recipe(
-      { issues: [{ provider: "acme", module: "./acme.ts", project: "X" }] },
+      { issues: [{ provider: "acme", package: "@acme/issues", project: "X" }] },
       {
-        "acme.ts": `export default { kind: "issues", apiVersion: 1, id: "acme",
+        "node_modules/@acme/issues/package.json": JSON.stringify({
+          name: "@acme/issues",
+          version: "1.0.0",
+          type: "module",
+          main: "index.js",
+        }),
+        "node_modules/@acme/issues/index.js": `export default { kind: "issues", apiVersion: 1, id: "acme",
   capabilities: { commands: { search: {} }, fields: [], hosts: ["acme.test"] },
   createSession: () => ({ search: async () => ({ issues: [] }) }) };\n`,
       },

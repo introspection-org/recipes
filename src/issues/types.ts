@@ -43,8 +43,8 @@ export const ISSUES_FALLBACK_PROVIDER = "introspection";
 
 /**
  * The options a first-party provider takes beside its id: where `create`
- * puts a new issue. A Recipe's own provider (`package` or `module`) may take
- * any of them.
+ * puts a new issue. A Recipe's own provider (`package`) may take any of
+ * them.
  */
 export const ISSUES_PROVIDER_OPTIONS: Readonly<
   Record<string, readonly string[]>

@@ -34,7 +34,7 @@ export const SEARCH_PROVIDER_FAMILY: ProviderFamily<SearchProviderModule> = {
  *
  * With `declarations` (the Recipe's `pi.search`), exactly those: each
  * first-party id from `@introspection-ai/recipe-search`, and each of the
- * Recipe's own from its `package` or `module`. One that does not load fails.
+ * Recipe's own from its `package`. One that does not load fails.
  *
  * Without them, every provider `@introspection-ai/recipe-search` exports: the
  * Recipe's own copy when it pins one, else the one installed beside Recipes.
