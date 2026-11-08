@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import googleProductivityModule from "@introspection-ai/recipe-productivity-google";
-import microsoftProductivityModule from "@introspection-ai/recipe-productivity-microsoft";
+import googleProductivityModule from "../packages/productivity/google/src/index.js";
+import microsoftProductivityModule from "../packages/productivity/microsoft/src/index.js";
 
 import {
   loadRecipeProductivity,
