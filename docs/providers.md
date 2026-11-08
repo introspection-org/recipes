@@ -55,9 +55,9 @@ dependency; nothing is loaded from a file in the Recipe at run time.
 | none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
 | `package` | an installed package by name, such as `@acme/recipe-search`, which the Recipe lists in `dependencies` with a version, never only as a peer |
 
-A provider kept with the Recipe's own code is a local package it depends on
-(`"@acme/recipe-search": "file:./providers/search"`, or a workspace package),
-built like any other. Loading or checking fails when the package does not
+A provider kept with the Recipe's own code is a local package inside the
+Recipe that it depends on (`"@acme/recipe-search": "file:./providers/search"`,
+or a workspace package), built like any other. Loading or checking fails when the package does not
 resolve from the Recipe's `node_modules`; there is no fallback to a path.
 
 Ids are open: any slug, unique within the family, because a handle such as
@@ -67,11 +67,12 @@ per Recipe; search and issues take several.
 
 The top level of a declaration holds only what the platform reads: `provider`,
 `package`, a fallback's `enabled` (6) and productivity's `tools` allowlist,
-which the host enforces before any call. Anything the provider itself reads
-goes in `options`, an object passed to the provider unchanged when it creates
-a session. The provider checks its own options, and `introspection check` only
-checks that `options` is an object, so a Recipe's own provider takes whatever
-it needs.
+which the host enforces before any call; any other field is an error. Anything
+the provider itself reads goes in `options`, passed to the provider unchanged
+when it creates a session. Each provider declares the options it takes, by
+name and type, in `capabilities.options`, and a declaration may set only
+those: `introspection check` holds the first-party providers' schemas, and
+loading a Recipe's own provider fails on an option it does not declare.
 
 `pi.search` is new. Without it, a Recipe keeps today's behaviour: the providers
 the runtime binds, from `@introspection-ai/recipe-search`.
