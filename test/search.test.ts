@@ -618,6 +618,17 @@ describe("web_search providers", () => {
     expect(brave.requests[0]!.url.searchParams.get("country")).toBe("GB");
   });
 
+  it("refuses a long site with a stray character promptly", async () => {
+    const { call } = setup(["brave"]);
+    const started = performance.now();
+    const result = await call({
+      query: "q",
+      sites: [`${"a".repeat(5000)}:443`],
+    });
+    expect(result.details.error).toMatchObject({ code: "invalid_request" });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("refuses a country that is not an ISO 3166-1 alpha-2 code", async () => {
     const { call } = setup(["brave"]);
     for (const country of ["ZZ", "XX", "EU", "gb", "GBR"]) {

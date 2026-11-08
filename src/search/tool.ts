@@ -50,7 +50,8 @@ export const SEARCH_SKILL = fileURLToPath(
 
 const defaultTracer = trace.getTracer("@introspection-ai/recipes/search");
 
-const SITE = /^-?(?:\.?[a-z0-9-]+)+(?:\/\S*)?$/i;
+// Labels split only at a dot, so a near-miss fails in linear time rather than backtracking.
+const SITE = /^-?\.?[a-z0-9-]+(?:\.[a-z0-9-]+)*(?:\/\S*)?$/i;
 
 /** A site with its domain in lower case; a path is case-sensitive, so it is kept. */
 function siteKey(site: string): string {
