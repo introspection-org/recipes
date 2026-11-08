@@ -33,7 +33,7 @@ Every family is declared the same way, in `package.json#pi`:
   "pi": {
     "issues": [
       { "provider": "linear" },
-      { "provider": "acme-tracker", "package": "@acme/recipe-issues-tracker", "project": "OPS" }
+      { "provider": "acme-tracker", "package": "@acme/recipe-issues-tracker", "options": { "queue": "support" } }
     ],
     "search": [
       { "provider": "brave" },
@@ -62,10 +62,16 @@ resolve from the Recipe's `node_modules`; there is no fallback to a path.
 
 Ids are open: any slug, unique within the family, because a handle such as
 `jira:PROJ-45` must route to exactly one provider. A first-party id with a
-`package` replaces the first-party provider. Family-specific options
-stay beside the provider (productivity's `tools` allowlist, issues' `project`),
-and a Recipe's own provider may take any of its family's. Productivity takes
-one provider per Recipe; search and issues take several.
+`package` replaces the first-party provider. Productivity takes one provider
+per Recipe; search and issues take several.
+
+The top level of a declaration holds only what the platform reads: `provider`,
+`package`, a fallback's `enabled` (6) and productivity's `tools` allowlist,
+which the host enforces before any call. Anything the provider itself reads
+goes in `options`, an object passed to the provider unchanged when it creates
+a session. The provider checks its own options, and `introspection check` only
+checks that `options` is an object, so a Recipe's own provider takes whatever
+it needs.
 
 `pi.search` is new. Without it, a Recipe keeps today's behaviour: the providers
 the runtime binds, from `@introspection-ai/recipe-search`.
@@ -178,8 +184,8 @@ The providers differ, so each declares the commands and fields it supports in
   sets the state, Jira applies the workflow transition that reaches it, and
   Introspection sets `status`.
 - **Where to create:** Linear needs a team and Jira a project and issue type,
-  from the declaration (`{ "provider": "jira", "project": "OPS", "issueType":
-  "Task" }`) or the call. Introspection creates in the Recipe's project, on the
+  from the declaration's options (`{ "provider": "jira", "options": {
+  "project": "OPS", "issueType": "Task" } }`) or the call. Introspection creates in the Recipe's project, on the
   calling task.
 
 Introspection issues have no `url` yet, and `/v1/issues` has no text filter, so
@@ -202,7 +208,8 @@ don't, and the Operator does.
 | `introspection` | REST | the data plane's `/v1/issues` |
 
 Linear and Atlassian are OAuth MCP servers. A declaration names the Recipe's
-MCP server for its provider with `server` (default `linear`, `atlassian`), since
+MCP server for its provider with the `server` option (default `linear`,
+`atlassian`), since
 a Recipe names its servers freely. An agent asks a person to connect with
 `introspection_open`.
 Each adapter maps commands to the server's tools as its live tool list names
@@ -228,7 +235,7 @@ family's contract does not bump another's.
 - **One declaration per id.** A Recipe does not declare the same id twice.
   Several Jira sites do not need it: Atlassian's server reaches every site the
   person's account can, and the adapter chooses one per call (`container`, or a
-  `site` option on the declaration). If two separate servers or accounts are
-  ever needed, an `id` alias on the declaration (`{ "provider": "jira", "id":
-  "jira-eu", "server": "atlassian-eu" }`, handles `jira-eu:PROJ-1`) adds it
+  `site` option). If two separate servers or accounts are ever needed, an `id`
+  alias on the declaration (`{ "provider": "jira", "id": "jira-eu", "options":
+  { "server": "atlassian-eu" } }`, handles `jira-eu:PROJ-1`) adds it
   without changing anything here.
