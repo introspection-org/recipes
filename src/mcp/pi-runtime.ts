@@ -12,7 +12,9 @@ import {
 import { createRuntime } from "mcporter";
 
 import type { McpRuntime } from "./cli/command-context.js";
-import type { McporterConfig, McporterServerConfig } from "./index.js";
+import type { McporterConfig } from "./index.js";
+
+type McporterServerConfig = McporterConfig["mcpServers"][string];
 
 /** Selects the client the `mcp` command and its daemon connect with. */
 export const MCP_CLIENT_ENV = "PI_RECIPES_MCP_CLIENT";
@@ -34,7 +36,10 @@ const READ_RETRY_DELAYS_MS = [250, 1_000];
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
-  return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, name: string) => env[name] ?? "");
+  return value.replace(
+    /\$\{([A-Z0-9_]+)\}/gi,
+    (_match, name: string) => env[name] ?? "",
+  );
 }
 
 /**
@@ -43,14 +48,18 @@ function interpolateEnv(value: string, env: NodeJS.ProcessEnv): string {
  */
 function describedError(error: unknown, server: string): unknown {
   if (error instanceof McpHttpError) {
-    return Object.assign(new Error(`HTTP ${error.status}: ${error.message}`, { cause: error }), {
-      code: error.status,
-    });
+    return Object.assign(
+      new Error(`HTTP ${error.status}: ${error.message}`, { cause: error }),
+      {
+        code: error.status,
+      },
+    );
   }
-  if (error instanceof Error && !(error instanceof McpConnectionClosedError)) return error;
+  if (error instanceof Error && !(error instanceof McpConnectionClosedError))
+    return error;
   return new Error(
     `MCP server '${server}' closed the connection: ${error instanceof Error ? error.message : String(error)}`,
-    { cause: error }
+    { cause: error },
   );
 }
 
@@ -76,12 +85,15 @@ class ServerConnection {
   constructor(
     readonly id: string,
     private readonly config: McporterServerConfig,
-    private readonly env: NodeJS.ProcessEnv
+    private readonly env: NodeJS.ProcessEnv,
   ) {}
 
   private connect(): Promise<McpClient> {
     this.client ??= (async () => {
-      const client = new McpClient({ name: "introspection-recipes", version: "1" });
+      const client = new McpClient({
+        name: "introspection-recipes",
+        version: "1",
+      });
       client.onClose(() => this.drop(client));
       await client.connect(
         new StreamableHttpTransport({
@@ -90,9 +102,9 @@ class ServerConnection {
             Object.entries(this.config.headers ?? {}).map(([name, value]) => [
               name,
               interpolateEnv(value, this.env),
-            ])
+            ]),
           ),
-        })
+        }),
       );
       this.connected = client;
       return client;
@@ -116,7 +128,10 @@ class ServerConnection {
    * had expired. A read is also retried after a transient failure. A
    * `tools/call` that may have run is never sent twice.
    */
-  async request<T>(read: boolean, request: (client: McpClient) => Promise<T>): Promise<T> {
+  async request<T>(
+    read: boolean,
+    request: (client: McpClient) => Promise<T>,
+  ): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       let client: McpClient;
       try {
@@ -138,7 +153,11 @@ class ServerConnection {
       } catch (error) {
         // An HTTP error status leaves the session usable; a lost connection
         // or an expired session does not.
-        if (notRun(error) || error instanceof McpConnectionClosedError || error instanceof TypeError) {
+        if (
+          notRun(error) ||
+          error instanceof McpConnectionClosedError ||
+          error instanceof TypeError
+        ) {
           this.drop(client);
           void client.close().catch(() => {});
         }
@@ -170,12 +189,12 @@ export class PiMcpRuntime {
 
   constructor(
     private readonly config: McporterConfig,
-    private readonly env: NodeJS.ProcessEnv = process.env
+    private readonly env: NodeJS.ProcessEnv = process.env,
   ) {
     for (const [id, server] of Object.entries(config.mcpServers)) {
       if (server.auth === "oauth") {
         throw new Error(
-          `MCP server '${id}' is bound with an OAuth flow, which the pi-mcp client does not run; unset ${MCP_CLIENT_ENV} to use mcporter for it`
+          `MCP server '${id}' is bound with an OAuth flow, which the pi-mcp client does not run; unset ${MCP_CLIENT_ENV} to use mcporter for it`,
         );
       }
       this.servers.set(id, new ServerConnection(id, server, env));
@@ -184,10 +203,16 @@ export class PiMcpRuntime {
 
   static fromConfigFile(
     path: string | undefined = process.env.MCPORTER_CONFIG,
-    env: NodeJS.ProcessEnv = process.env
+    env: NodeJS.ProcessEnv = process.env,
   ): PiMcpRuntime {
-    if (!path) throw new Error("MCPORTER_CONFIG is not set; the MCP session has no server config");
-    return new PiMcpRuntime(JSON.parse(readFileSync(path, "utf8")) as McporterConfig, env);
+    if (!path)
+      throw new Error(
+        "MCPORTER_CONFIG is not set; the MCP session has no server config",
+      );
+    return new PiMcpRuntime(
+      JSON.parse(readFileSync(path, "utf8")) as McporterConfig,
+      env,
+    );
   }
 
   listServers(): string[] {
@@ -200,33 +225,48 @@ export class PiMcpRuntime {
     return server;
   }
 
-  async listTools(server: string, _options?: Record<string, unknown>): Promise<Tool[]> {
-    const tools = await this.server(server).request(true, (client) => client.listTools());
+  async listTools(
+    server: string,
+    _options?: Record<string, unknown>,
+  ): Promise<Tool[]> {
+    const tools = await this.server(server).request(true, (client) =>
+      client.listTools(),
+    );
     const allowed = this.config.mcpServers[server]?.allowedTools;
-    return allowed ? tools.filter((tool) => allowed.includes(tool.name)) : tools;
+    return allowed
+      ? tools.filter((tool) => allowed.includes(tool.name))
+      : tools;
   }
 
-  async callTool(server: string, tool: string, options: PiMcpCallOptions = {}): Promise<unknown> {
+  async callTool(
+    server: string,
+    tool: string,
+    options: PiMcpCallOptions = {},
+  ): Promise<unknown> {
     const allowed = this.config.mcpServers[server]?.allowedTools;
     if (allowed && !allowed.includes(tool)) {
-      throw new Error(`MCP tool '${server}.${tool}' is not in this session's allowed tools.`);
+      throw new Error(
+        `MCP tool '${server}.${tool}' is not in this session's allowed tools.`,
+      );
     }
     return await this.server(server).request(false, (client) =>
       client.callTool(tool, options.args ?? {}, {
         ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
-      })
+      }),
     );
   }
 
   async close(): Promise<void> {
-    await Promise.all([...this.servers.values()].map((server) => server.close()));
+    await Promise.all(
+      [...this.servers.values()].map((server) => server.close()),
+    );
   }
 }
 
 /** The session's MCP runtime: mcporter's, or pi-mcp's when {@link MCP_CLIENT_ENV} selects it. */
 export async function createMcpRuntime(
-  configPath: string | undefined = process.env.MCPORTER_CONFIG
+  configPath: string | undefined = process.env.MCPORTER_CONFIG,
 ): Promise<McpRuntime> {
   return usesPiMcpClient()
     ? PiMcpRuntime.fromConfigFile(configPath)
