@@ -17,10 +17,11 @@ import { isMainThread, Worker } from "node:worker_threads";
 import type { Readable, Writable } from "node:stream";
 import {
   createCallResult,
-  createRuntime,
   describeConnectionIssue,
   type CallResult,
 } from "mcporter";
+import { createMcpRuntime, usesPiMcpClient } from "../pi-runtime.js";
+import { callToolWithHandshakeRetry } from "./handshake-retry.js";
 import {
   currentMcpCommandContext,
   runWithMcpCommandContext,
@@ -85,17 +86,17 @@ function loadMcporterCli(): Promise<typeof import("mcporter/cli")> {
 }
 
 async function acquireRuntime(): Promise<{
-  runtime: Awaited<ReturnType<typeof createRuntime>>;
+  runtime: McpRuntime;
   owned: boolean;
 }> {
   const shared = currentMcpCommandContext()?.runtime;
   return shared
     ? { runtime: shared, owned: false }
-    : { runtime: await createRuntime(), owned: true };
+    : { runtime: await createMcpRuntime(), owned: true };
 }
 
 async function closeOwnedRuntime(
-  runtime: Awaited<ReturnType<typeof createRuntime>>,
+  runtime: McpRuntime,
   owned: boolean,
 ): Promise<void> {
   if (owned) await runtime.close();
@@ -662,7 +663,7 @@ function catalogEntry(tool: ContractTool): McpToolCatalogEntry {
 }
 
 async function discoverServerCatalog(
-  runtime: Awaited<ReturnType<typeof createRuntime>>,
+  runtime: McpRuntime,
   server: McpSessionServer,
   timeoutMs: number,
 ): Promise<McpToolCatalogEntry[]> {
@@ -1328,52 +1329,6 @@ function improveRunToolError(
   return new Error(describeUnavailableRunTool(server, tool, knownTools), {
     cause: error,
   });
-}
-
-type McpCallOptions = NonNullable<Parameters<McpRuntime["callTool"]>[2]>;
-
-// A refused version probe means the connection never opened, so the tool did
-// not run and the call can be made again. Any later failure may follow a
-// remote side effect and is left to the caller.
-const HANDSHAKE_RETRY_DELAYS_MS = [500, 1500];
-
-function refusedHandshake(error: unknown): boolean {
-  let current = error;
-  for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    if (
-      /Version negotiation failed: the server answered the probe with HTTP 5\d\d/.test(
-        current.message,
-      )
-    ) {
-      return true;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
-}
-
-export async function callToolWithHandshakeRetry(
-  runtime: McpRuntime,
-  server: string,
-  tool: string,
-  options: () => McpCallOptions,
-  deadlineMs = Number.POSITIVE_INFINITY,
-): Promise<unknown> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await runtime.callTool(server, tool, options());
-    } catch (error) {
-      const wait = HANDSHAKE_RETRY_DELAYS_MS[attempt];
-      if (
-        wait === undefined ||
-        !refusedHandshake(error) ||
-        Date.now() + wait >= deadlineMs
-      ) {
-        throw error;
-      }
-      await delay(wait);
-    }
-  }
 }
 
 async function createTools(opts: {
@@ -2046,12 +2001,14 @@ async function callWithMcporter(args: string[]): Promise<number> {
   process.env.MCPORTER_DISABLE_AUTORUN = "1";
   process.exitCode = undefined;
 
-  let runtime: Awaited<ReturnType<typeof createRuntime>> | undefined;
+  let runtime: McpRuntime | undefined;
   let owned = false;
   try {
     ({ runtime, owned } = await acquireRuntime());
+    // pi-mcp takes the daemon's path; mcporter's own `call` drives mcporter's runtime.
+    if (usesPiMcpClient()) return await callWithSharedRuntime(runtime, args);
     const { handleCall } = await loadMcporterCli();
-    await handleCall(runtime, args);
+    await handleCall(runtime as Parameters<typeof handleCall>[0], args);
     return process.exitCode ?? 0;
   } finally {
     process.exitCode = previousExitCode;
@@ -2065,7 +2022,7 @@ async function callWithMcporter(args: string[]): Promise<number> {
 }
 
 async function callWithSharedRuntime(
-  runtime: Awaited<ReturnType<typeof createRuntime>>,
+  runtime: McpRuntime,
   args: string[],
 ): Promise<number> {
   const selector = args[0];
@@ -2118,12 +2075,13 @@ async function callWithSharedRuntime(
       parsed.schemaStringCoercionCandidates,
       timeoutMs,
     );
+    const signal = currentMcpCommandContext()?.signal;
     const call = callToolWithHandshakeRetry(runtime, server, tool, () => ({
       args: values,
       timeoutMs,
       disableOAuth: true,
+      ...(signal ? { signal } : {}),
     }));
-    const signal = currentMcpCommandContext()?.signal;
     let cancelled: (() => void) | undefined;
     const raw = signal
       ? await Promise.race([
@@ -2322,7 +2280,7 @@ async function loadCallInputSchema(
 }
 
 async function restoreSchemaStringArguments(
-  runtime: Awaited<ReturnType<typeof createRuntime>>,
+  runtime: McpRuntime,
   server: string,
   tool: string,
   values: Record<string, unknown>,

@@ -130,6 +130,7 @@
 		"clean": "rm -rf dist .turbo node_modules target vendor/mcp-client"
 	},
 	"dependencies": {
+		"@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
 		"@introspection-sdk/introspection-pi": "^0.43.0",
 		"@opentelemetry/api": "^1.9.1",
 		"ajv": "^8.20.0",
@@ -155,10 +156,10 @@
 		"typebox": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "1.4.0",
-		"@earendil-works/pi-ai": "1.4.0",
-		"@earendil-works/pi-coding-agent": "1.4.0",
-		"@earendil-works/pi-tui": "1.4.0",
+		"@earendil-works/pi-agent-core": "1.5.0",
+		"@earendil-works/pi-ai": "1.5.0",
+		"@earendil-works/pi-coding-agent": "1.5.0",
+		"@earendil-works/pi-tui": "1.5.0",
 		"@eslint/js": "9.39.5",
 		"@pollyjs/adapter-fetch": "^6.0.7",
 		"@pollyjs/core": "^6.0.6",

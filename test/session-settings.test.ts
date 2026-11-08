@@ -81,6 +81,7 @@ const HOST_OWNED = new Set([
   "sessionDir",
   "sessionShareDestination",
   "npmCommand",
+  "selfUpdateCommand",
   "themes",
   "enableSkillCommands",
   "collapseChangelog",

@@ -84,6 +84,13 @@ jobs:
 
       - run: pnpm test
 
+      # Every MCP suite (files named *mcp*) again on mcporter, the way back
+      # while PI_RECIPES_MCP_CLIENT=mcporter is still offered.
+      - name: mcp command on mcporter
+        env:
+          PI_RECIPES_MCP_CLIENT: mcporter
+        run: pnpm exec vitest run mcp
+
       - run: pnpm build
 
       - run: pnpm pack:check

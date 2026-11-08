@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { callToolWithHandshakeRetry } from "../src/mcp/cli/core.js";
+import { callToolWithHandshakeRetry } from "../src/mcp/cli/handshake-retry.js";
 
 type Runtime = Parameters<typeof callToolWithHandshakeRetry>[0];
 
