@@ -1,18 +1,18 @@
+import type {
+  SearchOption,
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
 import {
   capText,
   dateOf,
   freshnessStart,
   hostOf,
-  requestJson,
-} from "../http.js";
-import { mcpResultText, parsedJson } from "../mcp.js";
-import {
-  SEARCH_PROVIDER_API_VERSION,
-  type SearchOption,
-  type SearchProviderModule,
-  type SearchProviderResult,
-  type SearchRequest,
-} from "../types.js";
+  mcpResultText,
+  parsedJson,
+} from "./text.js";
 
 interface ExaResponse {
   results?: Array<{
@@ -94,7 +94,7 @@ function exaTextResults(text: string): ExaResponse {
  */
 export const exaSearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "exa",
   capabilities: {
     modes: {
@@ -180,7 +180,7 @@ export const exaSearchProvider: SearchProviderModule = {
     },
   },
   async search(request, context) {
-    const body = (await requestJson("exa", context, "/search", {
+    const body = (await context.request("/search", {
       method: "POST",
       body: {
         query: request.query,

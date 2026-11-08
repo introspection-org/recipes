@@ -111,6 +111,7 @@ describe("release plan", () => {
     for (const [path, key] of [
       ["packages/productivity/google", "google"],
       ["packages/productivity/microsoft", "microsoft"],
+      ["packages/search", "search"],
     ]) {
       expect(keys.includes(key)).toBe(manifest[path] !== undefined);
     }

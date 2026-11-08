@@ -2,20 +2,28 @@ import {
   SearchProviderError,
   type SearchCallContext,
   type SearchErrorCode,
+  type SearchFetch,
 } from "./types.js";
+
+/** Where one provider's requests go, and with which credential. */
+export interface SearchHttpTarget {
+  fetch: SearchFetch;
+  /** The provider's base URL; tests and hosts may replace it. */
+  baseUrl: string;
+  /** Headers carrying the credential, from the host's egress (never a key). */
+  credentialHeaders: Record<string, string>;
+  now: () => Date;
+  signal?: AbortSignal;
+}
 
 /** Sends one request for a provider and maps a failure to a typed error. */
 export async function requestJson(
   provider: string,
-  context: SearchCallContext,
+  context: SearchHttpTarget,
   path: string,
-  init: {
-    method: "GET" | "POST";
-    body?: unknown;
-    headers?: Record<string, string>;
-  },
+  init: Parameters<SearchCallContext["request"]>[1],
 ): Promise<unknown> {
-  let response: Awaited<ReturnType<SearchCallContext["fetch"]>>;
+  let response: Awaited<ReturnType<SearchFetch>>;
   try {
     response = await context.fetch(`${context.baseUrl}${path}`, {
       method: init.method,
@@ -92,49 +100,4 @@ export function isCountryCode(code: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** A country's English name in lower case (`US` → `united states`), as Tavily takes it. */
-export function countryName(code: string): string {
-  return (REGIONS.of(code) ?? code).toLowerCase();
-}
-
-/** A text cut to `limit` characters, on a word boundary where one is near. */
-export function capText(text: string, limit: number): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (clean.length <= limit) return clean;
-  const cut = clean.slice(0, limit);
-  const space = cut.lastIndexOf(" ");
-  return `${space > limit * 0.6 ? cut.slice(0, space) : cut}…`;
-}
-
-export function hostOf(url: string): string | undefined {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return undefined;
-  }
-}
-
-/** `YYYY-MM-DD` of an ISO-ish date string, or undefined. */
-export function dateOf(value: unknown): string | undefined {
-  if (typeof value !== "string" || !value) return undefined;
-  const match = /^\d{4}-\d{2}-\d{2}/.exec(value);
-  if (match) return match[0];
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? undefined
-    : parsed.toISOString().slice(0, 10);
-}
-
-const FRESHNESS_DAYS = { day: 1, week: 7, month: 31, year: 365 } as const;
-
-/** The first day a freshness window admits, as `YYYY-MM-DD`. */
-export function freshnessStart(
-  freshness: keyof typeof FRESHNESS_DAYS,
-  now: Date,
-): string {
-  return new Date(now.getTime() - FRESHNESS_DAYS[freshness] * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
 }

@@ -1,11 +1,17 @@
-import { capText, countryName, dateOf, hostOf, requestJson } from "../http.js";
-import { mcpResultText, parsedJson } from "../mcp.js";
+import type {
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
 import {
-  SEARCH_PROVIDER_API_VERSION,
-  type SearchProviderModule,
-  type SearchProviderResult,
-  type SearchRequest,
-} from "../types.js";
+  capText,
+  countryName,
+  dateOf,
+  hostOf,
+  mcpResultText,
+  parsedJson,
+} from "./text.js";
 
 interface TavilyResponse {
   results?: Array<{
@@ -97,7 +103,7 @@ function tavilyTextResults(text: string): TavilyResponse {
  */
 export const tavilySearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "tavily",
   capabilities: {
     modes: {
@@ -167,7 +173,7 @@ export const tavilySearchProvider: SearchProviderModule = {
     },
   },
   async search(request, context) {
-    const body = (await requestJson("tavily", context, "/search", {
+    const body = (await context.request("/search", {
       method: "POST",
       body: {
         query: request.query,

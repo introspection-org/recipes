@@ -100,6 +100,9 @@ importers:
       '@introspection-ai/recipe-productivity-microsoft':
         specifier: workspace:>=0.1.0
         version: link:packages/productivity/microsoft
+      '@introspection-ai/recipe-search':
+        specifier: workspace:>=0.1.0
+        version: link:packages/search
 
   examples:
     devDependencies:
@@ -206,6 +209,18 @@ importers:
       '@introspection-ai/recipes':
         specifier: workspace:^
         version: link:../../..
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/search:
+    devDependencies:
+      '@introspection-ai/recipes':
+        specifier: workspace:^
+        version: link:../..
       '@types/node':
         specifier: ^26.1.2
         version: 26.6.6

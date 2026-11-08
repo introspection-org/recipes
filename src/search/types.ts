@@ -1,7 +1,12 @@
 import type { McpCallToolResult } from "./mcp.js";
 
-/** Compatibility of a search provider module with this host. */
-export const SEARCH_PROVIDER_API_VERSION = 1;
+/**
+ * The search provider contract this host implements. A provider module, and
+ * the package that exports them, declare the version they were written
+ * against, and the host refuses one that differs; bump it on any breaking
+ * change to `SearchProviderModule` or the types it uses.
+ */
+export const SEARCH_PROVIDER_API_VERSION = 1 as const;
 
 /** The providers `web_search` knows, by the id a call names. */
 export const SEARCH_PROVIDER_IDS = [
@@ -159,11 +164,20 @@ export type SearchFetch = (
 
 /** What the host hands a provider for each request. */
 export interface SearchCallContext {
-  fetch: SearchFetch;
-  /** The provider's base URL; tests and hosts may replace it. */
-  baseUrl: string;
-  /** Headers carrying the credential, from the host's egress (never a key). */
-  credentialHeaders: Record<string, string>;
+  /**
+   * Sends one JSON request to `path` on the provider's host, with the
+   * credential its egress lane needs, and throws `SearchProviderError` for a
+   * failure (429 with its retry delay, 401, 402, 5xx…). Resolves to the
+   * parsed body.
+   */
+  request(
+    path: string,
+    init: {
+      method: "GET" | "POST";
+      body?: unknown;
+      headers?: Record<string, string>;
+    },
+  ): Promise<unknown>;
   now: () => Date;
   signal?: AbortSignal;
 }
@@ -227,6 +241,7 @@ export interface SearchMcpAdapter {
     hasTool: (tool: string) => boolean,
     now: Date,
   ): SearchMcpPlan | undefined;
+  /** An error it throws that is not a `SearchProviderError` is reported as `provider_error`. */
   parse(
     result: McpCallToolResult,
     request: SearchRequest,
@@ -237,7 +252,7 @@ export interface SearchMcpAdapter {
 /** A search provider: a descriptor, its REST call and, optionally, its MCP server. */
 export interface SearchProviderModule {
   kind: "search";
-  apiVersion: number;
+  apiVersion: typeof SEARCH_PROVIDER_API_VERSION;
   id: SearchProviderId;
   capabilities: SearchCapabilities;
   mcp?: SearchMcpAdapter;
@@ -245,6 +260,21 @@ export interface SearchProviderModule {
     request: SearchRequest,
     context: SearchCallContext,
   ): Promise<SearchProviderResult>;
+}
+
+export type SearchProviders = Readonly<
+  Partial<Record<SearchProviderId, SearchProviderModule>>
+>;
+
+/**
+ * What a search provider package exports as its default
+ * (`@introspection-ai/recipe-search`): its providers by id. It needs no
+ * run-time import of `@introspection-ai/recipes`, only these types.
+ */
+export interface RecipeSearchModule {
+  kind: "search";
+  apiVersion: typeof SEARCH_PROVIDER_API_VERSION;
+  providers: SearchProviders;
 }
 
 /** The arguments of one call, from the model or from Recipe code. */

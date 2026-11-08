@@ -1,12 +1,10 @@
-import { capText, dateOf, hostOf, requestJson } from "../http.js";
-import { mcpResultText, parsedJson } from "../mcp.js";
-import {
-  SEARCH_PROVIDER_API_VERSION,
-  SearchProviderError,
-  type SearchProviderModule,
-  type SearchProviderResult,
-  type SearchRequest,
-} from "../types.js";
+import type {
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
+import { capText, dateOf, hostOf, mcpResultText, parsedJson } from "./text.js";
 
 /** Relative offsets Keenable's `published_after` takes back from the request time. */
 const FRESHNESS = { day: "1d", week: "7d", month: "1mo", year: "1y" } as const;
@@ -75,7 +73,7 @@ function keenableArgs(request: SearchRequest): Record<string, unknown> {
  */
 export const keenableSearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "keenable",
   capabilities: {
     modes: {
@@ -120,16 +118,16 @@ export const keenableSearchProvider: SearchProviderModule = {
     parse(result, request) {
       const text = mcpResultText(result);
       const body = parsedJson(text) as KeenableResponse | undefined;
+      // The host reports any other error as `provider_error`.
       if (!Array.isArray(body?.results))
-        throw new SearchProviderError({
-          code: "provider_error",
-          message: `keenable/search_web_pages did not answer JSON: ${text.slice(0, 200)}`,
-        });
+        throw new Error(
+          `keenable/search_web_pages did not answer JSON: ${text.slice(0, 200)}`,
+        );
       return keenableResults(body, request);
     },
   },
   async search(request, context) {
-    const body = (await requestJson("keenable", context, "/v1/search", {
+    const body = (await context.request("/v1/search", {
       method: "POST",
       body: keenableArgs(request),
     })) as KeenableResponse;

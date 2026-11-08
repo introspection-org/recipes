@@ -7,7 +7,7 @@ import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
 import { egressCredentialHeaders, type SearchEnvironment } from "./egress.js";
-import { isCountryCode } from "./http.js";
+import { isCountryCode, requestJson } from "./http.js";
 import {
   piSearchMcpClient,
   tracedMcpCall,
@@ -15,12 +15,6 @@ import {
   type PiToolInfo,
   type SearchMcpClient,
 } from "./mcp.js";
-import { braveSearchProvider } from "./providers/brave.js";
-import { exaSearchProvider } from "./providers/exa.js";
-import { keenableSearchProvider } from "./providers/keenable.js";
-import { parallelSearchProvider } from "./providers/parallel.js";
-import { perplexitySearchProvider } from "./providers/perplexity.js";
-import { tavilySearchProvider } from "./providers/tavily.js";
 import {
   SEARCH_CONTENT,
   SEARCH_CONTENT_CHARS,
@@ -36,6 +30,7 @@ import {
   type SearchOption,
   type SearchProviderId,
   type SearchProviderModule,
+  type SearchProviders,
   type SearchProviderResult,
   type SearchRequest,
   type WebSearchArgs,
@@ -52,20 +47,6 @@ const WEB_SEARCH_DESCRIPTION =
 export const SEARCH_SKILL = fileURLToPath(
   new URL("../../skills/search/SKILL.md", import.meta.url),
 );
-
-export type SearchProviders = Readonly<
-  Partial<Record<SearchProviderId, SearchProviderModule>>
->;
-
-/** The providers this package implements. */
-export const BUILTIN_SEARCH_PROVIDERS: SearchProviders = {
-  brave: braveSearchProvider,
-  exa: exaSearchProvider,
-  keenable: keenableSearchProvider,
-  parallel: parallelSearchProvider,
-  perplexity: perplexitySearchProvider,
-  tavily: tavilySearchProvider,
-};
 
 const defaultTracer = trace.getTracer("@introspection-ai/recipes/search");
 
@@ -109,7 +90,7 @@ function urlHost(url: string | undefined): string | undefined {
  */
 export function boundSearchProviders(
   bindings: SearchBindings,
-  providers: SearchProviders = BUILTIN_SEARCH_PROVIDERS,
+  providers: SearchProviders,
 ): Pick<WebSearchOptions, "bound" | "mcpServers"> {
   const hosts = new Set(
     [...(bindings.hosts ?? [])].map((host) => host.trim().toLowerCase()),
@@ -200,7 +181,11 @@ export interface WebSearchOptions {
    * carries an MCP client; the REST API, if bound too, is the fallback.
    */
   mcpServers?: Readonly<Partial<Record<SearchProviderId, string>>>;
-  providers?: SearchProviders;
+  /**
+   * The provider modules, from `@introspection-ai/recipe-search`
+   * ({@link loadSearchProviders}). A provider without one is not offered.
+   */
+  providers: SearchProviders;
   env?: SearchEnvironment;
   fetch?: SearchFetch;
   /** Base URLs by provider, in place of `https://<capabilities.host>`. */
@@ -254,7 +239,7 @@ export type WebSearch = (
 
 /** Bound providers this package implements: by REST endpoint, or by an MCP server it can call. */
 function offeredProviders(options: WebSearchOptions): SearchProviderId[] {
-  const providers = options.providers ?? BUILTIN_SEARCH_PROVIDERS;
+  const { providers } = options;
   const mcpBound = (
     Object.keys(options.mcpServers ?? {}) as SearchProviderId[]
   ).filter((id) => providers[id]?.mcp);
@@ -265,7 +250,7 @@ function offeredProviders(options: WebSearchOptions): SearchProviderId[] {
 
 /** The Pi tool names `web_search` may call through `ctx.executeTool`. */
 export function webSearchMcpToolNames(options: WebSearchOptions): string[] {
-  const providers = options.providers ?? BUILTIN_SEARCH_PROVIDERS;
+  const { providers } = options;
   return Object.entries(options.mcpServers ?? {}).flatMap(([id, server]) =>
     (providers[id as SearchProviderId]?.mcp?.tools ?? []).map((tool) =>
       mcpToolName(server!, tool),
@@ -279,7 +264,7 @@ export function webSearchMcpToolNames(options: WebSearchOptions): string[] {
  * the provider, mode, setting and billed units.
  */
 export function createWebSearch(options: WebSearchOptions): WebSearch {
-  const providers = options.providers ?? BUILTIN_SEARCH_PROVIDERS;
+  const { providers } = options;
   for (const module of Object.values(providers)) {
     if (
       module.kind !== "search" ||
@@ -504,10 +489,15 @@ export function createWebSearch(options: WebSearchOptions): WebSearch {
       const credentialHeaders = options.credentialHeaders
         ? options.credentialHeaders(module)
         : egressCredentialHeaders(id, capabilities, options.env ?? process.env);
-      result = await module.search(request, {
+      const target = {
         fetch: options.fetch ?? (fetch as unknown as SearchFetch),
         baseUrl: options.baseUrls?.[id] ?? `https://${capabilities.host}`,
         credentialHeaders,
+        now: () => now,
+        ...(signal ? { signal } : {}),
+      };
+      result = await module.search(request, {
+        request: (path, init) => requestJson(id, target, path, init),
         now: () => now,
         ...(signal ? { signal } : {}),
       });

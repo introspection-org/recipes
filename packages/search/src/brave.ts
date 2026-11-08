@@ -1,10 +1,10 @@
-import { capText, dateOf, hostOf, requestJson } from "../http.js";
-import {
-  SEARCH_PROVIDER_API_VERSION,
-  type SearchProviderModule,
-  type SearchRequest,
-  type SearchResultItem,
-} from "../types.js";
+import type {
+  SearchProviderModule,
+  SearchRequest,
+  SearchResultItem,
+} from "@introspection-ai/recipes/search";
+
+import { capText, dateOf, hostOf } from "./text.js";
 
 const FRESHNESS = { day: "pd", week: "pw", month: "pm", year: "py" } as const;
 
@@ -62,7 +62,7 @@ function stripTags(text: string): string {
  */
 export const braveSearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "brave",
   capabilities: {
     modes: {
@@ -99,14 +99,9 @@ export const braveSearchProvider: SearchProviderModule = {
     const rules = goggles(request);
     if (rules) params.set("goggles", rules);
     const path = web ? "/res/v1/web/search" : "/res/v1/llm/context";
-    const body = await requestJson(
-      "brave",
-      context,
-      `${path}?${params.toString()}`,
-      {
-        method: "GET",
-      },
-    );
+    const body = await context.request(`${path}?${params.toString()}`, {
+      method: "GET",
+    });
     const items: SearchResultItem[] = web
       ? ((body as BraveWeb).web?.results ?? []).flatMap((item) => {
           if (typeof item.url !== "string") return [];

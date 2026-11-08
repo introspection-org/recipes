@@ -1,13 +1,15 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   boundSearchProviders,
-  BUILTIN_SEARCH_PROVIDERS,
   createWebSearch,
+  loadSearchProviders,
   piSearchMcpClient,
   registerWebSearchTool,
   SEARCH_PROVIDER_API_VERSION,
@@ -21,6 +23,7 @@ import {
   type WebSearchResult,
 } from "../src/search/index.js";
 import { mcpToolName } from "../src/mcp/pi-client.js";
+import searchProviders from "../packages/search/src/index.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 interface Recorded {
@@ -84,6 +87,7 @@ const LEGACY = {
   INTROSPECTION_TOKEN: "locator-jwt",
 };
 const NOW = () => new Date("2026-11-06T12:00:00Z");
+const PROVIDERS = searchProviders.providers;
 
 const braveContext = {
   grounding: {
@@ -184,6 +188,7 @@ function setup(
   const { spans, tracer } = fakeTracer();
   registerWebSearchTool(pi, {
     bound,
+    providers: PROVIDERS,
     env: PROXY_NATIVE,
     now: NOW,
     tracer,
@@ -224,8 +229,8 @@ describe("web_search schema", () => {
   it("offers only bound providers this package implements", () => {
     const { tool } = setup(["parallel", "tavily", "brave"], {
       providers: {
-        tavily: BUILTIN_SEARCH_PROVIDERS.tavily!,
-        brave: BUILTIN_SEARCH_PROVIDERS.brave!,
+        tavily: PROVIDERS.tavily!,
+        brave: PROVIDERS.brave!,
       },
     });
     expect((tool.parameters as any).properties.provider.enum).toEqual([
@@ -265,7 +270,7 @@ describe("web_search schema", () => {
       new URL("../docs/search/README.md", import.meta.url),
       "utf8",
     );
-    for (const module of Object.values(BUILTIN_SEARCH_PROVIDERS)) {
+    for (const module of Object.values(PROVIDERS)) {
       const { modes, mode_parameter } = module.capabilities;
       if (modes.default.setting === modes.fast.setting) continue;
       const cell = (setting: string) => `\`${setting}\``;
@@ -282,22 +287,67 @@ describe("web_search schema", () => {
       "api.exa.ai",
       "api.tavily.com",
     ];
-    expect(boundSearchProviders({ hosts })).toEqual({
+    expect(boundSearchProviders({ hosts }, PROVIDERS)).toEqual({
       bound: ["brave"],
       mcpServers: {},
     });
     expect(
-      boundSearchProviders({
-        hosts,
-        mcpServers: [
-          { id: "web", url: "https://mcp.tavily.com/mcp/" },
-          { id: "exa", url: "http://127.0.0.1:7353/exa/mcp" },
-          { id: "other", url: "https://mcp.example.com/mcp" },
-        ],
-      }),
+      boundSearchProviders(
+        {
+          hosts,
+          mcpServers: [
+            { id: "web", url: "https://mcp.tavily.com/mcp/" },
+            { id: "exa", url: "http://127.0.0.1:7353/exa/mcp" },
+            { id: "other", url: "https://mcp.example.com/mcp" },
+          ],
+        },
+        PROVIDERS,
+      ),
     ).toEqual({
       bound: ["brave", "exa", "tavily"],
       mcpServers: { exa: "exa", tavily: "web" },
+    });
+  });
+});
+
+describe("web_search provider package", () => {
+  const emptyDir = (prefix: string) => {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "recipe", version: "0.0.0" }),
+    );
+    return dir;
+  };
+
+  it("loads the six providers from @introspection-ai/recipe-search beside Recipes", async () => {
+    const providers = await loadSearchProviders({
+      recipeDir: emptyDir("search-recipe-"),
+    });
+    expect(Object.keys(providers).sort()).toEqual([
+      "brave",
+      "exa",
+      "keenable",
+      "parallel",
+      "perplexity",
+      "tavily",
+    ]);
+    expect(providers.tavily!.capabilities.host).toBe("api.tavily.com");
+  });
+
+  it("offers no provider, and refuses a call cleanly, when the package is not installed", async () => {
+    const providers = await loadSearchProviders({
+      recipeDir: emptyDir("search-recipe-"),
+      hostDir: emptyDir("search-host-"),
+    });
+    expect(providers).toEqual({});
+    const search = createWebSearch({
+      bound: ["brave"],
+      providers,
+      tracer: fakeTracer().tracer,
+    });
+    await expect(search({ query: "x" })).rejects.toMatchObject({
+      search: { code: "not_bound" },
     });
   });
 });
@@ -612,7 +662,7 @@ describe("web_search routing", () => {
       };
     },
   };
-  const providers = { ...BUILTIN_SEARCH_PROVIDERS, keenable: plain };
+  const providers = { ...PROVIDERS, keenable: plain };
 
   it("tells the model what it ignored or capped", async () => {
     const result = await setup(["keenable"], { providers }).call({
@@ -653,7 +703,7 @@ describe("web_search routing", () => {
       },
     };
     const result = await setup(["perplexity"], {
-      providers: { ...BUILTIN_SEARCH_PROVIDERS, perplexity: exclusive },
+      providers: { ...PROVIDERS, perplexity: exclusive },
     }).call({ query: "x", sites: ["arxiv.org", "-spam.com"] });
     expect(requests[0]).toMatchObject({
       include_sites: ["arxiv.org"],
@@ -666,7 +716,7 @@ describe("web_search routing", () => {
         "perplexity cannot combine included and excluded sites, so only the included ones apply",
     });
     const excludeOnly = await setup(["perplexity"], {
-      providers: { ...BUILTIN_SEARCH_PROVIDERS, perplexity: exclusive },
+      providers: { ...PROVIDERS, perplexity: exclusive },
     }).call({ query: "x", sites: ["-spam.com"], max_results: 3 });
     expect(requests[1]).toMatchObject({ exclude_sites: ["spam.com"] });
     expect(excludeOnly.details.notes).toEqual([]);
@@ -675,7 +725,7 @@ describe("web_search routing", () => {
   it("declares which built providers combine included and excluded sites", () => {
     expect(
       Object.fromEntries(
-        Object.values(BUILTIN_SEARCH_PROVIDERS).map((module) => [
+        Object.values(PROVIDERS).map((module) => [
           module.id,
           module.capabilities.combine_sites,
         ]),
@@ -709,6 +759,7 @@ describe("web_search routing", () => {
   it("serves Recipe code with the same arguments", async () => {
     const tavily = await fakeApi(() => ({ body: tavilyBody }));
     const search = createWebSearch({
+      providers: PROVIDERS,
       bound: ["tavily"],
       env: PROXY_NATIVE,
       baseUrls: { tavily: tavily.baseUrl },
@@ -1221,6 +1272,7 @@ describe("web_search over a provider's MCP server", () => {
     );
 
     const search = createWebSearch({
+      providers: PROVIDERS,
       bound: [],
       mcpServers: { tavily: "tavily" },
       tracer: fakeTracer().tracer,
@@ -1714,14 +1766,17 @@ describe("web_search over Keenable, Perplexity and Parallel", () => {
 
   it("binds Keenable, Perplexity and Parallel by their MCP servers, and REST by host", () => {
     expect(
-      boundSearchProviders({
-        hosts: ["api.parallel.ai", "api.keenable.ai"],
-        mcpServers: [
-          { id: "k", url: "https://api.keenable.ai/mcp" },
-          { id: "p", url: "https://api.perplexity.ai/mcp" },
-          { id: "par", url: "https://search.parallel.ai/mcp" },
-        ],
-      }),
+      boundSearchProviders(
+        {
+          hosts: ["api.parallel.ai", "api.keenable.ai"],
+          mcpServers: [
+            { id: "k", url: "https://api.keenable.ai/mcp" },
+            { id: "p", url: "https://api.perplexity.ai/mcp" },
+            { id: "par", url: "https://search.parallel.ai/mcp" },
+          ],
+        },
+        PROVIDERS,
+      ),
     ).toEqual({
       bound: ["keenable", "parallel"],
       mcpServers: { keenable: "k", parallel: "par", perplexity: "p" },

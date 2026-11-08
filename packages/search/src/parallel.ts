@@ -1,19 +1,18 @@
+import type {
+  SearchOption,
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
 import {
   capText,
   dateOf,
   freshnessStart,
   hostOf,
-  requestJson,
-} from "../http.js";
-import { mcpResultText, parsedJson } from "../mcp.js";
-import {
-  SEARCH_MAX_RESULTS,
-  SEARCH_PROVIDER_API_VERSION,
-  type SearchOption,
-  type SearchProviderModule,
-  type SearchProviderResult,
-  type SearchRequest,
-} from "../types.js";
+  mcpResultText,
+  parsedJson,
+} from "./text.js";
 
 interface ParallelResponse {
   results?: Array<{
@@ -94,7 +93,7 @@ function parallelResults(
  */
 export const parallelSearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "parallel",
   capabilities: {
     modes: {
@@ -107,7 +106,8 @@ export const parallelSearchProvider: SearchProviderModule = {
       },
     },
     mode_parameter: "mode",
-    max_results: SEARCH_MAX_RESULTS,
+    // The API states no maximum; web_search never asks for more than 10.
+    max_results: 10,
     host: "api.parallel.ai",
     credential: { header: "x-api-key" },
     billing: "per request; the response's usage lists SKUs and counts",
@@ -187,7 +187,7 @@ export const parallelSearchProvider: SearchProviderModule = {
         ? { after_date: freshnessStart(request.freshness, context.now()) }
         : {}),
     };
-    const body = (await requestJson("parallel", context, "/v1/search", {
+    const body = (await context.request("/v1/search", {
       method: "POST",
       body: {
         objective: request.query,

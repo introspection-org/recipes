@@ -24,6 +24,14 @@ const SEARCH_MODULE = join(
   "search",
   "index.ts",
 );
+const SEARCH_PROVIDERS_MODULE = join(
+  import.meta.dirname,
+  "..",
+  "packages",
+  "search",
+  "src",
+  "index.ts",
+);
 
 /** tavily-mcp's `tavily_search`, answering in its older text format, which the adapter still reads. */
 function fakeTavilyMcp(): Promise<HelloMcp> {
@@ -91,8 +99,9 @@ describe("web_search with its MCP server behind it", () => {
       join(fixture.recipeDir, "extensions", "search.ts"),
       [
         `import { registerWebSearchTool } from ${JSON.stringify(SEARCH_MODULE)};`,
+        `import search from ${JSON.stringify(SEARCH_PROVIDERS_MODULE)};`,
         "export default (pi) => {",
-        '  registerWebSearchTool(pi, { bound: [], mcpServers: { tavily: "tavily" } });',
+        '  registerWebSearchTool(pi, { bound: [], mcpServers: { tavily: "tavily" }, providers: search.providers });',
         "};",
         "",
       ].join("\n"),

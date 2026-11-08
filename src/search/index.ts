@@ -1,6 +1,5 @@
 export {
   boundSearchProviders,
-  BUILTIN_SEARCH_PROVIDERS,
   createWebSearch,
   formatWebSearch,
   registerWebSearchTool,
@@ -11,7 +10,6 @@ export {
 } from "./tool.js";
 export type {
   SearchBindings,
-  SearchProviders,
   WebSearch,
   WebSearchCall,
   WebSearchOptions,
@@ -25,12 +23,7 @@ export type {
 } from "./mcp.js";
 export { egressCredentialHeaders } from "./egress.js";
 export type { SearchEnvironment } from "./egress.js";
-export { braveSearchProvider } from "./providers/brave.js";
-export { exaSearchProvider } from "./providers/exa.js";
-export { keenableSearchProvider } from "./providers/keenable.js";
-export { parallelSearchProvider } from "./providers/parallel.js";
-export { perplexitySearchProvider } from "./providers/perplexity.js";
-export { tavilySearchProvider } from "./providers/tavily.js";
+export { loadSearchProviders, SEARCH_PROVIDERS_PACKAGE } from "./module.js";
 export {
   SEARCH_CONTENT,
   SEARCH_CONTENT_CHARS,
@@ -45,6 +38,7 @@ export {
   SearchProviderError,
 } from "./types.js";
 export type {
+  RecipeSearchModule,
   SearchCallContext,
   SearchCapabilities,
   SearchContent,
@@ -61,6 +55,7 @@ export type {
   SearchProviderId,
   SearchProviderModule,
   SearchProviderResult,
+  SearchProviders,
   SearchRequest,
   SearchResultItem,
   SearchSupport,

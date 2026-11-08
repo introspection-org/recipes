@@ -48,6 +48,13 @@
       "include-component-in-tag": true,
       "initial-version": "0.1.0",
       "bump-minor-pre-major": true
+    },
+    "packages/search": {
+      "release-type": "node",
+      "package-name": "@introspection-ai/recipe-search",
+      "include-component-in-tag": true,
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true
     }
   },
   "bump-minor-pre-major": true

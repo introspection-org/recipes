@@ -1,7 +1,9 @@
 # Web search
 
 **Status: prototype.** `@introspection-ai/recipes/search` implements the
-`web_search` tool, its provider contract, and six providers. Tavily, Exa,
+`web_search` tool and its provider contract; six providers (Tavily, Exa,
+Brave, Keenable, Parallel, Perplexity) ship in the companion package
+`@introspection-ai/recipe-search` ([Where things live](#where-things-live)). Tavily, Exa,
 Keenable, Perplexity and Parallel call their hosted MCP servers, kept behind
 `web_search` ([Declare the servers](#declare-the-servers)), through Pi's
 built-in MCP client, and their REST APIs only as a fallback; Brave is REST
@@ -165,9 +167,13 @@ introspection-cloud ([service-rates.md](https://github.com/introspection-org/int
 Recipe code calls the same function with the same arguments:
 
 ```ts
-import { createWebSearch } from "@introspection-ai/recipes/search";
+import {
+  createWebSearch,
+  loadSearchProviders,
+} from "@introspection-ai/recipes/search";
 
-const search = createWebSearch({ bound: ["tavily", "brave"] });
+const providers = await loadSearchProviders({ recipeDir });
+const search = createWebSearch({ providers, bound: ["tavily", "brave"] });
 const { results } = await search({
   query: "…",
   provider: "tavily",
@@ -505,7 +511,7 @@ adapter:
   declaration in the Recipe: a search provider is interchangeable and chosen
   per call.
 
-`boundSearchProviders({ hosts, mcpServers })` applies both rules and returns
+`boundSearchProviders({ hosts, mcpServers }, providers)` applies both rules and returns
 the `bound` (REST) and `mcpServers` options for the tool: `hosts` are the
 egress's credentialed endpoint hosts, `mcpServers` the servers the Recipe keeps
 behind `web_search` with their bound URLs. The host discovers the hosts:
@@ -640,13 +646,38 @@ Not built. The intended shape:
 - An agent selects the tool as any other: `tools: [web_search]` in its
   agent file.
 - The host computes the bound set ([Bound providers](#bound-providers)) and,
-  when it is not empty, calls `registerWebSearchTool(pi,
-boundSearchProviders({ hosts, mcpServers }))` and
+  when it is not empty, calls `registerWebSearchTool(pi, { providers,
+  ...boundSearchProviders({ hosts, mcpServers }, providers) })`, with
+  `providers` from `loadSearchProviders`, and
   offers `SEARCH_SKILL` (`skills/search/SKILL.md`), as it offers the
   documents skill with `documents`. The skill joins the Recipe isolation
   rule in `AGENTS.md`.
 - An agent that selects `web_search` on a runtime with nothing bound fails
   at selection, naming the providers it could bind.
+
+## Where things live
+
+- **The host, in Recipes** (`src/search`, the `@introspection-ai/recipes/search`
+  subpath): the tool's schema and registration (`createWebSearch`,
+  `registerWebSearchTool`), argument normalization (modes, sites, country,
+  freshness, the budget), typed errors, the MCP path through Pi's
+  `ctx.executeTool`, the HTTP request and its credential lanes, spans and the
+  usage record, `boundSearchProviders`, `loadSearchProviders`, and the
+  provider contract (`SearchProviderModule`, `RecipeSearchModule`,
+  `SEARCH_PROVIDER_API_VERSION`).
+- **The providers, in `@introspection-ai/recipe-search`** (`packages/search`):
+  one plain `SearchProviderModule` per provider, exported together as the
+  package's default `RecipeSearchModule` (`{ kind: "search", apiVersion,
+  providers }`) and each by name. It imports only types from Recipes; the
+  host injects what runs (`context.request` for HTTP, the MCP call itself).
+  It is a companion package: Recipes installs it alongside itself as an
+  `optionalDependency`, and a Recipe that lists it in `dependencies` pins
+  its copy.
+
+`loadSearchProviders({ recipeDir, hostDir? })` resolves the package from the
+Recipe, then beside Recipes, checks its `apiVersion` and returns the
+providers. With the package not installed it returns none, and `web_search`
+offers no provider: a call fails with `not_bound`.
 
 ## Write a provider
 
@@ -666,18 +697,22 @@ A provider is a plain module, `SearchProviderModule`:
 - `search(request, context)`: `request` is normalized, with the mode's
   `setting`, the content level and its `max_chars`, and only the arguments the
   descriptor serves, and a `session` id stable for the task.
-  `context` carries `fetch`, `baseUrl`, the
-  `credentialHeaders` to send, `now` and the abort `signal`. It returns
-  results and the billed `units`, and throws `SearchProviderError` with a code
-  for a failure (`requestJson` in `src/search/http.ts` maps HTTP statuses).
+  `context` carries `request(path, init)`, which sends one JSON request to the
+  provider's host with the credential its egress lane needs and throws a
+  typed `SearchProviderError` for a failure (429 with its delay, 401, 402,
+  5xx), `now` and the abort `signal`. It returns results and the billed
+  `units`. An adapter's MCP `parse` may throw a plain `Error`, which the host
+  reports as `provider_error`.
 
-The six built providers live in this package, because each is one HTTP
-call with no SDK. A provider that needs its own dependencies would become a
-companion package (`recipe-search-*`) under the companion rule in `AGENTS.md`.
+The six providers share one package, `@introspection-ai/recipe-search`,
+because each is a few HTTP or MCP calls with no SDK and no dependency of its
+own. A provider that needs its own dependencies would be a companion package
+of its own under the companion rule in `AGENTS.md`.
 
 ## Test search
 
-- **Unit:** `test/search.test.ts` runs each provider against a local HTTP
+- **Unit:** `test/search.test.ts` loads the providers from
+  `packages/search` and runs each against a local HTTP
   server: request shape per mode and argument, the credential header on each
   egress lane, response mapping, notes, errors and spans. The MCP path runs
   against a fake Pi tool context whose `executeTool` answers as Pi's client

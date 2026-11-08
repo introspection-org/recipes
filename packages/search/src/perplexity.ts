@@ -1,12 +1,11 @@
-import { capText, dateOf, hostOf, requestJson } from "../http.js";
-import { mcpResultText } from "../mcp.js";
-import {
-  SEARCH_PROVIDER_API_VERSION,
-  type SearchContent,
-  type SearchProviderModule,
-  type SearchProviderResult,
-  type SearchRequest,
-} from "../types.js";
+import type {
+  SearchContent,
+  SearchProviderModule,
+  SearchProviderResult,
+  SearchRequest,
+} from "@introspection-ai/recipes/search";
+
+import { capText, dateOf, hostOf, mcpResultText } from "./text.js";
 
 /** Tokens extracted per page; the MCP tool takes 256 to 2048. */
 const TOKENS_PER_PAGE: Readonly<Record<SearchContent, number>> = {
@@ -111,7 +110,7 @@ function perplexityTextResults(text: string): PerplexityResponse {
  */
 export const perplexitySearchProvider: SearchProviderModule = {
   kind: "search",
-  apiVersion: SEARCH_PROVIDER_API_VERSION,
+  apiVersion: 1,
   id: "perplexity",
   capabilities: {
     modes: {
@@ -159,7 +158,7 @@ export const perplexitySearchProvider: SearchProviderModule = {
     },
   },
   async search(request, context) {
-    const body = (await requestJson("perplexity", context, "/search", {
+    const body = (await context.request("/search", {
       method: "POST",
       body: perplexityArgs(request),
     })) as PerplexityResponse;
