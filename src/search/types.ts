@@ -72,6 +72,8 @@ export interface SearchCapabilities {
   /** The most results one request returns. */
   max_results: number;
   options: Readonly<Record<SearchOption, SearchSupport>>;
+  /** The ISO 3166-1 alpha-2 codes `country` accepts, where the provider names a closed set. */
+  countries?: readonly string[];
   /**
    * Whether one request may carry both included and excluded sites. When it
    * may not (Perplexity answers 400, Parallel drops the exclusions), a call

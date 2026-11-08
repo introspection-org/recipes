@@ -618,6 +618,34 @@ describe("web_search providers", () => {
     expect(brave.requests[0]!.url.searchParams.get("country")).toBe("GB");
   });
 
+  it("sends Tavily its own country names, and drops a country it lacks with a note", async () => {
+    const tavily = await fakeApi(() => ({ body: { results: [] } }));
+    const { call } = setup(["tavily"], {
+      baseUrls: { tavily: tavily.baseUrl },
+    });
+    await call({ query: "q", country: "CZ" });
+    await call({ query: "q", country: "TR" });
+    const greenland = await call({ query: "q", country: "GL" });
+    expect(tavily.requests[0]!.body).toMatchObject({
+      country: "czech republic",
+    });
+    expect(tavily.requests[1]!.body).toMatchObject({ country: "turkey" });
+    expect(tavily.requests[2]!.body).not.toHaveProperty("country");
+    expect(greenland.details.notes).toEqual([
+      expect.objectContaining({ option: "country", outcome: "ignored" }),
+    ]);
+  });
+
+  it("keeps an error's text out of the span status", async () => {
+    const { call, spans } = setup(["brave"]);
+    const result = await call({
+      query: "private plans",
+      sites: ["private-plans.example.com/q?x y"],
+    });
+    expect(result.details.error).toMatchObject({ code: "invalid_request" });
+    expect(spans[0]!.status).toEqual({ code: 2, message: "invalid_request" });
+  });
+
   it("refuses a long site with a stray character promptly", async () => {
     const { call } = setup(["brave"]);
     const started = performance.now();
@@ -760,7 +788,7 @@ describe("web_search routing", () => {
     );
     const unbound = await call({ query: "x", provider: "exa" });
     expect(unbound.content[0]!.text).toMatch(/not_bound.*exa is not bound/);
-    expect(spans[1]!.status?.message).toMatch(/exa is not bound/);
+    expect(spans[1]!.status?.message).toBe("not_bound");
     expect(
       (await call({ query: "x", provider: "keenable", sites: ["not a site"] }))
         .isError,
