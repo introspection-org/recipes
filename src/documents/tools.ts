@@ -239,7 +239,7 @@ interface Definition {
 const DEFINITIONS: Record<DocumentCommand, Definition> = {
   read: {
     description:
-      "Read a document. Word: each paragraph's current text after its id (quote from this text), tracked changes and comments inline by author, numbered changes and comment threads. PDF: the text page by page, filled form fields and page comments; the first line names the path used (text, tables, or page images when a page has no text layer, a scan, which you then render). Pass tables: true for a PDF with a fee schedule, SLA grid or price table. Long documents come in parts: pass the offset it gives.",
+      "Read a document. Word: each paragraph's current text after its id (quote from this text), tracked changes and comments inline by author, numbered changes and comment threads. PDF: the text page by page, filled form fields and page comments; the first line names the path used (text, tables, or page images when a page has no text layer, a scan, which you then render). Pass tables: true for a PDF with a fee schedule, SLA grid or price table. HTML: the page as markdown, each chart (a figure or inline SVG) a [chart N] line, to render. Long documents come in parts: pass the offset it gives.",
     parameters: Type.Object(
       {
         path: Type.String({ minLength: 1 }),
@@ -368,14 +368,15 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
   },
   render: {
     description:
-      "Render PDF pages to PNG files (at most 10 per call) and return their paths; open each with the read tool to see the page. Use it for pages read reports have no text layer (scans), and to check signatures, stamps, handwriting, charts or layout.",
+      "Render PDF pages, or an HTML page and its charts, to PNG files (at most 10 per call) and return their paths; open each with the read tool to see the page. Use it for PDF pages read reports have no text layer (scans), to check signatures, stamps, handwriting, charts or layout, and to check each chart on an HTML page makes sense. HTML renders the full page light and dark and each chart with a browser; without one, only inline SVG charts, and the result says so.",
     parameters: Type.Object(
       {
         path: Type.String({ minLength: 1 }),
         pages: Type.Optional(
           Type.String({
             maxLength: 100,
-            description: "Pages to render, like 2-4,9 (default: from page 1)",
+            description:
+              "Pages to render, like 2-4,9 (default: from page 1); for HTML, chart numbers (default: the full page and every chart)",
           }),
         ),
       },

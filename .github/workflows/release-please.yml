@@ -110,6 +110,7 @@ jobs:
       slack: ${{ steps.plan.outputs.slack }}
       docx: ${{ steps.plan.outputs.docx }}
       pdf: ${{ steps.plan.outputs.pdf }}
+      html: ${{ steps.plan.outputs.html }}
       google: ${{ steps.plan.outputs.google }}
       microsoft: ${{ steps.plan.outputs.microsoft }}
       search: ${{ steps.plan.outputs.search }}
@@ -261,6 +262,7 @@ jobs:
           publish_slack: ${{ needs.plan.outputs.slack }}
           publish_docx: ${{ needs.plan.outputs.docx }}
           publish_pdf: ${{ needs.plan.outputs.pdf }}
+          publish_html: ${{ needs.plan.outputs.html }}
           publish_google: ${{ needs.plan.outputs.google }}
           publish_microsoft: ${{ needs.plan.outputs.microsoft }}
           publish_search: ${{ needs.plan.outputs.search }}
@@ -325,6 +327,9 @@ jobs:
           fi
           if [[ "$publish_pdf" == "true" ]]; then
             channel_dirs+=("packages/documents/pdf")
+          fi
+          if [[ "$publish_html" == "true" ]]; then
+            channel_dirs+=("packages/documents/html")
           fi
           if [[ "$publish_google" == "true" ]]; then
             channel_dirs+=("packages/productivity/google")
