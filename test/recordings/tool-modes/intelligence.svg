@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <rect width="760" height="440" fill="#faf9f5"/>
-<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task (by reasoning effort)</text>
+<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (by reasoning effort)</text>
 <g transform="translate(618 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="642" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>
 <text x="16" y="46" font-size="12" fill="#5e5d59">Artificial Analysis Intelligence Index v5.0.1 per effort, low (L) to high (H); each model at its cheapest mode that passed every run</text>
 <line x1="70" y1="370" x2="720" y2="370" stroke="#e8e6dc"/><text x="62" y="374" font-size="10" text-anchor="end" fill="#5e5d59">0</text>

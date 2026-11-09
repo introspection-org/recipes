@@ -343,7 +343,7 @@ const byEffort = (value) =>
 const newest = "signatures";
 
 /**
- * Intelligence against cost: each model at its cheapest setting that passed
+ * Intelligence vs. cost: each model at its cheapest setting that passed
  * every run, against its Intelligence Index at the effort the runs used.
  * Up and to the left is better. Cost is on a log scale, as the index's own
  * chart draws it.
@@ -420,7 +420,7 @@ function intelligence(efforts) {
   const esc = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
-  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task (${many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (${many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
   svg += brand(W);
   svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${many ? "per effort, low (L) to high (H)" : `at ${effort} effort, the effort the runs used`}; each model at its cheapest mode that passed every run</text>\n`;
   for (let v = 0; v <= yMax; v += 10) {
