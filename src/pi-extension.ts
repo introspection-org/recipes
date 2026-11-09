@@ -1243,11 +1243,19 @@ export function createRecipesExtension(
       }
       launchState.toolSearchRegistered = true;
     }
+    const registeredTools = new Set(pi.getAllTools().map((tool) => tool.name));
+    // A tool `include: ["*"]` added that the host does not offer is left out.
+    const unavailable = new Set(
+      launchState.resolved.wildcardTools?.filter(
+        (name) => !registeredTools.has(name),
+      ),
+    );
     const activeTools = new Set([
       ...launchState.resolved.tools.filter(
         (tool) =>
           !launchState.connectorToolNames.includes(tool) &&
-          !undeclaredExtensionTools.some((entry) => entry.name === tool),
+          !undeclaredExtensionTools.some((entry) => entry.name === tool) &&
+          !unavailable.has(tool),
       ),
       ...launchState.initialConnectorToolNames,
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),
@@ -1269,7 +1277,6 @@ export function createRecipesExtension(
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
     ]);
-    const registeredTools = new Set(pi.getAllTools().map((tool) => tool.name));
     const missingTools = [...activeTools].filter(
       (name) => !registeredTools.has(name),
     );
