@@ -94,6 +94,31 @@ describe("TpeSampler", () => {
     expect(late.length).toBeLessThan(5);
   });
 
+  it("keeps failed trials out of the good group when few succeed", () => {
+    const sampler = new TpeSampler(
+      { mode: choice(["a", "b", "c"]) },
+      { startupTrials: 2, seed: 3 },
+    );
+    // One success, then a failure that would rank second, then many more.
+    sampler.tell({ mode: "a" }, 1);
+    sampler.tell({ mode: "b" }, NaN);
+    for (let i = 0; i < 18; i++) sampler.tell({ mode: "c" }, NaN);
+    const asks = Array.from({ length: 300 }, () => sampler.ask().mode);
+    expect(asks.filter((m) => m === "b").length).toBeLessThan(
+      asks.filter((m) => m === "a").length / 2,
+    );
+  });
+
+  it("samples from the prior when every trial failed", () => {
+    const sampler = new TpeSampler(
+      { mode: choice(["a", "b"]) },
+      { startupTrials: 2, seed: 3 },
+    );
+    for (let i = 0; i < 10; i++) sampler.tell({ mode: "b" }, NaN);
+    const asks = Array.from({ length: 200 }, () => sampler.ask().mode);
+    expect(asks.filter((m) => m === "a").length).toBeGreaterThan(60);
+  });
+
   it("rejects invalid ranges", () => {
     expect(() => float(1, 0)).toThrow(RangeError);
     expect(() => float(0, 1, { log: true })).toThrow(RangeError);

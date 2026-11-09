@@ -140,11 +140,17 @@ export class TpeSampler<S extends SearchSpace> {
       return config as Config<S>;
     }
     // Lower is better internally; a value that isn't finite (a failed trial)
-    // sorts last, so it always counts as bad.
+    // sorts last and is never in the good group.
     const ranked = this.trials
       .map((trial) => ({ config: trial.config, loss: this.loss(trial.value) }))
       .sort((a, b) => a.loss - b.loss);
-    const nGood = Math.max(1, Math.min(told - 1, this.gamma(told)));
+    const finite = ranked.filter((t) => Number.isFinite(t.loss)).length;
+    if (finite === 0) {
+      for (const [name, param] of Object.entries(this.space))
+        config[name] = this.sampleRandom(param);
+      return config as Config<S>;
+    }
+    const nGood = Math.max(1, Math.min(finite, told - 1, this.gamma(told)));
     const good = ranked.slice(0, nGood).map((t) => t.config);
     const bad = ranked.slice(nGood).map((t) => t.config);
     for (const [name, param] of Object.entries(this.space)) {
