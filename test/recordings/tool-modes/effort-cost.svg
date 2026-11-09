@@ -52,6 +52,7 @@ Cached: 78%
 Output tokens: 1,051</title></rect>
 <text x="422.7561555065" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0434<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±57%</tspan> · tools</text>
 <rect x="120" y="112" width="82.27109266423753" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · low effort · cli
+Cheapest
 Time per task: 9.9s ±10%
 Cost per task: $0.000539 ±3%
 Runs: 5
