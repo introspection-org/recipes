@@ -348,8 +348,9 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
         "fetch failed: cannot follow a redirect with a streamed body",
       );
     const headers = new Headers(init.headers);
+    // Another host gets none of what the binding strips, bound or not.
     if (next.host !== url.host) {
-      headers.delete("authorization");
+      for (const name of STRIPPED_HEADERS) headers.delete(name);
       for (const name of Object.keys(binding.headers ?? {}))
         headers.delete(name);
     }

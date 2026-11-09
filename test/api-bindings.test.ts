@@ -502,6 +502,44 @@ describe("redirects from a bound host", () => {
     expect(vendorRequests).toEqual([]);
   });
 
+  it("sends a redirect to an unbound host none of the stripped credentials", async () => {
+    install("test", [
+      { host: "localhost", url: `${fakeBase}/fake`, headers: { "x-fake": "1" } },
+    ]);
+    // The fake's own address is not bound: the redirect goes there directly.
+    reply = (request) =>
+      request.path === "/fake/start"
+        ? { status: 302, headers: { Location: `${fakeBase}/elsewhere` } }
+        : { json: { from: "fake" } };
+
+    await fetch(`${vendorBase}/start`, {
+      headers: {
+        Authorization: "Bearer introspection-egress",
+        "x-api-key": "k",
+        baggage: "introspection.session=1",
+        "x-introspection-egress-host": "localhost",
+        Accept: "application/json",
+      },
+    });
+
+    expect(recorded.map((request) => request.path)).toEqual([
+      "/fake/start",
+      "/elsewhere",
+    ]);
+    const headers = recorded[1]!.headers;
+    for (const name of [
+      "authorization",
+      "x-api-key",
+      "baggage",
+      "x-introspection-egress-host",
+      "x-fake",
+      "x-forwarded-host",
+    ])
+      expect(headers[name]).toBeUndefined();
+    expect(headers.accept).toBe("application/json");
+    expect(vendorRequests).toEqual([]);
+  });
+
   it("keeps a caller's manual redirect and stops after 20 hops", async () => {
     install("test", [{ host: "localhost", url: `${fakeBase}/fake` }]);
     redirecting(302);
