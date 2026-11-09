@@ -33,7 +33,7 @@ export interface ToolsBridgeTool {
 /** The answer to one request, one JSON object per line. */
 export type ToolsBridgeResponse =
   | { id: number; tools: ToolsBridgeTool[] }
-  | { id: number; text: string; isError: boolean }
+  | { id: number; text: string; details?: unknown; isError: boolean }
   | { id: number; error: string };
 
 const active = new AsyncLocalStorage<string>();
@@ -76,6 +76,7 @@ async function answer(
   return {
     id: request.id,
     text: resultText(outcome.result),
+    details: outcome.result.details as unknown,
     isError: outcome.isError,
   };
 }

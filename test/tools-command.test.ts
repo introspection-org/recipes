@@ -37,8 +37,15 @@ const SEARCH = {
   parameters: { type: "object", properties: { query: { type: "string" } } },
 };
 
-/** Run `tools …` inside a bridge whose context answers with the call it got. */
-async function tools(argv: string[], stdin = "") {
+/**
+ * Run `tools …` inside a bridge whose context answers with the call it got,
+ * and with `details(name, args)` as the structured result when given.
+ */
+async function tools(
+  argv: string[],
+  stdin = "",
+  details?: (name: string, args: Record<string, unknown>) => unknown,
+) {
   const calls: Array<{ name: string; args: unknown }> = [];
   const ctx = {
     tools: [
@@ -52,6 +59,7 @@ async function tools(argv: string[], stdin = "") {
       return {
         result: {
           content: [{ type: "text", text: `${name} ${JSON.stringify(args)}` }],
+          details: details?.(name, args as Record<string, unknown>),
         },
         isError: (args as { query?: string }).query === "fail",
       };
@@ -157,5 +165,39 @@ describe("the tools command", () => {
       'issues {"query":"a","command":"search"}',
       'mail {"message":"m1","command":"read"}',
     ]);
+  });
+
+  it("hands a script each call's structured result, so one call builds the next", async () => {
+    const details = (name: string, args: Record<string, unknown>) =>
+      name !== "issues"
+        ? undefined
+        : args.command === "search"
+          ? { issues: [{ handle: "ENG-1", title: "Checkout fails" }] }
+          : { handle: args.handle, title: "Checkout fails" };
+    const run = await tools(
+      ["run"],
+      [
+        'const found = await tools.issues.search({ query: "checkout" });',
+        "return await tools.issues.get({ handle: found.issues[0].handle });",
+      ].join("\n"),
+      details,
+    );
+    expect(run.stderr).toBe("");
+    expect(run.calls[1]).toEqual({
+      name: "issues",
+      args: { handle: "ENG-1", command: "get" },
+    });
+    expect(JSON.parse(run.stdout)).toEqual({
+      handle: "ENG-1",
+      title: "Checkout fails",
+    });
+    const call = await tools(
+      ["call", "issues.search", "--json", '{"query":"checkout"}'],
+      "",
+      details,
+    );
+    expect(call.stdout).toBe(
+      'issues {"query":"checkout","command":"search"}\n',
+    );
   });
 });

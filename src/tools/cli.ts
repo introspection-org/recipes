@@ -145,9 +145,15 @@ function client(socket: string) {
       );
     if (!("text" in answer)) throw new Error("unexpected answer");
     if (answer.isError) throw new Error(answer.text);
-    return answer.text;
+    return answer;
   };
-  return { list, call };
+  // In a script a call resolves to the tool's structured result, so one
+  // call's output can build the next; `tools call` prints the text.
+  const value = async (name: string, args: Record<string, unknown>) => {
+    const { text, details } = await call(name, args);
+    return details ?? text;
+  };
+  return { list, call, value };
 }
 
 function flag(args: string[], name: string): string | undefined {
@@ -243,7 +249,7 @@ export async function runToolsCommand(
       if (!body || typeof body !== "object" || Array.isArray(body))
         throw new UsageError("--json must be an object");
       io.stdout.write(
-        `${await tools.call(name, body as Record<string, unknown>)}\n`,
+        `${(await tools.call(name, body as Record<string, unknown>)).text}\n`,
       );
       return 0;
     }
@@ -258,7 +264,7 @@ export async function runToolsCommand(
         catalog.map((tool) => {
           const commands = commandsOf(tool);
           const callable = (args: Record<string, unknown> = {}) =>
-            tools.call(tool.name, args);
+            tools.value(tool.name, args);
           return [
             tool.name,
             commands.some((command) => command.command)
@@ -266,7 +272,7 @@ export async function runToolsCommand(
                   commands.map((command) => [
                     command.command,
                     (args: Record<string, unknown> = {}) =>
-                      tools.call(nameOf(command), args),
+                      tools.value(nameOf(command), args),
                   ]),
                 )
               : callable,
