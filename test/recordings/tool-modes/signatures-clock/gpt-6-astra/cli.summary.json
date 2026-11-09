@@ -1,0 +1,135 @@
+{
+  "model": "openai/gpt-6-astra",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 725,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1613,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 41,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list && tools list calendar --schema && tools list mail --schema && tools list drive --schema",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1938,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1610,
+      "output_tokens": 72,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "date -Iseconds; tools call mail.search --json - <<'JSON'\n{\"query\":\"budget\",\"from\":\"Dana\"}\nJSON\ntools call drive.search --json - <<'JSON'\n{\"query\":\"budget\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3545,
+      "output_tokens": 52,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_928e52a98c1c4244\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 308,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3931,
+      "output_tokens": 108,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00Z\",\"to\":\"2026-11-11T00:00:00Z\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4236,
+      "output_tokens": 101,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_928e52a98c1c4244\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review.\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 216,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4609,
+      "output_tokens": 121,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"reply_to\":\"msg_928e52a98c1c4244\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review.\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 206,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4822,
+      "output_tokens": 173,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 8,
+    "tool_calls": 7,
+    "input_tokens": 5771,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 22753,
+    "output_tokens": 714
+  }
+}

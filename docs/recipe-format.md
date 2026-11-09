@@ -96,7 +96,7 @@ Recipe MUST contain at least one agent.
 name: agent
 description: Produce a sourced research brief.
 ai:
-  model: <provider>/<model>  # one Pi has credentials for: pi --list-models
+  model: <provider>/<model> # one Pi has credentials for: pi --list-models
   thinking_level: high
   options:
     max_tokens: 4096
@@ -285,7 +285,10 @@ object holding a command allowlist per tool. A second provider is refused.
 {
   "pi": {
     "productivity": [
-      { "provider": "microsoft", "tools": { "mail": ["search", "read", "draft"] } }
+      {
+        "provider": "microsoft",
+        "tools": { "mail": ["search", "read", "draft"] }
+      }
     ]
   }
 }
@@ -352,6 +355,7 @@ suggest: true
 description: Redline a contract against our playbook
 argument-hint: "[contract]"
 ---
+
 Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
 ```
 
@@ -489,11 +493,11 @@ Besides Pi's own tools (`read`, `bash`, `edit`, `write`, `grep`, `find`,
 `ls`), Recipes provides these built-in tools, available only to an agent that
 lists them in `tools`:
 
-| Tool | What it does |
-| --- | --- |
-| `ask_user_question` | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool). |
-| `show_artifact` | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel). |
-| `review_artifacts` | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files). |
+| Tool                 | What it does                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ask_user_question`  | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool).                                                                                                                                                            |
+| `show_artifact`      | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel).                                                                                                                                                                 |
+| `review_artifacts`   | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files).                                                                                                                      |
 | `introspection_open` | Asks the person to open an Introspection page (install GitHub or Slack, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, look at a Runtime or task) and, with `wait: true`, pauses until they are done. In Pi's terminal it runs the Introspection CLI's loopback; pause/resume hosts render a card. See [Interactions](interactions.md#the-built-in-introspection_open-tool). |
 | `introspection_open` | Asks the person to open an Introspection page (install GitHub or Slack, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, look at a Runtime or task) and, with `wait: true`, pauses until they are done. In Pi's terminal it runs the Introspection CLI's loopback; pause/resume hosts render a card. See [Interactions](interactions.md#the-built-in-introspection_open-tool). |
 
@@ -526,6 +530,60 @@ catalog of a required server declared `"discovery": "defer"`.
 
 See [MCP configuration](mcp-configuration.md) for the complete authored and
 binding grammar.
+
+`tools` takes two forms. A list names the tools the agent may call, each
+declared to the model; `tools: []` is an agent with none. A mapping adds
+how they reach the model, with the selectors an [`mcp` server
+entry](mcp-configuration.md) takes and the same `mode`:
+
+```yaml
+tools: [read, bash, issues, mail]
+
+tools:
+  mode: codemode # tools (default) | codemode | cli
+  include: [read, bash, issues, mail]
+  eager: [issues]
+```
+
+| Key       | Takes                        | Meaning                                                                               |
+| --------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `include` | names, or `"*"`              | The tools the agent may call: the list form is exactly this.                          |
+| `exclude` | names                        | Removed after `include`.                                                              |
+| `defer`   | first-party names, or `"*"`  | In `tools` mode, hidden from the model until Pi's `tool_search` loads them.           |
+| `eager`   | first-party names, or `"*"`  | Exceptions to `defer`; in `codemode`, also declared to the model.                     |
+| `mode`    | `tools`, `codemode` or `cli` | How the first-party tools reach the model. Built-ins and a Recipe's own are declared. |
+
+`include: ["*"]` selects Pi's tools, the Recipes built-ins above, and the
+first-party tools the Recipe declares in `package.json#pi`: `issues` with
+`pi.issues`, `mail`, `calendar` and `drive` with `pi.productivity` (only the
+ones its `tools` names, when it names any), and `web_search` with `pi.search`.
+A Recipe's own extension and connector tools are never in `*`; name them. A
+tool `*` selects that the host does not offer is left out rather than refused.
+
+`mode`, `defer` and `eager` govern only the first-party tools (`issues`,
+`mail`, `calendar`, `drive`, `web_search`):
+
+- `tools` declares each one, except those `defer` holds back for tool search.
+- `codemode` keeps each one to codemode scripts (`tools.issues({...})`): it is
+  named in the `codemode` tool's description and not declared, so its schema
+  costs nothing until a script reads it with `describeTool()`. The agent gets
+  the `codemode` tool whenever `tools` or `mcp` asks for codemode, and the
+  mode needs Pi 1.3 or newer.
+- `cli` keeps them undeclared and serves them to a `tools` command in each
+  `bash` call's shell: `tools list`, `tools search "words"`,
+  `tools call issues.search --json '{"query":"checkout"}'` (or `--json -` to
+  read the object from stdin) and `tools run` for a script
+  (`tools.issues.search({...})`), where a call returns the tool's structured
+  result, or its text when it has none. Each call is a nested call of that bash
+  call, so hooks, spans and `behind` apply as to any other. The agent selects
+  `bash`. The command reaches first-party tools only; a Recipe's MCP servers
+  stay on the `mcp` command. The SDK session host serves it; the `pi`
+  extension host does not yet.
+
+The rules are an `mcp` server's: `defer` is invalid in `codemode` and `cli`,
+`eager` in `cli`, and every `defer` or `eager` name must be one `include`
+selects. A child agent that declares `tools` replaces its parent's whole
+block, mode included, as one that declares `mcp` does.
 
 ## Host responsibilities
 
@@ -622,7 +680,10 @@ stdout parsed as JSON (default timeout 300 s, 64 MB output):
 
 ```ts
 import { getRecipeSessionContext } from "@introspection-ai/recipes/extensions";
-import { pythonExecutable, runPythonJson } from "@introspection-ai/recipes/python";
+import {
+  pythonExecutable,
+  runPythonJson,
+} from "@introspection-ai/recipes/python";
 
 export default function tables(pi) {
   const python = pythonExecutable({
@@ -738,17 +799,17 @@ other way round, so a case file never names a path.
 
 A case file is YAML front matter, then a body. The front matter:
 
-| Field | Meaning |
-| --- | --- |
-| `id` | The file name without `.md`. Unique across the Recipe and never reused. Any name safe as a file name. |
-| `title` | One line in the owner's words. |
-| `check` | `code` (a verifier), `person` (the owner or a reviewer) or `later` (left for a later improvement pass). Only `code` cases get an implementation. |
-| `inputs` | A list of `{ name, sha256, location }`: each input by its hash and where it came from. The case file never holds an input; the implementation carries the copy it runs on, such as a Harbor task's `environment/`. |
-| `sources` | What the agent must reach for this case, such as `[documents]`. |
-| `approved_by`, `approved_at`, `approved_in` | Who approved the case, when, and in which message. All empty means a draft. |
-| `approved_hash` | Optional: `sha256:<hex>` of the body when the case was approved, written by `introspection eval approve <id>`. An edited body no longer matches, so the case is unapproved until the owner approves it again. |
-| `conversation` | Optional: `{ id, task_id, turn }` of the real conversation the case came from, `task_id` only when it ran as a platform task. Provenance only: a run never fetches it. |
-| `issue` | Optional: the UUID of the issue recording the hypothesis the case tests. |
+| Field                                       | Meaning                                                                                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                                        | The file name without `.md`. Unique across the Recipe and never reused. Any name safe as a file name.                                                                                                              |
+| `title`                                     | One line in the owner's words.                                                                                                                                                                                     |
+| `check`                                     | `code` (a verifier), `person` (the owner or a reviewer) or `later` (left for a later improvement pass). Only `code` cases get an implementation.                                                                   |
+| `inputs`                                    | A list of `{ name, sha256, location }`: each input by its hash and where it came from. The case file never holds an input; the implementation carries the copy it runs on, such as a Harbor task's `environment/`. |
+| `sources`                                   | What the agent must reach for this case, such as `[documents]`.                                                                                                                                                    |
+| `approved_by`, `approved_at`, `approved_in` | Who approved the case, when, and in which message. All empty means a draft.                                                                                                                                        |
+| `approved_hash`                             | Optional: `sha256:<hex>` of the body when the case was approved, written by `introspection eval approve <id>`. An edited body no longer matches, so the case is unapproved until the owner approves it again.      |
+| `conversation`                              | Optional: `{ id, task_id, turn }` of the real conversation the case came from, `task_id` only when it ran as a platform task. Provenance only: a run never fetches it.                                             |
+| `issue`                                     | Optional: the UUID of the issue recording the hypothesis the case tests.                                                                                                                                           |
 
 Unknown keys are allowed: the other fields and the body are for people. By
 convention the body has the sections Situation, A good result and A bad
@@ -784,6 +845,7 @@ approved_in: msg_01
 ---
 
 ## Situation
+
 ...
 ```
 
@@ -841,14 +903,14 @@ eval paths, the links between cases and implementations, and the judges eval
 code names. A broken link between a case and its implementation, or a broken
 case file, is an error and fails the check; the rest are warnings:
 
-| Code | Severity | Rule |
-| --- | --- | --- |
-| `pi.evals_case_unknown` | error | A Vitest row or Harbor task names a case with no case file. |
-| `pi.evals_case_duplicate` | error | A case has more than one implementation, on one runner or across both: two rows, two tasks, or a row and a task. Keep one and delete the other. |
-| `pi.evals_case_unapproved` | warning | A case with an implementation has an empty approval field, or a body that no longer matches its `approved_hash`; `introspection eval approve <id>` approves it again. It stays a warning: a draft case is how one is proposed, and the owner approves it in review. |
-| `pi.evals_case_row_missing_id` | error | A `.eval.jsonl` row has no `case`. |
-| `pi.evals_case_invalid` | error | A case file has no readable front matter, an `id` other than its file name, an `issue` that is not a UUID, or an `approved_hash` that is not `sha256:` and 64 hexadecimal digits. |
-| `pi.evals_judge_unknown` | warning | A string-literal `recipeJudge("<name>")` in a Vitest suite or the eval `lib`, or `judge_reward("<name>")` in a Harbor task's Python, names an online judge with no definition of that `name` in `judges/`; a `recipeJudge` YAML path, read from the Recipe root, that names a missing file warns too. Names built at run time or passed in a variable are not seen. It stays a warning. |
+| Code                           | Severity | Rule                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pi.evals_case_unknown`        | error    | A Vitest row or Harbor task names a case with no case file.                                                                                                                                                                                                                                                                                                                             |
+| `pi.evals_case_duplicate`      | error    | A case has more than one implementation, on one runner or across both: two rows, two tasks, or a row and a task. Keep one and delete the other.                                                                                                                                                                                                                                         |
+| `pi.evals_case_unapproved`     | warning  | A case with an implementation has an empty approval field, or a body that no longer matches its `approved_hash`; `introspection eval approve <id>` approves it again. It stays a warning: a draft case is how one is proposed, and the owner approves it in review.                                                                                                                     |
+| `pi.evals_case_row_missing_id` | error    | A `.eval.jsonl` row has no `case`.                                                                                                                                                                                                                                                                                                                                                      |
+| `pi.evals_case_invalid`        | error    | A case file has no readable front matter, an `id` other than its file name, an `issue` that is not a UUID, or an `approved_hash` that is not `sha256:` and 64 hexadecimal digits.                                                                                                                                                                                                       |
+| `pi.evals_judge_unknown`       | warning  | A string-literal `recipeJudge("<name>")` in a Vitest suite or the eval `lib`, or `judge_reward("<name>")` in a Harbor task's Python, names an online judge with no definition of that `name` in `judges/`; a `recipeJudge` YAML path, read from the Recipe root, that names a missing file warns too. Names built at run time or passed in a variable are not seen. It stays a warning. |
 
 ## Conformance
 

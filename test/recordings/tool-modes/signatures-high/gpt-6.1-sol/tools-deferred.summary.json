@@ -1,0 +1,159 @@
+{
+  "model": "openai/gpt-6.1-sol",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 609,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1497,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 27,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "+calendar +mail +drive command",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 3680,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1494,
+      "output_tokens": 28,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "current time user timezone profile drive search",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 4622,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1617,
+      "output_tokens": 66,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "from": "Dana",
+            "query": "budget",
+            "limit": 20
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1358,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5252,
+      "output_tokens": 34,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "read",
+            "message": "msg_3b6b58b4c10e4866"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 289,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6607,
+      "output_tokens": 129,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "current date time timezone clock user profile",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 148,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6893,
+      "output_tokens": 342,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-09T00:00:00Z",
+            "to": "2026-11-12T00:00:00Z",
+            "limit": 100
+          }
+        },
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "to": [
+              "dana@example.test"
+            ],
+            "subject": "Re: Q3 budget numbers",
+            "body": "Hi Dana,\n\nI'll bring the latest budget sheet to the planning review. Here's the link: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget).\n\nBest,\nSam",
+            "reply_to": "msg_3b6b58b4c10e4866"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 671,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7038,
+      "output_tokens": 191,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 8,
+    "tool_calls": 9,
+    "input_tokens": 12874,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 28901,
+    "output_tokens": 863
+  }
+}

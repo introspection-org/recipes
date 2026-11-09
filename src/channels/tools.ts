@@ -1,7 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
-import { commandParameters } from "../command-parameters.js";
+import {
+  commandParameters,
+  commandSignature,
+  commandVariant,
+  withoutFields,
+  type ObjectSchema,
+} from "../command-parameters.js";
+
+import { CHANNELS_ARGUMENTS } from "./arguments.generated.js";
 
 import { ChannelRefStore } from "./refs.js";
 import type {
@@ -295,13 +302,7 @@ export function registerChannelTools(
   register("reply", () => ({
     description:
       "Post a message to the conversation this task answers. Text is Markdown and is rendered in the channel's native format. Replies land in the origin thread when there is one. Use final:false for progress; final:true (the default) for a completed answer.",
-    parameters: Type.Object(
-      {
-        text: Type.String({ minLength: 1 }),
-        final: Type.Optional(Type.Boolean()),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.reply,
     async execute(
       _toolCallId: string,
       params: { text: string; final?: boolean },
@@ -319,14 +320,7 @@ export function registerChannelTools(
   register("send", () => ({
     description:
       "Send Markdown to an explicit channel, optionally inside a thread, using this connection. No thread means a top-level post.",
-    parameters: Type.Object(
-      {
-        channel_id: Type.String({ minLength: 1 }),
-        thread_id: Type.Optional(Type.String({ minLength: 1 })),
-        text: Type.String({ minLength: 1 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.send,
     async execute(
       _toolCallId: string,
       params: { channel_id: string; thread_id?: string; text: string },
@@ -343,7 +337,7 @@ export function registerChannelTools(
   register("list", () => ({
     description:
       "List the channels available to the current provider credential session. Returns provider channel ids and names for use with explicitly targeted channel tools.",
-    parameters: Type.Object({}, { additionalProperties: false }),
+    parameters: CHANNELS_ARGUMENTS.list,
     async execute(
       _toolCallId: string,
       _params: Record<string, never>,
@@ -382,21 +376,9 @@ export function registerChannelTools(
       : adapter.capabilities.read === "thread"
         ? "Read earlier messages in this conversation's thread, most recent last."
         : "Read earlier messages in this conversation, most recent last.",
-    parameters: Type.Object(
-      {
-        ...(adapter.capabilities.targeting
-          ? {
-              channel_id: Type.Optional(Type.String({ minLength: 1 })),
-              thread_id: Type.Optional(
-                Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-              ),
-            }
-          : {}),
-        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
-        cursor: Type.Optional(Type.String({ minLength: 1 })),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: adapter.capabilities.targeting
+      ? CHANNELS_ARGUMENTS.read
+      : withoutFields(CHANNELS_ARGUMENTS.read, ["channel_id", "thread_id"]),
     async execute(
       _toolCallId: string,
       params: {
@@ -427,22 +409,7 @@ export function registerChannelTools(
   register("react", () => ({
     description:
       "Add or remove a provider-supported emoji reaction on a message in this conversation, named by a reference a channel tool returned. The action defaults to add.",
-    parameters: Type.Object(
-      {
-        message: Type.String({ minLength: 1 }),
-        emoji: Type.String({
-          minLength: 1,
-          description:
-            "Emoji name or value accepted by the current channel provider.",
-        }),
-        action: Type.Optional(
-          Type.Union([Type.Literal("add"), Type.Literal("remove")], {
-            default: "add",
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.react,
     async execute(
       _toolCallId: string,
       params: {
@@ -466,13 +433,7 @@ export function registerChannelTools(
   register("edit", () => ({
     description:
       "Replace the text of a message this agent posted. Messages from other authors cannot be edited.",
-    parameters: Type.Object(
-      {
-        message: Type.String({ minLength: 1 }),
-        text: Type.String({ minLength: 1 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.edit,
     async execute(
       _toolCallId: string,
       params: { message: string; text: string },
@@ -493,10 +454,7 @@ export function registerChannelTools(
   register("retract", () => ({
     description:
       "Delete a message this agent posted. Messages from other authors cannot be retracted.",
-    parameters: Type.Object(
-      { message: Type.String({ minLength: 1 }) },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.retract,
     async execute(
       _toolCallId: string,
       params: { message: string },
@@ -513,14 +471,7 @@ export function registerChannelTools(
   register("attach", () => ({
     description:
       "Upload a file from the task workspace into this conversation.",
-    parameters: Type.Object(
-      {
-        path: Type.String({ minLength: 1 }),
-        title: Type.Optional(Type.String()),
-        comment: Type.Optional(Type.String()),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.attach,
     async execute(
       _toolCallId: string,
       params: { path: string; title?: string; comment?: string },
@@ -535,13 +486,7 @@ export function registerChannelTools(
   register("fetch_file", () => ({
     description:
       "Download an observed file into the task workspace and return its local path, size, and digest. Takes a file reference returned by the read command. A provider file id is not accepted. The bytes stay on disk; they are not read into this conversation.",
-    parameters: Type.Object(
-      {
-        file: Type.String({ minLength: 1, maxLength: 200 }),
-        variant: Type.Optional(Type.String({ minLength: 1, maxLength: 40 })),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.fetch_file,
     async execute(
       _toolCallId: string,
       params: { file: string; variant?: string },
@@ -566,13 +511,7 @@ export function registerChannelTools(
   register("post_document", () => ({
     description:
       "Publish long-form Markdown to this conversation as a document rather than a message, for output that reads badly when split across chat messages.",
-    parameters: Type.Object(
-      {
-        title: Type.String({ minLength: 1 }),
-        markdown: Type.String({ minLength: 1 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: CHANNELS_ARGUMENTS.post_document,
     async execute(
       _toolCallId: string,
       params: { title: string; markdown: string },
@@ -678,26 +617,22 @@ export function registerChannelTools(
   }
 
   const variants = [...definitions].map(([command, definition]) => {
-    const schema = definition.parameters as TSchema & {
-      properties: Record<string, TSchema>;
+    const schema = definition.parameters as ObjectSchema;
+    const description = definition.description as string;
+    return {
+      line: `${commandSignature(command, schema)}: ${description}`,
+      schema: commandVariant(command, schema, description),
     };
-    return Type.Object(
-      { command: Type.Literal(command), ...schema.properties },
-      {
-        additionalProperties: false,
-        description: definition.description as string,
-      },
-    );
   });
-  const parameters = commandParameters(variants);
+  const parameters = commandParameters(
+    variants.map((variant) => variant.schema),
+  );
   pi.registerTool({
     name: "channels",
     label: "Channels",
     description:
-      "Read and manage channel conversations using this connection. Choose a command. " +
-      [...definitions]
-        .map(([command, definition]) => `${command}: ${definition.description}`)
-        .join("\n"),
+      "Read and manage channel conversations using this connection. Choose a command.\n" +
+      variants.map((variant) => variant.line).join("\n"),
     parameters,
     executionMode: "sequential",
     async execute(

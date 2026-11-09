@@ -1,0 +1,119 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 707,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 63,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1612,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 54,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list && tools list calendar --schema && tools list mail --schema && tools list drive --schema",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1951,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1609,
+      "output_tokens": 158,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "date '+%Y-%m-%d %H:%M:%S %Z %z' && date -d tomorrow '+%Y-%m-%d'",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 287,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3557,
+      "output_tokens": 251,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst results = await Promise.all([\n  tools.calendar.list({from:'2026-11-09T00:00:00-08:00',to:'2026-11-10T00:00:00-08:00',limit:100}),\n  tools.mail.search({query:'budget',from:'Dana',limit:100}),\n  tools.drive.search({query:'budget',limit:100})\n]);\nfor (let i=0;i<results.length;i++) { console.log(['CALENDAR','MAIL','DRIVE'][i]); console.log(JSON.stringify(results[i])); }\nJS",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 473,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3841,
+      "output_tokens": 260,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst results = await Promise.all([\n  tools.mail.read({message:'msg_a0101569957c4110'}),\n  tools.drive.read({file:'file_453e74b85572415e'})\n]);\nconsole.log('EMAIL'); console.log(JSON.stringify(results[0]));\nconsole.log('SHEET'); console.log(JSON.stringify(results[1]));\nJS",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 576,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4311,
+      "output_tokens": 207,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_a0101569957c4110\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nI’ll bring the latest budget sheet to the meeting. Here’s the [Q3 Budget sheet](https://docs.example.test/spreadsheets/d/f-budget).\\n\\nBest,\\nSam\"}\nJSON",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 290,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4884,
+      "output_tokens": 207,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 7,
+    "tool_calls": 6,
+    "input_tokens": 5896,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 18202,
+    "output_tokens": 1200
+  }
+}

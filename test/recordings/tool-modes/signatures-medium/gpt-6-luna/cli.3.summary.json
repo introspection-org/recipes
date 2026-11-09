@@ -1,0 +1,133 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 707,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1595,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 53,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list; tools list mail --schema; tools list calendar --schema; tools list drive --schema",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1950,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1592,
+      "output_tokens": 72,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "date -Iseconds; date +%Y-%m-%d; date +%z;",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 114,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3539,
+      "output_tokens": 236,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.search --json - <<'JSON'\n{\"query\":\"budget\",\"from\":\"Dana\",\"limit\":20}\nJSON",
+            "timeout": 120000
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call drive.search --json - <<'JSON'\n{\"query\":\"budget spreadsheet\",\"limit\":20}\nJSON",
+            "timeout": 120000
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\",\"limit\":100}\nJSON",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 561,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3650,
+      "output_tokens": 148,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_e55d592b5dfe4e1e\"}\nJSON",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 401,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4208,
+      "output_tokens": 174,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nI’ll bring the latest budget sheet to tomorrow’s planning review: https://docs.example.test/spreadsheets/d/f-budget\\n\\nBest,\\nSam\",\"reply_to\":\"msg_e55d592b5dfe4e1e\"}\nJSON",
+            "timeout": 120000
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 255,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4606,
+      "output_tokens": 180,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 7,
+    "tool_calls": 8,
+    "input_tokens": 5583,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 17595,
+    "output_tokens": 909
+  }
+}

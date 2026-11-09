@@ -1,0 +1,94 @@
+{
+  "model": "anthropic/claude-sonnet-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 4576,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 125,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1315,
+      "cache_read_input_tokens": 4576,
+      "output_tokens": 336,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "from": "Dana",
+            "limit": 10
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget"
+          }
+        },
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2020-01-01T00:00:00Z",
+            "to": "2100-01-01T00:00:00Z",
+            "limit": 5
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1237,
+      "cache_read_input_tokens": 5891,
+      "output_tokens": 264,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "to": [
+              "dana@example.test"
+            ],
+            "subject": "Re: Q3 budget numbers",
+            "reply_to": "msg_a905bc453efe462f",
+            "body": "Hi Dana,\n\nYes, I'll bring the latest budget sheet to tomorrow's review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\n\nSee you there.\n\nSam"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 364,
+      "cache_read_input_tokens": 7128,
+      "output_tokens": 308,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 5,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 7492,
+    "cache_read_input_tokens": 17595,
+    "output_tokens": 1033
+  }
+}

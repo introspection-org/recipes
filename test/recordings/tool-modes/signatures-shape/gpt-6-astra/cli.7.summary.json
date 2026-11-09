@@ -1,0 +1,103 @@
+{
+  "model": "openai/gpt-6-astra",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 725,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1613,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 41,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list && tools list calendar --schema && tools list mail --schema && tools list drive --schema",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1987,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1610,
+      "output_tokens": 93,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst results = await Promise.all([tools.calendar.list({}), tools.mail.search({query:\"budget\",from:\"Dana\"}), tools.drive.search({query:\"budget\"})]); results.forEach((r,i)=>console.log(JSON.stringify({type:[\"calendar\",\"mail\",\"drive\"][i],result:r})));\nJS",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 518,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3594,
+      "output_tokens": 52,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_8dfbacb9b6724a55\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 305,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4109,
+      "output_tokens": 109,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_8dfbacb9b6724a55\",\"body\":\"Hi Dana,\\n\\nI'll bring the [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 192,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4411,
+      "output_tokens": 182,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 5340,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 13724,
+    "output_tokens": 523
+  }
+}

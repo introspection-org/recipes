@@ -15,6 +15,7 @@ import {
   type RecipePackageChannel,
   type RecipePackageManifest,
 } from "./recipe/package.js";
+import type { RecipeToolExposure } from "./recipe/agent.js";
 
 interface RecipeConnectorToolDefinition {
   readonly id: string;
@@ -35,12 +36,22 @@ export interface RecipeConnectorExtensionOptions {
   python?: Readonly<Record<string, { interpreter: string }>>;
   /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
   hostDir?: string;
+  /** How a first-party tool registers for the agent (`tools.mode`, `defer`). Default: declared. */
+  exposure?: (tool: string) => RecipeToolExposure;
+  /** What the agent's `include: ["*"]` added (`wildcardTools`). */
+  wildcardTools?: readonly string[];
 }
 
 interface RecipeConnectorToolLoadout {
   toolNames: string[];
   initialActiveToolNames: string[];
   deferredToolNames: string[];
+  /** Registered for codemode scripts only (`tools.mode: codemode`). */
+  scriptOnlyToolNames: string[];
+}
+
+function isScriptOnly(tool: object): boolean {
+  return (tool as { scriptOnly?: boolean }).scriptOnly === true;
 }
 
 interface RecipeConnectorModuleOptions {
@@ -219,17 +230,23 @@ export async function loadRecipeConnectors(
     options,
   );
   const issues = await loadRecipeIssues(manifest.issues, agentTools, options);
+  // A first-party tool in codemode is registered but neither declared nor
+  // deferred to tool search: codemode lists it for scripts.
+  const scriptOnly = (name: string) => options.exposure?.(name) === "codemode";
+  const active = (name: string) => options.exposure?.(name) !== "deferred";
   const selected = [
     ...loaded.flatMap((connector) => connector.selected),
     ...issues.toolNames.map((name) => ({
       id: name,
       name,
-      defaultActive: true,
+      defaultActive: active(name),
+      scriptOnly: scriptOnly(name),
     })),
     ...productivity.toolNames.map((name) => ({
       id: name,
       name,
-      defaultActive: true,
+      defaultActive: active(name),
+      scriptOnly: scriptOnly(name),
     })),
     ...documents.toolNames.map((name) => ({
       id: name,
@@ -255,10 +272,13 @@ export async function loadRecipeConnectors(
     loadout: {
       toolNames: selected.map((tool) => tool.name),
       initialActiveToolNames: selected
-        .filter((tool) => tool.defaultActive)
+        .filter((tool) => tool.defaultActive && !isScriptOnly(tool))
         .map((tool) => tool.name),
       deferredToolNames: selected
         .filter((tool) => !tool.defaultActive)
+        .map((tool) => tool.name),
+      scriptOnlyToolNames: selected
+        .filter((tool) => isScriptOnly(tool))
         .map((tool) => tool.name),
     },
   };

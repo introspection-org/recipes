@@ -21,7 +21,11 @@ import {
   parseRecipeMcpToolSelection,
   readPiPackageManifest,
   RecipePackageError,
+  type PiPackageManifest,
+  type RecipeMcpToolSelection,
 } from "./package.js";
+import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
+import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
 export interface RecipeSystemInstructions {
@@ -29,15 +33,18 @@ export interface RecipeSystemInstructions {
   content: string;
 }
 
-interface RecipeAgentMcpServer {
-  /** Exact tool names or the reserved whole-toolset `*` sentinel. */
-  include?: string[];
-  /** Exact tool names removed after inclusion. */
-  exclude?: string[];
-  /** Authorized tools hidden from the model until activated. */
+/**
+ * The selectors an agent's `tools` block and each of its `mcp.servers` share:
+ * `include`/`exclude` authorize, `defer`/`eager` choose what the model sees.
+ */
+interface RecipeAgentToolSelectors extends RecipeMcpToolSelection {
+  /** Authorized tools hidden from the model until tool search loads them. */
   defer?: string[];
-  /** Deferred tools made visible at session start. */
+  /** Exceptions to `defer`, or in codemode tools declared as well. */
   eager?: string[];
+}
+
+interface RecipeAgentMcpServer extends RecipeAgentToolSelectors {
   /**
    * The tools whose own calls alone may reach this server. The model, codemode
    * scripts and every other tool are refused.
@@ -45,16 +52,126 @@ interface RecipeAgentMcpServer {
   behind?: string[];
 }
 
-export type RecipeAgentMcpMode = "cli" | "tools" | "codemode";
+/** How selected tools reach the model, for `tools.mode` and `mcp.mode` alike. */
+export type RecipeAgentToolMode = "cli" | "tools" | "codemode";
 
 export interface RecipeAgentMcp {
   /** Omission inherits the parent mode or defaults the resolved root to CLI. */
-  mode?: RecipeAgentMcpMode;
+  mode?: RecipeAgentToolMode;
   /** Authorization selection, still upper-bounded by package.json#pi.mcp. */
   servers: Record<string, RecipeAgentMcpServer>;
 }
 
 const INVALID_AGENT_MCP = Symbol("invalidAgentMcp");
+
+/** The first-party tools whose exposure `tools.mode`, `defer` and `eager` govern. */
+export const PLATFORM_TOOL_NAMES = [
+  "issues",
+  "mail",
+  "calendar",
+  "drive",
+  "web_search",
+] as const;
+
+/** The agent `tools` block; `include` is the definition's `tools` list. */
+export interface RecipeAgentToolPolicy extends Omit<
+  RecipeAgentToolSelectors,
+  "include"
+> {
+  /** Omission means `tools`: each selected tool is declared to the model. */
+  mode?: RecipeAgentToolMode;
+}
+
+/** How a tool registers with Pi: declared, codemode scripts only, or loaded by tool search. */
+export type RecipeToolExposure = "direct" | "codemode" | "deferred";
+
+const selects = (selectors: readonly string[] | undefined, name: string) =>
+  (selectors ?? []).some((selector) => selector === "*" || selector === name);
+
+/**
+ * How a first-party tool registers for an agent. Every other tool is declared:
+ * the policy governs only {@link PLATFORM_TOOL_NAMES}.
+ */
+export function platformToolExposure(
+  policy: RecipeAgentToolPolicy | undefined,
+  toolName: string,
+): RecipeToolExposure {
+  if (!(PLATFORM_TOOL_NAMES as readonly string[]).includes(toolName))
+    return "direct";
+  // In cli the `tools` command calls them through the bash call, so they stay
+  // callable without being declared, as in codemode.
+  if (policy?.mode === "cli") return "codemode";
+  if (selects(policy?.eager, toolName)) return "direct";
+  if (policy?.mode === "codemode") return "codemode";
+  return selects(policy?.defer, toolName) ? "deferred" : "direct";
+}
+
+/** Pi's built-in tools and the Recipe built-ins: what `include: ["*"]` always selects. */
+const BUILTIN_TOOL_NAMES = [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+  "ask_user_question",
+  "show_artifact",
+  "review_artifacts",
+  "introspection_open",
+] as const;
+
+/** Whether `pi.issues` leaves a provider, as `issuesProviderDeclarations` does: an undeclared fallback is implicit. */
+function issuesRegisters(declared: PiPackageManifest["issues"]): boolean {
+  return (
+    declared !== undefined &&
+    (declared.some((declaration) => declaration.enabled !== false) ||
+      !declared.some(
+        (declaration) => declaration.provider === ISSUES_FALLBACK_PROVIDER,
+      ))
+  );
+}
+
+/**
+ * The tools an agent selects, with `include: ["*"]` expanded to the built-ins
+ * and the first-party tools the Recipe declares, less `exclude`. A Recipe's own
+ * extension and connector tools are never in `*`: they are named. `wildcard`
+ * is what `*` added, which a session drops when its host does not offer it.
+ */
+export function selectedAgentTools(
+  include: readonly string[],
+  policy: RecipeAgentToolPolicy | undefined,
+  manifest: Pick<PiPackageManifest, "issues" | "productivity" | "search">,
+): { tools: string[]; wildcard: string[] } {
+  const named = include.filter((name) => name !== "*");
+  const wildcard = include.includes("*")
+    ? [
+        ...BUILTIN_TOOL_NAMES,
+        ...(issuesRegisters(manifest.issues) ? ["issues"] : []),
+        // An omitted allowlist exposes every supported command; only an empty
+        // one disables the tool.
+        ...(manifest.productivity ?? []).flatMap((declaration) =>
+          PRODUCTIVITY_TOOLS.filter(
+            (tool) => declaration.tools?.[tool]?.length !== 0,
+          ),
+        ),
+        ...(manifest.search?.length ? ["web_search"] : []),
+      ].filter((name) => !named.includes(name))
+    : [];
+  const excluded = new Set(policy?.exclude ?? []);
+  return {
+    tools: [...new Set([...named, ...wildcard])].filter(
+      (name) => !excluded.has(name),
+    ),
+    wildcard: wildcard.filter((name) => !excluded.has(name)),
+  };
+}
+
+const INVALID_AGENT_TOOLS = Symbol("invalidAgentTools");
+
+type ParsedRecipeAgentToolPolicy = RecipeAgentToolPolicy & {
+  [INVALID_AGENT_TOOLS]?: string;
+};
 
 type ParsedRecipeAgentMcp = RecipeAgentMcp & {
   [INVALID_AGENT_MCP]?: true;
@@ -79,6 +196,8 @@ export interface RecipeAgentDefinition {
   tools: string[];
   /** MCP tool selection, separate from the exact Pi/extension tool allowlist. */
   mcp?: RecipeAgentMcp;
+  /** The `tools` mapping's `mode`, `exclude`, `defer` and `eager`; `tools` holds its `include`. */
+  toolPolicy?: RecipeAgentToolPolicy;
   skills: string[];
   /**
    * The phases the agent moves through, in order (`[build, improve]`): each
@@ -115,7 +234,7 @@ type ParsedRecipeAgentDefinition = Omit<
 
 export interface RecipeAgentValidationFinding {
   agentName: string;
-  field: "name" | "from" | "file" | "mcp" | "model.name";
+  field: "name" | "from" | "file" | "mcp" | "tools" | "model.name";
   code?: string;
   message: string;
 }
@@ -189,6 +308,14 @@ function invalidAgentField(data: Record<string, unknown>): string | undefined {
     return "description must be a string";
   }
   for (const key of ["tools", "skills", "phases", "subagents"] as const) {
+    // A `tools` mapping is checked with the selectors it shares with `mcp`.
+    if (
+      key === "tools" &&
+      data.tools &&
+      typeof data.tools === "object" &&
+      !Array.isArray(data.tools)
+    )
+      continue;
     if (Object.hasOwn(data, key) && !isNonEmptyStringArray(data[key])) {
       return `${key} must be an array of non-empty strings`;
     }
@@ -311,6 +438,7 @@ function validBehind(server: Record<string, unknown>): boolean {
       (name) =>
         typeof name === "string" && Boolean(name.trim()) && !name.includes("*"),
     ) &&
+    new Set(behind).size === behind.length &&
     !Object.hasOwn(server, "defer") &&
     !Object.hasOwn(server, "eager")
   );
@@ -349,52 +477,21 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
   }
   const mode =
     raw.mode === "cli" || raw.mode === "tools" || raw.mode === "codemode"
-      ? (raw.mode as RecipeAgentMcpMode)
+      ? (raw.mode as RecipeAgentToolMode)
       : undefined;
   const mcp: ParsedRecipeAgentMcp = {
     ...(mode ? { mode } : {}),
     servers,
   };
-  const malformedServers = Object.entries(rawServers).some(
-    ([, serverValue]) => {
-      const server = asRecord(serverValue);
-      return (
-        !serverValue ||
-        typeof serverValue !== "object" ||
-        Array.isArray(serverValue) ||
-        Object.keys(server).some(
-          (key) =>
-            !["include", "exclude", "defer", "eager", "behind"].includes(key),
-        ) ||
-        ["include", "exclude", "defer", "eager", "behind"].some((key) => {
-          if (!Object.hasOwn(server, key)) return false;
-          const values = stringArray(server[key]);
-          return new Set(values).size !== values.length;
-        }) ||
-        ["defer", "eager"].some(
-          (key) =>
-            Object.hasOwn(server, key) &&
-            (!Array.isArray(server[key]) ||
-              (server[key] as unknown[]).some(
-                (selector) => typeof selector !== "string",
-              )),
-        ) ||
-        !validActivationSelectors(
-          Object.hasOwn(server, "defer")
-            ? stringArray(server.defer).map((selector) => selector.trim())
-            : undefined,
-        ) ||
-        !validActivationSelectors(
-          Object.hasOwn(server, "eager")
-            ? stringArray(server.eager).map((selector) => selector.trim())
-            : undefined,
-        ) ||
-        (mode === "cli" &&
-          (Object.hasOwn(server, "defer") || Object.hasOwn(server, "eager"))) ||
-        (mode === "codemode" && Object.hasOwn(server, "defer")) ||
-        (Object.hasOwn(server, "behind") && !validBehind(server))
-      );
-    },
+  const malformedServers = Object.values(rawServers).some(
+    (serverValue) =>
+      !serverValue ||
+      typeof serverValue !== "object" ||
+      Array.isArray(serverValue) ||
+      toolSelectorsProblem(asRecord(serverValue), mode, ["behind"]) !==
+        undefined ||
+      (Object.hasOwn(asRecord(serverValue), "behind") &&
+        !validBehind(asRecord(serverValue))),
   );
   const malformedStructured =
     malformedServers ||
@@ -416,6 +513,121 @@ function parseMcp(data: Record<string, unknown>): RecipeAgentMcp | undefined {
     });
   }
   return mcp;
+}
+
+const SELECTOR_KEYS = ["include", "exclude", "defer", "eager"] as const;
+
+/**
+ * Why a `tools` block or one `mcp.servers` entry breaks the rules the two
+ * share, or undefined. `extra` names the keys the caller adds (`behind`).
+ */
+function toolSelectorsProblem(
+  raw: Record<string, unknown>,
+  mode: unknown,
+  extra: readonly string[] = [],
+): string | undefined {
+  const unknown = Object.keys(raw).filter(
+    (key) =>
+      !(SELECTOR_KEYS as readonly string[]).includes(key) &&
+      !extra.includes(key),
+  );
+  if (unknown.length > 0)
+    return `unsupported key(s): ${unknown.join(", ")}; it takes ${[...SELECTOR_KEYS, ...extra].join(", ")}`;
+  const lists: Partial<Record<(typeof SELECTOR_KEYS)[number], string[]>> = {};
+  for (const key of SELECTOR_KEYS) {
+    if (!Object.hasOwn(raw, key)) continue;
+    const value = raw[key];
+    if (
+      !Array.isArray(value) ||
+      value.some((item) => typeof item !== "string" || !item.trim())
+    )
+      return `${key} must be a list of tool names`;
+    const names = (value as string[]).map((item) => item.trim());
+    if (new Set(names).size !== names.length)
+      return `${key} names a tool twice`;
+    if (names.some((name) => name.includes("*") && name !== "*"))
+      return `${key} takes exact tool names or "*"`;
+    if (key === "exclude" && names.includes("*"))
+      return 'exclude takes exact tool names, not "*"';
+    if (
+      (key === "defer" || key === "eager") &&
+      names.includes("*") &&
+      names.length > 1
+    )
+      return `${key} takes "*" alone`;
+    lists[key] = names;
+  }
+  if (mode === "cli" && (lists.defer || lists.eager))
+    return "defer and eager are invalid in cli mode";
+  if (mode === "codemode" && lists.defer) return "defer is invalid in codemode";
+  const unselected = [...(lists.defer ?? []), ...(lists.eager ?? [])].filter(
+    (name) =>
+      name !== "*" &&
+      !mcpSelectionAllowsTool(
+        { include: lists.include ?? [], exclude: lists.exclude ?? [] },
+        name,
+      ),
+  );
+  if (unselected.length > 0)
+    return `defer and eager name tool(s) include does not select: ${unselected.join(", ")}`;
+  return undefined;
+}
+
+/**
+ * `tools`: a list of tool names, or the mapping that mirrors one
+ * `mcp.servers` entry plus `mode`. Either way `include` is the list.
+ */
+function parseTools(data: Record<string, unknown>): {
+  include?: string[];
+  policy?: RecipeAgentToolPolicy;
+} {
+  if (!Object.hasOwn(data, "tools")) return {};
+  const value = data.tools;
+  if (Array.isArray(value)) return { include: stringArray(value) };
+  const raw = asRecord(value);
+  const policy: ParsedRecipeAgentToolPolicy = {
+    ...(raw.mode === "tools" || raw.mode === "codemode" || raw.mode === "cli"
+      ? { mode: raw.mode }
+      : {}),
+    ...(Object.hasOwn(raw, "exclude")
+      ? { exclude: stringArray(raw.exclude) }
+      : {}),
+    ...(Object.hasOwn(raw, "defer") ? { defer: stringArray(raw.defer) } : {}),
+    ...(Object.hasOwn(raw, "eager") ? { eager: stringArray(raw.eager) } : {}),
+  };
+  const firstPartyOnly = [
+    ...(policy.defer ?? []),
+    ...(policy.eager ?? []),
+  ].filter(
+    (name) =>
+      name !== "*" &&
+      !(PLATFORM_TOOL_NAMES as readonly string[]).includes(name),
+  );
+  const problem =
+    !value || typeof value !== "object"
+      ? "tools must be a list of tool names or a mapping"
+      : Object.hasOwn(raw, "mode") &&
+          raw.mode !== "tools" &&
+          raw.mode !== "codemode" &&
+          raw.mode !== "cli"
+        ? "tools.mode must be tools, codemode or cli"
+        : raw.mode === "cli" &&
+            !(
+              (stringArray(raw.include).includes("bash") ||
+                stringArray(raw.include).includes("*")) &&
+              !(policy.exclude ?? []).includes("bash")
+            )
+          ? "tools.mode cli runs the tools command from bash; select bash"
+          : (toolSelectorsProblem(raw, raw.mode ?? "tools", ["mode"]) ??
+            (firstPartyOnly.length > 0
+              ? `defer and eager apply only to first-party tools (${PLATFORM_TOOL_NAMES.join(", ")}): ${firstPartyOnly.join(", ")}`
+              : undefined));
+  if (problem)
+    Object.defineProperty(policy, INVALID_AGENT_TOOLS, {
+      value: problem.startsWith("tools") ? problem : `tools: ${problem}`,
+      enumerable: false,
+    });
+  return { include: stringArray(raw.include), policy };
 }
 
 function mergeMcp(
@@ -522,6 +734,7 @@ function readRecipeAgentSources(
       continue;
     }
 
+    const parsedTools = parseTools(data);
     sources.push({
       definition: {
         name,
@@ -531,9 +744,8 @@ function readRecipeAgentSources(
         model: modelProjection(modelConfig),
         modelConfig,
         sessionConfig,
-        tools: Object.hasOwn(data, "tools")
-          ? stringArray(data.tools)
-          : undefined,
+        tools: parsedTools.include,
+        ...(parsedTools.policy ? { toolPolicy: parsedTools.policy } : {}),
         mcp: parseMcp(data),
         skills: Object.hasOwn(data, "skills")
           ? stringArray(data.skills)
@@ -606,7 +818,11 @@ function definitionsFromSources(
       model: modelProjection(modelConfig),
       ...(modelConfig ? { modelConfig } : {}),
       ...(sessionConfig ? { sessionConfig } : {}),
+      // A child's `tools` replaces its parent's whole block, as `mcp` does.
       tools: raw.tools ?? base?.tools ?? [],
+      ...((raw.tools ? raw.toolPolicy : base?.toolPolicy)
+        ? { toolPolicy: raw.tools ? raw.toolPolicy : base?.toolPolicy }
+        : {}),
       mcp: mergeMcp(base?.mcp, raw.mcp),
       skills: raw.skills ?? base?.skills ?? [],
       ...((raw.phases ?? base?.phases)
@@ -711,6 +927,21 @@ function validateResolvedRecipeAgentSource(
     return mergeMcp(base, definition.mcp);
   }
 
+  /** The policy of the definition whose `tools` the agent resolves to. */
+  function resolvedToolPolicy(
+    name: string,
+    stack: string[] = [],
+  ): RecipeAgentToolPolicy | undefined {
+    if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
+      return undefined;
+    const definition = rawDefinitions.get(name);
+    if (!definition) return undefined;
+    if (definition.tools) return definition.toolPolicy;
+    return definition.from
+      ? resolvedToolPolicy(definition.from, [...stack, name])
+      : undefined;
+  }
+
   function resolvedTools(name: string, stack: string[] = []): string[] {
     if (stack.includes(name) || stack.length >= MAX_INHERITANCE_DEPTH)
       return [];
@@ -808,7 +1039,9 @@ function validateResolvedRecipeAgentSource(
   }
   const tools = new Set(resolvedTools(agentName));
   for (const [serverId, selection] of Object.entries(mcp?.servers ?? {})) {
-    const missing = (selection.behind ?? []).filter((name) => !tools.has(name));
+    const missing = tools.has("*")
+      ? []
+      : (selection.behind ?? []).filter((name) => !tools.has(name));
     if (missing.length === 0) continue;
     findings.push({
       agentName,
@@ -817,6 +1050,17 @@ function validateResolvedRecipeAgentSource(
       message: `Recipe agent "${agentName}" puts MCP server '${serverId}' behind tool(s) it does not declare: ${missing.join(", ")}`,
     });
   }
+
+  const toolsProblem = (
+    resolvedToolPolicy(agentName) as ParsedRecipeAgentToolPolicy | undefined
+  )?.[INVALID_AGENT_TOOLS];
+  if (toolsProblem)
+    findings.push({
+      agentName,
+      field: "tools",
+      code: "tools_invalid",
+      message: `Recipe agent "${agentName}": ${toolsProblem}`,
+    });
 
   return findings;
 }

@@ -1,0 +1,78 @@
+{
+  "model": "openai/gpt-6-astra",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 3470,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 47,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 892,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3467,
+      "output_tokens": 64,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "text(await searchTools(\"current date time timezone\", {limit:2}));\ntext(await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:10}));\ntext(await tools.drive({command:\"search\",query:\"budget\",limit:10}));\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 2636,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4356,
+      "output_tokens": 81,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "text(await tools.mail({command:\"read\",message:\"msg_b212c75cf2384866\"}));\ntext(await tools.drive({command:\"read\",file:\"file_59d9594bab0b4565\"}));\ntext(ALL_TOOLS.map(x=>({name:x.name,description:x.description?.slice(0,130)})));\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 684,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6989,
+      "output_tokens": 145,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "text(await tools.mail({command:\"draft\",reply_to:\"msg_b212c75cf2384866\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget sheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review.\\n\\nBest,\\nSam\"}));\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 239,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7670,
+      "output_tokens": 119,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 5,
+    "tool_calls": 4,
+    "input_tokens": 7921,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 22482,
+    "output_tokens": 456
+  }
+}

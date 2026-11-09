@@ -13,6 +13,7 @@ import {
   ISSUES_TOOL_NAME,
   type RecipeIssuesProviderModule,
 } from "./types.js";
+import type { RecipeToolExposure } from "../recipe/agent.js";
 
 /** The package that serves the first-party issues providers, a companion of Recipes. */
 export const ISSUES_PROVIDERS_PACKAGE = "@introspection-ai/recipe-issues";
@@ -101,6 +102,8 @@ export async function loadRecipeIssues(
     env?: NodeJS.ProcessEnv;
     /** Where companion packages resolve from. Default: where `@introspection-ai/recipes` is installed. */
     hostDir?: string;
+    /** How a first-party tool registers for the agent (`tools.mode`). Default: declared. */
+    exposure?: (tool: string) => RecipeToolExposure;
   },
 ): Promise<LoadedRecipeIssues> {
   if (declarations === undefined) return { toolNames: [] };
@@ -151,6 +154,9 @@ export async function loadRecipeIssues(
         registerIssuesTool(pi, {
           providers,
           env: options.env ?? process.env,
+          ...(options.exposure
+            ? { exposure: options.exposure(ISSUES_TOOL_NAME) }
+            : {}),
         });
       },
     },

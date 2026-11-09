@@ -19,7 +19,11 @@
         "src/mcp/daemon/index.ts!",
         "src/mcp/cli/run-worker.ts!",
         "src/mcp/client-entry.ts!",
-        "test/**/*.test.ts"
+        // The `tools` command's shim runs it by path (src/tools/shell.ts).
+        "src/tools/entry.ts!",
+        "test/**/*.test.ts",
+        // Imported by path from the provider package a fixture writes.
+        "test/helpers/in-memory-google.ts"
       ],
       "project": [
         "src/**/*.ts!",

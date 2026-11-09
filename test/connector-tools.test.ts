@@ -73,6 +73,7 @@ describe("Recipe connector packages", () => {
       toolNames: ["package_owned_ping"],
       initialActiveToolNames: [],
       deferredToolNames: ["package_owned_ping"],
+      scriptOnlyToolNames: [],
     });
     expect(loaded.extensions).toHaveLength(1);
     const manifest = readPiPackageManifest(recipeDir);

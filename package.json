@@ -1,181 +1,185 @@
 {
-	"name": "@introspection-ai/recipes",
-	"version": "0.51.0",
-	"description": "The open format for vertical agents, built on Pi.",
-	"license": "Apache-2.0",
-	"type": "module",
-	"packageManager": "pnpm@10.33.0",
-	"engines": {
-		"node": ">=24"
-	},
-	"files": [
-		"dist",
-		"skills",
-		"docs",
-		"README.md",
-		"package.json"
-	],
-	"repository": {
-		"type": "git",
-		"url": "git+ssh://git@github.com/introspection-org/recipes.git"
-	},
-	"bugs": {
-		"url": "https://github.com/introspection-org/recipes/issues"
-	},
-	"homepage": "https://github.com/introspection-org/recipes#readme",
-	"publishConfig": {
-		"access": "public",
-		"tag": "latest"
-	},
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		},
-		"./interactions": {
-			"types": "./dist/interactions.d.ts",
-			"import": "./dist/interactions.js",
-			"default": "./dist/interactions.js"
-		},
-		"./review": {
-			"types": "./dist/review.d.ts",
-			"import": "./dist/review.js",
-			"default": "./dist/review.js"
-		},
-		"./extensions": {
-			"types": "./dist/api/extensions.d.ts",
-			"import": "./dist/api/extensions.js"
-		},
-		"./mcp": {
-			"types": "./dist/api/mcp.d.ts",
-			"import": "./dist/api/mcp.js"
-		},
-		"./pi-extension": {
-			"types": "./dist/pi-extension.d.ts",
-			"import": "./dist/pi-extension.js"
-		},
-		"./agents": {
-			"types": "./dist/agents.d.ts",
-			"import": "./dist/agents.js"
-		},
-		"./recipe": {
-			"types": "./dist/recipe/resolve.d.ts",
-			"import": "./dist/recipe/resolve.js"
-		},
-		"./session": {
-			"types": "./dist/api/session.d.ts",
-			"import": "./dist/api/session.js"
-		},
-		"./memory": {
-			"types": "./dist/api/memory.d.ts",
-			"import": "./dist/api/memory.js"
-		},
-		"./channels": {
-			"types": "./dist/channels/index.d.ts",
-			"import": "./dist/channels/index.js"
-		},
-		"./python": {
-			"types": "./dist/python.d.ts",
-			"import": "./dist/python.js"
-		},
-		"./documents": {
-			"types": "./dist/documents/index.d.ts",
-			"import": "./dist/documents/index.js"
-		},
-		"./productivity": {
-			"types": "./dist/productivity/index.d.ts",
-			"import": "./dist/productivity/index.js"
-		},
-		"./search": {
-			"types": "./dist/search/index.d.ts",
-			"import": "./dist/search/index.js"
-		},
-		"./issues": {
-			"types": "./dist/issues/index.d.ts",
-			"import": "./dist/issues/index.js"
-		},
-		"./test-utils": {
-			"types": "./dist/test-utils.d.ts",
-			"import": "./dist/test-utils.js"
-		},
-		"./inspect": {
-			"types": "./dist/inspect.d.ts",
-			"import": "./dist/inspect.js"
-		},
-		"./suggestions": {
-			"types": "./dist/recipe/suggestions.d.ts",
-			"import": "./dist/recipe/suggestions.js"
-		}
-	},
-	"pi": {
-		"extensions": [
-			"./dist/pi-extension.js"
-		]
-	},
-	"scripts": {
-		"build": "pnpm build:ts && pnpm build:native",
-		"build:workspace-packages": "pnpm --filter './packages/**' build",
-		"build:ts": "rm -rf dist && pnpm manifest && tsc && node scripts/build-mcp-daemon.mjs && pnpm build:workspace-packages",
-		"build:native": "cargo build --release -p pi-mcp-client && node scripts/package-mcp-client.mjs",
-		"bench:mcp-client": "pnpm build:ts && cargo build --release -p pi-mcp-client && node scripts/benchmark-mcp-client.mjs",
-		"prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
-		"typecheck": "pnpm manifest && tsc --noEmit && tsc --noEmit -p tsconfig.test.json && pnpm --filter './packages/**' --filter './examples' typecheck",
-		"lint": "pnpm manifest && eslint . --max-warnings 0",
-		"manifest": "node scripts/write-manifest.mjs",
-		"format": "prettier --write \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
-		"format:check": "prettier --check \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
-		"knip": "pnpm manifest && knip",
-		"test": "pnpm build:ts && cargo test -p pi-mcp-client -p introspection-recipe-check && cargo build -p pi-mcp-client && MCP_CLIENT_BIN=target/debug/mcp-client node scripts/package-mcp-client.mjs && vitest run && pnpm --filter './examples' test",
-		"pack:check": "pnpm pack --dry-run --json | node scripts/check-npm-pack.mjs && pnpm --filter './packages/**' pack:check",
-		"clean": "rm -rf dist .turbo node_modules target vendor/mcp-client"
-	},
-	"dependencies": {
-		"@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
-		"@introspection-sdk/introspection-pi": "^0.43.0",
-		"@opentelemetry/api": "^1.9.1",
-		"ajv": "^8.20.0",
-		"mcporter": "0.16.1",
-		"minimatch": "^10.2.6",
-		"semver": "^7.8.5",
-		"yaml": "^2.9.0"
-	},
-	"optionalDependencies": {
-		"@introspection-ai/recipe-channel-slack": "workspace:>=0.6.0",
-		"@introspection-ai/recipe-documents-docx": "workspace:>=0.3.0",
-		"@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0",
-		"@introspection-ai/recipe-issues": "workspace:>=0.1.0",
-		"@introspection-ai/recipe-productivity-google": "workspace:>=0.1.0",
-		"@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0",
-		"@introspection-ai/recipe-search": "workspace:>=0.1.0"
-	},
-	"peerDependencies": {
-		"@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",
-		"@earendil-works/pi-ai": ">=1.1.0 <2.0.0",
-		"@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
-		"@earendil-works/pi-tui": ">=1.1.0 <2.0.0",
-		"typebox": "*"
-	},
-	"devDependencies": {
-		"@earendil-works/pi-agent-core": "1.5.0",
-		"@earendil-works/pi-ai": "1.5.0",
-		"@earendil-works/pi-coding-agent": "1.5.0",
-		"@earendil-works/pi-tui": "1.5.0",
-		"@eslint/js": "9.39.5",
-		"@pollyjs/adapter-fetch": "^6.0.7",
-		"@pollyjs/core": "^6.0.6",
-		"@pollyjs/persister-fs": "^6.0.6",
-		"@types/node": "^26.1.2",
-		"@types/semver": "^7.8.0",
-		"@typescript/native": "npm:typescript@^7.0.2",
-		"esbuild": "^0.28.1",
-		"eslint": "9.39.5",
-		"eslint-config-prettier": "10.1.8",
-		"eslint-plugin-only-warn": "1.2.1",
-		"knip": "6.44.0",
-		"prettier": "3.9.10",
-		"typebox": "^1.0.56",
-		"typescript": "npm:@typescript/typescript6@^6.0.2",
-		"typescript-eslint": "8.72.1",
-		"vitest": "^5.0.1"
-	}
+  "name": "@introspection-ai/recipes",
+  "version": "0.51.0",
+  "description": "The open format for vertical agents, built on Pi.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "docs",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/introspection-org/recipes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/introspection-org/recipes/issues"
+  },
+  "homepage": "https://github.com/introspection-org/recipes#readme",
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./interactions": {
+      "types": "./dist/interactions.d.ts",
+      "import": "./dist/interactions.js",
+      "default": "./dist/interactions.js"
+    },
+    "./review": {
+      "types": "./dist/review.d.ts",
+      "import": "./dist/review.js",
+      "default": "./dist/review.js"
+    },
+    "./extensions": {
+      "types": "./dist/api/extensions.d.ts",
+      "import": "./dist/api/extensions.js"
+    },
+    "./mcp": {
+      "types": "./dist/api/mcp.d.ts",
+      "import": "./dist/api/mcp.js"
+    },
+    "./pi-extension": {
+      "types": "./dist/pi-extension.d.ts",
+      "import": "./dist/pi-extension.js"
+    },
+    "./agents": {
+      "types": "./dist/agents.d.ts",
+      "import": "./dist/agents.js"
+    },
+    "./recipe": {
+      "types": "./dist/recipe/resolve.d.ts",
+      "import": "./dist/recipe/resolve.js"
+    },
+    "./session": {
+      "types": "./dist/api/session.d.ts",
+      "import": "./dist/api/session.js"
+    },
+    "./memory": {
+      "types": "./dist/api/memory.d.ts",
+      "import": "./dist/api/memory.js"
+    },
+    "./channels": {
+      "types": "./dist/channels/index.d.ts",
+      "import": "./dist/channels/index.js"
+    },
+    "./python": {
+      "types": "./dist/python.d.ts",
+      "import": "./dist/python.js"
+    },
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "import": "./dist/documents/index.js"
+    },
+    "./productivity": {
+      "types": "./dist/productivity/index.d.ts",
+      "import": "./dist/productivity/index.js"
+    },
+    "./search": {
+      "types": "./dist/search/index.d.ts",
+      "import": "./dist/search/index.js"
+    },
+    "./issues": {
+      "types": "./dist/issues/index.d.ts",
+      "import": "./dist/issues/index.js"
+    },
+    "./test-utils": {
+      "types": "./dist/test-utils.d.ts",
+      "import": "./dist/test-utils.js"
+    },
+    "./inspect": {
+      "types": "./dist/inspect.d.ts",
+      "import": "./dist/inspect.js"
+    },
+    "./suggestions": {
+      "types": "./dist/recipe/suggestions.d.ts",
+      "import": "./dist/recipe/suggestions.js"
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./dist/pi-extension.js"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm build:ts && pnpm build:native",
+    "build:workspace-packages": "pnpm --filter './packages/**' build",
+    "build:ts": "rm -rf dist && pnpm manifest && tsc && node scripts/build-mcp-daemon.mjs && pnpm build:workspace-packages",
+    "build:native": "cargo build --release -p pi-mcp-client && node scripts/package-mcp-client.mjs",
+    "bench:mcp-client": "pnpm build:ts && cargo build --release -p pi-mcp-client && node scripts/benchmark-mcp-client.mjs",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "typecheck": "pnpm manifest && tsc --noEmit && tsc --noEmit -p tsconfig.test.json && pnpm --filter './packages/**' --filter './examples' typecheck",
+    "lint": "pnpm manifest && eslint . --max-warnings 0",
+    "manifest": "node scripts/write-manifest.mjs",
+    "schemas": "node scripts/generate-tool-schemas.mjs",
+    "schemas:check": "node scripts/generate-tool-schemas.mjs --check",
+    "format": "prettier --write \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
+    "format:check": "prettier --check \"{src,test,packages,examples}/**/*.{ts,mjs,md}\" \"*.{ts,mjs}\"",
+    "knip": "pnpm manifest && knip",
+    "test": "pnpm build:ts && cargo test -p pi-mcp-client -p introspection-recipe-check && cargo build -p pi-mcp-client && MCP_CLIENT_BIN=target/debug/mcp-client node scripts/package-mcp-client.mjs && vitest run && pnpm --filter './examples' test",
+    "pack:check": "pnpm pack --dry-run --json | node scripts/check-npm-pack.mjs && pnpm --filter './packages/**' pack:check",
+    "clean": "rm -rf dist .turbo node_modules target vendor/mcp-client",
+    "report:tool-modes": "node scripts/tool-modes-report.mjs && prettier --write test/recordings/tool-modes/report.md"
+  },
+  "dependencies": {
+    "@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
+    "@introspection-sdk/introspection-pi": "^0.43.0",
+    "@opentelemetry/api": "^1.9.1",
+    "ajv": "^8.20.0",
+    "mcporter": "0.16.1",
+    "minimatch": "^10.2.6",
+    "semver": "^7.8.5",
+    "yaml": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "@introspection-ai/recipe-channel-slack": "workspace:>=0.6.0",
+    "@introspection-ai/recipe-documents-docx": "workspace:>=0.3.0",
+    "@introspection-ai/recipe-documents-pdf": "workspace:>=0.2.0",
+    "@introspection-ai/recipe-issues": "workspace:>=0.1.0",
+    "@introspection-ai/recipe-productivity-google": "workspace:>=0.1.0",
+    "@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0",
+    "@introspection-ai/recipe-search": "workspace:>=0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",
+    "@earendil-works/pi-ai": ">=1.1.0 <2.0.0",
+    "@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
+    "@earendil-works/pi-tui": ">=1.1.0 <2.0.0",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-tui": "1.5.0",
+    "@eslint/js": "9.39.5",
+    "@pollyjs/adapter-fetch": "^6.0.7",
+    "@pollyjs/core": "^6.0.6",
+    "@pollyjs/persister-fs": "^6.0.6",
+    "@types/node": "^26.1.2",
+    "@types/semver": "^7.8.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "esbuild": "^0.28.1",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-only-warn": "1.2.1",
+    "knip": "6.44.0",
+    "prettier": "3.9.10",
+    "ts-json-schema-generator": "^2.9.0",
+    "typebox": "^1.0.56",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "8.72.1",
+    "vitest": "^5.0.1"
+  }
 }
