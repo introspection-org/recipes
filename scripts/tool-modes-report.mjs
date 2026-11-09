@@ -428,8 +428,8 @@ const dial = (cx, cy, r, share) => {
   return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
 };
 
-const dot = (p, cx, cy, r = 7) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
+const dot = (p, cx, cy, r = 7, pick = false) =>
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended: the best cost × time of any setting, and every run passed" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
 
 function intelligence(efforts) {
   const many = efforts.length > 1;
@@ -525,7 +525,7 @@ function intelligence(efforts) {
   }
   svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score)}" r="13" fill="#e6ff00" stroke="#c5d900" pointer-events="none"/>\n`;
   for (const point of points) {
-    svg += dot(point, x(point.cost), y(point.score));
+    svg += dot(point, x(point.cost), y(point.score), 7, point === pick);
     if (many)
       svg += `<text x="${x(point.cost)}" y="${y(point.score) + 3.5}" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="${light(point.color) ? "#141413" : "#ffffff"}">${point.effort[0].toUpperCase()}</text>\n`;
   }
