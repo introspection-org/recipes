@@ -209,6 +209,16 @@ writeFileSync(join(DIR, "report.md"), md);
 
 const passed = (r) => r.drafted === r.runs && r.errors === 0;
 
+/** The recommended setting: the passing row with the least cost × time. */
+const recommended = Object.values(table)
+  .flatMap((rows) => Object.values(rows))
+  .filter(passed)
+  .reduce(
+    (a, r) =>
+      !a || r.costPerTask * r.seconds < a.costPerTask * a.seconds ? r : a,
+    null,
+  );
+
 /** Whether a fill is light enough to take dark hatching. */
 const light = (hex) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -261,12 +271,24 @@ function chart(groups, value, title, unit, digits, log = false) {
   let lx = 16;
   present.forEach(([, name]) => {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
-    lx += 22 + name.length * 6.6;
+    lx += 18 + name.length * 6.4;
   });
   svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
+  const hasRec = groups.some((g) => g.bars.some((b) => b.row === recommended));
   if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
-    lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
+    lx += 18 + (value === "seconds" ? 7 : 8) * 6.6;
     svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#ff1744"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
+  }
+  if (hasRec) {
+    lx +=
+      22 +
+      (groups.some((g) => g.bars.some((b) => b.row.failed))
+        ? 6
+        : value === "seconds"
+          ? 7
+          : 8) *
+        6.6;
+    svg += `<rect x="${lx - 1}" y="37" width="12" height="12" rx="3" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="${lx + 15}" y="47" font-size="12" fill="#5e5d59">recommended</text>\n`;
   }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
@@ -314,6 +336,8 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}${r.costPerTaskCI ? ` ± ${usd(r.costPerTaskCI)}` : ""}\nTime per task: ${fmt(r.seconds, 1)}s${r.secondsCI ? ` ± ${fmt(r.secondsCI, 1)}s` : ""}\nRuns: ${r.runs}\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
+      if (r === recommended)
+        svg += `<rect x="${left - 2.5}" y="${y - 2.5}" width="${w + 5}" height="${barH + 5}" rx="5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
       if (r.failed) {
         const fw = Math.max((w * r.failed) / r.runs, 3);
         svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>\n`;
