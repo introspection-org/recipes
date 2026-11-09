@@ -118,7 +118,10 @@ describe("first-party tool arguments", () => {
         expectSignatures(pi.tools.get(tool) as unknown as RegisteredTool);
     }
     expect(commandSignature("draft", MAIL_ARGUMENTS.draft)).toBe(
-      "draft { to, subject, body, cc?, reply_to? }",
+      "draft { body, to?, cc?, subject?, reply_to? }",
+    );
+    expect(commandSignature("list", CALENDAR_ARGUMENTS.list)).toBe(
+      "list { from?, to?, calendar?, limit?, cursor? }",
     );
   });
 

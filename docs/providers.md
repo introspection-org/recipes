@@ -318,4 +318,4 @@ them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-genera
   that read it. Some providers send the model only the flat properties, so
   each command's line in the tool's description starts with a signature
   `commandSignature` derives from its schema, `?` marking an optional field:
-  `draft { to, subject, body, cc?, reply_to? }: Write a draft…`.
+  `draft { body, to?, cc?, subject?, reply_to? }: Write a draft…`.
