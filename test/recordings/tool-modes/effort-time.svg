@@ -52,7 +52,7 @@ Output tokens: 1,051</title></rect>
 Recommended time
 Fastest
 Time per task: 7.7s ±20%
-Cost per task: $0.000546 ±3%
+Cost per task: $0.000930 ±4%
 Runs: 5
 Drafted: 5/5
 Requests per task: 5.0
@@ -115,7 +115,7 @@ Output tokens: 1,193</title></rect>
 <text x="401.39050776728163" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.3s · codemode</text>
 <rect x="120" y="224" width="320.27925056807624" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · medium effort · tools
 Time per task: 16.6s ±49%
-Cost per task: $0.000938 ±98%
+Cost per task: $0.00161 ±54%
 Runs: 3
 Drafted: 3/3
 Requests per task: 5.0
@@ -176,7 +176,7 @@ Output tokens: 1,364</title></rect>
 <text x="410.65122261443696" y="331" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.8s · codemode</text>
 <rect x="120" y="336" width="450" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · high effort · codemode
 Time per task: 23.3s ±41%
-Cost per task: $0.000665 ±14%
+Cost per task: $0.00149 ±17%
 Runs: 3
 Drafted: 3/3
 Requests per task: 5.3
