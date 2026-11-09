@@ -23,7 +23,14 @@ const MODELS = [
 // One ramp per provider, darker for the more capable model: Anthropic's orange,
 // OpenAI's grays. Adjacent shades are validated for color-vision deficiency;
 // every bar carries its value, which the palest shades need.
-const COLORS = ["#f6bd9d", "#d97757", "#8a3618", "#c9c7be", "#77756e", "#141413"];
+const COLORS = [
+  "#f6bd9d",
+  "#d97757",
+  "#8a3618",
+  "#c9c7be",
+  "#77756e",
+  "#141413",
+];
 const SETS = ["flat", "signatures"];
 
 const catalogDir = join(
@@ -158,8 +165,12 @@ for (const set of SETS) {
 }
 writeFileSync(join(DIR, "report.md"), md);
 
-/** Grouped horizontal bars: one group per mode, one bar per model, one linear scale. */
-function chart(set, value, title, unit, digits) {
+/**
+ * One group per mode, one mark per model, on one scale for every model. A
+ * linear scale draws bars; a log scale draws dots, since a bar's length
+ * claims a zero a log axis doesn't have.
+ */
+function chart(set, value, title, unit, digits, log = false) {
   const W = 760;
   const left = 120;
   const right = 190;
@@ -171,9 +182,14 @@ function chart(set, value, title, unit, digits) {
     MODES.some(([m]) => table[set]?.[`${id}|${m}`]),
   );
   const groupH = present.length * (barH + gap) - gap;
-  const H = top + MODES.length * (groupH + groupGap) + 40;
-  const max = Math.max(...Object.values(table[set] ?? {}).map((r) => r[value]));
-  const x = (v) => left + (v / max) * (W - left - right);
+  const H = top + MODES.length * (groupH + groupGap) + 52;
+  const values = Object.values(table[set] ?? {}).map((r) => r[value]);
+  const max = Math.max(...values);
+  const lo = Math.floor(Math.log10(Math.min(...values)));
+  const hi = Math.ceil(Math.log10(max));
+  const x = log
+    ? (v) => left + ((Math.log10(v) - lo) / (hi - lo)) * (W - left - right)
+    : (v) => left + (v / max) * (W - left - right);
   const esc = (s) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
@@ -183,6 +199,26 @@ function chart(set, value, title, unit, digits) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 26 + name.length * 7;
   });
+  // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
+  const ticks = log
+    ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
+        p < hi ? [10 ** p, 3 * 10 ** p] : [10 ** p],
+      )
+    : (() => {
+        const step =
+          [1, 2, 5, 10, 20, 50, 100].find((t) => max / t <= 6) ?? 100;
+        return Array.from(
+          { length: Math.floor(max / step) + 1 },
+          (_, i) => i * step,
+        );
+      })();
+  const tickLabel = (v) =>
+    v > 0 && v < 1 ? v.toFixed(1) : `${fmt(Math.round(v))}${log ? "" : unit}`;
+  for (const v of ticks) {
+    const gx = x(v);
+    svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 46}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 32}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
+  }
+  svg += `<line x1="${left}" y1="${H - 46}" x2="${W - right}" y2="${H - 46}" stroke="#b0aea5"/>\n`;
   MODES.forEach(([mode, label], g) => {
     const gy = top + g * (groupH + groupGap);
     svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#141413">${esc(label)}</text>\n`;
@@ -191,24 +227,33 @@ function chart(set, value, title, unit, digits) {
       if (!r) return;
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
-      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${COLORS[MODELS.findIndex(([m]) => m === id)]}" stroke="#0000001f"/>\n`;
+      const color = COLORS[MODELS.findIndex(([m]) => m === id)];
+      svg += log
+        ? `<line x1="${left}" y1="${y + barH / 2}" x2="${left + w}" y2="${y + barH / 2}" stroke="#e8e6dc"/><circle cx="${left + w}" cy="${y + barH / 2}" r="5.5" fill="${color}" stroke="#0000003d"/>\n`
+        : `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = [
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
         ...(r.errors > 0 ? [`${fmt(r.errors, 1)} errors/run`] : []),
       ];
-      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" fill="${quality.length ? "#b3261e" : "#45453f"}">${fmt(r[value], digits)}${unit}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${fmt(r[value], digits)}${unit}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<line x1="${left}" y1="${top - 6}" x2="${left}" y2="${H - 34}" stroke="#e8e6dc"/>\n`;
-  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : "USD per 1,000 tasks at list price: lower is better.")} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per 1,000 tasks at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
   return `${svg}</svg>\n`;
 }
 
 const newest = SETS.filter((set) => table[set]).at(-1);
 writeFileSync(
   join(DIR, "cost.svg"),
-  chart(newest, "costPerThousand", "Cost per 1,000 tasks, by tool mode", "", 2),
+  chart(
+    newest,
+    "costPerThousand",
+    "Cost per 1,000 tasks, by tool mode",
+    "",
+    2,
+    true,
+  ),
 );
 writeFileSync(
   join(DIR, "time.svg"),

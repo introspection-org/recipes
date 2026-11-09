@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="552" viewBox="0 0 760 552" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="760" height="552" fill="#faf9f5"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="564" viewBox="0 0 760 564" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="760" height="564" fill="#faf9f5"/>
 <text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Model time per task, by tool mode</text>
 <rect x="16" y="38" width="10" height="10" rx="2" fill="#f6bd9d" stroke="#0000001f"/><text x="30" y="47" font-size="12" fill="#5e5d59">Haiku 5.5</text>
 <rect x="105" y="38" width="10" height="10" rx="2" fill="#d97757" stroke="#0000001f"/><text x="119" y="47" font-size="12" fill="#5e5d59">Sonnet 5.5</text>
@@ -7,58 +7,62 @@
 <rect x="283" y="38" width="10" height="10" rx="2" fill="#c9c7be" stroke="#0000001f"/><text x="297" y="47" font-size="12" fill="#5e5d59">gpt-6-luna</text>
 <rect x="379" y="38" width="10" height="10" rx="2" fill="#77756e" stroke="#0000001f"/><text x="393" y="47" font-size="12" fill="#5e5d59">gpt-6.1-sol</text>
 <rect x="482" y="38" width="10" height="10" rx="2" fill="#141413" stroke="#0000001f"/><text x="496" y="47" font-size="12" fill="#5e5d59">gpt-6-astra</text>
+<line x1="120" y1="58" x2="120" y2="518" stroke="#e8e6dc"/><text x="120" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">0s</text>
+<line x1="233.10511235107828" y1="58" x2="233.10511235107828" y2="518" stroke="#e8e6dc"/><text x="233.10511235107828" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">5s</text>
+<line x1="346.21022470215655" y1="58" x2="346.21022470215655" y2="518" stroke="#e8e6dc"/><text x="346.21022470215655" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">10s</text>
+<line x1="459.3153370532349" y1="58" x2="459.3153370532349" y2="518" stroke="#e8e6dc"/><text x="459.3153370532349" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">15s</text>
+<line x1="120" y1="518" x2="570" y2="518" stroke="#b0aea5"/>
 <text x="110" y="115" font-size="12" text-anchor="end" fill="#141413">tools</text>
 <rect x="120" y="64" width="210.95913135273724" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f"/>
-<text x="336.95913135273724" y="75" font-size="11" fill="#45453f">9.3s</text>
+<text x="336.95913135273724" y="75" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.3s</text>
 <rect x="120" y="80" width="202.37520735937267" height="14" rx="3" fill="#d97757" stroke="#0000001f"/>
-<text x="328.37520735937267" y="91" font-size="11" fill="#45453f">8.9s</text>
+<text x="328.37520735937267" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.9s</text>
 <rect x="120" y="96" width="269.57472477756" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
-<text x="395.57472477756" y="107" font-size="11" fill="#45453f">11.9s</text>
+<text x="395.57472477756" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.9s</text>
 <rect x="120" y="112" width="197.27793696275074" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
-<text x="323.27793696275074" y="123" font-size="11" fill="#45453f">8.7s</text>
+<text x="323.27793696275074" y="123" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.7s</text>
 <rect x="120" y="128" width="231.14160760066363" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
-<text x="357.14160760066363" y="139" font-size="11" fill="#45453f">10.2s</text>
+<text x="357.14160760066363" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.2s</text>
 <rect x="120" y="144" width="318.77544865027903" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
-<text x="444.77544865027903" y="155" font-size="11" fill="#45453f">14.1s</text>
+<text x="444.77544865027903" y="155" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.1s</text>
 <text x="110" y="227" font-size="12" text-anchor="end" fill="#141413">tools + defer</text>
 <rect x="120" y="176" width="245.43356959734587" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f"/>
-<text x="371.43356959734587" y="187" font-size="11" fill="#45453f">10.8s</text>
+<text x="371.43356959734587" y="187" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.8s</text>
 <rect x="120" y="192" width="234.0672598401448" height="14" rx="3" fill="#d97757" stroke="#0000001f"/>
-<text x="360.0672598401448" y="203" font-size="11" fill="#45453f">10.3s</text>
+<text x="360.0672598401448" y="203" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.3s</text>
 <rect x="120" y="208" width="330.96817976172525" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
-<text x="456.96817976172525" y="219" font-size="11" fill="#45453f">14.6s</text>
+<text x="456.96817976172525" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.6s</text>
 <rect x="120" y="224" width="229.92459659176598" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
-<text x="355.924596591766" y="235" font-size="11" fill="#b3261e">10.2s · 4/5 drafted</text>
+<text x="355.924596591766" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">10.2s · 4/5 drafted</text>
 <rect x="120" y="240" width="327.3563565073142" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
-<text x="453.3563565073142" y="251" font-size="11" fill="#45453f">14.5s</text>
+<text x="453.3563565073142" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.5s</text>
 <rect x="120" y="256" width="439.0212637611221" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
-<text x="565.0212637611221" y="267" font-size="11" fill="#45453f">19.4s</text>
+<text x="565.0212637611221" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">19.4s</text>
 <text x="110" y="339" font-size="12" text-anchor="end" fill="#141413">codemode</text>
 <rect x="120" y="288" width="213.18956416830042" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f"/>
-<text x="339.1895641683004" y="299" font-size="11" fill="#45453f">9.4s</text>
+<text x="339.1895641683004" y="299" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.4s</text>
 <rect x="120" y="304" width="181.33765646207212" height="14" rx="3" fill="#d97757" stroke="#0000001f"/>
-<text x="307.3376564620721" y="315" font-size="11" fill="#45453f">8.0s</text>
+<text x="307.3376564620721" y="315" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.0s</text>
 <rect x="120" y="320" width="278.8568843311718" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
-<text x="404.8568843311718" y="331" font-size="11" fill="#45453f">12.3s</text>
+<text x="404.8568843311718" y="331" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">12.3s</text>
 <rect x="120" y="336" width="173.45347609711962" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
-<text x="299.4534760971196" y="347" font-size="11" fill="#45453f">7.7s</text>
+<text x="299.4534760971196" y="347" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.7s</text>
 <rect x="120" y="352" width="270.01206454531746" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
-<text x="396.01206454531746" y="363" font-size="11" fill="#45453f">11.9s</text>
+<text x="396.01206454531746" y="363" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.9s</text>
 <rect x="120" y="368" width="323.8727190469009" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
-<text x="449.8727190469009" y="379" font-size="11" fill="#45453f">14.3s</text>
+<text x="449.8727190469009" y="379" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.3s</text>
 <text x="110" y="451" font-size="12" text-anchor="end" fill="#141413">cli</text>
 <rect x="120" y="400" width="217.22515457698694" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f"/>
-<text x="343.22515457698694" y="411" font-size="11" fill="#45453f">9.6s</text>
+<text x="343.22515457698694" y="411" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.6s</text>
 <rect x="120" y="416" width="210.78268737746947" height="14" rx="3" fill="#d97757" stroke="#0000001f"/>
-<text x="336.7826873774695" y="427" font-size="11" fill="#45453f">9.3s</text>
+<text x="336.7826873774695" y="427" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.3s</text>
 <rect x="120" y="432" width="365.51802141456795" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
-<text x="491.51802141456795" y="443" font-size="11" fill="#45453f">16.2s</text>
+<text x="491.51802141456795" y="443" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">16.2s</text>
 <rect x="120" y="448" width="222.9754184889157" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
-<text x="348.9754184889157" y="459" font-size="11" fill="#45453f">9.9s</text>
+<text x="348.9754184889157" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.9s</text>
 <rect x="120" y="464" width="339.02880410194547" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
-<text x="465.02880410194547" y="475" font-size="11" fill="#b3261e">15.0s · 0.7 errors/run</text>
+<text x="465.02880410194547" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">15.0s · 0.7 errors/run</text>
 <rect x="120" y="480" width="450" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
-<text x="576" y="491" font-size="11" fill="#b3261e">19.9s · 2.0 errors/run</text>
-<line x1="120" y1="58" x2="120" y2="518" stroke="#e8e6dc"/>
-<text x="120" y="538" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<text x="576" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">19.9s · 2.0 errors/run</text>
+<text x="120" y="550" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
 </svg>
