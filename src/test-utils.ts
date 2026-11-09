@@ -45,6 +45,8 @@ interface FixtureOptions {
   manifestPi?: Record<string, unknown>;
   subagents?: string[];
   tools?: string[];
+  /** The agent's `tools` written as these YAML lines (the mapping form) instead of `tools`. */
+  toolsBlock?: string[];
 }
 
 /** Write a minimal recipe package into a fresh temp dir. */
@@ -79,7 +81,9 @@ export function writeFixtureRecipe(options: FixtureOptions = {}): {
       "model:",
       "  name: anthropic/claude-sonnet-4-5",
       "  thinking_level: low",
-      `tools: [${(options.tools ?? ["read"]).join(", ")}]`,
+      ...(options.toolsBlock ?? [
+        `tools: [${(options.tools ?? ["read"]).join(", ")}]`,
+      ]),
       ...(options.subagents?.length
         ? ["subagents:", ...options.subagents.map((name) => `  - ${name}`)]
         : []),

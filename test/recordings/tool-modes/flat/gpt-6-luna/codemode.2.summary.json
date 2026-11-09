@@ -1,0 +1,65 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 3152,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 45,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 890,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3149,
+      "output_tokens": 99,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const r = await Promise.all([\n tools.calendar({command:\"list\",from:\"2025-04-16T00:00:00Z\",to:\"2025-04-17T00:00:00Z\",limit:50}),\n tools.mail({command:\"search\",query:\"Dana budget\",limit:10}),\n tools.drive({command:\"search\",query:\"budget spreadsheet\",limit:10})\n]); r.forEach(text);\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 445,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4036,
+      "output_tokens": 125,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const a=await tools.mail({command:\"read\",message:\"msg_9fbf073b97b64f87\"}); text(a);\nconst b=await tools.mail({command:\"draft\",to:[\"dana@example.test\"],reply_to:\"msg_9fbf073b97b64f87\",subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI’ll bring the latest budget sheet to tomorrow’s review: https://docs.example.test/spreadsheets/d/f-budget\\n\\nBest,\\nSam\"}); text(b);\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 482,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4478,
+      "output_tokens": 76,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 3,
+    "input_tokens": 4969,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 11663,
+    "output_tokens": 345
+  }
+}

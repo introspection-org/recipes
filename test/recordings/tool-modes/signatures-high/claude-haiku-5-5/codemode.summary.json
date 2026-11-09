@@ -1,0 +1,84 @@
+{
+  "model": "anthropic/claude-haiku-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 5643,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 257,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1447,
+      "cache_read_input_tokens": 5643,
+      "output_tokens": 277,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const [mailRes, driveRes] = await Promise.all([\n  tools.mail({ command: \"search\", query: \"budget\", from: \"Dana\", limit: 10 }),\n  tools.drive({ command: \"search\", query: \"budget\", limit: 10 }),\n]);\nreturn { mailRes, driveRes };"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 846,
+      "cache_read_input_tokens": 7090,
+      "output_tokens": 617,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const [msg, cal] = await Promise.all([\n  tools.mail({ command: \"read\", message: \"msg_badb398bca6c421b\" }),\n  tools.calendar({ command: \"list\", from: \"2026-11-09T00:00:00Z\", to: \"2026-11-11T23:59:59Z\", limit: 50 }),\n]);\nreturn { msg, cal };"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1514,
+      "cache_read_input_tokens": 7936,
+      "output_tokens": 465,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const draft = await tools.mail({\n  command: \"draft\",\n  reply_to: \"msg_badb398bca6c421b\",\n  to: [\"dana@example.test\"],\n  subject: \"Re: Q3 budget numbers\",\n  body: \"Hi Dana,\\n\\nYes, I'll bring the budget sheet to tomorrow's planning review. Here's the link to the Q3 Budget spreadsheet:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\",\n});\nreturn draft;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 588,
+      "cache_read_input_tokens": 9450,
+      "output_tokens": 403,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 5,
+    "tool_calls": 4,
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 10038,
+    "cache_read_input_tokens": 30119,
+    "output_tokens": 2019
+  }
+}

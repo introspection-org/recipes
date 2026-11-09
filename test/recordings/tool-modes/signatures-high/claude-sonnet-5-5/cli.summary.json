@@ -1,0 +1,110 @@
+{
+  "model": "anthropic/claude-sonnet-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 1482,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 221,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 300
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list; tools list mail --schema; tools list calendar --schema; tools list drive --schema",
+            "timeout": 30
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 4328,
+      "cache_read_input_tokens": 1482,
+      "output_tokens": 214,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "date; date +%z; tools call mail.search --json - <<'JSON'\n{\"query\":\"budget\",\"from\":\"Dana\",\"limit\":10}\nJSON\ntools call drive.search --json - <<'JSON'\n{\"query\":\"budget\",\"limit\":10}\nJSON",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 654,
+      "cache_read_input_tokens": 5810,
+      "output_tokens": 266,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_ba5f1d7724c04af9\"}\nJSON\ntools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\"}\nJSON",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 632,
+      "cache_read_input_tokens": 6464,
+      "output_tokens": 240,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-08T00:00:00-08:00\",\"to\":\"2026-11-11T00:00:00-08:00\"}\nJSON",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 550,
+      "cache_read_input_tokens": 7096,
+      "output_tokens": 324,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_ba5f1d7724c04af9\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nYes, I'll bring the latest budget sheet to the planning review, including the Q3 travel line.\\n\\nHere's the sheet: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\\n\\nSee you there,\\nSam\"}\nJSON",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 425,
+      "cache_read_input_tokens": 7646,
+      "output_tokens": 423,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 6,
+    "input_tokens": 14,
+    "cache_creation_input_tokens": 8071,
+    "cache_read_input_tokens": 28498,
+    "output_tokens": 1688
+  }
+}

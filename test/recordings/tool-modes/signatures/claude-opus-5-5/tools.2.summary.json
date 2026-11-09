@@ -1,0 +1,77 @@
+{
+  "model": "anthropic/claude-opus-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 578,
+      "cache_read_input_tokens": 4003,
+      "output_tokens": 231,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "from": "Dana",
+            "limit": 5
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "limit": 5
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 696,
+      "cache_read_input_tokens": 4581,
+      "output_tokens": 400,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-10T00:00:00Z",
+            "to": "2026-11-11T00:00:00Z"
+          }
+        },
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "to": [
+              "dana@example.test"
+            ],
+            "subject": "Re: Q3 budget numbers",
+            "body": "Hi Dana,\n\nYes, I'll bring the latest budget sheet to tomorrow's review. Here's the link in the meantime: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\n\nThanks,\nSam",
+            "reply_to": "msg_ad41d77f41a34d17"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 853,
+      "cache_read_input_tokens": 5277,
+      "output_tokens": 340,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 3,
+    "tool_calls": 4,
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 2127,
+    "cache_read_input_tokens": 13861,
+    "output_tokens": 971
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "model": "anthropic/claude-opus-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 578,
+      "cache_read_input_tokens": 5071,
+      "output_tokens": 129,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1319,
+      "cache_read_input_tokens": 5649,
+      "output_tokens": 138,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const m=await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:5});\nconst d=await tools.drive({command:\"search\",query:\"budget\",limit:5});\nreturn m+\"\\n----\\n\"+d;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 579,
+      "cache_read_input_tokens": 6968,
+      "output_tokens": 178,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const c=await tools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\"});\nconst r=await tools.mail({command:\"read\",message:\"msg_2d61b3e1718c4599\"});\nreturn c+\"\\n---\\n\"+r;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 867,
+      "cache_read_input_tokens": 7547,
+      "output_tokens": 222,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "return await tools.mail({command:\"draft\",reply_to:\"msg_2d61b3e1718c4599\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nYes, I'll bring the budget sheet to tomorrow's Q3 planning review, including the Q3 travel line. Here's the link if you want to look at it first: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\\n\\nThanks,\\nSam\"});"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 344,
+      "cache_read_input_tokens": 8414,
+      "output_tokens": 433,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 5,
+    "tool_calls": 4,
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 3687,
+    "cache_read_input_tokens": 33649,
+    "output_tokens": 1100
+  }
+}

@@ -1803,6 +1803,46 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
+  it('leaves out a tool include: ["*"] selects that the host does not offer', async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const manifestPath = join(recipeDir, "package.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.pi.search = [{ provider: "brave" }];
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      writeFileSync(
+        join(recipeDir, "defs", "main.yaml"),
+        [
+          "name: main",
+          "model:",
+          "  name: openai/gpt-4.1",
+          "tools:",
+          '  include: ["*"]',
+        ].join("\n"),
+      );
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension()(pi);
+      const notify = vi.fn();
+
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(join(root, "project"), notify),
+      );
+
+      expect(notify).not.toHaveBeenCalledWith(
+        expect.stringContaining("declares unavailable tool(s)"),
+        "warning",
+      );
+      expect(pi.activeTools).toEqual(expect.arrayContaining(["read", "bash"]));
+      expect(pi.activeTools).not.toContain("web_search");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("streams recipe agent prompt and output through tool updates", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
     try {

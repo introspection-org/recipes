@@ -57,11 +57,21 @@ describe("MCP servers behind a tool", () => {
     required?: boolean;
     env?: NodeJS.ProcessEnv;
     responses?: FauxResponseStep[];
+    toolsMode?: Mode;
   }) {
     const id = options.id ?? "hello-mcp";
     const plainId = options.plainId ?? "plain";
     const fixture = writeFixtureRecipe({
       tools: ["read", "bash", "mail", "other"],
+      ...(options.toolsMode
+        ? {
+            toolsBlock: [
+              "tools:",
+              `  mode: ${options.toolsMode}`,
+              "  include: [read, bash, mail, other]",
+            ],
+          }
+        : {}),
       manifestPi: {
         extensions: ["extensions/*.ts"],
         mcp: {
@@ -111,6 +121,16 @@ describe("MCP servers behind a tool", () => {
     });
     handles.push(handle);
     return { handle, env };
+  }
+
+  for (const mode of ["cli", "tools"] as const) {
+    it(`registers codemode for tools.mode codemode beside mcp.mode ${mode}`, async () => {
+      const server = await hello();
+      const { handle } = await open({ mode, toolsMode: "codemode", server });
+      expect(handle.session.getAllTools().map((tool) => tool.name)).toContain(
+        "codemode",
+      );
+    });
   }
 
   for (const mode of ["cli", "tools", "codemode"] as const) {

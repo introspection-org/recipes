@@ -66,8 +66,12 @@ import {
 } from "./mcp/index.js";
 import { mcpServersBehindTools } from "./mcp/policy.js";
 import { clearMcpCatalogPreload, preloadMcpCatalogs } from "./mcp/catalog.js";
-import { type RecipeAgentDefinition } from "./recipe/agent.js";
-import type { RecipeAgentMcp, RecipeAgentMcpMode } from "./recipe/agent.js";
+import {
+  PLATFORM_TOOL_NAMES,
+  platformToolExposure,
+  type RecipeAgentDefinition,
+} from "./recipe/agent.js";
+import type { RecipeAgentMcp, RecipeAgentToolMode } from "./recipe/agent.js";
 import { createMcpToolSet } from "./mcp/tools.js";
 import {
   createMcpBehindGuard,
@@ -77,6 +81,7 @@ import {
   serverBehindTools,
   waitForPiMcpServers,
   type PiMcpServerRegistration,
+  assertPiSupportsCodemode,
 } from "./mcp/pi-client.js";
 import {
   applyRecipeAgentPayloadPolicy,
@@ -127,6 +132,7 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  withToolExposure,
 } from "./tool-search.js";
 
 export interface RecipesExtensionOptions {
@@ -195,7 +201,7 @@ interface RecipeLaunchState {
   extensionFailure?: string;
   configured: boolean;
   mcpConfigured: boolean;
-  agentMcpMode: RecipeAgentMcpMode;
+  agentMcpMode: RecipeAgentToolMode;
   initialMcpToolNames: string[];
   mcpDeferredToolNames: string[];
   /** `mcp.mode: codemode`: the servers registered with Pi's MCP support. */
@@ -317,7 +323,7 @@ async function registerServersBehindTools(
   );
 }
 
-function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentMcpMode {
+function resolvedMcpMode(state: RecipeLaunchState): RecipeAgentToolMode {
   return state.resolved.mcp?.mode ?? "cli";
 }
 
@@ -1013,6 +1019,10 @@ export function createRecipesExtension(
       launchState.extensionRegistrations.claim("tool", tool.name, "<host>");
     }
     let loadedCount = 0;
+    if (launchState.resolved.toolPolicy?.mode === "cli")
+      throw new Error(
+        "tools.mode cli serves first-party tools to the tools command, which this Pi extension host does not provide yet; use tools or codemode here",
+      );
     try {
       const connectors = await loadRecipeConnectors(
         launchState.resolved.manifest,
@@ -1024,10 +1034,26 @@ export function createRecipesExtension(
           ...(launchState.python
             ? { python: launchState.python.packages }
             : {}),
+          exposure: (name) =>
+            platformToolExposure(launchState.resolved.toolPolicy, name),
+          ...(launchState.resolved.wildcardTools
+            ? { wildcardTools: launchState.resolved.wildcardTools }
+            : {}),
         },
       );
       launchState.initialConnectorToolNames =
         connectors.loadout.initialActiveToolNames;
+      if (launchState.resolved.toolPolicy?.mode === "codemode") {
+        // First-party tools in codemode need the codemode tool even with no MCP server.
+        assertPiSupportsCodemode("tools.mode codemode");
+        if (!pi.getAllTools().some((tool) => tool.name === CODEMODE_TOOL_NAME))
+          await createCodemodeExtension({ models: false })(pi);
+        launchState.initialConnectorToolNames = [
+          ...launchState.initialConnectorToolNames,
+          CODEMODE_TOOL_NAME,
+        ];
+        launchState.extensionAllowedToolNames.add(CODEMODE_TOOL_NAME);
+      }
       launchState.connectorToolNames = connectors.loadout.toolNames;
       launchState.connectorDeferredToolNames =
         connectors.loadout.deferredToolNames;
@@ -1079,7 +1105,9 @@ export function createRecipesExtension(
           launchState.extensionAllowedToolNames,
           usesPiMcp(launchState),
         );
-        await factory(pi);
+        await withToolExposure(factory, (name) =>
+          platformToolExposure(launchState.resolved.toolPolicy, name),
+        )(pi);
         loadedCount += 1;
       }
       // The first-party ask_user_question tool loads after the Recipe's own
@@ -1187,9 +1215,23 @@ export function createRecipesExtension(
       pi.setThinkingLevel(launchState.resolved.thinkingLevel);
     }
 
+    // First-party tools a host or Recipe extension registered (`web_search`)
+    // whose exposure keeps them undeclared.
+    const undeclaredExtensionTools = pi
+      .getAllTools()
+      .filter(
+        (tool) =>
+          tool.exposure !== "direct" &&
+          (PLATFORM_TOOL_NAMES as readonly string[]).includes(tool.name) &&
+          launchState.resolved.tools.includes(tool.name) &&
+          !launchState.connectorToolNames.includes(tool.name),
+      );
     const deferredToolNames = [
       ...launchState.connectorDeferredToolNames,
       ...launchState.mcpDeferredToolNames,
+      ...undeclaredExtensionTools
+        .filter((tool) => tool.exposure === "deferred")
+        .map((tool) => tool.name),
     ];
     if (deferredToolNames.length > 0 && !launchState.toolSearchRegistered) {
       const toolSearchTools = createRecipeToolSearchTools(
@@ -1204,9 +1246,19 @@ export function createRecipesExtension(
       }
       launchState.toolSearchRegistered = true;
     }
+    const registeredTools = new Set(pi.getAllTools().map((tool) => tool.name));
+    // A tool `include: ["*"]` added that the host does not offer is left out.
+    const unavailable = new Set(
+      launchState.resolved.wildcardTools?.filter(
+        (name) => !registeredTools.has(name),
+      ),
+    );
     const activeTools = new Set([
       ...launchState.resolved.tools.filter(
-        (tool) => !launchState.connectorToolNames.includes(tool),
+        (tool) =>
+          !launchState.connectorToolNames.includes(tool) &&
+          !undeclaredExtensionTools.some((entry) => entry.name === tool) &&
+          !unavailable.has(tool),
       ),
       ...launchState.initialConnectorToolNames,
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),
@@ -1228,7 +1280,6 @@ export function createRecipesExtension(
         ? [LEGACY_MCP_TOOL_SEARCH_NAME]
         : []),
     ]);
-    const registeredTools = new Set(pi.getAllTools().map((tool) => tool.name));
     const missingTools = [...activeTools].filter(
       (name) => !registeredTools.has(name),
     );

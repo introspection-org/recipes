@@ -1,0 +1,69 @@
+{
+  "model": "anthropic/claude-sonnet-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 579,
+      "cache_read_input_tokens": 5071,
+      "output_tokens": 129,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1319,
+      "cache_read_input_tokens": 5650,
+      "output_tokens": 160,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const m=await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:5});\nconst d=await tools.drive({command:\"search\",query:\"budget\"});\nreturn m+\"\\n----\\n\"+d;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 596,
+      "cache_read_input_tokens": 6969,
+      "output_tokens": 311,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const c=await tools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\"});\nconst dr=await tools.mail({command:\"draft\",reply_to:\"msg_39adffb6f73345da\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI'll bring the latest budget sheet to the review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\\n\\nSee you there,\\nSam\"});\nreturn c+\"\\n---\\n\"+dr;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 745,
+      "cache_read_input_tokens": 7565,
+      "output_tokens": 315,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 3,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 3239,
+    "cache_read_input_tokens": 25255,
+    "output_tokens": 915
+  }
+}
