@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.52.1](https://github.com/introspection-org/recipes/compare/v0.52.0...v0.52.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **introspection-open:** a runtime or task page answers returned once it opens in Pi's terminal ([#499](https://github.com/introspection-org/recipes/issues/499)) ([97ec8da](https://github.com/introspection-org/recipes/commit/97ec8daa1b9dae48a69a3120098efdd900a85f2b))
+* **release:** publish every companion package even when one of them fails ([#497](https://github.com/introspection-org/recipes/issues/497)) ([c96302e](https://github.com/introspection-org/recipes/commit/c96302e05ad36f41cb716de709610b2c51483318))
+* **scripts:** price models at their chat entry, and re-record the tool-mode grid with the date in every agent's context ([#493](https://github.com/introspection-org/recipes/issues/493)) ([7b436cd](https://github.com/introspection-org/recipes/commit/7b436cde6f4d1cc2215d9dccdf6a8d692acb4dec))
+
 ## [0.52.0](https://github.com/introspection-org/recipes/compare/v0.51.0...v0.52.0) (2026-11-09)
 
 
