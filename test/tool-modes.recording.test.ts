@@ -36,8 +36,18 @@ import {
  * baseline.
  */
 const DIR = join(import.meta.dirname, "recordings", "tool-modes");
-const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5"] as const;
-const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0];
+// Each model's provider, the host its calls go to and the key a recording sends.
+const PROVIDERS = {
+  anthropic: { host: "api.anthropic.com", key: "ANTHROPIC_API_KEY" },
+  openai: { host: "api.openai.com", key: "OPENAI_API_KEY" },
+} as const;
+type Provider = keyof typeof PROVIDERS;
+const MODELS: ReadonlyArray<{ id: string; provider: Provider }> = [
+  { id: "claude-haiku-5-5", provider: "anthropic" },
+  { id: "claude-sonnet-5-5", provider: "anthropic" },
+  { id: "gpt-6-luna", provider: "openai" },
+];
+const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0]!.id;
 // What the tools told the model when a set was recorded: `flat`, before each
 // command's signature was in its description; `signatures`, after.
 const SETS = ["flat", "signatures"] as const;
@@ -77,6 +87,60 @@ const USAGE_FIELDS = [
   "cache_read_input_tokens",
   "output_tokens",
 ] as const;
+
+/**
+ * One streamed OpenAI Responses response: `usage` and the function calls from
+ * `response.completed`. Cached input is what it read from the cache; OpenAI
+ * charges nothing extra to write one.
+ */
+function summarizeOpenAiResponse(body: string): RequestSummary {
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    const event = JSON.parse(line.slice(5)) as {
+      type: string;
+      response?: {
+        status?: string;
+        usage?: {
+          input_tokens?: number;
+          input_tokens_details?: { cached_tokens?: number };
+          output_tokens?: number;
+        };
+        output?: Array<{
+          type: string;
+          name?: string;
+          arguments?: string;
+          input?: string;
+        }>;
+      };
+    };
+    if (event.type !== "response.completed" || !event.response) continue;
+    const usage = event.response.usage ?? {};
+    const cached = usage.input_tokens_details?.cached_tokens ?? 0;
+    return {
+      input_tokens: (usage.input_tokens ?? 0) - cached,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: cached,
+      output_tokens: usage.output_tokens ?? 0,
+      ...(event.response.status ? { stop_reason: event.response.status } : {}),
+      // A free-form tool such as codemode is a `custom_tool_call`, its input text.
+      tool_calls: (event.response.output ?? [])
+        .filter(
+          (item) =>
+            item.type === "function_call" || item.type === "custom_tool_call",
+        )
+        .map((item) => ({
+          name: item.name ?? "",
+          input:
+            item.type === "custom_tool_call"
+              ? (item.input ?? "")
+              : item.arguments
+                ? (JSON.parse(item.arguments) as unknown)
+                : {},
+        })),
+    };
+  }
+  throw new Error("An OpenAI response without response.completed");
+}
 
 /** One streamed Messages response: `usage` from `message_start` and `message_delta`, and its `tool_use` blocks. */
 function summarizeResponse(body: string): RequestSummary {
@@ -128,12 +192,17 @@ function summarizeResponse(body: string): RequestSummary {
   };
 }
 
-function summarize(responses: readonly string[], model: string): Summary {
-  const requests = responses.map(summarizeResponse);
+function summarize(
+  responses: readonly string[],
+  model: { id: string; provider: Provider },
+): Summary {
+  const requests = responses.map(
+    model.provider === "openai" ? summarizeOpenAiResponse : summarizeResponse,
+  );
   const sum = (field: (typeof USAGE_FIELDS)[number]) =>
     requests.reduce((total, request) => total + request[field], 0);
   return {
-    model: `anthropic/${model}`,
+    model: `${model.provider}/${model.id}`,
     prompt: PROMPT,
     requests,
     totals: {
@@ -148,10 +217,11 @@ function summarize(responses: readonly string[], model: string): Summary {
 }
 
 /** The live key when recording, never printed or written; a placeholder a replay never sends. */
-function anthropicKey(record: boolean): string {
+function providerKey(provider: Provider, record: boolean): string {
   if (!record) return "replay";
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("POLLY_MODE=record needs ANTHROPIC_API_KEY");
+  const name = PROVIDERS[provider].key;
+  const key = process.env[name];
+  if (!key) throw new Error(`Recording ${provider} needs ${name}`);
   return key;
 }
 
@@ -180,20 +250,20 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
     for (const model of MODELS)
       for (const mode of Object.keys(TOOL_MODES) as ToolMode[])
         for (let run = 1; run <= MAX_RUNS; run++) {
-          const dir = join(DIR, set, model);
+          const dir = join(DIR, set, model.id);
           const name = run === 1 ? mode : `${mode}.${run}`;
           const record =
             RECORDING &&
             set === RECORD_SET &&
-            model === RECORD_MODEL &&
+            model.id === RECORD_MODEL &&
             run <= RECORD_RUNS &&
             (RECORD_MODE === undefined || RECORD_MODE === mode);
           if (!record && !hasRecording(dir, name)) continue;
-          it(`${set} ${model} ${name}: calendar, mail and drive, then a draft`, async () => {
+          it(`${set} ${model.id} ${name}: calendar, mail and drive, then a draft`, async () => {
             const { polly, responses } = startModelRecording(
               name,
               dir,
-              "api.anthropic.com",
+              PROVIDERS[model.provider].host,
               localPaths(),
               record,
             );
@@ -205,13 +275,13 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
               agentPath,
               readFileSync(agentPath, "utf8").replace(
                 "anthropic/claude-sonnet-4-5",
-                `anthropic/${model}`,
+                `${model.provider}/${model.id}`,
               ),
             );
             const credentials = new InMemoryCredentialStore();
-            await credentials.modify("anthropic", async () => ({
+            await credentials.modify(model.provider, async () => ({
               type: "api_key",
-              key: anthropicKey(record),
+              key: providerKey(model.provider, record),
             }));
             const handle = await createAgentSession({
               recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
@@ -227,7 +297,8 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
 
             const summary = summarize(responses, model);
             const path = join(dir, `${name}.summary.json`);
-            if (record) {
+            // UPDATE_SUMMARIES rewrites a summary from its cassette, when how one is read changes.
+            if (record || process.env.UPDATE_SUMMARIES) {
               mkdirSync(dir, { recursive: true });
               writeFileSync(path, `${JSON.stringify(summary, null, 2)}\n`);
             } else {

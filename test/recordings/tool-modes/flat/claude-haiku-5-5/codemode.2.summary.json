@@ -1,0 +1,69 @@
+{
+  "model": "anthropic/claude-haiku-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 572,
+      "cache_read_input_tokens": 4647,
+      "output_tokens": 162,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1352,
+      "cache_read_input_tokens": 5219,
+      "output_tokens": 296,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const now = new Date();\nconst tomorrowStart = new Date(now.getTime() + 24*3600*1000);\nconst d = tomorrowStart.toISOString().slice(0,10);\nconst [cal, mailRes, drv] = await Promise.all([\n  tools.calendar({command:\"list\", from: d+\"T00:00:00Z\", to: d+\"T23:59:59Z\"}).catch(e=>\"ERR \"+e),\n  tools.mail({command:\"search\", query:\"Dana budget\", limit: 10}).catch(e=>\"ERR \"+e),\n  tools.drive({command:\"search\", query:\"budget\"}).catch(e=>\"ERR \"+e),\n]);\nreturn {date:d, now: now.toISOString(), cal, mailRes, drv};"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1303,
+      "cache_read_input_tokens": 6571,
+      "output_tokens": 340,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const draft = await tools.mail({\n  command: \"draft\",\n  reply_to: \"msg_fe148c83ccff4ebf\",\n  to: [\"dana@example.test\"],\n  subject: \"Re: Q3 budget numbers\",\n  body: \"Hi Dana,\\n\\nYes, I'll bring the budget sheet to tomorrow's review. Here's the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"\n});\nreturn draft;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 463,
+      "cache_read_input_tokens": 7874,
+      "output_tokens": 372,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 3,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 3690,
+    "cache_read_input_tokens": 24311,
+    "output_tokens": 1170
+  }
+}

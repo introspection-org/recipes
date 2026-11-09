@@ -4,9 +4,9 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 1448,
-      "cache_read_input_tokens": 0,
-      "output_tokens": 166,
+      "cache_creation_input_tokens": 574,
+      "cache_read_input_tokens": 907,
+      "output_tokens": 157,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
@@ -21,15 +21,15 @@
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1356,
-      "cache_read_input_tokens": 1448,
-      "output_tokens": 101,
+      "cache_creation_input_tokens": 1347,
+      "cache_read_input_tokens": 1481,
+      "output_tokens": 99,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema; date",
+            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema",
             "timeout": 60
           }
         }
@@ -37,83 +37,120 @@
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 2687,
-      "cache_read_input_tokens": 2804,
-      "output_tokens": 323,
+      "cache_creation_input_tokens": 2664,
+      "cache_read_input_tokens": 2828,
+      "output_tokens": 149,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools call calendar.list --json '{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\",\"limit\":50}'; echo ---; tools call mail.search --json '{\"query\":\"budget\",\"from\":\"Dana\",\"limit\":10}'; echo ---; tools call drive.search --json '{\"query\":\"budget\",\"limit\":10}'",
-            "timeout": 90
+            "command": "date; date +%Z; readlink /etc/localtime 2>/dev/null",
+            "timeout": 30
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1046,
-      "cache_read_input_tokens": 5491,
-      "output_tokens": 371,
+      "cache_creation_input_tokens": 204,
+      "cache_read_input_tokens": 5492,
+      "output_tokens": 203,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools call mail.read --json '{\"message\":\"msg_45244645bb99488d\"}'; echo ---; tools call calendar.read --json '{\"event\":\"evt_2a8dee3ef8bb43aa\"}'",
-            "timeout": 90
+            "command": "echo ok",
+            "timeout": 10
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "echo ok2",
+            "timeout": 10
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1033,
-      "cache_read_input_tokens": 6537,
-      "output_tokens": 202,
+      "cache_creation_input_tokens": 264,
+      "cache_read_input_tokens": 5696,
+      "output_tokens": 345,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools call mail.draft --json '{\"reply_to\":\"msg_45244645bb99488d\",\"to\":[\"dana@example.test\"],\"body\":\"Hi Dana,\\n\\nYes, I will bring the Q3 budget sheet to the planning review tomorrow. Here is the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"}'",
-            "timeout": 90
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\",\"limit\":100}\nJSON",
+            "timeout": 60
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.search --json - <<'JSON'\n{\"query\":\"budget\",\"from\":\"Dana\",\"limit\":25}\nJSON",
+            "timeout": 60
+          }
+        },
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call drive.search --json - <<'JSON'\n{\"query\":\"budget\",\"limit\":25}\nJSON",
+            "timeout": 60
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 395,
-      "cache_read_input_tokens": 7570,
-      "output_tokens": 219,
+      "cache_creation_input_tokens": 842,
+      "cache_read_input_tokens": 5960,
+      "output_tokens": 184,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools call mail.draft --json '{\"reply_to\":\"msg_45244645bb99488d\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nYes, I will bring the Q3 budget sheet to the planning review tomorrow. Here is the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"}'",
-            "timeout": 90
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_36d44bbb75d0427e\"}\nJSON",
+            "timeout": 60
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 320,
-      "cache_read_input_tokens": 7965,
-      "output_tokens": 406,
+      "cache_creation_input_tokens": 539,
+      "cache_read_input_tokens": 6802,
+      "output_tokens": 222,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_36d44bbb75d0427e\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nYes, I'll bring the budget sheet to tomorrow's review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": 60
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 324,
+      "cache_read_input_tokens": 7341,
+      "output_tokens": 412,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 7,
-    "tool_calls": 6,
-    "input_tokens": 16,
-    "cache_creation_input_tokens": 8285,
-    "cache_read_input_tokens": 31815,
-    "output_tokens": 1788
+    "requests": 8,
+    "tool_calls": 10,
+    "input_tokens": 18,
+    "cache_creation_input_tokens": 6758,
+    "cache_read_input_tokens": 36507,
+    "output_tokens": 1771
   }
 }

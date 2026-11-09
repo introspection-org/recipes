@@ -24,7 +24,7 @@ export const RECORDING = process.env.POLLY_MODE === "record";
 // that name a model API account (organization, workspace, rate-limit tier)
 // or trace back to it (request and edge ids).
 const SENSITIVE_HEADER =
-  /(authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|\btoken\b|secret|password|credential|cookie|session|organization|workspace|request[-_]?id|ratelimit|cf-ray)/i;
+  /(authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|\btoken\b|secret|password|credential|cookie|session|organization|project|workspace|request[-_]?id|ratelimit|cf-ray)/i;
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
@@ -32,6 +32,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   ],
   [/lin_(?:api|oauth)_[A-Za-z0-9]{20,}/g, "REDACTED_LINEAR_TOKEN"],
   [/sk-ant-[A-Za-z0-9_-]{20,}/g, "REDACTED_ANTHROPIC_KEY"],
+  [/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g, "REDACTED_OPENAI_KEY"],
   [/tvly-[A-Za-z0-9_-]{20,}/g, "REDACTED_TAVILY_KEY"],
   [
     /("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]+(")/g,
@@ -224,12 +225,17 @@ function rpcKey(body: string): string {
 }
 
 /** Whether `name` has a cassette under `dir` (Polly writes `<name>_<hash>/recording.har`). */
+/** The folder name Polly gives a recording: it writes `.` as `-`. */
+function cassetteName(name: string): string {
+  return name.replaceAll(".", "-");
+}
+
 export function hasRecording(dir: string, name: string): boolean {
   return (
     existsSync(dir) &&
     readdirSync(dir).some(
       (entry) =>
-        entry.startsWith(`${name}_`) &&
+        entry.startsWith(`${cassetteName(name)}_`) &&
         existsSync(join(dir, entry, "recording.har")),
     )
   );
@@ -328,6 +334,8 @@ export function startMcpRecording(
  * would otherwise slip past a rewrite in pieces.
  */
 function joinToolInputDeltas(text: string): string {
+  if (text.includes("response.function_call_arguments.delta"))
+    return joinOpenAiArgumentDeltas(text);
   if (!text.includes("input_json_delta")) return text;
   const events = text.split("\n\n");
   const first = new Map<number, { at: number; json: string }>();
@@ -367,6 +375,38 @@ function joinToolInputDeltas(text: string): string {
   return kept.filter((event) => event !== undefined).join("\n\n");
 }
 
+/** The same for OpenAI's Responses stream: one `function_call_arguments.delta` per call. */
+function joinOpenAiArgumentDeltas(text: string): string {
+  const events = text.split("\n\n");
+  const first = new Map<
+    string,
+    { at: number; event: Record<string, unknown> }
+  >();
+  const kept: Array<string | undefined> = events.map((event, at) => {
+    const data = event.split("\n").find((line) => line.startsWith("data:"));
+    if (!data) return event;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(data.slice(5)) as Record<string, unknown>;
+    } catch {
+      return event;
+    }
+    if (parsed.type !== "response.function_call_arguments.delta") return event;
+    const key = String(parsed.item_id ?? parsed.output_index);
+    const seen = first.get(key);
+    if (seen) {
+      seen.event.delta = `${String(seen.event.delta ?? "")}${String(parsed.delta ?? "")}`;
+      return undefined;
+    }
+    first.set(key, { at, event: parsed });
+    return event;
+  });
+  for (const { at, event } of first.values())
+    kept[at] =
+      `event: response.function_call_arguments.delta\ndata: ${JSON.stringify(event)}`;
+  return kept.filter((event) => event !== undefined).join("\n\n");
+}
+
 export function startModelRecording(
   name: string,
   dir: string,
@@ -392,7 +432,7 @@ export function startModelRecording(
 export function recordedRequests(dir: string, name: string): number {
   const entry = readdirSync(dir).find(
     (item) =>
-      item.startsWith(`${name}_`) &&
+      item.startsWith(`${cassetteName(name)}_`) &&
       existsSync(join(dir, item, "recording.har")),
   );
   if (!entry) throw new Error(`No recording ${name} under ${dir}`);

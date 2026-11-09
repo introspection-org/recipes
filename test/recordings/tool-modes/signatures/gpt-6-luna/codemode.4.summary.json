@@ -1,0 +1,91 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 3627,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 47,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 892,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3624,
+      "output_tokens": 61,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const r = await tools.calendar({command:\"list\",from:\"2025-02-03T00:00:00Z\",to:\"2025-02-04T00:00:00Z\",limit:100});\ntext(r)\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 95,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4513,
+      "output_tokens": 54,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const r = await Promise.all([\n tools.mail({command:\"search\",query:\"Dana budget\",limit:10}),\n tools.drive({command:\"search\",query:\"budget spreadsheet\",limit:10})\n]); text(r)\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 418,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4605,
+      "output_tokens": 89,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const r=await Promise.all([\ntools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\",limit:100}),\ntools.mail({command:\"read\",message:\"msg_17e44e4a6fbf46f9\"})\n]); text(r)\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 672,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5020,
+      "output_tokens": 95,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "text(await tools.mail({command:\"draft\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI’ll bring the latest Q3 budget sheet to tomorrow’s planning review: https://docs.example.test/spreadsheets/d/f-budget\\n\\nBest,\\nSam\",reply_to:\"msg_17e44e4a6fbf46f9\"}))\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 194,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5689,
+      "output_tokens": 104,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 5898,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 23451,
+    "output_tokens": 450
+  }
+}

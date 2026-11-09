@@ -66,7 +66,7 @@ export function withToolsCommand(
     ...bash,
     // The tools are not declared, so this is how the model learns they exist;
     // the description reaches it even when a Recipe's SYSTEM.md replaces Pi's prompt.
-    description: `${bash.description}\n\n${names.join(", ")} are not tools you call directly: reach them from bash with the \`tools\` command. \`tools list\` shows them, \`tools list <tool> --schema\` a tool's commands and arguments, \`tools call <tool>.<command> --json '{...}'\` makes one call, and \`tools run\` with a script on stdin (\`await tools.<tool>.<command>({...})\`) makes several.`,
+    description: `${bash.description}\n\n${names.join(", ")} are not tools you call directly: reach them from bash with the \`tools\` command. \`tools list\` shows them, \`tools list <tool> --schema\` a tool's commands and arguments, \`tools call <tool>.<command> --json -\` with the arguments on stdin in a quoted heredoc (\`<<'JSON'\`), so quotes in them need no escaping, makes one call, and \`tools run\` with a script on stdin (\`await tools.<tool>.<command>({...})\`) makes several.`,
     execute: (toolCallId, params, signal, onUpdate, ctx) =>
       withToolsBridge(ctx, names, () =>
         bash.execute(toolCallId, params, signal, onUpdate, ctx),
