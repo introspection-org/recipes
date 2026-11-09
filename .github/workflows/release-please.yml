@@ -344,6 +344,10 @@ jobs:
             channel_dirs+=("packages/issues")
           fi
 
+          # One companion that cannot publish (a new package with no trusted
+          # publisher yet) must not keep the ones after it off npm: publish
+          # every companion, then fail the job naming the ones that failed.
+          failed_companions=()
           if [[ "${#channel_dirs[@]}" -gt 0 ]]; then
             for channel_dir in "${channel_dirs[@]}"; do
               channel_name="$(node -p "require('./$channel_dir/package.json').name")"
@@ -383,9 +387,15 @@ jobs:
                 echo "$channel_name@$channel_version is already published"
                 assert_tagged "$channel_name" "$channel_tag" "$channel_version"
               else
-                pnpm --filter "$channel_name" publish --access public --tag "$channel_tag" --no-git-checks
+                if ! pnpm --filter "$channel_name" publish --access public --tag "$channel_tag" --no-git-checks; then
+                  failed_companions+=("$channel_name@$channel_version")
+                fi
               fi
             done
+          fi
+          if [[ "${#failed_companions[@]}" -gt 0 ]]; then
+            echo "Failed to publish: ${failed_companions[*]}" >&2
+            exit 1
           fi
 
   publish-crate:
