@@ -296,7 +296,75 @@ function isRequest(input: unknown): input is Request {
   );
 }
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** The redirects one bound request follows, as fetch itself allows. */
+const MAX_REDIRECTS = 20;
+
 function bindingFetch(inner: typeof fetch): typeof fetch {
+  /** Send `url` through the binding lookup: a bound host to its target, any other to the wrapped fetch. */
+  function send(url: URL, init: RequestInit, hops: number): Promise<Response> {
+    const host = hostOf(url);
+    const entry = host === undefined ? undefined : live.get(host);
+    return entry
+      ? sendBound(url, entry.binding, init, hops)
+      : inner(url.href, init);
+  }
+
+  /**
+   * Send a request for a bound host to its target. Redirects the caller wants
+   * followed are followed here rather than inside the wrapped fetch, so a
+   * `Location` naming the vendor host goes through the binding again instead
+   * of reaching the vendor.
+   */
+  async function sendBound(
+    url: URL,
+    binding: LocalApiBinding,
+    init: RequestInit,
+    hops: number,
+  ): Promise<Response> {
+    const { target, prefix } = rewrite(url, binding);
+    const follow = (init.redirect ?? "follow") === "follow";
+    const response = await inner(target, {
+      ...init,
+      headers: boundHeaders(new Headers(init.headers), binding, prefix),
+      ...(follow ? { redirect: "manual" } : {}),
+    });
+    const location = response.headers.get("location");
+    if (!follow || !REDIRECT_STATUSES.has(response.status) || !location)
+      return response;
+    if (hops >= MAX_REDIRECTS)
+      throw new TypeError("fetch failed: too many redirects");
+    // The target answers as the vendor (x-forwarded-*), so its Location is
+    // read against the URL the provider sent to.
+    const next = new URL(location, url);
+    const method = (init.method ?? "GET").toUpperCase();
+    const toGet =
+      response.status === 303
+        ? method !== "HEAD"
+        : (response.status === 301 || response.status === 302) &&
+          method === "POST";
+    if (!toGet && init.body instanceof ReadableStream)
+      throw new TypeError(
+        "fetch failed: cannot follow a redirect with a streamed body",
+      );
+    const headers = new Headers(init.headers);
+    if (next.host !== url.host) {
+      headers.delete("authorization");
+      for (const name of Object.keys(binding.headers ?? {}))
+        headers.delete(name);
+    }
+    if (toGet) {
+      headers.delete("content-type");
+      headers.delete("content-length");
+    }
+    await response.body?.cancel();
+    return send(
+      next,
+      { ...init, headers, ...(toGet ? { method: "GET", body: null } : {}) },
+      hops + 1,
+    );
+  }
+
   const wrapped = (async (
     input: Parameters<typeof fetch>[0],
     init?: RequestInit,
@@ -310,38 +378,28 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
     const host = hostOf(raw);
     const entry = host === undefined ? undefined : live.get(host);
     if (!entry) return inner(input, init);
-    const { target, prefix } = rewrite(new URL(raw), entry.binding);
-    if (!isRequest(input)) {
-      return inner(target, {
-        ...init,
-        headers: boundHeaders(
-          new Headers(init?.headers),
-          entry.binding,
-          prefix,
-        ),
-      });
-    }
+    if (!isRequest(input))
+      return sendBound(new URL(raw), entry.binding, init ?? {}, 0);
     const request = init ? new Request(input, init) : input;
-    return inner(
-      new Request(target, {
+    // Buffered, so a 307 or 308 can send the body again.
+    const body = request.body ? await request.arrayBuffer() : null;
+    return sendBound(
+      new URL(request.url),
+      entry.binding,
+      {
         method: request.method,
-        headers: boundHeaders(
-          new Headers(request.headers),
-          entry.binding,
-          prefix,
-        ),
-        body: request.body,
+        headers: request.headers,
+        body,
         redirect: request.redirect,
         signal: request.signal,
         credentials: request.credentials,
         cache: request.cache,
         integrity: request.integrity,
         keepalive: request.keepalive,
-        mode: request.mode,
         referrer: request.referrer,
         referrerPolicy: request.referrerPolicy,
-        ...(request.body ? { duplex: "half" } : {}),
-      } as RequestInit),
+      },
+      0,
     );
   }) as typeof fetch;
   return wrapped;

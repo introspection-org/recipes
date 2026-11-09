@@ -428,6 +428,99 @@ describe("the binding fetch", () => {
   });
 });
 
+describe("redirects from a bound host", () => {
+  /** The live vendor: a second server that a bound request must never reach. */
+  const vendorRequests: string[] = [];
+  const vendor = createServer((req, res) => {
+    vendorRequests.push(`${req.method} ${req.url}`);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ from: "vendor" }));
+  });
+  let vendorBase = "";
+  beforeAll(async () => {
+    await new Promise<void>((resolve) =>
+      vendor.listen(0, "127.0.0.1", resolve),
+    );
+    // `localhost` stands in for the vendor host the binding names.
+    vendorBase = `http://localhost:${(vendor.address() as AddressInfo).port}`;
+  });
+  afterAll(() => new Promise<void>((resolve) => vendor.close(() => resolve())));
+  afterEach(() => {
+    vendorRequests.length = 0;
+  });
+
+  /** The fake redirects `/start` to the vendor's own `/next`, as built from x-forwarded-*. */
+  function redirecting(status: number) {
+    reply = (request) =>
+      request.path === "/fake/start"
+        ? {
+            status,
+            headers: { Location: `${vendorBase}/next?page=2` },
+          }
+        : { json: { from: "fake", method: request.method } };
+  }
+
+  it("follows a Location naming the vendor host back through the binding", async () => {
+    install("test", [
+      {
+        host: "localhost",
+        url: `${fakeBase}/fake`,
+        headers: { "x-fake": "1" },
+      },
+    ]);
+    redirecting(302);
+
+    const response = await fetch(`${vendorBase}/start`, {
+      headers: { Authorization: "Bearer introspection-egress" },
+    });
+
+    expect(await response.json()).toEqual({ from: "fake", method: "GET" });
+    expect(vendorRequests).toEqual([]);
+    expect(
+      recorded.map((request) => `${request.path}${request.search}`),
+    ).toEqual(["/fake/start", "/fake/next?page=2"]);
+    expect(recorded[1]!.headers["x-forwarded-host"]).toBe("localhost");
+    expect(recorded[1]!.headers["x-fake"]).toBe("1");
+    expect(recorded[1]!.headers.authorization).toBeUndefined();
+  });
+
+  it("turns a POST into a GET on 302 and 303, and keeps it with its body on 307", async () => {
+    install("test", [{ host: "localhost", url: `${fakeBase}/fake` }]);
+    for (const [status, method, body] of [
+      [302, "GET", ""],
+      [303, "GET", ""],
+      [307, "POST", "payload"],
+    ] as const) {
+      recorded.length = 0;
+      redirecting(status);
+      await fetch(
+        new Request(`${vendorBase}/start`, { method: "POST", body: "payload" }),
+      );
+      expect(recorded[1]!.method).toBe(method);
+      expect(recorded[1]!.body.toString("utf8")).toBe(body);
+    }
+    expect(vendorRequests).toEqual([]);
+  });
+
+  it("keeps a caller's manual redirect and stops after 20 hops", async () => {
+    install("test", [{ host: "localhost", url: `${fakeBase}/fake` }]);
+    redirecting(302);
+    const manual = await fetch(`${vendorBase}/start`, { redirect: "manual" });
+    expect(manual.status).toBe(302);
+    expect(manual.headers.get("location")).toBe(`${vendorBase}/next?page=2`);
+    expect(recorded).toHaveLength(1);
+
+    reply = () => ({
+      status: 302,
+      headers: { Location: `${vendorBase}/loop` },
+    });
+    await expect(fetch(`${vendorBase}/loop`)).rejects.toThrow(
+      /too many redirects/,
+    );
+    expect(vendorRequests).toEqual([]);
+  });
+});
+
 describe("declared hosts", () => {
   it("come from the loaded channels, productivity, issues and search providers, selected or not", async () => {
     const recipeDir = tempDir("api-bindings-declared-");
