@@ -245,7 +245,7 @@ function chart(groups, value, title, unit, digits, log = false) {
   svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
   if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
     lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
-    svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#ff2d95"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
+    svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#ff1744"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
   }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
@@ -294,11 +294,11 @@ function chart(groups, value, title, unit, digits, log = false) {
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
       if (r.failed) {
         const fw = Math.max((w * r.failed) / r.runs, 3);
-        svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>\n`;
+        svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>\n`;
       }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
-      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
   svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better</text>\n`;
@@ -392,7 +392,7 @@ function frontierPoints(set, effort) {
 /** A ring around a point, filled clockwise to `share`: the runs that failed. */
 const dial = (cx, cy, r, share) => {
   const c = 2 * Math.PI * r;
-  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
 };
 
 const dot = (p, cx, cy, r = 7) =>

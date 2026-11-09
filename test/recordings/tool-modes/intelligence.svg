@@ -26,7 +26,7 @@
 <polyline points="188.83602273723199,326.2857142857143 193.80106285078728,291.3142857142857 199.89657320082972,278.2 276.5858323696417,260.7142857142857 278.9868106481182,238.85714285714286 436.5339083210749,168.9142857142857 452.3074033225125,151.42857142857142 513.450294491646,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
 <rect x="420" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="437" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
 <line x1="580" y1="78" x2="608" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="614" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
-<circle cx="426" cy="98" r="5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="426" cy="98" r="5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 426 98)" pointer-events="none"/><text x="437" y="102" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>
+<circle cx="426" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="426" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 426 98)" pointer-events="none"/><text x="437" y="102" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>
 <polyline points="269.69697034226954,286.9428571428572 276.5858323696417,260.7142857142857 278.9868106481182,238.85714285714286" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
 <polyline points="455.3238492204284,256.34285714285716 474.4799408375406,234.4857142857143 483.1749493568962,186.4" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
 <polyline points="498.6477801760556,217 532.4468944148689,160.17142857142858 513.450294491646,142.68571428571428" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
@@ -68,7 +68,7 @@ Input tokens: 19,236
 Cached: 72%
 Output tokens: 521
 Failed runs, all modes: 1/20
-Click for more info</title><circle cx="188.83602273723199" cy="326.2857142857143" r="7" fill="#c9c7be" stroke="#0000003d"/></a><circle cx="188.83602273723199" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="188.83602273723199" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="3.298672286269283 65.97344572538566" transform="rotate(-90 188.83602273723199 326.2857142857143)" pointer-events="none"/>
+Click for more info</title><circle cx="188.83602273723199" cy="326.2857142857143" r="7" fill="#c9c7be" stroke="#0000003d"/></a><circle cx="188.83602273723199" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="188.83602273723199" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="3.298672286269283 65.97344572538566" transform="rotate(-90 188.83602273723199 326.2857142857143)" pointer-events="none"/>
 <text x="188.83602273723199" y="329.7857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
 Cost per task: $0.0220
@@ -78,7 +78,7 @@ Input tokens: 28,868
 Cached: 72%
 Output tokens: 363
 Failed runs, all modes: 1/12
-Click for more info</title><circle cx="450.6555537064233" cy="217" r="7" fill="#77756e" stroke="#0000003d"/></a><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="5.497787143782138 65.97344572538566" transform="rotate(-90 450.6555537064233 217)" pointer-events="none"/>
+Click for more info</title><circle cx="450.6555537064233" cy="217" r="7" fill="#77756e" stroke="#0000003d"/></a><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="5.497787143782138 65.97344572538566" transform="rotate(-90 450.6555537064233 217)" pointer-events="none"/>
 <text x="450.6555537064233" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
 Cost per task: $0.107
@@ -88,7 +88,7 @@ Input tokens: 29,295
 Cached: 78%
 Output tokens: 382
 Failed runs, all modes: 3/12
-Click for more info</title><circle cx="562.4132356019898" cy="182.0285714285714" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 562.4132356019898 182.0285714285714)" pointer-events="none"/>
+Click for more info</title><circle cx="562.4132356019898" cy="182.0285714285714" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 562.4132356019898 182.0285714285714)" pointer-events="none"/>
 <text x="562.4132356019898" y="185.5285714285714" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (medium) · tools
 Cost per task: $0.00187
@@ -143,7 +143,7 @@ Input tokens: 28,183
 Cached: 59%
 Output tokens: 428
 Failed runs, all modes: 1/4
-Click for more info</title><circle cx="587.3470327616604" cy="142.68571428571428" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 587.3470327616604 142.68571428571428)" pointer-events="none"/>
+Click for more info</title><circle cx="587.3470327616604" cy="142.68571428571428" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 587.3470327616604 142.68571428571428)" pointer-events="none"/>
 <text x="587.3470327616604" y="146.18571428571428" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (high) · tools
 Cost per task: $0.00193
@@ -198,7 +198,7 @@ Input tokens: 38,134
 Cached: 69%
 Output tokens: 569
 Failed runs, all modes: 1/4
-Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 595.6370189637862 129.57142857142858)" pointer-events="none"/>
+Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 595.6370189637862 129.57142857142858)" pointer-events="none"/>
 <text x="595.6370189637862" y="133.07142857142858" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
 <text x="280.69697034226954" y="290.9428571428572" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
 <text x="466.3238492204284" y="260.34285714285716" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>

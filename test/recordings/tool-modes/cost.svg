@@ -10,7 +10,7 @@
 <rect x="348.2" y="38" width="10" height="10" rx="2" fill="#77756e" stroke="#0000001f"/><text x="362.2" y="47" font-size="12" fill="#5e5d59">gpt-6.1-sol</text>
 <rect x="442.79999999999995" y="38" width="10" height="10" rx="2" fill="#141413" stroke="#0000001f"/><text x="456.79999999999995" y="47" font-size="12" fill="#5e5d59">gpt-6-astra</text>
 <rect x="537.4" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="551.4" y="47" font-size="12" fill="#5e5d59">cheapest</text>
-<rect x="612.1999999999999" y="41.5" width="10" height="3" rx="1.5" fill="#ff2d95"/><text x="626.1999999999999" y="47" font-size="12" fill="#5e5d59">failed</text>
+<rect x="612.1999999999999" y="41.5" width="10" height="3" rx="1.5" fill="#ff1744"/><text x="626.1999999999999" y="47" font-size="12" fill="#5e5d59">failed</text>
 <line x1="120" y1="58" x2="120" y2="518" stroke="#e8e6dc"/><text x="120" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0001</text>
 <line x1="173.67614115596206" y1="58" x2="173.67614115596206" y2="518" stroke="#e8e6dc"/><text x="173.67614115596206" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0003</text>
 <line x1="232.5" y1="58" x2="232.5" y2="518" stroke="#e8e6dc"/><text x="232.5" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.001</text>
@@ -113,8 +113,8 @@ Requests per task: 5.6
 Input tokens: 25,979
 Cached: 50%
 Output tokens: 447</title></rect>
-<rect x="120" y="224" width="24.32836962991678" height="14" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/><rect x="120" y="229.5" width="24.32836962991678" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>
-<text x="247.6418481495839" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff2d95">$0.00121 · 1/5 runs failed</text>
+<rect x="120" y="224" width="24.32836962991678" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="229.5" width="24.32836962991678" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
+<text x="247.6418481495839" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">$0.00121 · 1/5 runs failed</text>
 <rect x="120" y="240" width="281.47550130165683" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · tools + defer
 Cost per task: $0.0318
 Time per task: 14.5s
@@ -236,8 +236,8 @@ Requests per task: 6.7
 Input tokens: 21,909
 Cached: 74%
 Output tokens: 653</title></rect>
-<rect x="120" y="464" width="85.56689355485871" height="14" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/><rect x="120" y="469.5" width="85.56689355485871" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>
-<text x="382.7006806645761" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff2d95">$0.0191 · 1/3 runs failed</text>
+<rect x="120" y="464" width="85.56689355485871" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="469.5" width="85.56689355485871" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
+<text x="382.7006806645761" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">$0.0191 · 1/3 runs failed</text>
 <rect x="120" y="480" width="347.57842959670256" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · cli
 Cost per task: $0.123
 Time per task: 19.9s
@@ -248,7 +248,7 @@ Requests per task: 8.0
 Input tokens: 28,759
 Cached: 79%
 Output tokens: 799</title></rect>
-<rect x="120" y="480" width="347.57842959670256" height="14" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/><rect x="120" y="485.5" width="347.57842959670256" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>
-<text x="473.57842959670256" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff2d95">$0.123 · 3/3 runs failed</text>
+<rect x="120" y="480" width="347.57842959670256" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="485.5" width="347.57842959670256" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
+<text x="473.57842959670256" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">$0.123 · 3/3 runs failed</text>
 <text x="120" y="552" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better</text>
 </svg>
