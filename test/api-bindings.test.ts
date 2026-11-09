@@ -504,7 +504,11 @@ describe("redirects from a bound host", () => {
 
   it("sends a redirect to an unbound host none of the stripped credentials", async () => {
     install("test", [
-      { host: "localhost", url: `${fakeBase}/fake`, headers: { "x-fake": "1" } },
+      {
+        host: "localhost",
+        url: `${fakeBase}/fake`,
+        headers: { "x-fake": "1" },
+      },
     ]);
     // The fake's own address is not bound: the redirect goes there directly.
     reply = (request) =>
