@@ -301,41 +301,40 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 20;
 
 function bindingFetch(inner: typeof fetch): typeof fetch {
-  /** Send `url` through the binding lookup: a bound host to its target, any other to the wrapped fetch. */
-  function send(url: URL, init: RequestInit, hops: number): Promise<Response> {
-    const host = hostOf(url);
-    const entry = host === undefined ? undefined : live.get(host);
-    return entry
-      ? sendBound(url, entry.binding, init, hops)
-      : inner(url.href, init);
-  }
-
   /**
-   * Send a request for a bound host to its target. Redirects the caller wants
-   * followed are followed here rather than inside the wrapped fetch, so a
-   * `Location` naming the vendor host goes through the binding again instead
-   * of reaching the vendor.
+   * Send one hop of a chain that started at a bound host: a bound host to its
+   * target, any other host to the wrapped fetch. Every redirect the caller
+   * wants followed is followed here, bound hop or not, rather than inside the
+   * wrapped fetch, so a `Location` naming a bound host anywhere in the chain
+   * goes through the binding instead of reaching the vendor.
    */
-  async function sendBound(
+  async function hop(
     url: URL,
-    binding: LocalApiBinding,
     init: RequestInit,
     hops: number,
   ): Promise<Response> {
-    const { target, prefix } = rewrite(url, binding);
+    const host = hostOf(url);
+    const binding = host === undefined ? undefined : live.get(host)?.binding;
     const follow = (init.redirect ?? "follow") === "follow";
-    const response = await inner(target, {
-      ...init,
-      headers: boundHeaders(new Headers(init.headers), binding, prefix),
-      ...(follow ? { redirect: "manual" } : {}),
-    });
+    const manual = follow ? { redirect: "manual" as const } : {};
+    let response: Response;
+    if (binding) {
+      const { target, prefix } = rewrite(url, binding);
+      response = await inner(target, {
+        ...init,
+        headers: boundHeaders(new Headers(init.headers), binding, prefix),
+        ...manual,
+      });
+    } else {
+      response = await inner(url.href, { ...init, ...manual });
+    }
     const location = response.headers.get("location");
     if (!follow || !REDIRECT_STATUSES.has(response.status) || !location)
       return response;
     if (hops >= MAX_REDIRECTS)
       throw new TypeError("fetch failed: too many redirects");
-    // The target answers as the vendor (x-forwarded-*), so its Location is
-    // read against the URL the provider sent to.
+    // A bound target answers as the vendor (x-forwarded-*), so its Location
+    // is read against the URL the provider sent to.
     const next = new URL(location, url);
     const method = (init.method ?? "GET").toUpperCase();
     const toGet =
@@ -351,7 +350,7 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
     // Another host gets none of what the binding strips, bound or not.
     if (next.host !== url.host) {
       for (const name of STRIPPED_HEADERS) headers.delete(name);
-      for (const name of Object.keys(binding.headers ?? {}))
+      for (const name of Object.keys(binding?.headers ?? {}))
         headers.delete(name);
     }
     if (toGet) {
@@ -359,7 +358,7 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
       headers.delete("content-length");
     }
     await response.body?.cancel();
-    return send(
+    return hop(
       next,
       { ...init, headers, ...(toGet ? { method: "GET", body: null } : {}) },
       hops + 1,
@@ -379,14 +378,12 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
     const host = hostOf(raw);
     const entry = host === undefined ? undefined : live.get(host);
     if (!entry) return inner(input, init);
-    if (!isRequest(input))
-      return sendBound(new URL(raw), entry.binding, init ?? {}, 0);
+    if (!isRequest(input)) return hop(new URL(raw), init ?? {}, 0);
     const request = init ? new Request(input, init) : input;
     // Buffered, so a 307 or 308 can send the body again.
     const body = request.body ? await request.arrayBuffer() : null;
-    return sendBound(
+    return hop(
       new URL(request.url),
-      entry.binding,
       {
         method: request.method,
         headers: request.headers,

@@ -544,6 +544,40 @@ describe("redirects from a bound host", () => {
     expect(vendorRequests).toEqual([]);
   });
 
+  it("keeps an unbound hop's redirect back to the vendor inside the binding", async () => {
+    // An unbound intermediary that sends the request on to the vendor host.
+    const intermediaryRequests: string[] = [];
+    const intermediary = createServer((req, res) => {
+      intermediaryRequests.push(`${req.method} ${req.url}`);
+      res.writeHead(302, { Location: `${vendorBase}/final` });
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      intermediary.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      const intermediaryBase = `http://127.0.0.1:${(intermediary.address() as AddressInfo).port}`;
+      install("test", [{ host: "localhost", url: `${fakeBase}/fake` }]);
+      reply = (request) =>
+        request.path === "/fake/start"
+          ? { status: 302, headers: { Location: `${intermediaryBase}/bounce` } }
+          : { json: { from: "fake" } };
+
+      const response = await fetch(`${vendorBase}/start`);
+
+      expect(await response.json()).toEqual({ from: "fake" });
+      expect(intermediaryRequests).toEqual(["GET /bounce"]);
+      expect(recorded.map((request) => request.path)).toEqual([
+        "/fake/start",
+        "/fake/final",
+      ]);
+      expect(recorded[1]!.headers["x-forwarded-host"]).toBe("localhost");
+      expect(vendorRequests).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => intermediary.close(() => resolve()));
+    }
+  });
+
   it("keeps a caller's manual redirect and stops after 20 hops", async () => {
     install("test", [{ host: "localhost", url: `${fakeBase}/fake` }]);
     redirecting(302);
