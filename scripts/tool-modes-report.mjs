@@ -170,9 +170,8 @@ for (const set of SETS) {
 writeFileSync(join(DIR, "report.md"), md);
 
 /**
- * One group per mode, one mark per model, on one scale for every model. A
- * linear scale draws bars; a log scale draws dots, since a bar's length
- * claims a zero a log axis doesn't have.
+ * One group per mode, one bar per model, on one scale for every model. On a
+ * log scale a bar starts at the axis's first decade, not at zero.
  */
 function chart(set, value, title, unit, digits, log = false) {
   const W = 760;
@@ -240,15 +239,13 @@ function chart(set, value, title, unit, digits, log = false) {
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
-      svg += log
-        ? `<line x1="${left}" y1="${y + barH / 2}" x2="${left + w}" y2="${y + barH / 2}" stroke="#e8e6dc"/><circle cx="${left + w}" cy="${y + barH / 2}" r="5.5" fill="${color}" stroke="#0000003d"/>\n`
-        : `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = [
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
         ...(r.errors > 0 ? [`${fmt(r.errors, 1)} errors/run`] : []),
       ];
-      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
   svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
@@ -256,12 +253,106 @@ function chart(set, value, title, unit, digits, log = false) {
 }
 
 const newest = SETS.filter((set) => table[set]).at(-1);
+
+/**
+ * Intelligence against cost: each model at its cheapest setting that passed
+ * every run, against its Intelligence Index at the effort the runs used.
+ * Up and to the left is better. Cost is on a log scale, as the index's own
+ * chart draws it.
+ */
+function intelligence(set) {
+  const lookup = JSON.parse(
+    readFileSync(process.env.INTELLIGENCE_JSON, "utf8"),
+  );
+  const points = MODELS.flatMap(([id, name], i) => {
+    const score = lookup.models[id]?.low;
+    const passing = MODES.map(([mode, label]) => ({
+      label,
+      row: table[set]?.[`${id}|${mode}`],
+    })).filter(
+      ({ row }) => row && row.drafted === row.runs && row.errors === 0,
+    );
+    if (score === undefined || !passing.length) return [];
+    const best = passing.reduce((a, b) =>
+      a.row.costPerTask <= b.row.costPerTask ? a : b,
+    );
+    return [
+      {
+        name,
+        mode: best.label,
+        cost: best.row.costPerTask,
+        score,
+        color: COLORS[i],
+      },
+    ];
+  });
+  const W = 760;
+  const H = 440;
+  const left = 70;
+  const right = 40;
+  const top = 64;
+  const bottom = 70;
+  const lo = Math.floor(Math.log10(Math.min(...points.map((p) => p.cost))));
+  const hi = Math.ceil(Math.log10(Math.max(...points.map((p) => p.cost))));
+  const yMax =
+    Math.ceil(Math.max(...points.map((p) => p.score)) / 10) * 10 + 10;
+  const x = (v) =>
+    left + ((Math.log10(v) - lo) / (hi - lo)) * (W - left - right);
+  const y = (v) => H - bottom - (v / yMax) * (H - top - bottom);
+  const esc = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
+  svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task</text>\n`;
+  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} at low effort, the effort the runs used; each model at its cheapest mode that passed every run</text>\n`;
+  for (let v = 0; v <= yMax; v += 10) {
+    svg += `<line x1="${left}" y1="${y(v)}" x2="${W - right}" y2="${y(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
+  }
+  for (let p = lo; p <= hi; p++)
+    for (const m of p < hi ? [1, 3] : [1]) {
+      const v = m * 10 ** p;
+      svg += `<line x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${H - bottom}" stroke="#e8e6dc"/><text x="${x(v)}" y="${H - bottom + 16}" font-size="10" text-anchor="middle" fill="#5e5d59">$${Number(v.toPrecision(1))}</text>\n`;
+    }
+  svg += `<line x1="${left}" y1="${H - bottom}" x2="${W - right}" y2="${H - bottom}" stroke="#b0aea5"/>\n`;
+  // A label that would overlap one already placed goes below its point.
+  const placed = [];
+  for (const point of points) {
+    const text = `${point.name} · ${point.mode} · ${usd(point.cost)}`;
+    const box = (dy) => ({
+      x0: x(point.cost) + 11,
+      x1: x(point.cost) + 11 + text.length * 6.2,
+      y0: y(point.score) + dy - 10,
+      y1: y(point.score) + dy + 4,
+    });
+    const hits = (b) =>
+      placed.some(
+        (p) => b.x0 < p.x1 && p.x0 < b.x1 && b.y0 < p.y1 && p.y0 < b.y1,
+      );
+    point.dy = [4, 20, -12].find((dy) => !hits(box(dy))) ?? 4;
+    placed.push(box(point.dy));
+  }
+  for (const point of points) {
+    svg += `<circle cx="${x(point.cost)}" cy="${y(point.score)}" r="7" fill="${point.color}" stroke="#0000003d"/>\n`;
+  }
+  for (const point of points) {
+    svg += `<text x="${x(point.cost) + 11}" y="${y(point.score) + point.dy}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(point.name)} · ${esc(point.mode)} · ${usd(point.cost)}</text>\n`;
+  }
+  svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
+  svg += `<text x="${left}" y="${H - 16}" font-size="11" fill="#5e5d59">Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
+  svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index (low effort)</text>\n`;
+  return `${svg}</svg>\n`;
+}
 writeFileSync(
   join(DIR, "cost.svg"),
-  chart(newest, "costPerTask", "Cost per task, by tool mode", "", 2),
+  chart(newest, "costPerTask", "Cost per task, by tool mode", "", 2, true),
 );
 writeFileSync(
   join(DIR, "time.svg"),
   chart(newest, "seconds", "Model time per task, by tool mode", "s", 1),
 );
+// Index scores aren't ours to commit; with a lookup file, the chart is drawn beside it.
+if (process.env.INTELLIGENCE_JSON)
+  writeFileSync(
+    process.env.INTELLIGENCE_JSON.replace(/\.json$/, ".svg"),
+    intelligence(newest),
+  );
 console.log(`report.md, cost.svg and time.svg from the ${newest} set`);
