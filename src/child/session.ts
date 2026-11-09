@@ -20,6 +20,7 @@ import {
 import { autoResolveInteractions } from "../interactions.js";
 import { promptResultError } from "./agent.js";
 import type { ResolvedRecipe } from "../recipe/resolve.js";
+import type { RecipeClockOptions } from "../clock.js";
 import type { MemoryContextOverride, MemoryContextSource } from "../memory.js";
 import {
   createAgentSessionInternal,
@@ -40,6 +41,7 @@ export interface CreateIsolatedChildSessionOptions {
   settingsManager?: SettingsManager;
   memory?: MemoryContextSource;
   memoryOverride?: MemoryContextOverride;
+  clock?: RecipeClockOptions;
   credentialsResolved?: boolean;
   modelOverride?: Model<Api>;
   otel?: RecipeSessionOtelOptions;
@@ -129,6 +131,7 @@ export async function createIsolatedChildSession(
         : {}),
       ...(opts.memory ? { memory: opts.memory } : {}),
       ...(opts.memoryOverride ? { memoryOverride: opts.memoryOverride } : {}),
+      ...(opts.clock ? { clock: opts.clock } : {}),
       ...(opts.credentialsResolved ? { credentialsResolved: true } : {}),
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
       ...(opts.otel ? { otel: opts.otel } : {}),

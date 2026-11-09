@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { createRecipeClock, type RecipeClock } from "../src/clock.js";
 import { loadRecipeConnectors } from "../src/connector-tools.js";
 import {
   BODY_LIMIT_CHARS,
@@ -252,6 +253,7 @@ function setup(
     calendar: ["list", "read", "create", "respond"],
     drive: ["search", "read", "download", "upload"],
   },
+  clock?: RecipeClock,
 ) {
   const cwd = mkdtempSync(join(tmpdir(), "productivity-test-"));
   const calls: Calls = [];
@@ -263,6 +265,7 @@ function setup(
     cwd,
     downloadsDir: join(cwd, "files", "fake"),
     session: () => fakeSession(calls),
+    ...(clock ? { clock } : {}),
   });
   const run = async (tool: string, params: Record<string, unknown>) => {
     const result = (await pi.tools
@@ -619,6 +622,32 @@ describe("productivity tools", () => {
     expect(calls.at(-1)).toEqual([
       "calendar.respond",
       { event_id: "evt-new", response: "accept" },
+    ]);
+  });
+
+  it("lists today and tomorrow in the session clock's zone by default", async () => {
+    const range = async (timeZone: string, now: string) => {
+      const { run, calls } = setup(
+        undefined,
+        createRecipeClock({ timeZone, now: () => new Date(now) }),
+      );
+      await run("calendar", { command: "list" });
+      const [, args] = calls.at(-1)! as [string, { from: string; to: string }];
+      return [args.from, args.to];
+    };
+    // Late Sunday in Los Angeles is already Monday in UTC.
+    expect(await range("America/Los_Angeles", "2026-11-09T06:30:00Z")).toEqual([
+      "2026-11-08T00:00:00-08:00",
+      "2026-11-10T00:00:00-08:00",
+    ]);
+    expect(await range("Australia/Sydney", "2026-11-09T06:30:00Z")).toEqual([
+      "2026-11-09T00:00:00+11:00",
+      "2026-11-11T00:00:00+11:00",
+    ]);
+    // The day daylight time starts begins in standard time.
+    expect(await range("America/Los_Angeles", "2026-03-08T12:00:00Z")).toEqual([
+      "2026-03-08T00:00:00-08:00",
+      "2026-03-10T00:00:00-07:00",
     ]);
   });
 

@@ -44,6 +44,14 @@ import {
   artifactViewerExtension,
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
+import {
+  createRecipeClock,
+  currentDateExtension,
+  todayExtension,
+  wantsToday,
+  type RecipeClock,
+  type RecipeClockOptions,
+} from "./clock.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   activateRecipePython,
@@ -288,6 +296,12 @@ export interface CreateAgentSessionOptions {
   memoryOverride?: MemoryContextOverride;
   /** Append or transform host context after portable prompt resolution. */
   transformSystemPrompt?: (resolved: string) => string;
+  /**
+   * The person's time zone and locale, and the clock, behind the date every
+   * turn's prompt names, the `today` tool and the productivity tools' default
+   * ranges. Default: the host's time zone and locale and the system clock.
+   */
+  clock?: RecipeClockOptions;
   /** Observe Pi resource diagnostics during construction. */
   onDiagnostics?: (diagnostics: AgentSessionRuntimeDiagnostic[]) => void;
   /** Tap on `session.subscribe`, detached at dispose. */
@@ -697,6 +711,7 @@ async function createSessionForAgent(
 ): Promise<RecipeSessionHandle> {
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
+  const clock = createRecipeClock(opts.clock);
   const loadedMemory = opts.memory
     ? loadMemoryIndex({ ...opts.memory, cwd })
     : { memory: null, diagnostics: [] };
@@ -818,7 +833,8 @@ async function createSessionForAgent(
   try {
     // Recipe extensions load through the shared jiti loader; host extensions
     // append after them, matching the Pi extension host's ordering.
-    const inlineExtensions: InlineExtension[] = [];
+    // The date goes first, so a later handler that forces a prompt keeps it.
+    const inlineExtensions: InlineExtension[] = [currentDateExtension(clock)];
     const recipeRegistrations = createRecipeExtensionRegistrationRegistry();
     for (const toolName of [
       "read",
@@ -844,6 +860,7 @@ async function createSessionForAgent(
         cwd,
         python: python.packages,
         exposure,
+        clock,
         ...(recipe.wildcardTools
           ? { wildcardTools: recipe.wildcardTools }
           : {}),
@@ -925,7 +942,12 @@ async function createSessionForAgent(
     // The first-party ask_user_question tool loads after the Recipe's own
     // extensions, so a Recipe that still ships its own keeps it.
     inlineExtensions.push(
-      ...interactionToolExtensions(recipe.tools, recipeRegistrations, env),
+      ...interactionToolExtensions(
+        recipe.tools,
+        recipeRegistrations,
+        env,
+        clock,
+      ),
     );
     // Likewise the first-party artifact viewer (show_artifact and /recipe view).
     if (wantsArtifactViewer(recipe.tools)) {
@@ -1061,6 +1083,11 @@ async function createSessionForAgent(
             ...(opts.memoryOverride
               ? { memoryOverride: opts.memoryOverride }
               : {}),
+            clock: {
+              timeZone: clock.timeZone,
+              locale: clock.locale,
+              now: clock.now,
+            },
             ...(otel ? { otel } : {}),
           })
         : inertRunController();
@@ -1363,13 +1390,15 @@ function piMcpSessionTools(
   };
 }
 
-/** The first-party interaction tools the agent lists, after the Recipe's own extensions so a Recipe's own tool wins. */
+/** The first-party interaction tools and `today` the agent lists, after the Recipe's own extensions so a Recipe's own tool wins. */
 function interactionToolExtensions(
   tools: readonly string[],
   registrations: RecipeExtensionRegistrationRegistry,
   env: NodeJS.ProcessEnv | undefined,
+  clock: RecipeClock,
 ): ExtensionFactory[] {
   return [
+    ...(wantsToday(tools) ? [todayExtension(clock, registrations)] : []),
     ...(wantsAskUserQuestion(tools)
       ? [askUserQuestionExtension(registrations, env)]
       : []),

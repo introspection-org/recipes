@@ -22,6 +22,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
+import type { RecipeClockOptions } from "../../src/clock.js";
 import { createRecipesExtension } from "../../src/pi-extension.js";
 import { resolveRecipe } from "../../src/recipe/resolve.js";
 import {
@@ -213,6 +214,7 @@ export async function openRecipeSession(options: {
   extensionFactories?: ExtensionFactory[];
   /** The host's own tools, such as its own `bash`. */
   customTools?: ToolDefinition[];
+  clock?: RecipeClockOptions;
 }): Promise<RecipeSessionHandle> {
   useFauxModel(options.recipeDir);
   const { faux, credentials } = await scriptedFaux(options.responses ?? []);
@@ -227,6 +229,7 @@ export async function openRecipeSession(options: {
       ...(options.extensionFactories ?? []),
     ],
     ...(options.customTools ? { customTools: options.customTools } : {}),
+    ...(options.clock ? { clock: options.clock } : {}),
     ...(options.mcpProvisioning
       ? { mcpProvisioning: options.mcpProvisioning }
       : {

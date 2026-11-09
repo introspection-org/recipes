@@ -499,14 +499,14 @@ lists them in `tools`:
 | `show_artifact`      | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel).                                                                                                                                                                 |
 | `review_artifacts`   | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files).                                                                                                                      |
 | `introspection_open` | Asks the person to open an Introspection page (install GitHub or Slack, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, look at a Runtime or task) and, with `wait: true`, pauses until they are done. In Pi's terminal it runs the Introspection CLI's loopback; pause/resume hosts render a card. See [Interactions](interactions.md#the-built-in-introspection_open-tool). |
-| `introspection_open` | Asks the person to open an Introspection page (install GitHub or Slack, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, look at a Runtime or task) and, with `wait: true`, pauses until they are done. In Pi's terminal it runs the Introspection CLI's loopback; pause/resume hosts render a card. See [Interactions](interactions.md#the-built-in-introspection_open-tool). |
+| `today` | Returns the current date, weekday and time, with the time zone and its UTC offset: the person's, or, with `time_zone`, another zone's. It reads the session's clock (see [Current date](#current-date)). |
 
 ```yaml
 tools: [read, bash, ask_user_question, show_artifact]
 ```
 
-If a Recipe extension registers its own `ask_user_question`, the host keeps
-the Recipe's tool and does not register the built-in one. This exception to
+If a Recipe extension registers its own `ask_user_question` or `today`, the
+host keeps the Recipe's tool and does not register the built-in one. This exception to
 the rule below lets a Recipe migrate from its own question tool without a
 coordinated release; new Recipes list the built-in tool instead.
 
@@ -584,6 +584,16 @@ The rules are an `mcp` server's: `defer` is invalid in `codemode` and `cli`,
 `eager` in `cli`, and every `defer` or `eager` name must be one `include`
 selects. A child agent that declares `tools` replaces its parent's whole
 block, mode included, as one that declares `mcp` does.
+
+### Current date
+
+Every agent's prompt names the date, with no configuration: the day, the
+date, the time zone and its UTC offset, read from the session's clock in the
+person's time zone (the host's when the host does not give one) and formatted
+in their locale. It names the day but not the time, so the prompt stays the
+same all day and a cached prompt prefix stays valid; an agent that needs the
+time lists `today`, and the prompt then points at it. The productivity tools'
+`calendar list` reads its default range, today and tomorrow, in the same zone.
 
 ## Host responsibilities
 

@@ -119,6 +119,7 @@ const BUILTIN_TOOL_NAMES = [
   "show_artifact",
   "review_artifacts",
   "introspection_open",
+  "today",
 ] as const;
 
 /** Whether `pi.issues` leaves a provider, as `issuesProviderDeclarations` does: an undeclared fallback is implicit. */
