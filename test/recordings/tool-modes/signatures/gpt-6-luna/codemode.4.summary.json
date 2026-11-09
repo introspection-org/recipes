@@ -3,7 +3,7 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 3627,
+      "input_tokens": 3461,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
       "output_tokens": 47,
@@ -22,70 +22,57 @@
     {
       "input_tokens": 892,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 3624,
-      "output_tokens": 61,
+      "cache_read_input_tokens": 3458,
+      "output_tokens": 99,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "const r = await tools.calendar({command:\"list\",from:\"2025-02-03T00:00:00Z\",to:\"2025-02-04T00:00:00Z\",limit:100});\ntext(r)\n"
+          "input": "const r = await Promise.all([\n tools.mail({command:\"search\",query:\"Dana budget\",limit:10}),\n tools.drive({command:\"search\",query:\"budget spreadsheet\",limit:10}),\n tools.calendar({command:\"list\",from:\"2026-03-03T00:00:00Z\",to:\"2026-03-04T00:00:00Z\",limit:25})\n]); r.forEach(text);"
         }
       ]
     },
     {
-      "input_tokens": 95,
+      "input_tokens": 436,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4513,
-      "output_tokens": 54,
+      "cache_read_input_tokens": 4347,
+      "output_tokens": 87,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "const r = await Promise.all([\n tools.mail({command:\"search\",query:\"Dana budget\",limit:10}),\n tools.drive({command:\"search\",query:\"budget spreadsheet\",limit:10})\n]); text(r)\n"
+          "input": "const a=await Promise.all([\ntools.mail({command:\"read\",message:\"msg_ca3ab4897efe4ec3\"}),\ntools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\",limit:25})\n]);a.forEach(text);"
         }
       ]
     },
     {
-      "input_tokens": 418,
+      "input_tokens": 598,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4605,
-      "output_tokens": 89,
+      "cache_read_input_tokens": 4780,
+      "output_tokens": 92,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "const r=await Promise.all([\ntools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\",limit:100}),\ntools.mail({command:\"read\",message:\"msg_17e44e4a6fbf46f9\"})\n]); text(r)\n"
+          "input": "text(await tools.mail({command:\"draft\",reply_to:\"msg_ca3ab4897efe4ec3\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI'll bring the latest budget sheet to the meeting: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget).\\n\\nThanks,\\nSam\"}));"
         }
       ]
     },
     {
-      "input_tokens": 672,
+      "input_tokens": 185,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 5020,
-      "output_tokens": 95,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "codemode",
-          "input": "text(await tools.mail({command:\"draft\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI’ll bring the latest Q3 budget sheet to tomorrow’s planning review: https://docs.example.test/spreadsheets/d/f-budget\\n\\nBest,\\nSam\",reply_to:\"msg_17e44e4a6fbf46f9\"}))\n"
-        }
-      ]
-    },
-    {
-      "input_tokens": 194,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 5689,
-      "output_tokens": 104,
+      "cache_read_input_tokens": 5375,
+      "output_tokens": 117,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 6,
-    "tool_calls": 5,
-    "input_tokens": 5898,
+    "requests": 5,
+    "tool_calls": 4,
+    "input_tokens": 5572,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 23451,
-    "output_tokens": 450
+    "cache_read_input_tokens": 17960,
+    "output_tokens": 442
   }
 }

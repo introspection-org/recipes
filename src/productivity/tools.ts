@@ -1000,6 +1000,9 @@ export function registerProductivityTools(
     if (!commands || commands.length === 0) continue;
     const toolCapabilities = options.capabilities[tool]?.commands as
       Partial<Record<string, ProductivityCommandCapability>> | undefined;
+    // Codemode renders each command's arguments as a TypeScript type, which
+    // already says what each takes; the signature would say it twice.
+    const scripted = options.exposure?.(tool) === "codemode";
     const variants = commands.map((command) => {
       const definition = (
         definitions[tool] as Record<string, CommandDefinition>
@@ -1017,7 +1020,7 @@ export function registerProductivityTools(
         .join(" ");
       const schema = withWords(definition.parameters, words);
       return {
-        line: `${commandSignature(command, schema)}: ${description}`,
+        line: `${scripted ? command : commandSignature(command, schema)}: ${description}`,
         schema: commandVariant(command, schema, description),
       };
     });

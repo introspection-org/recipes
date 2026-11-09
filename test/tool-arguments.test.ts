@@ -122,6 +122,25 @@ describe("first-party tool arguments", () => {
     );
   });
 
+  it("leave the signature out in codemode, whose TypeScript type carries it", () => {
+    const pi = createMockExtensionAPI();
+    registerProductivityTools(pi as never, {
+      provider: "fake",
+      capabilities: everyCommand({ labels: "labels", folders: "labels" }),
+      tools: { mail: PRODUCTIVITY_COMMANDS.mail },
+      exposure: () => "codemode",
+      cwd: "/nonexistent",
+      downloadsDir: "/nonexistent",
+      session: () => {
+        throw new Error("not called");
+      },
+    });
+    const description = (pi.tools.get("mail") as unknown as RegisteredTool)
+      .description;
+    expect(description).toMatch(/^draft: /m);
+    expect(description).not.toMatch(/^draft \{/m);
+  });
+
   it("lead each channels command's description line with its signature", () => {
     const implemented = async () => ({}) as never;
     const adapter = {

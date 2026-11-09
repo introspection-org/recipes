@@ -4,7 +4,7 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 5913,
+      "cache_creation_input_tokens": 5649,
       "cache_read_input_tokens": 0,
       "output_tokens": 129,
       "stop_reason": "tool_use",
@@ -22,38 +22,38 @@
     {
       "input_tokens": 2,
       "cache_creation_input_tokens": 1319,
-      "cache_read_input_tokens": 5913,
-      "output_tokens": 144,
+      "cache_read_input_tokens": 5649,
+      "output_tokens": 141,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "codemode",
           "input": {
-            "code": "const m=await tools.mail({command:\"search\",query:\"budget\",from:\"Dana\",limit:5});\nconst d=await tools.drive({command:\"search\",query:\"budget\",limit:10});\nreturn m+\"\\n----\\n\"+d;"
+            "code": "const m=await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:5});\nconst d=await tools.drive({command:\"search\",query:\"budget\"});\nreturn m+\"\\n----\\n\"+d;"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 582,
-      "cache_read_input_tokens": 7232,
-      "output_tokens": 307,
+      "cache_creation_input_tokens": 578,
+      "cache_read_input_tokens": 6968,
+      "output_tokens": 304,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "codemode",
           "input": {
-            "code": "const c=await tools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\"});\nconst dr=await tools.mail({command:\"draft\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",reply_to:\"msg_6800b98c356d40a0\",body:\"Hi Dana,\\n\\nYes, I'll bring the latest budget sheet to the meeting. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\\n\\nSee you there,\\nSam\"});\nreturn c+\"\\n---\\n\"+dr;"
+            "code": "const c=await tools.calendar({command:\"list\",from:\"2026-11-10T00:00:00Z\",to:\"2026-11-11T00:00:00Z\"});\nconst r=await tools.mail({command:\"draft\",reply_to:\"msg_b4a9db360bfc4ef5\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nYes, I'll bring the latest budget sheet to the review tomorrow. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\\n\\nSam\"});\nreturn c+\"\\n---\\n\"+r;"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 736,
-      "cache_read_input_tokens": 7814,
-      "output_tokens": 323,
+      "cache_creation_input_tokens": 727,
+      "cache_read_input_tokens": 7546,
+      "output_tokens": 312,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
@@ -62,8 +62,8 @@
     "requests": 4,
     "tool_calls": 3,
     "input_tokens": 10,
-    "cache_creation_input_tokens": 8550,
-    "cache_read_input_tokens": 20959,
-    "output_tokens": 903
+    "cache_creation_input_tokens": 8273,
+    "cache_read_input_tokens": 20163,
+    "output_tokens": 886
   }
 }
