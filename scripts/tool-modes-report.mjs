@@ -289,7 +289,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
-      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}, ${fmt(r.errors, r.errors % 1 ? 1 : 0)} rejected calls per run</title></rect>\n`;
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
       if (r.failed) {
@@ -374,6 +374,7 @@ function frontierPoints(set, effort) {
         name,
         effort,
         mode: best.label,
+        row: best.row,
         cost: best.row.costPerTask,
         score,
         color: COLORS[i],
@@ -384,7 +385,7 @@ function frontierPoints(set, effort) {
 
 /** A point linking to the model's page, with a hover title as the index's own chart has. */
 const dot = (p, cx, cy, r = 7) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>\n`;
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>\n`;
 
 function intelligence(efforts) {
   const many = efforts.length > 1;
@@ -543,19 +544,9 @@ if (EFFORTS.filter(([set]) => table[set]).length > 1) {
   );
 }
 // Index scores aren't ours to commit; with a lookup file, the chart is drawn beside it.
-if (process.env.INTELLIGENCE_JSON)
+if (lookup)
   writeFileSync(
     process.env.INTELLIGENCE_JSON.replace(/\.json$/, ".svg"),
-    intelligence(["low"]),
+    intelligence(["low", "medium", "high"]),
   );
-if (lookup)
-  for (const [file, efforts] of [
-    ["intelligence-medium", ["medium"]],
-    ["intelligence-high", ["high"]],
-    ["intelligence-effort", ["low", "medium", "high"]],
-  ])
-    writeFileSync(
-      join(dirname(process.env.INTELLIGENCE_JSON), `${file}.svg`),
-      intelligence(efforts),
-    );
 console.log(`report.md, cost.svg and time.svg from the ${newest} set`);
