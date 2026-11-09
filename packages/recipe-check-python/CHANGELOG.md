@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.24.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.23.0...introspection-recipe-check-python-v0.24.0) (2026-11-09)
+
+
+### Features
+
+* **recipe-check:** accept a committed .pi/api.local.json only as an evaluation binding ([#495](https://github.com/introspection-org/recipes/issues/495)) ([d812086](https://github.com/introspection-org/recipes/commit/d81208647d47deb9780ad7f20a4ccb0c8c464f78))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.23.0 to 0.24.0
+
 ## [0.23.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.22.0...introspection-recipe-check-python-v0.23.0) (2026-11-08)
 
 
