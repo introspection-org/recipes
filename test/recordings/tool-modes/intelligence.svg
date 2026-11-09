@@ -37,9 +37,9 @@
 <circle cx="189.74208376786868" cy="326.2857142857143" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
 Passed in tools: 5/5
+Time per task: 9.3s
 Cost per task: $0.00169
 Intelligence Index: 19
-Time per task: 9.3s
 Input tokens: 30,987
 Cached: 83%
 Output tokens: 1,605
@@ -47,9 +47,9 @@ Click for more info</title><circle cx="269.69697034226954" cy="286.9428571428572
 <text x="269.69697034226954" y="290.4428571428572" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · codemode
 Passed in codemode: 3/3
+Time per task: 8.0s
 Cost per task: $0.0235
 Intelligence Index: 26
-Time per task: 8.0s
 Input tokens: 28,464
 Cached: 83%
 Output tokens: 888
@@ -57,9 +57,9 @@ Click for more info</title><circle cx="455.3238492204284" cy="256.34285714285716
 <text x="455.3238492204284" y="259.84285714285716" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools
 Passed in tools: 3/3
+Time per task: 11.9s
 Cost per task: $0.0434
 Intelligence Index: 35
-Time per task: 11.9s
 Input tokens: 18,801
 Cached: 78%
 Output tokens: 1,051
@@ -68,9 +68,9 @@ Click for more info</title><circle cx="498.6477801760556" cy="217" r="7" fill="#
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · codemode
 Recommended
 Passed in codemode: 5/5
+Time per task: 7.7s
 Cost per task: $0.000546
 Intelligence Index: 10
-Time per task: 7.7s
 Input tokens: 23,303
 Cached: 77%
 Output tokens: 411
@@ -79,9 +79,9 @@ Click for more info</title><circle cx="189.74208376786868" cy="326.2857142857143
 <text x="189.74208376786868" y="329.7857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
 Passed in tools: 3/3
+Time per task: 10.2s
 Cost per task: $0.0220
 Intelligence Index: 35
-Time per task: 10.2s
 Input tokens: 28,868
 Cached: 72%
 Output tokens: 363
@@ -90,9 +90,9 @@ Click for more info</title><circle cx="450.6555537064233" cy="217" r="7" fill="#
 <text x="450.6555537064233" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
 Passed in tools: 3/3
+Time per task: 14.1s
 Cost per task: $0.107
 Intelligence Index: 43
-Time per task: 14.1s
 Input tokens: 29,295
 Cached: 78%
 Output tokens: 382
@@ -101,9 +101,9 @@ Click for more info</title><circle cx="562.4132356019898" cy="182.0285714285714"
 <text x="562.4132356019898" y="185.5285714285714" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (medium) · cli
 Passed in cli: 3/3
+Time per task: 10.4s
 Cost per task: $0.00195
 Intelligence Index: 25
-Time per task: 10.4s
 Input tokens: 32,136
 Cached: 78%
 Output tokens: 1,591
@@ -111,9 +111,9 @@ Click for more info</title><circle cx="279.49761703922184" cy="260.7142857142857
 <text x="279.49761703922184" y="264.2142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">M</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (medium) · tools
 Passed in tools: 1/1
+Time per task: 9.0s
 Cost per task: $0.0308
 Intelligence Index: 31
-Time per task: 9.0s
 Input tokens: 25,097
 Cached: 70%
 Output tokens: 1,033
@@ -121,9 +121,9 @@ Click for more info</title><circle cx="474.4799408375406" cy="234.4857142857143"
 <text x="474.4799408375406" y="237.9857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (medium) · tools
 Passed in tools: 3/3
+Time per task: 15.1s
 Cost per task: $0.0643
 Intelligence Index: 48
-Time per task: 15.1s
 Input tokens: 32,552
 Cached: 80%
 Output tokens: 1,304
@@ -131,9 +131,9 @@ Click for more info</title><circle cx="526.3011291214268" cy="160.17142857142858
 <text x="526.3011291214268" y="163.67142857142858" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (medium) · cli
 Passed in cli: 3/3
+Time per task: 20.3s
 Cost per task: $0.000578
 Intelligence Index: 18
-Time per task: 20.3s
 Input tokens: 23,763
 Cached: 75%
 Output tokens: 987
@@ -141,9 +141,9 @@ Click for more info</title><circle cx="193.80106285078728" cy="291.3142857142857
 <text x="193.80106285078728" y="294.8142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">M</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (medium) · tools
 Passed in tools: 3/3
+Time per task: 14.0s
 Cost per task: $0.0208
 Intelligence Index: 46
-Time per task: 14.0s
 Input tokens: 29,595
 Cached: 77%
 Output tokens: 496
@@ -151,9 +151,9 @@ Click for more info</title><circle cx="446.65610673705237" cy="168.9142857142857
 <text x="446.65610673705237" y="172.4142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (medium) · tools
 Passed in tools: 1/1
+Time per task: 21.6s
 Cost per task: $0.153
 Intelligence Index: 52
-Time per task: 21.6s
 Input tokens: 28,183
 Cached: 59%
 Output tokens: 428
@@ -162,9 +162,9 @@ Click for more info</title><circle cx="587.3470327616604" cy="142.68571428571428
 <text x="587.3470327616604" y="146.18571428571428" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (high) · tools
 Passed in tools: 3/3
+Time per task: 11.3s
 Cost per task: $0.00193
 Intelligence Index: 30
-Time per task: 11.3s
 Input tokens: 33,725
 Cached: 83%
 Output tokens: 1,854
@@ -172,9 +172,9 @@ Click for more info</title><circle cx="278.9868106481182" cy="238.85714285714286
 <text x="278.9868106481182" y="242.35714285714286" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">H</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (high) · tools
 Passed in tools: 1/1
+Time per task: 12.1s
 Cost per task: $0.0349
 Intelligence Index: 42
-Time per task: 12.1s
 Input tokens: 32,579
 Cached: 76%
 Output tokens: 1,258
@@ -182,9 +182,9 @@ Click for more info</title><circle cx="483.1749493568962" cy="186.4" r="7" fill=
 <text x="483.1749493568962" y="189.9" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (high) · codemode
 Passed in codemode: 1/1
+Time per task: 14.8s
 Cost per task: $0.0549
 Intelligence Index: 52
-Time per task: 14.8s
 Input tokens: 38,472
 Cached: 89%
 Output tokens: 1,364
@@ -192,9 +192,9 @@ Click for more info</title><circle cx="515.2380719936262" cy="142.68571428571428
 <text x="515.2380719936262" y="146.18571428571428" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (high) · codemode
 Passed in codemode: 3/3
+Time per task: 23.3s
 Cost per task: $0.000665
 Intelligence Index: 21
-Time per task: 23.3s
 Input tokens: 27,578
 Cached: 76%
 Output tokens: 1,239
@@ -202,9 +202,9 @@ Click for more info</title><circle cx="203.72620257756168" cy="278.2" r="7" fill
 <text x="203.72620257756168" y="281.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">H</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (high) · codemode
 Passed in codemode: 1/1
+Time per task: 14.5s
 Cost per task: $0.0259
 Intelligence Index: 50
-Time per task: 14.5s
 Input tokens: 40,500
 Cached: 79%
 Output tokens: 544
@@ -212,9 +212,9 @@ Click for more info</title><circle cx="462.2292993224253" cy="151.42857142857142
 <text x="462.2292993224253" y="154.92857142857142" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (high) · codemode
 Passed in codemode: 1/1
+Time per task: 16.2s
 Cost per task: $0.172
 Intelligence Index: 55
-Time per task: 16.2s
 Input tokens: 38,134
 Cached: 69%
 Output tokens: 569
