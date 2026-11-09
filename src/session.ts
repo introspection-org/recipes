@@ -1402,10 +1402,16 @@ async function sessionBash(
     recipe.toolPolicy?.mode === "cli" && firstParty.length > 0
       ? join(options.binRoot, ".pi", "tools", "bin")
       : undefined;
+  const hostBash = options.customTools.some((tool) => tool.name === "bash");
+  // The host's bash may run where the `tools` shim and socket are not.
+  if (toolsBinDir && hostBash && options.tools.includes("bash"))
+    throw new Error(
+      `Recipe agent "${recipe.name}" sets tools.mode cli, which runs the tools command in the session's bash, but the host supplies its own bash; use tools.mode tools or codemode`,
+    );
   if (
     !(mcpShellEnv || pythonActivation || toolsBinDir) ||
     !options.tools.includes("bash") ||
-    options.customTools.some((tool) => tool.name === "bash")
+    hostBash
   )
     return undefined;
   if (toolsBinDir) await materializeToolsShim(toolsBinDir);

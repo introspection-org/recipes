@@ -2,6 +2,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import {
+  createBashToolDefinition,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import {
   fauxAssistantMessage,
   fauxToolCall,
   type FauxResponseStep,
@@ -293,6 +297,24 @@ describe("first-party tools by tools.mode", () => {
       expect(output).toContain("acme:A-1");
       expect(prompt).toContain("reach them from bash with the `tools` command");
     });
+
+  it("refuses cli when the host supplies its own bash", async () => {
+    const fixture = issuesRecipe([
+      "tools:",
+      "  mode: cli",
+      "  include: [read, bash, issues]",
+    ]);
+    cleanups.push(fixture.cleanup);
+    await expect(
+      openRecipeSession({
+        ...fixture,
+        bindings: [],
+        customTools: [
+          createBashToolDefinition(fixture.workspaceDir) as ToolDefinition,
+        ],
+      }),
+    ).rejects.toThrow("the host supplies its own bash");
+  });
 
   it("leaves out a tool * selects that the host does not offer", async () => {
     let tools: string[] = [];

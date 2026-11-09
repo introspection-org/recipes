@@ -19,6 +19,7 @@ import {
   SettingsManager,
   type AgentSession,
   type ExtensionFactory,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 import { createRecipesExtension } from "../../src/pi-extension.js";
@@ -210,6 +211,8 @@ export async function openRecipeSession(options: {
   mcpProvisioning?: "host";
   /** The host's own extensions, such as one registering `web_search`. */
   extensionFactories?: ExtensionFactory[];
+  /** The host's own tools, such as its own `bash`. */
+  customTools?: ToolDefinition[];
 }): Promise<RecipeSessionHandle> {
   useFauxModel(options.recipeDir);
   const { faux, credentials } = await scriptedFaux(options.responses ?? []);
@@ -223,6 +226,7 @@ export async function openRecipeSession(options: {
       (pi) => pi.registerProvider(faux.provider),
       ...(options.extensionFactories ?? []),
     ],
+    ...(options.customTools ? { customTools: options.customTools } : {}),
     ...(options.mcpProvisioning
       ? { mcpProvisioning: options.mcpProvisioning }
       : {
