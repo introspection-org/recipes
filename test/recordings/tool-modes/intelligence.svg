@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <rect width="760" height="440" fill="#faf9f5"/>
 <text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task</text>
+<g transform="translate(618 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="642" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>
 <text x="16" y="46" font-size="12" fill="#5e5d59">Artificial Analysis Intelligence Index v5.0.1 at low effort, the effort the runs used; each model at its cheapest mode that passed every run</text>
 <line x1="70" y1="370" x2="720" y2="370" stroke="#e8e6dc"/><text x="62" y="374" font-size="10" text-anchor="end" fill="#5e5d59">0</text>
 <line x1="70" y1="319" x2="720" y2="319" stroke="#e8e6dc"/><text x="62" y="323" font-size="10" text-anchor="end" fill="#5e5d59">10</text>
@@ -36,8 +37,8 @@
 <text x="199.83602273723199" y="323" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna · cli · $0.000539</text>
 <text x="461.6555537064233" y="211.5" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol · tools · $0.0220</text>
 <text x="573.4132356019898" y="154.7" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra · tools · $0.107</text>
-<g transform="translate(570 94) scale(0.34)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="592" y="108" font-size="13" font-family="Georgia, serif" fill="#5e5d59">Artificial Analysis</text>
 <text x="70" y="406" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>
-<text x="70" y="424" font-size="11" fill="#5e5d59">Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>
+<text x="70" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>
+<g transform="translate(596.6 413) scale(0.24)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="720" y="424" font-size="12" font-family="Georgia, serif" text-anchor="end" fill="#5e5d59">Artificial Analysis</text>
 <text transform="translate(20 217) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index (low effort)</text>
 </svg>

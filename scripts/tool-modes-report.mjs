@@ -145,6 +145,12 @@ for (const set of SETS)
       if (list.length)
         (table[set] ??= {})[`${id}|${mode}`] = row(id, provider, list);
 
+/** Introspection's mark and name, at the top right of a chart `width` wide. */
+function brand(width) {
+  const x0 = width - 142;
+  return `<g transform="translate(${x0} 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="${x0 + 24}" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>\n`;
+}
+
 /** Dollars to three significant figures, so a fraction of a cent still reads. */
 const usd = (n) =>
   `$${n >= 1 ? fmt(n, 2) : n.toFixed(Math.max(2, 2 - Math.floor(Math.log10(n))))}`;
@@ -197,6 +203,7 @@ function chart(set, value, title, unit, digits, log = false) {
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
   svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">${esc(title)}</text>\n`;
+  svg += brand(W);
   let lx = 16;
   present.forEach(([, name], i) => {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
@@ -303,6 +310,7 @@ function intelligence(set) {
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
   svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task</text>\n`;
+  svg += brand(W);
   svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} at low effort, the effort the runs used; each model at its cheapest mode that passed every run</text>\n`;
   for (let v = 0; v <= yMax; v += 10) {
     svg += `<line x1="${left}" y1="${y(v)}" x2="${W - right}" y2="${y(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
@@ -353,16 +361,20 @@ function intelligence(set) {
     svg += `<text x="${x(point.cost) + 11}" y="${y(point.score) + point.dy}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(point.name)} · ${esc(point.mode)} · ${usd(point.cost)}</text>\n`;
   }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
+  svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
+  // The credit line names the index's source; its logo and name, when given,
+  // close the line on the right. Only the logo file's shapes are kept.
+  svg += `<text x="${left}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
   if (lookup.logo) {
     const paths =
       readFileSync(
         join(dirname(process.env.INTELLIGENCE_JSON), lookup.logo),
         "utf8",
       ).match(/<path\b[^>]*\/>/g) ?? [];
-    svg += `<g transform="translate(${W - right - 150} ${top + 30}) scale(0.34)">${paths.join("")}</g><text x="${W - right - 128}" y="${top + 44}" font-size="13" font-family="Georgia, serif" fill="#5e5d59">${esc(lookup.credit ?? "")}</text>\n`;
+    const name = lookup.credit ?? "";
+    const x0 = W - right - 17 - name.length * 5.6;
+    svg += `<g transform="translate(${x0} ${H - 27}) scale(0.24)">${paths.join("")}</g><text x="${W - right}" y="${H - 16}" font-size="12" font-family="Georgia, serif" text-anchor="end" fill="#5e5d59">${esc(name)}</text>\n`;
   }
-  svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
-  svg += `<text x="${left}" y="${H - 16}" font-size="11" fill="#5e5d59">Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
   svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index (low effort)</text>\n`;
   return `${svg}</svg>\n`;
 }
