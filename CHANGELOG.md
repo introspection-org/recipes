@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.52.0](https://github.com/introspection-org/recipes/compare/v0.51.0...v0.52.0) (2026-11-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** the mcp command's connections run on pi-mcp, with mcporter as the way back ([#376](https://github.com/introspection-org/recipes/issues/376))
+
+### Features
+
+* **agents:** an agent's tools block chooses how first-party tools reach the model, with an MCP server's selectors ([#481](https://github.com/introspection-org/recipes/issues/481)) ([afefae4](https://github.com/introspection-org/recipes/commit/afefae4bbef05ed59c219e6a6cd04c0f5fa2fbe7))
+* bind a Recipe's vendor API hosts with .pi/api.local.json ([#496](https://github.com/introspection-org/recipes/issues/496)) ([2479127](https://github.com/introspection-org/recipes/commit/24791277dd22f4fe200cecd8dd6da2f71377426c))
+* **documents:** an html format that reads a page as markdown and renders it and its charts to images ([#490](https://github.com/introspection-org/recipes/issues/490)) ([0b4cfda](https://github.com/introspection-org/recipes/commit/0b4cfda8ee1bdbeda1e2df14f3bb3c1b493e325b))
+* **issues:** one issues tool across Linear, Jira and Introspection, in @introspection-ai/recipe-issues ([#479](https://github.com/introspection-org/recipes/issues/479)) ([2f9f6cb](https://github.com/introspection-org/recipes/commit/2f9f6cbd7c7e20cc4cf5bafa923cafbbb83661a9))
+* **mcp:** the mcp command's connections run on pi-mcp, with mcporter as the way back ([#376](https://github.com/introspection-org/recipes/issues/376)) ([571a684](https://github.com/introspection-org/recipes/commit/571a6849bc766582d870a81dbc28ad16a2048638))
+* **providers:** one loader for search and productivity providers, with a Recipe's own by package or module ([#478](https://github.com/introspection-org/recipes/issues/478)) ([76714fb](https://github.com/introspection-org/recipes/commit/76714fb608a9fac4ddecae307f72c39d989b030e))
+* **session:** every agent knows the current date and the person's timezone ([#494](https://github.com/introspection-org/recipes/issues/494)) ([ba7ef7b](https://github.com/introspection-org/recipes/commit/ba7ef7b0189fca801504d80d0baf5a1f4e17a533))
+
+
+### Bug Fixes
+
+* **documents:** the html render expands every toggle, accordions included, and skips a hidden chart instead of timing out ([#492](https://github.com/introspection-org/recipes/issues/492)) ([0c850dd](https://github.com/introspection-org/recipes/commit/0c850ddc76617d9e9c65a482a8354020963ff862))
+* **scripts:** the intelligence charts' legend columns start at the quadrant's gridlines ([#491](https://github.com/introspection-org/recipes/issues/491)) ([cc38deb](https://github.com/introspection-org/recipes/commit/cc38debc7b646930bcc693a1d7bfac37f7c59549))
+
 ## [0.51.0](https://github.com/introspection-org/recipes/compare/v0.50.0...v0.51.0) (2026-11-08)
 
 

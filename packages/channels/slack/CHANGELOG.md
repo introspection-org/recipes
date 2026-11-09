@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.7.0...recipe-channel-slack-v0.8.0) (2026-11-09)
+
+
+### Features
+
+* bind a Recipe's vendor API hosts with .pi/api.local.json ([#496](https://github.com/introspection-org/recipes/issues/496)) ([2479127](https://github.com/introspection-org/recipes/commit/24791277dd22f4fe200cecd8dd6da2f71377426c))
+
 ## [0.7.0](https://github.com/introspection-org/recipes/compare/recipe-channel-slack-v0.6.0...recipe-channel-slack-v0.7.0) (2026-11-03)
 
 

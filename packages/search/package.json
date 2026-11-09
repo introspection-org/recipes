@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-search",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tavily, Exa, Brave, Keenable, Parallel and Perplexity search providers for the Introspection Recipes web_search tool.",
   "license": "Apache-2.0",
   "type": "module",
