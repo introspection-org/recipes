@@ -10,7 +10,7 @@
 <rect x="348.2" y="38" width="10" height="10" rx="2" fill="#77756e" stroke="#0000001f"/><text x="362.2" y="47" font-size="12" fill="#5e5d59">gpt-6.1-sol</text>
 <rect x="442.79999999999995" y="38" width="10" height="10" rx="2" fill="#141413" stroke="#0000001f"/><text x="456.79999999999995" y="47" font-size="12" fill="#5e5d59">gpt-6-astra</text>
 <rect x="537.4" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="551.4" y="47" font-size="12" fill="#5e5d59">cheapest</text>
-<rect x="612.1999999999999" y="41.5" width="10" height="3" rx="1.5" fill="#b3261e"/><text x="626.1999999999999" y="47" font-size="12" fill="#5e5d59">errors</text>
+<rect x="612.1999999999999" y="41.5" width="10" height="3" rx="1.5" fill="#b3261e"/><text x="626.1999999999999" y="47" font-size="12" fill="#5e5d59">failed</text>
 <line x1="120" y1="58" x2="120" y2="518" stroke="#e8e6dc"/><text x="120" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0001</text>
 <line x1="173.67614115596206" y1="58" x2="173.67614115596206" y2="518" stroke="#e8e6dc"/><text x="173.67614115596206" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0003</text>
 <line x1="232.5" y1="58" x2="232.5" y2="518" stroke="#e8e6dc"/><text x="232.5" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">$0.001</text>
@@ -42,8 +42,8 @@
 <rect x="120" y="208" width="317.95975756048375" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
 <text x="443.95975756048375" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0670</text>
 <rect x="120" y="224" width="121.6418481495839" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
-<rect x="122" y="229.5" width="23.528369629916778" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
-<text x="247.6418481495839" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.00121 · 4/5 drafted</text>
+<rect x="122" y="229.5" width="23.528369629916778" height="3" rx="1.5" fill="#b3261e"/>
+<text x="247.6418481495839" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.00121 · 1/5 runs failed</text>
 <rect x="120" y="240" width="281.47550130165683" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="407.47550130165683" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0318</text>
 <rect x="120" y="256" width="365.3828206329672" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
@@ -72,10 +72,10 @@
 <rect x="120" y="448" width="82.27109266423753" height="14" rx="3" fill="url(#win-light)"/>
 <text x="208.27109266423753" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000539</text>
 <rect x="120" y="464" width="256.7006806645761" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
-<rect x="122" y="469.5" width="84.23356022152537" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
-<text x="382.7006806645761" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.0191 · 0.7 errors/run</text>
+<rect x="122" y="469.5" width="84.23356022152537" height="3" rx="1.5" fill="#b3261e"/>
+<text x="382.7006806645761" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.0191 · 1/3 runs failed</text>
 <rect x="120" y="480" width="347.57842959670256" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
-<rect x="122" y="485.5" width="343.57842959670256" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
-<text x="473.57842959670256" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.123 · 2.0 errors/run</text>
+<rect x="122" y="485.5" width="343.57842959670256" height="3" rx="1.5" fill="#b3261e"/>
+<text x="473.57842959670256" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.123 · 3/3 runs failed</text>
 <text x="120" y="552" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better</text>
 </svg>
