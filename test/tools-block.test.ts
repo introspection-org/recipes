@@ -213,7 +213,11 @@ describe("first-party tools by tools.mode", () => {
   async function run(
     toolsBlock: string[],
     responses: FauxResponseStep[],
-    host: { search?: boolean; webSearch?: boolean } = {},
+    host: {
+      search?: boolean;
+      webSearch?: boolean;
+      customWebSearch?: boolean;
+    } = {},
   ) {
     const fixture = issuesRecipe(
       toolsBlock,
@@ -225,9 +229,11 @@ describe("first-party tools by tools.mode", () => {
       responses,
       bindings: [],
       ...(host.webSearch ? { extensionFactories: [webSearchExtension] } : {}),
+      ...(host.customWebSearch ? { customTools: [webSearchDefinition()] } : {}),
     });
     handles.push(handle);
     await handle.session.prompt("go");
+    return handle;
   }
 
   it("declares the tool in tools mode, with no codemode", async () => {
@@ -400,6 +406,35 @@ describe("first-party tools by tools.mode", () => {
     expect(tools).toContain("tool_search");
   });
 
+  it("defers a web_search the host supplies as a custom tool, which tool search finds", async () => {
+    let tools: string[] = [];
+    let found = "";
+    const handle = await run(
+      ["tools:", "  include: [read, web_search]", "  defer: [web_search]"],
+      [
+        (context) => {
+          tools = declared(context);
+          return fauxAssistantMessage(
+            [fauxToolCall("tool_search", { query: "web_search" })],
+            { stopReason: "toolUse" },
+          );
+        },
+        (context) => {
+          found = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { customWebSearch: true },
+    );
+    expect(tools).not.toContain("web_search");
+    expect(tools).toContain("tool_search");
+    expect(
+      handle.session.getAllTools().find((tool) => tool.name === "web_search")
+        ?.exposure,
+    ).toBe("deferred");
+    expect(found).toContain("web_search");
+  });
+
   it("serves a host's web_search to bash's tools command in cli", async () => {
     let tools: string[] = [];
     let output = "";
@@ -443,6 +478,17 @@ function webSearchExtension(pi: Parameters<typeof registerWebSearchTool>[0]) {
       text: async () => JSON.stringify(BRAVE_ANSWER),
     }),
   });
+}
+
+/** The `web_search` definition a host passes as a custom tool, with no exposure of its own. */
+function webSearchDefinition(): ToolDefinition {
+  let definition: ToolDefinition | undefined;
+  webSearchExtension({
+    registerTool: (tool: ToolDefinition) => {
+      definition = tool;
+    },
+  } as unknown as Parameters<typeof registerWebSearchTool>[0]);
+  return definition!;
 }
 
 const BRAVE_ANSWER = {

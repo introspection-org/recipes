@@ -94,17 +94,18 @@ export function withToolExposure(
           if (property !== "registerTool" || typeof value !== "function") {
             return typeof value === "function" ? value.bind(target) : value;
           }
-          return (definition: ToolDefinition, ...rest: unknown[]) => {
-            const chosen = definition.exposure ?? exposure(definition.name);
-            return value.call(
-              target,
-              definition.exposure === undefined && chosen !== "direct"
-                ? { ...definition, exposure: chosen }
-                : definition,
-              ...rest,
-            );
-          };
+          return (definition: ToolDefinition, ...rest: unknown[]) =>
+            value.call(target, withExposure(definition, exposure), ...rest);
         },
       }),
     );
+}
+
+/** A tool definition that sets no `exposure`, given the one `exposure` chooses; see {@link withToolExposure}. */
+export function withExposure<
+  T extends Pick<ToolDefinition, "name" | "exposure">,
+>(definition: T, exposure: (name: string) => RecipeToolExposure): T {
+  if (definition.exposure !== undefined) return definition;
+  const chosen = exposure(definition.name);
+  return chosen === "direct" ? definition : { ...definition, exposure: chosen };
 }

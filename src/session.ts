@@ -92,6 +92,7 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  withExposure,
   withToolExposure,
 } from "./tool-search.js";
 import {
@@ -1145,7 +1146,7 @@ async function createSessionForAgent(
     });
     const customTools = [
       ...(environmentBash ? [environmentBash] : []),
-      ...(opts.customTools ?? []),
+      ...(opts.customTools ?? []).map((tool) => withExposure(tool, exposure)),
       ...(wantsSubagents
         ? [createAgentTool(agentRuns, recipe.subagents, opts.agentToolOptions)]
         : []),
