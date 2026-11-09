@@ -201,9 +201,9 @@ const light = (hex) => {
 
 /**
  * Grouped horizontal bars, one bar per model, on one scale for every model.
- * `groups` is `[{ label, bars: [{ id, row, note? }] }]`. Each group's winner
- * (the lowest `value` among bars whose every run passed) is hatched over its
- * own colour. On a log scale a bar starts at the axis's first decade.
+ * `groups` is `[{ label, bars: [{ id, row, note? }] }]`. The chart's winner,
+ * the lowest `value` among every bar whose runs all passed, is hatched over
+ * its own colour. On a log scale a bar starts at the axis's first decade.
  */
 function chart(groups, value, title, unit, digits, log = false) {
   const W = 760;
@@ -241,7 +241,7 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 26 + name.length * 7;
   });
-  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-dark)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"} that passed</text>\n`;
+  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-dark)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"} overall that passed</text>\n`;
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
     ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
@@ -270,12 +270,14 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 46}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 32}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
   }
   svg += `<line x1="${left}" y1="${H - 46}" x2="${W - right}" y2="${H - 46}" stroke="#b0aea5"/>\n`;
+  // One winner for the whole chart: the lowest value among bars whose every run passed.
+  const winner = groups
+    .flatMap((g) => g.bars)
+    .filter((b) => passed(b.row))
+    .reduce((a, b) => (!a || b.row[value] < a.row[value] ? b : a), null);
   groups.forEach((group, g) => {
     const gy = top + g * (groupH + groupGap);
     svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#141413">${esc(group.label)}</text>\n`;
-    const winner = group.bars
-      .filter((b) => passed(b.row))
-      .reduce((a, b) => (!a || b.row[value] < a.row[value] ? b : a), null);
     present.forEach(([id], i) => {
       const bar = group.bars.find((b) => b.id === id);
       if (!bar) return;
