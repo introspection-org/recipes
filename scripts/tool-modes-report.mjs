@@ -201,9 +201,8 @@ const light = (hex) => {
 
 /**
  * Grouped horizontal bars, one bar per model, on one scale for every model.
- * `groups` is `[{ label, bars: [{ id, row, note? }] }]`. The chart's winner,
- * the lowest `value` among every bar whose runs all passed, is hatched over
- * its own colour. On a log scale a bar starts at the axis's first decade.
+ * `groups` is `[{ label, bars: [{ id, row, note? }] }]`. The winning group,
+ * closest on average to each model's own best, is hatched over its colours. On a log scale a bar starts at the axis's first decade.
  */
 function chart(groups, value, title, unit, digits, log = false) {
   const W = 760;
@@ -217,7 +216,7 @@ function chart(groups, value, title, unit, digits, log = false) {
     groups.some((g) => g.bars.some((b) => b.id === id)),
   );
   const groupH = present.length * (barH + gap) - gap;
-  const H = top + groups.length * (groupH + groupGap) + 52;
+  const H = top + groups.length * (groupH + groupGap) + 68;
   const values = groups.flatMap((g) => g.bars.map((b) => b.row[value]));
   const max = Math.max(...values);
   const lo = Math.floor(Math.log10(Math.min(...values)));
@@ -241,7 +240,7 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 26 + name.length * 7;
   });
-  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-dark)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"} overall that passed</text>\n`;
+  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-dark)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">best group</text>\n`;
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
     ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
@@ -267,17 +266,34 @@ function chart(groups, value, title, unit, digits, log = false) {
       : `${fmt(v, v % 1 ? 1 : 0)}${unit}`;
   for (const v of ticks) {
     const gx = x(v);
-    svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 46}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 32}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
+    svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 62}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 48}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
   }
-  svg += `<line x1="${left}" y1="${H - 46}" x2="${W - right}" y2="${H - 46}" stroke="#b0aea5"/>\n`;
-  // One winner for the whole chart: the lowest value among bars whose every run passed.
-  const winner = groups
-    .flatMap((g) => g.bars)
-    .filter((b) => passed(b.row))
-    .reduce((a, b) => (!a || b.row[value] < a.row[value] ? b : a), null);
+  svg += `<line x1="${left}" y1="${H - 62}" x2="${W - right}" y2="${H - 62}" stroke="#b0aea5"/>\n`;
+  // The winning group: the one closest, on average, to each model's own best.
+  // Each bar is scored as its value over its model's best passing value
+  // across the groups, three times that when a run missed; a group's score is
+  // the geometric mean over its models.
+  const bestOf = Object.fromEntries(
+    present.map(([id]) => {
+      const passing = groups
+        .flatMap((g) => g.bars)
+        .filter((b) => b.id === id && passed(b.row))
+        .map((b) => b.row[value]);
+      return [id, passing.length ? Math.min(...passing) : undefined];
+    }),
+  );
+  const scores = groups.map((g) => {
+    const ratios = g.bars
+      .filter((b) => bestOf[b.id] !== undefined)
+      .map((b) => (b.row[value] / bestOf[b.id]) * (passed(b.row) ? 1 : 3));
+    return ratios.length
+      ? Math.exp(ratios.reduce((a, r) => a + Math.log(r), 0) / ratios.length)
+      : Infinity;
+  });
+  const winning = scores.indexOf(Math.min(...scores));
   groups.forEach((group, g) => {
     const gy = top + g * (groupH + groupGap);
-    svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#141413">${esc(group.label)}</text>\n`;
+    svg += `<text x="${left - 10}" y="${gy + groupH / 2 - 2}" font-size="12" text-anchor="end" fill="#141413" font-weight="${g === winning ? 600 : 400}">${esc(group.label)}</text><text x="${left - 10}" y="${gy + groupH / 2 + 12}" font-size="10" text-anchor="end" fill="#5e5d59">${fmt(scores[g], 2)}× best</text>\n`;
     present.forEach(([id], i) => {
       const bar = group.bars.find((b) => b.id === id);
       if (!bar) return;
@@ -286,7 +302,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
-      if (bar === winner)
+      if (g === winning)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = [
@@ -296,7 +312,8 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<text x="${left}" y="${H - 30}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<text x="${left}" y="${H - 14}" font-size="11" fill="#5e5d59">Hatched, the best group: on average closest to each model's own best ${value === "seconds" ? "time" : "cost"}; "1.07× best" is that average, a miss counting 3×.</text>\n`;
   return `${svg}</svg>\n`;
 }
 
