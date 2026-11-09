@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="424" viewBox="0 0 760 424" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="760" height="424" fill="#fcfcfb"/>
+<text x="16" y="26" font-size="15" font-weight="600" fill="#1f1f1d">Cost per 1,000 tasks, by tool mode</text>
+<rect x="16" y="38" width="10" height="10" rx="2" fill="#2a78d6"/><text x="30" y="47" font-size="12" fill="#45453f">Haiku 5.5</text>
+<rect x="105" y="38" width="10" height="10" rx="2" fill="#eb6834"/><text x="119" y="47" font-size="12" fill="#45453f">Sonnet 5.5</text>
+<rect x="201" y="38" width="10" height="10" rx="2" fill="#1baf7a"/><text x="215" y="47" font-size="12" fill="#45453f">gpt-6-luna</text>
+<rect x="297" y="38" width="10" height="10" rx="2" fill="#eda100"/><text x="311" y="47" font-size="12" fill="#45453f">gpt-6.1-sol</text>
+<text x="110" y="99" font-size="12" text-anchor="end" fill="#1f1f1d">tools</text>
+<rect x="120" y="64" width="23.35732626678501" height="14" rx="3" fill="#2a78d6"/>
+<text x="149.357326266785" y="75" font-size="11" fill="#45453f">1.69</text>
+<rect x="120" y="80" width="342.3587413808776" height="14" rx="3" fill="#eb6834"/>
+<text x="468.3587413808776" y="91" font-size="11" fill="#45453f">24.83</text>
+<rect x="120" y="96" width="10.290397140969048" height="14" rx="3" fill="#1baf7a"/>
+<text x="136.29039714096905" y="107" font-size="11" fill="#45453f">0.75</text>
+<rect x="120" y="112" width="303.3991847390338" height="14" rx="3" fill="#eda100"/>
+<text x="429.3991847390338" y="123" font-size="11" fill="#45453f">22.00</text>
+<text x="110" y="179" font-size="12" text-anchor="end" fill="#1f1f1d">tools + defer</text>
+<rect x="120" y="144" width="29.999161962386864" height="14" rx="3" fill="#2a78d6"/>
+<text x="155.99916196238686" y="155" font-size="11" fill="#45453f">2.18</text>
+<rect x="120" y="160" width="450" height="14" rx="3" fill="#eb6834"/>
+<text x="576" y="171" font-size="11" fill="#45453f">32.64</text>
+<rect x="120" y="176" width="16.625685725170655" height="14" rx="3" fill="#1baf7a"/>
+<text x="142.62568572517065" y="187" font-size="11" fill="#b3261e">1.21 · 4/5 drafted</text>
+<rect x="120" y="192" width="438.0494610718506" height="14" rx="3" fill="#eda100"/>
+<text x="564.0494610718506" y="203" font-size="11" fill="#45453f">31.77</text>
+<text x="110" y="259" font-size="12" text-anchor="end" fill="#1f1f1d">codemode</text>
+<rect x="120" y="224" width="23.527545954183182" height="14" rx="3" fill="#2a78d6"/>
+<text x="149.52754595418318" y="235" font-size="11" fill="#45453f">1.71</text>
+<rect x="120" y="240" width="324.14728013130787" height="14" rx="3" fill="#eb6834"/>
+<text x="450.14728013130787" y="251" font-size="11" fill="#45453f">23.51</text>
+<rect x="120" y="256" width="7.523034543900195" height="14" rx="3" fill="#1baf7a"/>
+<text x="133.5230345439002" y="267" font-size="11" fill="#45453f">0.55</text>
+<rect x="120" y="272" width="328.1036756196933" height="14" rx="3" fill="#eda100"/>
+<text x="454.1036756196933" y="283" font-size="11" fill="#45453f">23.80</text>
+<text x="110" y="339" font-size="12" text-anchor="end" fill="#1f1f1d">cli</text>
+<rect x="120" y="304" width="25.76665529536612" height="14" rx="3" fill="#2a78d6"/>
+<text x="151.76665529536612" y="315" font-size="11" fill="#45453f">1.87</text>
+<rect x="120" y="320" width="406.1409108411732" height="14" rx="3" fill="#eb6834"/>
+<text x="532.1409108411732" y="331" font-size="11" fill="#45453f">29.45</text>
+<rect x="120" y="336" width="7.427066214674497" height="14" rx="3" fill="#1baf7a"/>
+<text x="133.42706621467448" y="347" font-size="11" fill="#45453f">0.54</text>
+<rect x="120" y="352" width="263.81684511777974" height="14" rx="3" fill="#eda100"/>
+<text x="389.81684511777974" y="363" font-size="11" fill="#b3261e">19.13 · 0.7 errors/run</text>
+<line x1="120" y1="58" x2="120" y2="390" stroke="#d6d5ce"/>
+<text x="120" y="410" font-size="12" fill="#45453f">USD per 1,000 tasks at list price: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+</svg>

@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+// Summarizes the tool-mode recordings (test/recordings/tool-modes/<set>/<model>/)
+// into report.md and two charts, cost.svg and time.svg, for the newest set.
+// Prices come from Pi's model catalog, so cost follows the recorded model.
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const DIR = join(import.meta.dirname, "..", "test", "recordings", "tool-modes");
+const MODES = [
+  ["tools", "tools"],
+  ["tools-deferred", "tools + defer"],
+  ["codemode", "codemode"],
+  ["cli", "cli"],
+];
+const MODELS = [
+  ["claude-haiku-5-5", "Haiku 5.5", "anthropic"],
+  ["claude-sonnet-5-5", "Sonnet 5.5", "anthropic"],
+  ["gpt-6-luna", "gpt-6-luna", "openai"],
+  ["gpt-6.1-sol", "gpt-6.1-sol", "openai"],
+];
+// Categorical slots 1-4 in fixed order, validated for color-vision deficiency.
+const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"];
+const SETS = ["flat", "signatures"];
+
+const catalogDir = join(
+  import.meta.dirname,
+  "..",
+  "node_modules",
+  "@earendil-works",
+  "pi-ai",
+  "dist",
+  "providers",
+  "data",
+);
+
+/** $ per million tokens: input, output, cache read, cache write. */
+function prices(id, provider) {
+  const data = JSON.parse(
+    readFileSync(join(catalogDir, `${provider}.json`), "utf8"),
+  );
+  for (const models of Object.values(data))
+    for (const model of Object.values(models))
+      if (model.id === id) return model.cost;
+  throw new Error(`No price for ${provider}/${id} in Pi's catalog`);
+}
+
+/** One run's cassette: model time, rejected calls, and whether a draft came back. */
+function cassette(har) {
+  const entries = JSON.parse(readFileSync(har, "utf8")).log.entries;
+  const seconds = entries.reduce((sum, e) => sum + (e.time ?? 0), 0) / 1000;
+  const last = JSON.parse(entries.at(-1).request.postData.text);
+  let errors = 0;
+  let drafted = false;
+  for (const item of [...(last.messages ?? []), ...(last.input ?? [])]) {
+    const blocks = Array.isArray(item.content) ? item.content : [item];
+    for (const block of blocks) {
+      if (
+        ![
+          "tool_result",
+          "function_call_output",
+          "custom_tool_call_output",
+        ].includes(block?.type)
+      )
+        continue;
+      const text = JSON.stringify(block.content ?? block.output ?? "");
+      if (block.is_error || text.includes("Validation failed")) errors += 1;
+      if (/draft\\*"\s*:\s*\\*"msg_/.test(text)) drafted = true;
+    }
+  }
+  return { seconds, errors, drafted };
+}
+
+function runs(set, id) {
+  const dir = join(DIR, set, id);
+  if (!existsSync(dir)) return {};
+  const byMode = {};
+  for (const [mode] of MODES) {
+    const names = readdirSync(dir)
+      .filter((f) => f.endsWith(".summary.json"))
+      .map((f) => f.slice(0, -".summary.json".length))
+      .filter((n) => n === mode || new RegExp(`^${mode}\\.\\d+$`).test(n));
+    byMode[mode] = names.map((name) => {
+      const totals = JSON.parse(
+        readFileSync(join(dir, `${name}.summary.json`), "utf8"),
+      ).totals;
+      const folder = readdirSync(dir).find((f) =>
+        f.startsWith(`${name.replaceAll(".", "-")}_`),
+      );
+      return { totals, ...cassette(join(dir, folder, "recording.har")) };
+    });
+  }
+  return byMode;
+}
+
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+function row(id, provider, list) {
+  const p = prices(id, provider);
+  const cost = list.map(
+    ({ totals: t }) =>
+      (t.input_tokens * p.input +
+        t.cache_creation_input_tokens * (p.cacheWrite ?? p.input) +
+        t.cache_read_input_tokens * (p.cacheRead ?? p.input) +
+        t.output_tokens * p.output) /
+      1e6,
+  );
+  const input = list.map(
+    ({ totals: t }) =>
+      t.input_tokens +
+      t.cache_creation_input_tokens +
+      t.cache_read_input_tokens,
+  );
+  return {
+    runs: list.length,
+    drafted: list.filter((r) => r.drafted).length,
+    errors: mean(list.map((r) => r.errors)),
+    requests: mean(list.map((r) => r.totals.requests)),
+    input: mean(input),
+    cached: mean(
+      list.map(
+        ({ totals: t }, i) => t.cache_read_input_tokens / Math.max(input[i], 1),
+      ),
+    ),
+    output: mean(list.map((r) => r.totals.output_tokens)),
+    costPerThousand: mean(cost) * 1000,
+    seconds: mean(list.map((r) => r.seconds)),
+  };
+}
+
+const table = {};
+for (const set of SETS)
+  for (const [id, , provider] of MODELS)
+    for (const [mode, list] of Object.entries(runs(set, id)))
+      if (list.length)
+        (table[set] ??= {})[`${id}|${mode}`] = row(id, provider, list);
+
+const fmt = (n, d = 0) =>
+  n.toLocaleString("en-US", {
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
+  });
+
+let md = "";
+for (const set of SETS) {
+  if (!table[set]) continue;
+  md += `### ${set}\n\n| model | mode | runs | drafted (errors) | requests | input | cached | output | $ / 1,000 tasks | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+  for (const [id, name] of MODELS)
+    for (const [mode, label] of MODES) {
+      const r = table[set][`${id}|${mode}`];
+      if (!r) continue;
+      md += `| ${name} | ${label} | ${r.runs} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${fmt(r.costPerThousand, 2)} | ${fmt(r.seconds, 1)}s |\n`;
+    }
+  md += "\n";
+}
+writeFileSync(join(DIR, "report.md"), md);
+
+/** Grouped horizontal bars: one group per mode, one bar per model, one linear scale. */
+function chart(set, value, title, unit, digits) {
+  const W = 760;
+  const left = 120;
+  const right = 190;
+  const barH = 14;
+  const gap = 2;
+  const groupGap = 18;
+  const top = 64;
+  const present = MODELS.filter(([id]) =>
+    MODES.some(([m]) => table[set]?.[`${id}|${m}`]),
+  );
+  const groupH = present.length * (barH + gap) - gap;
+  const H = top + MODES.length * (groupH + groupGap) + 40;
+  const max = Math.max(...Object.values(table[set] ?? {}).map((r) => r[value]));
+  const x = (v) => left + (v / max) * (W - left - right);
+  const esc = (s) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
+  svg += `<rect width="${W}" height="${H}" fill="#fcfcfb"/>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#1f1f1d">${esc(title)}</text>\n`;
+  let lx = 16;
+  present.forEach(([, name], i) => {
+    svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}"/><text x="${lx + 14}" y="47" font-size="12" fill="#45453f">${esc(name)}</text>\n`;
+    lx += 26 + name.length * 7;
+  });
+  MODES.forEach(([mode, label], g) => {
+    const gy = top + g * (groupH + groupGap);
+    svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#1f1f1d">${esc(label)}</text>\n`;
+    present.forEach(([id], i) => {
+      const r = table[set]?.[`${id}|${mode}`];
+      if (!r) return;
+      const y = gy + i * (barH + gap);
+      const w = Math.max(x(r[value]) - left, 1);
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${COLORS[MODELS.findIndex(([m]) => m === id)]}"/>\n`;
+      // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
+      const quality = [
+        ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
+        ...(r.errors > 0 ? [`${fmt(r.errors, 1)} errors/run`] : []),
+      ];
+      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" fill="${quality.length ? "#b3261e" : "#45453f"}">${fmt(r[value], digits)}${unit}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+    });
+  });
+  svg += `<line x1="${left}" y1="${top - 6}" x2="${left}" y2="${H - 34}" stroke="#d6d5ce"/>\n`;
+  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#45453f">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : "USD per 1,000 tasks at list price: lower is better.")} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  return `${svg}</svg>\n`;
+}
+
+const newest = SETS.filter((set) => table[set]).at(-1);
+writeFileSync(
+  join(DIR, "cost.svg"),
+  chart(newest, "costPerThousand", "Cost per 1,000 tasks, by tool mode", "", 2),
+);
+writeFileSync(
+  join(DIR, "time.svg"),
+  chart(newest, "seconds", "Model time per task, by tool mode", "s", 1),
+);
+console.log(`report.md, cost.svg and time.svg from the ${newest} set`);

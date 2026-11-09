@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="424" viewBox="0 0 760 424" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="760" height="424" fill="#fcfcfb"/>
+<text x="16" y="26" font-size="15" font-weight="600" fill="#1f1f1d">Model time per task, by tool mode</text>
+<rect x="16" y="38" width="10" height="10" rx="2" fill="#2a78d6"/><text x="30" y="47" font-size="12" fill="#45453f">Haiku 5.5</text>
+<rect x="105" y="38" width="10" height="10" rx="2" fill="#eb6834"/><text x="119" y="47" font-size="12" fill="#45453f">Sonnet 5.5</text>
+<rect x="201" y="38" width="10" height="10" rx="2" fill="#1baf7a"/><text x="215" y="47" font-size="12" fill="#45453f">gpt-6-luna</text>
+<rect x="297" y="38" width="10" height="10" rx="2" fill="#eda100"/><text x="311" y="47" font-size="12" fill="#45453f">gpt-6.1-sol</text>
+<text x="110" y="99" font-size="12" text-anchor="end" fill="#1f1f1d">tools</text>
+<rect x="120" y="64" width="280.01045327165167" height="14" rx="3" fill="#2a78d6"/>
+<text x="406.01045327165167" y="75" font-size="11" fill="#45453f">9.3s</text>
+<rect x="120" y="80" width="268.6168319914595" height="14" rx="3" fill="#eb6834"/>
+<text x="394.6168319914595" y="91" font-size="11" fill="#45453f">8.9s</text>
+<rect x="120" y="96" width="261.85111872247677" height="14" rx="3" fill="#1baf7a"/>
+<text x="387.85111872247677" y="107" font-size="11" fill="#45453f">8.7s</text>
+<rect x="120" y="112" width="306.7990747742538" height="14" rx="3" fill="#eda100"/>
+<text x="432.7990747742538" y="123" font-size="11" fill="#45453f">10.2s</text>
+<text x="110" y="179" font-size="12" text-anchor="end" fill="#1f1f1d">tools + defer</text>
+<rect x="120" y="144" width="325.76909390151684" height="14" rx="3" fill="#2a78d6"/>
+<text x="451.76909390151684" y="155" font-size="11" fill="#45453f">10.8s</text>
+<rect x="120" y="160" width="310.68235398781195" height="14" rx="3" fill="#eb6834"/>
+<text x="436.68235398781195" y="171" font-size="11" fill="#45453f">10.3s</text>
+<rect x="120" y="176" width="305.18371068902627" height="14" rx="3" fill="#1baf7a"/>
+<text x="431.18371068902627" y="187" font-size="11" fill="#b3261e">10.2s · 4/5 drafted</text>
+<rect x="120" y="192" width="434.506916952093" height="14" rx="3" fill="#eda100"/>
+<text x="560.506916952093" y="203" font-size="11" fill="#45453f">14.5s</text>
+<text x="110" y="259" font-size="12" text-anchor="end" fill="#1f1f1d">codemode</text>
+<rect x="120" y="224" width="282.97095324941057" height="14" rx="3" fill="#2a78d6"/>
+<text x="408.97095324941057" y="235" font-size="11" fill="#45453f">9.4s</text>
+<rect x="120" y="240" width="240.69325207953386" height="14" rx="3" fill="#eb6834"/>
+<text x="366.69325207953386" y="251" font-size="11" fill="#45453f">8.0s</text>
+<rect x="120" y="256" width="230.22841510608959" height="14" rx="3" fill="#1baf7a"/>
+<text x="356.2284151060896" y="267" font-size="11" fill="#45453f">7.7s</text>
+<rect x="120" y="272" width="358.3926426760375" height="14" rx="3" fill="#eda100"/>
+<text x="484.3926426760375" y="283" font-size="11" fill="#45453f">11.9s</text>
+<text x="110" y="339" font-size="12" text-anchor="end" fill="#1f1f1d">cli</text>
+<rect x="120" y="304" width="288.3274765357413" height="14" rx="3" fill="#2a78d6"/>
+<text x="414.3274765357413" y="315" font-size="11" fill="#45453f">9.6s</text>
+<rect x="120" y="320" width="279.77625550464836" height="14" rx="3" fill="#eb6834"/>
+<text x="405.77625550464836" y="331" font-size="11" fill="#45453f">9.3s</text>
+<rect x="120" y="336" width="295.9599217116676" height="14" rx="3" fill="#1baf7a"/>
+<text x="421.9599217116676" y="347" font-size="11" fill="#45453f">9.9s</text>
+<rect x="120" y="352" width="450" height="14" rx="3" fill="#eda100"/>
+<text x="576" y="363" font-size="11" fill="#b3261e">15.0s · 0.7 errors/run</text>
+<line x1="120" y1="58" x2="120" y2="390" stroke="#d6d5ce"/>
+<text x="120" y="410" font-size="12" fill="#45453f">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+</svg>
