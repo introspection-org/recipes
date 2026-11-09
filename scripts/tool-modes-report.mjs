@@ -240,11 +240,11 @@ function chart(groups, value, title, unit, digits, log = false) {
   let lx = 16;
   present.forEach(([, name]) => {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
-    lx += 26 + name.length * 7;
+    lx += 22 + name.length * 6.6;
   });
   svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
   if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
-    lx += 26 + (value === "seconds" ? 7 : 8) * 7;
+    lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
     svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#b3261e"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">errors</text>\n`;
   }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
