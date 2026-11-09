@@ -15,12 +15,20 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createRecipeClock, currentDateContext } from "../src/clock.js";
 import { createRecipesExtension } from "../src/pi-extension.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 import {
   installSlackRecipeConnector,
   SLACK_RECIPE_CHANNEL_PACKAGE,
 } from "./helpers/recipe-connectors.js";
+
+const CLOCK = {
+  timeZone: "UTC",
+  locale: "en-US",
+  now: () => new Date("2026-11-09T12:00:00Z"),
+};
+const DATE_BLOCK = `\n\n<current_date>\n${currentDateContext(createRecipeClock(CLOCK), false)}\n</current_date>`;
 
 beforeEach(() => {});
 
@@ -458,7 +466,7 @@ describe("Recipes extension for Pi", () => {
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
 
-      createRecipesExtension()(pi);
+      createRecipesExtension({ clock: CLOCK })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
         ctx,
@@ -499,7 +507,7 @@ describe("Recipes extension for Pi", () => {
       );
       expect(promptResults).toEqual([
         {
-          systemPrompt: "Base recipe prompt\n\nAgent-specific prompt",
+          systemPrompt: `Base recipe prompt\n\nAgent-specific prompt${DATE_BLOCK}`,
         },
       ]);
 
@@ -1321,7 +1329,7 @@ describe("Recipes extension for Pi", () => {
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
 
-      createRecipesExtension()(pi);
+      createRecipesExtension({ clock: CLOCK })(pi);
       await pi.emitExtensionEvent(
         { type: "session_start", reason: "startup" } as any,
         extensionContext(projectDir),
@@ -1338,7 +1346,7 @@ describe("Recipes extension for Pi", () => {
       );
       expect(promptResults).toEqual([
         {
-          systemPrompt: "Agent replacement prompt",
+          systemPrompt: `Agent replacement prompt${DATE_BLOCK}`,
         },
       ]);
     } finally {
@@ -1371,7 +1379,7 @@ describe("Recipes extension for Pi", () => {
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
-      createRecipesExtension()(pi);
+      createRecipesExtension({ clock: CLOCK })(pi);
 
       const promptResults = await pi.emitExtensionEvent(
         {
@@ -1389,7 +1397,7 @@ describe("Recipes extension for Pi", () => {
       const skillsSection = `<skills>\n${formatSkillsForPrompt(skills, "read").trim()}\n</skills>`;
       expect(promptResults).toEqual([
         {
-          systemPrompt: `Base recipe prompt\n\nAgent-specific prompt\n\n${skillsSection}`,
+          systemPrompt: `Base recipe prompt\n\nAgent-specific prompt\n\n${skillsSection}${DATE_BLOCK}`,
         },
       ]);
     } finally {
@@ -1424,7 +1432,7 @@ describe("Recipes extension for Pi", () => {
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
-      createRecipesExtension()(pi);
+      createRecipesExtension({ clock: CLOCK })(pi);
 
       const promptResults = await pi.emitExtensionEvent(
         {
@@ -1441,7 +1449,7 @@ describe("Recipes extension for Pi", () => {
 
       expect(promptResults).toEqual([
         {
-          systemPrompt: `${forwarded}\n\nAgent-specific prompt`,
+          systemPrompt: `${forwarded}\n\nAgent-specific prompt${DATE_BLOCK}`,
         },
       ]);
     } finally {

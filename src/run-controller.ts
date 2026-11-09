@@ -18,6 +18,7 @@ import type {
   RecipeSessionOtelOptions,
   RecipeSessionHandle,
 } from "./session.js";
+import type { RecipeClockOptions } from "./clock.js";
 import type { MemoryContextOverride, MemoryContextSource } from "./memory.js";
 import type { ResolvedRecipe } from "./recipe/resolve.js";
 
@@ -35,6 +36,8 @@ export interface InProcessRunControllerOptions {
   settingsManager?: SettingsManager;
   memory?: MemoryContextSource;
   memoryOverride?: MemoryContextOverride;
+  /** The root's clock options, so every child reads the same clock. */
+  clock?: RecipeClockOptions;
   /** Concurrent child runs; excess starts queue. Default 4. */
   concurrency?: number;
   /** Root session instrumentation inherited by in-process child sessions. */
@@ -154,6 +157,7 @@ export function createInProcessRunController(
           ...(opts.memoryOverride
             ? { memoryOverride: opts.memoryOverride }
             : {}),
+          ...(opts.clock ? { clock: opts.clock } : {}),
           ...(opts.otel
             ? {
                 otel: {

@@ -16,6 +16,7 @@ import {
   type RecipePackageManifest,
 } from "./recipe/package.js";
 import type { RecipeToolExposure } from "./recipe/agent.js";
+import type { RecipeClock } from "./clock.js";
 
 interface RecipeConnectorToolDefinition {
   readonly id: string;
@@ -40,6 +41,8 @@ export interface RecipeConnectorExtensionOptions {
   exposure?: (tool: string) => RecipeToolExposure;
   /** What the agent's `include: ["*"]` added (`wildcardTools`). */
   wildcardTools?: readonly string[];
+  /** The session's clock. Default: the host's. */
+  clock?: RecipeClock;
 }
 
 interface RecipeConnectorToolLoadout {

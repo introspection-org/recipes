@@ -75,6 +75,7 @@ const handle = await createAgentSession({
   },
   memoryOverride,
   transformSystemPrompt,
+  clock: { timeZone: "America/Los_Angeles", locale: "en-US" },
   onDiagnostics,
   onEvent,
   onAgentRunEvent,
@@ -118,6 +119,15 @@ extensions, its own settings, an event bus, host tools, and a
 gateway-decorated model without reimplementing Recipe semantics. The Recipe
 continues to own model configuration and tool selection; host seams replace
 transport and materialized resources, not the portable definition.
+
+### The person's clock
+
+`clock` sets the time zone (IANA) and locale (BCP 47) of the person the
+session serves, and optionally `now`, which pins the clock in tests. Every
+turn's prompt names the date in that zone, and the built-in `today` tool and
+`calendar list`'s default range read the same clock, as do the default
+in-process children. Omitted fields fall back to the host's time zone and
+locale and the system clock; an unknown zone fails construction.
 
 ### Persistent memory context
 

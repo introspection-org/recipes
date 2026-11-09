@@ -3247,7 +3247,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
 const PLATFORM_TOOL_NAMES: [&str; 5] = ["issues", "mail", "calendar", "drive", "web_search"];
 
 /// Tools every agent session has, which `tools.include: ["*"]` selects.
-const BUILTIN_TOOL_NAMES: [&str; 11] = [
+const BUILTIN_TOOL_NAMES: [&str; 12] = [
     "read",
     "bash",
     "edit",
@@ -3259,6 +3259,7 @@ const BUILTIN_TOOL_NAMES: [&str; 11] = [
     "show_artifact",
     "review_artifacts",
     "introspection_open",
+    "today",
 ];
 
 /// What `tools.include: ["*"]` selects: the built-ins plus the first-party tools `package.json#pi`
