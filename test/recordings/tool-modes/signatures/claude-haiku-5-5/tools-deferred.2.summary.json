@@ -4,9 +4,9 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 577,
+      "cache_creation_input_tokens": 652,
       "cache_read_input_tokens": 746,
-      "output_tokens": 163,
+      "output_tokens": 161,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
@@ -21,27 +21,35 @@
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1353,
-      "cache_read_input_tokens": 1323,
-      "output_tokens": 78,
+      "cache_creation_input_tokens": 1351,
+      "cache_read_input_tokens": 1398,
+      "output_tokens": 116,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "tool_search",
           "input": {
-            "query": "mail calendar drive tools",
-            "limit": 8
+            "query": "mail calendar drive documents tools",
+            "limit": 10
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 3780,
-      "cache_read_input_tokens": 2676,
-      "output_tokens": 333,
+      "cache_creation_input_tokens": 4086,
+      "cache_read_input_tokens": 2749,
+      "output_tokens": 430,
       "stop_reason": "tool_use",
       "tool_calls": [
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-10T00:00:00-08:00",
+            "to": "2026-11-11T00:00:00-08:00"
+          }
+        },
         {
           "name": "mail",
           "input": {
@@ -63,65 +71,36 @@
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 791,
-      "cache_read_input_tokens": 6456,
-      "output_tokens": 423,
-      "stop_reason": "tool_use",
-      "tool_calls": [
-        {
-          "name": "mail",
-          "input": {
-            "command": "read",
-            "message": "msg_25118993be7c4802"
-          }
-        },
-        {
-          "name": "calendar",
-          "input": {
-            "command": "list",
-            "from": "2026-11-10T00:00:00Z",
-            "to": "2026-11-11T00:00:00Z",
-            "limit": 50
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 2,
-      "cache_creation_input_tokens": 1128,
-      "cache_read_input_tokens": 7247,
-      "output_tokens": 368,
+      "cache_creation_input_tokens": 1250,
+      "cache_read_input_tokens": 6835,
+      "output_tokens": 291,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "draft",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nI'll bring the Q3 budget sheet to tomorrow's planning review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\n\nThanks,\nSam",
-            "reply_to": "msg_25118993be7c4802"
+            "reply_to": "msg_f3333bd8f6d0402e",
+            "body": "Hi Dana,\n\nYes, I'll bring the budget sheet to tomorrow's Q3 planning review. Here's the link:\n\nhttps://docs.example.test/spreadsheets/d/f-budget\n\nThanks,\nSam"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 464,
-      "cache_read_input_tokens": 8375,
-      "output_tokens": 361,
+      "cache_creation_input_tokens": 395,
+      "cache_read_input_tokens": 8085,
+      "output_tokens": 298,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 6,
-    "tool_calls": 7,
-    "input_tokens": 14,
-    "cache_creation_input_tokens": 8093,
-    "cache_read_input_tokens": 26823,
-    "output_tokens": 1726
+    "requests": 5,
+    "tool_calls": 6,
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 7734,
+    "cache_read_input_tokens": 19813,
+    "output_tokens": 1296
   }
 }

@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 3460,
+      "input_tokens": 3576,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,72 +20,59 @@
       ]
     },
     {
-      "input_tokens": 892,
+      "input_tokens": 891,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 3457,
-      "output_tokens": 63,
+      "cache_read_input_tokens": 3573,
+      "output_tokens": 108,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(await searchTools(\"current time timezone\", {limit:2}));\ntext(await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:10}));\ntext(await tools.drive({command:\"search\",query:\"budget\",limit:10}));\n"
+          "input": "await Promise.all([\ntools.calendar({command:\"list\",from:\"2026-11-10T00:00:00-08:00\",to:\"2026-11-11T00:00:00-08:00\",limit:100}).then(text),\ntools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:25}).then(text),\ntools.drive({command:\"search\",query:\"budget\",limit:25}).then(text)\n]);\n"
         }
       ]
     },
     {
-      "input_tokens": 2636,
+      "input_tokens": 705,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4346,
-      "output_tokens": 68,
+      "cache_read_input_tokens": 4461,
+      "output_tokens": 37,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(await tools.mail({command:\"read\",message:\"msg_c4a07c3c72954ed4\"}));\ntext(await tools.drive({command:\"read\",file:\"file_0800d842cad14c7d\"}));\ntext(Object.keys(ALL_TOOLS));\n"
+          "input": "text(await tools.mail({command:\"read\",message:\"msg_8e7b2a74cf574c27\"}));\n"
         }
       ]
     },
     {
-      "input_tokens": 537,
+      "input_tokens": 306,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6979,
-      "output_tokens": 149,
+      "cache_read_input_tokens": 5163,
+      "output_tokens": 89,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(ALL_TOOLS.map(x=>({name:x.name,description:x.description?.slice(0,200)})));\ntext(await tools.mail({command:\"draft\",reply_to:\"msg_c4a07c3c72954ed4\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget sheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}));\n"
+          "input": "text(await tools.mail({command:\"draft\",reply_to:\"msg_8e7b2a74cf574c27\",body:\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}));\n"
         }
       ]
     },
     {
-      "input_tokens": 470,
+      "input_tokens": 184,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 7513,
-      "output_tokens": 88,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "codemode",
-          "input": "text(await tools.calendar({command:\"list\",from:\"2026-11-09T10:00:00Z\",to:\"2026-11-11T12:00:00Z\",limit:100}));\n"
-        }
-      ]
-    },
-    {
-      "input_tokens": 350,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 7980,
-      "output_tokens": 177,
+      "cache_read_input_tokens": 5466,
+      "output_tokens": 170,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 6,
-    "tool_calls": 5,
-    "input_tokens": 8345,
+    "requests": 5,
+    "tool_calls": 4,
+    "input_tokens": 5662,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 30275,
-    "output_tokens": 592
+    "cache_read_input_tokens": 18663,
+    "output_tokens": 450
   }
 }

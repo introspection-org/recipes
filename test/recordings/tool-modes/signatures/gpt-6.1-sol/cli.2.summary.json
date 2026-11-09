@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 707,
+      "input_tokens": 763,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,116 +20,84 @@
       ]
     },
     {
-      "input_tokens": 1596,
+      "input_tokens": 1651,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 41,
+      "output_tokens": 38,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema",
+            "command": "tools list mail --schema; tools list calendar --schema; tools list drive --schema",
             "timeout": null
           }
         }
       ]
     },
     {
-      "input_tokens": 1938,
+      "input_tokens": 1886,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1593,
-      "output_tokens": 89,
+      "cache_read_input_tokens": 1648,
+      "output_tokens": 119,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "date -Iseconds; env | grep -Ei 'time|date|tz'; tools run <<'JS'\nconst r = await Promise.all([tools.mail.search({query:\"budget\",from:\"Dana\"}),tools.drive.search({query:\"budget\"})]); r.forEach(x=>console.log(JSON.stringify(x)));\nJS",
+            "command": "tools run <<'JS'\nconst results = await Promise.all([tools.calendar.list({from:'2026-11-10T00:00:00-08:00',to:'2026-11-11T00:00:00-08:00'}),tools.mail.search({query:'budget',from:'Dana'}),tools.drive.search({query:'budget'})]); results.forEach((r,i)=>console.log(JSON.stringify({i,result:r})));\nJS",
             "timeout": null
           }
         }
       ]
     },
     {
-      "input_tokens": 452,
+      "input_tokens": 543,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 3528,
-      "output_tokens": 96,
+      "cache_read_input_tokens": 3531,
+      "output_tokens": 53,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools run <<'JS'\nawait Promise.all([tools.calendar.list({}), tools.mail.read({message:\"msg_91e0483df22c4e77\"})]).then(r=>r.forEach(x=>console.log(x)));\nJS",
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_4f59caffcf3d44d4\"}\nJSON",
             "timeout": null
           }
         }
       ]
     },
     {
-      "input_tokens": 147,
+      "input_tokens": 308,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 3977,
-      "output_tokens": 107,
+      "cache_read_input_tokens": 4071,
+      "output_tokens": 111,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "bash",
           "input": {
-            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_91e0483df22c4e77\"}\nJSON\n tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00-08:00\",\"to\":\"2026-11-10T00:00:00-08:00\"}\nJSON",
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_4f59caffcf3d44d4\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
             "timeout": null
           }
         }
       ]
     },
     {
-      "input_tokens": 366,
+      "input_tokens": 193,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4121,
-      "output_tokens": 137,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "bash",
-          "input": {
-            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_91e0483df22c4e77\",\"body\":\"Hi Dana,\\n\\nI'll bring the [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
-            "timeout": null
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 259,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4484,
-      "output_tokens": 128,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "bash",
-          "input": {
-            "command": "tools call mail.draft --json - <<'JSON'\n{\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"reply_to\":\"msg_91e0483df22c4e77\",\"body\":\"Hi Dana,\\n\\nI'll bring the [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
-            "timeout": null
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 213,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4740,
-      "output_tokens": 135,
+      "cache_read_input_tokens": 4376,
+      "output_tokens": 174,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 8,
-    "tool_calls": 7,
-    "input_tokens": 5678,
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 5344,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 22443,
-    "output_tokens": 780
+    "cache_read_input_tokens": 13626,
+    "output_tokens": 541
   }
 }

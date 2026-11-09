@@ -22,283 +22,282 @@
 <line x1="70" y1="370" x2="720" y2="370" stroke="#b0aea5"/>
 <rect x="70" y="64" width="325" height="153" fill="#e3f1dc" opacity="0.75"/>
 <rect x="395" y="217" width="325" height="153" fill="#efede6" opacity="0.8"/>
-<polyline points="227.36132709366214,323.5 269.69697034226954,259.6 450.6555537064233,178 562.4132356019898,137.2" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
+<polyline points="228.18130946231352,323.5 248.86205997860537,259.6 434.2535961378709,205 553.4092712986426,164.2" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
 <rect x="405" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="422" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
 <line x1="567" y1="78" x2="581" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="584" y="82" font-size="11" fill="#5e5d59">Pareto line, passing</text>
-<circle cx="411" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="411" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 411 98)" pointer-events="none"/><text x="422" y="102" font-size="11" fill="#5e5d59">runs failed</text>
 <circle cx="573" cy="98" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="584" y="102" font-size="11" fill="#5e5d59">recommended</text>
-<polyline points="269.69697034226954,259.6 270.2094146016559,277.6 276.62514489323496,286.6 287.3584446094393,268.6" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
-<polyline points="455.3238492204284,241.9 459.1814430978872,223.9 471.2381821686906,250.9 478.4752456570415,232.9" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
-<polyline points="498.6477801760556,178 513.6527056175107,196 529.2752053651432,187 536.629400506826,205" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
-<polyline points="227.36132709366214,323.5 227.95556944103947,332.5 243.78294370829386,305.5 264.27406348862536,314.5" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
-<polyline points="440.78987207105433,205 450.6555537064233,178 456.1800152113295,196 476.5757241023932,187" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
-<polyline points="562.4132356019898,137.2 568.0051400903066,164.2 581.476470506522,155.2 597.7751853587304,146.2" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
-<circle cx="227.36132709366214" cy="323.5" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
+<polyline points="248.86205997860537,259.6 252.2091326796143,277.6 272.84169254211827,286.6 277.7228735351249,268.6" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
+<polyline points="449.584346028299,223.9 450.1932582255197,241.9 465.1662788614627,250.9 472.1681298676043,232.9" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
+<polyline points="484.0292484092446,196 484.7247176862419,178 520.39442832294,205 525.0613406925811,187" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
+<polyline points="228.18130946231352,323.5 230.5181270996014,332.5 242.51554955397867,305.5 267.11284797341983,314.5" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
+<polyline points="434.2535961378709,205 435.5130200094132,196 447.26984048790894,178 481.809638417444,187" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
+<polyline points="553.4092712986426,164.2 555.9011938460028,155.2 568.5667300764482,137.2 594.101835446009,146.2" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
+<circle cx="228.18130946231352" cy="323.5" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
 Passed in tools: 5/5
-Time per task: 9.3s
-Cost per task: $0.00169
+Time per task: 8.0s
+Cost per task: $0.00126
 Intelligence Index: 19
-Input tokens: 30,987
-Cached: 83%
-Output tokens: 1,605
-Click for more info</title><circle cx="269.69697034226954" cy="259.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
-<text x="269.69697034226954" y="263.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">1</text>
+Input tokens: 21,427
+Cached: 79%
+Output tokens: 1,081
+Click for more info</title><circle cx="248.86205997860537" cy="259.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="248.86205997860537" y="263.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">1</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools + defer
 Passed in tools + defer: 5/5
 Time per task: 10.8s
-Cost per task: $0.00218
+Cost per task: $0.00190
 Intelligence Index: 19
-Input tokens: 35,060
-Cached: 76%
-Output tokens: 1,749
-Click for more info</title><circle cx="287.3584446094393" cy="268.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
-<text x="287.3584446094393" y="272.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">2</text>
+Input tokens: 31,173
+Cached: 74%
+Output tokens: 1,321
+Click for more info</title><circle cx="277.7228735351249" cy="268.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="277.7228735351249" y="272.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">2</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · codemode
 Passed in codemode: 5/5
-Time per task: 9.4s
-Cost per task: $0.00171
+Time per task: 7.6s
+Cost per task: $0.00132
 Intelligence Index: 19
-Input tokens: 35,773
-Cached: 85%
-Output tokens: 1,466
-Click for more info</title><circle cx="270.2094146016559" cy="277.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
-<text x="270.2094146016559" y="281.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">3</text>
+Input tokens: 27,349
+Cached: 82%
+Output tokens: 1,024
+Click for more info</title><circle cx="252.2091326796143" cy="277.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="252.2091326796143" y="281.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">3</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · cli
 Passed in cli: 5/5
-Time per task: 9.6s
-Cost per task: $0.00187
+Time per task: 8.8s
+Cost per task: $0.00177
 Intelligence Index: 19
-Input tokens: 33,013
-Cached: 79%
-Output tokens: 1,481
-Click for more info</title><circle cx="276.62514489323496" cy="286.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
-<text x="276.62514489323496" y="290.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">4</text>
+Input tokens: 32,873
+Cached: 78%
+Output tokens: 1,240
+Click for more info</title><circle cx="272.84169254211827" cy="286.6" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="272.84169254211827" y="290.1" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">4</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · tools
 Passed in tools: 3/3
-Time per task: 8.9s
-Cost per task: $0.0248
+Time per task: 6.5s
+Cost per task: $0.0217
 Intelligence Index: 26
-Input tokens: 24,541
-Cached: 80%
-Output tokens: 1,088
-Click for more info</title><circle cx="459.1814430978872" cy="223.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
-<text x="459.1814430978872" y="227.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
+Input tokens: 19,893
+Cached: 76%
+Output tokens: 821
+Click for more info</title><circle cx="449.584346028299" cy="223.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="449.584346028299" y="227.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · tools + defer
 Passed in tools + defer: 3/3
-Time per task: 10.3s
-Cost per task: $0.0326
+Time per task: 8.1s
+Cost per task: $0.0298
 Intelligence Index: 26
-Input tokens: 23,005
-Cached: 67%
-Output tokens: 1,219
-Click for more info</title><circle cx="478.4752456570415" cy="232.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
-<text x="478.4752456570415" y="236.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
+Input tokens: 24,220
+Cached: 68%
+Output tokens: 904
+Click for more info</title><circle cx="472.1681298676043" cy="232.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="472.1681298676043" y="236.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · codemode
 Passed in codemode: 3/3
-Time per task: 8.0s
-Cost per task: $0.0235
+Time per task: 7.6s
+Cost per task: $0.0219
 Intelligence Index: 26
-Input tokens: 28,464
-Cached: 83%
-Output tokens: 888
-Click for more info</title><circle cx="455.3238492204284" cy="241.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
-<text x="455.3238492204284" y="245.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
+Input tokens: 24,704
+Cached: 79%
+Output tokens: 747
+Click for more info</title><circle cx="450.1932582255197" cy="241.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="450.1932582255197" y="245.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
 <a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · cli
 Passed in cli: 3/3
-Time per task: 9.3s
-Cost per task: $0.0295
+Time per task: 8.6s
+Cost per task: $0.0270
 Intelligence Index: 26
-Input tokens: 26,728
-Cached: 75%
-Output tokens: 1,090
-Click for more info</title><circle cx="471.2381821686906" cy="250.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
-<text x="471.2381821686906" y="254.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
+Input tokens: 21,698
+Cached: 69%
+Output tokens: 891
+Click for more info</title><circle cx="465.1662788614627" cy="250.9" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="465.1662788614627" y="254.4" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools
 Passed in tools: 3/3
-Time per task: 11.9s
-Cost per task: $0.0434
+Time per task: 7.9s
+Cost per task: $0.0357
 Intelligence Index: 35
-Input tokens: 18,801
-Cached: 78%
-Output tokens: 1,051
-Click for more info</title><circle cx="498.6477801760556" cy="178" r="7" fill="#8a3618" stroke="#0000003d"/></a>
-<text x="498.6477801760556" y="181.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
+Input tokens: 17,263
+Cached: 80%
+Output tokens: 776
+Click for more info</title><circle cx="484.7247176862419" cy="178" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="484.7247176862419" y="181.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools + defer
 Passed in tools + defer: 3/3
-Time per task: 14.6s
-Cost per task: $0.0670
+Time per task: 12.2s
+Cost per task: $0.0632
 Intelligence Index: 35
-Input tokens: 24,605
+Input tokens: 25,156
 Cached: 69%
-Output tokens: 1,308
-Click for more info</title><circle cx="529.2752053651432" cy="187" r="7" fill="#8a3618" stroke="#0000003d"/></a>
-<text x="529.2752053651432" y="190.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
+Output tokens: 1,061
+Click for more info</title><circle cx="525.0613406925811" cy="187" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="525.0613406925811" y="190.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · codemode
 Passed in codemode: 3/3
-Time per task: 12.3s
-Cost per task: $0.0537
+Time per task: 8.8s
+Cost per task: $0.0353
 Intelligence Index: 35
-Input tokens: 34,746
-Cached: 85%
-Output tokens: 1,041
-Click for more info</title><circle cx="513.6527056175107" cy="196" r="7" fill="#8a3618" stroke="#0000003d"/></a>
-<text x="513.6527056175107" y="199.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
+Input tokens: 19,672
+Cached: 81%
+Output tokens: 695
+Click for more info</title><circle cx="484.0292484092446" cy="196" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="484.0292484092446" y="199.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · cli
 Passed in cli: 3/3
-Time per task: 16.2s
-Cost per task: $0.0744
+Time per task: 13.6s
+Cost per task: $0.0591
 Intelligence Index: 35
-Input tokens: 32,169
-Cached: 77%
-Output tokens: 1,614
-Click for more info</title><circle cx="536.629400506826" cy="205" r="7" fill="#8a3618" stroke="#0000003d"/></a>
-<text x="536.629400506826" y="208.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
+Input tokens: 26,685
+Cached: 74%
+Output tokens: 1,074
+Click for more info</title><circle cx="520.39442832294" cy="205" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="520.39442832294" y="208.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · tools
 Passed in tools: 5/5
-Time per task: 8.7s
-Cost per task: $0.00117
+Time per task: 10.8s
+Cost per task: $0.00115
 Intelligence Index: 10
-Input tokens: 28,280
-Cached: 73%
-Output tokens: 438
-Click for more info</title><circle cx="243.78294370829386" cy="305.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
-<text x="243.78294370829386" y="309" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">1</text>
+Input tokens: 31,574
+Cached: 77%
+Output tokens: 394
+Click for more info</title><circle cx="242.51554955397867" cy="305.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="242.51554955397867" y="309" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">1</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · tools + defer
-Passed in tools + defer: 4/5
-Time per task: 10.2s
-Cost per task: $0.00157
+Passed in tools + defer: 5/5
+Time per task: 9.6s
+Cost per task: $0.00163
 Intelligence Index: 10
-Input tokens: 25,979
-Cached: 50%
-Output tokens: 447
-Click for more info</title><circle cx="264.27406348862536" cy="314.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a><circle cx="264.27406348862536" cy="314.5" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="264.27406348862536" cy="314.5" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="13.194689145077133 65.97344572538566" transform="rotate(-90 264.27406348862536 314.5)" pointer-events="none"/>
-<text x="264.27406348862536" y="318" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">2</text>
+Input tokens: 25,190
+Cached: 48%
+Output tokens: 397
+Click for more info</title><circle cx="267.11284797341983" cy="314.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="267.11284797341983" y="318" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">2</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · codemode
 Recommended
 Passed in codemode: 5/5
-Time per task: 7.7s
-Cost per task: $0.000930
+Time per task: 6.9s
+Cost per task: $0.000941
 Intelligence Index: 10
-Input tokens: 23,303
-Cached: 77%
-Output tokens: 411
-Click for more info</title><circle cx="227.36132709366214" cy="323.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
-<text x="227.36132709366214" y="327" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">3</text>
+Input tokens: 23,296
+Cached: 75%
+Output tokens: 394
+Click for more info</title><circle cx="228.18130946231352" cy="323.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="228.18130946231352" y="327" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">3</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · cli
 Passed in cli: 5/5
-Time per task: 9.9s
-Cost per task: $0.000938
+Time per task: 8.9s
+Cost per task: $0.000972
 Intelligence Index: 10
-Input tokens: 19,236
-Cached: 72%
-Output tokens: 521
-Click for more info</title><circle cx="227.95556944103947" cy="332.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
-<text x="227.95556944103947" y="336" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">4</text>
+Input tokens: 19,972
+Cached: 71%
+Output tokens: 537
+Click for more info</title><circle cx="230.5181270996014" cy="332.5" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="230.5181270996014" y="336" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">4</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
 Passed in tools: 3/3
-Time per task: 10.2s
-Cost per task: $0.0220
+Time per task: 11.6s
+Cost per task: $0.0210
 Intelligence Index: 35
-Input tokens: 28,868
-Cached: 72%
-Output tokens: 363
-Click for more info</title><circle cx="450.6555537064233" cy="178" r="7" fill="#77756e" stroke="#0000003d"/></a>
-<text x="450.6555537064233" y="181.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
+Input tokens: 31,420
+Cached: 78%
+Output tokens: 444
+Click for more info</title><circle cx="447.26984048790894" cy="178" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="447.26984048790894" y="181.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools + defer
 Passed in tools + defer: 3/3
-Time per task: 14.5s
-Cost per task: $0.0318
+Time per task: 15.6s
+Cost per task: $0.0342
 Intelligence Index: 35
-Input tokens: 39,716
-Cached: 69%
-Output tokens: 486
-Click for more info</title><circle cx="476.5757241023932" cy="187" r="7" fill="#77756e" stroke="#0000003d"/></a>
-<text x="476.5757241023932" y="190.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
+Input tokens: 47,553
+Cached: 73%
+Output tokens: 471
+Click for more info</title><circle cx="481.809638417444" cy="187" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="481.809638417444" y="190.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · codemode
 Passed in codemode: 3/3
-Time per task: 11.9s
-Cost per task: $0.0238
+Time per task: 8.8s
+Cost per task: $0.0178
 Intelligence Index: 35
-Input tokens: 33,004
-Cached: 75%
-Output tokens: 520
-Click for more info</title><circle cx="456.1800152113295" cy="196" r="7" fill="#77756e" stroke="#0000003d"/></a>
-<text x="456.1800152113295" y="199.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
+Input tokens: 24,425
+Cached: 77%
+Output tokens: 450
+Click for more info</title><circle cx="435.5130200094132" cy="196" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="435.5130200094132" y="199.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · cli
-Passed in cli: 2/3
-Time per task: 15.0s
-Cost per task: $0.0191
+Passed in cli: 3/3
+Time per task: 13.2s
+Cost per task: $0.0174
 Intelligence Index: 35
-Input tokens: 21,909
-Cached: 74%
-Output tokens: 653
-Click for more info</title><circle cx="440.78987207105433" cy="205" r="7" fill="#77756e" stroke="#0000003d"/></a><circle cx="440.78987207105433" cy="205" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="440.78987207105433" cy="205" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="21.991148575128552 65.97344572538566" transform="rotate(-90 440.78987207105433 205)" pointer-events="none"/>
-<text x="440.78987207105433" y="208.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
+Input tokens: 18,960
+Cached: 72%
+Output tokens: 540
+Click for more info</title><circle cx="434.2535961378709" cy="205" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="434.2535961378709" y="208.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
 Passed in tools: 3/3
-Time per task: 14.1s
-Cost per task: $0.107
+Time per task: 15.7s
+Cost per task: $0.117
 Intelligence Index: 43
-Input tokens: 29,295
+Input tokens: 31,433
 Cached: 78%
-Output tokens: 382
-Click for more info</title><circle cx="562.4132356019898" cy="137.2" r="7" fill="#141413" stroke="#0000003d"/></a>
-<text x="562.4132356019898" y="140.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
+Output tokens: 443
+Click for more info</title><circle cx="568.5667300764482" cy="137.2" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="568.5667300764482" y="140.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">1</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools + defer
 Passed in tools + defer: 3/3
-Time per task: 19.4s
-Cost per task: $0.177
+Time per task: 16.4s
+Cost per task: $0.168
 Intelligence Index: 43
-Input tokens: 43,408
-Cached: 72%
-Output tokens: 456
-Click for more info</title><circle cx="597.7751853587304" cy="146.2" r="7" fill="#141413" stroke="#0000003d"/></a>
-<text x="597.7751853587304" y="149.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
+Input tokens: 30,232
+Cached: 58%
+Output tokens: 467
+Click for more info</title><circle cx="594.101835446009" cy="146.2" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="594.101835446009" y="149.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">2</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · codemode
 Passed in codemode: 3/3
-Time per task: 14.3s
-Cost per task: $0.140
+Time per task: 17.4s
+Cost per task: $0.0978
 Intelligence Index: 43
-Input tokens: 32,488
-Cached: 72%
-Output tokens: 528
-Click for more info</title><circle cx="581.476470506522" cy="155.2" r="7" fill="#141413" stroke="#0000003d"/></a>
-<text x="581.476470506522" y="158.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
-<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · cli
-Passed in cli: 1/8
-Time per task: 20.7s
-Cost per task: $0.116
-Intelligence Index: 43
-Input tokens: 25,839
+Input tokens: 24,372
 Cached: 77%
-Output tokens: 744
-Click for more info</title><circle cx="568.0051400903066" cy="164.2" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="568.0051400903066" cy="164.2" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="568.0051400903066" cy="164.2" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="57.72676500971245 65.97344572538566" transform="rotate(-90 568.0051400903066 164.2)" pointer-events="none"/>
-<text x="568.0051400903066" y="167.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
-<text x="280.69697034226954" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="298.3584446094393" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Haiku 5.5</text>
-<text x="281.2094146016559" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="287.62514489323496" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="470.1814430978872" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="489.4752456570415" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Sonnet 5.5</text>
-<text x="466.3238492204284" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="482.2381821686906" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="509.6477801760556" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="540.2752053651432" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="524.6527056175107" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="547.629400506826" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Opus 5.5</text>
-<text x="254.78294370829386" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="275.27406348862536" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna</text>
-<text x="238.36132709366214" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="238.95556944103947" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="461.6555537064233" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="487.5757241023932" y="165.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol</text>
-<text x="467.1800152113295" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="451.78987207105433" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="573.4132356019898" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="608.7751853587304" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra</text>
-<text x="592.476470506522" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="579.0051400903066" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+Output tokens: 448
+Click for more info</title><circle cx="555.9011938460028" cy="155.2" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="555.9011938460028" y="158.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">3</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · cli
+Passed in cli: 3/3
+Time per task: 16.9s
+Cost per task: $0.0944
+Intelligence Index: 43
+Input tokens: 19,078
+Cached: 72%
+Output tokens: 538
+Click for more info</title><circle cx="553.4092712986426" cy="164.2" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="553.4092712986426" y="167.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">4</text>
+<text x="259.8620599786054" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="288.7228735351249" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Haiku 5.5</text>
+<text x="263.2091326796143" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="283.84169254211827" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="460.584346028299" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="483.1681298676043" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Sonnet 5.5</text>
+<text x="461.1932582255197" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="476.1662788614627" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="495.7247176862419" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="536.0613406925811" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Opus 5.5</text>
+<text x="495.0292484092446" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="531.39442832294" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="253.51554955397867" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="278.11284797341983" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna</text>
+<text x="239.18130946231352" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="241.5181270996014" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="458.26984048790894" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="492.809638417444" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol</text>
+<text x="446.5130200094132" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="445.2535961378709" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="579.5667300764482" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="605.101835446009" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra</text>
+<text x="566.9011938460028" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="564.4092712986426" y="154.7" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
 <text x="404" y="318" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>
 <circle cx="411" cy="336" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="411" y="339.5" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">1</text><text x="422" y="340" font-size="11" fill="#5e5d59">tools</text>
 <circle cx="573" cy="336" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="573" y="339.5" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">2</text><text x="584" y="340" font-size="11" fill="#5e5d59">tools + defer</text>

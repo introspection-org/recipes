@@ -23,82 +23,79 @@
 <line x1="70" y1="370" x2="720" y2="370" stroke="#b0aea5"/>
 <rect x="70" y="64" width="325" height="153" fill="#e3f1dc" opacity="0.75"/>
 <rect x="395" y="217" width="325" height="153" fill="#efede6" opacity="0.8"/>
-<polyline points="227.36132709366214,326.2857142857143 257.6705098969441,291.3142857142857 260.82882285220467,278.2 278.9868106481182,238.85714285714286 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142 515.2380719936262,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
+<polyline points="228.18130946231352,326.2857142857143 252.2091326796143,286.9428571428572 260.82882285220467,278.2 278.9868106481182,238.85714285714286 435.5130200094132,217 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142 515.2380719936262,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
 <rect x="405" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="422" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
 <line x1="567" y1="78" x2="581" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="584" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
 <circle cx="411" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="411" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 411 98)" pointer-events="none"/><text x="422" y="102" font-size="11" fill="#5e5d59">runs failed, all modes</text>
 <circle cx="573" cy="98" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="584" y="102" font-size="11" fill="#5e5d59">recommended</text>
-<polyline points="269.69697034226954,286.9428571428572 279.49761703922184,260.7142857142857 278.9868106481182,238.85714285714286" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
-<polyline points="455.3238492204284,256.34285714285716 474.4799408375406,234.4857142857143 483.1749493568962,186.4" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
-<polyline points="498.6477801760556,217 526.3011291214268,160.17142857142858 515.2380719936262,142.68571428571428" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
-<polyline points="227.36132709366214,326.2857142857143 257.6705098969441,291.3142857142857 260.82882285220467,278.2" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
-<polyline points="450.6555537064233,217 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
-<polyline points="562.4132356019898,182.0285714285714 587.3470327616604,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
-<circle cx="227.36132709366214" cy="326.2857142857143" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
-<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
-Passed in tools: 5/5
-Time per task: 9.3s
-Cost per task: $0.00169
+<polyline points="252.2091326796143,286.9428571428572 279.49761703922184,260.7142857142857 278.9868106481182,238.85714285714286" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
+<polyline points="449.584346028299,256.34285714285716 474.4799408375406,234.4857142857143 483.1749493568962,186.4" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
+<polyline points="484.7247176862419,217 526.3011291214268,160.17142857142858 515.2380719936262,142.68571428571428" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
+<polyline points="228.18130946231352,326.2857142857143 257.6705098969441,291.3142857142857 260.82882285220467,278.2" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
+<polyline points="435.5130200094132,217 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
+<polyline points="553.4092712986426,182.0285714285714 587.3470327616604,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
+<circle cx="228.18130946231352" cy="326.2857142857143" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
+<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · codemode
+Passed in codemode: 5/5
+Time per task: 7.6s
+Cost per task: $0.00132
 Intelligence Index: 19
-Input tokens: 30,987
-Cached: 83%
-Output tokens: 1,605
-Click for more info</title><circle cx="269.69697034226954" cy="286.9428571428572" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
-<text x="269.69697034226954" y="290.4428571428572" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
-<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · codemode
-Passed in codemode: 3/3
-Time per task: 8.0s
-Cost per task: $0.0235
+Input tokens: 27,349
+Cached: 82%
+Output tokens: 1,024
+Click for more info</title><circle cx="252.2091326796143" cy="286.9428571428572" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="252.2091326796143" y="290.4428571428572" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
+<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · tools
+Passed in tools: 3/3
+Time per task: 6.5s
+Cost per task: $0.0217
 Intelligence Index: 26
-Input tokens: 28,464
-Cached: 83%
-Output tokens: 888
-Click for more info</title><circle cx="455.3238492204284" cy="256.34285714285716" r="7" fill="#d97757" stroke="#0000003d"/></a>
-<text x="455.3238492204284" y="259.84285714285716" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+Input tokens: 19,893
+Cached: 76%
+Output tokens: 821
+Click for more info</title><circle cx="449.584346028299" cy="256.34285714285716" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="449.584346028299" y="259.84285714285716" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools
 Passed in tools: 3/3
-Time per task: 11.9s
-Cost per task: $0.0434
+Time per task: 7.9s
+Cost per task: $0.0357
 Intelligence Index: 35
-Input tokens: 18,801
-Cached: 78%
-Output tokens: 1,051
-Click for more info</title><circle cx="498.6477801760556" cy="217" r="7" fill="#8a3618" stroke="#0000003d"/></a>
-<text x="498.6477801760556" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+Input tokens: 17,263
+Cached: 80%
+Output tokens: 776
+Click for more info</title><circle cx="484.7247176862419" cy="217" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="484.7247176862419" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · codemode
 Recommended
 Passed in codemode: 5/5
-Time per task: 7.7s
-Cost per task: $0.000930
+Time per task: 6.9s
+Cost per task: $0.000941
 Intelligence Index: 10
-Input tokens: 23,303
-Cached: 77%
-Output tokens: 411
-Failed runs, all modes: 1/20
-Click for more info</title><circle cx="227.36132709366214" cy="326.2857142857143" r="7" fill="#c9c7be" stroke="#0000003d"/></a><circle cx="227.36132709366214" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="3.298672286269283 65.97344572538566" transform="rotate(-90 227.36132709366214 326.2857142857143)" pointer-events="none"/>
-<text x="227.36132709366214" y="329.7857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
-<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
-Passed in tools: 3/3
-Time per task: 10.2s
-Cost per task: $0.0220
+Input tokens: 23,296
+Cached: 75%
+Output tokens: 394
+Click for more info</title><circle cx="228.18130946231352" cy="326.2857142857143" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="228.18130946231352" y="329.7857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · codemode
+Passed in codemode: 3/3
+Time per task: 8.8s
+Cost per task: $0.0178
 Intelligence Index: 35
-Input tokens: 28,868
-Cached: 72%
-Output tokens: 363
-Failed runs, all modes: 1/12
-Click for more info</title><circle cx="450.6555537064233" cy="217" r="7" fill="#77756e" stroke="#0000003d"/></a><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="5.497787143782138 65.97344572538566" transform="rotate(-90 450.6555537064233 217)" pointer-events="none"/>
-<text x="450.6555537064233" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
-<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
-Passed in tools: 3/3
-Time per task: 14.1s
-Cost per task: $0.107
+Input tokens: 24,425
+Cached: 77%
+Output tokens: 450
+Click for more info</title><circle cx="435.5130200094132" cy="217" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="435.5130200094132" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · cli
+Passed in cli: 3/3
+Time per task: 16.9s
+Cost per task: $0.0944
 Intelligence Index: 43
-Input tokens: 29,295
-Cached: 78%
-Output tokens: 382
-Failed runs, all modes: 7/17
-Click for more info</title><circle cx="562.4132356019898" cy="182.0285714285714" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="27.1655364751588 65.97344572538566" transform="rotate(-90 562.4132356019898 182.0285714285714)" pointer-events="none"/>
-<text x="562.4132356019898" y="185.5285714285714" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+Input tokens: 19,078
+Cached: 72%
+Output tokens: 538
+Click for more info</title><circle cx="553.4092712986426" cy="182.0285714285714" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="553.4092712986426" y="185.5285714285714" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (medium) · cli
 Passed in cli: 3/3
 Time per task: 10.4s
@@ -221,12 +218,12 @@ Output tokens: 569
 Failed runs, all modes: 1/4
 Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 595.6370189637862 129.57142857142858)" pointer-events="none"/>
 <text x="595.6370189637862" y="133.07142857142858" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
-<text x="280.69697034226954" y="290.9428571428572" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="466.3238492204284" y="260.34285714285716" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="509.6477801760556" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="238.36132709366214" y="330.2857142857143" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="461.6555537064233" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
-<text x="573.4132356019898" y="186.0285714285714" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="263.2091326796143" y="290.9428571428572" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="460.584346028299" y="260.34285714285716" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="495.7247176862419" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="239.18130946231352" y="330.2857142857143" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="446.5130200094132" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="564.4092712986426" y="186.0285714285714" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
 <text x="290.49761703922184" y="264.7142857142857" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
 <text x="485.4799408375406" y="238.4857142857143" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
 <text x="537.3011291214268" y="164.17142857142858" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
