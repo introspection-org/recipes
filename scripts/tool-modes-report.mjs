@@ -313,6 +313,29 @@ function intelligence(set) {
       svg += `<line x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${H - bottom}" stroke="#e8e6dc"/><text x="${x(v)}" y="${H - bottom + 16}" font-size="10" text-anchor="middle" fill="#5e5d59">$${Number(v.toPrecision(1))}</text>\n`;
     }
   svg += `<line x1="${left}" y1="${H - bottom}" x2="${W - right}" y2="${H - bottom}" stroke="#b0aea5"/>\n`;
+  // Quadrants split at the median cost and score of the plotted models.
+  const median = (xs) => {
+    const sorted = [...xs].sort((a, b) => a - b);
+    const mid = sorted.length / 2;
+    return sorted.length % 2
+      ? sorted[Math.floor(mid)]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const midCost = 10 ** median(points.map((p) => Math.log10(p.cost)));
+  const midScore = median(points.map((p) => p.score));
+  svg += `<rect x="${left}" y="${top}" width="${x(midCost) - left}" height="${y(midScore) - top}" fill="#e3f1dc" opacity="0.75"/>\n`;
+  svg += `<rect x="${x(midCost)}" y="${y(midScore)}" width="${W - right - x(midCost)}" height="${H - bottom - y(midScore)}" fill="#efede6" opacity="0.8"/>\n`;
+  // The Pareto line: each model no cheaper model beats on intelligence.
+  const frontier = [...points]
+    .sort((a, b) => a.cost - b.cost)
+    .reduce(
+      (line, p) =>
+        !line.length || p.score > line.at(-1).score ? [...line, p] : line,
+      [],
+    );
+  svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
+  svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
+  svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
   // A label that would overlap one already placed goes below its point.
   const placed = [];
   for (const point of points) {
