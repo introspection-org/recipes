@@ -334,6 +334,32 @@ def test_a_committed_evaluation_binding_is_accepted() -> None:
     assert codes == ["package.local_config_present"]
 
 
+def test_a_committed_api_binding_is_accepted_only_for_evaluation() -> None:
+    def report(binding: str) -> introspection_recipe_check.Report:
+        return introspection_recipe_check.check_recipe_files(
+            {
+                "files": [
+                    {
+                        "path": "package.json",
+                        "content": '{"name":"demo","pi":{"agents":["agents/*.yaml"]}}',
+                    },
+                    {
+                        "path": "agents/agent.yaml",
+                        "content": "name: agent\nmodel:\n  name: test/model\n",
+                    },
+                    {"path": ".pi/api.local.json", "content": binding},
+                ]
+            }
+        )
+
+    fake = '{"apis":[{"host":"api.example.com","url":"http://fakes:7353/example"}]}'
+    assert report(fake).valid
+
+    live = '{"apis":[{"host":"api.example.com","url":"https://staging.example.com"}]}'
+    codes = [diagnostic.code for diagnostic in report(live).diagnostics]
+    assert codes == ["package.local_config_present"]
+
+
 MISSION_JUDGE = (
     "name: booking\n"
     "type: mission\n"
