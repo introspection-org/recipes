@@ -1,4 +1,9 @@
-import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
@@ -175,6 +180,23 @@ describe("html adapter: render without a browser (resvg)", () => {
       height: 300,
     });
     expect(text(result)).toContain("panel 2 of 2");
+  });
+
+  it("holds the image limit across panels and reports the rest", async () => {
+    const panel = (i: number) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="#${(i * 111111).toString(16).padStart(6, "0").slice(0, 6)}"/></svg>`;
+    writeFileSync(
+      join(cwd, "many-panels.html"),
+      `<!doctype html><html><body><figure>${Array.from({ length: 12 }, (_, i) => panel(i)).join("")}<figcaption>Twelve panels</figcaption></figure></body></html>`,
+    );
+    const result = await tool().execute("4c", {
+      command: "render",
+      path: "many-panels.html",
+      pages: "1",
+    });
+    expect(result.details.images).toHaveLength(10);
+    expect(result.details.skipped).toHaveLength(2);
+    expect(text(result)).toContain("over the 10-image limit");
   });
 
   it("renders a standalone .svg file", async () => {

@@ -117,6 +117,7 @@ export class HtmlDocumentAdapter implements DocumentAdapter {
         fullPage,
         outputDir: input.outputDir,
         stem: basename(input.path, extname(input.path)),
+        maxImages: room,
       });
     } finally {
       await browser?.close();

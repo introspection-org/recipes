@@ -22,6 +22,8 @@ export interface HtmlRenderRequest {
   outputDir: string;
   /** File name prefix for the images. */
   stem: string;
+  /** The most chart images to write; panels count one each. */
+  maxImages: number;
 }
 
 export interface HtmlRenderedImage {
@@ -155,6 +157,16 @@ export class ResvgHtmlRenderer implements HtmlRenderer {
         const label = many
           ? `${chartLabel(chart)}, panel ${index + 1} of ${chart.svgs.length}`
           : chartLabel(chart);
+        if (images.length >= request.maxImages) {
+          skipped.push({
+            label,
+            reason:
+              chart.svgs.length > request.maxImages
+                ? `over the ${request.maxImages}-image limit; a browser draws the whole figure as one image`
+                : `over the ${request.maxImages}-image limit; render it on its own with pages: "${chart.number}"`,
+          });
+          continue;
+        }
         let rendered;
         try {
           rendered = new Resvg(svg, {
