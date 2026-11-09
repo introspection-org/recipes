@@ -241,6 +241,6 @@ Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858
 <text x="606.6370189637862" y="133.57142857142858" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra</text>
 <text x="70" y="406" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>
 <g transform="translate(70 413) scale(0.24)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="86" y="424" font-size="12" font-family="Georgia, serif" fill="#5e5d59">Artificial Analysis</text>
-<text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>
+<text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank"><tspan fill="#a8522f" text-decoration="underline">https://artificialanalysis.ai/leaderboards/models</tspan></a>, read 2026-11-08.</text>
 <text transform="translate(20 217) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index</text>
 </svg>
