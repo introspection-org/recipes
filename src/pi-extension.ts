@@ -1036,6 +1036,9 @@ export function createRecipesExtension(
             : {}),
           exposure: (name) =>
             platformToolExposure(launchState.resolved.toolPolicy, name),
+          ...(launchState.resolved.wildcardTools
+            ? { wildcardTools: launchState.resolved.wildcardTools }
+            : {}),
         },
       );
       launchState.initialConnectorToolNames =

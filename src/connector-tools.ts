@@ -38,6 +38,8 @@ export interface RecipeConnectorExtensionOptions {
   hostDir?: string;
   /** How a first-party tool registers for the agent (`tools.mode`, `defer`). Default: declared. */
   exposure?: (tool: string) => RecipeToolExposure;
+  /** What the agent's `include: ["*"]` added (`wildcardTools`). */
+  wildcardTools?: readonly string[];
 }
 
 interface RecipeConnectorToolLoadout {

@@ -118,7 +118,7 @@ export interface LoadedRecipeProductivity {
  *
  * One provider per Recipe. The declaration's per-tool allowlists narrow what
  * the provider supports; an unknown or unsupported command fails here, and an
- * agent selecting a tool the declaration does not enable fails too.
+ * agent naming a tool the declaration does not enable fails too.
  */
 export async function loadRecipeProductivity(
   declarations: readonly RecipePackageProductivity[],
@@ -133,6 +133,8 @@ export async function loadRecipeProductivity(
     fetch?: ProductivityFetch;
     /** How a first-party tool registers for the agent (`tools.mode`). Default: declared. */
     exposure?: (tool: string) => RecipeToolExposure;
+    /** What `include: ["*"]` added: one of these the provider does not enable is left out rather than refused. */
+    wildcardTools?: readonly string[];
   },
 ): Promise<LoadedRecipeProductivity> {
   if (declarations.length === 0) return { toolNames: [] };
@@ -179,8 +181,10 @@ export async function loadRecipeProductivity(
     if (commands.length > 0)
       (enabled as Record<string, string[]>)[tool] = commands;
   }
-  const selected = PRODUCTIVITY_TOOLS.filter((tool) =>
-    agentTools.includes(tool),
+  const selected = PRODUCTIVITY_TOOLS.filter(
+    (tool) =>
+      agentTools.includes(tool) &&
+      (enabled[tool] !== undefined || !options.wildcardTools?.includes(tool)),
   );
   const disabled = selected.filter((tool) => !enabled[tool]);
   if (disabled.length > 0)

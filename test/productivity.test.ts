@@ -826,6 +826,27 @@ describe("loading a productivity provider", () => {
     expect(loaded.toolNames).toEqual(["calendar", "drive"]);
   });
 
+  it('leaves out a tool include: ["*"] selects that the provider does not support, but refuses it named', async () => {
+    const mailOnly = { mail: capabilities.mail };
+    const recipeDir = recipe([{ provider: "fake" }], {
+      capabilities: mailOnly,
+    });
+    const manifest = readPiPackageManifest(recipeDir);
+    const { tools, wildcard } = selectedAgentTools(["*"], undefined, manifest);
+    const loaded = await loadRecipeProductivity(manifest.productivity!, tools, {
+      recipeDir,
+      wildcardTools: wildcard,
+    });
+    expect(loaded.toolNames).toEqual(["mail"]);
+    await expect(
+      loadRecipeProductivity(manifest.productivity!, ["mail", "drive"], {
+        recipeDir,
+      }),
+    ).rejects.toThrow(
+      "The agent selects drive, which pi.productivity provider 'fake' does not enable",
+    );
+  });
+
   it("refuses two providers", async () => {
     const recipeDir = recipe([{ provider: "fake" }, { provider: "other" }]);
     await expect(

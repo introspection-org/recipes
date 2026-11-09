@@ -843,6 +843,9 @@ async function createSessionForAgent(
         cwd,
         python: python.packages,
         exposure,
+        ...(recipe.wildcardTools
+          ? { wildcardTools: recipe.wildcardTools }
+          : {}),
       },
     );
     const connectorLoadout = connectors.loadout;
