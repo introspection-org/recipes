@@ -10,269 +10,259 @@
 <rect x="324.8" y="38" width="10" height="10" rx="2" fill="#77756e" stroke="#0000001f"/><text x="338.8" y="47" font-size="12" fill="#5e5d59">gpt-6.1-sol</text>
 <rect x="413.20000000000005" y="38" width="10" height="10" rx="2" fill="#141413" stroke="#0000001f"/><text x="427.20000000000005" y="47" font-size="12" fill="#5e5d59">gpt-6-astra</text>
 <rect x="501.6" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="515.6" y="47" font-size="12" fill="#5e5d59">fastest</text>
-<rect x="565.8" y="41.5" width="10" height="3" rx="1.5" fill="#ff1744"/><text x="579.8" y="47" font-size="12" fill="#5e5d59">failed</text>
-<rect x="626.4" y="37" width="12" height="12" rx="3" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="642.4" y="47" font-size="12" fill="#5e5d59">recommended</text>
+<rect x="568.8" y="37" width="12" height="12" rx="3" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="584.8" y="47" font-size="12" fill="#5e5d59">recommended</text>
 <line x1="120" y1="58" x2="120" y2="518" stroke="#e8e6dc"/><text x="120" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">0s</text>
-<line x1="228.6097350525852" y1="58" x2="228.6097350525852" y2="518" stroke="#e8e6dc"/><text x="228.6097350525852" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">5s</text>
-<line x1="337.2194701051704" y1="58" x2="337.2194701051704" y2="518" stroke="#e8e6dc"/><text x="337.2194701051704" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">10s</text>
-<line x1="445.8292051577556" y1="58" x2="445.8292051577556" y2="518" stroke="#e8e6dc"/><text x="445.8292051577556" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">15s</text>
-<line x1="554.4389402103408" y1="58" x2="554.4389402103408" y2="518" stroke="#e8e6dc"/><text x="554.4389402103408" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">20s</text>
+<line x1="249.2162793368812" y1="58" x2="249.2162793368812" y2="518" stroke="#e8e6dc"/><text x="249.2162793368812" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">5s</text>
+<line x1="378.4325586737624" y1="58" x2="378.4325586737624" y2="518" stroke="#e8e6dc"/><text x="378.4325586737624" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">10s</text>
+<line x1="507.6488380106436" y1="58" x2="507.6488380106436" y2="518" stroke="#e8e6dc"/><text x="507.6488380106436" y="532" font-size="10" text-anchor="middle" fill="#5e5d59">15s</text>
 <line x1="120" y1="518" x2="570" y2="518" stroke="#b0aea5"/>
-<text x="110" y="109" font-size="12" text-anchor="end" fill="#141413" font-weight="400">tools</text>
-<rect x="120" y="64" width="202.57453343067982" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · tools
-Time per task: 9.3s ±14%
-Cost per task: $0.00169 ±12%
+<text x="110" y="109" font-size="12" text-anchor="end" fill="#141413" font-weight="600">tools</text>
+<rect x="120" y="64" width="207.6815728014089" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · tools
+Time per task: 8.0s ±32%
+Cost per task: $0.00126 ±22%
 Runs: 5
 Drafted: 5/5
-Requests per task: 4.6
-Input tokens: 30,987
-Cached: 83%
-Output tokens: 1,605</title></rect>
-<text x="328.5745334306798" y="75" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.3s<tspan font-size="9.5" fill="#8a8880"> ±14%</tspan></text>
-<rect x="120" y="80" width="194.33177860508897" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · tools
-Time per task: 8.9s ±41%
-Cost per task: $0.0248 ±57%
+Requests per task: 3.2
+Input tokens: 21,427
+Cached: 79%
+Output tokens: 1,081</title></rect>
+<text x="333.6815728014089" y="75" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.0s<tspan font-size="9.5" fill="#8a8880"> ±32%</tspan></text>
+<rect x="120" y="80" width="167.24893755503655" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · tools
+Fastest
+Time per task: 6.5s ±25%
+Cost per task: $0.0217 ±69%
+Runs: 3
+Drafted: 3/3
+Requests per task: 3.0
+Input tokens: 19,893
+Cached: 76%
+Output tokens: 821</title></rect>
+<rect x="120" y="80" width="167.24893755503655" height="14" rx="3" fill="url(#win-dark)" pointer-events="none"/>
+<text x="293.24893755503655" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">6.5s<tspan font-size="9.5" fill="#8a8880"> ±25%</tspan></text>
+<rect x="120" y="96" width="204.4459971668134" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · tools
+Time per task: 7.9s ±22%
+Cost per task: $0.0357 ±82%
+Runs: 3
+Drafted: 3/3
+Requests per task: 3.0
+Input tokens: 17,263
+Cached: 80%
+Output tokens: 776</title></rect>
+<text x="330.4459971668134" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.9s<tspan font-size="9.5" fill="#8a8880"> ±22%</tspan></text>
+<rect x="120" y="112" width="279.7635820666947" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · tools
+Time per task: 10.8s ±23%
+Cost per task: $0.00115 ±2%
+Runs: 5
+Drafted: 5/5
+Requests per task: 5.0
+Input tokens: 31,574
+Cached: 77%
+Output tokens: 394</title></rect>
+<text x="405.7635820666947" y="123" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.8s<tspan font-size="9.5" fill="#8a8880"> ±23%</tspan></text>
+<rect x="120" y="128" width="300.2555610857996" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · tools
+Time per task: 11.6s ±28%
+Cost per task: $0.0210 ±1%
+Runs: 3
+Drafted: 3/3
+Requests per task: 5.0
+Input tokens: 31,420
+Cached: 78%
+Output tokens: 444</title></rect>
+<text x="426.2555610857996" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.6s<tspan font-size="9.5" fill="#8a8880"> ±28%</tspan></text>
+<rect x="120" y="144" width="406.86760595734904" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · tools
+Time per task: 15.7s ±22%
+Cost per task: $0.117 ±1%
+Runs: 3
+Drafted: 3/3
+Requests per task: 5.0
+Input tokens: 31,433
+Cached: 78%
+Output tokens: 443</title></rect>
+<text x="532.867605957349" y="155" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">15.7s<tspan font-size="9.5" fill="#8a8880"> ±22%</tspan></text>
+<text x="110" y="221" font-size="12" text-anchor="end" fill="#141413" font-weight="400">tools + defer</text>
+<rect x="120" y="176" width="278.81771890194875" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · tools + defer
+Time per task: 10.8s ±36%
+Cost per task: $0.00190 ±6%
+Runs: 5
+Drafted: 5/5
+Requests per task: 5.4
+Input tokens: 31,173
+Cached: 74%
+Output tokens: 1,321</title></rect>
+<text x="404.81771890194875" y="187" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.8s<tspan font-size="9.5" fill="#8a8880"> ±36%</tspan></text>
+<rect x="120" y="192" width="209.78693671273788" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · tools + defer
+Time per task: 8.1s ±25%
+Cost per task: $0.0298 ±7%
 Runs: 3
 Drafted: 3/3
 Requests per task: 4.0
-Input tokens: 24,541
-Cached: 80%
-Output tokens: 1,088</title></rect>
-<text x="320.33177860508897" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.9s<tspan font-size="9.5" fill="#8a8880"> ±41%</tspan></text>
-<rect x="120" y="96" width="258.8604425243316" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · tools
-Time per task: 11.9s ±43%
-Cost per task: $0.0434 ±57%
+Input tokens: 24,220
+Cached: 68%
+Output tokens: 904</title></rect>
+<text x="335.7869367127379" y="203" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.1s<tspan font-size="9.5" fill="#8a8880"> ±25%</tspan></text>
+<rect x="120" y="208" width="315.0292890233163" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · tools + defer
+Time per task: 12.2s ±15%
+Cost per task: $0.0632 ±9%
+Runs: 3
+Drafted: 3/3
+Requests per task: 4.3
+Input tokens: 25,156
+Cached: 69%
+Output tokens: 1,061</title></rect>
+<text x="441.0292890233163" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">12.2s<tspan font-size="9.5" fill="#8a8880"> ±15%</tspan></text>
+<rect x="120" y="224" width="249.23752823614996" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · tools + defer
+Time per task: 9.6s ±23%
+Cost per task: $0.00163 ±18%
+Runs: 5
+Drafted: 5/5
+Requests per task: 5.4
+Input tokens: 25,190
+Cached: 48%
+Output tokens: 397</title></rect>
+<text x="375.23752823614996" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.6s<tspan font-size="9.5" fill="#8a8880"> ±23%</tspan></text>
+<rect x="120" y="240" width="404.3780389754585" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · tools + defer
+Time per task: 15.6s ±22%
+Cost per task: $0.0342 ±2%
+Runs: 3
+Drafted: 3/3
+Requests per task: 9.0
+Input tokens: 47,553
+Cached: 73%
+Output tokens: 471</title></rect>
+<text x="530.3780389754585" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">15.6s<tspan font-size="9.5" fill="#8a8880"> ±22%</tspan></text>
+<rect x="120" y="256" width="424.9923427390022" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · tools + defer
+Time per task: 16.4s ±31%
+Cost per task: $0.168 ±1%
+Runs: 3
+Drafted: 3/3
+Requests per task: 6.0
+Input tokens: 30,232
+Cached: 58%
+Output tokens: 467</title></rect>
+<text x="550.9923427390022" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">16.4s<tspan font-size="9.5" fill="#8a8880"> ±31%</tspan></text>
+<text x="110" y="333" font-size="12" text-anchor="end" fill="#141413" font-weight="400">codemode</text>
+<rect x="120" y="288" width="196.97729622114167" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · codemode
+Time per task: 7.6s ±28%
+Cost per task: $0.00132 ±21%
+Runs: 5
+Drafted: 5/5
+Requests per task: 3.6
+Input tokens: 27,349
+Cached: 82%
+Output tokens: 1,024</title></rect>
+<text x="322.97729622114167" y="299" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.6s<tspan font-size="9.5" fill="#8a8880"> ±28%</tspan></text>
+<rect x="120" y="304" width="195.4611585435889" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · codemode
+Time per task: 7.6s ±64%
+Cost per task: $0.0219 ±82%
 Runs: 3
 Drafted: 3/3
 Requests per task: 3.3
-Input tokens: 18,801
-Cached: 78%
-Output tokens: 1,051</title></rect>
-<text x="384.8604425243316" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.9s<tspan font-size="9.5" fill="#8a8880"> ±43%</tspan></text>
-<rect x="120" y="112" width="189.4370998787191" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · tools
-Time per task: 8.7s ±11%
-Cost per task: $0.00117 ±19%
+Input tokens: 24,704
+Cached: 79%
+Output tokens: 747</title></rect>
+<text x="321.4611585435889" y="315" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.6s<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±64%</tspan></text>
+<rect x="120" y="320" width="226.61951070102225" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · codemode
+Time per task: 8.8s ±35%
+Cost per task: $0.0353 ±101%
+Runs: 3
+Drafted: 3/3
+Requests per task: 3.0
+Input tokens: 19,672
+Cached: 81%
+Output tokens: 695</title></rect>
+<text x="352.61951070102225" y="331" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.8s<tspan font-size="9.5" fill="#8a8880"> ±35%</tspan></text>
+<rect x="120" y="336" width="179.38837627780543" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · codemode
+Recommended time
+Time per task: 6.9s ±16%
+Cost per task: $0.000941 ±3%
 Runs: 5
 Drafted: 5/5
 Requests per task: 4.8
-Input tokens: 28,280
-Cached: 73%
-Output tokens: 438</title></rect>
-<text x="315.4370998787191" y="123" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.7s<tspan font-size="9.5" fill="#8a8880"> ±11%</tspan></text>
-<rect x="120" y="128" width="221.95485455346312" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · tools
-Time per task: 10.2s ±16%
-Cost per task: $0.0220 ±59%
+Input tokens: 23,296
+Cached: 75%
+Output tokens: 394</title></rect>
+<rect x="121.5" y="337.5" width="176.38837627780543" height="11" rx="2" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>
+<text x="305.38837627780543" y="347" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">6.9s<tspan font-size="9.5" fill="#8a8880"> ±16%</tspan></text>
+<rect x="120" y="352" width="227.13637581836986" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · codemode
+Time per task: 8.8s ±23%
+Cost per task: $0.0178 ±3%
 Runs: 3
 Drafted: 3/3
 Requests per task: 5.0
-Input tokens: 28,868
-Cached: 72%
-Output tokens: 363</title></rect>
-<text x="347.9548545534631" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.2s<tspan font-size="9.5" fill="#8a8880"> ±16%</tspan></text>
-<rect x="120" y="144" width="306.1056772722061" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · tools
-Time per task: 14.1s ±25%
-Cost per task: $0.107 ±1%
+Input tokens: 24,425
+Cached: 77%
+Output tokens: 450</title></rect>
+<text x="353.13637581836986" y="363" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.8s<tspan font-size="9.5" fill="#8a8880"> ±23%</tspan></text>
+<rect x="120" y="368" width="450" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · codemode
+Time per task: 17.4s ±105%
+Cost per task: $0.0978 ±0%
 Runs: 3
 Drafted: 3/3
 Requests per task: 5.0
-Input tokens: 29,295
-Cached: 78%
-Output tokens: 382</title></rect>
-<text x="432.1056772722061" y="155" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.1s<tspan font-size="9.5" fill="#8a8880"> ±25%</tspan></text>
-<text x="110" y="221" font-size="12" text-anchor="end" fill="#141413" font-weight="400">tools + defer</text>
-<rect x="120" y="176" width="235.6787806747078" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · tools + defer
-Time per task: 10.8s ±8%
-Cost per task: $0.00218 ±2%
+Input tokens: 24,372
+Cached: 77%
+Output tokens: 448</title></rect>
+<text x="576" y="379" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">17.4s<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±105%</tspan></text>
+<text x="110" y="445" font-size="12" text-anchor="end" fill="#141413" font-weight="400">cli</text>
+<rect x="120" y="400" width="227.44649488877826" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · cli
+Time per task: 8.8s ±11%
+Cost per task: $0.00177 ±7%
 Runs: 5
 Drafted: 5/5
 Requests per task: 6.0
-Input tokens: 35,060
-Cached: 76%
-Output tokens: 1,749</title></rect>
-<text x="361.6787806747078" y="187" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.8s<tspan font-size="9.5" fill="#8a8880"> ±8%</tspan></text>
-<rect x="120" y="192" width="224.76422636682332" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · tools + defer
-Time per task: 10.3s ±26%
-Cost per task: $0.0326 ±8%
+Input tokens: 32,873
+Cached: 78%
+Output tokens: 1,240</title></rect>
+<text x="353.44649488877826" y="411" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.8s<tspan font-size="9.5" fill="#8a8880"> ±11%</tspan></text>
+<rect x="120" y="416" width="222.1916995290785" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · cli
+Time per task: 8.6s ±19%
+Cost per task: $0.0270 ±10%
 Runs: 3
 Drafted: 3/3
 Requests per task: 4.0
-Input tokens: 23,005
-Cached: 67%
-Output tokens: 1,219</title></rect>
-<text x="350.7642263668233" y="203" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">10.3s<tspan font-size="9.5" fill="#8a8880"> ±26%</tspan></text>
-<rect x="120" y="208" width="317.8138067108748" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · tools + defer
-Time per task: 14.6s ±21%
-Cost per task: $0.0670 ±11%
-Runs: 3
-Drafted: 3/3
-Requests per task: 4.7
-Input tokens: 24,605
+Input tokens: 21,698
 Cached: 69%
-Output tokens: 1,308</title></rect>
-<text x="443.8138067108748" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.6s<tspan font-size="9.5" fill="#8a8880"> ±21%</tspan></text>
-<rect x="120" y="224" width="220.7862138042973" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · tools + defer
-Time per task: 10.2s ±41%
-Cost per task: $0.00157 ±11%
-Runs: 5
-Drafted: 4/5
-Failed runs: 1/5
-Requests per task: 5.6
-Input tokens: 25,979
-Cached: 50%
-Output tokens: 447</title></rect>
-<rect x="120" y="224" width="44.15724276085946" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="229.5" width="44.15724276085946" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
-<text x="346.7862138042973" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">10.2s<tspan font-size="9.5" fill="#8a8880"> ±41%</tspan> · 1/5 runs failed</text>
-<rect x="120" y="240" width="314.3455358381956" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · tools + defer
-Time per task: 14.5s ±37%
-Cost per task: $0.0318 ±9%
-Runs: 3
-Drafted: 3/3
-Requests per task: 8.0
-Input tokens: 39,716
-Cached: 69%
-Output tokens: 486</title></rect>
-<text x="440.3455358381956" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.5s<tspan font-size="9.5" fill="#8a8880"> ±37%</tspan></text>
-<rect x="120" y="256" width="421.57230693111126" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · tools + defer
-Time per task: 19.4s ±17%
-Cost per task: $0.177 ±5%
-Runs: 3
-Drafted: 3/3
-Requests per task: 8.7
-Input tokens: 43,408
-Cached: 72%
-Output tokens: 456</title></rect>
-<text x="547.5723069311113" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">19.4s<tspan font-size="9.5" fill="#8a8880"> ±17%</tspan></text>
-<text x="110" y="333" font-size="12" text-anchor="end" fill="#141413" font-weight="600">codemode</text>
-<rect x="120" y="288" width="204.71631740591675" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · codemode
-Time per task: 9.4s ±19%
-Cost per task: $0.00171 ±25%
-Runs: 5
-Drafted: 5/5
-Requests per task: 4.6
-Input tokens: 35,773
-Cached: 85%
-Output tokens: 1,466</title></rect>
-<text x="330.71631740591675" y="299" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.4s<tspan font-size="9.5" fill="#8a8880"> ±19%</tspan></text>
-<rect x="120" y="304" width="174.13036788530815" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · codemode
-Time per task: 8.0s ±16%
-Cost per task: $0.0235 ±74%
-Runs: 3
-Drafted: 3/3
-Requests per task: 4.0
-Input tokens: 28,464
-Cached: 83%
-Output tokens: 888</title></rect>
-<text x="300.13036788530815" y="315" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.0s<tspan font-size="9.5" fill="#8a8880"> ±16%</tspan></text>
-<rect x="120" y="320" width="267.77368144764705" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · codemode
-Time per task: 12.3s ±14%
-Cost per task: $0.0537 ±75%
-Runs: 3
-Drafted: 3/3
-Requests per task: 4.7
-Input tokens: 34,746
-Cached: 85%
-Output tokens: 1,041</title></rect>
-<text x="393.77368144764705" y="331" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">12.3s<tspan font-size="9.5" fill="#8a8880"> ±14%</tspan></text>
-<rect x="120" y="336" width="166.55954528724254" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · codemode
-Recommended time
-Fastest
-Time per task: 7.7s ±20%
-Cost per task: $0.000930 ±4%
-Runs: 5
-Drafted: 5/5
-Requests per task: 5.0
-Input tokens: 23,303
-Cached: 77%
-Output tokens: 411</title></rect>
-<rect x="120" y="336" width="166.55954528724254" height="14" rx="3" fill="url(#win-light)" pointer-events="none"/>
-<rect x="121.5" y="337.5" width="163.55954528724254" height="11" rx="2" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>
-<text x="292.55954528724254" y="347" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.7s<tspan font-size="9.5" fill="#8a8880"> ±20%</tspan></text>
-<rect x="120" y="352" width="259.2804001665349" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · codemode
-Time per task: 11.9s ±21%
-Cost per task: $0.0238 ±18%
+Output tokens: 891</title></rect>
+<text x="348.1916995290785" y="427" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.6s<tspan font-size="9.5" fill="#8a8880"> ±19%</tspan></text>
+<rect x="120" y="432" width="351.76117002948047" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · cli
+Time per task: 13.6s ±33%
+Cost per task: $0.0591 ±6%
 Runs: 3
 Drafted: 3/3
 Requests per task: 5.3
-Input tokens: 33,004
-Cached: 75%
-Output tokens: 520</title></rect>
-<text x="385.2804001665349" y="363" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.9s<tspan font-size="9.5" fill="#8a8880"> ±21%</tspan></text>
-<rect x="120" y="368" width="311.0003559985759" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · codemode
-Time per task: 14.3s ±20%
-Cost per task: $0.140 ±36%
-Runs: 3
-Drafted: 3/3
-Requests per task: 5.0
-Input tokens: 32,488
-Cached: 72%
-Output tokens: 528</title></rect>
-<text x="437.0003559985759" y="379" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.3s<tspan font-size="9.5" fill="#8a8880"> ±20%</tspan></text>
-<text x="110" y="445" font-size="12" text-anchor="end" fill="#141413" font-weight="400">cli</text>
-<rect x="120" y="400" width="208.59151275259302" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · cli
-Time per task: 9.6s ±14%
-Cost per task: $0.00187 ±7%
+Input tokens: 26,685
+Cached: 74%
+Output tokens: 1,074</title></rect>
+<text x="477.76117002948047" y="443" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">13.6s<tspan font-size="9.5" fill="#8a8880"> ±33%</tspan></text>
+<rect x="120" y="448" width="230.7337570351085" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · cli
+Time per task: 8.9s ±19%
+Cost per task: $0.000972 ±11%
 Runs: 5
 Drafted: 5/5
 Requests per task: 6.2
-Input tokens: 33,013
-Cached: 79%
-Output tokens: 1,481</title></rect>
-<text x="334.591512752593" y="411" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.6s<tspan font-size="9.5" fill="#8a8880"> ±14%</tspan></text>
-<rect x="120" y="416" width="202.40510224399782" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · cli
-Time per task: 9.3s ±19%
-Cost per task: $0.0295 ±3%
-Runs: 3
-Drafted: 3/3
-Requests per task: 5.0
-Input tokens: 26,728
-Cached: 75%
-Output tokens: 1,090</title></rect>
-<text x="328.4051022439978" y="427" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.3s<tspan font-size="9.5" fill="#8a8880"> ±19%</tspan></text>
-<rect x="120" y="432" width="350.99046044493775" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · cli
-Time per task: 16.2s ±18%
-Cost per task: $0.0744 ±16%
+Input tokens: 19,972
+Cached: 71%
+Output tokens: 537</title></rect>
+<text x="356.7337570351085" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">8.9s<tspan font-size="9.5" fill="#8a8880"> ±19%</tspan></text>
+<rect x="120" y="464" width="342.044105823347" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · cli
+Time per task: 13.2s ±17%
+Cost per task: $0.0174 ±2%
 Runs: 3
 Drafted: 3/3
 Requests per task: 6.0
-Input tokens: 32,169
-Cached: 77%
-Output tokens: 1,614</title></rect>
-<text x="476.99046044493775" y="443" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">16.2s<tspan font-size="9.5" fill="#8a8880"> ±18%</tspan></text>
-<rect x="120" y="448" width="214.11323168266642" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · cli
-Time per task: 9.9s ±10%
-Cost per task: $0.000938 ±5%
-Runs: 5
-Drafted: 5/5
-Requests per task: 6.4
-Input tokens: 19,236
+Input tokens: 18,960
 Cached: 72%
-Output tokens: 521</title></rect>
-<text x="340.1132316826664" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.9s<tspan font-size="9.5" fill="#8a8880"> ±10%</tspan></text>
-<rect x="120" y="464" width="325.55406049562237" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · cli
-Time per task: 15.0s ±41%
-Cost per task: $0.0191 ±28%
+Output tokens: 540</title></rect>
+<text x="468.044105823347" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">13.2s<tspan font-size="9.5" fill="#8a8880"> ±17%</tspan></text>
+<rect x="120" y="480" width="436.7079520655461" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · cli
+Time per task: 16.9s ±30%
+Cost per task: $0.0944 ±3%
 Runs: 3
 Drafted: 3/3
-Failed runs: 1/3
-Rejected calls per run: 0.7
-Requests per task: 6.7
-Input tokens: 21,909
-Cached: 74%
-Output tokens: 653</title></rect>
-<rect x="120" y="464" width="108.51802016520746" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="469.5" width="108.51802016520746" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
-<text x="451.55406049562237" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">15.0s<tspan font-size="9.5" fill="#8a8880"> ±41%</tspan> · 1/3 runs failed</text>
-<rect x="120" y="480" width="450" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · cli
-Time per task: 20.7s ±16%
-Cost per task: $0.116 ±9%
-Runs: 8
-Drafted: 8/8
-Failed runs: 7/8
-Rejected calls per run: 1.4
-Requests per task: 7.4
-Input tokens: 25,839
-Cached: 77%
-Output tokens: 744</title></rect>
-<rect x="120" y="480" width="393.75" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="485.5" width="393.75" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
-<text x="576" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">20.7s<tspan font-size="9.5" fill="#8a8880"> ±16%</tspan> · 7/8 runs failed</text>
+Requests per task: 6.0
+Input tokens: 19,078
+Cached: 72%
+Output tokens: 538</title></rect>
+<text x="562.7079520655461" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">16.9s<tspan font-size="9.5" fill="#8a8880"> ±30%</tspan></text>
 <text x="120" y="552" font-size="11" fill="#5e5d59">Seconds per task, lower is better · ±: 95% confidence interval of the mean (±50% or wider in purple)</text>
 </svg>
