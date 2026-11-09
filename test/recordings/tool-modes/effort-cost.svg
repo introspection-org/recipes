@@ -40,7 +40,7 @@ Requests per task: 4.0
 Input tokens: 28,464
 Cached: 83%
 Output tokens: 888</title></rect>
-<text x="392.7626648449119" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0235<tspan font-size="9.5" fill="#8a8880"> ±74%</tspan> · codemode</text>
+<text x="392.7626648449119" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0235<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±74%</tspan> · codemode</text>
 <rect x="120" y="96" width="296.7561555065" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · low effort · tools
 Cost per task: $0.0434 ±57%
 Time per task: 11.9s ±43%
@@ -50,7 +50,7 @@ Requests per task: 3.3
 Input tokens: 18,801
 Cached: 78%
 Output tokens: 1,051</title></rect>
-<text x="422.7561555065" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0434<tspan font-size="9.5" fill="#8a8880"> ±57%</tspan> · tools</text>
+<text x="422.7561555065" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0434<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±57%</tspan> · tools</text>
 <rect x="120" y="112" width="82.27109266423753" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · low effort · cli
 Cost per task: $0.000539 ±3%
 Time per task: 9.9s ±10%
@@ -71,7 +71,7 @@ Requests per task: 5.0
 Input tokens: 28,868
 Cached: 72%
 Output tokens: 363</title></rect>
-<text x="389.5307679506007" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0220<tspan font-size="9.5" fill="#8a8880"> ±59%</tspan> · tools</text>
+<text x="389.5307679506007" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0220<tspan font-size="9.5" fill="#7c3aed" font-weight="600"> ±59%</tspan> · tools</text>
 <rect x="120" y="144" width="340.9014708013775" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · low effort · tools
 Cost per task: $0.107 ±1%
 Time per task: 14.1s ±25%
@@ -204,5 +204,5 @@ Input tokens: 38,134
 Cached: 69%
 Output tokens: 569</title></rect>
 <text x="489.9025515903135" y="379" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.172 · codemode</text>
-<text x="120" y="440" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better · ±: 95% confidence interval of the mean</text>
+<text x="120" y="440" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better · ±: 95% confidence interval of the mean, <tspan fill="#7c3aed" font-weight="600">purple</tspan> when ±50% or wider</text>
 </svg>

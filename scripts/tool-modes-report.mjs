@@ -110,6 +110,8 @@ function runs(set, id) {
 }
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+// An interval this wide relative to its mean is too uncertain to rank on.
+const WIDE = 0.5;
 // Student's t at 95%, two-sided, by degrees of freedom; 1.96 past the table.
 const T95 = [12.71, 4.3, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
 /** Half the width of the mean's 95% confidence interval; 0 for one run. */
@@ -338,10 +340,10 @@ function chart(groups, value, title, unit, digits, log = false) {
       }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
-      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${r[ciKey] > 0 ? `<tspan font-size="9.5" fill="#8a8880"> ±${Math.round((100 * r[ciKey]) / r[value])}%</tspan>` : ""}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${r[ciKey] > 0 ? `<tspan font-size="9.5" ${r[ciKey] / r[value] >= WIDE ? 'fill="#7c3aed" font-weight="600"' : 'fill="#8a8880"'}> ±${Math.round((100 * r[ciKey]) / r[value])}%</tspan>` : ""}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean</text>\n`;
+  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean, <tspan fill="#7c3aed" font-weight="600">purple</tspan> when ±50% or wider</text>\n`;
   return `${svg}</svg>\n`;
 }
 

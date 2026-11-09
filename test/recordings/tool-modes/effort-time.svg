@@ -202,5 +202,5 @@ Input tokens: 38,134
 Cached: 69%
 Output tokens: 569</title></rect>
 <text x="438.163262972861" y="379" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">16.2s · codemode</text>
-<text x="120" y="440" font-size="11" fill="#5e5d59">Seconds per task, lower is better · ±: 95% confidence interval of the mean</text>
+<text x="120" y="440" font-size="11" fill="#5e5d59">Seconds per task, lower is better · ±: 95% confidence interval of the mean, <tspan fill="#7c3aed" font-weight="600">purple</tspan> when ±50% or wider</text>
 </svg>
