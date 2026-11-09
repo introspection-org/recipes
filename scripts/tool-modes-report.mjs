@@ -313,16 +313,9 @@ function intelligence(set) {
       svg += `<line x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${H - bottom}" stroke="#e8e6dc"/><text x="${x(v)}" y="${H - bottom + 16}" font-size="10" text-anchor="middle" fill="#5e5d59">$${Number(v.toPrecision(1))}</text>\n`;
     }
   svg += `<line x1="${left}" y1="${H - bottom}" x2="${W - right}" y2="${H - bottom}" stroke="#b0aea5"/>\n`;
-  // Quadrants split at the median cost and score of the plotted models.
-  const median = (xs) => {
-    const sorted = [...xs].sort((a, b) => a - b);
-    const mid = sorted.length / 2;
-    return sorted.length % 2
-      ? sorted[Math.floor(mid)]
-      : (sorted[mid - 1] + sorted[mid]) / 2;
-  };
-  const midCost = 10 ** median(points.map((p) => Math.log10(p.cost)));
-  const midScore = median(points.map((p) => p.score));
+  // Four equal quadrants: the middle of each axis, the cost axis in log space.
+  const midCost = 10 ** ((lo + hi) / 2);
+  const midScore = yMax / 2;
   svg += `<rect x="${left}" y="${top}" width="${x(midCost) - left}" height="${y(midScore) - top}" fill="#e3f1dc" opacity="0.75"/>\n`;
   svg += `<rect x="${x(midCost)}" y="${y(midScore)}" width="${W - right - x(midCost)}" height="${H - bottom - y(midScore)}" fill="#efede6" opacity="0.8"/>\n`;
   // The Pareto line: each model no cheaper model beats on intelligence.
