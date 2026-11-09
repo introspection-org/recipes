@@ -112,7 +112,7 @@ export class HtmlDocumentAdapter implements DocumentAdapter {
     try {
       result = await renderer.render({
         kind: page.kind,
-        markup: page.markup,
+        markup: page.renderMarkup,
         charts,
         fullPage,
         outputDir: input.outputDir,

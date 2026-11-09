@@ -78,6 +78,7 @@ beforeAll(() => {
     "results.html",
     "no-charts.html",
     "panels.html",
+    "scripted.html",
     "trend.svg",
   ])
     copyFileSync(join(fixtures, name), join(cwd, name));
@@ -252,6 +253,20 @@ describe.skipIf(!probe)(
       expect(decodePng(images[2]!).width).toBeGreaterThanOrEqual(600);
       expect(decodePng(images[3]!).width).toBeGreaterThan(0);
       expect(result.details.skipped).toEqual([]);
+    });
+
+    it("draws the chart it numbered when the page's scripts add or remove charts", async () => {
+      const result = await documents(new HtmlDocumentAdapter()).execute("8", {
+        command: "render",
+        path: "scripted.html",
+        pages: "1-2",
+      });
+      const images = result.details.images as string[];
+      expect(images.map((path) => path.split("/").at(-1))).toEqual([
+        "scripted-chart-1.png",
+      ]);
+      expect(decodePng(images[0]!).width).toBe(300 * 2);
+      expect(text(result)).toContain("chart 2: Time per task");
     });
   },
 );

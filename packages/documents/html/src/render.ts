@@ -4,16 +4,15 @@ import { join } from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 import type { Browser, Page } from "playwright-core";
 
-import { findCharts, type HtmlChart } from "./page.js";
+import { CHART_ATTRIBUTE, type HtmlChart } from "./page.js";
 
 /** Pixels per CSS pixel in every image. */
 export const RENDER_SCALE = 2;
 const VIEWPORT = { width: 1280, height: 800 };
-const CHART_ATTRIBUTE = "data-recipe-chart";
 
 export interface HtmlRenderRequest {
   kind: "html" | "svg";
-  /** The file's markup; a renderer loads it as is, so the page must be self-contained. */
+  /** The page's markup with its charts marked by `CHART_ATTRIBUTE`; a renderer loads it as is, so the page must be self-contained. */
   markup: string;
   /** The charts to render, each its own image. */
   charts: readonly HtmlChart[];
@@ -109,26 +108,36 @@ export class BrowserHtmlRenderer implements HtmlRenderer {
         );
       }
     }
+    const skipped: HtmlRenderResult["skipped"] = [];
     if (request.charts.length > 0) {
       images.push(
         ...(await this.capture(request, "light", async (page) => {
-          await page.evaluate(
-            `(${findCharts.toString()})(document).forEach((element, index) => element.setAttribute(${JSON.stringify(CHART_ATTRIBUTE)}, String(index + 1)))`,
-          );
           const shots: HtmlRenderedImage[] = [];
           for (const chart of request.charts) {
-            const png = await page
-              .locator(`[${CHART_ATTRIBUTE}="${chart.number}"]`)
-              .screenshot();
+            const located = page.locator(
+              `[${CHART_ATTRIBUTE}="${chart.number}"]`,
+            );
+            if ((await located.count()) !== 1) {
+              skipped.push({
+                label: chartLabel(chart),
+                reason:
+                  "the page's scripts removed or copied it, so its image can't be matched to it",
+              });
+              continue;
+            }
             shots.push(
-              await save(chartLabel(chart), `chart-${chart.number}`, png),
+              await save(
+                chartLabel(chart),
+                `chart-${chart.number}`,
+                await located.screenshot(),
+              ),
             );
           }
           return shots;
         })),
       );
     }
-    return { images, skipped: [] };
+    return { images, skipped };
   }
 }
 

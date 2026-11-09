@@ -12,10 +12,15 @@ export interface HtmlChart {
   svgs: string[];
 }
 
+/** Marks each chart element in `renderMarkup` with its number. */
+export const CHART_ATTRIBUTE = "data-recipe-chart";
+
 export interface HtmlPage {
   kind: "html" | "svg";
   /** The file's markup. */
   markup: string;
+  /** The markup with each chart marked by number, so a page's scripts can't renumber them before a browser draws it. */
+  renderMarkup: string;
   title: string;
   document: Document;
   charts: HtmlChart[];
@@ -82,6 +87,14 @@ export async function loadPage(path: string): Promise<HtmlPage> {
     .map((style) => style.textContent ?? "")
     .join("\n");
   const elements = findCharts(document);
+  const renderMarkup = (() => {
+    elements.forEach((element, index) =>
+      element.setAttribute(CHART_ATTRIBUTE, String(index + 1)),
+    );
+    const stamped = document.toString();
+    elements.forEach((element) => element.removeAttribute(CHART_ATTRIBUTE));
+    return stamped;
+  })();
   const charts = elements.map((element, index): HtmlChart => {
     // A figure may hold several panels; an SVG nested inside another is part of it.
     const panels =
@@ -99,7 +112,7 @@ export async function loadPage(path: string): Promise<HtmlPage> {
   const title =
     clean(document.querySelector("title")?.textContent) ||
     (kind === "svg" ? (charts[0]?.label ?? "") : "");
-  return { kind, markup, title, document, charts, elements };
+  return { kind, markup, renderMarkup, title, document, charts, elements };
 }
 
 /** Chart numbers from a list like `2-4,9`; every chart when absent. */
