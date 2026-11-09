@@ -209,16 +209,23 @@ function chart(set, value, title, unit, digits, log = false) {
         p < hi ? [10 ** p, 3 * 10 ** p] : [10 ** p],
       )
     : (() => {
+        // A round step (1, 2 or 5 times a power of ten) giving about five ticks.
+        const raw = max / 5;
+        const power = 10 ** Math.floor(Math.log10(raw));
         const step =
-          [1, 2, 5, 10, 20, 50, 100].find((t) => max / t <= 6) ?? 100;
+          power * ([1, 2, 5, 10].find((m) => m * power >= raw) ?? 10);
         return Array.from(
-          { length: Math.floor(max / step) + 1 },
-          (_, i) => i * step,
+          { length: Math.floor(max / step + 1e-9) + 1 },
+          (_, i) => Number((i * step).toPrecision(6)),
         );
       })();
-  // The log scale is the cost chart: its ticks are dollars.
+  const money = value === "costPerTask";
   const tickLabel = (v) =>
-    log ? `$${Number(v.toPrecision(1))}` : `${fmt(Math.round(v))}${unit}`;
+    money
+      ? v === 0
+        ? "$0"
+        : `$${Number(v.toPrecision(2))}`
+      : `${fmt(v, v % 1 ? 1 : 0)}${unit}`;
   for (const v of ticks) {
     const gx = x(v);
     svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 46}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 32}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
@@ -241,7 +248,7 @@ function chart(set, value, title, unit, digits, log = false) {
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
         ...(r.errors > 0 ? [`${fmt(r.errors, 1)} errors/run`] : []),
       ];
-      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${log ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
   svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
@@ -251,7 +258,7 @@ function chart(set, value, title, unit, digits, log = false) {
 const newest = SETS.filter((set) => table[set]).at(-1);
 writeFileSync(
   join(DIR, "cost.svg"),
-  chart(newest, "costPerTask", "Cost per task, by tool mode", "", 2, true),
+  chart(newest, "costPerTask", "Cost per task, by tool mode", "", 2),
 );
 writeFileSync(
   join(DIR, "time.svg"),
