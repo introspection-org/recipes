@@ -54,13 +54,19 @@ const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0]!.id;
 // What the tools told the model when a set was recorded: `flat`, before each
 // command's signature was in its description; `signatures`, after.
 // The fixture runs at low effort; a `-<effort>` set records the same at another.
+// `signatures-clock`, with the fixture's data dated in the clock's own zone;
+// `signatures-shape`, that and calendar.list and reply drafts needing less.
 const SETS = [
   "flat",
   "signatures",
   "signatures-medium",
   "signatures-high",
+  "signatures-clock",
+  "signatures-shape",
 ] as const;
-const effortOf = (set: string) => set.split("-")[1] ?? "low";
+const EFFORTS = ["low", "medium", "high"];
+const effortOf = (set: string) =>
+  set.split("-").find((part) => EFFORTS.includes(part)) ?? "low";
 const RECORD_SET = process.env.RECORD_SET ?? "signatures";
 // Trials per mode: one run is noise. Run 1 is `<mode>`, later runs `<mode>.<n>`.
 const RECORD_RUNS = Number(process.env.RECORD_RUNS ?? 1);

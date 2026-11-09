@@ -11,11 +11,30 @@ const ME = { email: "me@example.test", name: "Sam Example" };
 const DANA = { email: "dana@example.test", name: "Dana Example" };
 const LEE = { email: "lee@example.test", name: "Lee Example" };
 
+// The machine's own zone: what `date` prints in the session's shell, so
+// "tomorrow" means the same day to the data as it does to the clock.
+const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** RFC 3339 with the local offset, such as 2026-03-02T09:00:00-08:00. */
+function local(date: Date): string {
+  const pad = (n: number) => String(Math.abs(n)).padStart(2, "0");
+  const offset = -date.getTimezoneOffset();
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `${offset < 0 ? "-" : "+"}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`
+  );
+}
+
+/** `hour:minute` local time, `offset` days from today, never after now when it is today or earlier. */
 function day(offset: number, hour: number, minute = 0): string {
   const date = new Date();
-  date.setUTCDate(date.getUTCDate() + offset);
-  date.setUTCHours(hour, minute, 0, 0);
-  return date.toISOString().replace(".000Z", "Z");
+  date.setDate(date.getDate() + offset);
+  date.setHours(hour, minute, 0, 0);
+  const now = Date.now();
+  if (offset <= 0 && date.getTime() > now)
+    return local(new Date(now - 10 * 60_000));
+  return local(date);
 }
 
 function notFound(what: string): Error {
@@ -59,8 +78,9 @@ function matches(message: MailMessage, query: string | undefined): boolean {
 }
 
 /**
- * Placeholder mail, calendar and drive for one run, dated around today so a
- * prompt about tomorrow finds something. Writes are kept in `actions`.
+ * Placeholder mail, calendar and drive for one run, dated around today in
+ * the machine's time zone so a prompt about tomorrow finds something. Writes
+ * are kept in `actions`.
  */
 export function createInMemoryGoogleSession(): ProductivitySession & {
   actions: Array<{ command: string; args: unknown }>;
@@ -115,7 +135,7 @@ export function createInMemoryGoogleSession(): ProductivitySession & {
       title: "Team standup",
       start: day(1, 9),
       end: day(1, 9, 15),
-      time_zone: "UTC",
+      time_zone: TIME_ZONE,
       organizer: LEE,
       response: "accepted",
       attendees: [ME, LEE],
@@ -125,7 +145,7 @@ export function createInMemoryGoogleSession(): ProductivitySession & {
       title: "Q3 planning review",
       start: day(1, 14),
       end: day(1, 15),
-      time_zone: "UTC",
+      time_zone: TIME_ZONE,
       location: "Room 4",
       organizer: DANA,
       response: "accepted",
@@ -137,7 +157,7 @@ export function createInMemoryGoogleSession(): ProductivitySession & {
       title: "Dentist",
       start: day(3, 10),
       end: day(3, 11),
-      time_zone: "UTC",
+      time_zone: TIME_ZONE,
       is_organizer: true,
     },
   ];
