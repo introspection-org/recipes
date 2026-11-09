@@ -115,6 +115,8 @@ jobs:
 
       - run: pnpm format:check
 
+      - run: pnpm schemas:check
+
       - run: pnpm knip
 
   rust-lint:

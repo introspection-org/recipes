@@ -290,3 +290,32 @@ A result that silently stops at the first page is the bug reviews kept finding.
   Google's `collectPages`, Microsoft's `@odata.nextLink`): use that package's
   helper rather than a new loop, and test each rule above against a fake that
   pages.
+
+### Tool arguments
+
+The arguments of a first-party command tool (`mail`, `calendar`, `drive`,
+`channels`) are TypeScript types, and their JSON Schemas are generated from
+them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-generator).
+
+- **One type per command,** `<Tool><Command>Arguments` in the family's
+  `arguments.ts` ([`src/productivity/arguments.ts`](../src/productivity/arguments.ts),
+  [`src/channels/arguments.ts`](../src/channels/arguments.ts)): `MailDraftArguments`
+  is `mail draft`. A field shared by several commands is one type alias, so it
+  reaches the model once.
+- **A field's doc comment is its description, and its tags are its limits:**
+  `@minLength`, `@maxLength`, `@minimum`, `@maximum`, `@minItems`, `@maxItems`,
+  `@default`, and `@asType integer` for a whole number. Every field has a
+  description; `test/tool-arguments.test.ts` fails on one without. A word that
+  varies by provider is a `{word}` placeholder the tool fills at registration
+  (`{folder}`, `{labels}`).
+- **Regenerate with `pnpm schemas`** and commit the `arguments.generated.ts`
+  beside the source. CI runs `pnpm schemas:check`, which fails when a
+  generated file is stale. Never edit the generated file, and never hand-write
+  a TypeBox schema for a tool's arguments.
+- **The tool merges the commands with `commandParameters`**
+  ([`src/command-parameters.ts`](../src/command-parameters.ts)): one flat
+  object with each field once, and the commands as its `anyOf` for validators
+  that read it. Some providers send the model only the flat properties, so
+  each command's line in the tool's description starts with a signature
+  `commandSignature` derives from its schema, `?` marking an optional field:
+  `draft { body, to?, cc?, subject?, reply_to? }: Write a draft…`.

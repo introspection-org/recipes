@@ -81,6 +81,7 @@ import {
   serverBehindTools,
   waitForPiMcpServers,
   type PiMcpServerRegistration,
+  assertPiSupportsCodemode,
 } from "./mcp/pi-client.js";
 import {
   createMcpToolSet,
@@ -91,6 +92,8 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  withExposure,
+  withToolExposure,
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
@@ -99,6 +102,7 @@ import {
   RecipeModelTransportError,
   resolveRecipeCredentials,
 } from "./model-binding.js";
+import { PLATFORM_TOOL_NAMES, platformToolExposure } from "./recipe/agent.js";
 import { loadRecipeExtensionFactory } from "./recipe/extensions.js";
 import { recipeSkillMatcher } from "./recipe/skills.js";
 import {
@@ -125,6 +129,11 @@ import {
   type MemoryContextSource,
 } from "./memory.js";
 import { recipeStepExtensions, type RecipeStep } from "./skill-progress.js";
+import {
+  materializeToolsShim,
+  toolsShellEnv,
+  withToolsCommand,
+} from "./tools/shell.js";
 
 function sessionSettingsManager(
   base: SettingsManager,
@@ -767,7 +776,7 @@ async function createSessionForAgent(
     codemodeToolNames,
     piMcpResourceToolNames,
     piMcpSessionOptions,
-  } = piMcpSessionTools(mcp.piServers, recipe.mcp);
+  } = piMcpSessionTools(mcp.piServers, recipe.mcp, recipe.toolPolicy);
   let piMcp: ExtensionAPI | undefined;
 
   const cleanup = async (): Promise<void> => {
@@ -824,12 +833,30 @@ async function createSessionForAgent(
     ]) {
       recipeRegistrations.claim("tool", toolName, "<host>");
     }
+    const exposure = (name: string) =>
+      platformToolExposure(recipe.toolPolicy, name);
     const connectors = await loadRecipeConnectors(
       recipe.manifest,
       recipe.tools,
-      { recipeDir: recipe.recipeDir, env, cwd, python: python.packages },
+      {
+        recipeDir: recipe.recipeDir,
+        env,
+        cwd,
+        python: python.packages,
+        exposure,
+        ...(recipe.wildcardTools
+          ? { wildcardTools: recipe.wildcardTools }
+          : {}),
+      },
     );
     const connectorLoadout = connectors.loadout;
+    // First-party tools a host or Recipe extension registers (`web_search`).
+    const extensionFirstParty = (PLATFORM_TOOL_NAMES as readonly string[])
+      .filter((name) => recipe.tools.includes(name))
+      .filter((name) => !connectorLoadout.toolNames.includes(name));
+    const deferredFirstParty =
+      connectorLoadout.deferredToolNames.length > 0 ||
+      extensionFirstParty.some((name) => exposure(name) === "deferred");
     for (const toolName of [
       ...(connectorLoadout.deferredToolNames.length > 0 ||
       (mcp.deferredToolNames?.length ?? 0) > 0
@@ -853,8 +880,7 @@ async function createSessionForAgent(
           recipeExtensionToolAllowlist(recipe.tools, wantsSubagents, [
             ...connectorLoadout.toolNames,
             ...(mcp.tools?.map((tool) => tool.name) ?? []),
-            ...(connectorLoadout.deferredToolNames.length > 0 ||
-            (mcp.deferredToolNames?.length ?? 0) > 0
+            ...(deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0
               ? [RECIPE_TOOL_SEARCH_NAME]
               : []),
             ...((mcp.deferredToolNames?.length ?? 0) > 0
@@ -874,8 +900,7 @@ async function createSessionForAgent(
           extensionPath,
           recipeExtensionToolAllowlist(recipe.tools, wantsSubagents, [
             ...(mcp.tools?.map((tool) => tool.name) ?? []),
-            ...(connectorLoadout.deferredToolNames.length > 0 ||
-            (mcp.deferredToolNames?.length ?? 0) > 0
+            ...(deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0
               ? [RECIPE_TOOL_SEARCH_NAME]
               : []),
             ...((mcp.deferredToolNames?.length ?? 0) > 0
@@ -953,7 +978,14 @@ async function createSessionForAgent(
           diagnostics,
         }),
         additionalPromptTemplatePaths: [...recipe.promptPaths],
-        extensionFactories: inlineExtensions,
+        extensionFactories: inlineExtensions.map((extension) =>
+          typeof extension === "function"
+            ? withToolExposure(extension, exposure)
+            : {
+                ...extension,
+                factory: withToolExposure(extension.factory, exposure),
+              },
+        ),
         systemPromptOverride: (base) => {
           const resolved = recipe.systemPromptOverride(base);
           const withMemory = [resolved, memoryPrompt]
@@ -1063,8 +1095,7 @@ async function createSessionForAgent(
       );
     }
     const hasDeferredTools =
-      connectorLoadout.deferredToolNames.length > 0 ||
-      (mcp.deferredToolNames?.length ?? 0) > 0;
+      deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0;
     const toolSearchTools = hasDeferredTools
       ? createRecipeToolSearchTools(
           {
@@ -1102,29 +1133,19 @@ async function createSessionForAgent(
       (recipe.mcp?.mode ?? "cli") === "cli" &&
       mcp.available &&
       env !== process.env;
-    const environmentBash: ToolDefinition | undefined =
-      (mcpShellEnv || pythonActivation) &&
-      tools.includes("bash") &&
-      !(opts.customTools ?? []).some((tool) => tool.name === "bash")
-        ? (createBashToolDefinition(cwd, {
-            commandPrefix: settingsManager.getShellCommandPrefix(),
-            shellPath: settingsManager.getShellPath(),
-            spawnHook: (context) => {
-              const shellEnv = mcpShellEnv
-                ? { ...context.env, ...env }
-                : { ...context.env };
-              return {
-                ...context,
-                env: pythonActivation
-                  ? activateRecipePython(shellEnv, pythonActivation)
-                  : shellEnv,
-              };
-            },
-          }) as ToolDefinition)
-        : undefined;
+    const environmentBash = await sessionBash(recipe, {
+      cwd,
+      env,
+      tools,
+      mcpShellEnv,
+      pythonActivation,
+      settingsManager,
+      binRoot: opts.mcpRuntimeDir ?? cwd,
+      customTools: opts.customTools ?? [],
+    });
     const customTools = [
       ...(environmentBash ? [environmentBash] : []),
-      ...(opts.customTools ?? []),
+      ...(opts.customTools ?? []).map((tool) => withExposure(tool, exposure)),
       ...(wantsSubagents
         ? [createAgentTool(agentRuns, recipe.subagents, opts.agentToolOptions)]
         : []),
@@ -1150,8 +1171,13 @@ async function createSessionForAgent(
     await session.bindExtensions({});
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));
+    // A tool `include: ["*"]` added that the host does not offer is left out.
+    const unavailable = new Set(
+      recipe.wildcardTools?.filter((name) => !registered.has(name)),
+    );
     const missingDeclaredTools = selectedToolNames.filter(
-      (name) => !name.includes("*") && !registered.has(name),
+      (name) =>
+        !name.includes("*") && !registered.has(name) && !unavailable.has(name),
     );
     if (missingDeclaredTools.length > 0) {
       throw new Error(
@@ -1166,7 +1192,11 @@ async function createSessionForAgent(
         `Pi did not register Recipe connector tool(s): ${missingConnectorTools.join(", ")}`,
       );
     }
-    if (mcp.tools || connectorLoadout.toolNames.length > 0) {
+    if (
+      mcp.tools ||
+      connectorLoadout.toolNames.length > 0 ||
+      extensionFirstParty.length > 0
+    ) {
       const missingRegistered = mcpToolNames.filter(
         (name) => !registered.has(name),
       );
@@ -1176,10 +1206,16 @@ async function createSessionForAgent(
         );
       }
       const activeTools = [
-        ...tools,
+        ...tools.filter(
+          (name) =>
+            !connectorLoadout.scriptOnlyToolNames.includes(name) &&
+            !unavailable.has(name) &&
+            exposure(name) === "direct",
+        ),
         ...connectorLoadout.initialActiveToolNames,
         ...(mcp.initialActiveToolNames ?? []),
         ...toolSearchTools.map((tool) => tool.name),
+        ...codemodeToolNames,
       ];
       session.setActiveToolsByName(activeTools);
       const applied = new Set(session.getActiveToolNames());
@@ -1250,12 +1286,14 @@ function sessionMcpToolOrigin(
  */
 function piMcpExtensions(
   piServers: PiMcpServerRegistration[],
+  /** Whether `mcp.mode` or `tools.mode` asks for codemode (`piMcpSessionTools`). */
   codemode: boolean,
   runtimeDir: string | undefined,
   cwd: string,
   onPi: (pi: ExtensionAPI) => void,
 ): ExtensionFactory[] {
-  if (piServers.length === 0) return [];
+  if (piServers.length === 0)
+    return codemode ? [createCodemodeExtension({ models: false })] : [];
   // A script's `models.*` calls would spend on models the Recipe never
   // declared, so scripts get tools only.
   return [
@@ -1302,18 +1340,22 @@ async function waitForRequiredPiMcpServers(
   );
 }
 
-/** What `mcp.mode: codemode` adds to a session's tools; nothing when no server is on Pi's client. */
+/** What codemode adds to a session's tools: from `mcp.mode` when a server is on Pi's client, or from `tools.mode`. */
 function piMcpSessionTools(
   servers: PiMcpServerRegistration[] | undefined,
   mcp: ResolvedRecipeAgent["mcp"],
+  toolPolicy: ResolvedRecipeAgent["toolPolicy"],
 ) {
   const codemode = mcp?.mode === "codemode";
   const piServers = servers ?? [];
   const usesPiMcp = piServers.length > 0;
+  const platformCodemode = toolPolicy?.mode === "codemode";
+  if (platformCodemode) assertPiSupportsCodemode("tools.mode codemode");
   return {
     piServers,
     usesPiMcp,
-    codemodeToolNames: usesPiMcp && codemode ? [CODEMODE_TOOL_NAME] : [],
+    codemodeToolNames:
+      (usesPiMcp && codemode) || platformCodemode ? [CODEMODE_TOOL_NAME] : [],
     piMcpResourceToolNames: usesPiMcp ? [...PI_MCP_RESOURCE_TOOL_NAMES] : [],
     piMcpSessionOptions: usesPiMcp
       ? { excludeTools: [...PI_MCP_RESOURCE_TOOL_NAMES] }
@@ -1335,4 +1377,61 @@ function interactionToolExtensions(
       ? [introspectionOpenExtension(registrations, env)]
       : []),
   ];
+}
+
+/**
+ * The session's own bash, when the shell needs the Recipe's environment, its
+ * Python or, with `tools.mode: cli`, the `tools` command on each call's PATH.
+ */
+async function sessionBash(
+  recipe: ResolvedRecipeAgent,
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    tools: readonly string[];
+    mcpShellEnv: boolean;
+    pythonActivation: Parameters<typeof activateRecipePython>[1] | undefined;
+    settingsManager: SettingsManager;
+    binRoot: string;
+    customTools: readonly ToolDefinition[];
+  },
+): Promise<ToolDefinition | undefined> {
+  const { cwd, env, mcpShellEnv, pythonActivation, settingsManager } = options;
+  const firstParty = (PLATFORM_TOOL_NAMES as readonly string[]).filter((name) =>
+    recipe.tools.includes(name),
+  );
+  const toolsBinDir =
+    recipe.toolPolicy?.mode === "cli" && firstParty.length > 0
+      ? join(options.binRoot, ".pi", "tools", "bin")
+      : undefined;
+  const hostBash = options.customTools.some((tool) => tool.name === "bash");
+  // The host's bash may run where the `tools` shim and socket are not.
+  if (toolsBinDir && hostBash && options.tools.includes("bash"))
+    throw new Error(
+      `Recipe agent "${recipe.name}" sets tools.mode cli, which runs the tools command in the session's bash, but the host supplies its own bash; use tools.mode tools or codemode`,
+    );
+  if (
+    !(mcpShellEnv || pythonActivation || toolsBinDir) ||
+    !options.tools.includes("bash") ||
+    hostBash
+  )
+    return undefined;
+  if (toolsBinDir) await materializeToolsShim(toolsBinDir);
+  const bash = createBashToolDefinition(cwd, {
+    commandPrefix: settingsManager.getShellCommandPrefix(),
+    shellPath: settingsManager.getShellPath(),
+    spawnHook: (context) => {
+      const base = mcpShellEnv
+        ? { ...context.env, ...env }
+        : { ...context.env };
+      const shellEnv = toolsBinDir ? toolsShellEnv(base, toolsBinDir) : base;
+      return {
+        ...context,
+        env: pythonActivation
+          ? activateRecipePython(shellEnv, pythonActivation)
+          : shellEnv,
+      };
+    },
+  }) as ToolDefinition;
+  return toolsBinDir ? withToolsCommand(bash, firstParty) : bash;
 }

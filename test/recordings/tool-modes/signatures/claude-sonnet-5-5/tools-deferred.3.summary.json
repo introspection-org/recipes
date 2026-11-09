@@ -1,0 +1,101 @@
+{
+  "model": "anthropic/claude-sonnet-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 578,
+      "cache_read_input_tokens": 746,
+      "output_tokens": 202,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        },
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "calendar mail drive",
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 5139,
+      "cache_read_input_tokens": 1324,
+      "output_tokens": 262,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "from": "Dana",
+            "query": "budget",
+            "limit": 10
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 727,
+      "cache_read_input_tokens": 6463,
+      "output_tokens": 407,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-10T00:00:00Z",
+            "to": "2026-11-11T00:00:00Z"
+          }
+        },
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "to": [
+              "dana@example.test"
+            ],
+            "reply_to": "msg_f8b21bb0f86d4271",
+            "subject": "Re: Q3 budget numbers",
+            "body": "Hi Dana,\n\nYes, I'll bring the latest budget sheet to the review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\n\nSee you there.\n\nSam"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 862,
+      "cache_read_input_tokens": 7190,
+      "output_tokens": 338,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 6,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 7306,
+    "cache_read_input_tokens": 15723,
+    "output_tokens": 1209
+  }
+}

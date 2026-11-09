@@ -1,0 +1,89 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 612,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 47,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1501,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 31,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "mail search messages draft reply; calendar list events; drive search files commands"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 4560,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1498,
+      "output_tokens": 116,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "from": "Dana",
+            "query": "budget",
+            "limit": 10
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget spreadsheet",
+            "limit": 10
+          }
+        },
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2025-11-28T00:00:00Z",
+            "to": "2025-11-29T00:00:00Z",
+            "limit": 20
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 4832,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1654,
+      "output_tokens": 107,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 5,
+    "input_tokens": 11505,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 3152,
+    "output_tokens": 301
+  }
+}

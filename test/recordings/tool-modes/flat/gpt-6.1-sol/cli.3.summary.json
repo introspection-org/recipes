@@ -1,0 +1,103 @@
+{
+  "model": "openai/gpt-6.1-sol",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 706,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 45,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1593,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema; date -Iseconds",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1708,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1590,
+      "output_tokens": 67,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.search --json - <<'JSON'\n{\"query\":\"budget\",\"from\":\"Dana\"}\nJSON\ntools call drive.search --json - <<'JSON'\n{\"query\":\"budget\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 364,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3295,
+      "output_tokens": 121,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-09T00:00:00Z\",\"to\":\"2026-11-11T00:00:00Z\"}\nJSON\ntools call mail.read --json - <<'JSON'\n{\"message\":\"msg_bb2ba0ae98d84f24\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 607,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3656,
+      "output_tokens": 204,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call calendar.list --json - <<'JSON'\n{\"from\":\"2026-11-10T00:00:00Z\",\"to\":\"2026-11-11T00:00:00Z\"}\nJSON\ntools call mail.draft --json - <<'JSON'\n{\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"reply_to\":\"msg_bb2ba0ae98d84f24\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest Q3 budget spreadsheet to the planning review, including the Q3 travel line for Finance. Here's the sheet: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget).\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 520,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4260,
+      "output_tokens": 135,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 5498,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 12801,
+    "output_tokens": 618
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "model": "anthropic/claude-haiku-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 574,
+      "cache_read_input_tokens": 4647,
+      "output_tokens": 159,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1349,
+      "cache_read_input_tokens": 5221,
+      "output_tokens": 359,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const now = new Date();\nconst tomorrowStart = new Date(now); tomorrowStart.setDate(now.getDate()+1); tomorrowStart.setHours(0,0,0,0);\nconst tomorrowEnd = new Date(tomorrowStart); tomorrowEnd.setDate(tomorrowStart.getDate()+1);\nconst [cal, mailRes, driveRes] = await Promise.all([\n  tools.calendar({command:\"list\", from: tomorrowStart.toISOString(), to: tomorrowEnd.toISOString()}).catch(e=>\"ERR \"+e),\n  tools.mail({command:\"search\", query:\"Dana budget\", limit: 10}).catch(e=>\"ERR \"+e),\n  tools.drive({command:\"search\", query:\"budget\", limit: 10}).catch(e=>\"ERR \"+e),\n]);\nreturn {now: now.toISOString(), cal, mailRes, driveRes};"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 971,
+      "cache_read_input_tokens": 6570,
+      "output_tokens": 518,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": {
+            "code": "const d = await tools.mail({\n  command: \"draft\",\n  reply_to: \"msg_b2dd5cd757b64b44\",\n  to: [\"dana@example.test\"],\n  subject: \"Re: Q3 budget numbers\",\n  body: \"Hi Dana,\\n\\nYes, I'll bring the budget sheet to tomorrow's review. Here's the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nSee you there,\\nSam\"\n});\nreturn d;"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 640,
+      "cache_read_input_tokens": 7541,
+      "output_tokens": 379,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 4,
+    "tool_calls": 3,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 3534,
+    "cache_read_input_tokens": 23979,
+    "output_tokens": 1415
+  }
+}

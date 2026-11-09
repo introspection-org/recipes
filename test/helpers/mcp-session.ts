@@ -18,6 +18,8 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type ExtensionFactory,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 import { createRecipesExtension } from "../../src/pi-extension.js";
@@ -39,6 +41,39 @@ export function lastToolResult(context: {
   return message
     ? message.content.map((part) => part.text ?? "").join("\n")
     : "";
+}
+
+/** What the model is handed: the prompt and tool declarations, carried by the system messages. */
+export function modelView(context: { messages: readonly unknown[] }): {
+  prompt: string;
+  tools: Array<{ name: string; description?: string; parameters?: unknown }>;
+} {
+  const system = (
+    context.messages as unknown as Array<{
+      role: string;
+      content: string | Array<{ text?: string }>;
+      sections?: Record<string, string | null>;
+      toolsAdded?: Array<{
+        name: string;
+        description?: string;
+        parameters?: unknown;
+      }>;
+    }>
+  ).filter((message) => message.role === "system");
+  const prompt = system
+    .map((message) =>
+      [
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => part.text ?? "").join(""),
+        ...Object.values(message.sections ?? {}).filter((s): s is string =>
+          Boolean(s),
+        ),
+      ].join("\n"),
+    )
+    .join("\n");
+  const tools = system.flatMap((message) => message.toolsAdded ?? []);
+  return { prompt, tools };
 }
 
 /** Points the fixture's agent at the scripted faux model. */
@@ -174,6 +209,10 @@ export async function openRecipeSession(options: {
   env?: NodeJS.ProcessEnv;
   /** The host already materialized the session's MCP, so no bindings go to it. */
   mcpProvisioning?: "host";
+  /** The host's own extensions, such as one registering `web_search`. */
+  extensionFactories?: ExtensionFactory[];
+  /** The host's own tools, such as its own `bash`. */
+  customTools?: ToolDefinition[];
 }): Promise<RecipeSessionHandle> {
   useFauxModel(options.recipeDir);
   const { faux, credentials } = await scriptedFaux(options.responses ?? []);
@@ -183,7 +222,11 @@ export async function openRecipeSession(options: {
     env: options.env ?? cleanEnv(),
     credentials,
     modelOverride: faux.getModel(),
-    extensionFactories: [(pi) => pi.registerProvider(faux.provider)],
+    extensionFactories: [
+      (pi) => pi.registerProvider(faux.provider),
+      ...(options.extensionFactories ?? []),
+    ],
+    ...(options.customTools ? { customTools: options.customTools } : {}),
     ...(options.mcpProvisioning
       ? { mcpProvisioning: options.mcpProvisioning }
       : {

@@ -1,0 +1,119 @@
+{
+  "model": "anthropic/claude-opus-5-5",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 575,
+      "cache_read_input_tokens": 907,
+      "output_tokens": 125,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1315,
+      "cache_read_input_tokens": 1482,
+      "output_tokens": 76,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list --schema; date",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 246,
+      "cache_read_input_tokens": 2797,
+      "output_tokens": 90,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "for t in mail calendar drive; do tools list $t --schema; done",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 2511,
+      "cache_read_input_tokens": 3043,
+      "output_tokens": 245,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconsole.log(JSON.stringify(await tools.calendar.list({from:\"2026-11-09T00:00:00-08:00\",to:\"2026-11-10T00:00:00-08:00\"}),null,1));\nconsole.log(JSON.stringify(await tools.mail.search({query:\"budget\",from:\"Dana\"}),null,1));\nconsole.log(JSON.stringify(await tools.drive.search({query:\"budget\"}),null,1));\nJS",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 798,
+      "cache_read_input_tokens": 5554,
+      "output_tokens": 312,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconsole.log(JSON.stringify(await tools.mail.read({message:\"msg_e345c183d4204e6b\"})));\nconsole.log(JSON.stringify(await tools.calendar.list({from:\"2026-11-08T00:00:00-08:00\",to:\"2026-11-12T00:00:00-08:00\"})));\nJS",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 1177,
+      "cache_read_input_tokens": 6352,
+      "output_tokens": 256,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_e345c183d4204e6b\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nYes, I'll bring the latest budget sheet to the Q3 planning review, including the Q3 travel line. Here's the link if you'd like to look ahead of time: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 354,
+      "cache_read_input_tokens": 7529,
+      "output_tokens": 730,
+      "stop_reason": "end_turn",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 7,
+    "tool_calls": 6,
+    "input_tokens": 16,
+    "cache_creation_input_tokens": 6976,
+    "cache_read_input_tokens": 27664,
+    "output_tokens": 1834
+  }
+}

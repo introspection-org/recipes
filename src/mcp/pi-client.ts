@@ -108,12 +108,20 @@ function versionParts(version: string): number[] {
 
 /** Refuses `mcp.mode: codemode` on a Pi older than {@link PI_MCP_CODEMODE_MIN_VERSION}. */
 export function assertPiSupportsMcpCodemode(version: string = VERSION): void {
+  assertPiSupportsCodemode("mcp.mode codemode", version);
+}
+
+/** Refuses a codemode setting (`what`) on a Pi older than {@link PI_MCP_CODEMODE_MIN_VERSION}. */
+export function assertPiSupportsCodemode(
+  what: string,
+  version: string = VERSION,
+): void {
   const have = versionParts(version);
   const need = versionParts(PI_MCP_CODEMODE_MIN_VERSION);
   const index = have.findIndex((part, i) => part !== need[i]);
   if (index !== -1 && have[index]! < need[index]!) {
     throw new Error(
-      `mcp.mode codemode needs Pi ${PI_MCP_CODEMODE_MIN_VERSION} or newer, where a tool can wait for the MCP servers it reaches; this host runs Pi ${version}`,
+      `${what} needs Pi ${PI_MCP_CODEMODE_MIN_VERSION} or newer, where a tool can wait for the MCP servers it reaches; this host runs Pi ${version}`,
     );
   }
 }

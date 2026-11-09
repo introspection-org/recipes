@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="760" height="440" fill="#faf9f5"/>
+<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (by reasoning effort)</text>
+<g transform="translate(618 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="642" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>
+<text x="16" y="46" font-size="12" fill="#5e5d59">Artificial Analysis Intelligence Index v5.0.1 per effort, low (L) to high (H); each model at its passing mode with the best cost × time</text>
+<line x1="70" y1="370" x2="720" y2="370" stroke="#e8e6dc"/><text x="62" y="374" font-size="10" text-anchor="end" fill="#5e5d59">0</text>
+<line x1="70" y1="326.2857142857143" x2="720" y2="326.2857142857143" stroke="#e8e6dc"/><text x="62" y="330.2857142857143" font-size="10" text-anchor="end" fill="#5e5d59">10</text>
+<line x1="70" y1="282.57142857142856" x2="720" y2="282.57142857142856" stroke="#e8e6dc"/><text x="62" y="286.57142857142856" font-size="10" text-anchor="end" fill="#5e5d59">20</text>
+<line x1="70" y1="238.85714285714286" x2="720" y2="238.85714285714286" stroke="#e8e6dc"/><text x="62" y="242.85714285714286" font-size="10" text-anchor="end" fill="#5e5d59">30</text>
+<line x1="70" y1="195.14285714285714" x2="720" y2="195.14285714285714" stroke="#e8e6dc"/><text x="62" y="199.14285714285714" font-size="10" text-anchor="end" fill="#5e5d59">40</text>
+<line x1="70" y1="151.42857142857142" x2="720" y2="151.42857142857142" stroke="#e8e6dc"/><text x="62" y="155.42857142857142" font-size="10" text-anchor="end" fill="#5e5d59">50</text>
+<line x1="70" y1="107.71428571428572" x2="720" y2="107.71428571428572" stroke="#e8e6dc"/><text x="62" y="111.71428571428572" font-size="10" text-anchor="end" fill="#5e5d59">60</text>
+<line x1="70" y1="64" x2="720" y2="64" stroke="#e8e6dc"/><text x="62" y="68" font-size="10" text-anchor="end" fill="#5e5d59">70</text>
+<line x1="70" y1="64" x2="70" y2="370" stroke="#e8e6dc"/><text x="70" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0001</text>
+<line x1="147.5322038919452" y1="64" x2="147.5322038919452" y2="370" stroke="#e8e6dc"/><text x="147.5322038919452" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0003</text>
+<line x1="232.5" y1="64" x2="232.5" y2="370" stroke="#e8e6dc"/><text x="232.5" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.001</text>
+<line x1="310.0322038919452" y1="64" x2="310.0322038919452" y2="370" stroke="#e8e6dc"/><text x="310.0322038919452" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.003</text>
+<line x1="395" y1="64" x2="395" y2="370" stroke="#e8e6dc"/><text x="395" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.01</text>
+<line x1="472.5322038919452" y1="64" x2="472.5322038919452" y2="370" stroke="#e8e6dc"/><text x="472.5322038919452" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.03</text>
+<line x1="557.5" y1="64" x2="557.5" y2="370" stroke="#e8e6dc"/><text x="557.5" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.1</text>
+<line x1="635.0322038919452" y1="64" x2="635.0322038919452" y2="370" stroke="#e8e6dc"/><text x="635.0322038919452" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$0.3</text>
+<line x1="720" y1="64" x2="720" y2="370" stroke="#e8e6dc"/><text x="720" y="386" font-size="10" text-anchor="middle" fill="#5e5d59">$1</text>
+<line x1="70" y1="370" x2="720" y2="370" stroke="#b0aea5"/>
+<rect x="70" y="64" width="325" height="153" fill="#e3f1dc" opacity="0.75"/>
+<rect x="395" y="217" width="325" height="153" fill="#efede6" opacity="0.8"/>
+<polyline points="189.74208376786868,326.2857142857143 193.80106285078728,291.3142857142857 203.72620257756168,278.2 278.9868106481182,238.85714285714286 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142 515.2380719936262,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
+<rect x="420" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="437" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
+<line x1="580" y1="78" x2="608" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="614" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
+<circle cx="426" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="426" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 426 98)" pointer-events="none"/><text x="437" y="102" font-size="11" fill="#5e5d59">runs failed, all modes</text>
+<circle cx="594" cy="98" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="614" y="102" font-size="11" fill="#5e5d59">recommended</text>
+<polyline points="269.69697034226954,286.9428571428572 279.49761703922184,260.7142857142857 278.9868106481182,238.85714285714286" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
+<polyline points="455.3238492204284,256.34285714285716 474.4799408375406,234.4857142857143 483.1749493568962,186.4" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
+<polyline points="498.6477801760556,217 526.3011291214268,160.17142857142858 515.2380719936262,142.68571428571428" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
+<polyline points="189.74208376786868,326.2857142857143 193.80106285078728,291.3142857142857 203.72620257756168,278.2" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
+<polyline points="450.6555537064233,217 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
+<polyline points="562.4132356019898,182.0285714285714 587.3470327616604,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
+<circle cx="189.74208376786868" cy="326.2857142857143" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
+<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
+Passed in tools: 5/5
+Time per task: 9.3s
+Cost per task: $0.00169
+Intelligence Index: 19
+Input tokens: 30,987
+Cached: 83%
+Output tokens: 1,605
+Click for more info</title><circle cx="269.69697034226954" cy="286.9428571428572" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="269.69697034226954" y="290.4428571428572" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
+<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · codemode
+Passed in codemode: 3/3
+Time per task: 8.0s
+Cost per task: $0.0235
+Intelligence Index: 26
+Input tokens: 28,464
+Cached: 83%
+Output tokens: 888
+Click for more info</title><circle cx="455.3238492204284" cy="256.34285714285716" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="455.3238492204284" y="259.84285714285716" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+<a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools
+Passed in tools: 3/3
+Time per task: 11.9s
+Cost per task: $0.0434
+Intelligence Index: 35
+Input tokens: 18,801
+Cached: 78%
+Output tokens: 1,051
+Click for more info</title><circle cx="498.6477801760556" cy="217" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="498.6477801760556" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · codemode
+Recommended
+Passed in codemode: 5/5
+Time per task: 7.7s
+Cost per task: $0.000546
+Intelligence Index: 10
+Input tokens: 23,303
+Cached: 77%
+Output tokens: 411
+Failed runs, all modes: 1/20
+Click for more info</title><circle cx="189.74208376786868" cy="326.2857142857143" r="7" fill="#c9c7be" stroke="#0000003d"/></a><circle cx="189.74208376786868" cy="326.2857142857143" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="3.298672286269283 65.97344572538566" transform="rotate(-90 189.74208376786868 326.2857142857143)" pointer-events="none"/>
+<text x="189.74208376786868" y="329.7857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">L</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
+Passed in tools: 3/3
+Time per task: 10.2s
+Cost per task: $0.0220
+Intelligence Index: 35
+Input tokens: 28,868
+Cached: 72%
+Output tokens: 363
+Failed runs, all modes: 1/12
+Click for more info</title><circle cx="450.6555537064233" cy="217" r="7" fill="#77756e" stroke="#0000003d"/></a><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="450.6555537064233" cy="217" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="5.497787143782138 65.97344572538566" transform="rotate(-90 450.6555537064233 217)" pointer-events="none"/>
+<text x="450.6555537064233" y="220.5" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
+Passed in tools: 3/3
+Time per task: 14.1s
+Cost per task: $0.107
+Intelligence Index: 43
+Input tokens: 29,295
+Cached: 78%
+Output tokens: 382
+Failed runs, all modes: 7/17
+Click for more info</title><circle cx="562.4132356019898" cy="182.0285714285714" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="562.4132356019898" cy="182.0285714285714" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="27.1655364751588 65.97344572538566" transform="rotate(-90 562.4132356019898 182.0285714285714)" pointer-events="none"/>
+<text x="562.4132356019898" y="185.5285714285714" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">L</text>
+<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (medium) · cli
+Passed in cli: 3/3
+Time per task: 10.4s
+Cost per task: $0.00195
+Intelligence Index: 25
+Input tokens: 32,136
+Cached: 78%
+Output tokens: 1,591
+Click for more info</title><circle cx="279.49761703922184" cy="260.7142857142857" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="279.49761703922184" y="264.2142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">M</text>
+<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (medium) · tools
+Passed in tools: 1/1
+Time per task: 9.0s
+Cost per task: $0.0308
+Intelligence Index: 31
+Input tokens: 25,097
+Cached: 70%
+Output tokens: 1,033
+Click for more info</title><circle cx="474.4799408375406" cy="234.4857142857143" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="474.4799408375406" y="237.9857142857143" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
+<a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (medium) · tools
+Passed in tools: 3/3
+Time per task: 15.1s
+Cost per task: $0.0643
+Intelligence Index: 48
+Input tokens: 32,552
+Cached: 80%
+Output tokens: 1,304
+Click for more info</title><circle cx="526.3011291214268" cy="160.17142857142858" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="526.3011291214268" y="163.67142857142858" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (medium) · cli
+Passed in cli: 3/3
+Time per task: 20.3s
+Cost per task: $0.000578
+Intelligence Index: 18
+Input tokens: 23,763
+Cached: 75%
+Output tokens: 987
+Click for more info</title><circle cx="193.80106285078728" cy="291.3142857142857" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="193.80106285078728" y="294.8142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">M</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (medium) · tools
+Passed in tools: 3/3
+Time per task: 14.0s
+Cost per task: $0.0208
+Intelligence Index: 46
+Input tokens: 29,595
+Cached: 77%
+Output tokens: 496
+Click for more info</title><circle cx="446.65610673705237" cy="168.9142857142857" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="446.65610673705237" y="172.4142857142857" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (medium) · tools
+Passed in tools: 1/1
+Time per task: 21.6s
+Cost per task: $0.153
+Intelligence Index: 52
+Input tokens: 28,183
+Cached: 59%
+Output tokens: 428
+Failed runs, all modes: 1/4
+Click for more info</title><circle cx="587.3470327616604" cy="142.68571428571428" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="587.3470327616604" cy="142.68571428571428" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 587.3470327616604 142.68571428571428)" pointer-events="none"/>
+<text x="587.3470327616604" y="146.18571428571428" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">M</text>
+<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (high) · tools
+Passed in tools: 3/3
+Time per task: 11.3s
+Cost per task: $0.00193
+Intelligence Index: 30
+Input tokens: 33,725
+Cached: 83%
+Output tokens: 1,854
+Click for more info</title><circle cx="278.9868106481182" cy="238.85714285714286" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<text x="278.9868106481182" y="242.35714285714286" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">H</text>
+<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (high) · tools
+Passed in tools: 1/1
+Time per task: 12.1s
+Cost per task: $0.0349
+Intelligence Index: 42
+Input tokens: 32,579
+Cached: 76%
+Output tokens: 1,258
+Click for more info</title><circle cx="483.1749493568962" cy="186.4" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<text x="483.1749493568962" y="189.9" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
+<a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (high) · codemode
+Passed in codemode: 1/1
+Time per task: 14.8s
+Cost per task: $0.0549
+Intelligence Index: 52
+Input tokens: 38,472
+Cached: 89%
+Output tokens: 1,364
+Click for more info</title><circle cx="515.2380719936262" cy="142.68571428571428" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<text x="515.2380719936262" y="146.18571428571428" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (high) · codemode
+Passed in codemode: 3/3
+Time per task: 23.3s
+Cost per task: $0.000665
+Intelligence Index: 21
+Input tokens: 27,578
+Cached: 76%
+Output tokens: 1,239
+Click for more info</title><circle cx="203.72620257756168" cy="278.2" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<text x="203.72620257756168" y="281.7" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#141413">H</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (high) · codemode
+Passed in codemode: 1/1
+Time per task: 14.5s
+Cost per task: $0.0259
+Intelligence Index: 50
+Input tokens: 40,500
+Cached: 79%
+Output tokens: 544
+Click for more info</title><circle cx="462.2292993224253" cy="151.42857142857142" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<text x="462.2292993224253" y="154.92857142857142" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (high) · codemode
+Passed in codemode: 1/1
+Time per task: 16.2s
+Cost per task: $0.172
+Intelligence Index: 55
+Input tokens: 38,134
+Cached: 69%
+Output tokens: 569
+Failed runs, all modes: 1/4
+Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858" r="7" fill="#141413" stroke="#0000003d"/></a><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="595.6370189637862" cy="129.57142857142858" r="10.5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="16.493361431346415 65.97344572538566" transform="rotate(-90 595.6370189637862 129.57142857142858)" pointer-events="none"/>
+<text x="595.6370189637862" y="133.07142857142858" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="#ffffff">H</text>
+<text x="280.69697034226954" y="290.9428571428572" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="466.3238492204284" y="260.34285714285716" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="509.6477801760556" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="200.74208376786868" y="330.2857142857143" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="461.6555537064233" y="221" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="573.4132356019898" y="186.0285714285714" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="290.49761703922184" y="264.7142857142857" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="485.4799408375406" y="238.4857142857143" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="537.3011291214268" y="164.17142857142858" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="204.80106285078728" y="295.3142857142857" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="457.65610673705237" y="172.9142857142857" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="598.3470327616604" y="146.68571428571428" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413"></text>
+<text x="289.9868106481182" y="242.85714285714286" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Haiku 5.5</text>
+<text x="494.1749493568962" y="190.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Sonnet 5.5</text>
+<text x="526.2380719936262" y="146.68571428571428" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Opus 5.5</text>
+<text x="214.72620257756168" y="282.2" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna</text>
+<text x="473.2292993224253" y="171.42857142857142" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol</text>
+<text x="606.6370189637862" y="133.57142857142858" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra</text>
+<text x="70" y="406" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>
+<g transform="translate(70 413) scale(0.24)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="86" y="424" font-size="12" font-family="Georgia, serif" fill="#5e5d59">Artificial Analysis</text>
+<text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>
+<text transform="translate(20 217) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index</text>
+</svg>

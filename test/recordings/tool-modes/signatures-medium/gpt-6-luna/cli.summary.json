@@ -1,0 +1,103 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 705,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 63,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1610,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 81,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list && tools list calendar --schema && tools list mail --schema && tools list drive --schema",
+            "timeout": 30
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1978,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1607,
+      "output_tokens": 259,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst [cal, mail, drive] = await Promise.all([\n  tools.calendar.list({from:'2026-11-08T12:00:00Z',to:'2026-11-10T12:00:00Z',limit:100}),\n  tools.mail.search({query:'budget',from:'Dana',limit:50}),\n  tools.drive.search({query:'budget spreadsheet',limit:50})\n]);\nconsole.log(JSON.stringify({cal,mail,drive},null,2));\nJS",
+            "timeout": 30
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 690,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3582,
+      "output_tokens": 280,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst [m, e] = await Promise.all([\n  tools.mail.read({message:'msg_7a65c188cd1b4cde'}),\n  tools.calendar.read({event:'evt_6ae44f9c914043b5'})\n]);\nconsole.log(JSON.stringify({m,e},null,2));\nJS",
+            "timeout": 30
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 704,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4269,
+      "output_tokens": 247,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_7a65c188cd1b4cde\",\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"body\":\"Hi Dana,\\n\\nI’ll bring the Q3 budget sheet to the meeting. Here’s the link: https://docs.example.test/spreadsheets/d/f-budget\\n\\nBest,\\nSam\"}\nJSON",
+            "timeout": 30
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 328,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4970,
+      "output_tokens": 263,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 6015,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 14428,
+    "output_tokens": 1193
+  }
+}

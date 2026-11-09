@@ -1,0 +1,91 @@
+{
+  "model": "openai/gpt-6-luna",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 3460,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 86,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": 1,
+            "limit": 200
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 931,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3457,
+      "output_tokens": 166,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "text(new Date().toISOString())\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 208,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4385,
+      "output_tokens": 367,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const rs = await Promise.all([\n  tools.calendar({command:\"list\", from:\"2026-11-09T00:00:00Z\", to:\"2026-11-12T00:00:00Z\", limit:100}),\n  tools.mail({command:\"search\", from:\"Dana\", query:\"budget\", limit:25}),\n  tools.drive({command:\"search\", query:\"budget\", limit:50})\n]);\nrs.forEach((r,i)=>{ text(JSON.stringify({i,r})); });\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 1046,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4590,
+      "output_tokens": 252,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const rs = await Promise.all([\n  tools.mail({command:\"read\", message:\"msg_75c2592ae0d34ac8\"}),\n  tools.calendar({command:\"read\", event:\"evt_c2e27e6ea1e0455f\"}),\n  tools.drive({command:\"read\", file:\"file_f3e3f479f9214d83\"})\n]);\nrs.forEach((r,i)=>text(JSON.stringify({i,r})));\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 1059,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5633,
+      "output_tokens": 168,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "codemode",
+          "input": "const r=await tools.mail({command:\"draft\", reply_to:\"msg_75c2592ae0d34ac8\", to:[\"dana@example.test\"], subject:\"Re: Q3 budget numbers\", body:\"Hi Dana,\\n\\nI’ll bring the Q3 budget sheet to tomorrow’s planning review. Here’s the sheet: https://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\"});\ntext(r)\n"
+        }
+      ]
+    },
+    {
+      "input_tokens": 263,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6689,
+      "output_tokens": 210,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 6,
+    "tool_calls": 5,
+    "input_tokens": 6967,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 24754,
+    "output_tokens": 1249
+  }
+}
