@@ -593,12 +593,14 @@ function intelligence(efforts, byMode = false) {
   }
   // The modes' key: two columns and two rows at the foot of the lower-right
   // quadrant, in the same columns as the legend above.
-  if (byMode)
+  if (byMode) {
+    svg += `<text x="${W - right - 301}" y="${H - bottom - 52}" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>\n`;
     MODES.forEach(([, label], k) => {
       const cx = W - right - (k % 2 ? 126 : 294);
       const cy = H - bottom - 34 + Math.floor(k / 2) * 20;
       svg += `<circle cx="${cx}" cy="${cy}" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="${cx}" y="${cy + 3.5}" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">${k + 1}</text><text x="${cx + 11}" y="${cy + 4}" font-size="11" fill="#5e5d59">${esc(label)}</text>\n`;
     });
+  }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
   // The credit line: the index's logo and name, when given, then its source.
