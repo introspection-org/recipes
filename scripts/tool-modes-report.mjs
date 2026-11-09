@@ -323,8 +323,16 @@ function chart(groups, value, title, unit, digits, log = false) {
         );
         const x1 = x(r[value] + ci);
         const cy = y + barH / 2;
-        const whisker = `<line x1="${x0}" y1="${cy}" x2="${x1}" y2="${cy}"/><line x1="${x0}" y1="${cy - 3.5}" x2="${x0}" y2="${cy + 3.5}"/><line x1="${x1}" y1="${cy - 3.5}" x2="${x1}" y2="${cy + 3.5}"/>`;
-        svg += `<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8">${whisker}</g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7">${whisker}</g></g>\n`;
+        // Inside the bar the whisker takes the bar's contrasting ink, outside it the chart's.
+        const end = left + w;
+        const inner = light(color) ? "#141413" : "#ffffff";
+        const seg = (a, b, stroke) =>
+          a < b
+            ? `<line x1="${a}" y1="${cy}" x2="${b}" y2="${cy}" stroke="${stroke}"/>`
+            : "";
+        const cap = (cx) =>
+          `<line x1="${cx}" y1="${cy - 3.5}" x2="${cx}" y2="${cy + 3.5}" stroke="${cx < end ? inner : "#141413"}"/>`;
+        svg += `<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none">${seg(x0, Math.min(x1, end), inner)}${seg(Math.max(x0, end), x1, "#141413")}${cap(x0)}${cap(x1)}</g>\n`;
       }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];

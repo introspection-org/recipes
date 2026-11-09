@@ -30,7 +30,7 @@ Requests per task: 4.6
 Input tokens: 30,987
 Cached: 83%
 Output tokens: 1,605</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="251.89589553754837" y1="71" x2="263.875151757513" y2="71"/><line x1="251.89589553754837" y1="67.5" x2="251.89589553754837" y2="74.5"/><line x1="263.875151757513" y1="67.5" x2="263.875151757513" y2="74.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="251.89589553754837" y1="71" x2="263.875151757513" y2="71"/><line x1="251.89589553754837" y1="67.5" x2="251.89589553754837" y2="74.5"/><line x1="263.875151757513" y1="67.5" x2="263.875151757513" y2="74.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="251.89589553754837" y1="71" x2="258.2517486984943" y2="71" stroke="#141413"/><line x1="258.2517486984943" y1="71" x2="263.875151757513" y2="71" stroke="#141413"/><line x1="251.89589553754837" y1="67.5" x2="251.89589553754837" y2="74.5" stroke="#141413"/><line x1="263.875151757513" y1="67.5" x2="263.875151757513" y2="74.5" stroke="#141413"/></g>
 <text x="269.875151757513" y="75" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.00169 · tools</text>
 <rect x="120" y="80" width="266.7626648449119" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · low effort · codemode
 Cost per task: $0.0235 ± $0.0174
@@ -41,7 +41,7 @@ Requests per task: 4.0
 Input tokens: 28,464
 Cached: 83%
 Output tokens: 888</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="321.1609534934355" y1="87" x2="413.79242960585134" y2="87"/><line x1="321.1609534934355" y1="83.5" x2="321.1609534934355" y2="90.5"/><line x1="413.79242960585134" y1="83.5" x2="413.79242960585134" y2="90.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="321.1609534934355" y1="87" x2="413.79242960585134" y2="87"/><line x1="321.1609534934355" y1="83.5" x2="321.1609534934355" y2="90.5"/><line x1="413.79242960585134" y1="83.5" x2="413.79242960585134" y2="90.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="321.1609534934355" y1="87" x2="386.7626648449119" y2="87" stroke="#ffffff"/><line x1="386.7626648449119" y1="87" x2="413.79242960585134" y2="87" stroke="#141413"/><line x1="321.1609534934355" y1="83.5" x2="321.1609534934355" y2="90.5" stroke="#ffffff"/><line x1="413.79242960585134" y1="83.5" x2="413.79242960585134" y2="90.5" stroke="#141413"/></g>
 <text x="419.79242960585134" y="91" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0235 · codemode</text>
 <rect x="120" y="96" width="296.7561555065" height="14" rx="3" fill="#8a3618" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-opus-5-5"><title>Opus 5.5 · low effort · tools
 Cost per task: $0.0434 ± $0.0247
@@ -52,7 +52,7 @@ Requests per task: 3.3
 Input tokens: 18,801
 Cached: 78%
 Output tokens: 1,051</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="375.6238028675885" y1="103" x2="438.7667704002612" y2="103"/><line x1="375.6238028675885" y1="99.5" x2="375.6238028675885" y2="106.5"/><line x1="438.7667704002612" y1="99.5" x2="438.7667704002612" y2="106.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="375.6238028675885" y1="103" x2="438.7667704002612" y2="103"/><line x1="375.6238028675885" y1="99.5" x2="375.6238028675885" y2="106.5"/><line x1="438.7667704002612" y1="99.5" x2="438.7667704002612" y2="106.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="375.6238028675885" y1="103" x2="416.7561555065" y2="103" stroke="#ffffff"/><line x1="416.7561555065" y1="103" x2="438.7667704002612" y2="103" stroke="#141413"/><line x1="375.6238028675885" y1="99.5" x2="375.6238028675885" y2="106.5" stroke="#ffffff"/><line x1="438.7667704002612" y1="99.5" x2="438.7667704002612" y2="106.5" stroke="#141413"/></g>
 <text x="444.7667704002612" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0434 · tools</text>
 <rect x="120" y="112" width="82.27109266423753" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · low effort · cli
 Cost per task: $0.000539 ± $0.0000170
@@ -64,7 +64,7 @@ Input tokens: 19,236
 Cached: 72%
 Output tokens: 521</title></rect>
 <rect x="120" y="112" width="82.27109266423753" height="14" rx="3" fill="url(#win-light)" pointer-events="none"/>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="200.706247323838" y1="119" x2="203.7873701146038" y2="119"/><line x1="200.706247323838" y1="115.5" x2="200.706247323838" y2="122.5"/><line x1="203.7873701146038" y1="115.5" x2="203.7873701146038" y2="122.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="200.706247323838" y1="119" x2="203.7873701146038" y2="119"/><line x1="200.706247323838" y1="115.5" x2="200.706247323838" y2="122.5"/><line x1="203.7873701146038" y1="115.5" x2="203.7873701146038" y2="122.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="200.706247323838" y1="119" x2="202.27109266423753" y2="119" stroke="#141413"/><line x1="202.27109266423753" y1="119" x2="203.7873701146038" y2="119" stroke="#141413"/><line x1="200.706247323838" y1="115.5" x2="200.706247323838" y2="122.5" stroke="#141413"/><line x1="203.7873701146038" y1="115.5" x2="203.7873701146038" y2="122.5" stroke="#141413"/></g>
 <text x="209.7873701146038" y="123" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000539 · cli</text>
 <rect x="120" y="128" width="263.5307679506007" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · low effort · tools
 Cost per task: $0.0220 ± $0.0130
@@ -75,7 +75,7 @@ Requests per task: 5.0
 Input tokens: 28,868
 Cached: 72%
 Output tokens: 363</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="339.8287908076627" y1="135" x2="406.2240214728896" y2="135"/><line x1="339.8287908076627" y1="131.5" x2="339.8287908076627" y2="138.5"/><line x1="406.2240214728896" y1="131.5" x2="406.2240214728896" y2="138.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="339.8287908076627" y1="135" x2="406.2240214728896" y2="135"/><line x1="339.8287908076627" y1="131.5" x2="339.8287908076627" y2="138.5"/><line x1="406.2240214728896" y1="131.5" x2="406.2240214728896" y2="138.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="339.8287908076627" y1="135" x2="383.5307679506007" y2="135" stroke="#ffffff"/><line x1="383.5307679506007" y1="135" x2="406.2240214728896" y2="135" stroke="#141413"/><line x1="339.8287908076627" y1="131.5" x2="339.8287908076627" y2="138.5" stroke="#ffffff"/><line x1="406.2240214728896" y1="131.5" x2="406.2240214728896" y2="138.5" stroke="#141413"/></g>
 <text x="412.2240214728896" y="139" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0220 · tools</text>
 <rect x="120" y="144" width="340.9014708013775" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · low effort · tools
 Cost per task: $0.107 ± $0.00129
@@ -86,7 +86,7 @@ Requests per task: 5.0
 Input tokens: 29,295
 Cached: 78%
 Output tokens: 382</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="460.3086800998975" y1="151" x2="461.4871553656132" y2="151"/><line x1="460.3086800998975" y1="147.5" x2="460.3086800998975" y2="154.5"/><line x1="461.4871553656132" y1="147.5" x2="461.4871553656132" y2="154.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="460.3086800998975" y1="151" x2="461.4871553656132" y2="151"/><line x1="460.3086800998975" y1="147.5" x2="460.3086800998975" y2="154.5"/><line x1="461.4871553656132" y1="147.5" x2="461.4871553656132" y2="154.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="460.3086800998975" y1="151" x2="460.9014708013775" y2="151" stroke="#ffffff"/><line x1="460.9014708013775" y1="151" x2="461.4871553656132" y2="151" stroke="#141413"/><line x1="460.3086800998975" y1="147.5" x2="460.3086800998975" y2="154.5" stroke="#ffffff"/><line x1="461.4871553656132" y1="147.5" x2="461.4871553656132" y2="154.5" stroke="#141413"/></g>
 <text x="467.4871553656132" y="155" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.107 · tools</text>
 <text x="110" y="221" font-size="12" text-anchor="end" fill="#141413" font-weight="400">medium effort</text>
 <rect x="120" y="176" width="143.0209608712904" height="14" rx="3" fill="#f6bd9d" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-haiku-5-5"><title>Haiku 5.5 · medium effort · tools
@@ -98,7 +98,7 @@ Requests per task: 5.3
 Input tokens: 35,936
 Cached: 84%
 Output tokens: 1,708</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="247.03786868416572" y1="183" x2="275.0443534339049" y2="183"/><line x1="247.03786868416572" y1="179.5" x2="247.03786868416572" y2="186.5"/><line x1="275.0443534339049" y1="179.5" x2="275.0443534339049" y2="186.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="247.03786868416572" y1="183" x2="275.0443534339049" y2="183"/><line x1="247.03786868416572" y1="179.5" x2="247.03786868416572" y2="186.5"/><line x1="275.0443534339049" y1="179.5" x2="275.0443534339049" y2="186.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="247.03786868416572" y1="183" x2="263.0209608712904" y2="183" stroke="#141413"/><line x1="263.0209608712904" y1="183" x2="275.0443534339049" y2="183" stroke="#141413"/><line x1="247.03786868416572" y1="179.5" x2="247.03786868416572" y2="186.5" stroke="#141413"/><line x1="275.0443534339049" y1="179.5" x2="275.0443534339049" y2="186.5" stroke="#141413"/></g>
 <text x="281.0443534339049" y="187" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.00187 · tools</text>
 <rect x="120" y="192" width="280.0245744259896" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · medium effort · tools
 Cost per task: $0.0308
@@ -119,7 +119,7 @@ Requests per task: 5.0
 Input tokens: 32,552
 Cached: 80%
 Output tokens: 1,304</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="406.3268498955563" y1="215" x2="454.1923203069708" y2="215"/><line x1="406.3268498955563" y1="211.5" x2="406.3268498955563" y2="218.5"/><line x1="454.1923203069708" y1="211.5" x2="454.1923203069708" y2="218.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="406.3268498955563" y1="215" x2="454.1923203069708" y2="215"/><line x1="406.3268498955563" y1="211.5" x2="406.3268498955563" y2="218.5"/><line x1="454.1923203069708" y1="211.5" x2="454.1923203069708" y2="218.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="406.3268498955563" y1="215" x2="435.90078169944934" y2="215" stroke="#ffffff"/><line x1="435.90078169944934" y1="215" x2="454.1923203069708" y2="215" stroke="#141413"/><line x1="406.3268498955563" y1="211.5" x2="406.3268498955563" y2="218.5" stroke="#ffffff"/><line x1="454.1923203069708" y1="211.5" x2="454.1923203069708" y2="218.5" stroke="#141413"/></g>
 <text x="460.1923203069708" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0643 · tools</text>
 <rect x="120" y="224" width="85.7084281274681" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · medium effort · cli
 Cost per task: $0.000578 ± $0.0000543
@@ -130,7 +130,7 @@ Requests per task: 7.0
 Input tokens: 23,763
 Cached: 75%
 Output tokens: 987</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="200.88657020428133" y1="231" x2="210.0968666157911" y2="231"/><line x1="200.88657020428133" y1="227.5" x2="200.88657020428133" y2="234.5"/><line x1="210.0968666157911" y1="227.5" x2="210.0968666157911" y2="234.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="200.88657020428133" y1="231" x2="210.0968666157911" y2="231"/><line x1="200.88657020428133" y1="227.5" x2="200.88657020428133" y2="234.5"/><line x1="210.0968666157911" y1="227.5" x2="210.0968666157911" y2="234.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="200.88657020428133" y1="231" x2="205.7084281274681" y2="231" stroke="#141413"/><line x1="205.7084281274681" y1="231" x2="210.0968666157911" y2="231" stroke="#141413"/><line x1="200.88657020428133" y1="227.5" x2="200.88657020428133" y2="234.5" stroke="#141413"/><line x1="210.0968666157911" y1="227.5" x2="210.0968666157911" y2="234.5" stroke="#141413"/></g>
 <text x="216.0968666157911" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000578 · cli</text>
 <rect x="120" y="240" width="260.58457124519737" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · medium effort · cli
 Cost per task: $0.0207 ± $0.00635
@@ -141,7 +141,7 @@ Requests per task: 7.3
 Input tokens: 23,605
 Cached: 76%
 Output tokens: 759</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="362.7092314818452" y1="247" x2="393.64319990390027" y2="247"/><line x1="362.7092314818452" y1="243.5" x2="362.7092314818452" y2="250.5"/><line x1="393.64319990390027" y1="243.5" x2="393.64319990390027" y2="250.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="362.7092314818452" y1="247" x2="393.64319990390027" y2="247"/><line x1="362.7092314818452" y1="243.5" x2="362.7092314818452" y2="250.5"/><line x1="393.64319990390027" y1="243.5" x2="393.64319990390027" y2="250.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="362.7092314818452" y1="247" x2="380.58457124519737" y2="247" stroke="#ffffff"/><line x1="380.58457124519737" y1="247" x2="393.64319990390027" y2="247" stroke="#141413"/><line x1="362.7092314818452" y1="243.5" x2="362.7092314818452" y2="250.5" stroke="#ffffff"/><line x1="393.64319990390027" y1="243.5" x2="393.64319990390027" y2="250.5" stroke="#141413"/></g>
 <text x="399.64319990390027" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0207 · cli</text>
 <rect x="120" y="256" width="358.16333037345726" height="14" rx="3" fill="#141413" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-astra"><title>gpt-6-astra · medium effort · tools
 Cost per task: $0.153
@@ -163,7 +163,7 @@ Requests per task: 5.0
 Input tokens: 33,725
 Cached: 83%
 Output tokens: 1,854</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="244.00856064898232" y1="295" x2="279.16529174063515" y2="295"/><line x1="244.00856064898232" y1="291.5" x2="244.00856064898232" y2="298.5"/><line x1="279.16529174063515" y1="291.5" x2="279.16529174063515" y2="298.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="244.00856064898232" y1="295" x2="279.16529174063515" y2="295"/><line x1="244.00856064898232" y1="291.5" x2="244.00856064898232" y2="298.5"/><line x1="279.16529174063515" y1="291.5" x2="279.16529174063515" y2="298.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="244.00856064898232" y1="295" x2="264.6831766025433" y2="295" stroke="#141413"/><line x1="264.6831766025433" y1="295" x2="279.16529174063515" y2="295" stroke="#141413"/><line x1="244.00856064898232" y1="291.5" x2="244.00856064898232" y2="298.5" stroke="#141413"/><line x1="279.16529174063515" y1="291.5" x2="279.16529174063515" y2="298.5" stroke="#141413"/></g>
 <text x="285.16529174063515" y="299" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.00193 · tools</text>
 <rect x="120" y="304" width="286.04419570862046" height="14" rx="3" fill="#d97757" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/claude-sonnet-5-5"><title>Sonnet 5.5 · high effort · tools
 Cost per task: $0.0349
@@ -184,7 +184,7 @@ Requests per task: 5.0
 Input tokens: 32,657
 Cached: 88%
 Output tokens: 1,413</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="423.16732808325474" y1="327" x2="431.0007224237374" y2="327"/><line x1="423.16732808325474" y1="323.5" x2="423.16732808325474" y2="330.5"/><line x1="431.0007224237374" y1="323.5" x2="431.0007224237374" y2="330.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="423.16732808325474" y1="327" x2="431.0007224237374" y2="327"/><line x1="423.16732808325474" y1="323.5" x2="423.16732808325474" y2="330.5"/><line x1="431.0007224237374" y1="323.5" x2="431.0007224237374" y2="330.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="423.16732808325474" y1="327" x2="427.2408478172167" y2="327" stroke="#ffffff"/><line x1="427.2408478172167" y1="327" x2="431.0007224237374" y2="327" stroke="#141413"/><line x1="423.16732808325474" y1="323.5" x2="423.16732808325474" y2="330.5" stroke="#ffffff"/><line x1="431.0007224237374" y1="323.5" x2="431.0007224237374" y2="330.5" stroke="#141413"/></g>
 <text x="437.0007224237374" y="331" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0538 · tools</text>
 <rect x="120" y="336" width="89.92839683134366" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · high effort · cli
 Cost per task: $0.000630 ± $0.000181
@@ -195,7 +195,7 @@ Requests per task: 7.3
 Input tokens: 24,608
 Cached: 74%
 Output tokens: 1,800</title></rect>
-<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8"><line x1="193.33340296070136" y1="343" x2="222.2933748335853" y2="343"/><line x1="193.33340296070136" y1="339.5" x2="193.33340296070136" y2="346.5"/><line x1="222.2933748335853" y1="339.5" x2="222.2933748335853" y2="346.5"/></g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7"><line x1="193.33340296070136" y1="343" x2="222.2933748335853" y2="343"/><line x1="193.33340296070136" y1="339.5" x2="193.33340296070136" y2="346.5"/><line x1="222.2933748335853" y1="339.5" x2="222.2933748335853" y2="346.5"/></g></g>
+<g stroke-width="1.2" stroke-opacity="0.75" pointer-events="none"><line x1="193.33340296070136" y1="343" x2="209.92839683134366" y2="343" stroke="#141413"/><line x1="209.92839683134366" y1="343" x2="222.2933748335853" y2="343" stroke="#141413"/><line x1="193.33340296070136" y1="339.5" x2="193.33340296070136" y2="346.5" stroke="#141413"/><line x1="222.2933748335853" y1="339.5" x2="222.2933748335853" y2="346.5" stroke="#141413"/></g>
 <text x="228.2933748335853" y="347" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000630 · cli</text>
 <rect x="120" y="352" width="264.67435614635485" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · high effort · cli
 Cost per task: $0.0225
