@@ -915,7 +915,6 @@ async function createSessionForAgent(
       ...piMcpExtensions(
         piServers,
         codemodeToolNames.length > 0,
-        recipe.toolPolicy?.mode === "codemode",
         opts.mcpRuntimeDir,
         cwd,
         (pi) => {
@@ -1287,15 +1286,14 @@ function sessionMcpToolOrigin(
  */
 function piMcpExtensions(
   piServers: PiMcpServerRegistration[],
+  /** Whether `mcp.mode` or `tools.mode` asks for codemode (`piMcpSessionTools`). */
   codemode: boolean,
-  platformCodemode: boolean,
   runtimeDir: string | undefined,
   cwd: string,
   onPi: (pi: ExtensionAPI) => void,
 ): ExtensionFactory[] {
-  // First-party tools in codemode need the codemode tool even with no server.
   if (piServers.length === 0)
-    return platformCodemode ? [createCodemodeExtension({ models: false })] : [];
+    return codemode ? [createCodemodeExtension({ models: false })] : [];
   // A script's `models.*` calls would spend on models the Recipe never
   // declared, so scripts get tools only.
   return [
