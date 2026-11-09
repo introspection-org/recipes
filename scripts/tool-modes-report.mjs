@@ -133,7 +133,7 @@ function row(id, provider, list) {
       ),
     ),
     output: mean(list.map((r) => r.totals.output_tokens)),
-    costPerThousand: mean(cost) * 1000,
+    costPerTask: mean(cost),
     seconds: mean(list.map((r) => r.seconds)),
   };
 }
@@ -145,6 +145,10 @@ for (const set of SETS)
       if (list.length)
         (table[set] ??= {})[`${id}|${mode}`] = row(id, provider, list);
 
+/** Dollars to three significant figures, so a fraction of a cent still reads. */
+const usd = (n) =>
+  `$${n >= 1 ? fmt(n, 2) : n.toFixed(Math.max(2, 2 - Math.floor(Math.log10(n))))}`;
+
 const fmt = (n, d = 0) =>
   n.toLocaleString("en-US", {
     minimumFractionDigits: d,
@@ -154,12 +158,12 @@ const fmt = (n, d = 0) =>
 let md = "";
 for (const set of SETS) {
   if (!table[set]) continue;
-  md += `### ${set}\n\n| model | mode | runs | drafted (errors) | requests | input | cached | output | $ / 1,000 tasks | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+  md += `### ${set}\n\n| model | mode | runs | drafted (errors) | requests | input | cached | output | $ / task | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
   for (const [id, name] of MODELS)
     for (const [mode, label] of MODES) {
       const r = table[set][`${id}|${mode}`];
       if (!r) continue;
-      md += `| ${name} | ${label} | ${r.runs} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${fmt(r.costPerThousand, 2)} | ${fmt(r.seconds, 1)}s |\n`;
+      md += `| ${name} | ${label} | ${r.runs} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${usd(r.costPerTask)} | ${fmt(r.seconds, 1)}s |\n`;
     }
   md += "\n";
 }
@@ -212,8 +216,9 @@ function chart(set, value, title, unit, digits, log = false) {
           (_, i) => i * step,
         );
       })();
+  // The log scale is the cost chart: its ticks are dollars.
   const tickLabel = (v) =>
-    v > 0 && v < 1 ? v.toFixed(1) : `${fmt(Math.round(v))}${log ? "" : unit}`;
+    log ? `$${Number(v.toPrecision(1))}` : `${fmt(Math.round(v))}${unit}`;
   for (const v of ticks) {
     const gx = x(v);
     svg += `<line x1="${gx}" y1="${top - 6}" x2="${gx}" y2="${H - 46}" stroke="#e8e6dc"/><text x="${gx}" y="${H - 32}" font-size="10" text-anchor="middle" fill="#5e5d59">${tickLabel(v)}</text>\n`;
@@ -236,24 +241,17 @@ function chart(set, value, title, unit, digits, log = false) {
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
         ...(r.errors > 0 ? [`${fmt(r.errors, 1)} errors/run`] : []),
       ];
-      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${fmt(r[value], digits)}${unit}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + (log ? 10 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${log ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per 1,000 tasks at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
   return `${svg}</svg>\n`;
 }
 
 const newest = SETS.filter((set) => table[set]).at(-1);
 writeFileSync(
   join(DIR, "cost.svg"),
-  chart(
-    newest,
-    "costPerThousand",
-    "Cost per 1,000 tasks, by tool mode",
-    "",
-    2,
-    true,
-  ),
+  chart(newest, "costPerTask", "Cost per task, by tool mode", "", 2, true),
 );
 writeFileSync(
   join(DIR, "time.svg"),
