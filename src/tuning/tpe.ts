@@ -116,10 +116,12 @@ export class TpeSampler<S extends SearchSpace> {
   private readonly gamma: (n: number) => number;
   private readonly priorWeight: number;
 
-  constructor(
-    readonly space: S,
-    options: TpeOptions = {},
-  ) {
+  readonly space: S;
+
+  // A plain field, not a parameter property, so Node can strip the types and
+  // run this file as it is.
+  constructor(space: S, options: TpeOptions = {}) {
+    this.space = space;
     this.random = mulberry32(options.seed ?? 0);
     this.sign = options.direction === "maximize" ? -1 : 1;
     this.startupTrials = options.startupTrials ?? 10;
