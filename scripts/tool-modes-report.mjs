@@ -233,9 +233,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       (k) =>
         `<pattern id="win-${k}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="${k === "light" ? "#141413" : "#ffffff"}" opacity="${k === "light" ? 0.4 : 0.6}"/></pattern>`,
     )
-    .join(
-      "",
-    )}<pattern id="win-yellow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="3" height="6" fill="#e6ff00"/></pattern></defs>\n`;
+    .join("")}</defs>\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
   svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">${esc(title)}</text>\n`;
   svg += brand(W);
@@ -244,11 +242,7 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 22 + name.length * 6.6;
   });
-  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-yellow)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
-  if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
-    lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
-    svg += `<circle cx="${lx + 5}" cy="43" r="4" fill="none" stroke="#ff2d9540" stroke-width="2"/><circle cx="${lx + 5}" cy="43" r="4" fill="none" stroke="#ff2d95" stroke-width="2" stroke-dasharray="${(2 * Math.PI * 4) / 3} ${2 * Math.PI * 4}" transform="rotate(-90 ${lx + 5} 43)"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
-  }
+  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
     ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
@@ -293,15 +287,10 @@ function chart(groups, value, title, unit, digits, log = false) {
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
-        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-yellow)" pointer-events="none"/>\n`;
+        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
-      // A dial at the label's start: the share of runs that failed.
-      const dialR = 5;
-      const dialC = 2 * Math.PI * dialR;
-      if (r.failed)
-        svg += `<circle cx="${left + w + 12}" cy="${y + barH / 2}" r="${dialR}" fill="none" stroke="#ff2d9540" stroke-width="2.5"/><circle cx="${left + w + 12}" cy="${y + barH / 2}" r="${dialR}" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="${(dialC * r.failed) / r.runs} ${dialC}" transform="rotate(-90 ${left + w + 12} ${y + barH / 2})"/>\n`;
-      svg += `<text x="${left + w + (r.failed ? 21 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
   svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better</text>\n`;
@@ -371,11 +360,16 @@ function frontierPoints(set, effort) {
     const best = passing.reduce((a, b) =>
       a.row.costPerTask <= b.row.costPerTask ? a : b,
     );
+    const all = MODES.map(([mode]) => table[set]?.[`${id}|${mode}`]).filter(
+      Boolean,
+    );
     return [
       {
         id,
         name,
         effort,
+        failed: all.reduce((a, r) => a + r.failed, 0),
+        runs: all.reduce((a, r) => a + r.runs, 0),
         mode: best.label,
         row: best.row,
         cost: best.row.costPerTask,
@@ -387,8 +381,14 @@ function frontierPoints(set, effort) {
 }
 
 /** A point linking to the model's page, with a hover title as the index's own chart has. */
+/** A ring around a point, filled clockwise to `share`: the runs that failed. */
+const dial = (cx, cy, r, share) => {
+  const c = 2 * Math.PI * r;
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff2d9533" stroke-width="2.5" pointer-events="none"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
+};
+
 const dot = (p, cx, cy, r = 7) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>\n`;
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
 
 function intelligence(efforts) {
   const many = efforts.length > 1;
@@ -440,6 +440,8 @@ function intelligence(efforts) {
   svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
   svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
   svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
+  if (points.some((p) => p.failed))
+    svg += `${dial(W - right - 286, top + 34, 5, 1 / 3)}<text x="${W - right - 276}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
