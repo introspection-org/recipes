@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 610,
+      "input_tokens": 666,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,42 +20,43 @@
       ]
     },
     {
-      "input_tokens": 1499,
+      "input_tokens": 1554,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 28,
+      "output_tokens": 30,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "tool_search",
           "input": {
-            "query": "+calendar +mail +drive tools command",
+            "query": "+calendar list +mail search draft +drive search",
             "limit": 2
           }
         }
       ]
     },
     {
-      "input_tokens": 2861,
+      "input_tokens": 3877,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1496,
-      "output_tokens": 22,
+      "cache_read_input_tokens": 1551,
+      "output_tokens": 55,
       "stop_reason": "completed",
       "tool_calls": [
         {
-          "name": "tool_search",
+          "name": "calendar",
           "input": {
-            "query": "+calendar",
-            "limit": 1
+            "command": "list",
+            "from": "2026-11-10T00:00:00-08:00",
+            "to": "2026-11-11T00:00:00-08:00"
           }
         }
       ]
     },
     {
-      "input_tokens": 4630,
+      "input_tokens": 4071,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1606,
-      "output_tokens": 29,
+      "cache_read_input_tokens": 1677,
+      "output_tokens": 25,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -63,81 +64,91 @@
           "input": {
             "command": "search",
             "from": "Dana",
-            "query": "budget",
-            "limit": 10
+            "query": "budget"
           }
         }
       ]
     },
     {
-      "input_tokens": 2001,
+      "input_tokens": 212,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4443,
-      "output_tokens": 25,
+      "cache_read_input_tokens": 5745,
+      "output_tokens": 23,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "+drive search",
+            "limit": 1
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1063,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5954,
+      "output_tokens": 21,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "drive",
           "input": {
             "command": "search",
-            "query": "budget",
-            "limit": 10
+            "query": "budget"
           }
         }
       ]
     },
     {
-      "input_tokens": 148,
+      "input_tokens": 1130,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6441,
-      "output_tokens": 30,
+      "cache_read_input_tokens": 6030,
+      "output_tokens": 31,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "read",
-            "message": "msg_620bdd1eedbf44f7"
+            "message": "msg_aa0601e26c224dc4"
           }
         }
       ]
     },
     {
-      "input_tokens": 278,
+      "input_tokens": 284,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6586,
-      "output_tokens": 127,
+      "cache_read_input_tokens": 7157,
+      "output_tokens": 92,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "draft",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nI'll bring the latest Q3 budget spreadsheet to the planning review. Here's the sheet: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget).\n\nBest,\nSam",
-            "reply_to": "msg_620bdd1eedbf44f7"
+            "reply_to": "msg_aa0601e26c224dc4",
+            "body": "Hi Dana,\n\nI'll bring the latest Q3 budget sheet to tomorrow's planning review, including the Q3 travel line for Finance.\n\nHere's the sheet: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\n\nThanks,\nSam"
           }
         }
       ]
     },
     {
-      "input_tokens": 207,
+      "input_tokens": 176,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6861,
-      "output_tokens": 96,
+      "cache_read_input_tokens": 7438,
+      "output_tokens": 125,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 8,
-    "tool_calls": 7,
-    "input_tokens": 12234,
+    "requests": 9,
+    "tool_calls": 8,
+    "input_tokens": 13033,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 27433,
-    "output_tokens": 404
+    "cache_read_input_tokens": 35552,
+    "output_tokens": 448
   }
 }

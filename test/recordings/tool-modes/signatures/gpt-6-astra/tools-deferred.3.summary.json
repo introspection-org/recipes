@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 620,
+      "input_tokens": 676,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,28 +20,36 @@
       ]
     },
     {
-      "input_tokens": 1509,
+      "input_tokens": 1564,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 32,
+      "output_tokens": 26,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "tool_search",
           "input": {
-            "query": "+calendar +mail +drive tools search list draft current time",
-            "limit": 2
+            "query": "+calendar +mail +drive",
+            "limit": 3
           }
         }
       ]
     },
     {
-      "input_tokens": 2865,
+      "input_tokens": 4749,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1506,
-      "output_tokens": 25,
+      "cache_read_input_tokens": 1561,
+      "output_tokens": 109,
       "stop_reason": "completed",
       "tool_calls": [
+        {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-10T00:00:00-08:00",
+            "to": "2026-11-11T00:00:00-08:00"
+          }
+        },
         {
           "name": "mail",
           "input": {
@@ -49,16 +57,7 @@
             "from": "Dana",
             "query": "budget"
           }
-        }
-      ]
-    },
-    {
-      "input_tokens": 2957,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1620,
-      "output_tokens": 21,
-      "stop_reason": "completed",
-      "tool_calls": [
+        },
         {
           "name": "drive",
           "input": {
@@ -69,25 +68,9 @@
       ]
     },
     {
-      "input_tokens": 146,
+      "input_tokens": 5276,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4574,
-      "output_tokens": 26,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "tool_search",
-          "input": {
-            "query": "+calendar list current date timezone",
-            "limit": 1
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 1886,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4717,
+      "cache_read_input_tokens": 1712,
       "output_tokens": 30,
       "stop_reason": "completed",
       "tool_calls": [
@@ -95,63 +78,43 @@
           "name": "mail",
           "input": {
             "command": "read",
-            "message": "msg_07318da5425047c1"
+            "message": "msg_968806b3a03749fc"
           }
         }
       ]
     },
     {
-      "input_tokens": 2070,
+      "input_tokens": 281,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4810,
-      "output_tokens": 38,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "tool_search",
-          "input": {
-            "query": "current time date user timezone profile",
-            "limit": 2
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 57,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6877,
-      "output_tokens": 94,
+      "cache_read_input_tokens": 6985,
+      "output_tokens": 81,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "draft",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nI'll bring the latest budget spreadsheet to the planning review. Here's the sheet: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget).\n\nBest,\nSam",
-            "reply_to": "msg_07318da5425047c1"
+            "reply_to": "msg_968806b3a03749fc",
+            "body": "Hi Dana,\n\nI'll bring the [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, including the Q3 travel line for Finance.\n\nThanks,\nSam"
           }
         }
       ]
     },
     {
-      "input_tokens": 178,
+      "input_tokens": 162,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6931,
-      "output_tokens": 149,
+      "cache_read_input_tokens": 7263,
+      "output_tokens": 176,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 9,
-    "tool_calls": 8,
-    "input_tokens": 12288,
+    "requests": 6,
+    "tool_calls": 7,
+    "input_tokens": 12708,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 31035,
-    "output_tokens": 462
+    "cache_read_input_tokens": 17521,
+    "output_tokens": 468
   }
 }

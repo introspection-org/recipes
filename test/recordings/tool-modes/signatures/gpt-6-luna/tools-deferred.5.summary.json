@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 609,
+      "input_tokens": 665,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,60 +20,25 @@
       ]
     },
     {
-      "input_tokens": 1498,
+      "input_tokens": 1553,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 32,
+      "output_tokens": 34,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "tool_search",
           "input": {
-            "query": "mail search email create draft calendar list events tomorrow drive search files budget spreadsheet tools"
+            "query": "mail search messages draft reply; calendar list events; drive search files get share link tools"
           }
         }
       ]
     },
     {
-      "input_tokens": 4561,
+      "input_tokens": 3515,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1495,
-      "output_tokens": 122,
-      "stop_reason": "completed",
-      "tool_calls": [
-        {
-          "name": "calendar",
-          "input": {
-            "command": "list",
-            "from": "2025-03-09T00:00:00-08:00",
-            "to": "2025-03-10T00:00:00-08:00",
-            "limit": 50
-          }
-        },
-        {
-          "name": "mail",
-          "input": {
-            "command": "search",
-            "from": "Dana",
-            "query": "budget",
-            "limit": 10
-          }
-        },
-        {
-          "name": "drive",
-          "input": {
-            "command": "search",
-            "query": "budget spreadsheet",
-            "limit": 10
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 4840,
-      "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 1652,
-      "output_tokens": 154,
+      "cache_read_input_tokens": 1550,
+      "output_tokens": 121,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -88,48 +53,54 @@
         {
           "name": "mail",
           "input": {
-            "command": "read",
-            "message": "msg_0ada7d79d9e94927"
+            "command": "search",
+            "query": "budget",
+            "from": "Dana",
+            "limit": 10
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "limit": 20
           }
         }
       ]
     },
     {
-      "input_tokens": 647,
+      "input_tokens": 5293,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6489,
-      "output_tokens": 86,
+      "cache_read_input_tokens": 1709,
+      "output_tokens": 71,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "draft",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nI’ll bring the latest budget sheet to the meeting: https://docs.example.test/spreadsheets/d/f-budget\n\nBest,\nSam",
-            "reply_to": "msg_0ada7d79d9e94927"
+            "reply_to": "msg_4f6b680ac8a44dc9",
+            "body": "Hi Dana,\n\nI’ll bring the latest budget sheet to tomorrow’s review: https://docs.example.test/spreadsheets/d/f-budget\n\nBest,\nSam"
           }
         }
       ]
     },
     {
-      "input_tokens": 168,
+      "input_tokens": 156,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 7133,
-      "output_tokens": 125,
+      "cache_read_input_tokens": 6999,
+      "output_tokens": 91,
       "stop_reason": "completed",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 6,
-    "tool_calls": 8,
-    "input_tokens": 12323,
+    "requests": 5,
+    "tool_calls": 6,
+    "input_tokens": 11182,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 16769,
-    "output_tokens": 566
+    "cache_read_input_tokens": 10258,
+    "output_tokens": 363
   }
 }

@@ -4,64 +4,58 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 4581,
+      "cache_creation_input_tokens": 4925,
       "cache_read_input_tokens": 0,
-      "output_tokens": 229,
-      "stop_reason": "tool_use",
-      "tool_calls": [
-        {
-          "name": "mail",
-          "input": {
-            "command": "search",
-            "query": "budget",
-            "from": "Dana",
-            "limit": 5
-          }
-        },
-        {
-          "name": "drive",
-          "input": {
-            "command": "search",
-            "query": "budget",
-            "limit": 5
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 2,
-      "cache_creation_input_tokens": 694,
-      "cache_read_input_tokens": 4581,
-      "output_tokens": 393,
+      "output_tokens": 272,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "calendar",
           "input": {
             "command": "list",
-            "from": "2026-11-10T00:00:00Z",
-            "to": "2026-11-11T00:00:00Z"
+            "from": "2026-11-10T00:00:00-08:00",
+            "to": "2026-11-11T00:00:00-08:00"
           }
         },
         {
           "name": "mail",
           "input": {
-            "command": "draft",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nYes, I'll bring the latest budget sheet to tomorrow's review. Here's the link: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\n\nThanks,\nSam",
-            "reply_to": "msg_0c2074bce3dc48e3"
+            "command": "search",
+            "query": "budget",
+            "from": "Dana"
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 842,
-      "cache_read_input_tokens": 5275,
-      "output_tokens": 380,
+      "cache_creation_input_tokens": 1089,
+      "cache_read_input_tokens": 4925,
+      "output_tokens": 202,
+      "stop_reason": "tool_use",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "reply_to": "msg_8f1c1796ed05402d",
+            "body": "Hi Dana,\n\nWill do. I'll bring the latest budget sheet to tomorrow's Q3 planning review. Here's the link in case you want it ahead of time: [Q3 Budget](https://docs.example.test/spreadsheets/d/f-budget)\n\nThanks,\nSam"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 301,
+      "cache_read_input_tokens": 6014,
+      "output_tokens": 295,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
@@ -70,8 +64,8 @@
     "requests": 3,
     "tool_calls": 4,
     "input_tokens": 8,
-    "cache_creation_input_tokens": 6117,
-    "cache_read_input_tokens": 9856,
-    "output_tokens": 1002
+    "cache_creation_input_tokens": 6315,
+    "cache_read_input_tokens": 10939,
+    "output_tokens": 769
   }
 }

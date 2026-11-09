@@ -4,9 +4,9 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 578,
-      "cache_read_input_tokens": 5071,
-      "output_tokens": 172,
+      "cache_creation_input_tokens": 653,
+      "cache_read_input_tokens": 5162,
+      "output_tokens": 167,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
@@ -21,64 +21,49 @@
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1362,
-      "cache_read_input_tokens": 5649,
-      "output_tokens": 247,
+      "cache_creation_input_tokens": 1357,
+      "cache_read_input_tokens": 5815,
+      "output_tokens": 146,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "codemode",
           "input": {
-            "code": "const [m, d] = await Promise.all([\n  tools.mail({ command: \"search\", query: \"budget\", from: \"Dana\", limit: 10 }),\n  tools.drive({ command: \"search\", query: \"budget\", limit: 10 }),\n]);\nreturn { m, d };"
+            "code": "const [cal, mailRes, files] = await Promise.all([\n  tools.calendar({ command: \"list\" }),\n  tools.mail({ command: \"search\", query: \"Dana budget\" }),\n  tools.drive({ command: \"search\", query: \"budget\" }),\n]);\nreturn { cal, mailRes, files };"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 817,
-      "cache_read_input_tokens": 7011,
-      "output_tokens": 355,
+      "cache_creation_input_tokens": 1146,
+      "cache_read_input_tokens": 7172,
+      "output_tokens": 258,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "codemode",
           "input": {
-            "code": "const [r, c] = await Promise.all([\n  tools.mail({ command: \"read\", message: \"msg_0f9e9e08c0264c3a\" }),\n  tools.calendar({ command: \"list\", from: \"2026-11-10T00:00:00Z\", to: \"2026-11-11T00:00:00Z\", limit: 50 }),\n]);\nreturn { r, c };"
+            "code": "const draft = await tools.mail({\n  command: \"draft\",\n  reply_to: \"msg_dcdd423dc7db4f5e\",\n  body: \"Hi Dana,\\n\\nI'll bring the budget sheet to tomorrow's review. Here's the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\",\n});\nreturn draft;"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 1256,
-      "cache_read_input_tokens": 7828,
-      "output_tokens": 336,
-      "stop_reason": "tool_use",
-      "tool_calls": [
-        {
-          "name": "codemode",
-          "input": {
-            "code": "const d = await tools.mail({\n  command: \"draft\",\n  reply_to: \"msg_0f9e9e08c0264c3a\",\n  to: [\"dana@example.test\"],\n  subject: \"Re: Q3 budget numbers\",\n  body: \"Hi Dana,\\n\\nI'll bring the Q3 budget sheet to tomorrow's planning review. Here's the link:\\n\\nhttps://docs.example.test/spreadsheets/d/f-budget\\n\\nThanks,\\nSam\",\n});\nreturn d;"
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 2,
-      "cache_creation_input_tokens": 458,
-      "cache_read_input_tokens": 9084,
-      "output_tokens": 461,
+      "cache_creation_input_tokens": 379,
+      "cache_read_input_tokens": 8318,
+      "output_tokens": 423,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 5,
-    "tool_calls": 4,
-    "input_tokens": 12,
-    "cache_creation_input_tokens": 4471,
-    "cache_read_input_tokens": 34643,
-    "output_tokens": 1571
+    "requests": 4,
+    "tool_calls": 3,
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 3535,
+    "cache_read_input_tokens": 26467,
+    "output_tokens": 994
   }
 }

@@ -55,9 +55,10 @@ function prices(id, provider) {
   const data = JSON.parse(
     readFileSync(join(catalogDir, `${provider}.json`), "utf8"),
   );
+  // A model can be listed more than once (a classifier as well as chat); the runs use chat.
   for (const models of Object.values(data))
-    for (const model of Object.values(models))
-      if (model.id === id) return model.cost;
+    for (const [key, model] of Object.entries(models))
+      if (model.id === id && !key.startsWith("classifier:")) return model.cost;
   throw new Error(`No price for ${provider}/${id} in Pi's catalog`);
 }
 

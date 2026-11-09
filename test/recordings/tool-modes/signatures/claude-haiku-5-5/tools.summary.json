@@ -4,9 +4,9 @@
   "requests": [
     {
       "input_tokens": 4,
-      "cache_creation_input_tokens": 4582,
+      "cache_creation_input_tokens": 4925,
       "cache_read_input_tokens": 0,
-      "output_tokens": 419,
+      "output_tokens": 434,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
@@ -18,85 +18,62 @@
           }
         },
         {
+          "name": "calendar",
+          "input": {
+            "command": "list",
+            "from": "2026-11-10T00:00:00-08:00",
+            "to": "2026-11-11T00:00:00-08:00"
+          }
+        },
+        {
           "name": "mail",
           "input": {
             "command": "search",
             "from": "Dana",
-            "query": "budget",
-            "limit": 10
+            "query": "budget"
           }
         },
         {
           "name": "drive",
           "input": {
             "command": "search",
-            "query": "budget",
-            "limit": 10
+            "query": "budget"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 2087,
-      "cache_read_input_tokens": 4582,
-      "output_tokens": 382,
-      "stop_reason": "tool_use",
-      "tool_calls": [
-        {
-          "name": "mail",
-          "input": {
-            "command": "read",
-            "message": "msg_06b08cab08b94815"
-          }
-        },
-        {
-          "name": "calendar",
-          "input": {
-            "command": "list",
-            "from": "2026-11-10T00:00:00Z",
-            "to": "2026-11-11T00:00:00Z",
-            "limit": 50
-          }
-        }
-      ]
-    },
-    {
-      "input_tokens": 2,
-      "cache_creation_input_tokens": 1089,
-      "cache_read_input_tokens": 6669,
-      "output_tokens": 311,
+      "cache_creation_input_tokens": 2458,
+      "cache_read_input_tokens": 4925,
+      "output_tokens": 257,
       "stop_reason": "tool_use",
       "tool_calls": [
         {
           "name": "mail",
           "input": {
             "command": "draft",
-            "reply_to": "msg_06b08cab08b94815",
-            "to": [
-              "dana@example.test"
-            ],
-            "subject": "Re: Q3 budget numbers",
-            "body": "Hi Dana,\n\nYes, I'll bring the budget sheet to tomorrow's Q3 planning review. Here's the link: https://docs.example.test/spreadsheets/d/f-budget\n\nThanks,\nSam"
+            "reply_to": "msg_343d377b94d348b3",
+            "body": "Hi Dana,\n\nYes, I'll bring the Q3 budget sheet to tomorrow's review. Here's the link for reference: https://docs.example.test/spreadsheets/d/f-budget\n\nThanks,\nSam"
           }
         }
       ]
     },
     {
       "input_tokens": 2,
-      "cache_creation_input_tokens": 410,
-      "cache_read_input_tokens": 7758,
-      "output_tokens": 394,
+      "cache_creation_input_tokens": 354,
+      "cache_read_input_tokens": 7383,
+      "output_tokens": 359,
       "stop_reason": "end_turn",
       "tool_calls": []
     }
   ],
   "totals": {
-    "requests": 4,
-    "tool_calls": 6,
-    "input_tokens": 10,
-    "cache_creation_input_tokens": 8168,
-    "cache_read_input_tokens": 19009,
-    "output_tokens": 1506
+    "requests": 3,
+    "tool_calls": 5,
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 7737,
+    "cache_read_input_tokens": 12308,
+    "output_tokens": 1050
   }
 }

@@ -3,10 +3,10 @@
   "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
   "requests": [
     {
-      "input_tokens": 3471,
+      "input_tokens": 3587,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
-      "output_tokens": 47,
+      "output_tokens": 46,
       "stop_reason": "completed",
       "tool_calls": [
         {
@@ -20,49 +20,49 @@
       ]
     },
     {
-      "input_tokens": 892,
+      "input_tokens": 891,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 3468,
-      "output_tokens": 64,
+      "cache_read_input_tokens": 3584,
+      "output_tokens": 117,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(await searchTools(\"current date time timezone\", {limit:2}));\ntext(await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:10}));\ntext(await tools.drive({command:\"search\",query:\"budget\",limit:10}));\n"
+          "input": "await Promise.all([\n(async()=>text(await tools.calendar({command:\"list\",from:\"2026-11-10T00:00:00-08:00\",to:\"2026-11-11T00:00:00-08:00\",limit:100})))(),\n(async()=>text(await tools.mail({command:\"search\",from:\"Dana\",query:\"budget\",limit:25})))(),\n(async()=>text(await tools.drive({command:\"search\",query:\"budget\",limit:25})))()\n]);\n"
         }
       ]
     },
     {
-      "input_tokens": 2635,
+      "input_tokens": 717,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 4357,
-      "output_tokens": 80,
+      "cache_read_input_tokens": 4472,
+      "output_tokens": 34,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(await tools.mail({command:\"read\",message:\"msg_57fbcb077843498a\"}));\ntext(await tools.drive({command:\"read\",file:\"file_f16aae8702aa4e52\"}));\ntext(ALL_TOOLS.map(x=>({name:x.name,description:x.description?.slice(0,100)})));\n"
+          "input": "text(await tools.mail({command:\"read\",message:\"msg_7ac140ffd3d141ff\"}));\n"
         }
       ]
     },
     {
-      "input_tokens": 661,
+      "input_tokens": 301,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 6989,
-      "output_tokens": 193,
+      "cache_read_input_tokens": 5186,
+      "output_tokens": 86,
       "stop_reason": "completed",
       "tool_calls": [
         {
           "name": "codemode",
-          "input": "text(await tools.calendar({command:\"list\",from:\"2026-11-09T00:00:00Z\",to:\"2026-11-12T00:00:00Z\",limit:100}));\ntext(await tools.mail({command:\"draft\",reply_to:\"msg_57fbcb077843498a\",to:[\"dana@example.test\"],subject:\"Re: Q3 budget numbers\",body:\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget sheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}));\n"
+          "input": "text(await tools.mail({command:\"draft\",reply_to:\"msg_7ac140ffd3d141ff\",body:\"Hi Dana,\\n\\nI'll bring the [Q3 Budget sheet](https://docs.example.test/spreadsheets/d/f-budget) to tomorrow's planning review, with the Q3 travel line ready for Finance.\\n\\nThanks,\\nSam\"}));\n"
         }
       ]
     },
     {
-      "input_tokens": 547,
+      "input_tokens": 181,
       "cache_creation_input_tokens": 0,
-      "cache_read_input_tokens": 7647,
-      "output_tokens": 191,
+      "cache_read_input_tokens": 5484,
+      "output_tokens": 164,
       "stop_reason": "completed",
       "tool_calls": []
     }
@@ -70,9 +70,9 @@
   "totals": {
     "requests": 5,
     "tool_calls": 4,
-    "input_tokens": 8206,
+    "input_tokens": 5677,
     "cache_creation_input_tokens": 0,
-    "cache_read_input_tokens": 22461,
-    "output_tokens": 575
+    "cache_read_input_tokens": 18726,
+    "output_tokens": 447
   }
 }
