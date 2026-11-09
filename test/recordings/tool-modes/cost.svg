@@ -41,6 +41,7 @@
 <rect x="120" y="208" width="317.95975756048375" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
 <text x="443.95975756048375" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0670</text>
 <rect x="120" y="224" width="121.6418481495839" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
+<rect x="122" y="229.5" width="23.528369629916778" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="247.6418481495839" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.00121 · 4/5 drafted</text>
 <rect x="120" y="240" width="281.47550130165683" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="407.47550130165683" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0318</text>
@@ -70,9 +71,11 @@
 <rect x="120" y="448" width="82.27109266423753" height="14" rx="3" fill="url(#win-light)"/>
 <text x="208.27109266423753" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000539</text>
 <rect x="120" y="464" width="256.7006806645761" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
+<rect x="122" y="469.5" width="84.23356022152537" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="382.7006806645761" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.0191 · 0.7 errors/run</text>
 <rect x="120" y="480" width="347.57842959670256" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
+<rect x="122" y="485.5" width="343.57842959670256" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="473.57842959670256" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">$0.123 · 2.0 errors/run</text>
-<text x="120" y="550" font-size="12" fill="#5e5d59">USD per task at list price, log scale: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<text x="120" y="550" font-size="12" fill="#5e5d59">USD per task at list price, log scale: lower is better. <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>
 <text x="120" y="566" font-size="11" fill="#5e5d59">Hatched, the recommendation: the cheapest setting on the chart whose every run drafted the reply with no rejected calls.</text>
 </svg>

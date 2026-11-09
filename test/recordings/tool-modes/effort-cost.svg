@@ -44,6 +44,6 @@
 <text x="245.90452910845818" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000630 · cli</text>
 <rect x="120" y="272" width="352.8991415284731" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="478.8991415284731" y="283" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0225 · cli</text>
-<text x="120" y="342" font-size="12" fill="#5e5d59">USD per task at list price, log scale: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<text x="120" y="342" font-size="12" fill="#5e5d59">USD per task at list price, log scale: lower is better. <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>
 <text x="120" y="358" font-size="11" fill="#5e5d59">Hatched, the recommendation: the cheapest setting on the chart whose every run drafted the reply with no rejected calls.</text>
 </svg>

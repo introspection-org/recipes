@@ -131,6 +131,7 @@ function row(id, provider, list) {
     runs: list.length,
     drafted: list.filter((r) => r.drafted).length,
     errors: mean(list.map((r) => r.errors)),
+    failed: list.filter((r) => !r.drafted || r.errors > 0).length,
     requests: mean(list.map((r) => r.totals.requests)),
     input: mean(input),
     cached: mean(
@@ -287,6 +288,8 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})"/>\n`;
+      if (r.failed)
+        svg += `<rect x="${left + 2}" y="${y + barH / 2 - 1.5}" width="${Math.max(((w - 4) * r.failed) / r.runs, 3)}" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = [
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
@@ -295,7 +298,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 30}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<text x="${left}" y="${H - 30}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : `USD per task at list price${log ? ", log scale" : ""}: lower is better.`)} <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>\n`;
   svg += `<text x="${left}" y="${H - 14}" font-size="11" fill="#5e5d59">Hatched, the recommendation: the ${value === "seconds" ? "fastest" : "cheapest"} setting on the chart whose every run drafted the reply with no rejected calls.</text>\n`;
   return `${svg}</svg>\n`;
 }

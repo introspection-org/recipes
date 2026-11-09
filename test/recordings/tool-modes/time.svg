@@ -36,6 +36,7 @@
 <rect x="120" y="208" width="330.96817976172525" height="14" rx="3" fill="#8a3618" stroke="#0000001f"/>
 <text x="456.96817976172525" y="219" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.6s</text>
 <rect x="120" y="224" width="229.92459659176598" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
+<rect x="122" y="229.5" width="45.184919318353195" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="355.924596591766" y="235" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">10.2s · 4/5 drafted</text>
 <rect x="120" y="240" width="327.3563565073142" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="453.3563565073142" y="251" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.5s</text>
@@ -65,9 +66,11 @@
 <rect x="120" y="448" width="222.9754184889157" height="14" rx="3" fill="#c9c7be" stroke="#0000001f"/>
 <text x="348.9754184889157" y="459" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">9.9s</text>
 <rect x="120" y="464" width="339.02880410194547" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
+<rect x="122" y="469.5" width="111.67626803398183" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="465.02880410194547" y="475" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">15.0s · 0.7 errors/run</text>
 <rect x="120" y="480" width="450" height="14" rx="3" fill="#141413" stroke="#0000001f"/>
+<rect x="122" y="485.5" width="446" height="3" rx="1.5" fill="#b3261e" stroke="#faf9f5" stroke-width="1"/>
 <text x="576" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#b3261e">19.9s · 2.0 errors/run</text>
-<text x="120" y="550" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<text x="120" y="550" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>
 <text x="120" y="566" font-size="11" fill="#5e5d59">Hatched, the recommendation: the fastest setting on the chart whose every run drafted the reply with no rejected calls.</text>
 </svg>

@@ -42,6 +42,6 @@
 <text x="576" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">23.3s · codemode</text>
 <rect x="120" y="272" width="280.1945035942435" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="406.1945035942435" y="283" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.5s · codemode</text>
-<text x="120" y="342" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<text x="120" y="342" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>
 <text x="120" y="358" font-size="11" fill="#5e5d59">Hatched, the recommendation: the fastest setting on the chart whose every run drafted the reply with no rejected calls.</text>
 </svg>
