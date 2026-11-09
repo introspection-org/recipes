@@ -24,10 +24,10 @@
 <rect x="70" y="64" width="325" height="153" fill="#e3f1dc" opacity="0.75"/>
 <rect x="395" y="217" width="325" height="153" fill="#efede6" opacity="0.8"/>
 <polyline points="189.74208376786868,326.2857142857143 193.80106285078728,291.3142857142857 203.72620257756168,278.2 278.9868106481182,238.85714285714286 446.65610673705237,168.9142857142857 462.2292993224253,151.42857142857142 515.2380719936262,142.68571428571428 595.6370189637862,129.57142857142858" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
-<rect x="420" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="437" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
-<line x1="580" y1="78" x2="608" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="614" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
-<circle cx="426" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="426" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 426 98)" pointer-events="none"/><text x="437" y="102" font-size="11" fill="#5e5d59">runs failed, all modes</text>
-<circle cx="594" cy="98" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="614" y="102" font-size="11" fill="#5e5d59">recommended</text>
+<rect x="405" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="422" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
+<line x1="567" y1="78" x2="581" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="584" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
+<circle cx="411" cy="98" r="5" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="411" cy="98" r="5" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="10.471975511965976 31.41592653589793" transform="rotate(-90 411 98)" pointer-events="none"/><text x="422" y="102" font-size="11" fill="#5e5d59">runs failed, all modes</text>
+<circle cx="573" cy="98" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="584" y="102" font-size="11" fill="#5e5d59">recommended</text>
 <polyline points="269.69697034226954,286.9428571428572 279.49761703922184,260.7142857142857 278.9868106481182,238.85714285714286" fill="none" stroke="#f6bd9d" stroke-width="2" opacity="0.7"/>
 <polyline points="455.3238492204284,256.34285714285716 474.4799408375406,234.4857142857143 483.1749493568962,186.4" fill="none" stroke="#d97757" stroke-width="2" opacity="0.7"/>
 <polyline points="498.6477801760556,217 526.3011291214268,160.17142857142858 515.2380719936262,142.68571428571428" fill="none" stroke="#8a3618" stroke-width="2" opacity="0.7"/>
@@ -241,6 +241,6 @@ Click for more info</title><circle cx="595.6370189637862" cy="129.57142857142858
 <text x="606.6370189637862" y="133.57142857142858" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra</text>
 <text x="70" y="406" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>
 <g transform="translate(70 413) scale(0.24)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="86" y="424" font-size="12" font-family="Georgia, serif" fill="#5e5d59">Artificial Analysis</text>
-<text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>
+<text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank">https://artificialanalysis.ai/leaderboards/models</a>, read 2026-11-08.</text>
 <text transform="translate(20 217) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index</text>
 </svg>
