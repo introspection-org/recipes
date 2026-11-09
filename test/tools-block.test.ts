@@ -44,7 +44,10 @@ const FAKE_ISSUES = `export default { kind: "issues", apiVersion: 1, id: "acme",
     search: async () => ({ issues: [{ ref: "A-1", title: "Found it", status: { name: "Todo", category: "open" } }] }),
   }) };\n`;
 
-function issuesRecipe(toolsBlock: string[]) {
+function issuesRecipe(
+  toolsBlock: string[],
+  manifestPi: Record<string, unknown> = {},
+) {
   const fixture = writeFixtureRecipe({
     toolsBlock,
     dependencies: { "@acme/issues": "1.0.0" },
@@ -53,6 +56,7 @@ function issuesRecipe(toolsBlock: string[]) {
         { provider: "acme", package: "@acme/issues" },
         { provider: "introspection", enabled: false },
       ],
+      ...manifestPi,
     },
   });
   const write = (path: string, body: string) => {
@@ -177,8 +181,15 @@ describe("first-party tools by tools.mode", () => {
     for (const cleanup of cleanups.splice(0)) cleanup();
   });
 
-  async function run(toolsBlock: string[], responses: FauxResponseStep[]) {
-    const fixture = issuesRecipe(toolsBlock);
+  async function run(
+    toolsBlock: string[],
+    responses: FauxResponseStep[],
+    host: { search?: boolean } = {},
+  ) {
+    const fixture = issuesRecipe(
+      toolsBlock,
+      host.search ? { search: [{ provider: "brave" }] } : {},
+    );
     cleanups.push(fixture.cleanup);
     const handle = await openRecipeSession({
       ...fixture,
@@ -279,4 +290,20 @@ describe("first-party tools by tools.mode", () => {
       expect(output).toContain("acme:A-1");
       expect(prompt).toContain("reach them from bash with the `tools` command");
     });
+
+  it("leaves out a tool * selects that the host does not offer", async () => {
+    let tools: string[] = [];
+    await run(
+      ["tools:", '  include: ["*"]'],
+      [
+        (context) => {
+          tools = declared(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { search: true },
+    );
+    expect(tools).toContain("issues");
+    expect(tools).not.toContain("web_search");
+  });
 });

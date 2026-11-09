@@ -1154,11 +1154,13 @@ async function createSessionForAgent(
     await session.bindExtensions({});
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));
+    // A tool `include: ["*"]` added that the host does not offer is left out.
+    const unavailable = new Set(
+      recipe.wildcardTools?.filter((name) => !registered.has(name)),
+    );
     const missingDeclaredTools = selectedToolNames.filter(
       (name) =>
-        !name.includes("*") &&
-        !registered.has(name) &&
-        !recipe.wildcardTools?.includes(name),
+        !name.includes("*") && !registered.has(name) && !unavailable.has(name),
     );
     if (missingDeclaredTools.length > 0) {
       throw new Error(
@@ -1184,7 +1186,9 @@ async function createSessionForAgent(
       }
       const activeTools = [
         ...tools.filter(
-          (name) => !connectorLoadout.scriptOnlyToolNames.includes(name),
+          (name) =>
+            !connectorLoadout.scriptOnlyToolNames.includes(name) &&
+            !unavailable.has(name),
         ),
         ...connectorLoadout.initialActiveToolNames,
         ...(mcp.initialActiveToolNames ?? []),
