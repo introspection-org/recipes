@@ -441,18 +441,47 @@ const dial = (cx, cy, r, share) => {
 };
 
 const dot = (p, cx, cy, r = 7, pick = false) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed && !p.mark ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
 
-function intelligence(efforts) {
-  const many = efforts.length > 1;
-  const effort = many ? "low, medium and high" : efforts[0];
-  const points = efforts.flatMap((e) =>
-    frontierPoints(EFFORTS.find(([, name]) => name === e)[0], e),
-  );
-  // The recommendation: the best cost × time of any point, behind its dot.
-  const pick = points.reduce((a, b) =>
-    a.cost * a.row.seconds <= b.cost * b.row.seconds ? a : b,
-  );
+/**
+ * With `byMode`, one effort and every tool mode: each model's modes are
+ * numbered points on its row, offset a little vertically so close ones stay
+ * visible, and a failure ring belongs to that mode alone.
+ */
+function intelligence(efforts, byMode = false) {
+  const many = efforts.length > 1 || byMode;
+  const effort = efforts.length > 1 ? "low, medium and high" : efforts[0];
+  const setOf = (e) => EFFORTS.find(([, name]) => name === e)[0];
+  const points = byMode
+    ? MODELS.flatMap(([id, name], i) =>
+        MODES.flatMap(([mode, label], k) => {
+          const row = table[setOf(effort)]?.[`${id}|${mode}`];
+          const score = lookup.models[id]?.[effort];
+          if (!row || score === undefined) return [];
+          return [
+            {
+              id,
+              name,
+              effort,
+              mode: label,
+              row,
+              cost: row.costPerTask,
+              score,
+              color: COLORS[i],
+              failed: row.failed,
+              runs: row.runs,
+              mark: k + 1,
+            },
+          ];
+        }),
+      )
+    : efforts.flatMap((e) => frontierPoints(setOf(e), e));
+  // The recommendation: the best cost × time of any passing setting.
+  const pick =
+    points.find((p) => p.row === recommended) ??
+    points.reduce((a, b) =>
+      a.cost * a.row.seconds <= b.cost * b.row.seconds ? a : b,
+    );
   const W = 760;
   const H = 440;
   const left = 70;
@@ -465,15 +494,16 @@ function intelligence(efforts) {
     Math.ceil(Math.max(...points.map((p) => p.score)) / 10) * 10 + 10;
   const x = (v) =>
     left + ((Math.log10(v) - lo) / (hi - lo)) * (W - left - right);
-  const y = (v) => H - bottom - (v / yMax) * (H - top - bottom);
+  const y0 = (v) => H - bottom - (v / yMax) * (H - top - bottom);
+  const y = (v, point) => y0(v) + (point?.mark ? (point.mark - 2.5) * 9 : 0);
   const esc = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
-  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (${many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (${byMode ? `by tool mode, ${effort} effort` : many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
   svg += brand(W);
-  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${many ? "per effort, low (L) to high (H)" : `at ${effort} effort, the effort the runs used`}; each model at its passing mode with the best cost × time</text>\n`;
+  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${byMode ? `at ${effort} effort; each model's tool modes, numbered as in the key` : many ? "per effort, low (L) to high (H); each model at its passing mode with the best cost × time" : `at ${effort} effort, the effort the runs used; each model at its passing mode with the best cost × time`}</text>\n`;
   for (let v = 0; v <= yMax; v += 10) {
-    svg += `<line x1="${left}" y1="${y(v)}" x2="${W - right}" y2="${y(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
+    svg += `<line x1="${left}" y1="${y0(v)}" x2="${W - right}" y2="${y0(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y0(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
   }
   for (let p = lo; p <= hi; p++)
     for (const m of p < hi ? [1, 3] : [1]) {
@@ -484,8 +514,8 @@ function intelligence(efforts) {
   // Four equal quadrants: the middle of each axis, the cost axis in log space.
   const midCost = 10 ** ((lo + hi) / 2);
   const midScore = yMax / 2;
-  svg += `<rect x="${left}" y="${top}" width="${x(midCost) - left}" height="${y(midScore) - top}" fill="#e3f1dc" opacity="0.75"/>\n`;
-  svg += `<rect x="${x(midCost)}" y="${y(midScore)}" width="${W - right - x(midCost)}" height="${H - bottom - y(midScore)}" fill="#efede6" opacity="0.8"/>\n`;
+  svg += `<rect x="${left}" y="${top}" width="${x(midCost) - left}" height="${y0(midScore) - top}" fill="#e3f1dc" opacity="0.75"/>\n`;
+  svg += `<rect x="${x(midCost)}" y="${y0(midScore)}" width="${W - right - x(midCost)}" height="${H - bottom - y0(midScore)}" fill="#efede6" opacity="0.8"/>\n`;
   // The Pareto line: each model no cheaper model beats on intelligence.
   const frontier = [...points]
     .sort((a, b) => a.cost - b.cost)
@@ -494,27 +524,42 @@ function intelligence(efforts) {
         !line.length || p.score > line.at(-1).score ? [...line, p] : line,
       [],
     );
-  svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
+  if (!byMode)
+    svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score, p)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
   svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
-  svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
+  if (!byMode)
+    svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
   if (points.some((p) => p.failed))
-    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, all modes</text>\n`;
+    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">${byMode ? "runs failed" : "runs failed, all modes"}</text>\n`;
   svg += `<circle cx="${W - right - 126}" cy="${top + 34}" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="${W - right - 106}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
       const own = points.filter((p) => p.id === id);
+      if (byMode) own.sort((a, b) => a.cost - b.cost);
       if (own.length > 1)
-        svg += `<polyline points="${own.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="${own[0].color}" stroke-width="2" opacity="0.7"/>\n`;
+        svg += `<polyline points="${own.map((p) => `${x(p.cost)},${y(p.score, p)}`).join(" ")}" fill="none" stroke="${own[0].color}" stroke-width="2" opacity="0.7"/>\n`;
     }
   const label = (point) =>
-    many
-      ? point.effort === efforts.at(-1)
+    byMode
+      ? point ===
+        points
+          .filter((p) => p.id === point.id)
+          .reduce((a, b) => (b.cost > a.cost ? b : a))
         ? point.name
         : ""
-      : `${point.name} · ${point.mode} · ${usd(point.cost)}`;
-  // A label that would overlap one already placed goes below its point.
-  const placed = [];
+      : many
+        ? point.effort === efforts.at(-1)
+          ? point.name
+          : ""
+        : `${point.name} · ${point.mode} · ${usd(point.cost)}`;
+  // A label that would overlap a point or a label already placed moves.
+  const placed = (byMode ? points : []).map((p) => ({
+    x0: x(p.cost) - 9,
+    x1: x(p.cost) + 9,
+    y0: y(p.score, p) - 9,
+    y1: y(p.score, p) + 9,
+  }));
   for (const point of points) {
     const text = label(point);
     point.flip = x(point.cost) + 11 + text.length * 6.2 > W - right;
@@ -525,24 +570,36 @@ function intelligence(efforts) {
       x1: point.flip
         ? x(point.cost) - 11
         : x(point.cost) + 11 + text.length * 6.2,
-      y0: y(point.score) + dy - 10,
-      y1: y(point.score) + dy + 4,
+      y0: y(point.score, point) + dy - 10,
+      y1: y(point.score, point) + dy + 4,
     });
     const hits = (b) =>
       placed.some(
         (p) => b.x0 < p.x1 && p.x0 < b.x1 && b.y0 < p.y1 && p.y0 < b.y1,
       );
-    point.dy = [4, 20, -12].find((dy) => !hits(box(dy))) ?? 4;
-    placed.push(box(point.dy));
+    point.dy = text
+      ? ([4, 20, -12, 34, -26].find((dy) => !hits(box(dy))) ?? 4)
+      : 4;
+    if (text) placed.push(box(point.dy));
   }
-  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score)}" r="13.5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
+  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score, pick)}" r="13.5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
   for (const point of points) {
-    svg += dot(point, x(point.cost), y(point.score), 7, point === pick);
+    svg += dot(point, x(point.cost), y(point.score, point), 7, point === pick);
     if (many)
-      svg += `<text x="${x(point.cost)}" y="${y(point.score) + 3.5}" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="${light(point.color) ? "#141413" : "#ffffff"}">${point.effort[0].toUpperCase()}</text>\n`;
+      svg += `<text x="${x(point.cost)}" y="${y(point.score, point) + 3.5}" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="${light(point.color) ? "#141413" : "#ffffff"}">${point.mark ?? point.effort[0].toUpperCase()}</text>\n`;
   }
   for (const point of points) {
     svg += `<text x="${point.flip ? x(point.cost) - 11 : x(point.cost) + 11}" y="${y(point.score) + point.dy}" text-anchor="${point.flip ? "end" : "start"}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(label(point))}</text>\n`;
+  }
+  // The modes' key, in the lower-right quadrant.
+  if (byMode) {
+    const kx = W - right - 150;
+    const ky = H - bottom - 18 - MODES.length * 18;
+    svg += `<text x="${kx}" y="${ky}" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>\n`;
+    MODES.forEach(([, label], k) => {
+      const cy = ky + 14 + k * 18;
+      svg += `<circle cx="${kx + 7}" cy="${cy}" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="${kx + 7}" y="${cy + 3.5}" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">${k + 1}</text><text x="${kx + 20}" y="${cy + 4}" font-size="11" fill="#5e5d59">${esc(label)}</text>\n`;
+    });
   }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
@@ -612,5 +669,10 @@ if (lookup)
   writeFileSync(
     process.env.INTELLIGENCE_JSON.replace(/\.json$/, ".svg"),
     intelligence(["low", "medium", "high"]),
+  );
+if (lookup)
+  writeFileSync(
+    process.env.INTELLIGENCE_JSON.replace(/\.json$/, "-modes.svg"),
+    intelligence(["low"], true),
   );
 console.log(`report.md, cost.svg and time.svg from the ${newest} set`);
