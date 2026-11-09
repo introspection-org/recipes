@@ -233,7 +233,9 @@ function chart(groups, value, title, unit, digits, log = false) {
       (k) =>
         `<pattern id="win-${k}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="${k === "light" ? "#141413" : "#ffffff"}" opacity="${k === "light" ? 0.4 : 0.6}"/></pattern>`,
     )
-    .join("")}</defs>\n`;
+    .join(
+      "",
+    )}<pattern id="win-yellow" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="3" height="6" fill="#e6ff00"/></pattern></defs>\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
   svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">${esc(title)}</text>\n`;
   svg += brand(W);
@@ -242,10 +244,10 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 22 + name.length * 6.6;
   });
-  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
+  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="#77756e"/><rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-yellow)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
   if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
     lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
-    svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#ff2d95"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
+    svg += `<circle cx="${lx + 5}" cy="43" r="4" fill="none" stroke="#ff2d9540" stroke-width="2"/><circle cx="${lx + 5}" cy="43" r="4" fill="none" stroke="#ff2d95" stroke-width="2" stroke-dasharray="${(2 * Math.PI * 4) / 3} ${2 * Math.PI * 4}" transform="rotate(-90 ${lx + 5} 43)"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
   }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
@@ -291,14 +293,15 @@ function chart(groups, value, title, unit, digits, log = false) {
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
-        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
-      if (r.failed) {
-        svg += `<rect x="${left}" y="${y}" width="${Math.max((w * r.failed) / r.runs, 3)}" height="${barH}" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/>`;
-        svg += `<rect x="${left}" y="${y + barH / 2 - 1.5}" width="${Math.max((w * r.failed) / r.runs, 3)}" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>\n`;
-      }
+        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-yellow)" pointer-events="none"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
-      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      // A dial at the label's start: the share of runs that failed.
+      const dialR = 5;
+      const dialC = 2 * Math.PI * dialR;
+      if (r.failed)
+        svg += `<circle cx="${left + w + 12}" cy="${y + barH / 2}" r="${dialR}" fill="none" stroke="#ff2d9540" stroke-width="2.5"/><circle cx="${left + w + 12}" cy="${y + barH / 2}" r="${dialR}" fill="none" stroke="#ff2d95" stroke-width="2.5" stroke-dasharray="${(dialC * r.failed) / r.runs} ${dialC}" transform="rotate(-90 ${left + w + 12} ${y + barH / 2})"/>\n`;
+      svg += `<text x="${left + w + (r.failed ? 21 : 6)}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
   svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better</text>\n`;
