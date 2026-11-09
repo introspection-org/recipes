@@ -1,5 +1,6 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { stripApiBoundHeaders } from "./api-bindings.js";
 import {
   CHANNEL_MODULE_API_VERSION,
   createChannelConnectorModule,
@@ -255,6 +256,11 @@ export async function loadRecipeConnectors(
             : {}),
           declarations: manifest.search,
         });
+  stripApiBoundHeaders(
+    Object.values(search).map(
+      (module) => module.capabilities.credential.header,
+    ),
+  );
   // A first-party tool in codemode is registered but neither declared nor
   // deferred to tool search: codemode lists it for scripts.
   const scriptOnly = (name: string) => options.exposure?.(name) === "codemode";

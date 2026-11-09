@@ -716,6 +716,52 @@ describe("a bound host needs no egress lane", () => {
     );
   });
 
+  it("search sends a bound host no provider key, not a host hook's and not after a redirect", async () => {
+    const brave = searchProviders.providers.brave!;
+    const header = brave.capabilities.credential.header;
+    install("test", [
+      { host: brave.capabilities.host, url: `${fakeBase}/brave` },
+    ]);
+    const pi = createMockExtensionAPI();
+    registerWebSearchTool(pi, {
+      bound: ["brave"],
+      providers: searchProviders.providers,
+      env: {},
+      credentialHeaders: () => ({ [header]: "host-key" }),
+    });
+
+    // The hook is not applied for a bound host.
+    reply = () => ({ json: { web: { results: [] } } });
+    await pi.tools
+      .get("web_search")!
+      .execute(
+        "call-1",
+        { query: "agents" } as never,
+        undefined,
+        undefined,
+        {} as never,
+      );
+    expect(recorded[0]!.path).toBe("/brave/res/v1/web/search");
+    expect(recorded[0]!.headers[header.toLowerCase()]).toBeUndefined();
+
+    // The provider's key header is stripped, at the target and after a
+    // redirect to an unbound host.
+    recorded.length = 0;
+    reply = (request) =>
+      request.path === "/brave/start"
+        ? { status: 302, headers: { Location: `${fakeBase}/elsewhere` } }
+        : { json: {} };
+    await fetch(`https://${brave.capabilities.host}/start`, {
+      headers: { [header]: "caller-key" },
+    });
+    expect(recorded.map((request) => request.path)).toEqual([
+      "/brave/start",
+      "/elsewhere",
+    ]);
+    for (const request of recorded)
+      expect(request.headers[header.toLowerCase()]).toBeUndefined();
+  });
+
   it("search offers a provider with an MCP server by its API-bound REST host alone", () => {
     const tavily = searchProviders.providers.tavily!;
     expect(tavily.mcp).toBeDefined();

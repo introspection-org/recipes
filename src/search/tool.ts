@@ -6,7 +6,7 @@ import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
-import { isApiBound } from "../api-bindings.js";
+import { isApiBound, stripApiBoundHeaders } from "../api-bindings.js";
 import { egressCredentialHeaders, type SearchEnvironment } from "./egress.js";
 import { isCountryCode, requestJson } from "./http.js";
 import {
@@ -297,6 +297,12 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
         `Search provider '${module.id}' has API version ${String(module.apiVersion)}; this host serves ${SEARCH_PROVIDER_API_VERSION}`,
       );
   }
+  // A request an API binding sends elsewhere loses each provider's key header.
+  stripApiBoundHeaders(
+    Object.values(providers).map(
+      (module) => module.capabilities.credential.header,
+    ),
+  );
   const offered = offeredProviders(options);
   const parameters = webSearchParameters(offered, true);
   const tracer = options.tracer ?? defaultTracer;
@@ -522,11 +528,12 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
       result = module.mcp!.parse(answer, request, plan);
     } else {
       const baseUrl = options.baseUrls?.[id] ?? `https://${capabilities.host}`;
-      // A host an API binding sends elsewhere needs no credential lane.
-      const credentialHeaders = options.credentialHeaders
-        ? options.credentialHeaders(module)
-        : isApiBound(baseUrl)
-          ? {}
+      // A host an API binding sends elsewhere needs no credential lane, and
+      // gets no credential, not even a host's.
+      const credentialHeaders = isApiBound(baseUrl)
+        ? {}
+        : options.credentialHeaders
+          ? options.credentialHeaders(module)
           : egressCredentialHeaders(
               id,
               capabilities,

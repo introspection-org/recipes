@@ -46,6 +46,22 @@ const STRIPPED_HEADERS = [
   "x-introspection-relay-target",
 ] as const;
 
+/**
+ * The credential headers the loaded providers declare (a search provider's
+ * `capabilities.credential.header`), removed beside `STRIPPED_HEADERS`.
+ */
+const providerCredentialHeaders = new Set<string>();
+
+/** Also remove these headers from every request to a bound host, and from any redirect it leads to another host. */
+export function stripApiBoundHeaders(names: Iterable<string>): void {
+  for (const name of names) providerCredentialHeaders.add(name.toLowerCase());
+}
+
+function deleteStrippedHeaders(headers: Headers): void {
+  for (const name of STRIPPED_HEADERS) headers.delete(name);
+  for (const name of providerCredentialHeaders) headers.delete(name);
+}
+
 function defaultApiLocalConfigPath(dir: string): string {
   return join(dir, ".pi", "api.local.json");
 }
@@ -276,7 +292,7 @@ function boundHeaders(
   binding: LocalApiBinding,
   prefix: string,
 ): Headers {
-  for (const name of STRIPPED_HEADERS) headers.delete(name);
+  deleteStrippedHeaders(headers);
   headers.set("x-forwarded-host", binding.host);
   headers.set("x-forwarded-proto", "https");
   if (prefix) headers.set("x-forwarded-prefix", prefix);
@@ -349,7 +365,7 @@ function bindingFetch(inner: typeof fetch): typeof fetch {
     const headers = new Headers(init.headers);
     // Another host gets none of what the binding strips, bound or not.
     if (next.host !== url.host) {
-      for (const name of STRIPPED_HEADERS) headers.delete(name);
+      deleteStrippedHeaders(headers);
       for (const name of Object.keys(binding?.headers ?? {}))
         headers.delete(name);
     }
