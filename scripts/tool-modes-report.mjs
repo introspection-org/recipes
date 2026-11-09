@@ -449,7 +449,7 @@ function intelligence(efforts) {
   svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
   svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
   if (points.some((p) => p.failed))
-    svg += `${dial(W - right - 286, top + 34, 5, 1 / 3)}<text x="${W - right - 276}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>\n`;
+    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
