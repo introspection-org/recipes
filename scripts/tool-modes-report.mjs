@@ -500,7 +500,7 @@ function intelligence(efforts) {
   svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
   if (points.some((p) => p.failed))
     svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, all modes</text>\n`;
-  svg += `<circle cx="${W - right - 126}" cy="${top + 34}" r="8" fill="#e6ff00" stroke="#c5d900"/><circle cx="${W - right - 126}" cy="${top + 34}" r="4.5" fill="#c9c7be" stroke="#0000003d"/><text x="${W - right - 106}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
+  svg += `<circle cx="${W - right - 126}" cy="${top + 34}" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="${W - right - 106}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
@@ -536,7 +536,7 @@ function intelligence(efforts) {
     point.dy = [4, 20, -12].find((dy) => !hits(box(dy))) ?? 4;
     placed.push(box(point.dy));
   }
-  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score)}" r="13" fill="#e6ff00" stroke="#c5d900" pointer-events="none"/>\n`;
+  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score)}" r="13.5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
   for (const point of points) {
     svg += dot(point, x(point.cost), y(point.score), 7, point === pick);
     if (many)
