@@ -24,6 +24,7 @@ import {
   type PiPackageManifest,
   type RecipeMcpToolSelection,
 } from "./package.js";
+import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
 export interface RecipeSystemInstructions {
@@ -119,6 +120,17 @@ const BUILTIN_TOOL_NAMES = [
   "introspection_open",
 ] as const;
 
+/** Whether `pi.issues` leaves a provider, as `issuesProviderDeclarations` does: an undeclared fallback is implicit. */
+function issuesRegisters(declared: PiPackageManifest["issues"]): boolean {
+  return (
+    declared !== undefined &&
+    (declared.some((declaration) => declaration.enabled !== false) ||
+      !declared.some(
+        (declaration) => declaration.provider === ISSUES_FALLBACK_PROVIDER,
+      ))
+  );
+}
+
 /**
  * The tools an agent selects, with `include: ["*"]` expanded to the built-ins
  * and the first-party tools the Recipe declares, less `exclude`. A Recipe's own
@@ -134,7 +146,7 @@ export function selectedAgentTools(
   const wildcard = include.includes("*")
     ? [
         ...BUILTIN_TOOL_NAMES,
-        ...(manifest.issues?.length ? ["issues"] : []),
+        ...(issuesRegisters(manifest.issues) ? ["issues"] : []),
         ...(manifest.productivity ?? []).flatMap((declaration) =>
           declaration.tools
             ? Object.keys(declaration.tools)

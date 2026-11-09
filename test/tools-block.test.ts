@@ -176,6 +176,18 @@ describe('include: ["*"]', () => {
     expect(declared.tools).not.toContain("calendar");
     expect(declared.wildcard).not.toContain("my_tool");
   });
+
+  it("selects issues when pi.issues leaves a provider, the implicit fallback included", () => {
+    const wildcard = (issues: Array<{ provider: string; enabled?: boolean }>) =>
+      selectedAgentTools(["*"], undefined, { issues }).tools;
+    expect(wildcard([])).toContain("issues");
+    expect(wildcard([{ provider: "linear", enabled: false }])).toContain(
+      "issues",
+    );
+    expect(
+      wildcard([{ provider: "introspection", enabled: false }]),
+    ).not.toContain("issues");
+  });
 });
 
 describe("first-party tools by tools.mode", () => {

@@ -3269,8 +3269,20 @@ fn agent_tool_catalog(package: &Package) -> Vec<String> {
         .iter()
         .map(|tool| (*tool).to_owned())
         .collect();
-    if declared("issues") {
-        catalog.push("issues".to_owned());
+    // As the runtime does: an undeclared fallback provider is implicit.
+    if let Some(issues) = pi
+        .and_then(|pi| pi.get("issues"))
+        .and_then(JsonValue::as_array)
+    {
+        let enabled = issues
+            .iter()
+            .any(|declaration| declaration.get("enabled") != Some(&JsonValue::Bool(false)));
+        let fallback = issues.iter().any(|declaration| {
+            declaration.get("provider").and_then(JsonValue::as_str) == ISSUES_FAMILY.fallback
+        });
+        if enabled || !fallback {
+            catalog.push("issues".to_owned());
+        }
     }
     if declared("productivity") {
         let allowed = pi
@@ -6453,6 +6465,27 @@ mod tests {
                 .any(|d| d.code == "agent.mcp_behind_tool_undeclared"),
             "{:?}",
             behind.diagnostics
+        );
+    }
+
+    #[test]
+    fn tools_star_selects_issues_when_a_provider_remains() {
+        let star = "tools:\n  include: ['*']\n  defer: [issues]\n";
+        for issues in [
+            json!([]),
+            json!([{ "provider": "linear", "enabled": false }]),
+        ] {
+            let diagnostics = tools_diagnostics(json!({ "issues": issues }), star);
+            assert!(diagnostics.is_empty(), "{issues}: {diagnostics:?}");
+        }
+        let none = tools_diagnostics(
+            json!({ "issues": [{ "provider": "introspection", "enabled": false }] }),
+            star,
+        );
+        assert!(
+            none.iter()
+                .any(|d| d.message.contains("does not select: issues")),
+            "{none:?}"
         );
     }
 
