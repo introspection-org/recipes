@@ -254,9 +254,59 @@ describe("introspection_open in Pi's terminal", () => {
     expect(notes).toHaveLength(1);
   });
 
-  it("answers returned for a page", async () => {
-    const { ctx } = fakeCtx("tui");
+  it("opens a runtime or task page without --wait and answers returned at once", async () => {
+    for (const [target, args] of [
+      [
+        { kind: "runtime", runtime: "support" },
+        ["open", "--runtime", "support"],
+      ],
+      [{ kind: "task", task: "t1" }, ["open", "--task", "t1"]],
+    ] as const) {
+      const { ctx, notes } = fakeCtx("tui");
+      const cli = fakeCli({ code: 0, stderr: "" });
+      const { text, details } = await run(
+        { target, reason: "x", wait: true },
+        ctx,
+        { env: {}, runCli: cli.runCli },
+      );
+      expect(cli.calls).toEqual([args]);
+      expect(text).toBe("Answer: returned");
+      expect(details.waited).toBe(true);
+      expect(notes[0]).not.toContain("continues when you're done");
+    }
+  });
+
+  it("keeps waiting on a binding, which the person has to finish", async () => {
+    const { ctx, notes } = fakeCtx("tui");
     const cli = fakeCli({ code: 0, stderr: "" });
+    const { text } = await run(
+      { target: binding, reason: "x", wait: true },
+      ctx,
+      {
+        env: {},
+        runCli: cli.runCli,
+      },
+    );
+    expect(cli.calls).toEqual([["open", "--runtime", "support", "--wait"]]);
+    expect(text).toBe("Answer: connected");
+    expect(notes[0]).toContain("continues when you're done");
+  });
+
+  it("answers failed when the CLI can't open a page", async () => {
+    const { ctx } = fakeCtx("tui");
+    const cli = fakeCli({ code: 1, stderr: "Error: runtime not found\n" });
+    const { text } = await run(
+      { target: { kind: "task", task: "t1" }, reason: "x", wait: true },
+      ctx,
+      { env: {}, runCli: cli.runCli },
+    );
+    expect(cli.calls).toEqual([["open", "--task", "t1"]]);
+    expect(text).toBe("Answer: failed: runtime not found");
+  });
+
+  it("falls back to the dialog for a page when the CLI is missing", async () => {
+    const { ctx, selects } = fakeCtx("tui", "Done");
+    const cli = fakeCli({ code: null, stderr: "ENOENT", missing: true });
     const { text } = await run(
       {
         target: { kind: "runtime", runtime: "support" },
@@ -266,6 +316,7 @@ describe("introspection_open in Pi's terminal", () => {
       ctx,
       { env: {}, runCli: cli.runCli },
     );
+    expect(selects[0]).toContain("Open the runtime");
     expect(text).toBe("Answer: returned");
   });
 
