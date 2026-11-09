@@ -183,7 +183,7 @@ Input tokens: 23,303
 Cached: 77%
 Output tokens: 411</title></rect>
 <rect x="120" y="336" width="166.55954528724254" height="14" rx="3" fill="url(#win-light)" pointer-events="none"/>
-<rect x="117.5" y="333.5" width="171.55954528724254" height="19" rx="5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>
+<rect x="121.5" y="337.5" width="163.55954528724254" height="11" rx="2" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>
 <text x="292.55954528724254" y="347" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">7.7s<tspan font-size="9.5" fill="#8a8880"> ±20%</tspan></text>
 <rect x="120" y="352" width="259.2804001665349" height="14" rx="3" fill="#77756e" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-1-sol"><title>gpt-6.1-sol · codemode
 Cost per task: $0.0238 ± $0.00422

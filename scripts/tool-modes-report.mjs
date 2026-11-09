@@ -331,7 +331,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
       if (r === recommended)
-        svg += `<rect x="${left - 2.5}" y="${y - 2.5}" width="${w + 5}" height="${barH + 5}" rx="5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
+        svg += `<rect x="${left + 1.5}" y="${y + 1.5}" width="${Math.max(w - 3, 0)}" height="${barH - 3}" rx="2" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
       if (r.failed) {
         const fw = Math.max((w * r.failed) / r.runs, 3);
         svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>\n`;
