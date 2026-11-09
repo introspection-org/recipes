@@ -362,9 +362,9 @@ function intelligence(set) {
   }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
-  // The credit line names the index's source; its logo and name, when given,
-  // close the line on the right. Only the logo file's shapes are kept.
-  svg += `<text x="${left}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
+  // The credit line: the index's logo and name, when given, then its source.
+  // Only the logo file's shapes are kept.
+  let credit = left;
   if (lookup.logo) {
     const paths =
       readFileSync(
@@ -372,9 +372,10 @@ function intelligence(set) {
         "utf8",
       ).match(/<path\b[^>]*\/>/g) ?? [];
     const name = lookup.credit ?? "";
-    const x0 = W - right - 17 - name.length * 5.6;
-    svg += `<g transform="translate(${x0} ${H - 27}) scale(0.24)">${paths.join("")}</g><text x="${W - right}" y="${H - 16}" font-size="12" font-family="Georgia, serif" text-anchor="end" fill="#5e5d59">${esc(name)}</text>\n`;
+    svg += `<g transform="translate(${left} ${H - 27}) scale(0.24)">${paths.join("")}</g><text x="${left + 16}" y="${H - 16}" font-size="12" font-family="Georgia, serif" fill="#5e5d59">${esc(name)}</text>\n`;
+    credit = left + 16 + name.length * 5.05 + 6;
   }
+  svg += `<text x="${credit}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
   svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index (low effort)</text>\n`;
   return `${svg}</svg>\n`;
 }
