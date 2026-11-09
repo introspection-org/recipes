@@ -82,6 +82,11 @@ export class BrowserHtmlRenderer implements HtmlRenderer {
       const page = await context.newPage();
       // setContent, not goto: an endpoint's browser may not share this filesystem.
       await page.setContent(request.markup, { waitUntil: "load" });
+      // What sits behind a collapsed toggle is part of the page to review; a
+      // shared `name` makes an accordion, which would close all but the last.
+      await page.evaluate(
+        'document.querySelectorAll("details").forEach((d) => { d.removeAttribute("name"); d.open = true; })',
+      );
       return await shoot(page);
     } finally {
       await context.close();
@@ -112,10 +117,6 @@ export class BrowserHtmlRenderer implements HtmlRenderer {
     if (request.charts.length > 0) {
       images.push(
         ...(await this.capture(request, "light", async (page) => {
-          // A chart behind a collapsed toggle is still part of the page.
-          await page.evaluate(
-            'document.querySelectorAll("details").forEach((d) => { d.open = true; })',
-          );
           const shots: HtmlRenderedImage[] = [];
           for (const chart of request.charts) {
             const located = page.locator(
