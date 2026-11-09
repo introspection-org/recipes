@@ -55,9 +55,20 @@ export function introspectionOpenFailed(error: string): string {
   return `failed: ${reason || "unknown error"}`;
 }
 
+/**
+ * Whether opening the target is the whole action: a `runtime` or `task` page,
+ * where the person has nothing to finish. Hosts answer `returned` as soon as it
+ * opens instead of waiting for the person to come back.
+ */
+export function introspectionOpenIsPage(
+  target: IntrospectionOpenTarget,
+): boolean {
+  return target.kind === "runtime" || target.kind === "task";
+}
+
 /** The answer for a target the person completed: `returned` for a page, `connected` otherwise. */
 export function introspectionOpenDone(target: IntrospectionOpenTarget): string {
-  return target.kind === "runtime" || target.kind === "task"
+  return introspectionOpenIsPage(target)
     ? INTROSPECTION_OPEN_ANSWER.returned
     : INTROSPECTION_OPEN_ANSWER.connected;
 }
