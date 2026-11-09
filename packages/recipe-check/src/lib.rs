@@ -3291,11 +3291,19 @@ fn agent_tool_catalog(package: &Package) -> Vec<String> {
             .and_then(|declarations| declarations.first())
             .and_then(|declaration| declaration.get("tools"))
             .and_then(JsonValue::as_object);
+        // An empty command list disables the tool.
+        let enabled = |tool: &str| {
+            allowed.is_none_or(|allowed| {
+                allowed
+                    .get(tool)
+                    .is_some_and(|commands| commands.as_array().is_none_or(|c| !c.is_empty()))
+            })
+        };
         catalog.extend(
             PRODUCTIVITY_COMMANDS
                 .iter()
                 .map(|(tool, _)| *tool)
-                .filter(|tool| allowed.is_none_or(|allowed| allowed.contains_key(*tool)))
+                .filter(|tool| enabled(tool))
                 .map(str::to_owned),
         );
     }
@@ -6443,8 +6451,7 @@ mod tests {
             "{undeclared:?}"
         );
 
-        let limited =
-            json!({ "productivity": [{ "provider": "acme", "tools": { "calendar": [] } }] });
+        let limited = json!({ "productivity": [{ "provider": "acme", "tools": { "mail": [], "calendar": ["list"] } }] });
         let only_calendar = tools_diagnostics(limited, star);
         assert!(
             only_calendar

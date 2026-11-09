@@ -149,7 +149,9 @@ export function selectedAgentTools(
         ...(issuesRegisters(manifest.issues) ? ["issues"] : []),
         ...(manifest.productivity ?? []).flatMap((declaration) =>
           declaration.tools
-            ? Object.keys(declaration.tools)
+            ? Object.entries(declaration.tools)
+                .filter(([, commands]) => commands?.length !== 0)
+                .map(([tool]) => tool)
             : ["mail", "calendar", "drive"],
         ),
         ...(manifest.search?.length ? ["web_search"] : []),

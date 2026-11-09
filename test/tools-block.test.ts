@@ -168,12 +168,15 @@ describe('include: ["*"]', () => {
     expect(none.tools).not.toContain("issues");
     const declared = selectedAgentTools(["*", "my_tool"], undefined, {
       issues: [{ provider: "linear" }],
-      productivity: [{ provider: "google", tools: { mail: [] } }],
+      productivity: [
+        { provider: "google", tools: { mail: [], calendar: ["list"] } },
+      ],
     });
     expect(declared.tools).toEqual(
-      expect.arrayContaining(["my_tool", "issues", "mail"]),
+      expect.arrayContaining(["my_tool", "issues", "calendar"]),
     );
-    expect(declared.tools).not.toContain("calendar");
+    expect(declared.tools).not.toContain("mail");
+    expect(declared.tools).not.toContain("drive");
     expect(declared.wildcard).not.toContain("my_tool");
   });
 

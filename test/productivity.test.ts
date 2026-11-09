@@ -22,6 +22,7 @@ import {
   type ProductivityCapabilities,
   type ProductivitySession,
 } from "../src/productivity/index.js";
+import { selectedAgentTools } from "../src/recipe/agent.js";
 import { recipesVersion } from "../src/recipe/companions.js";
 import {
   readPiPackageManifest,
@@ -811,6 +812,18 @@ describe("loading a productivity provider", () => {
     ).rejects.toThrow(
       "The agent selects mail, which pi.productivity provider 'fake' does not enable",
     );
+  });
+
+  it('loads what include: ["*"] selects, leaving out a tool the declaration disables', async () => {
+    const recipeDir = recipe([
+      { provider: "fake", tools: { mail: [], calendar: ["list"] } },
+    ]);
+    const manifest = readPiPackageManifest(recipeDir);
+    const { tools } = selectedAgentTools(["*"], undefined, manifest);
+    const loaded = await loadRecipeProductivity(manifest.productivity!, tools, {
+      recipeDir,
+    });
+    expect(loaded.toolNames).toEqual(["calendar"]);
   });
 
   it("refuses two providers", async () => {
