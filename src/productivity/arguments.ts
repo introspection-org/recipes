@@ -121,10 +121,22 @@ export interface MailFetchAttachmentArguments {
   attachment: string;
 }
 
+/**
+ * Recipient addresses; with reply_to, default the replied-to message's sender
+ * @maxItems 100
+ */
+type DraftRecipients = Email[];
+
+/**
+ * The subject line; with reply_to, default "Re: " and the replied-to subject
+ * @maxLength 1000
+ */
+type DraftSubject = string;
+
 export interface MailDraftArguments {
-  to: Recipients;
+  to?: DraftRecipients;
   cc?: Copied;
-  subject: Subject;
+  subject?: DraftSubject;
   body: MailBody;
   /**
    * A message handle to reply to
@@ -216,9 +228,15 @@ type OnlineMeeting = boolean;
  */
 type Comment = string;
 
+/** RFC 3339 time with offset; default the start of today in the person's time zone */
+type ListFrom = string;
+
+/** RFC 3339 time with offset; default the end of tomorrow in the person's time zone */
+type ListTo = string;
+
 export interface CalendarListArguments {
-  from: Instant;
-  to: Instant;
+  from?: ListFrom;
+  to?: ListTo;
   /**
    * A calendar name; default the primary calendar
    * @minLength 1

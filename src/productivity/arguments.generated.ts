@@ -99,7 +99,8 @@ export const MAIL_ARGUMENTS = {
       to: {
         type: "array",
         items: { type: "string", minLength: 3, maxLength: 320 },
-        description: "Recipient addresses",
+        description:
+          "Recipient addresses; with reply_to, default the replied-to message's sender",
         maxItems: 100,
       },
       cc: {
@@ -110,7 +111,8 @@ export const MAIL_ARGUMENTS = {
       },
       subject: {
         type: "string",
-        description: "The subject line",
+        description:
+          'The subject line; with reply_to, default "Re: " and the replied-to subject',
         maxLength: 1000,
       },
       body: {
@@ -124,7 +126,7 @@ export const MAIL_ARGUMENTS = {
         minLength: 1,
       },
     },
-    required: ["to", "subject", "body"],
+    required: ["body"],
     additionalProperties: false,
   } as ArgumentsSchema<MailDraftArguments>,
   update_draft: {
@@ -220,8 +222,16 @@ export const CALENDAR_ARGUMENTS = {
   list: {
     type: "object",
     properties: {
-      from: { type: "string", description: "RFC 3339 time with offset" },
-      to: { type: "string", description: "RFC 3339 time with offset" },
+      from: {
+        type: "string",
+        description:
+          "RFC 3339 time with offset; default the start of today in the person's time zone",
+      },
+      to: {
+        type: "string",
+        description:
+          "RFC 3339 time with offset; default the end of tomorrow in the person's time zone",
+      },
       calendar: {
         type: "string",
         description: "A calendar name; default the primary calendar",
@@ -241,7 +251,6 @@ export const CALENDAR_ARGUMENTS = {
         minLength: 1,
       },
     },
-    required: ["from", "to"],
     additionalProperties: false,
   } as ArgumentsSchema<CalendarListArguments>,
   read: {

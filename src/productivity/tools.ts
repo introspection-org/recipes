@@ -247,6 +247,56 @@ function instant(value: unknown, field: string): string {
   return value;
 }
 
+/** The zone the person's day is read in: the host's own. */
+function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/** `zone`'s offset from UTC at `at`, in minutes. */
+function offsetMinutes(at: Date, zone: string): number {
+  const name = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(at)
+    .find((part) => part.type === "timeZoneName")!.value;
+  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(name);
+  if (!match) return 0;
+  return (
+    (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3]))
+  );
+}
+
+/** `at` as RFC 3339 in `zone`, with its offset: 2026-03-02T09:00:00-08:00. */
+function zonedTime(at: Date, zone: string): string {
+  const offset = offsetMinutes(at, zone);
+  const local = new Date(at.getTime() + offset * 60_000)
+    .toISOString()
+    .slice(0, 19);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const abs = Math.abs(offset);
+  return `${local}${offset < 0 ? "-" : "+"}${pad(Math.trunc(abs / 60))}:${pad(abs % 60)}`;
+}
+
+/** Midnight in `zone`, `days` after today there. */
+function startOfDay(zone: string, days: number): Date {
+  const now = new Date();
+  const today = zonedTime(now, zone).slice(0, 10);
+  const guess = Date.parse(`${today}T00:00:00Z`) + days * 86_400_000;
+  return new Date(guess - offsetMinutes(new Date(guess), zone) * 60_000);
+}
+
+/** An instant the provider gave in UTC, in the event's own zone with its offset. */
+function withOffset(
+  value: string,
+  zone: string | undefined,
+  allDay: boolean | undefined,
+): string {
+  if (allDay || !zone || !/Z$/i.test(value) || Number.isNaN(Date.parse(value)))
+    return value;
+  return zonedTime(new Date(value), zone);
+}
+
 function timeZone(value: unknown): string {
   if (typeof value !== "string" || !value.trim())
     invalid("time_zone must be an IANA time zone name, such as Europe/London");
@@ -513,8 +563,8 @@ export function registerProductivityTools(
   const eventSummary = (event: CalendarEventSummary) => ({
     event: handles.handle("event", { id: event.id }),
     ...kept(event, { title: "defined" }),
-    start: event.start,
-    end: event.end,
+    start: withOffset(event.start, event.time_zone, event.all_day),
+    end: withOffset(event.end, event.time_zone, event.all_day),
     time_zone: event.time_zone,
     ...kept(event, {
       all_day: "flag",
@@ -667,13 +717,16 @@ export function registerProductivityTools(
             params.reply_to !== undefined
               ? handles.resolve("message", params.reply_to).id
               : undefined;
-          if (replyTo === undefined && (params.to as string[]).length === 0)
+          const to = (params.to as string[] | undefined) ?? [];
+          if (replyTo === undefined && to.length === 0)
             invalid("A new draft needs at least one recipient in to");
+          if (replyTo === undefined && params.subject === undefined)
+            invalid("A new draft needs a subject");
           const draft = await s.mail!.draft!(
             {
-              to: params.to as string[],
+              to,
               ...given<MailDraftArgs>(params, { cc: asIs }),
-              subject: params.subject as string,
+              subject: (params.subject as string | undefined) ?? "",
               body: params.body as string,
               ...(replyTo !== undefined ? { reply_to_id: replyTo } : {}),
             },
@@ -769,12 +822,20 @@ export function registerProductivityTools(
     },
     calendar: {
       list: {
-        description: "List events between two times. Returns event handles.",
+        description:
+          "List events between two times, by default today and tomorrow in the person's time zone. Returns event handles.",
         parameters: CALENDAR_ARGUMENTS.list,
         async run(params, s, ctx) {
+          const zone = localTimeZone();
           const args = {
-            from: instant(params.from, "from"),
-            to: instant(params.to, "to"),
+            from:
+              params.from === undefined
+                ? zonedTime(startOfDay(zone, 0), zone)
+                : instant(params.from, "from"),
+            to:
+              params.to === undefined
+                ? zonedTime(startOfDay(zone, 2), zone)
+                : instant(params.to, "to"),
             ...given<CalendarListArgs>(params, { calendar: asIs }),
           };
           const { items, cursor } = await paged(

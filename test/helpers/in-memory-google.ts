@@ -234,8 +234,17 @@ export function createInMemoryGoogleSession(): ProductivitySession & {
           id: `d-${drafts}`,
           message_id: `m-draft-${drafts}`,
           ...(replied?.thread_id ? { thread_id: replied.thread_id } : {}),
-          to: args.to.map((email) => ({ email })),
-          subject: args.subject,
+          // As Gmail does: a reply defaults to the sender and "Re: " the subject.
+          to:
+            args.to.length || !replied?.from
+              ? args.to.map((email) => ({ email }))
+              : [{ email: replied.from.email }],
+          subject:
+            args.subject || !replied
+              ? args.subject
+              : /^re:/i.test(replied.subject ?? "")
+                ? replied.subject
+                : `Re: ${replied.subject ?? ""}`,
         };
       },
       updateDraft: async (args) => {
