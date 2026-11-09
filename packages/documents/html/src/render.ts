@@ -112,6 +112,10 @@ export class BrowserHtmlRenderer implements HtmlRenderer {
     if (request.charts.length > 0) {
       images.push(
         ...(await this.capture(request, "light", async (page) => {
+          // A chart behind a collapsed toggle is still part of the page.
+          await page.evaluate(
+            'document.querySelectorAll("details").forEach((d) => { d.open = true; })',
+          );
           const shots: HtmlRenderedImage[] = [];
           for (const chart of request.charts) {
             const located = page.locator(
@@ -122,6 +126,13 @@ export class BrowserHtmlRenderer implements HtmlRenderer {
                 label: chartLabel(chart),
                 reason:
                   "the page's scripts removed or copied it, so its image can't be matched to it",
+              });
+              continue;
+            }
+            if (!(await located.isVisible())) {
+              skipped.push({
+                label: chartLabel(chart),
+                reason: "it is hidden on the page, so there is nothing to draw",
               });
               continue;
             }

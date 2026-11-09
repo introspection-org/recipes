@@ -79,6 +79,7 @@ beforeAll(() => {
     "no-charts.html",
     "panels.html",
     "scripted.html",
+    "hidden.html",
     "trend.svg",
   ])
     copyFileSync(join(fixtures, name), join(cwd, name));
@@ -267,6 +268,20 @@ describe.skipIf(!probe)(
       ]);
       expect(decodePng(images[0]!).width).toBe(300 * 2);
       expect(text(result)).toContain("chart 2: Time per task");
+    });
+
+    it("draws a chart behind a collapsed toggle, and skips one the page hides", async () => {
+      const result = await documents(new HtmlDocumentAdapter()).execute("9", {
+        command: "render",
+        path: "hidden.html",
+        pages: "1-2",
+      });
+      const images = result.details.images as string[];
+      expect(images.map((path) => path.split("/").at(-1))).toEqual([
+        "hidden-chart-1.png",
+      ]);
+      expect(decodePng(images[0]!).width).toBe(300 * 2);
+      expect(text(result)).toContain("chart 2: Never shown");
     });
   },
 );
