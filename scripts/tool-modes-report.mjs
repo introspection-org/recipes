@@ -243,6 +243,10 @@ function chart(groups, value, title, unit, digits, log = false) {
     lx += 22 + name.length * 6.6;
   });
   svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
+  if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
+    lx += 22 + (value === "seconds" ? 7 : 8) * 6.6;
+    svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#ff2d95"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">failed</text>\n`;
+  }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
     ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
@@ -288,6 +292,10 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
+      if (r.failed) {
+        const fw = Math.max((w * r.failed) / r.runs, 3);
+        svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>\n`;
+      }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
