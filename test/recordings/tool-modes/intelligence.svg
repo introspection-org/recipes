@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <rect width="760" height="440" fill="#faf9f5"/>
-<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task</text>
+<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task (low effort)</text>
 <g transform="translate(618 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="642" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>
 <text x="16" y="46" font-size="12" fill="#5e5d59">Artificial Analysis Intelligence Index v5.0.1 at low effort, the effort the runs used; each model at its cheapest mode that passed every run</text>
 <line x1="70" y1="370" x2="720" y2="370" stroke="#e8e6dc"/><text x="62" y="374" font-size="10" text-anchor="end" fill="#5e5d59">0</text>
@@ -25,18 +25,36 @@
 <polyline points="188.83602273723199,319 269.69697034226954,273.1 450.6555537064233,191.5 562.4132356019898,150.7" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>
 <rect x="420" y="72" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="437" y="82" font-size="11" fill="#5e5d59">Most attractive quadrant</text>
 <line x1="580" y1="78" x2="608" y2="78" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="614" y="82" font-size="11" fill="#5e5d59">Pareto line</text>
-<circle cx="269.69697034226954" cy="273.1" r="7" fill="#f6bd9d" stroke="#0000003d"/>
-<circle cx="455.3238492204284" cy="237.4" r="7" fill="#d97757" stroke="#0000003d"/>
-<circle cx="498.6477801760556" cy="191.5" r="7" fill="#8a3618" stroke="#0000003d"/>
-<circle cx="188.83602273723199" cy="319" r="7" fill="#c9c7be" stroke="#0000003d"/>
-<circle cx="450.6555537064233" cy="191.5" r="7" fill="#77756e" stroke="#0000003d"/>
-<circle cx="562.4132356019898" cy="150.7" r="7" fill="#141413" stroke="#0000003d"/>
-<text x="280.69697034226954" y="277.1" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Haiku 5.5 · tools · $0.00169</text>
-<text x="466.3238492204284" y="241.4" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Sonnet 5.5 · codemode · $0.0235</text>
-<text x="509.6477801760556" y="195.5" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Opus 5.5 · tools · $0.0434</text>
-<text x="199.83602273723199" y="323" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna · cli · $0.000539</text>
-<text x="461.6555537064233" y="211.5" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol · tools · $0.0220</text>
-<text x="573.4132356019898" y="154.7" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra · tools · $0.107</text>
+<a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
+Cost per task: $0.00169
+Intelligence Index: 19
+Click for more info</title><circle cx="269.69697034226954" cy="273.1" r="7" fill="#f6bd9d" stroke="#0000003d"/></a>
+<a href="https://artificialanalysis.ai/models/claude-sonnet-5-5" target="_blank"><title>Sonnet 5.5 (low) · codemode
+Cost per task: $0.0235
+Intelligence Index: 26
+Click for more info</title><circle cx="455.3238492204284" cy="237.4" r="7" fill="#d97757" stroke="#0000003d"/></a>
+<a href="https://artificialanalysis.ai/models/claude-opus-5-5" target="_blank"><title>Opus 5.5 (low) · tools
+Cost per task: $0.0434
+Intelligence Index: 35
+Click for more info</title><circle cx="498.6477801760556" cy="191.5" r="7" fill="#8a3618" stroke="#0000003d"/></a>
+<a href="https://artificialanalysis.ai/models/gpt-6-luna" target="_blank"><title>gpt-6-luna (low) · cli
+Cost per task: $0.000539
+Intelligence Index: 10
+Click for more info</title><circle cx="188.83602273723199" cy="319" r="7" fill="#c9c7be" stroke="#0000003d"/></a>
+<a href="https://artificialanalysis.ai/models/gpt-6-1-sol" target="_blank"><title>gpt-6.1-sol (low) · tools
+Cost per task: $0.0220
+Intelligence Index: 35
+Click for more info</title><circle cx="450.6555537064233" cy="191.5" r="7" fill="#77756e" stroke="#0000003d"/></a>
+<a href="https://artificialanalysis.ai/models/gpt-6-astra" target="_blank"><title>gpt-6-astra (low) · tools
+Cost per task: $0.107
+Intelligence Index: 43
+Click for more info</title><circle cx="562.4132356019898" cy="150.7" r="7" fill="#141413" stroke="#0000003d"/></a>
+<text x="280.69697034226954" y="277.1" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Haiku 5.5 · tools · $0.00169</text>
+<text x="466.3238492204284" y="241.4" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Sonnet 5.5 · codemode · $0.0235</text>
+<text x="509.6477801760556" y="195.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">Opus 5.5 · tools · $0.0434</text>
+<text x="199.83602273723199" y="323" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-luna · cli · $0.000539</text>
+<text x="461.6555537064233" y="211.5" text-anchor="start" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6.1-sol · tools · $0.0220</text>
+<text x="551.4132356019898" y="154.7" text-anchor="end" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">gpt-6-astra · tools · $0.107</text>
 <text x="70" y="406" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>
 <g transform="translate(70 413) scale(0.24)"><path d="M46.2194 52.8201H52.8194V39.6101H46.2194H39.6094V52.8201H46.2194Z" fill="#7F4BF3"/><path d="M26.41 0L13.2 13.2H0V26.41H19.81L33.01 13.2H39.61V0H26.41Z" fill="#7F4BF3"/><path d="M26.41 26.4099L13.2 39.6099H0V52.8199H19.81L33.01 39.6099H39.61V26.4099H26.41Z" fill="#7F4BF3"/><path d="M52.8194 26.41V13.2H46.2194H39.6094V26.41H46.2194H52.8194Z" fill="#7F4BF3"/></g><text x="86" y="424" font-size="12" font-family="Georgia, serif" fill="#5e5d59">Artificial Analysis</text>
 <text x="187.95" y="424" font-size="11" fill="#5e5d59">Intelligence Index scores: https://artificialanalysis.ai/leaderboards/models, read 2026-11-08.</text>

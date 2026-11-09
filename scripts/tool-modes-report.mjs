@@ -168,17 +168,17 @@ const fmt = (n, d = 0) =>
     maximumFractionDigits: d,
   });
 
-const header = `| model | mode | runs | drafted (errors) | requests | input | cached | output | $ / task | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+const header = `| model | mode | drafted (errors) | req | input | cached | output | $ / task | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
 const line = (name, label, r) =>
-  `| ${name} | ${label} | ${r.runs} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${usd(r.costPerTask)} | ${fmt(r.seconds, 1)}s |\n`;
+  `| ${name} | ${label} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${usd(r.costPerTask)} | ${fmt(r.seconds, 1)}s |\n`;
 let md = "";
 // With signatures: every effort in one table, the effort beside the model.
-md += `### signatures\n\n${header}`;
+md += `### signatures\n\nEffort: (L) low, (M) medium, (H) high. Drafted: runs that drafted the reply, of all runs, with rejected calls per run.\n\n${header}`;
 for (const [id, name] of MODELS)
   for (const [set, effort] of EFFORTS)
     for (const [mode, label] of MODES) {
       const r = table[set]?.[`${id}|${mode}`];
-      if (r) md += line(`${name} (${effort})`, label, r);
+      if (r) md += line(`${name} (${effort[0].toUpperCase()})`, label, r);
     }
 md += "\n";
 if (table.flat) {
@@ -186,7 +186,7 @@ if (table.flat) {
   for (const [id, name] of MODELS)
     for (const [mode, label] of MODES) {
       const r = table.flat[`${id}|${mode}`];
-      if (r) md += line(`${name} (low)`, label, r);
+      if (r) md += line(`${name} (L)`, label, r);
     }
   md += "\n";
 }
@@ -289,11 +289,13 @@ function chart(groups, value, title, unit, digits, log = false) {
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
-      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"/>\n`;
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}, ${fmt(r.errors, r.errors % 1 ? 1 : 0)} rejected calls per run</title></rect>\n`;
       if (bar === winner)
-        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})"/>\n`;
-      if (r.failed)
-        svg += `<rect x="${left}" y="${y + barH / 2 - 1.5}" width="${Math.max((w * r.failed) / r.runs, 3)}" height="3" rx="1.5" fill="#ff2d95"/>\n`;
+        svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
+      if (r.failed) {
+        svg += `<rect x="${left}" y="${y}" width="${Math.max((w * r.failed) / r.runs, 3)}" height="${barH}" rx="3" fill="#ff2d95" opacity="0.3" pointer-events="none"/>`;
+        svg += `<rect x="${left}" y="${y + barH / 2 - 1.5}" width="${Math.max((w * r.failed) / r.runs, 3)}" height="3" rx="1.5" fill="#ff2d95" pointer-events="none"/>\n`;
+      }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff2d95" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
@@ -346,12 +348,16 @@ const newest = "signatures";
  * Up and to the left is better. Cost is on a log scale, as the index's own
  * chart draws it.
  */
-function intelligence(set) {
-  const lookup = JSON.parse(
-    readFileSync(process.env.INTELLIGENCE_JSON, "utf8"),
-  );
-  const points = MODELS.flatMap(([id, name], i) => {
-    const score = lookup.models[id]?.low;
+const lookup = process.env.INTELLIGENCE_JSON
+  ? JSON.parse(readFileSync(process.env.INTELLIGENCE_JSON, "utf8"))
+  : undefined;
+const aaPage = (id) =>
+  `https://artificialanalysis.ai/models/${id.replaceAll(".", "-")}`;
+
+/** Each model at its cheapest setting that passed every run in `set`, scored at `effort`. */
+function frontierPoints(set, effort) {
+  return MODELS.flatMap(([id, name], i) => {
+    const score = lookup.models[id]?.[effort];
     const passing = MODES.map(([mode, label]) => ({
       label,
       row: table[set]?.[`${id}|${mode}`],
@@ -364,7 +370,9 @@ function intelligence(set) {
     );
     return [
       {
+        id,
         name,
+        effort,
         mode: best.label,
         cost: best.row.costPerTask,
         score,
@@ -372,6 +380,18 @@ function intelligence(set) {
       },
     ];
   });
+}
+
+/** A point linking to the model's page, with a hover title as the index's own chart has. */
+const dot = (p, cx, cy, r = 7) =>
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>\n`;
+
+function intelligence(efforts) {
+  const many = efforts.length > 1;
+  const effort = many ? "low, medium and high" : efforts[0];
+  const points = efforts.flatMap((e) =>
+    frontierPoints(EFFORTS.find(([, name]) => name === e)[0], e),
+  );
   const W = 760;
   const H = 440;
   const left = 70;
@@ -388,9 +408,9 @@ function intelligence(set) {
   const esc = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
-  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task</text>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence against cost per task (${many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
   svg += brand(W);
-  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} at low effort, the effort the runs used; each model at its cheapest mode that passed every run</text>\n`;
+  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${many ? "per effort, low (L) to high (H)" : `at ${effort} effort, the effort the runs used`}; each model at its cheapest mode that passed every run</text>\n`;
   for (let v = 0; v <= yMax; v += 10) {
     svg += `<line x1="${left}" y1="${y(v)}" x2="${W - right}" y2="${y(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
   }
@@ -416,13 +436,31 @@ function intelligence(set) {
   svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
   svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
   svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
+  // A model's points, low to high, joined in its colour.
+  if (many)
+    for (const [id] of MODELS) {
+      const own = points.filter((p) => p.id === id);
+      if (own.length > 1)
+        svg += `<polyline points="${own.map((p) => `${x(p.cost)},${y(p.score)}`).join(" ")}" fill="none" stroke="${own[0].color}" stroke-width="2" opacity="0.7"/>\n`;
+    }
+  const label = (point) =>
+    many
+      ? point.effort === efforts.at(-1)
+        ? point.name
+        : ""
+      : `${point.name} · ${point.mode} · ${usd(point.cost)}`;
   // A label that would overlap one already placed goes below its point.
   const placed = [];
   for (const point of points) {
-    const text = `${point.name} · ${point.mode} · ${usd(point.cost)}`;
+    const text = label(point);
+    point.flip = x(point.cost) + 11 + text.length * 6.2 > W - right;
     const box = (dy) => ({
-      x0: x(point.cost) + 11,
-      x1: x(point.cost) + 11 + text.length * 6.2,
+      x0: point.flip
+        ? x(point.cost) - 11 - text.length * 6.2
+        : x(point.cost) + 11,
+      x1: point.flip
+        ? x(point.cost) - 11
+        : x(point.cost) + 11 + text.length * 6.2,
       y0: y(point.score) + dy - 10,
       y1: y(point.score) + dy + 4,
     });
@@ -434,10 +472,12 @@ function intelligence(set) {
     placed.push(box(point.dy));
   }
   for (const point of points) {
-    svg += `<circle cx="${x(point.cost)}" cy="${y(point.score)}" r="7" fill="${point.color}" stroke="#0000003d"/>\n`;
+    svg += dot(point, x(point.cost), y(point.score));
+    if (many)
+      svg += `<text x="${x(point.cost)}" y="${y(point.score) + 3.5}" font-size="9" font-weight="600" text-anchor="middle" pointer-events="none" fill="${light(point.color) ? "#141413" : "#ffffff"}">${point.effort[0].toUpperCase()}</text>\n`;
   }
   for (const point of points) {
-    svg += `<text x="${x(point.cost) + 11}" y="${y(point.score) + point.dy}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(point.name)} · ${esc(point.mode)} · ${usd(point.cost)}</text>\n`;
+    svg += `<text x="${point.flip ? x(point.cost) - 11 : x(point.cost) + 11}" y="${y(point.score) + point.dy}" text-anchor="${point.flip ? "end" : "start"}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(label(point))}</text>\n`;
   }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
@@ -455,7 +495,7 @@ function intelligence(set) {
     credit = left + 16 + name.length * 5.05 + 6;
   }
   svg += `<text x="${credit}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
-  svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index (low effort)</text>\n`;
+  svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index${many ? "" : ` (${effort} effort)`}</text>\n`;
   return `${svg}</svg>\n`;
 }
 writeFileSync(
@@ -506,6 +546,16 @@ if (EFFORTS.filter(([set]) => table[set]).length > 1) {
 if (process.env.INTELLIGENCE_JSON)
   writeFileSync(
     process.env.INTELLIGENCE_JSON.replace(/\.json$/, ".svg"),
-    intelligence(newest),
+    intelligence(["low"]),
   );
+if (lookup)
+  for (const [file, efforts] of [
+    ["intelligence-medium", ["medium"]],
+    ["intelligence-high", ["high"]],
+    ["intelligence-effort", ["low", "medium", "high"]],
+  ])
+    writeFileSync(
+      join(dirname(process.env.INTELLIGENCE_JSON), `${file}.svg`),
+      intelligence(efforts),
+    );
 console.log(`report.md, cost.svg and time.svg from the ${newest} set`);
