@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="372" viewBox="0 0 760 372" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="354" viewBox="0 0 760 354" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <defs><pattern id="win-light" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="#141413" opacity="0.4"/></pattern><pattern id="win-dark" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="#ffffff" opacity="0.6"/></pattern></defs>
-<rect width="760" height="372" fill="#faf9f5"/>
+<rect width="760" height="354" fill="#faf9f5"/>
 <text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Model time per task, by reasoning effort</text>
 <g transform="translate(618 12) scale(0.75)" fill="none" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></g><text x="642" y="27" font-size="16" font-family="Georgia, serif" fill="#141413">Introspection</text>
 <rect x="16" y="38" width="10" height="10" rx="2" fill="#f6bd9d" stroke="#0000001f"/><text x="30" y="47" font-size="12" fill="#5e5d59">Haiku 5.5</text>
@@ -42,6 +42,5 @@
 <text x="576" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">23.3s · codemode</text>
 <rect x="120" y="272" width="280.1945035942435" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="406.1945035942435" y="283" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">14.5s · codemode</text>
-<text x="120" y="342" font-size="12" fill="#5e5d59">Seconds of model time per task: lower is better. <tspan fill="#b3261e">Red</tspan>: the share of runs that failed.</text>
-<text x="120" y="358" font-size="11" fill="#5e5d59">Hatched, the recommendation: the fastest setting on the chart whose every run drafted the reply with no rejected calls.</text>
+<text x="120" y="344" font-size="11" fill="#5e5d59">Seconds per task, lower is better · <tspan fill="#b3261e">red line</tspan>: share of runs that failed</text>
 </svg>
