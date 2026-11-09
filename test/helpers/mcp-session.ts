@@ -18,6 +18,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
 import { createRecipesExtension } from "../../src/pi-extension.js";
@@ -207,6 +208,8 @@ export async function openRecipeSession(options: {
   env?: NodeJS.ProcessEnv;
   /** The host already materialized the session's MCP, so no bindings go to it. */
   mcpProvisioning?: "host";
+  /** The host's own extensions, such as one registering `web_search`. */
+  extensionFactories?: ExtensionFactory[];
 }): Promise<RecipeSessionHandle> {
   useFauxModel(options.recipeDir);
   const { faux, credentials } = await scriptedFaux(options.responses ?? []);
@@ -216,7 +219,10 @@ export async function openRecipeSession(options: {
     env: options.env ?? cleanEnv(),
     credentials,
     modelOverride: faux.getModel(),
-    extensionFactories: [(pi) => pi.registerProvider(faux.provider)],
+    extensionFactories: [
+      (pi) => pi.registerProvider(faux.provider),
+      ...(options.extensionFactories ?? []),
+    ],
     ...(options.mcpProvisioning
       ? { mcpProvisioning: options.mcpProvisioning }
       : {

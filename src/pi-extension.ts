@@ -67,6 +67,7 @@ import {
 import { mcpServersBehindTools } from "./mcp/policy.js";
 import { clearMcpCatalogPreload, preloadMcpCatalogs } from "./mcp/catalog.js";
 import {
+  PLATFORM_TOOL_NAMES,
   platformToolExposure,
   type RecipeAgentDefinition,
 } from "./recipe/agent.js";
@@ -131,6 +132,7 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  withToolExposure,
 } from "./tool-search.js";
 
 export interface RecipesExtensionOptions {
@@ -1100,7 +1102,9 @@ export function createRecipesExtension(
           launchState.extensionAllowedToolNames,
           usesPiMcp(launchState),
         );
-        await factory(pi);
+        await withToolExposure(factory, (name) =>
+          platformToolExposure(launchState.resolved.toolPolicy, name),
+        )(pi);
         loadedCount += 1;
       }
       // The first-party ask_user_question tool loads after the Recipe's own
@@ -1208,9 +1212,23 @@ export function createRecipesExtension(
       pi.setThinkingLevel(launchState.resolved.thinkingLevel);
     }
 
+    // First-party tools a host or Recipe extension registered (`web_search`)
+    // whose exposure keeps them undeclared.
+    const undeclaredExtensionTools = pi
+      .getAllTools()
+      .filter(
+        (tool) =>
+          tool.exposure !== "direct" &&
+          (PLATFORM_TOOL_NAMES as readonly string[]).includes(tool.name) &&
+          launchState.resolved.tools.includes(tool.name) &&
+          !launchState.connectorToolNames.includes(tool.name),
+      );
     const deferredToolNames = [
       ...launchState.connectorDeferredToolNames,
       ...launchState.mcpDeferredToolNames,
+      ...undeclaredExtensionTools
+        .filter((tool) => tool.exposure === "deferred")
+        .map((tool) => tool.name),
     ];
     if (deferredToolNames.length > 0 && !launchState.toolSearchRegistered) {
       const toolSearchTools = createRecipeToolSearchTools(
@@ -1227,7 +1245,9 @@ export function createRecipesExtension(
     }
     const activeTools = new Set([
       ...launchState.resolved.tools.filter(
-        (tool) => !launchState.connectorToolNames.includes(tool),
+        (tool) =>
+          !launchState.connectorToolNames.includes(tool) &&
+          !undeclaredExtensionTools.some((entry) => entry.name === tool),
       ),
       ...launchState.initialConnectorToolNames,
       ...(launchState.resolved.subagents.size > 0 ? ["agent"] : []),

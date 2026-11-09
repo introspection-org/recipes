@@ -6,6 +6,8 @@ import {
   type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 
+import type { RecipeToolExposure } from "./recipe/agent.js";
+
 export const RECIPE_TOOL_SEARCH_NAME = "tool_search";
 export const LEGACY_MCP_TOOL_SEARCH_NAME = "mcp_search";
 
@@ -70,6 +72,38 @@ export function deferTools(
                 ? { ...definition, exposure: "deferred" }
                 : definition,
             );
+        },
+      }),
+    );
+}
+
+/**
+ * Register each tool that sets no `exposure` with the one `exposure` gives
+ * it, so a first-party tool a host or Recipe extension registers, such as
+ * `web_search`, follows the agent's `tools` policy.
+ */
+export function withToolExposure(
+  factory: ExtensionFactory,
+  exposure: (name: string) => RecipeToolExposure,
+): ExtensionFactory {
+  return (pi) =>
+    factory(
+      new Proxy(pi, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          if (property !== "registerTool" || typeof value !== "function") {
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+          return (definition: ToolDefinition, ...rest: unknown[]) => {
+            const chosen = definition.exposure ?? exposure(definition.name);
+            return value.call(
+              target,
+              definition.exposure === undefined && chosen !== "direct"
+                ? { ...definition, exposure: chosen }
+                : definition,
+              ...rest,
+            );
+          };
         },
       }),
     );

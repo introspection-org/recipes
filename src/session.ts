@@ -92,6 +92,7 @@ import {
   createRecipeToolSearchTools,
   LEGACY_MCP_TOOL_SEARCH_NAME,
   RECIPE_TOOL_SEARCH_NAME,
+  withToolExposure,
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
@@ -831,6 +832,8 @@ async function createSessionForAgent(
     ]) {
       recipeRegistrations.claim("tool", toolName, "<host>");
     }
+    const exposure = (name: string) =>
+      platformToolExposure(recipe.toolPolicy, name);
     const connectors = await loadRecipeConnectors(
       recipe.manifest,
       recipe.tools,
@@ -839,10 +842,17 @@ async function createSessionForAgent(
         env,
         cwd,
         python: python.packages,
-        exposure: (name) => platformToolExposure(recipe.toolPolicy, name),
+        exposure,
       },
     );
     const connectorLoadout = connectors.loadout;
+    // First-party tools a host or Recipe extension registers (`web_search`).
+    const extensionFirstParty = (PLATFORM_TOOL_NAMES as readonly string[])
+      .filter((name) => recipe.tools.includes(name))
+      .filter((name) => !connectorLoadout.toolNames.includes(name));
+    const deferredFirstParty =
+      connectorLoadout.deferredToolNames.length > 0 ||
+      extensionFirstParty.some((name) => exposure(name) === "deferred");
     for (const toolName of [
       ...(connectorLoadout.deferredToolNames.length > 0 ||
       (mcp.deferredToolNames?.length ?? 0) > 0
@@ -866,8 +876,7 @@ async function createSessionForAgent(
           recipeExtensionToolAllowlist(recipe.tools, wantsSubagents, [
             ...connectorLoadout.toolNames,
             ...(mcp.tools?.map((tool) => tool.name) ?? []),
-            ...(connectorLoadout.deferredToolNames.length > 0 ||
-            (mcp.deferredToolNames?.length ?? 0) > 0
+            ...(deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0
               ? [RECIPE_TOOL_SEARCH_NAME]
               : []),
             ...((mcp.deferredToolNames?.length ?? 0) > 0
@@ -887,8 +896,7 @@ async function createSessionForAgent(
           extensionPath,
           recipeExtensionToolAllowlist(recipe.tools, wantsSubagents, [
             ...(mcp.tools?.map((tool) => tool.name) ?? []),
-            ...(connectorLoadout.deferredToolNames.length > 0 ||
-            (mcp.deferredToolNames?.length ?? 0) > 0
+            ...(deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0
               ? [RECIPE_TOOL_SEARCH_NAME]
               : []),
             ...((mcp.deferredToolNames?.length ?? 0) > 0
@@ -967,7 +975,14 @@ async function createSessionForAgent(
           diagnostics,
         }),
         additionalPromptTemplatePaths: [...recipe.promptPaths],
-        extensionFactories: inlineExtensions,
+        extensionFactories: inlineExtensions.map((extension) =>
+          typeof extension === "function"
+            ? withToolExposure(extension, exposure)
+            : {
+                ...extension,
+                factory: withToolExposure(extension.factory, exposure),
+              },
+        ),
         systemPromptOverride: (base) => {
           const resolved = recipe.systemPromptOverride(base);
           const withMemory = [resolved, memoryPrompt]
@@ -1077,8 +1092,7 @@ async function createSessionForAgent(
       );
     }
     const hasDeferredTools =
-      connectorLoadout.deferredToolNames.length > 0 ||
-      (mcp.deferredToolNames?.length ?? 0) > 0;
+      deferredFirstParty || (mcp.deferredToolNames?.length ?? 0) > 0;
     const toolSearchTools = hasDeferredTools
       ? createRecipeToolSearchTools(
           {
@@ -1175,7 +1189,11 @@ async function createSessionForAgent(
         `Pi did not register Recipe connector tool(s): ${missingConnectorTools.join(", ")}`,
       );
     }
-    if (mcp.tools || connectorLoadout.toolNames.length > 0) {
+    if (
+      mcp.tools ||
+      connectorLoadout.toolNames.length > 0 ||
+      extensionFirstParty.length > 0
+    ) {
       const missingRegistered = mcpToolNames.filter(
         (name) => !registered.has(name),
       );
@@ -1188,7 +1206,8 @@ async function createSessionForAgent(
         ...tools.filter(
           (name) =>
             !connectorLoadout.scriptOnlyToolNames.includes(name) &&
-            !unavailable.has(name),
+            !unavailable.has(name) &&
+            exposure(name) === "direct",
         ),
         ...connectorLoadout.initialActiveToolNames,
         ...(mcp.initialActiveToolNames ?? []),

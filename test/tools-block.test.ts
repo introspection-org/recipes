@@ -13,6 +13,7 @@ import {
   selectedAgentTools,
   validateRecipeAgentDefinitions,
 } from "../src/recipe/agent.js";
+import { registerWebSearchTool } from "../src/search/index.js";
 import { type RecipeSessionHandle } from "../src/session.js";
 import { writeFixtureRecipe } from "../src/test-utils.js";
 import {
@@ -20,6 +21,7 @@ import {
   modelView,
   openRecipeSession,
 } from "./helpers/mcp-session.js";
+import searchProviders from "../packages/search/src/index.js";
 
 type Context = Parameters<
   Extract<FauxResponseStep, (...args: never[]) => unknown>
@@ -184,7 +186,7 @@ describe("first-party tools by tools.mode", () => {
   async function run(
     toolsBlock: string[],
     responses: FauxResponseStep[],
-    host: { search?: boolean } = {},
+    host: { search?: boolean; webSearch?: boolean } = {},
   ) {
     const fixture = issuesRecipe(
       toolsBlock,
@@ -195,6 +197,7 @@ describe("first-party tools by tools.mode", () => {
       ...fixture,
       responses,
       bindings: [],
+      ...(host.webSearch ? { extensionFactories: [webSearchExtension] } : {}),
     });
     handles.push(handle);
     await handle.session.prompt("go");
@@ -306,4 +309,107 @@ describe("first-party tools by tools.mode", () => {
     expect(tools).toContain("issues");
     expect(tools).not.toContain("web_search");
   });
+
+  it("keeps a host's web_search to codemode scripts in codemode", async () => {
+    let tools: string[] = [];
+    let output = "";
+    await run(
+      ["tools:", "  mode: codemode", "  include: [read, web_search]"],
+      [
+        (context) => {
+          tools = declared(context);
+          return fauxAssistantMessage(
+            [
+              fauxToolCall("codemode", {
+                code: 'return await tools.web_search({ query: "agents", content: "context" });',
+              }),
+            ],
+            { stopReason: "toolUse" },
+          );
+        },
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { webSearch: true },
+    );
+    expect(tools).toContain("codemode");
+    expect(tools).not.toContain("web_search");
+    expect(output).toContain("Agents that search");
+  });
+
+  it("defers a host's web_search to tool search", async () => {
+    let tools: string[] = [];
+    await run(
+      ["tools:", "  include: [read, web_search]", "  defer: [web_search]"],
+      [
+        (context) => {
+          tools = declared(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { webSearch: true },
+    );
+    expect(tools).not.toContain("web_search");
+    expect(tools).toContain("tool_search");
+  });
+
+  it("serves a host's web_search to bash's tools command in cli", async () => {
+    let tools: string[] = [];
+    let output = "";
+    await run(
+      ["tools:", "  mode: cli", "  include: [read, bash, web_search]"],
+      [
+        (context) => {
+          tools = declared(context);
+          return fauxAssistantMessage(
+            [
+              fauxToolCall("bash", {
+                command: `tools call web_search --json '{"query":"agents","content":"context"}'`,
+              }),
+            ],
+            { stopReason: "toolUse" },
+          );
+        },
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { webSearch: true },
+    );
+    expect(tools).not.toContain("web_search");
+    expect(output).toContain("Agents that search");
+  });
 });
+
+/** A host's extension registering `web_search`, which sets no exposure of its own. */
+function webSearchExtension(pi: Parameters<typeof registerWebSearchTool>[0]) {
+  registerWebSearchTool(pi, {
+    bound: ["brave"],
+    providers: searchProviders.providers,
+    env: { INTROSPECTION_EGRESS_PROXY_NATIVE: "1" },
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => BRAVE_ANSWER,
+      text: async () => JSON.stringify(BRAVE_ANSWER),
+    }),
+  });
+}
+
+const BRAVE_ANSWER = {
+  grounding: {
+    generic: [
+      {
+        url: "https://example.com/agents",
+        title: "Agents that search",
+        snippets: ["About agents."],
+      },
+    ],
+    map: [],
+  },
+  sources: {},
+};
