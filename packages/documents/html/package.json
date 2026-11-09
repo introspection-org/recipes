@@ -1,0 +1,50 @@
+{
+  "name": "@introspection-ai/recipe-documents-html",
+  "version": "0.1.0",
+  "description": "HTML format for the Introspection Recipes documents tool: read a page as markdown and render it and its charts to images.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/introspection-org/recipes.git",
+    "directory": "packages/documents/html"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "linkedom": "^0.18.15",
+    "playwright-core": "^1.65.0",
+    "turndown": "^7.2.5",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "devDependencies": {
+    "@introspection-ai/recipes": "workspace:^",
+    "@types/node": "^26.1.2",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

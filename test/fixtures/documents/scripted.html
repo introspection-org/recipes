@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+  <head><title>Scripted</title></head>
+  <body>
+    <svg id="first" width="300" height="120" aria-label="Cost per task"><rect width="300" height="120" fill="#888" /></svg>
+    <svg id="second" width="200" height="80" aria-label="Time per task"><rect width="200" height="80" fill="#444" /></svg>
+    <script>
+      const badge = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      badge.setAttribute("width", "20");
+      badge.setAttribute("height", "20");
+      document.body.prepend(badge);
+      document.getElementById("second").remove();
+    </script>
+  </body>
+</html>

@@ -28,6 +28,13 @@
       "initial-version": "0.1.0",
       "bump-minor-pre-major": true
     },
+    "packages/documents/html": {
+      "release-type": "node",
+      "package-name": "@introspection-ai/recipe-documents-html",
+      "include-component-in-tag": true,
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true
+    },
     "packages/documents/pdf": {
       "release-type": "node",
       "package-name": "@introspection-ai/recipe-documents-pdf",

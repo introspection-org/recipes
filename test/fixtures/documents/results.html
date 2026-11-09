@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Eval results</title>
+    <style>
+      body { font-family: sans-serif; margin: 2rem; }
+      .bar { fill: #3366cc; }
+      .line { fill: none; stroke: #cc3333; stroke-width: 3; }
+      @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+    </style>
+  </head>
+  <body>
+    <h1>Eval results</h1>
+    <p>Two runs of the support recipe, scored by the judge.</p>
+    <h2>Scores</h2>
+    <ul>
+      <li>Run A passed 9 of 10 trials.</li>
+      <li>Run B passed 7 of 10 trials.</li>
+    </ul>
+    <table>
+      <thead>
+        <tr><th>Run</th><th>Pass rate</th><th>Median latency</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>A</td><td>0.90</td><td>1.2 s</td></tr>
+        <tr><td>B</td><td>0.70</td><td>1.8 s</td></tr>
+      </tbody>
+    </table>
+    <h2>Charts</h2>
+    <figure>
+      <svg viewBox="0 0 300 150" width="300" height="150" role="img" aria-label="Pass rate by run">
+        <rect class="bar" x="40" y="15" width="80" height="135" />
+        <rect class="bar" x="180" y="45" width="80" height="105" />
+      </svg>
+      <figcaption>Pass rate by run</figcaption>
+    </figure>
+    <svg viewBox="0 0 200 100" width="100%" role="img">
+      <title>Latency over trials</title>
+      <polyline class="line" points="0,80 50,60 100,70 150,30 200,20" />
+    </svg>
+    <script>document.body.dataset.ready = "1";</script>
+  </body>
+</html>

@@ -55,6 +55,7 @@ export function readArtifacts(repo) {
     npmPackage("slack", "packages/channels/slack", "recipe-channel-slack-v"),
     npmPackage("docx", "packages/documents/docx", "recipe-documents-docx-v"),
     npmPackage("pdf", "packages/documents/pdf", "recipe-documents-pdf-v"),
+    npmPackage("html", "packages/documents/html", "recipe-documents-html-v"),
     npmPackage(
       "google",
       "packages/productivity/google",
