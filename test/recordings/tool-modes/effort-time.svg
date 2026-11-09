@@ -50,6 +50,7 @@ Output tokens: 1,051</title></rect>
 <text x="355.9165392365627" y="107" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">11.9s<tspan font-size="9.5" fill="#8a8880"> ±43%</tspan> · tools</text>
 <rect x="120" y="112" width="147.93606105212012" height="14" rx="3" fill="#c9c7be" stroke="#0000001f" data-href="https://artificialanalysis.ai/models/gpt-6-luna"><title>gpt-6-luna · low effort · codemode
 Recommended time
+Fastest
 Time per task: 7.7s ±20%
 Cost per task: $0.000546 ±3%
 Runs: 5
