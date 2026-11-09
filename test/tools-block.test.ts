@@ -176,8 +176,16 @@ describe('include: ["*"]', () => {
       expect.arrayContaining(["my_tool", "issues", "calendar"]),
     );
     expect(declared.tools).not.toContain("mail");
-    expect(declared.tools).not.toContain("drive");
     expect(declared.wildcard).not.toContain("my_tool");
+  });
+
+  it("selects a productivity tool whose allowlist the declaration omits", () => {
+    const { wildcard } = selectedAgentTools(["*"], undefined, {
+      productivity: [{ provider: "google", tools: { mail: ["search"] } }],
+    });
+    expect(wildcard).toEqual(
+      expect.arrayContaining(["mail", "calendar", "drive"]),
+    );
   });
 
   it("selects issues when pi.issues leaves a provider, the implicit fallback included", () => {

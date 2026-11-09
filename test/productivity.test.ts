@@ -823,7 +823,7 @@ describe("loading a productivity provider", () => {
     const loaded = await loadRecipeProductivity(manifest.productivity!, tools, {
       recipeDir,
     });
-    expect(loaded.toolNames).toEqual(["calendar"]);
+    expect(loaded.toolNames).toEqual(["calendar", "drive"]);
   });
 
   it("refuses two providers", async () => {

@@ -3291,13 +3291,12 @@ fn agent_tool_catalog(package: &Package) -> Vec<String> {
             .and_then(|declarations| declarations.first())
             .and_then(|declaration| declaration.get("tools"))
             .and_then(JsonValue::as_object);
-        // An empty command list disables the tool.
+        // An omitted allowlist exposes every supported command; only an empty one disables the tool.
         let enabled = |tool: &str| {
-            allowed.is_none_or(|allowed| {
-                allowed
-                    .get(tool)
-                    .is_some_and(|commands| commands.as_array().is_none_or(|c| !c.is_empty()))
-            })
+            allowed
+                .and_then(|allowed| allowed.get(tool))
+                .and_then(JsonValue::as_array)
+                .is_none_or(|commands| !commands.is_empty())
         };
         catalog.extend(
             PRODUCTIVITY_COMMANDS
@@ -6460,6 +6459,12 @@ mod tests {
                     && !d.message.contains("calendar")),
             "{only_calendar:?}"
         );
+
+        let partial =
+            json!({ "productivity": [{ "provider": "acme", "tools": { "mail": ["search"] } }] });
+        let all = "tools:\n  include: ['*']\n  defer: [mail, calendar, drive]\n";
+        let omitted = tools_diagnostics(partial, all);
+        assert!(omitted.is_empty(), "{omitted:?}");
 
         let behind = check_recipe_files(&tools_recipe(
             json!({ "mcp": { "servers": [{ "id": "docs", "url": "https://example.test/mcp", "tools": { "include": ["*"] } }] } }),

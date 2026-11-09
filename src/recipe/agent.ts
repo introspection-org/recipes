@@ -25,6 +25,7 @@ import {
   type RecipeMcpToolSelection,
 } from "./package.js";
 import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
+import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
 export interface RecipeSystemInstructions {
@@ -147,12 +148,12 @@ export function selectedAgentTools(
     ? [
         ...BUILTIN_TOOL_NAMES,
         ...(issuesRegisters(manifest.issues) ? ["issues"] : []),
+        // An omitted allowlist exposes every supported command; only an empty
+        // one disables the tool.
         ...(manifest.productivity ?? []).flatMap((declaration) =>
-          declaration.tools
-            ? Object.entries(declaration.tools)
-                .filter(([, commands]) => commands?.length !== 0)
-                .map(([tool]) => tool)
-            : ["mail", "calendar", "drive"],
+          PRODUCTIVITY_TOOLS.filter(
+            (tool) => declaration.tools?.[tool]?.length !== 0,
+          ),
         ),
         ...(manifest.search?.length ? ["web_search"] : []),
       ].filter((name) => !named.includes(name))
