@@ -50,7 +50,11 @@ import {
   boundSearchProviders,
   registerWebSearchTool,
 } from "../src/search/index.js";
-import { createAgentSession } from "../src/session.js";
+import { createInProcessRunController } from "../src/run-controller.js";
+import {
+  createAgentSession,
+  createAgentSessionInternal,
+} from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 import {
@@ -543,6 +547,21 @@ describe("a bound host needs no egress lane", () => {
     );
   });
 
+  it("search offers a provider with an MCP server by its API-bound REST host alone", () => {
+    const tavily = searchProviders.providers.tavily!;
+    expect(tavily.mcp).toBeDefined();
+    expect(boundSearchProviders({}, searchProviders.providers).bound).toEqual(
+      [],
+    );
+    install("test", [
+      { host: tavily.capabilities.host, url: `${fakeBase}/tavily` },
+    ]);
+    expect(boundSearchProviders({}, searchProviders.providers)).toEqual({
+      bound: ["tavily"],
+      mcpServers: {},
+    });
+  });
+
   it("Slack sends without Authorization through the fetch installed after it was built", async () => {
     reply = () => ({ json: { ok: true, messages: [] } });
     const session = new SlackBotSession({ env: {}, isApiBound });
@@ -885,5 +904,56 @@ export default {
     ).rejects.toThrow(/graph\.microsoft\.com/);
     expect(isApiBound("https://slack.com")).toBe(false);
     expect(isApiBound("https://graph.microsoft.com")).toBe(false);
+  });
+
+  it("SDK: a delegated child binds what its root resolved, not the file", async () => {
+    const created = writeFixtureRecipe({
+      dependencies: { [SLACK_RECIPE_CHANNEL_PACKAGE]: "0.1.0" },
+      tools: ["channels"],
+      subagents: ["helper"],
+      manifestPi: { channels: [{ provider: "slack" }] },
+    });
+    cleanups.push(created.cleanup);
+    installSlackRecipeConnector(created.recipeDir);
+    const { recipeDir, workspaceDir } = created;
+    writeBindingFile(workspaceDir, {
+      apis: [{ host: "slack.com", url: "http://localhost:7353/from-file" }],
+    });
+    const inline = {
+      apis: [{ host: "slack.com", url: "http://localhost:7353/inline" }],
+    };
+    const recipe = resolveRecipe({ recipeDir });
+    const root = await createAgentSession({
+      recipe,
+      cwd: workspaceDir,
+      credentials: await credentials(),
+      env: cleanEnv(),
+      apiBindings: inline,
+    });
+    try {
+      let childBound: unknown;
+      const controller = createInProcessRunController({
+        recipe,
+        cwd: workspaceDir,
+        env: cleanEnv(),
+        apiBindings: { apis: [...root.apiBindings.bound] },
+        sessionFactory: async (options) => {
+          const child = await createAgentSessionInternal({
+            ...options,
+            credentials: await credentials(),
+          });
+          childBound = child.apiBindings.bound;
+          await child.dispose();
+          throw new Error("constructed");
+        },
+      });
+      const run = await controller.start({ name: "helper", prompt: "go" });
+      const settled = await controller.wait(run.agent_run_id);
+      expect(settled.error).toContain("constructed");
+      expect(childBound).toEqual(inline.apis);
+      expect(isApiBound("https://slack.com")).toBe(true);
+    } finally {
+      await root.dispose();
+    }
   });
 });

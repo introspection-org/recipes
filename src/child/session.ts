@@ -20,6 +20,7 @@ import {
 import { autoResolveInteractions } from "../interactions.js";
 import { promptResultError } from "./agent.js";
 import type { ResolvedRecipe } from "../recipe/resolve.js";
+import type { ApiLocalConfig } from "../api-bindings.js";
 import type { RecipeClockOptions } from "../clock.js";
 import type { MemoryContextOverride, MemoryContextSource } from "../memory.js";
 import {
@@ -36,6 +37,8 @@ export interface CreateIsolatedChildSessionOptions {
   env: NodeJS.ProcessEnv;
   /** Where the host prepared the Python environments; see `pythonEnvironmentRoot` on the session. */
   pythonEnvironmentRoot?: string;
+  /** The parent's resolved API bindings (see `apiBindings` on the session). */
+  apiBindings?: ApiLocalConfig;
   credentials?: CredentialStore;
   /** Host settings the child layers its own `session` policy over. */
   settingsManager?: SettingsManager;
@@ -125,6 +128,7 @@ export async function createIsolatedChildSession(
       ...(opts.pythonEnvironmentRoot
         ? { pythonEnvironmentRoot: opts.pythonEnvironmentRoot }
         : {}),
+      ...(opts.apiBindings ? { apiBindings: opts.apiBindings } : {}),
       ...(opts.credentials ? { credentials: opts.credentials } : {}),
       ...(opts.settingsManager
         ? { settingsManager: opts.settingsManager }

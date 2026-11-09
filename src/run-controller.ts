@@ -18,6 +18,7 @@ import type {
   RecipeSessionOtelOptions,
   RecipeSessionHandle,
 } from "./session.js";
+import type { ApiLocalConfig } from "./api-bindings.js";
 import type { RecipeClockOptions } from "./clock.js";
 import type { MemoryContextOverride, MemoryContextSource } from "./memory.js";
 import type { ResolvedRecipe } from "./recipe/resolve.js";
@@ -31,6 +32,8 @@ export interface InProcessRunControllerOptions {
   env?: NodeJS.ProcessEnv;
   /** Where the host prepared the Python environments; see `pythonEnvironmentRoot` on the session. */
   pythonEnvironmentRoot?: string;
+  /** The root's resolved API bindings, so every child binds the same hosts the same way. */
+  apiBindings?: ApiLocalConfig;
   credentials?: CredentialStore;
   /** The root's host settings; each child layers its own `session` policy over them. */
   settingsManager?: SettingsManager;
@@ -149,6 +152,7 @@ export function createInProcessRunController(
           ...(opts.pythonEnvironmentRoot
             ? { pythonEnvironmentRoot: opts.pythonEnvironmentRoot }
             : {}),
+          ...(opts.apiBindings ? { apiBindings: opts.apiBindings } : {}),
           ...(opts.credentials ? { credentials: opts.credentials } : {}),
           ...(opts.settingsManager
             ? { settingsManager: opts.settingsManager }

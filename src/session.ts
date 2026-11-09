@@ -1097,6 +1097,8 @@ async function createSessionForAgent(
             // Children check the environments this session checked, wherever
             // the host prepared them, not the shared cache.
             ...(pythonEnvironmentRoot ? { pythonEnvironmentRoot } : {}),
+            // Children bind what this session resolved, never a file of their own.
+            apiBindings: { apis: bound.bindings },
             ...(opts.credentials ? { credentials: opts.credentials } : {}),
             ...(opts.settingsManager
               ? { settingsManager: opts.settingsManager }

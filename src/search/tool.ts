@@ -89,8 +89,9 @@ function urlHost(url: string | undefined): string | undefined {
  * binds that server: one whose bound URL has the adapter's host, or, for a
  * fake on another host, whose id is the provider's. Its REST endpoint, when
  * the egress holds one, is then the fallback. A REST-only provider is bound
- * by its endpoint host alone, which the egress holds or an API binding
- * (`.pi/api.local.json`) sends elsewhere.
+ * by its endpoint host alone. A REST endpoint an API binding
+ * (`.pi/api.local.json`) sends elsewhere is bound on its own, with or without
+ * an MCP server.
  */
 export function boundSearchProviders(
   bindings: SearchBindings,
@@ -103,19 +104,16 @@ export function boundSearchProviders(
   const mcpServers: Partial<Record<SearchProviderId, string>> = {};
   const bound: SearchProviderId[] = [];
   for (const module of Object.values(providers)) {
+    const apiBound = isApiBound(`https://${module.capabilities.host}`);
     if (module.mcp) {
       const host = urlHost(module.mcp.url);
       const server =
         servers.find((entry) => host && urlHost(entry.url) === host) ??
         servers.find((entry) => entry.id === module.id);
-      if (!server) continue;
-      mcpServers[module.id] = server.id;
+      if (server) mcpServers[module.id] = server.id;
+      else if (!apiBound) continue;
     }
-    if (
-      hosts.has(module.capabilities.host) ||
-      isApiBound(`https://${module.capabilities.host}`)
-    )
-      bound.push(module.id);
+    if (hosts.has(module.capabilities.host) || apiBound) bound.push(module.id);
   }
   return { bound, mcpServers };
 }
