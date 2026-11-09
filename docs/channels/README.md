@@ -270,6 +270,7 @@ const capabilities = {
   react: false, edit: true, retract: true, read: false,
   attach: false, fetchFile: false,
   documents: false, resolveAuthors: true, permalinks: false,
+  hosts: ["api.my-channel.example"],
 };
 
 class MyAdapter implements ChannelAdapter {
@@ -313,6 +314,15 @@ their own API fields and do not define provider-specific origin types.
 
 Registration checks that the adapter implements every method its capabilities
 claim, so a descriptor cannot promise a tool the adapter does not have.
+
+`hosts` lists every host the adapter sends to; only a declared host can be
+rebound by `.pi/api.local.json` (see
+[Bind a provider's API host](../mcp-configuration.md#bind-a-providers-api-host)).
+`createSession` also receives `isApiBound(url)`: a request to a bound host
+goes to a fake or local server rather than through the egress, so the adapter
+sends it without a credential instead of refusing for want of an egress.
+Read `globalThis.fetch` per call rather than capturing it, so the binding
+applies.
 
 The host turns the descriptor into an ordinary `RecipeConnectorModule` with
 `createChannelConnectorModule`, which a package may still call itself if it

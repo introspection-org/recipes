@@ -52,6 +52,11 @@ import {
   type RecipeClock,
   type RecipeClockOptions,
 } from "./clock.js";
+import {
+  bindRecipeApis,
+  type ApiLocalConfig,
+  type RecipeSessionApiBindings,
+} from "./api-bindings.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import {
   activateRecipePython,
@@ -212,6 +217,12 @@ export interface CreateAgentSessionOptions {
   /** Inline MCP bindings, for hosts that synthesize them instead of reading a file. */
   mcpBindings?: McpLocalConfig;
   /**
+   * Inline API bindings, for hosts that synthesize them instead of reading a
+   * file. Default: the file `PI_RECIPES_API_LOCAL_CONFIG` names, else
+   * `<cwd|recipe.recipeDir>/.pi/api.local.json`.
+   */
+  apiBindings?: ApiLocalConfig;
+  /**
    * MCP provisioning owner. "session" (default) resolves bindings and
    * prepares the session MCP runtime in `env`; "host" trusts that the host
    * already materialized a runtime covering exactly this agent's policy.
@@ -346,7 +357,13 @@ export interface RecipeSessionHandle {
   agent: ResolvedRecipeAgent;
   /** The subagent run controller serving this session's `agent` tool. */
   agentRuns: AgentRunController;
-  /** Abort any in-flight turn, dispose the session, stop session MCP. */
+  /**
+   * The hosts this session's providers and channel adapters declare, and the
+   * ones its API bindings (`.pi/api.local.json`) send elsewhere, with where:
+   * what a host records about where each declared host was bound.
+   */
+  apiBindings: RecipeSessionApiBindings;
+  /** Abort any in-flight turn, dispose the session, stop session MCP, release its API bindings. */
   dispose(): Promise<void>;
 }
 
@@ -793,6 +810,7 @@ async function createSessionForAgent(
     piMcpSessionOptions,
   } = piMcpSessionTools(mcp.piServers, recipe.mcp, recipe.toolPolicy);
   let piMcp: ExtensionAPI | undefined;
+  let releaseApiBindings: (() => void) | undefined;
 
   const cleanup = async (): Promise<void> => {
     try {
@@ -827,6 +845,8 @@ async function createSessionForAgent(
       // Continue releasing MCP state.
     }
     detachInstrumentation = undefined;
+    releaseApiBindings?.();
+    releaseApiBindings = undefined;
     await mcp.release?.();
   };
 
@@ -866,6 +886,17 @@ async function createSessionForAgent(
           : {}),
       },
     );
+    // Bound hosts must be in front of the fetch before the factories run in
+    // createAgentSessionServices: a channel adapter may capture it there.
+    const bound = bindRecipeApis({
+      owner: `Recipe ${recipe.manifest.name} agent ${recipe.name}`,
+      cwd,
+      recipeDir: recipe.recipeDir,
+      declaredHosts: connectors.hosts,
+      env,
+      inline: opts.apiBindings,
+    });
+    releaseApiBindings = bound.release;
     const connectorLoadout = connectors.loadout;
     // First-party tools a host or Recipe extension registers (`web_search`).
     const extensionFirstParty = (PLATFORM_TOOL_NAMES as readonly string[])
@@ -1271,6 +1302,7 @@ async function createSessionForAgent(
       session: liveSession,
       agent: recipe,
       agentRuns: liveRuns,
+      apiBindings: bound.apiBindings,
       async dispose(): Promise<void> {
         if (disposed) return;
         disposed = true;

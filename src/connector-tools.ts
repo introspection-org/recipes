@@ -6,6 +6,7 @@ import {
   type RecipeChannelModule,
 } from "./channels/module.js";
 import { loadRecipeDocuments } from "./documents/module.js";
+import { loadSearchProviders } from "./search/module.js";
 import { loadRecipeIssues } from "./issues/module.js";
 import { loadRecipeProductivity } from "./productivity/module.js";
 import { loadRecipePackageModule } from "./recipe/companions.js";
@@ -68,6 +69,8 @@ interface RecipeConnectorModuleOptions {
 export interface RecipeConnectorModule {
   readonly provider: string;
   readonly tools: readonly RecipeConnectorToolDefinition[];
+  /** Every host the connector sends to (a channel's `capabilities.hosts`). */
+  readonly hosts?: readonly string[];
   createExtension(options: RecipeConnectorModuleOptions): ExtensionFactory;
 }
 
@@ -76,6 +79,12 @@ export interface LoadedRecipeConnectors {
   loadout: RecipeConnectorToolLoadout;
   /** Skills the `documents` and productivity tools offer: their core skills and the selected profiles. */
   skillPaths: string[];
+  /**
+   * Every host the loaded providers and adapters declare: channels,
+   * productivity and issues, and search when the Recipe declares `pi.search`.
+   * An API binding may rebind only these.
+   */
+  hosts: string[];
 }
 
 function connectorModuleError(
@@ -219,6 +228,7 @@ export async function loadRecipeConnectors(
           ),
         },
         selected,
+        hosts: module.hosts ?? [],
       };
     }),
   );
@@ -233,6 +243,18 @@ export async function loadRecipeConnectors(
     options,
   );
   const issues = await loadRecipeIssues(manifest.issues, agentTools, options);
+  // Search providers load here only to learn their hosts; `web_search` is
+  // registered by the host or the Recipe.
+  const search =
+    manifest.search === undefined
+      ? {}
+      : await loadSearchProviders({
+          recipeDir: options.recipeDir,
+          ...(options.hostDir !== undefined
+            ? { hostDir: options.hostDir }
+            : {}),
+          declarations: manifest.search,
+        });
   // A first-party tool in codemode is registered but neither declared nor
   // deferred to tool search: codemode lists it for scripts.
   const scriptOnly = (name: string) => options.exposure?.(name) === "codemode";
@@ -265,6 +287,19 @@ export async function loadRecipeConnectors(
     skillPaths: [
       ...(documents.skillPaths ?? []),
       ...(productivity.skillPaths ?? []),
+    ],
+    hosts: [
+      ...new Set(
+        [
+          ...loaded.flatMap((connector) => connector.hosts),
+          ...(productivity.hosts ?? []),
+          ...(issues.hosts ?? []),
+          ...Object.values(search).flatMap((module) => [
+            module.capabilities.host,
+            ...(module.capabilities.hosts ?? []),
+          ]),
+        ].map((host) => host.toLowerCase()),
+      ),
     ],
     extensions: [
       ...loaded.map((connector) => connector.extension),

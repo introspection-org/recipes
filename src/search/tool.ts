@@ -6,6 +6,7 @@ import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
+import { isApiBound } from "../api-bindings.js";
 import { egressCredentialHeaders, type SearchEnvironment } from "./egress.js";
 import { isCountryCode, requestJson } from "./http.js";
 import {
@@ -88,7 +89,8 @@ function urlHost(url: string | undefined): string | undefined {
  * binds that server: one whose bound URL has the adapter's host, or, for a
  * fake on another host, whose id is the provider's. Its REST endpoint, when
  * the egress holds one, is then the fallback. A REST-only provider is bound
- * by its endpoint host alone.
+ * by its endpoint host alone, which the egress holds or an API binding
+ * (`.pi/api.local.json`) sends elsewhere.
  */
 export function boundSearchProviders(
   bindings: SearchBindings,
@@ -109,7 +111,11 @@ export function boundSearchProviders(
       if (!server) continue;
       mcpServers[module.id] = server.id;
     }
-    if (hosts.has(module.capabilities.host)) bound.push(module.id);
+    if (
+      hosts.has(module.capabilities.host) ||
+      isApiBound(`https://${module.capabilities.host}`)
+    )
+      bound.push(module.id);
   }
   return { bound, mcpServers };
 }
@@ -517,12 +523,20 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
       );
       result = module.mcp!.parse(answer, request, plan);
     } else {
+      const baseUrl = options.baseUrls?.[id] ?? `https://${capabilities.host}`;
+      // A host an API binding sends elsewhere needs no credential lane.
       const credentialHeaders = options.credentialHeaders
         ? options.credentialHeaders(module)
-        : egressCredentialHeaders(id, capabilities, options.env ?? process.env);
+        : isApiBound(baseUrl)
+          ? {}
+          : egressCredentialHeaders(
+              id,
+              capabilities,
+              options.env ?? process.env,
+            );
       const target = {
         fetch: options.fetch ?? (fetch as unknown as SearchFetch),
-        baseUrl: options.baseUrls?.[id] ?? `https://${capabilities.host}`,
+        baseUrl,
         credentialHeaders,
         now: () => now,
         ...(signal ? { signal } : {}),
