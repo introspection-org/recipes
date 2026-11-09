@@ -35,8 +35,8 @@ tools: [documents]
 ```
 
 Each declaration names a format, served by the package
-`@introspection-ai/recipe-documents-<format>`. Recipes installs the docx and
-pdf packages alongside itself (they are `optionalDependencies` of
+`@introspection-ai/recipe-documents-<format>`. Recipes installs the docx,
+pdf and html packages alongside itself (they are `optionalDependencies` of
 `@introspection-ai/recipes`), so a Recipe that does not list them uses the
 copy beside the running Recipes, Python environment and profiles included.
 Declare it in `peerDependencies` by default, which says so explicitly: the
@@ -200,13 +200,13 @@ doesn't ship fails when the Recipe loads, with the names it does ship.
 
 | Command (`documents` + `command`) | Arguments | Requires |
 | --- | --- | --- |
-| `read` | `path`, `offset?`, `budget?`, `pages?`, `tables?` | always |
-| `revise` | `path`, `output?`, `author`, `revisions[]` (`paragraph`, `text`, `rationale`) | `revise` |
-| `propose_edits` | `path`, `output?`, `author`, `edits[]` | `proposeEdits` |
-| `comment` | `path`, `output?`, `author`, `text`, and `quote` (`paragraph?`, `near?`, `occurrence?`) or `thread` | `comment` |
-| `respond` | `path`, `output?`, `author`, `responses[]` | `respond` |
-| `remove_section` | `path`, `output?`, `author`, `from`, `through`, `keep?`, `rationale` | `removeSection` |
-| `render` | `path`, `pages?` | `render` |
+| `read` | `path`, `offset?`, `budget?`, `pages?`, `tables?` | always | The page as markdown (`.html`, `.htm`; an `.svg` file is one chart): headings, lists and GFM tables, scripts and styles dropped, each chart (an outermost `<figure>` or `<svg>`) a `[chart N: label]` line. Paged by character. |
+| `revise` | `path`, `output?`, `author`, `revisions[]` (`paragraph`, `text`, `rationale`) | `revise` | not registered |
+| `propose_edits` | `path`, `output?`, `author`, `edits[]` | `proposeEdits` | not registered |
+| `comment` | `path`, `output?`, `author`, `text`, and `quote` (`paragraph?`, `near?`, `occurrence?`) or `thread` | `comment` | not registered |
+| `respond` | `path`, `output?`, `author`, `responses[]` | `respond` | not registered |
+| `remove_section` | `path`, `output?`, `author`, `from`, `through`, `keep?`, `rationale` | `removeSection` | not registered |
+| `render` | `path`, `pages?` | `render` | With a browser, the full page light and dark and each chart as its own element screenshot, at 2x; without one, each inline `<svg>` chart through resvg, naming what it could not draw. `pages` picks charts. |
 
 An edit is `{ op: "replace" | "delete" | "insert_after", quote, paragraph?,
 near?, occurrence?, new?, rationale }`. A response is `{ action: "accept" |
@@ -219,15 +219,15 @@ candidate paragraphs. It never returns the whole document; `read` does that.
 
 ## What each format registers
 
-| Command | docx (`@introspection-ai/recipe-documents-docx`) | PDF (`@introspection-ai/recipe-documents-pdf`) |
-| --- | --- | --- |
-| `read` | Paragraphs with stable ids (`p-031`, `p-012.r2c3` in tables) and their current text, Word's list numbers, a `markup:` line with tracked changes and comments by author, then numbered changes and comment threads. Paged by paragraph. | The path used (text, tables or page images), then pypdfium2's text page by page in reading order, filled form fields and page comments. `tables: true` adds table cells with the `tables` extra. Pages with no text layer are named, to render. Paged by character. |
-| `revise` | Each paragraph's revised text: on a file with no pending changes, untracked edits on a working copy and paper-docx `compare(granularity="word")` build the redline; if compare refuses the batch, or the file already has changes, the same word-level changes go in as targeted tracked edits. The rationale is a comment on the changed text. | not registered |
-| `propose_edits` | Tracked changes signed by `author`, each with its rationale as a comment, saved with `patch_save` | not registered |
-| `comment` | New comment on a quote, or a reply under a thread's first comment | not registered |
-| `respond` | Accept or reject by change number (tracked moves resolve as a pair), reply, or counter | not registered |
-| `remove_section` | Strikes the paragraphs, leaves `Reserved.` after `keep`, keeps numbering | not registered |
-| `render` | not registered | PNG files of pages, at most 10 per call; returns their paths for Pi's `read` tool |
+| Command | docx (`@introspection-ai/recipe-documents-docx`) | PDF (`@introspection-ai/recipe-documents-pdf`) | HTML (`@introspection-ai/recipe-documents-html`) |
+| --- | --- | --- | --- |
+| `read` | Paragraphs with stable ids (`p-031`, `p-012.r2c3` in tables) and their current text, Word's list numbers, a `markup:` line with tracked changes and comments by author, then numbered changes and comment threads. Paged by paragraph. | The path used (text, tables or page images), then pypdfium2's text page by page in reading order, filled form fields and page comments. `tables: true` adds table cells with the `tables` extra. Pages with no text layer are named, to render. Paged by character. | The page as markdown (`.html`, `.htm`; an `.svg` file is one chart): headings, lists and GFM tables, scripts and styles dropped, each chart (an outermost `<figure>` or `<svg>`) a `[chart N: label]` line. Paged by character. |
+| `revise` | Each paragraph's revised text: on a file with no pending changes, untracked edits on a working copy and paper-docx `compare(granularity="word")` build the redline; if compare refuses the batch, or the file already has changes, the same word-level changes go in as targeted tracked edits. The rationale is a comment on the changed text. | not registered | not registered |
+| `propose_edits` | Tracked changes signed by `author`, each with its rationale as a comment, saved with `patch_save` | not registered | not registered |
+| `comment` | New comment on a quote, or a reply under a thread's first comment | not registered | not registered |
+| `respond` | Accept or reject by change number (tracked moves resolve as a pair), reply, or counter | not registered | not registered |
+| `remove_section` | Strikes the paragraphs, leaves `Reserved.` after `keep`, keeps numbering | not registered | not registered |
+| `render` | not registered | PNG files of pages, at most 10 per call; returns their paths for Pi's `read` tool | With a browser, the full page light and dark and each chart as its own element screenshot, at 2x; without one, each inline `<svg>` chart through resvg, naming what it could not draw. `pages` picks charts. |
 
 ### docx: revise or propose_edits
 
@@ -338,7 +338,7 @@ recommend the extra; a Recipe that only reads briefs can leave it out.
 
 ## Python
 
-The Word and PDF helpers are small Python programs. Each format package
+The Word and PDF helpers are small Python programs (HTML runs in Node and needs none). Each format package
 declares its own `pi.runtime.python` environment, locked by the package's
 `python/uv.lock`: paper-docx for Word, pypdfium2 and pillow for PDF. The host
 prepares that environment for the installed package, as it does every
@@ -424,3 +424,4 @@ dependency of the Recipe that uses it, installed when the runtime is baked.
 
 - Word: this page; `packages/documents/docx/README.md`.
 - PDF: this page; `packages/documents/pdf/README.md`.
+- HTML: this page; `packages/documents/html/README.md`.

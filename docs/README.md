@@ -24,7 +24,7 @@ at run time.
 | Declare capability policy and bindings | [MCP configuration](mcp-configuration.md) |
 | Answer a chat message from a Recipe | [Channel tools](channels/README.md) |
 | Add Slack tools to a Recipe | [Slack channel connector](channels/slack.md) |
-| Read and mark up Word and PDF files from a Recipe | [Document tools](documents/README.md) |
+| Read and mark up Word, PDF and HTML files from a Recipe | [Document tools](documents/README.md) |
 | Work with a person's mail, calendar and files | [Productivity tools](productivity/README.md) |
 | Search the web from a Recipe | [Web search](search/README.md) |
 | Track work in Linear, Jira or Introspection | [Issues tool](issues/README.md) |

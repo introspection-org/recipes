@@ -1,6 +1,6 @@
 ---
 name: documents
-description: How to read Word and PDF files and mark up Word files with the documents tool. Load it before opening, editing, commenting on or responding to any document.
+description: How to read Word, PDF and HTML files, check an HTML page's charts, and mark up Word files with the documents tool. Load it before opening, editing, commenting on or responding to any document.
 ---
 
 # Documents
@@ -20,6 +20,7 @@ Always `read` first, every part: pass `offset` from the previous part until it e
 | Comment without changing text, or reply on a thread | `comment`: `{quote, text}`, or `{thread, text}` |
 | Answer markup already there | `respond`: accept or reject by change number, reply on a thread, or counter with your own change |
 | See a PDF page as an image (a scan, a signature, a chart) | `render`, then open the image it returns |
+| Check that each chart on an HTML page makes sense | `render` the page, then open each chart image it returns; `pages: "2"` renders chart 2 alone |
 
 Every change carries its `rationale`, which becomes a margin comment.
 
