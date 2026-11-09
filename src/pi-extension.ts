@@ -126,6 +126,13 @@ import {
   splitRecipeSubcommand,
   wantsArtifactViewer,
 } from "./artifact-viewer.js";
+import {
+  createRecipeClock,
+  todayExtension,
+  wantsToday,
+  withCurrentDate,
+  type RecipeClockOptions,
+} from "./clock.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import { createRecipeSuggestionPicker } from "./suggestion-picker.js";
 import {
@@ -140,6 +147,8 @@ export interface RecipesExtensionOptions {
   createChildAgentRunner?: CreateRecipeChildAgentRunner;
   /** Observe canonical Pi events from every child run. */
   onAgentRunEvent?: AgentRunEventObserver;
+  /** The clock behind the date in the prompt and the `today` tool. Default: the host's. */
+  clock?: RecipeClockOptions;
 }
 
 interface AgentCallParams {
@@ -607,6 +616,7 @@ export function createRecipesExtension(
   opts: RecipesExtensionOptions = {},
 ): ExtensionFactory {
   const env = opts.env ?? process.env;
+  const clock = createRecipeClock(opts.clock);
   const createChildAgentRunner =
     opts.createChildAgentRunner ?? createRecipeChildAgentRunner;
   let state: RecipeLaunchState | null = null;
@@ -1036,6 +1046,7 @@ export function createRecipesExtension(
             : {}),
           exposure: (name) =>
             platformToolExposure(launchState.resolved.toolPolicy, name),
+          clock,
           ...(launchState.resolved.wildcardTools
             ? { wildcardTools: launchState.resolved.wildcardTools }
             : {}),
@@ -1123,6 +1134,9 @@ export function createRecipesExtension(
           launchState.extensionRegistrations,
           env,
         )(pi);
+      }
+      if (wantsToday(launchState.resolved.tools)) {
+        await todayExtension(clock, launchState.extensionRegistrations)(pi);
       }
       // Likewise the first-party artifact viewer (show_artifact and /recipe view).
       if (wantsArtifactViewer(launchState.resolved.tools)) {
@@ -2007,9 +2021,11 @@ export function createRecipesExtension(
         launchState.piBehindServers,
       );
       offerOnlyRecipeSkills(event, recipeSkills(launchState));
-      return {
-        systemPrompt: createSystemPrompt(event, launchState),
-      };
+      return withCurrentDate(
+        event,
+        clock,
+        createSystemPrompt(event, launchState),
+      );
     });
   };
 }

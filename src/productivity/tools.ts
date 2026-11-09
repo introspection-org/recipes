@@ -12,6 +12,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Check } from "typebox/value";
 
 import {
+  createRecipeClock,
+  startOfDay,
+  zonedTime,
+  type RecipeClock,
+} from "../clock.js";
+
+import {
   commandParameters,
   commandSignature,
   commandVariant,
@@ -166,6 +173,8 @@ export interface RegisterProductivityToolsOptions {
   /** Where fetched attachments and downloads are written. */
   downloadsDir: string;
   handles?: ProductivityHandleStore;
+  /** The session's clock: `calendar list` defaults to today and tomorrow in its zone. Default: the host's. */
+  clock?: RecipeClock;
 }
 
 /** A request the host refuses before any provider call. */
@@ -245,45 +254,6 @@ function instant(value: unknown, field: string): string {
       `${field} must be an RFC 3339 time with an offset, such as 2026-03-02T09:00:00Z`,
     );
   return value;
-}
-
-/** The zone the person's day is read in: the host's own. */
-function localTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-/** `zone`'s offset from UTC at `at`, in minutes. */
-function offsetMinutes(at: Date, zone: string): number {
-  const name = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    timeZoneName: "longOffset",
-  })
-    .formatToParts(at)
-    .find((part) => part.type === "timeZoneName")!.value;
-  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(name);
-  if (!match) return 0;
-  return (
-    (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3]))
-  );
-}
-
-/** `at` as RFC 3339 in `zone`, with its offset: 2026-03-02T09:00:00-08:00. */
-function zonedTime(at: Date, zone: string): string {
-  const offset = offsetMinutes(at, zone);
-  const local = new Date(at.getTime() + offset * 60_000)
-    .toISOString()
-    .slice(0, 19);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const abs = Math.abs(offset);
-  return `${local}${offset < 0 ? "-" : "+"}${pad(Math.trunc(abs / 60))}:${pad(abs % 60)}`;
-}
-
-/** Midnight in `zone`, `days` after today there. */
-function startOfDay(zone: string, days: number): Date {
-  const now = new Date();
-  const today = zonedTime(now, zone).slice(0, 10);
-  const guess = Date.parse(`${today}T00:00:00Z`) + days * 86_400_000;
-  return new Date(guess - offsetMinutes(new Date(guess), zone) * 60_000);
 }
 
 /** An instant the provider gave in UTC, in the event's own zone with its offset. */
@@ -469,6 +439,7 @@ export function registerProductivityTools(
   options: RegisterProductivityToolsOptions,
 ): void {
   const handles = options.handles ?? new ProductivityHandleStore();
+  const clock = options.clock ?? createRecipeClock();
   const provider = options.provider;
   let pending: Promise<ProductivitySession> | undefined;
   let opened: ProductivitySession | undefined;
@@ -826,15 +797,16 @@ export function registerProductivityTools(
           "List events between two times, by default today and tomorrow in the person's time zone. Returns event handles.",
         parameters: CALENDAR_ARGUMENTS.list,
         async run(params, s, ctx) {
-          const zone = localTimeZone();
+          const zone = clock.timeZone;
+          const now = clock.now();
           const args = {
             from:
               params.from === undefined
-                ? zonedTime(startOfDay(zone, 0), zone)
+                ? zonedTime(startOfDay(now, zone, 0), zone)
                 : instant(params.from, "from"),
             to:
               params.to === undefined
-                ? zonedTime(startOfDay(zone, 2), zone)
+                ? zonedTime(startOfDay(now, zone, 2), zone)
                 : instant(params.to, "to"),
             ...given<CalendarListArgs>(params, { calendar: asIs }),
           };

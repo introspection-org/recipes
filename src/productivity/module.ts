@@ -29,6 +29,7 @@ import {
   type ProductivityTool,
 } from "./types.js";
 import type { RecipeToolExposure } from "../recipe/agent.js";
+import type { RecipeClock } from "../clock.js";
 
 /**
  * The productivity contract this host implements. A provider module declares
@@ -135,6 +136,8 @@ export async function loadRecipeProductivity(
     exposure?: (tool: string) => RecipeToolExposure;
     /** What `include: ["*"]` added: one of these the provider does not enable is left out rather than refused. */
     wildcardTools?: readonly string[];
+    /** The session's clock. Default: the host's. */
+    clock?: RecipeClock;
   },
 ): Promise<LoadedRecipeProductivity> {
   if (declarations.length === 0) return { toolNames: [] };
@@ -206,6 +209,7 @@ export async function loadRecipeProductivity(
         const cwd = options.cwd ?? process.cwd();
         registerProductivityTools(pi, {
           ...(options.exposure ? { exposure: options.exposure } : {}),
+          ...(options.clock ? { clock: options.clock } : {}),
           provider: declaration.provider,
           capabilities: module.capabilities,
           tools,
