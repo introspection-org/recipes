@@ -130,7 +130,7 @@
     "test": "pnpm build:ts && cargo test -p pi-mcp-client -p introspection-recipe-check && cargo build -p pi-mcp-client && MCP_CLIENT_BIN=target/debug/mcp-client node scripts/package-mcp-client.mjs && vitest run && pnpm --filter './examples' test",
     "pack:check": "pnpm pack --dry-run --json | node scripts/check-npm-pack.mjs && pnpm --filter './packages/**' pack:check",
     "clean": "rm -rf dist .turbo node_modules target vendor/mcp-client",
-    "report:tool-modes": "node scripts/tool-modes-report.mjs"
+    "report:tool-modes": "node scripts/tool-modes-report.mjs && prettier --write test/recordings/tool-modes/report.md"
   },
   "dependencies": {
     "@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
