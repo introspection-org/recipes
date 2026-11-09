@@ -1,0 +1,135 @@
+{
+  "model": "openai/gpt-6-astra",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 726,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 47,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1615,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools list; tools list calendar --schema; tools list mail --schema; tools list drive --schema; date -Iseconds",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1960,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1612,
+      "output_tokens": 77,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst results = await Promise.all([tools.mail.search({query:\"budget\",from:\"Dana\"}),tools.drive.search({query:\"budget\"}),tools.calendar.list({})]); results.forEach(x=>console.log(JSON.stringify(x)));\nJS",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 128,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3569,
+      "output_tokens": 115,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools run <<'JS'\nconst results = await Promise.all([tools.mail.search({query:\"budget\",from:\"Dana\"}),tools.drive.search({query:\"budget\"}),tools.calendar.list({from:\"2026-11-09T00:00:00-08:00\",to:\"2026-11-10T00:00:00-08:00\"})]); results.forEach(x=>console.log(JSON.stringify(x)));\nJS",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 472,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 3694,
+      "output_tokens": 77,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.read --json - <<'JSON'\n{\"message\":\"msg_92badfe7cde3435a\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 328,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4163,
+      "output_tokens": 108,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"reply_to\":\"msg_92badfe7cde3435a\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 230,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4488,
+      "output_tokens": 128,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "bash",
+          "input": {
+            "command": "tools call mail.draft --json - <<'JSON'\n{\"to\":[\"dana@example.test\"],\"subject\":\"Re: Q3 budget numbers\",\"reply_to\":\"msg_92badfe7cde3435a\",\"body\":\"Hi Dana,\\n\\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\\n\\nThanks,\\nSam\"}\nJSON",
+            "timeout": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 210,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 4715,
+      "output_tokens": 145,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 8,
+    "tool_calls": 7,
+    "input_tokens": 5669,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 22241,
+    "output_tokens": 743
+  }
+}

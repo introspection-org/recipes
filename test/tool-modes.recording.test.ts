@@ -45,8 +45,10 @@ type Provider = keyof typeof PROVIDERS;
 const MODELS: ReadonlyArray<{ id: string; provider: Provider }> = [
   { id: "claude-haiku-5-5", provider: "anthropic" },
   { id: "claude-sonnet-5-5", provider: "anthropic" },
+  { id: "claude-opus-5-5", provider: "anthropic" },
   { id: "gpt-6-luna", provider: "openai" },
   { id: "gpt-6.1-sol", provider: "openai" },
+  { id: "gpt-6-astra", provider: "openai" },
 ];
 const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0]!.id;
 // What the tools told the model when a set was recorded: `flat`, before each

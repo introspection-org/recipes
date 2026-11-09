@@ -15,11 +15,13 @@ const MODES = [
 const MODELS = [
   ["claude-haiku-5-5", "Haiku 5.5", "anthropic"],
   ["claude-sonnet-5-5", "Sonnet 5.5", "anthropic"],
+  ["claude-opus-5-5", "Opus 5.5", "anthropic"],
   ["gpt-6-luna", "gpt-6-luna", "openai"],
   ["gpt-6.1-sol", "gpt-6.1-sol", "openai"],
+  ["gpt-6-astra", "gpt-6-astra", "openai"],
 ];
 // Categorical slots 1-4 in fixed order, validated for color-vision deficiency.
-const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"];
+const COLORS = ["#2a78d6", "#eb6834", "#6250d6", "#1baf7a", "#eda100", "#008300"];
 const SETS = ["flat", "signatures"];
 
 const catalogDir = join(

@@ -1,46 +1,64 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="424" viewBox="0 0 760 424" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="760" height="424" fill="#fcfcfb"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="552" viewBox="0 0 760 552" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="760" height="552" fill="#fcfcfb"/>
 <text x="16" y="26" font-size="15" font-weight="600" fill="#1f1f1d">Cost per 1,000 tasks, by tool mode</text>
 <rect x="16" y="38" width="10" height="10" rx="2" fill="#2a78d6"/><text x="30" y="47" font-size="12" fill="#45453f">Haiku 5.5</text>
 <rect x="105" y="38" width="10" height="10" rx="2" fill="#eb6834"/><text x="119" y="47" font-size="12" fill="#45453f">Sonnet 5.5</text>
-<rect x="201" y="38" width="10" height="10" rx="2" fill="#1baf7a"/><text x="215" y="47" font-size="12" fill="#45453f">gpt-6-luna</text>
-<rect x="297" y="38" width="10" height="10" rx="2" fill="#eda100"/><text x="311" y="47" font-size="12" fill="#45453f">gpt-6.1-sol</text>
-<text x="110" y="99" font-size="12" text-anchor="end" fill="#1f1f1d">tools</text>
-<rect x="120" y="64" width="23.35732626678501" height="14" rx="3" fill="#2a78d6"/>
-<text x="149.357326266785" y="75" font-size="11" fill="#45453f">1.69</text>
-<rect x="120" y="80" width="342.3587413808776" height="14" rx="3" fill="#eb6834"/>
-<text x="468.3587413808776" y="91" font-size="11" fill="#45453f">24.83</text>
-<rect x="120" y="96" width="10.290397140969048" height="14" rx="3" fill="#1baf7a"/>
-<text x="136.29039714096905" y="107" font-size="11" fill="#45453f">0.75</text>
-<rect x="120" y="112" width="303.3991847390338" height="14" rx="3" fill="#eda100"/>
-<text x="429.3991847390338" y="123" font-size="11" fill="#45453f">22.00</text>
-<text x="110" y="179" font-size="12" text-anchor="end" fill="#1f1f1d">tools + defer</text>
-<rect x="120" y="144" width="29.999161962386864" height="14" rx="3" fill="#2a78d6"/>
-<text x="155.99916196238686" y="155" font-size="11" fill="#45453f">2.18</text>
-<rect x="120" y="160" width="450" height="14" rx="3" fill="#eb6834"/>
-<text x="576" y="171" font-size="11" fill="#45453f">32.64</text>
-<rect x="120" y="176" width="16.625685725170655" height="14" rx="3" fill="#1baf7a"/>
-<text x="142.62568572517065" y="187" font-size="11" fill="#b3261e">1.21 · 4/5 drafted</text>
-<rect x="120" y="192" width="438.0494610718506" height="14" rx="3" fill="#eda100"/>
-<text x="564.0494610718506" y="203" font-size="11" fill="#45453f">31.77</text>
-<text x="110" y="259" font-size="12" text-anchor="end" fill="#1f1f1d">codemode</text>
-<rect x="120" y="224" width="23.527545954183182" height="14" rx="3" fill="#2a78d6"/>
-<text x="149.52754595418318" y="235" font-size="11" fill="#45453f">1.71</text>
-<rect x="120" y="240" width="324.14728013130787" height="14" rx="3" fill="#eb6834"/>
-<text x="450.14728013130787" y="251" font-size="11" fill="#45453f">23.51</text>
-<rect x="120" y="256" width="7.523034543900195" height="14" rx="3" fill="#1baf7a"/>
-<text x="133.5230345439002" y="267" font-size="11" fill="#45453f">0.55</text>
-<rect x="120" y="272" width="328.1036756196933" height="14" rx="3" fill="#eda100"/>
-<text x="454.1036756196933" y="283" font-size="11" fill="#45453f">23.80</text>
-<text x="110" y="339" font-size="12" text-anchor="end" fill="#1f1f1d">cli</text>
-<rect x="120" y="304" width="25.76665529536612" height="14" rx="3" fill="#2a78d6"/>
-<text x="151.76665529536612" y="315" font-size="11" fill="#45453f">1.87</text>
-<rect x="120" y="320" width="406.1409108411732" height="14" rx="3" fill="#eb6834"/>
-<text x="532.1409108411732" y="331" font-size="11" fill="#45453f">29.45</text>
-<rect x="120" y="336" width="7.427066214674497" height="14" rx="3" fill="#1baf7a"/>
-<text x="133.42706621467448" y="347" font-size="11" fill="#45453f">0.54</text>
-<rect x="120" y="352" width="263.81684511777974" height="14" rx="3" fill="#eda100"/>
-<text x="389.81684511777974" y="363" font-size="11" fill="#b3261e">19.13 · 0.7 errors/run</text>
-<line x1="120" y1="58" x2="120" y2="390" stroke="#d6d5ce"/>
-<text x="120" y="410" font-size="12" fill="#45453f">USD per 1,000 tasks at list price: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
+<rect x="201" y="38" width="10" height="10" rx="2" fill="#6250d6"/><text x="215" y="47" font-size="12" fill="#45453f">Opus 5.5</text>
+<rect x="283" y="38" width="10" height="10" rx="2" fill="#1baf7a"/><text x="297" y="47" font-size="12" fill="#45453f">gpt-6-luna</text>
+<rect x="379" y="38" width="10" height="10" rx="2" fill="#eda100"/><text x="393" y="47" font-size="12" fill="#45453f">gpt-6.1-sol</text>
+<rect x="482" y="38" width="10" height="10" rx="2" fill="#008300"/><text x="496" y="47" font-size="12" fill="#45453f">gpt-6-astra</text>
+<text x="110" y="115" font-size="12" text-anchor="end" fill="#1f1f1d">tools</text>
+<rect x="120" y="64" width="4.307940061712813" height="14" rx="3" fill="#2a78d6"/>
+<text x="130.30794006171283" y="75" font-size="11" fill="#45453f">1.69</text>
+<rect x="120" y="80" width="63.14339752018478" height="14" rx="3" fill="#eb6834"/>
+<text x="189.14339752018478" y="91" font-size="11" fill="#45453f">24.83</text>
+<rect x="120" y="96" width="110.45813663473024" height="14" rx="3" fill="#6250d6"/>
+<text x="236.45813663473024" y="107" font-size="11" fill="#45453f">43.43</text>
+<rect x="120" y="112" width="1.897923314859682" height="14" rx="3" fill="#1baf7a"/>
+<text x="127.89792331485968" y="123" font-size="11" fill="#45453f">0.75</text>
+<rect x="120" y="128" width="55.957838996620495" height="14" rx="3" fill="#eda100"/>
+<text x="181.9578389966205" y="139" font-size="11" fill="#45453f">22.00</text>
+<rect x="120" y="144" width="272.6468693368698" height="14" rx="3" fill="#008300"/>
+<text x="398.6468693368698" y="155" font-size="11" fill="#45453f">107.21</text>
+<text x="110" y="227" font-size="12" text-anchor="end" fill="#1f1f1d">tools + defer</text>
+<rect x="120" y="176" width="5.53293601157398" height="14" rx="3" fill="#2a78d6"/>
+<text x="131.53293601157398" y="187" font-size="11" fill="#45453f">2.18</text>
+<rect x="120" y="192" width="82.99635864261955" height="14" rx="3" fill="#eb6834"/>
+<text x="208.99635864261955" y="203" font-size="11" fill="#45453f">32.64</text>
+<rect x="120" y="208" width="170.4802899522649" height="14" rx="3" fill="#6250d6"/>
+<text x="296.4802899522649" y="219" font-size="11" fill="#45453f">67.04</text>
+<rect x="120" y="224" width="3.0663808336127687" height="14" rx="3" fill="#1baf7a"/>
+<text x="129.06638083361275" y="235" font-size="11" fill="#b3261e">1.21 · 4/5 drafted</text>
+<rect x="120" y="240" width="80.7922448318345" height="14" rx="3" fill="#eda100"/>
+<text x="206.7922448318345" y="251" font-size="11" fill="#45453f">31.77</text>
+<rect x="120" y="256" width="450" height="14" rx="3" fill="#008300"/>
+<text x="576" y="267" font-size="11" fill="#45453f">176.95</text>
+<text x="110" y="339" font-size="12" text-anchor="end" fill="#1f1f1d">codemode</text>
+<rect x="120" y="288" width="4.339334759986883" height="14" rx="3" fill="#2a78d6"/>
+<text x="130.33933475998688" y="299" font-size="11" fill="#45453f">1.71</text>
+<rect x="120" y="304" width="59.78454203290596" height="14" rx="3" fill="#eb6834"/>
+<text x="185.78454203290596" y="315" font-size="11" fill="#45453f">23.51</text>
+<rect x="120" y="320" width="136.62674297253818" height="14" rx="3" fill="#6250d6"/>
+<text x="262.6267429725382" y="331" font-size="11" fill="#45453f">53.72</text>
+<rect x="120" y="336" width="1.3875210513030112" height="14" rx="3" fill="#1baf7a"/>
+<text x="127.38752105130301" y="347" font-size="11" fill="#45453f">0.55</text>
+<rect x="120" y="352" width="60.51424518598617" height="14" rx="3" fill="#eda100"/>
+<text x="186.51424518598617" y="363" font-size="11" fill="#45453f">23.80</text>
+<rect x="120" y="368" width="357.20105265934006" height="14" rx="3" fill="#008300"/>
+<text x="483.20105265934006" y="379" font-size="11" fill="#45453f">140.46</text>
+<text x="110" y="451" font-size="12" text-anchor="end" fill="#1f1f1d">cli</text>
+<rect x="120" y="400" width="4.752307919811017" height="14" rx="3" fill="#2a78d6"/>
+<text x="130.75230791981102" y="411" font-size="11" fill="#45453f">1.87</text>
+<rect x="120" y="416" width="74.90714821247593" height="14" rx="3" fill="#eb6834"/>
+<text x="200.90714821247593" y="427" font-size="11" fill="#45453f">29.45</text>
+<rect x="120" y="432" width="189.2041948135618" height="14" rx="3" fill="#6250d6"/>
+<text x="315.2041948135618" y="443" font-size="11" fill="#45453f">74.40</text>
+<rect x="120" y="448" width="1.369821002701343" height="14" rx="3" fill="#1baf7a"/>
+<text x="127.36982100270134" y="459" font-size="11" fill="#45453f">0.54</text>
+<rect x="120" y="464" width="48.65741665191035" height="14" rx="3" fill="#eda100"/>
+<text x="174.65741665191035" y="475" font-size="11" fill="#b3261e">19.13 · 0.7 errors/run</text>
+<rect x="120" y="480" width="312.5728554043922" height="14" rx="3" fill="#008300"/>
+<text x="438.5728554043922" y="491" font-size="11" fill="#b3261e">122.91 · 2.0 errors/run</text>
+<line x1="120" y1="58" x2="120" y2="518" stroke="#d6d5ce"/>
+<text x="120" y="538" font-size="12" fill="#45453f">USD per 1,000 tasks at list price: lower is better. <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>
 </svg>
