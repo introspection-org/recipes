@@ -246,9 +246,7 @@ function chart(groups, value, title, unit, digits, log = false) {
   const H = top + groups.length * (groupH + groupGap) + 50;
   const values = groups.flatMap((g) => g.bars.map((b) => b.row[value]));
   const ciKey = value === "seconds" ? "secondsCI" : "costPerTaskCI";
-  const max = Math.max(
-    ...groups.flatMap((g) => g.bars.map((b) => b.row[value] + b.row[ciKey])),
-  );
+  const max = Math.max(...values);
   const lo = Math.floor(Math.log10(Math.min(...values)));
   const hi = Math.ceil(Math.log10(max));
   const x = log
@@ -256,10 +254,7 @@ function chart(groups, value, title, unit, digits, log = false) {
     : (v) => left + (v / max) * (W - left - right);
   const esc = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
-  svg += `<style>.ci{opacity:0;transition:opacity .1s}.bar:hover .ci{opacity:1}</style><defs>${[
-    "light",
-    "dark",
-  ]
+  svg += `<defs>${["light", "dark"]
     .map(
       (k) =>
         `<pattern id="win-${k}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2.5" height="6" fill="${k === "light" ? "#141413" : "#ffffff"}" opacity="${k === "light" ? 0.4 : 0.6}"/></pattern>`,
@@ -332,7 +327,6 @@ function chart(groups, value, title, unit, digits, log = false) {
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
-      svg += `<g class="bar">`;
       svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}${r.costPerTaskCI ? ` ± ${usd(r.costPerTaskCI)}` : ""}\nTime per task: ${fmt(r.seconds, 1)}s${r.secondsCI ? ` ± ${fmt(r.secondsCI, 1)}s` : ""}\nRuns: ${r.runs}\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
@@ -342,33 +336,12 @@ function chart(groups, value, title, unit, digits, log = false) {
         const fw = Math.max((w * r.failed) / r.runs, 3);
         svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>\n`;
       }
-      // The mean's 95% confidence interval, where the bar averages several runs.
-      const ci = r[ciKey];
-      if (ci > 0) {
-        const x0 = Math.max(
-          x(Math.max(r[value] - ci, log ? 10 ** -12 : 0)),
-          left,
-        );
-        const x1 = x(r[value] + ci);
-        const cy = y + barH / 2;
-        // Inside the bar the whisker takes the bar's contrasting ink, outside it the chart's.
-        const end = left + w;
-        const inner = light(color) ? "#141413" : "#ffffff";
-        const seg = (a, b, stroke) =>
-          a < b
-            ? `<line x1="${a}" y1="${cy}" x2="${b}" y2="${cy}" stroke="${stroke}"/>`
-            : "";
-        const cap = (cx) =>
-          `<line x1="${cx}" y1="${cy - 3.5}" x2="${cx}" y2="${cy + 3.5}" stroke="${cx < end ? inner : "#141413"}"/>`;
-        svg += `<g class="ci" stroke-width="1.2" stroke-opacity="0.75" pointer-events="none">${seg(x0, Math.min(x1, end), inner)}${seg(Math.max(x0, end), x1, "#141413")}${cap(x0)}${cap(x1)}</g>\n`;
-      }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${r[ciKey] > 0 ? `<tspan font-size="9.5" fill="#8a8880"> ±${Math.round((100 * r[ciKey]) / r[value])}%</tspan>` : ""}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
-      svg += `</g>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean, drawn on hover</text>\n`;
+  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean</text>\n`;
   return `${svg}</svg>\n`;
 }
 
