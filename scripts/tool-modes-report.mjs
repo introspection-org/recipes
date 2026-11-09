@@ -242,7 +242,11 @@ function chart(groups, value, title, unit, digits, log = false) {
     svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 26 + name.length * 7;
   });
-  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"} that passed</text>\n`;
+  svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${value === "seconds" ? "fastest" : "cheapest"}</text>\n`;
+  if (groups.some((g) => g.bars.some((b) => b.row.failed))) {
+    lx += 26 + (value === "seconds" ? 7 : 8) * 7;
+    svg += `<rect x="${lx}" y="41.5" width="10" height="3" rx="1.5" fill="#b3261e"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">errors</text>\n`;
+  }
   // A horizontal axis: 1-3 steps per decade on a log scale, round steps on a linear one.
   const ticks = log
     ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).flatMap((p) =>
@@ -298,7 +302,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#b3261e" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · <tspan fill="#b3261e">red line</tspan>: share of runs that failed</text>\n`;
+  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better</text>\n`;
   return `${svg}</svg>\n`;
 }
 

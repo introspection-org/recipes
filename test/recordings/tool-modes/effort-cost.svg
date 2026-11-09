@@ -7,7 +7,7 @@
 <rect x="105" y="38" width="10" height="10" rx="2" fill="#d97757" stroke="#0000001f"/><text x="119" y="47" font-size="12" fill="#5e5d59">Sonnet 5.5</text>
 <rect x="201" y="38" width="10" height="10" rx="2" fill="#c9c7be" stroke="#0000001f"/><text x="215" y="47" font-size="12" fill="#5e5d59">gpt-6-luna</text>
 <rect x="297" y="38" width="10" height="10" rx="2" fill="#77756e" stroke="#0000001f"/><text x="311" y="47" font-size="12" fill="#5e5d59">gpt-6.1-sol</text>
-<rect x="400" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="414" y="47" font-size="12" fill="#5e5d59">cheapest that passed</text>
+<rect x="400" y="38" width="10" height="10" rx="2" fill="url(#win-light)" stroke="#0000001f"/><text x="414" y="47" font-size="12" fill="#5e5d59">cheapest</text>
 <line x1="120" y1="58" x2="120" y2="310" stroke="#e8e6dc"/><text x="120" y="324" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0001</text>
 <line x1="191.5681882079494" y1="58" x2="191.5681882079494" y2="310" stroke="#e8e6dc"/><text x="191.5681882079494" y="324" font-size="10" text-anchor="middle" fill="#5e5d59">$0.0003</text>
 <line x1="270" y1="58" x2="270" y2="310" stroke="#e8e6dc"/><text x="270" y="324" font-size="10" text-anchor="middle" fill="#5e5d59">$0.001</text>
@@ -44,5 +44,5 @@
 <text x="245.90452910845818" y="267" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.000630 · cli</text>
 <rect x="120" y="272" width="352.8991415284731" height="14" rx="3" fill="#77756e" stroke="#0000001f"/>
 <text x="478.8991415284731" y="283" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#45453f">$0.0225 · cli</text>
-<text x="120" y="344" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better · <tspan fill="#b3261e">red line</tspan>: share of runs that failed</text>
+<text x="120" y="344" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better</text>
 </svg>
