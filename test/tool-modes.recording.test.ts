@@ -64,6 +64,8 @@ const effortOf = (set: string) => set.split("-")[1] ?? "low";
 const RECORD_SET = process.env.RECORD_SET ?? "signatures";
 // Trials per mode: one run is noise. Run 1 is `<mode>`, later runs `<mode>.<n>`.
 const RECORD_RUNS = Number(process.env.RECORD_RUNS ?? 1);
+// The first run to record, so more trials add to a cell rather than replace it.
+const RECORD_FROM = Number(process.env.RECORD_FROM ?? 1);
 const MAX_RUNS = 10;
 const RECORD_MODE = process.env.RECORD_MODE;
 const PROMPT =
@@ -268,6 +270,7 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
             RECORDING &&
             set === RECORD_SET &&
             model.id === RECORD_MODEL &&
+            run >= RECORD_FROM &&
             run <= RECORD_RUNS &&
             (RECORD_MODE === undefined || RECORD_MODE === mode);
           if (!record && !hasRecording(dir, name)) continue;

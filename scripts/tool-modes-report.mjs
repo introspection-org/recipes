@@ -110,6 +110,17 @@ function runs(set, id) {
 }
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+// Student's t at 95%, two-sided, by degrees of freedom; 1.96 past the table.
+const T95 = [12.71, 4.3, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
+/** Half the width of the mean's 95% confidence interval; 0 for one run. */
+const ci95 = (xs) => {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  const sd = Math.sqrt(
+    xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1),
+  );
+  return ((T95[xs.length - 2] ?? 1.96) * sd) / Math.sqrt(xs.length);
+};
 
 function row(id, provider, list) {
   const p = prices(id, provider);
@@ -141,7 +152,11 @@ function row(id, provider, list) {
     ),
     output: mean(list.map((r) => r.totals.output_tokens)),
     costPerTask: mean(cost),
+    costPerTaskCI: ci95(cost),
+    costs: cost,
     seconds: mean(list.map((r) => r.seconds)),
+    secondsCI: ci95(list.map((r) => r.seconds)),
+    times: list.map((r) => r.seconds),
   };
 }
 
@@ -168,12 +183,12 @@ const fmt = (n, d = 0) =>
     maximumFractionDigits: d,
   });
 
-const header = `| model | mode | drafted (errors) | req | input | cached | output | $ / task | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+const header = `| model (thinking level) | mode | drafted (errors) | req | input | cached | output | $ / task | time |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
 const line = (name, label, r) =>
   `| ${name} | ${label} | ${r.drafted}/${r.runs} (${fmt(r.errors, r.errors % 1 ? 1 : 0)}) | ${fmt(r.requests, 1)} | ${fmt(r.input)} | ${fmt(r.cached * 100)}% | ${fmt(r.output)} | ${usd(r.costPerTask)} | ${fmt(r.seconds, 1)}s |\n`;
 let md = "";
 // With signatures: every effort in one table, the effort beside the model.
-md += `### signatures\n\nEffort: (L) low, (M) medium, (H) high. Drafted: runs that drafted the reply, of all runs, with rejected calls per run.\n\n${header}`;
+md += `### signatures\n\nThinking level: (L) low, (M) medium, (H) high. Drafted: runs that drafted the reply, of all runs, with rejected calls per run.\n\n${header}`;
 for (const [id, name] of MODELS)
   for (const [set, effort] of EFFORTS)
     for (const [mode, label] of MODES) {
@@ -220,7 +235,10 @@ function chart(groups, value, title, unit, digits, log = false) {
   const groupH = present.length * (barH + gap) - gap;
   const H = top + groups.length * (groupH + groupGap) + 50;
   const values = groups.flatMap((g) => g.bars.map((b) => b.row[value]));
-  const max = Math.max(...values);
+  const ciKey = value === "seconds" ? "secondsCI" : "costPerTaskCI";
+  const max = Math.max(
+    ...groups.flatMap((g) => g.bars.map((b) => b.row[value] + b.row[ciKey])),
+  );
   const lo = Math.floor(Math.log10(Math.min(...values)));
   const hi = Math.ceil(Math.log10(max));
   const x = log
@@ -289,19 +307,31 @@ function chart(groups, value, title, unit, digits, log = false) {
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
       const color = COLORS[MODELS.findIndex(([m]) => m === id)];
-      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}\nTime per task: ${fmt(r.seconds, 1)}s\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}" stroke="#0000001f" data-href="${aaPage(id)}"><title>${esc(MODELS.find(([m]) => m === id)[1])} · ${esc(group.label)}${bar.note ? ` · ${esc(bar.note)}` : ""}\nCost per task: ${usd(r.costPerTask)}${r.costPerTaskCI ? ` ± ${usd(r.costPerTaskCI)}` : ""}\nTime per task: ${fmt(r.seconds, 1)}s${r.secondsCI ? ` ± ${fmt(r.secondsCI, 1)}s` : ""}\nRuns: ${r.runs}\nDrafted: ${r.drafted}/${r.runs}${r.failed ? `\nFailed runs: ${r.failed}/${r.runs}` : ""}${r.errors ? `\nRejected calls per run: ${fmt(r.errors, r.errors % 1 ? 1 : 0)}` : ""}\nRequests per task: ${fmt(r.requests, 1)}\nInput tokens: ${fmt(r.input)}\nCached: ${fmt(r.cached * 100)}%\nOutput tokens: ${fmt(r.output)}</title></rect>\n`;
       if (bar === winner)
         svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="url(#win-${light(color) ? "light" : "dark"})" pointer-events="none"/>\n`;
       if (r.failed) {
         const fw = Math.max((w * r.failed) / r.runs, 3);
         svg += `<rect x="${left}" y="${y}" width="${fw}" height="${barH}" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="${left}" y="${y + barH / 2 - 1.5}" width="${fw}" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>\n`;
       }
+      // The mean's 95% confidence interval, where the bar averages several runs.
+      const ci = r[ciKey];
+      if (ci > 0) {
+        const x0 = Math.max(
+          x(Math.max(r[value] - ci, log ? 10 ** -12 : 0)),
+          left,
+        );
+        const x1 = x(r[value] + ci);
+        const cy = y + barH / 2;
+        const whisker = `<line x1="${x0}" y1="${cy}" x2="${x1}" y2="${cy}"/><line x1="${x0}" y1="${cy - 3.5}" x2="${x0}" y2="${cy + 3.5}"/><line x1="${x1}" y1="${cy - 3.5}" x2="${x1}" y2="${cy + 3.5}"/>`;
+        svg += `<g pointer-events="none"><g stroke="#faf9f5" stroke-width="3" stroke-opacity="0.8">${whisker}</g><g stroke="#141413" stroke-width="1.2" stroke-opacity="0.7">${whisker}</g></g>\n`;
+      }
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = r.failed ? [`${r.failed}/${r.runs} runs failed`] : [];
-      svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
+      svg += `<text x="${Math.max(left + w, ci > 0 ? x(r[value] + ci) : 0) + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better</text>\n`;
+  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · whiskers: 95% confidence interval of the mean</text>\n`;
   return `${svg}</svg>\n`;
 }
 
@@ -365,8 +395,11 @@ function frontierPoints(set, effort) {
       ({ row }) => row && row.drafted === row.runs && row.errors === 0,
     );
     if (score === undefined || !passing.length) return [];
+    // The sweet spot: the passing mode with the least cost × time.
     const best = passing.reduce((a, b) =>
-      a.row.costPerTask <= b.row.costPerTask ? a : b,
+      a.row.costPerTask * a.row.seconds <= b.row.costPerTask * b.row.seconds
+        ? a
+        : b,
     );
     const all = MODES.map(([mode]) => table[set]?.[`${id}|${mode}`]).filter(
       Boolean,
@@ -404,6 +437,10 @@ function intelligence(efforts) {
   const points = efforts.flatMap((e) =>
     frontierPoints(EFFORTS.find(([, name]) => name === e)[0], e),
   );
+  // The recommendation: the best cost × time of any point, behind its dot.
+  const pick = points.reduce((a, b) =>
+    a.cost * a.row.seconds <= b.cost * b.row.seconds ? a : b,
+  );
   const W = 760;
   const H = 440;
   const left = 70;
@@ -422,7 +459,7 @@ function intelligence(efforts) {
   svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
   svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">Intelligence vs. cost per task (${many ? "by reasoning effort" : `${effort} effort`})</text>\n`;
   svg += brand(W);
-  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${many ? "per effort, low (L) to high (H)" : `at ${effort} effort, the effort the runs used`}; each model at its cheapest mode that passed every run</text>\n`;
+  svg += `<text x="16" y="46" font-size="12" fill="#5e5d59">${esc(lookup.index)} ${many ? "per effort, low (L) to high (H)" : `at ${effort} effort, the effort the runs used`}; each model at its passing mode with the best cost × time</text>\n`;
   for (let v = 0; v <= yMax; v += 10) {
     svg += `<line x1="${left}" y1="${y(v)}" x2="${W - right}" y2="${y(v)}" stroke="#e8e6dc"/><text x="${left - 8}" y="${y(v) + 4}" font-size="10" text-anchor="end" fill="#5e5d59">${v}</text>\n`;
   }
@@ -449,7 +486,8 @@ function intelligence(efforts) {
   svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
   svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">Pareto line</text>\n`;
   if (points.some((p) => p.failed))
-    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, across the model's tool modes</text>\n`;
+    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">runs failed, all modes</text>\n`;
+  svg += `<circle cx="${W - right - 126}" cy="${top + 34}" r="6" fill="#e6ff00" stroke="#c5d900"/><text x="${W - right - 106}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
@@ -485,6 +523,7 @@ function intelligence(efforts) {
     point.dy = [4, 20, -12].find((dy) => !hits(box(dy))) ?? 4;
     placed.push(box(point.dy));
   }
+  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score)}" r="13" fill="#e6ff00" stroke="#c5d900" pointer-events="none"/>\n`;
   for (const point of points) {
     svg += dot(point, x(point.cost), y(point.score));
     if (many)
