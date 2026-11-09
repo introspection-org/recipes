@@ -1,0 +1,150 @@
+{
+  "model": "openai/gpt-6.1-sol",
+  "prompt": "What's on my calendar tomorrow, and did Dana email about the budget? Find the budget spreadsheet in my Drive, then draft a reply to Dana saying I'll bring it to the meeting, with a link to the sheet. Don't send it.",
+  "requests": [
+    {
+      "input_tokens": 608,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 46,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "read",
+          "input": {
+            "path": "/repo/skills/productivity/SKILL.md",
+            "offset": null,
+            "limit": null
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1496,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 27,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "+mail +calendar +drive command",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 3680,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1493,
+      "output_tokens": 29,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "search",
+            "from": "Dana",
+            "query": "budget",
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 3765,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 1616,
+      "output_tokens": 29,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "drive search files and current time timezone profile",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1069,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5378,
+      "output_tokens": 66,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "read",
+            "message": "msg_334ac49017054bf2"
+          }
+        },
+        {
+          "name": "drive",
+          "input": {
+            "command": "search",
+            "query": "budget",
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 1415,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 5460,
+      "output_tokens": 44,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "tool_search",
+          "input": {
+            "query": "current date time user timezone profile",
+            "limit": 2
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 63,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6872,
+      "output_tokens": 149,
+      "stop_reason": "completed",
+      "tool_calls": [
+        {
+          "name": "mail",
+          "input": {
+            "command": "draft",
+            "to": [
+              "dana@example.test"
+            ],
+            "subject": "Re: Q3 budget numbers",
+            "body": "Hi Dana,\n\nI'll bring the latest [Q3 Budget spreadsheet](https://docs.example.test/spreadsheets/d/f-budget) to the planning review, including the Q3 travel line for Finance.\n\nThanks,\nSam",
+            "reply_to": "msg_334ac49017054bf2"
+          }
+        }
+      ]
+    },
+    {
+      "input_tokens": 229,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6932,
+      "output_tokens": 102,
+      "stop_reason": "completed",
+      "tool_calls": []
+    }
+  ],
+  "totals": {
+    "requests": 8,
+    "tool_calls": 8,
+    "input_tokens": 12325,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 27751,
+    "output_tokens": 492
+  }
+}

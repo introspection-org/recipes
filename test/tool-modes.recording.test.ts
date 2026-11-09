@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -53,8 +53,15 @@ const MODELS: ReadonlyArray<{ id: string; provider: Provider }> = [
 const RECORD_MODEL = process.env.RECORD_MODEL ?? MODELS[0]!.id;
 // What the tools told the model when a set was recorded: `flat`, before each
 // command's signature was in its description; `signatures`, after.
-const SETS = ["flat", "signatures"] as const;
-const RECORD_SET = process.env.RECORD_SET ?? SETS.at(-1);
+// The fixture runs at low effort; a `-<effort>` set records the same at another.
+const SETS = [
+  "flat",
+  "signatures",
+  "signatures-medium",
+  "signatures-high",
+] as const;
+const effortOf = (set: string) => set.split("-")[1] ?? "low";
+const RECORD_SET = process.env.RECORD_SET ?? "signatures";
 // Trials per mode: one run is noise. Run 1 is `<mode>`, later runs `<mode>.<n>`.
 const RECORD_RUNS = Number(process.env.RECORD_RUNS ?? 1);
 const MAX_RUNS = 10;
@@ -236,6 +243,8 @@ function localPaths(): Array<[string, string]> {
     [realpathSync(tmpdir()), "/tmp"],
     [tmpdir(), "/tmp"],
     [homedir(), "/home/user"],
+    // A shell listing names the file owner on its own, outside any path.
+    [userInfo().username, "user"],
   ];
   return paths.sort(([a], [b]) => b.length - a.length);
 }
@@ -276,10 +285,15 @@ describe("Google tools per tool mode, on a real model (recorded)", () => {
             const agentPath = join(fixture.recipeDir, "agents", "agent.yaml");
             writeFileSync(
               agentPath,
-              readFileSync(agentPath, "utf8").replace(
-                "anthropic/claude-sonnet-4-5",
-                `${model.provider}/${model.id}`,
-              ),
+              readFileSync(agentPath, "utf8")
+                .replace(
+                  "anthropic/claude-sonnet-4-5",
+                  `${model.provider}/${model.id}`,
+                )
+                .replace(
+                  "thinking_level: low",
+                  `thinking_level: ${effortOf(set)}`,
+                ),
             );
             const credentials = new InMemoryCredentialStore();
             await credentials.modify(model.provider, async () => ({
