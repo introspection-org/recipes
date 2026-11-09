@@ -20,8 +20,10 @@ const MODELS = [
   ["gpt-6.1-sol", "gpt-6.1-sol", "openai"],
   ["gpt-6-astra", "gpt-6-astra", "openai"],
 ];
-// Categorical slots 1-4 in fixed order, validated for color-vision deficiency.
-const COLORS = ["#2a78d6", "#eb6834", "#6250d6", "#1baf7a", "#eda100", "#008300"];
+// One ramp per provider, darker for the more capable model: Anthropic's orange,
+// OpenAI's grays. Adjacent shades are validated for color-vision deficiency;
+// every bar carries its value, which the palest shades need.
+const COLORS = ["#f6bd9d", "#d97757", "#8a3618", "#c9c7be", "#77756e", "#141413"];
 const SETS = ["flat", "signatures"];
 
 const catalogDir = join(
@@ -174,22 +176,22 @@ function chart(set, value, title, unit, digits) {
   const x = (v) => left + (v / max) * (W - left - right);
   const esc = (s) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">\n`;
-  svg += `<rect width="${W}" height="${H}" fill="#fcfcfb"/>\n`;
-  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#1f1f1d">${esc(title)}</text>\n`;
+  svg += `<rect width="${W}" height="${H}" fill="#faf9f5"/>\n`;
+  svg += `<text x="16" y="26" font-size="15" font-weight="600" fill="#141413">${esc(title)}</text>\n`;
   let lx = 16;
   present.forEach(([, name], i) => {
-    svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}"/><text x="${lx + 14}" y="47" font-size="12" fill="#45453f">${esc(name)}</text>\n`;
+    svg += `<rect x="${lx}" y="38" width="10" height="10" rx="2" fill="${COLORS[MODELS.findIndex(([, n]) => n === name)]}" stroke="#0000001f"/><text x="${lx + 14}" y="47" font-size="12" fill="#5e5d59">${esc(name)}</text>\n`;
     lx += 26 + name.length * 7;
   });
   MODES.forEach(([mode, label], g) => {
     const gy = top + g * (groupH + groupGap);
-    svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#1f1f1d">${esc(label)}</text>\n`;
+    svg += `<text x="${left - 10}" y="${gy + groupH / 2 + 4}" font-size="12" text-anchor="end" fill="#141413">${esc(label)}</text>\n`;
     present.forEach(([id], i) => {
       const r = table[set]?.[`${id}|${mode}`];
       if (!r) return;
       const y = gy + i * (barH + gap);
       const w = Math.max(x(r[value]) - left, 1);
-      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${COLORS[MODELS.findIndex(([m]) => m === id)]}"/>\n`;
+      svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${COLORS[MODELS.findIndex(([m]) => m === id)]}" stroke="#0000001f"/>\n`;
       // Quality rides on the label: a bar that didn't finish every run, or made rejected calls, says so.
       const quality = [
         ...(r.drafted < r.runs ? [`${r.drafted}/${r.runs} drafted`] : []),
@@ -198,8 +200,8 @@ function chart(set, value, title, unit, digits) {
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" fill="${quality.length ? "#b3261e" : "#45453f"}">${fmt(r[value], digits)}${unit}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<line x1="${left}" y1="${top - 6}" x2="${left}" y2="${H - 34}" stroke="#d6d5ce"/>\n`;
-  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#45453f">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : "USD per 1,000 tasks at list price: lower is better.")} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
+  svg += `<line x1="${left}" y1="${top - 6}" x2="${left}" y2="${H - 34}" stroke="#e8e6dc"/>\n`;
+  svg += `<text x="${left}" y="${H - 14}" font-size="12" fill="#5e5d59">${esc(value === "seconds" ? "Seconds of model time per task: lower is better." : "USD per 1,000 tasks at list price: lower is better.")} <tspan fill="#b3261e">Red</tspan>: missed drafts or rejected calls.</text>\n`;
   return `${svg}</svg>\n`;
 }
 
