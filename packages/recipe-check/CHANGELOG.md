@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.23.0...introspection-recipe-check-v0.24.0) (2026-11-09)
+
+
+### Features
+
+* **agents:** an agent's tools block chooses how first-party tools reach the model, with an MCP server's selectors ([#481](https://github.com/introspection-org/recipes/issues/481)) ([afefae4](https://github.com/introspection-org/recipes/commit/afefae4bbef05ed59c219e6a6cd04c0f5fa2fbe7))
+* **documents:** an html format that reads a page as markdown and renders it and its charts to images ([#490](https://github.com/introspection-org/recipes/issues/490)) ([0b4cfda](https://github.com/introspection-org/recipes/commit/0b4cfda8ee1bdbeda1e2df14f3bb3c1b493e325b))
+* **issues:** one issues tool across Linear, Jira and Introspection, in @introspection-ai/recipe-issues ([#479](https://github.com/introspection-org/recipes/issues/479)) ([2f9f6cb](https://github.com/introspection-org/recipes/commit/2f9f6cbd7c7e20cc4cf5bafa923cafbbb83661a9))
+* **providers:** one loader for search and productivity providers, with a Recipe's own by package or module ([#478](https://github.com/introspection-org/recipes/issues/478)) ([76714fb](https://github.com/introspection-org/recipes/commit/76714fb608a9fac4ddecae307f72c39d989b030e))
+* **recipe-check:** accept a committed .pi/api.local.json only as an evaluation binding ([#495](https://github.com/introspection-org/recipes/issues/495)) ([d812086](https://github.com/introspection-org/recipes/commit/d81208647d47deb9780ad7f20a4ccb0c8c464f78))
+* **session:** every agent knows the current date and the person's timezone ([#494](https://github.com/introspection-org/recipes/issues/494)) ([ba7ef7b](https://github.com/introspection-org/recipes/commit/ba7ef7b0189fca801504d80d0baf5a1f4e17a533))
+
 ## [0.23.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.22.0...introspection-recipe-check-v0.23.0) (2026-11-08)
 
 
