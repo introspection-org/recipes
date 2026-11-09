@@ -328,6 +328,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             .map(|policy| policy.into_keys().collect())
             .unwrap_or_default();
         validate_mcp_local_config(&declared_mcp_servers, &mut ctx);
+        validate_api_local_config(&mut ctx);
         validate_mcp_local_example(&mut ctx);
 
         let mcp_tool_policy = package
@@ -722,6 +723,116 @@ fn non_evaluation_binding_reasons(content: &str, declared: &BTreeSet<String>) ->
         }
     }
     reasons
+}
+
+const API_LOCAL_CONFIG: &str = ".pi/api.local.json";
+const API_LOCAL_CONFIG_HELP: &str = "commit only evaluation bindings in .pi/api.local.json: {\"apis\":[{\"host\",\"url\",\"headers\"?}]}, every host a bare hostname, once, bound to a loopback or single-label host such as http://localhost:<port>/<vendor> or a compose service's http://fakes:<port>/<vendor>, with literal header values only; keep any other local configuration out of the Recipe";
+
+/// A committed `.pi/api.local.json` is accepted only as an evaluation binding:
+/// every vendor host is sent to a loopback address or a compose service, so
+/// the file can stand a fake in for a vendor API and nothing else. Whether a
+/// host is one the Recipe's modules call is module data, checked at run time.
+fn validate_api_local_config(ctx: &mut CheckContext) {
+    if !ctx.has_file(API_LOCAL_CONFIG) {
+        return;
+    }
+    let Some(content) = ctx.content(API_LOCAL_CONFIG).map(str::to_owned) else {
+        ctx.error(
+            LOCAL_CONFIG_PRESENT,
+            API_LOCAL_CONFIG,
+            "Local capability configuration must not be distributed with a Recipe: .pi/api.local.json content was not provided, so it cannot be accepted as an evaluation binding",
+            Some(API_LOCAL_CONFIG_HELP),
+        );
+        return;
+    };
+    for reason in non_evaluation_api_binding_reasons(&content) {
+        ctx.error(
+            LOCAL_CONFIG_PRESENT,
+            API_LOCAL_CONFIG,
+            format!(
+                "Local capability configuration must not be distributed with a Recipe: {reason}"
+            ),
+            Some(API_LOCAL_CONFIG_HELP),
+        );
+    }
+}
+
+/// Everything in a `.pi/api.local.json` that makes it more than an evaluation
+/// binding. Empty means every entry binds a bare hostname, named once, to a
+/// loopback or single-label HTTP(S) URL with literal headers.
+fn non_evaluation_api_binding_reasons(content: &str) -> Vec<String> {
+    let parsed: JsonValue = match serde_json::from_str(content) {
+        Ok(value) => value,
+        Err(err) => return vec![format!(".pi/api.local.json is not valid JSON: {err}")],
+    };
+    let JsonValue::Object(map) = parsed else {
+        return vec![".pi/api.local.json must be an object".to_owned()];
+    };
+    let mut reasons: Vec<String> = map
+        .keys()
+        .filter(|key| key.as_str() != "apis")
+        .map(|key| format!(".pi/api.local.json has unknown field '{key}'"))
+        .collect();
+    let Some(apis) = map.get("apis") else {
+        reasons.push(".pi/api.local.json must have an apis array".to_owned());
+        return reasons;
+    };
+    let JsonValue::Array(apis) = apis else {
+        reasons.push("apis must be an array".to_owned());
+        return reasons;
+    };
+    let mut seen = BTreeSet::new();
+    for (index, api) in apis.iter().enumerate() {
+        let JsonValue::Object(api) = api else {
+            reasons.push(format!("apis[{index}] must be an object"));
+            continue;
+        };
+        for key in api.keys() {
+            if !matches!(key.as_str(), "host" | "url" | "headers") {
+                reasons.push(format!("apis[{index}] has unknown field '{key}'"));
+            }
+        }
+        match api.get("host").and_then(JsonValue::as_str) {
+            Some(host) if is_bare_hostname(host) => {
+                if !seen.insert(host.to_ascii_lowercase()) {
+                    reasons.push(format!(
+                        "apis[{index}].host \"{host}\" is bound more than once"
+                    ));
+                }
+            }
+            _ => reasons.push(format!(
+                "apis[{index}].host must be a bare hostname such as graph.microsoft.com, without scheme, port or path"
+            )),
+        }
+        match api.get("url").and_then(JsonValue::as_str) {
+            Some(url) if is_evaluation_http_url(url) => {}
+            _ => reasons.push(format!(
+                "apis[{index}].url must be an absolute HTTP(S) URL to a loopback host (localhost, 127.0.0.0/8 or ::1) or a single-label compose service name; an environment reference is not expanded in a committed binding"
+            )),
+        }
+        match api.get("headers") {
+            None => {}
+            Some(JsonValue::Object(headers)) => {
+                for (key, value) in headers {
+                    match value {
+                        JsonValue::String(value) if !value.contains("${") => {}
+                        JsonValue::String(_) => reasons.push(format!(
+                            "apis[{index}].headers.{key} must be a literal; an environment reference is not expanded in a committed binding"
+                        )),
+                        _ => reasons.push(format!("apis[{index}].headers.{key} must be a string")),
+                    }
+                }
+            }
+            Some(_) => reasons.push(format!("apis[{index}].headers must be an object")),
+        }
+    }
+    reasons
+}
+
+/// A hostname alone: dot-separated DNS labels, no scheme, port, path or
+/// trailing dot.
+fn is_bare_hostname(host: &str) -> bool {
+    !host.is_empty() && host.len() <= 253 && host.split('.').all(is_dns_label)
 }
 
 /// A loopback address, or a single DNS label such as a compose service name: a
@@ -8232,6 +8343,117 @@ mod tests {
                 .any(|diagnostic| diagnostic.code == "package.local_config_present");
             assert_eq!(!rejected, accepted, "{content}: {:?}", report.diagnostics);
         }
+    }
+
+    #[test]
+    fn a_committed_api_binding_is_accepted_only_as_an_evaluation_binding() {
+        for (content, accepted) in [
+            (r#"{"apis":[]}"#, true),
+            (
+                r#"{"apis":[{"host":"graph.microsoft.com","url":"http://localhost:7353/microsoft","headers":{"X-Fake":"1"}},{"host":"api.attio.com","url":"http://fakes:7353/attio"}]}"#,
+                true,
+            ),
+            (
+                r#"{"apis":[{"host":"Api.Example.com","url":"https://[::1]:8443"}]}"#,
+                true,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://127.0.0.1:1/x"}]}"#,
+                true,
+            ),
+            (r#"{}"#, false),
+            (r#"{"apis":[],"extra":1}"#, false),
+            (r#"{"apis":{}}"#, false),
+            (r#"{"apis":["a"]}"#, false),
+            (r#"[]"#, false),
+            (r#"{"#, false),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://localhost","x":1}]}"#,
+                false,
+            ),
+            (r#"{"apis":[{"url":"http://localhost"}]}"#, false),
+            (r#"{"apis":[{"host":"","url":"http://localhost"}]}"#, false),
+            (
+                r#"{"apis":[{"host":"https://api.example.com","url":"http://localhost"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com:443","url":"http://localhost"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com/v1","url":"http://localhost"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://localhost"},{"host":"API.example.com","url":"http://fakes"}]}"#,
+                false,
+            ),
+            (r#"{"apis":[{"host":"api.example.com"}]}"#, false),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"https://staging.example.com"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://10.0.0.1"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"${API_URL}"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"ws://localhost"}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://localhost","headers":{"X":1}}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://localhost","headers":{"Authorization":"Bearer ${TOKEN}"}}]}"#,
+                false,
+            ),
+            (
+                r#"{"apis":[{"host":"api.example.com","url":"http://localhost","headers":[]}]}"#,
+                false,
+            ),
+        ] {
+            let input = recipe_files(&[
+                ("package.json", r#"{"name":"api-config-recipe","pi":{}}"#),
+                (".pi/api.local.json", content),
+            ]);
+
+            let report = check_recipe_files(&input);
+            let rejected = report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "package.local_config_present");
+            assert_eq!(!rejected, accepted, "{content}: {:?}", report.diagnostics);
+        }
+    }
+
+    #[test]
+    fn a_committed_api_binding_without_content_is_rejected() {
+        let input = RecipeFiles {
+            files: vec![
+                RecipeFile::new("package.json", r#"{"name":"api-config-recipe","pi":{}}"#),
+                RecipeFile {
+                    path: ".pi/api.local.json".to_owned(),
+                    content: None,
+                },
+            ],
+            directories: Vec::new(),
+        };
+
+        let report = check_recipe_files(&input);
+        assert!(report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "package.local_config_present"
+                && diagnostic
+                    .help
+                    .as_deref()
+                    .is_some_and(|help| help.contains(".pi/api.local.json"))
+        }));
     }
 
     #[test]
