@@ -429,7 +429,7 @@ const dial = (cx, cy, r, share) => {
 };
 
 const dot = (p, cx, cy, r = 7, pick = false) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended: the best cost × time of any setting, and every run passed" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
 
 function intelligence(efforts) {
   const many = efforts.length > 1;
