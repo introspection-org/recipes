@@ -8,8 +8,8 @@ export interface HtmlChart {
   /** 1-based, in document order; `read` marks it `[chart N]` and `render` takes it in `pages`. */
   number: number;
   label: string;
-  /** The SVG to render without a browser, with the page's `<style>` rules copied in; absent for a figure with no inline SVG. */
-  svg?: string;
+  /** Each panel's SVG to render without a browser, with the page's `<style>` rules copied in; empty for a figure with no inline SVG. */
+  svgs: string[];
 }
 
 export interface HtmlPage {
@@ -83,14 +83,17 @@ export async function loadPage(path: string): Promise<HtmlPage> {
     .join("\n");
   const elements = findCharts(document);
   const charts = elements.map((element, index): HtmlChart => {
-    const svg =
+    // A figure may hold several panels; an SVG nested inside another is part of it.
+    const panels =
       element.localName.toLowerCase() === "svg"
-        ? element
-        : element.querySelector("svg");
+        ? [element]
+        : Array.from(element.querySelectorAll("svg")).filter(
+            (svg) => !svg.parentElement?.closest("svg"),
+          );
     return {
       number: index + 1,
       label: chartLabel(element),
-      ...(svg ? { svg: standaloneSvg(svg, styles) } : {}),
+      svgs: panels.map((svg) => standaloneSvg(svg, styles)),
     };
   });
   const title =

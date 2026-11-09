@@ -143,37 +143,43 @@ export class ResvgHtmlRenderer implements HtmlRenderer {
         reason: "drawing the whole page needs a browser",
       });
     for (const chart of request.charts) {
-      if (!chart.svg) {
+      if (chart.svgs.length === 0) {
         skipped.push({
           label: chartLabel(chart),
           reason: "a figure with no inline <svg>, which needs a browser",
         });
         continue;
       }
-      let rendered;
-      try {
-        rendered = new Resvg(chart.svg, {
-          fitTo: { mode: "zoom", value: RENDER_SCALE },
-          background: "white",
-        }).render();
-      } catch (error) {
-        skipped.push({
-          label: chartLabel(chart),
-          reason: `resvg could not draw it: ${error instanceof Error ? error.message : String(error)}`,
+      for (const [index, svg] of chart.svgs.entries()) {
+        const many = chart.svgs.length > 1;
+        const label = many
+          ? `${chartLabel(chart)}, panel ${index + 1} of ${chart.svgs.length}`
+          : chartLabel(chart);
+        let rendered;
+        try {
+          rendered = new Resvg(svg, {
+            fitTo: { mode: "zoom", value: RENDER_SCALE },
+            background: "white",
+          }).render();
+        } catch (error) {
+          skipped.push({
+            label,
+            reason: `resvg could not draw it: ${error instanceof Error ? error.message : String(error)}`,
+          });
+          continue;
+        }
+        const path = join(
+          request.outputDir,
+          `${request.stem}-chart-${chart.number}${many ? `-panel-${index + 1}` : ""}.png`,
+        );
+        await writeFile(path, rendered.asPng());
+        images.push({
+          label,
+          path,
+          width: rendered.width,
+          height: rendered.height,
         });
-        continue;
       }
-      const path = join(
-        request.outputDir,
-        `${request.stem}-chart-${chart.number}.png`,
-      );
-      await writeFile(path, rendered.asPng());
-      images.push({
-        label: chartLabel(chart),
-        path,
-        width: rendered.width,
-        height: rendered.height,
-      });
     }
     return { images, skipped };
   }

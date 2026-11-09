@@ -69,7 +69,12 @@ function decodePng(path: string): { width: number; height: number } {
 
 beforeAll(() => {
   cwd = mkdtempSync(join(tmpdir(), "documents-html-"));
-  for (const name of ["results.html", "no-charts.html", "trend.svg"])
+  for (const name of [
+    "results.html",
+    "no-charts.html",
+    "panels.html",
+    "trend.svg",
+  ])
     copyFileSync(join(fixtures, name), join(cwd, name));
 });
 
@@ -151,6 +156,25 @@ describe("html adapter: render without a browser (resvg)", () => {
     expect(result.details.images).toHaveLength(1);
     expect(result.details.images[0]).toMatch(/results-chart-2\.png$/);
     expect(result.details.skipped).toEqual([]);
+  });
+
+  it("renders every panel of a figure that holds several SVGs", async () => {
+    const result = await tool().execute("4b", {
+      command: "render",
+      path: "panels.html",
+    });
+    expect(result.details.images).toHaveLength(2);
+    expect(result.details.images[0]).toMatch(/panels-chart-1-panel-1\.png$/);
+    expect(result.details.images[1]).toMatch(/panels-chart-1-panel-2\.png$/);
+    expect(decodePng(result.details.images[0])).toEqual({
+      width: 400,
+      height: 200,
+    });
+    expect(decodePng(result.details.images[1])).toEqual({
+      width: 600,
+      height: 300,
+    });
+    expect(text(result)).toContain("panel 2 of 2");
   });
 
   it("renders a standalone .svg file", async () => {
