@@ -3,7 +3,7 @@
 // into report.md and two charts, cost.svg and time.svg, for the newest set.
 // Prices come from Pi's model catalog, so cost follows the recorded model.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const DIR = join(import.meta.dirname, "..", "test", "recordings", "tool-modes");
 const MODES = [
@@ -351,6 +351,15 @@ function intelligence(set) {
   }
   for (const point of points) {
     svg += `<text x="${x(point.cost) + 11}" y="${y(point.score) + point.dy}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(point.name)} · ${esc(point.mode)} · ${usd(point.cost)}</text>\n`;
+  }
+  // The source's logo, as its own chart carries it: only the file's shapes are kept.
+  if (lookup.logo) {
+    const paths =
+      readFileSync(
+        join(dirname(process.env.INTELLIGENCE_JSON), lookup.logo),
+        "utf8",
+      ).match(/<path\b[^>]*\/>/g) ?? [];
+    svg += `<g transform="translate(${W - right - 150} ${top + 30}) scale(0.34)">${paths.join("")}</g><text x="${W - right - 128}" y="${top + 44}" font-size="13" font-family="Georgia, serif" fill="#5e5d59">${esc(lookup.credit ?? "")}</text>\n`;
   }
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
   svg += `<text x="${left}" y="${H - 16}" font-size="11" fill="#5e5d59">Index scores: ${esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
