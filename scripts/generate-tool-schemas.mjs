@@ -1,0 +1,107 @@
+// Writes the JSON Schema of each first-party command tool's arguments from
+// the TypeScript types that declare them. `--check` fails when a generated
+// file is stale instead of writing it.
+import { readFileSync, writeFileSync } from "node:fs";
+
+import * as prettier from "prettier";
+import { createGenerator } from "ts-json-schema-generator";
+
+const root = new URL("../", import.meta.url);
+const SOURCES = [
+  {
+    source: "src/productivity/arguments.ts",
+    output: "src/productivity/arguments.generated.ts",
+    tools: {
+      Mail: "MAIL_ARGUMENTS",
+      Calendar: "CALENDAR_ARGUMENTS",
+      Drive: "DRIVE_ARGUMENTS",
+    },
+  },
+  {
+    source: "src/channels/arguments.ts",
+    output: "src/channels/arguments.generated.ts",
+    tools: { Channels: "CHANNELS_ARGUMENTS" },
+  },
+];
+
+const snake = (name) =>
+  name.replace(/(?<!^)[A-Z]/g, (letter) => `_${letter}`).toLowerCase();
+
+/** The schema of one command's arguments, inlined and in a fixed key order. */
+function commandSchema(generator, type) {
+  const { properties = {}, required = [] } = generator.createSchema(type);
+  return {
+    type: "object",
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+}
+
+async function generate({ source, output, tools }) {
+  const text = readFileSync(new URL(source, root), "utf8");
+  const generator = createGenerator({
+    path: new URL(source, root).pathname,
+    tsconfig: new URL("tsconfig.json", root).pathname,
+    skipTypeCheck: true,
+    expose: "none",
+    topRef: false,
+    jsDoc: "extended",
+    additionalProperties: false,
+  });
+  const imports = [];
+  const blocks = [];
+  for (const [prefix, constant] of Object.entries(tools)) {
+    const pattern = new RegExp(
+      `^export (?:interface|type) (${prefix}(\\w+)Arguments)\\b`,
+      "gm",
+    );
+    const entries = [...text.matchAll(pattern)].map(([, type, command]) => {
+      imports.push(type);
+      return `  ${snake(command)}: ${JSON.stringify(commandSchema(generator, type))} as ArgumentsSchema<${type}>,`;
+    });
+    if (entries.length === 0)
+      throw new Error(`${source} declares no ${prefix} commands`);
+    blocks.push(`export const ${constant} = {\n${entries.join("\n")}\n};`);
+  }
+  const from = `./${source.split("/").pop().replace(/\.ts$/, ".js")}`;
+  const module = [
+    `// Generated from ${source} by scripts/generate-tool-schemas.mjs; do not edit.`,
+    `import type { ArgumentsSchema } from "../command-parameters.js";`,
+    `import type { ${imports.join(", ")} } from "${from}";`,
+    "",
+    ...blocks,
+    "",
+  ].join("\n");
+  const path = new URL(output, root);
+  const options = (await prettier.resolveConfig(path.pathname)) ?? {};
+  return {
+    output,
+    path,
+    content: await prettier.format(module, {
+      ...options,
+      filepath: path.pathname,
+    }),
+  };
+}
+
+const check = process.argv.includes("--check");
+const stale = [];
+for (const entry of SOURCES) {
+  const { output, path, content } = await generate(entry);
+  let current;
+  try {
+    current = readFileSync(path, "utf8");
+  } catch {
+    current = undefined;
+  }
+  if (current === content) continue;
+  if (check) stale.push(output);
+  else writeFileSync(path, content);
+}
+if (stale.length > 0) {
+  console.error(
+    `Stale tool schemas: ${stale.join(", ")}. Run pnpm schemas and commit the result.`,
+  );
+  process.exit(1);
+}

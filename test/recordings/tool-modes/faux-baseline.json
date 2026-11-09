@@ -1,7 +1,7 @@
 {
   "tools": {
     "systemPromptBytes": 849,
-    "toolsBytes": 22187,
+    "toolsBytes": 21933,
     "tools": [
       "calendar",
       "drive",
@@ -19,7 +19,7 @@
   },
   "codemode": {
     "systemPromptBytes": 849,
-    "toolsBytes": 11057,
+    "toolsBytes": 12872,
     "tools": [
       "codemode",
       "read"
@@ -27,7 +27,7 @@
   },
   "cli": {
     "systemPromptBytes": 849,
-    "toolsBytes": 1294,
+    "toolsBytes": 1641,
     "tools": [
       "bash",
       "read"
