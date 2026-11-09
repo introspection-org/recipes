@@ -591,16 +591,14 @@ function intelligence(efforts, byMode = false) {
   for (const point of points) {
     svg += `<text x="${point.flip ? x(point.cost) - 11 : x(point.cost) + 11}" y="${y(point.score) + point.dy}" text-anchor="${point.flip ? "end" : "start"}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#141413">${esc(label(point))}</text>\n`;
   }
-  // The modes' key, in the lower-right quadrant.
-  if (byMode) {
-    const kx = W - right - 150;
-    const ky = H - bottom - 18 - MODES.length * 18;
-    svg += `<text x="${kx}" y="${ky}" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>\n`;
+  // The modes' key: two columns and two rows at the foot of the lower-right
+  // quadrant, in the same columns as the legend above.
+  if (byMode)
     MODES.forEach(([, label], k) => {
-      const cy = ky + 14 + k * 18;
-      svg += `<circle cx="${kx + 7}" cy="${cy}" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="${kx + 7}" y="${cy + 3.5}" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">${k + 1}</text><text x="${kx + 20}" y="${cy + 4}" font-size="11" fill="#5e5d59">${esc(label)}</text>\n`;
+      const cx = W - right - (k % 2 ? 126 : 294);
+      const cy = H - bottom - 34 + Math.floor(k / 2) * 20;
+      svg += `<circle cx="${cx}" cy="${cy}" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="${cx}" y="${cy + 3.5}" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">${k + 1}</text><text x="${cx + 11}" y="${cy + 4}" font-size="11" fill="#5e5d59">${esc(label)}</text>\n`;
     });
-  }
   // The source's logo, as its own chart carries it: only the file's shapes are kept.
   svg += `<text x="${left}" y="${H - 34}" font-size="12" fill="#5e5d59">USD per task at list price, log scale. Up and to the left is better.</text>\n`;
   // The credit line: the index's logo and name, when given, then its source.
