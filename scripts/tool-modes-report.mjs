@@ -615,7 +615,7 @@ function intelligence(efforts, byMode = false) {
     svg += `<g transform="translate(${left} ${H - 27}) scale(0.24)">${paths.join("")}</g><text x="${left + 16}" y="${H - 16}" font-size="12" font-family="Georgia, serif" fill="#5e5d59">${esc(name)}</text>\n`;
     credit = left + 16 + name.length * 5.05 + 6;
   }
-  svg += `<text x="${credit}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${/^https:\/\//.test(lookup.source) ? `<a href="${esc(lookup.source)}" target="_blank"><tspan fill="#a8522f" text-decoration="underline">${esc(lookup.source)}</tspan></a>` : esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
+  svg += `<text x="${credit}" y="${H - 16}" font-size="11" fill="#5e5d59">Intelligence Index scores: ${/^https:\/\//.test(lookup.source) ? `<a href="${esc(lookup.source)}" target="_blank">${esc(lookup.source)}</a>` : esc(lookup.source)}, read ${esc(lookup.read)}.</text>\n`;
   svg += `<text transform="translate(20 ${(top + H - bottom) / 2}) rotate(-90)" font-size="11" text-anchor="middle" fill="#5e5d59">Intelligence Index${many ? "" : ` (${effort} effort)`}</text>\n`;
   return `${svg}</svg>\n`;
 }
