@@ -276,5 +276,5 @@ Cached: 77%
 Output tokens: 744</title></rect>
 <rect x="120" y="480" width="301.67619063162806" height="14" rx="3" fill="#ff1744" opacity="0.3" pointer-events="none"/><rect x="120" y="485.5" width="301.67619063162806" height="3" rx="1.5" fill="#ff1744" pointer-events="none"/>
 <text x="470.7727892932892" y="491" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="#ff1744">$0.116<tspan font-size="9.5" fill="#8a8880"> ±9%</tspan> · 7/8 runs failed</text>
-<text x="120" y="552" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better · ±: 95% confidence interval of the mean, <tspan fill="#7c3aed" font-weight="600">purple</tspan> when ±50% or wider</text>
+<text x="120" y="552" font-size="11" fill="#5e5d59">USD per task, log scale, lower is better · ±: 95% confidence interval of the mean (<tspan fill="#7c3aed" font-weight="600">±50% or wider</tspan>)</text>
 </svg>

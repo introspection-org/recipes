@@ -343,7 +343,7 @@ function chart(groups, value, title, unit, digits, log = false) {
       svg += `<text x="${left + w + 6}" y="${y + barH - 3}" font-size="11" stroke="#faf9f5" stroke-width="3" paint-order="stroke" fill="${quality.length ? "#ff1744" : "#45453f"}">${money ? usd(r[value]) : `${fmt(r[value], digits)}${unit}`}${r[ciKey] > 0 ? `<tspan font-size="9.5" ${r[ciKey] / r[value] >= WIDE ? 'fill="#7c3aed" font-weight="600"' : 'fill="#8a8880"'}> ±${Math.round((100 * r[ciKey]) / r[value])}%</tspan>` : ""}${bar.note ? ` · ${esc(bar.note)}` : ""}${quality.length ? ` · ${quality.join(", ")}` : ""}</text>\n`;
     });
   });
-  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean, <tspan fill="#7c3aed" font-weight="600">purple</tspan> when ±50% or wider</text>\n`;
+  svg += `<text x="${left}" y="${H - 10}" font-size="11" fill="#5e5d59">${value === "seconds" ? "Seconds per task" : `USD per task${log ? ", log scale" : ""}`}, lower is better · ±: 95% confidence interval of the mean (<tspan fill="#7c3aed" font-weight="600">±50% or wider</tspan>)</text>\n`;
   return `${svg}</svg>\n`;
 }
 
