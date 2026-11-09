@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-productivity-google",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Gmail, Google Calendar and Google Drive productivity tools for Introspection Recipes.",
   "license": "Apache-2.0",
   "type": "module",

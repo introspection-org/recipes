@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/introspection-org/recipes/compare/recipe-productivity-google-v0.1.1...recipe-productivity-google-v0.2.0) (2026-11-09)
+
+
+### Features
+
+* **providers:** one loader for search and productivity providers, with a Recipe's own by package or module ([#478](https://github.com/introspection-org/recipes/issues/478)) ([76714fb](https://github.com/introspection-org/recipes/commit/76714fb608a9fac4ddecae307f72c39d989b030e))
+
 ## [0.1.1](https://github.com/introspection-org/recipes/compare/recipe-productivity-google-v0.1.0...recipe-productivity-google-v0.1.1) (2026-11-08)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-productivity-microsoft",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Microsoft 365 mail, calendar and OneDrive over Microsoft Graph for the Introspection Recipes productivity tools.",
   "license": "Apache-2.0",
   "type": "module",
