@@ -22,7 +22,10 @@ The checker validates the portable authored contract:
   and a malformed case file;
 - exclusion of local capability configuration from distributable snapshots,
   accepting a committed `.pi/mcp.local.json` only as an evaluation binding
-  (declared ids, each once, at a loopback or single-label compose host).
+  (declared ids, each once, at a loopback or single-label compose host), and a
+  committed `.pi/api.local.json` only as one too (`{"apis":[...]}`, each entry
+  a bare `host`, once, sent to a loopback or single-label compose `url`, with
+  literal `headers`).
 
 It deliberately does not validate host manifests, credentials, deployment
 resources, licenses, or local endpoint bindings. The exported `resources`

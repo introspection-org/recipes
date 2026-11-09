@@ -41,6 +41,7 @@ export const SLACK_CHANNEL_CAPABILITIES: ChannelCapabilities = {
   documents: false,
   resolveAuthors: true,
   permalinks: true,
+  hosts: ["slack.com", "files.slack.com"],
 };
 
 const SLACK_FILE_VARIANTS = new Set(["original", "video_low"]);
@@ -568,13 +569,19 @@ export function createSlackChannelSession(
     env?: ChannelEnvironment;
     cwd?: string;
     session?: SlackFileSession;
+    /** The host's API binding check (`createSession`'s `isApiBound`). */
+    isApiBound?: (url: string | URL) => boolean;
   } = {},
 ): ChannelConnectorSession {
   const env = options.env ?? process.env;
   const config = options.config ?? null;
   const session =
     options.session ??
-    new SlackFileSession({ env, cwd: options.cwd ?? process.cwd() });
+    new SlackFileSession({
+      env,
+      cwd: options.cwd ?? process.cwd(),
+      ...(options.isApiBound ? { isApiBound: options.isApiBound } : {}),
+    });
   return {
     adapter: new SlackChannelAdapter(session),
     // Resolved per call: a Recipe that declares Slack can still run from an

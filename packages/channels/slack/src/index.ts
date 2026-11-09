@@ -61,8 +61,13 @@ export const slackRecipeConnectorModule: RecipeChannelModule = {
   apiVersion: 1,
   provider: "slack",
   capabilities: SLACK_CHANNEL_CAPABILITIES,
-  createSession: ({ config, env, cwd }) =>
-    createSlackChannelSession({ config, env, cwd }),
+  createSession: ({ config, env, cwd, isApiBound }) =>
+    createSlackChannelSession({
+      config,
+      env,
+      cwd,
+      ...(isApiBound ? { isApiBound } : {}),
+    }),
 };
 
 export default slackRecipeConnectorModule;

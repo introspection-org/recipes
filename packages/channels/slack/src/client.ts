@@ -27,7 +27,14 @@ export type SlackFetch = (
 
 export interface SlackBotSessionOptions {
   env?: ChannelEnvironment;
+  /** Default: `globalThis.fetch`, read per call so a fetch installed later (an API binding) applies. */
   fetchImpl?: SlackFetch;
+  /**
+   * Whether a request to `url` goes where an API binding
+   * (`.pi/api.local.json`) sends it, which needs no egress credential. The
+   * host passes it to `createSession`.
+   */
+  isApiBound?: (url: string | URL) => boolean;
 }
 
 export interface SlackApiResult {
@@ -121,10 +128,14 @@ function bodyFor(
 export class SlackBotSession {
   readonly env: ChannelEnvironment;
   readonly fetchImpl: SlackFetch;
+  private readonly isApiBound: (url: string | URL) => boolean;
 
   constructor(options: SlackBotSessionOptions = {}) {
     this.env = options.env ?? process.env;
-    this.fetchImpl = options.fetchImpl ?? (fetch as unknown as SlackFetch);
+    this.fetchImpl =
+      options.fetchImpl ??
+      ((url, init) => (globalThis.fetch as unknown as SlackFetch)(url, init));
+    this.isApiBound = options.isApiBound ?? (() => false);
   }
 
   request(
@@ -133,6 +144,14 @@ export class SlackBotSession {
       headers?: Record<string, string>;
     },
   ): Promise<SlackHttpResponse> {
+    if (this.isApiBound(url)) {
+      // An API binding sends the request to a fake or local server, never
+      // through the egress, so it carries no credential.
+      return this.fetchImpl(url.toString(), {
+        ...init,
+        headers: { ...init.headers },
+      });
+    }
     if (egressProxyNative(this.env)) {
       // The egress terminates TLS for Slack and injects the bot token whatever
       // the request carries, so the locator never rides along.

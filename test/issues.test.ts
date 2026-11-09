@@ -167,7 +167,7 @@ describe("registering the issues tool", () => {
       await loadRecipeIssues(readPiPackageManifest(declared).issues, ["bash"], {
         recipeDir: declared,
       }),
-    ).toEqual({ toolNames: [] });
+    ).toEqual({ toolNames: [], hosts: [] });
     const disabled = recipe({
       issues: [{ provider: "introspection", enabled: false }],
     });
@@ -177,7 +177,7 @@ describe("registering the issues tool", () => {
         ["issues"],
         { recipeDir: disabled },
       ),
-    ).toEqual({ toolNames: [] });
+    ).toEqual({ toolNames: [], hosts: [] });
   });
 
   it("registers one issues tool over the first-party bundle when declared and selected", async () => {

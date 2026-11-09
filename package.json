@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipes",
-  "version": "0.51.0",
+  "version": "0.52.0",
   "description": "The open format for vertical agents, built on Pi.",
   "license": "Apache-2.0",
   "type": "module",
@@ -49,6 +49,10 @@
     "./mcp": {
       "types": "./dist/api/mcp.d.ts",
       "import": "./dist/api/mcp.js"
+    },
+    "./api-bindings": {
+      "types": "./dist/api/api-bindings.d.ts",
+      "import": "./dist/api/api-bindings.js"
     },
     "./pi-extension": {
       "types": "./dist/pi-extension.d.ts",

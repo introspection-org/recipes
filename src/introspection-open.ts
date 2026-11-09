@@ -9,7 +9,8 @@
  * resumes with `{ answer: "connected" | "returned" | "failed: …" }` or a
  * decline. In Pi's terminal it runs the Introspection CLI's own loopback
  * (`introspection open --wait`, `connectors authorize`), which returns when the
- * browser comes back.
+ * browser comes back. A `runtime` or `task` page has nothing to finish, so on
+ * every host opening it is the answer (`returned`) and nothing waits.
  */
 
 import { spawn } from "node:child_process";
@@ -29,6 +30,7 @@ import {
   introspectionOpenAction,
   introspectionOpenDone,
   introspectionOpenFailed,
+  introspectionOpenIsPage,
   parseIntrospectionOpenTarget,
   type IntrospectionOpenTarget,
 } from "./open.js";
@@ -171,7 +173,7 @@ const parameters = Type.Object(
     wait: Type.Optional(
       Type.Boolean({
         description:
-          "Pause until the person is done and continue with what they did. Default false: open it and carry on.",
+          "Pause until the person is done and continue with what they did. Default false: open it and carry on. A runtime or task page has nothing to finish, so it answers `returned` once it opens.",
       }),
     ),
   },
@@ -180,7 +182,8 @@ const parameters = Type.Object(
 
 const description = [
   "Ask the person to open an Introspection page: install an integration (GitHub, Slack), create a GitHub repository, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, or look at a Runtime or task.",
-  "Name the target; never write a link yourself. With wait: true the conversation pauses until they finish, and the result is `Answer: connected`, `Answer: returned` (for a page), `Answer: failed: <reason>`, or a decline.",
+  "Name the target; never write a link yourself. With wait: true the conversation pauses until they finish, and the result is `Answer: connected`, `Answer: returned`, `Answer: failed: <reason>`, or a decline.",
+  "A runtime or task page has nothing to finish: with wait: true it answers `Answer: returned` as soon as the page opens, without waiting for the person to come back.",
   "The answer is what the person did, not proof: after `connected`, read the real state with the CLI (`introspection integrations list`, `introspection connectors connections list`, `introspection bindings mcp list`) before saying it is connected.",
   "Call it on its own in a turn, not beside a question, so the person does one thing at a time.",
 ].join("\n");
@@ -279,10 +282,15 @@ async function runLoopback(
   signal: AbortSignal | undefined,
   runCli: CliRunner,
 ): Promise<AskUserOutcome> {
-  const args = introspectionOpenCliArgs(target, true);
+  // A runtime or task page has nothing to finish: like the hosted card, opening
+  // it is the answer, so the CLI only opens it and the agent carries on.
+  const page = introspectionOpenIsPage(target);
+  const args = introspectionOpenCliArgs(target, !page);
   if (!args) return askInDialog(target, reason, ui, signal);
   ui.notify(
-    `${reason}\n${introspectionOpenAction(target)} in the browser that just opened; the agent continues when you're done.`,
+    page
+      ? `${reason}\n${introspectionOpenAction(target)}: it opens in your browser.`
+      : `${reason}\n${introspectionOpenAction(target)} in the browser that just opened; the agent continues when you're done.`,
     "info",
   );
   const result = await runCli(args, signal);
@@ -341,6 +349,7 @@ export function createIntrospectionOpenTool(
       "Ask the person to connect something or open a page, and wait for them",
     promptGuidelines: [
       "When the person must connect an integration, a connector or their own account, or look at a Runtime or task, use introspection_open with wait: true instead of writing a link.",
+      "introspection_open with wait: true answers `returned` for a Runtime or task page as soon as it opens; the person may still be looking at it.",
     ],
     parameters,
     // Interactions must not race other tools: a host pause would strand
