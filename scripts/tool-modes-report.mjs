@@ -526,11 +526,11 @@ function intelligence(efforts, byMode = false) {
       [],
     );
   svg += `<polyline points="${frontier.map((p) => `${x(p.cost)},${y(p.score, p)}`).join(" ")}" fill="none" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/>\n`;
-  svg += `<rect x="${W - right - 300}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 283}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
-  svg += `<line x1="${W - right - 140}" y1="${top + 14}" x2="${W - right - 112}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 106}" y="${top + 18}" font-size="11" fill="#5e5d59">${byMode ? "Pareto line, passing" : "Pareto line"}</text>\n`;
+  svg += `<rect x="${W - right - 315}" y="${top + 8}" width="12" height="12" rx="2" fill="#e3f1dc" stroke="#0000001f"/><text x="${W - right - 298}" y="${top + 18}" font-size="11" fill="#5e5d59">Most attractive quadrant</text>\n`;
+  svg += `<line x1="${W - right - 153}" y1="${top + 14}" x2="${W - right - 139}" y2="${top + 14}" stroke="#141413" stroke-width="1.5" stroke-dasharray="1 4" stroke-linecap="round"/><text x="${W - right - 136}" y="${top + 18}" font-size="11" fill="#5e5d59">${byMode ? "Pareto line, passing" : "Pareto line"}</text>\n`;
   if (points.some((p) => p.failed))
-    svg += `${dial(W - right - 294, top + 34, 5, 1 / 3)}<text x="${W - right - 283}" y="${top + 38}" font-size="11" fill="#5e5d59">${byMode ? "runs failed" : "runs failed, all modes"}</text>\n`;
-  svg += `<circle cx="${W - right - 126}" cy="${top + 34}" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="${W - right - 106}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
+    svg += `${dial(W - right - 309, top + 34, 5, 1 / 3)}<text x="${W - right - 298}" y="${top + 38}" font-size="11" fill="#5e5d59">${byMode ? "runs failed" : "runs failed, all modes"}</text>\n`;
+  svg += `<circle cx="${W - right - 147}" cy="${top + 34}" r="5" fill="none" stroke="#e6ff00" stroke-width="2.5"/><text x="${W - right - 136}" y="${top + 38}" font-size="11" fill="#5e5d59">recommended</text>\n`;
   // A model's points, low to high, joined in its colour.
   if (many)
     for (const [id] of MODELS) {
@@ -593,9 +593,9 @@ function intelligence(efforts, byMode = false) {
   // The modes' key: two columns and two rows at the foot of the lower-right
   // quadrant, in the same columns as the legend above.
   if (byMode) {
-    svg += `<text x="${W - right - 301}" y="${H - bottom - 52}" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>\n`;
+    svg += `<text x="${W - right - 316}" y="${H - bottom - 52}" font-size="11" font-weight="600" fill="#5e5d59">Tool mode</text>\n`;
     MODES.forEach(([, label], k) => {
-      const cx = W - right - (k % 2 ? 126 : 294);
+      const cx = W - right - (k % 2 ? 147 : 309);
       const cy = H - bottom - 34 + Math.floor(k / 2) * 20;
       svg += `<circle cx="${cx}" cy="${cy}" r="7" fill="#c9c7be" stroke="#0000003d"/><text x="${cx}" y="${cy + 3.5}" font-size="9" font-weight="600" text-anchor="middle" fill="#141413">${k + 1}</text><text x="${cx + 11}" y="${cy + 4}" font-size="11" fill="#5e5d59">${esc(label)}</text>\n`;
     });
