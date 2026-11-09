@@ -1,5 +1,6 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { isApiBound } from "../api-bindings.js";
 import type { RecipeConnectorModule } from "../connector-tools.js";
 import { resolveChannelConfig } from "./config.js";
 import type { ChannelConfig } from "./config.js";
@@ -47,6 +48,11 @@ export interface ChannelConnectorModuleOptions {
     config: ChannelConfig | null;
     env: NodeJS.ProcessEnv;
     cwd: string;
+    /**
+     * Whether a request to `url` goes where an API binding sends it rather
+     * than to the provider: such a request needs no egress credential.
+     */
+    isApiBound?: (url: string | URL) => boolean;
   }): ChannelConnectorSession;
 }
 
@@ -77,20 +83,22 @@ function sameCapabilities(
   left: ChannelCapabilities,
   right: ChannelCapabilities,
 ): boolean {
-  left = {
+  const { hosts: leftHosts = [], ...leftRest } = {
     ...left,
     targeting: left.targeting ?? false,
     list: left.list ?? false,
   };
-  right = {
+  const { hosts: rightHosts = [], ...rightRest } = {
     ...right,
     targeting: right.targeting ?? false,
     list: right.list ?? false,
   };
-  const keys = Object.keys(right) as (keyof ChannelCapabilities)[];
+  const keys = Object.keys(rightRest) as (keyof typeof rightRest)[];
   return (
-    Object.keys(left).length === keys.length &&
-    keys.every((key) => left[key] === right[key])
+    Object.keys(leftRest).length === keys.length &&
+    keys.every((key) => leftRest[key] === rightRest[key]) &&
+    leftHosts.length === rightHosts.length &&
+    leftHosts.every((host, index) => host === rightHosts[index])
   );
 }
 
@@ -114,6 +122,7 @@ export function createChannelConnectorModule(
   return {
     provider: options.provider,
     tools: connectorTools,
+    hosts: options.capabilities.hosts ?? [],
     createExtension(moduleOptions): ExtensionFactory {
       const unknown = moduleOptions.tools.filter((tool) => tool !== "channels");
       if (unknown.length > 0) {
@@ -143,6 +152,7 @@ export function createChannelConnectorModule(
           config: resolveChannelConfig(moduleOptions.env ?? process.env),
           env: moduleOptions.env ?? process.env,
           cwd: moduleOptions.cwd ?? process.cwd(),
+          isApiBound,
         });
         if (session.adapter.provider !== options.provider) {
           throw new Error(

@@ -814,7 +814,7 @@ describe("loading a productivity provider", () => {
         recipeDir,
       },
     );
-    expect(loaded).toEqual({ toolNames: [] });
+    expect(loaded).toEqual({ toolNames: [], hosts: [] });
   });
 
   it("refuses an unknown or unsupported command, and a tool the declaration disables", async () => {

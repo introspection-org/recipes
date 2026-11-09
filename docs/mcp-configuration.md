@@ -239,6 +239,59 @@ When the local file is absent, manifest-supplied endpoints remain usable.
 Required servers that need environment-specific bindings fail closed until the
 local Pi environment or embedding host supplies them.
 
+### Bind a provider's API host
+
+The vendor APIs a Recipe's own code calls (productivity, search and issues
+providers, channel adapters) are bound by host in `.pi/api.local.json`, the
+counterpart of `.pi/mcp.local.json`: an evaluation sends a host to a fake, and
+a developer to a local or staging server.
+
+```json
+{
+  "apis": [
+    { "host": "graph.microsoft.com", "url": "http://localhost:7353/microsoft" },
+    {
+      "host": "www.googleapis.com",
+      "url": "https://staging.example.com",
+      "headers": { "Authorization": "Bearer ${STAGING_TOKEN}" }
+    }
+  ]
+}
+```
+
+- **Entry.** `host` is a bare hostname, once per file. `url` is an absolute
+  `http(s)` URL, optionally with a path prefix. `headers` are set on every
+  request to the host. `${VAR}` in `url` and `headers` is resolved from the
+  environment.
+- **Lookup.** An inline `apiBindings` option (`createAgentSession`), then the
+  file `PI_RECIPES_API_LOCAL_CONFIG` names, then `<cwd>/.pi/api.local.json`,
+  then `<recipeDir>/.pi/api.local.json`. An empty file binds nothing.
+- **Declared hosts only.** A host must be one the session's loaded providers
+  and adapters declare: `capabilities.hosts` of the productivity and issues
+  providers and the channel adapters (Slack: `slack.com`, `files.slack.com`),
+  and `host`/`hosts` of the search providers when the Recipe declares
+  `pi.search`. An undeclared host, a host bound twice, a malformed file or a
+  `url` that is not absolute fails the session at start.
+
+A request to a bound host goes to `url` plus its own path and query:
+`GET https://graph.microsoft.com/v1.0/me` is sent as
+`GET http://localhost:7353/microsoft/v1.0/me`. It carries
+`x-forwarded-host: <host>`, `x-forwarded-proto: https` and, when `url` has a
+path, `x-forwarded-prefix: <that path>`, so a server that builds absolute links
+(a next-page link, an upload session's `Location`) replaces its own scheme,
+host and prefix with `https://<host>` and answers with the vendor's URLs. Its
+`Authorization`, `Proxy-Authorization`, API-key headers and session carriers
+are removed before the entry's headers are set. A bound host needs no egress
+credential lane, so productivity, search and Slack tools run under a local
+Pi against what the file binds.
+
+The binding sits in front of `globalThis.fetch` in the Pi process, outside a
+host's managed proxy fetch, so the proxy sees the rewritten URL. Traffic
+outside the Pi process (a Python subprocess, `curl`) is not covered. A session
+created with `createAgentSession` reports what it bound as `apiBindings`
+(`declaredHosts`, and `bound` with each host's `url`). Do not commit a file
+that holds a real endpoint or credential.
+
 ## Use capabilities from an agent
 
 In CLI mode, Recipes creates a session-local `mcp` command containing only the

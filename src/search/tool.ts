@@ -6,6 +6,7 @@ import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
+import { isApiBound, stripApiBoundHeaders } from "../api-bindings.js";
 import { egressCredentialHeaders, type SearchEnvironment } from "./egress.js";
 import { isCountryCode, requestJson } from "./http.js";
 import {
@@ -88,7 +89,9 @@ function urlHost(url: string | undefined): string | undefined {
  * binds that server: one whose bound URL has the adapter's host, or, for a
  * fake on another host, whose id is the provider's. Its REST endpoint, when
  * the egress holds one, is then the fallback. A REST-only provider is bound
- * by its endpoint host alone.
+ * by its endpoint host alone. A REST endpoint an API binding
+ * (`.pi/api.local.json`) sends elsewhere is bound on its own, with or without
+ * an MCP server.
  */
 export function boundSearchProviders(
   bindings: SearchBindings,
@@ -101,15 +104,16 @@ export function boundSearchProviders(
   const mcpServers: Partial<Record<SearchProviderId, string>> = {};
   const bound: SearchProviderId[] = [];
   for (const module of Object.values(providers)) {
+    const apiBound = isApiBound(`https://${module.capabilities.host}`);
     if (module.mcp) {
       const host = urlHost(module.mcp.url);
       const server =
         servers.find((entry) => host && urlHost(entry.url) === host) ??
         servers.find((entry) => entry.id === module.id);
-      if (!server) continue;
-      mcpServers[module.id] = server.id;
+      if (server) mcpServers[module.id] = server.id;
+      else if (!apiBound) continue;
     }
-    if (hosts.has(module.capabilities.host)) bound.push(module.id);
+    if (hosts.has(module.capabilities.host) || apiBound) bound.push(module.id);
   }
   return { bound, mcpServers };
 }
@@ -293,6 +297,12 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
         `Search provider '${module.id}' has API version ${String(module.apiVersion)}; this host serves ${SEARCH_PROVIDER_API_VERSION}`,
       );
   }
+  // A request an API binding sends elsewhere loses each provider's key header.
+  stripApiBoundHeaders(
+    Object.values(providers).map(
+      (module) => module.capabilities.credential.header,
+    ),
+  );
   const offered = offeredProviders(options);
   const parameters = webSearchParameters(offered, true);
   const tracer = options.tracer ?? defaultTracer;
@@ -517,12 +527,21 @@ function toolSearch(options: WebSearchOptions): ToolSearch {
       );
       result = module.mcp!.parse(answer, request, plan);
     } else {
-      const credentialHeaders = options.credentialHeaders
-        ? options.credentialHeaders(module)
-        : egressCredentialHeaders(id, capabilities, options.env ?? process.env);
+      const baseUrl = options.baseUrls?.[id] ?? `https://${capabilities.host}`;
+      // A host an API binding sends elsewhere needs no credential lane, and
+      // gets no credential, not even a host's.
+      const credentialHeaders = isApiBound(baseUrl)
+        ? {}
+        : options.credentialHeaders
+          ? options.credentialHeaders(module)
+          : egressCredentialHeaders(
+              id,
+              capabilities,
+              options.env ?? process.env,
+            );
       const target = {
         fetch: options.fetch ?? (fetch as unknown as SearchFetch),
-        baseUrl: options.baseUrls?.[id] ?? `https://${capabilities.host}`,
+        baseUrl,
         credentialHeaders,
         now: () => now,
         ...(signal ? { signal } : {}),

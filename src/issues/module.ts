@@ -87,6 +87,8 @@ function contractProblem(
 export interface LoadedRecipeIssues {
   extension?: { owner: string; factory: ExtensionFactory };
   toolNames: string[];
+  /** The hosts the loaded providers declare (`capabilities.hosts`), whether or not the agent selects the tool. */
+  hosts?: readonly string[];
 }
 
 /**
@@ -144,10 +146,12 @@ export async function loadRecipeIssues(
       };
     },
   );
+  const hosts = providers.flatMap(({ module }) => module.capabilities.hosts);
   if (!agentTools.includes(ISSUES_TOOL_NAME) || providers.length === 0)
-    return { toolNames: [] };
+    return { toolNames: [], hosts };
   return {
     toolNames: [ISSUES_TOOL_NAME],
+    hosts,
     extension: {
       owner: "<issues>",
       factory: (pi) => {

@@ -8,6 +8,7 @@ import {
   type Tracer,
 } from "@opentelemetry/api";
 
+import { isApiBound } from "../api-bindings.js";
 import { egressCredentialLane, parseRetryAfter } from "../egress.js";
 import type {
   ProductivityFetch,
@@ -221,15 +222,18 @@ export function createProductivityHttp(
   async function attempt(
     request: ProductivityHttpRequest,
   ): Promise<FetchResponse> {
-    const headers = request.anonymous
-      ? { ...request.headers }
-      : {
-          ...request.headers,
-          Authorization: productivityAuthorization(
-            env,
-            options.fetch !== undefined,
-          ),
-        };
+    // A host an API binding sends elsewhere needs no credential lane: the
+    // request never reaches the egress, and the binding removes credentials.
+    const headers =
+      request.anonymous || isApiBound(request.url)
+        ? { ...request.headers }
+        : {
+            ...request.headers,
+            Authorization: productivityAuthorization(
+              env,
+              options.fetch !== undefined,
+            ),
+          };
     const { name, attributes } = httpRequestSpan(request);
     const span = tracer.startSpan(name, { kind: SpanKind.CLIENT, attributes });
     try {

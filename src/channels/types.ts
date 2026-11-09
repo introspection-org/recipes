@@ -43,6 +43,11 @@ export interface ChannelCapabilities {
   /** Enrichment performed in trusted code, not exposed as lookup tools. */
   readonly resolveAuthors: boolean;
   readonly permalinks: boolean;
+  /**
+   * Every host the adapter sends to. An API binding (`.pi/api.local.json`)
+   * may rebind only a host a loaded provider or adapter declares.
+   */
+  readonly hosts?: readonly string[];
 }
 
 /**

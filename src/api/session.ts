@@ -11,4 +11,9 @@ export type {
   RecipeSessionOtelOptions,
 } from "../session.js";
 export type { MemoryContextOverride, MemoryContextSource } from "../memory.js";
+export type {
+  ApiLocalConfig,
+  LocalApiBinding,
+  RecipeSessionApiBindings,
+} from "../api-bindings.js";
 export type { RecipeStep, RecipeStepItem } from "../skill-progress.js";

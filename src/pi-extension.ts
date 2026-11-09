@@ -133,6 +133,13 @@ import {
   withCurrentDate,
   type RecipeClockOptions,
 } from "./clock.js";
+import {
+  bindRecipeApis,
+  ensureApiBindingFetch,
+  installApiBindings,
+  isApiBindingFetchInstalled,
+  type LocalApiBinding,
+} from "./api-bindings.js";
 import { loadRecipeConnectors } from "./connector-tools.js";
 import { createRecipeSuggestionPicker } from "./suggestion-picker.js";
 import {
@@ -168,14 +175,20 @@ const MANAGED_EGRESS_URL_ENV = "INTROSPECTION_EGRESS_URL";
 const EGRESS_PROXY_NATIVE_ENV = "INTROSPECTION_EGRESS_PROXY_NATIVE";
 
 /**
- * Recompose the Runtime's managed fetch over the fetch Pi installs during its
- * own bootstrap. Returns whether an installer was present.
+ * Compose the process fetch: the Runtime's managed fetch over the fetch Pi
+ * installs during its own bootstrap, then the API binding wrapper over both
+ * while a binding is live, so the proxy sees the rewritten URL. A no-op while
+ * the wrapper is the global fetch: the managed installer re-wraps any fetch it
+ * did not install, which would grow the chain on every model request. Returns
+ * whether an installer was present.
  */
-function ensureManagedFetch(): boolean {
+function ensureRecipeFetch(): boolean {
   const install = Reflect.get(globalThis, MANAGED_FETCH_INSTALLER_SYMBOL);
-  if (typeof install !== "function") return false;
-  install();
-  return true;
+  const managed = typeof install === "function";
+  if (isApiBindingFetchInstalled()) return managed;
+  if (managed) install();
+  ensureApiBindingFetch();
+  return managed;
 }
 
 /**
@@ -229,6 +242,8 @@ interface RecipeLaunchState {
   mcpAmbientMcporterConfig?: string;
   python?: PreparedRecipePython;
   pythonFailure?: string;
+  /** The session's API bindings, resolved and checked once the connectors load. */
+  apiBindings?: LocalApiBinding[];
 }
 
 const CODEMODE_TOOL_NAME = "codemode";
@@ -623,6 +638,7 @@ export function createRecipesExtension(
   let lastLaunchErrorKey: string | null = null;
   let childRunIndex = 0;
   const childRuns = new Map<string, ChildRun>();
+  let releaseApiBindings: (() => void) | undefined;
   // Runs restored from a previous Pi process via rehydrateChildRuns(). They
   // have no live runner: readable (status/wait) but not controllable.
   const archivedRuns = new Map<string, ChildRunSnapshot>();
@@ -1052,6 +1068,17 @@ export function createRecipesExtension(
             : {}),
         },
       );
+      // Bound hosts must be in front of the fetch before any factory runs: a
+      // channel adapter may capture it while its extension loads.
+      const bound = bindRecipeApis({
+        owner: `Recipe ${launchState.resolved.manifest.name}`,
+        cwd: launchState.cwd,
+        recipeDir: launchState.resolved.recipeDir,
+        declaredHosts: connectors.hosts,
+        env,
+      });
+      launchState.apiBindings = bound.bindings;
+      releaseApiBindings = bound.release;
       launchState.initialConnectorToolNames =
         connectors.loadout.initialActiveToolNames;
       if (launchState.resolved.toolPolicy?.mode === "codemode") {
@@ -1732,7 +1759,7 @@ export function createRecipesExtension(
     void createMcpBehindGuard(() => state?.piBehindServers ?? [])(pi);
 
     pi.on("before_provider_request", (event, ctx) => {
-      ensureManagedFetch();
+      ensureRecipeFetch();
       if (!state || !ctx.model) return undefined;
       return applyRecipeAgentPayloadPolicy(
         event.payload,
@@ -1803,6 +1830,8 @@ export function createRecipesExtension(
           await closeAllChildRuns();
           await closeRootMcpRuntime();
           state = null;
+          releaseApiBindings?.();
+          releaseApiBindings = undefined;
           archivedRuns.clear();
           completions.clear();
           await ctx.waitForIdle();
@@ -1868,7 +1897,7 @@ export function createRecipesExtension(
     });
 
     pi.on("session_start", async (event, ctx) => {
-      if (!ensureManagedFetch()) {
+      if (!ensureRecipeFetch()) {
         const warning = managedFetchMissingWarning(env);
         if (warning !== undefined) ctx.ui.notify(warning, "warning");
       }
@@ -1895,6 +1924,12 @@ export function createRecipesExtension(
       }
       try {
         await loadRecipeExtensions(pi, ctx, launchState);
+        // A restarted session reuses the loaded extensions and their bindings.
+        if (launchState.apiBindings && !releaseApiBindings)
+          releaseApiBindings = installApiBindings(
+            `Recipe ${launchState.resolved.manifest.name}`,
+            launchState.apiBindings,
+          );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         failRecipeSession(pi, `extension startup failed\n${message}`, ctx);
@@ -1950,6 +1985,8 @@ export function createRecipesExtension(
       clearMcpCatalogPreload(env);
       await stopMcpDaemon(env);
       restorePythonActivation();
+      releaseApiBindings?.();
+      releaseApiBindings = undefined;
       if (originalRecipeDirEnv === undefined) {
         delete env.PI_RECIPE_DIR;
       } else {

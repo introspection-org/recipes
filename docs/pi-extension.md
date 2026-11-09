@@ -251,6 +251,11 @@ A host may synthesize the same bindings in memory.
 Bindings are resolved fail-closed for required servers. Optional servers may
 remain unavailable. See [MCP configuration](mcp-configuration.md).
 
+The vendor API hosts the Recipe's providers and channel adapters call are bound
+the same way, by host, in `.pi/api.local.json` (or the file
+`PI_RECIPES_API_LOCAL_CONFIG` names), at session start before any extension
+loads (see [Bind a provider's API host](mcp-configuration.md#bind-a-providers-api-host)).
+
 ## Recipe-owned extensions
 
 TypeScript extension sources declared by `package.json#pi.extensions` are

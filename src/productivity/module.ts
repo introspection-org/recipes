@@ -110,6 +110,8 @@ export interface LoadedRecipeProductivity {
   toolNames: string[];
   /** The core `productivity` skill, when the agent selects one of the tools. */
   skillPaths?: string[];
+  /** The hosts the loaded provider declares (`capabilities.hosts`), whether or not the agent selects a tool. */
+  hosts?: readonly string[];
 }
 
 /**
@@ -194,13 +196,15 @@ export async function loadRecipeProductivity(
     throw new Error(
       `The agent selects ${disabled.join(", ")}, which pi.productivity provider '${declaration.provider}' does not enable`,
     );
-  if (selected.length === 0) return { toolNames: [] };
+  const hosts = module.capabilities.hosts ?? [];
+  if (selected.length === 0) return { toolNames: [], hosts };
   const skillPaths = [PRODUCTIVITY_SKILL];
   const tools = Object.fromEntries(
     selected.map((tool) => [tool, enabled[tool]!]),
   ) as RegisterProductivityToolsOptions["tools"];
   return {
     toolNames: [...selected],
+    hosts,
     skillPaths,
     extension: {
       owner: `<productivity:${declaration.provider}>`,
