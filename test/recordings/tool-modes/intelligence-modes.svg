@@ -31,7 +31,7 @@
 <polyline points="188.83602273723199,332.5 189.74208376786868,323.5 211.84843426331426,305.5 245.7048917716212,314.5" fill="none" stroke="#c9c7be" stroke-width="2" opacity="0.7"/>
 <polyline points="440.78987207105433,205 450.6555537064233,178 456.1800152113295,196 476.5757241023932,187" fill="none" stroke="#77756e" stroke-width="2" opacity="0.7"/>
 <polyline points="562.4132356019898,137.2 568.0051400903066,164.2 581.476470506522,155.2 597.7751853587304,146.2" fill="none" stroke="#141413" stroke-width="2" opacity="0.7"/>
-<circle cx="189.74208376786868" cy="323.5" r="13.5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>
+<circle cx="189.74208376786868" cy="323.5" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>
 <a href="https://artificialanalysis.ai/models/claude-haiku-5-5" target="_blank"><title>Haiku 5.5 (low) · tools
 Passed in tools: 5/5
 Cost per task: $0.00169

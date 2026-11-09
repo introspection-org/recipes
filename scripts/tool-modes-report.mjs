@@ -435,13 +435,13 @@ function frontierPoints(set, effort) {
 
 /** A point linking to the model's page, with a hover title as the index's own chart has. */
 /** A ring around a point, filled clockwise to `share`: the runs that failed. */
-const dial = (cx, cy, r, share) => {
+const dial = (cx, cy, r, share, track = true) => {
   const c = 2 * Math.PI * r;
-  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
+  return `${track ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff174433" stroke-width="2.5" pointer-events="none"/>` : ""}<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff1744" stroke-width="2.5" stroke-dasharray="${c * share} ${c}" transform="rotate(-90 ${cx} ${cy})" pointer-events="none"/>`;
 };
 
 const dot = (p, cx, cy, r = 7, pick = false) =>
-  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed && !p.mark ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs) : ""}\n`;
+  `<a href="${aaPage(p.id)}" target="_blank"><title>${p.name} (${p.effort}) · ${p.mode}${pick ? "\nRecommended" : ""}\nPassed in ${p.mode}: ${p.row.runs - p.row.failed}/${p.row.runs}\nCost per task: ${usd(p.cost)}\nIntelligence Index: ${p.score}\nTime per task: ${fmt(p.row.seconds, 1)}s\nInput tokens: ${fmt(p.row.input)}\nCached: ${fmt(p.row.cached * 100)}%\nOutput tokens: ${fmt(p.row.output)}${p.failed && !p.mark ? `\nFailed runs, all modes: ${p.failed}/${p.runs}` : ""}\nClick for more info</title><circle cx="${cx}" cy="${cy}" r="${r}" fill="${p.color}" stroke="#0000003d"/></a>${p.failed ? dial(cx, cy, r + 3.5, p.failed / p.runs, !pick) : ""}\n`;
 
 /**
  * With `byMode`, one effort and every tool mode: each model's modes are
@@ -582,7 +582,7 @@ function intelligence(efforts, byMode = false) {
       : 4;
     if (text) placed.push(box(point.dy));
   }
-  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score, pick)}" r="13.5" fill="none" stroke="#e6ff00" stroke-width="3" pointer-events="none"/>\n`;
+  svg += `<circle cx="${x(pick.cost)}" cy="${y(pick.score, pick)}" r="10.5" fill="none" stroke="#e6ff00" stroke-width="2.5" pointer-events="none"/>\n`;
   for (const point of points) {
     svg += dot(point, x(point.cost), y(point.score, point), 7, point === pick);
     if (many)
