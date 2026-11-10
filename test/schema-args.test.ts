@@ -366,6 +366,55 @@ describe("a command line from a tool's schema", () => {
     expect(() => parse(["--name", "Ada"])).toThrow(SchemaArgsError);
   });
 
+  it("reads a nullable scalar as its type, and keeps a string a string", () => {
+    const command = {
+      path: ["mcp", "call", "s.t"],
+      description: "",
+      schema: {
+        properties: {
+          id: { anyOf: [{ type: "string" }, { type: "null" }] },
+          count: { oneOf: [{ type: "integer" }, { type: "null" }] },
+          key: { anyOf: [{ type: "string" }, { type: "object" }] },
+        },
+      },
+    };
+    const parse = (argv: string[]) =>
+      parseSchemaArgs(command, argv, undefined, { assignments: true }).args;
+    expect(parse(["id=123", "count=4", "key=55"])).toEqual({
+      id: "123",
+      count: 4,
+      key: "55",
+    });
+    expect(parse(["--id", "123", "--count", "4"])).toEqual({
+      id: "123",
+      count: 4,
+    });
+    expect(parse(['key={"a":1}'])).toEqual({ key: { a: 1 } });
+    expect(schemaHelp(command, "x")).toContain("--id <string>");
+  });
+
+  it("keeps a boolean whose kebab flag would start with no- on its own name", () => {
+    const command = {
+      path: ["t"],
+      description: "",
+      schema: {
+        properties: {
+          no_cache: { type: "boolean" },
+          noRetry: { type: "boolean" },
+        },
+      },
+    };
+    const parse = (argv: string[]) => parseSchemaArgs(command, argv).args;
+    expect(parse(["--no_cache", "--noRetry"])).toEqual({
+      no_cache: true,
+      noRetry: true,
+    });
+    const help = schemaHelp(command, "x");
+    expect(help).toContain("--no_cache");
+    expect(help).toContain("--noRetry");
+    expect(help).not.toMatch(/--no-cache|--no-retry/);
+  });
+
   it("keeps the exact names where kebab-case would collide", () => {
     const command = {
       path: ["t"],

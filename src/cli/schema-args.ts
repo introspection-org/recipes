@@ -80,6 +80,17 @@ function scalarOf(property: Property): string | undefined {
   );
   if (types.length === 1 && SCALAR.has(String(types[0])))
     return String(types[0]);
+  // A nullable scalar written as a union: `anyOf: [{ type: "string" }, { type: "null" }]`.
+  const variants = (property.anyOf ?? property.oneOf) as unknown;
+  if (types.length === 0 && Array.isArray(variants)) {
+    const typed = variants
+      .map(record)
+      .filter((variant) => variant.type !== "null" && !("const" in variant));
+    if (typed.length === 1) {
+      const type = scalarOf(typed[0]!);
+      if (type) return type;
+    }
+  }
   const values = enumOf(property);
   if (types.length === 0 && values?.length) {
     const kinds = new Set(values.map((value) => typeof value));
@@ -91,6 +102,20 @@ function scalarOf(property: Property): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Whether a property takes a string, in any branch of its unions. */
+function allowsString(property: Property): boolean {
+  const type = property.type;
+  if (type === "string" || (Array.isArray(type) && type.includes("string")))
+    return true;
+  return ["anyOf", "oneOf", "allOf"].some((key) => {
+    const branches = property[key];
+    return (
+      Array.isArray(branches) &&
+      branches.some((branch) => allowsString(record(branch)))
+    );
+  });
 }
 
 /** No `type` and nothing that shapes it: a string flag, decoded leniently. */
@@ -175,18 +200,22 @@ function fields(command: SchemaCommand): Field[] {
   // A kebab name another property also answers to stays the exact name.
   const reserved = new Set(command.reserved ?? []);
   return all.map((field) => {
-    const flag = spellings(field.name, field.shape).every(
+    let flag = spellings(field.name, field.shape).every(
       (form) => counts.get(form) === 1,
     )
       ? kebab(field.name)
       : field.name;
+    // `--no-x` negates `x`, so a boolean's own flag never starts with `no-`.
+    if (isBoolean(field.shape) && flag.startsWith("no-")) flag = field.name;
     const forms = isBoolean(field.shape)
       ? [flag, field.name, `no-${flag}`, `no-${field.name}`]
       : [flag, field.name];
     return {
       ...field,
       flag,
-      reserved: forms.some((form) => reserved.has(form)),
+      reserved:
+        forms.some((form) => reserved.has(form)) ||
+        (isBoolean(field.shape) && flag.startsWith("no-")),
     };
   });
 }
@@ -438,7 +467,12 @@ export function parseSchemaArgs(
       args[name] = valueOf(field.shape, text);
     else
       try {
-        args[name] = JSON.parse(text) as unknown;
+        const value = JSON.parse(text) as unknown;
+        // Text the schema takes as a string stays one, though it reads as a number.
+        args[name] =
+          typeof value !== "object" && allowsString(field.property)
+            ? text
+            : value;
       } catch {
         args[name] = text;
       }
