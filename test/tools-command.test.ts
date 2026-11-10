@@ -156,12 +156,18 @@ describe("the tools command", () => {
     expect(tool.code).toBe(0);
     expect(tool.stdout).toContain("Usage: issues <command>");
     expect(tool.stdout).toMatch(/Commands:\n {2}search\s+\n {2}get/);
+    expect(tool.stdout).toContain(
+      "Run `issues <command> --help` for a command's arguments, or `tools list issues --schema` for the JSON each takes.",
+    );
     expect((await tools(["issues"])).code).toBe(64);
     const command = await tools(["mail", "read", "--help"]);
     expect(command.stdout).toContain(
       "Usage: mail read [--<argument> <value> ...]",
     );
     expect(command.stdout).toContain("--message <string>");
+    expect(command.stdout).toContain(
+      "Every argument as one JSON object (`tools list mail --schema` prints its schema)",
+    );
     expect(command.calls).toEqual([]);
     expect((await tools(["web_search", "--help"])).stdout).toContain(
       "Usage: web_search --query <string>",

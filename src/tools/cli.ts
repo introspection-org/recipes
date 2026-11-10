@@ -243,7 +243,12 @@ export async function runToolsCommand(
     if (commands.some((entry) => entry.command)) {
       if (first === undefined || isHelp(first)) {
         io[first ? "stdout" : "stderr"].write(
-          `${schemaGroupHelp([tool.name], tool.description, commands.map(specOf))}\n`,
+          `${schemaGroupHelp(
+            [tool.name],
+            tool.description,
+            commands.map(specOf),
+            `tools list ${tool.name} --schema`,
+          )}\n`,
         );
         return first ? 0 : 64;
       }
@@ -266,7 +271,9 @@ export async function runToolsCommand(
     const usage = usageOf(spec);
     const parsed = parseSchemaArgs(spec, rest, io.stdin);
     if (parsed.help) {
-      io.stdout.write(`${schemaHelp(spec)}\n`);
+      io.stdout.write(
+        `${schemaHelp(spec, `tools list ${command.tool} --schema`)}\n`,
+      );
       return 0;
     }
     let answer: Awaited<ReturnType<typeof tools.call>>;

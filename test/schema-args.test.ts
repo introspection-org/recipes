@@ -156,7 +156,10 @@ describe("a command line from a tool's schema", () => {
         '{"body":{"text":"x"},"template":{}}',
       ),
     ).toEqual({ body: { text: "x" }, template: {}, title: "t" });
-    const help = schemaHelp(command);
+    const help = schemaHelp(command, "mcp list github --schema");
+    expect(help).toContain(
+      "Every argument as one JSON object (`mcp list github --schema` prints its schema)",
+    );
     expect(help.split("\n")[0]).toBe(
       "Usage: github create_issue --title <string> [--<argument> <value> ...]",
     );
@@ -171,14 +174,19 @@ describe("a command line from a tool's schema", () => {
 
   it("lists a group's commands with their first sentence", () => {
     expect(
-      schemaGroupHelp(["github"], "GitHub's tools. More text.", [
-        {
-          path: ["github", "create_issue"],
-          description: "Create an issue. Then more.",
-          schema: {},
-        },
-        { path: ["github", "list_issues"], description: "", schema: {} },
-      ]),
+      schemaGroupHelp(
+        ["github"],
+        "GitHub's tools. More text.",
+        [
+          {
+            path: ["github", "create_issue"],
+            description: "Create an issue. Then more.",
+            schema: {},
+          },
+          { path: ["github", "list_issues"], description: "", schema: {} },
+        ],
+        "mcp list github --schema",
+      ),
     ).toBe(
       [
         "Usage: github <command> [--<argument> <value> ...]",
@@ -189,13 +197,13 @@ describe("a command line from a tool's schema", () => {
         "  create_issue  Create an issue.",
         "  list_issues   ",
         "",
-        "Run `github <command> --help` for a command's arguments.",
+        "Run `github <command> --help` for a command's arguments, or `mcp list github --schema` for the JSON each takes.",
       ].join("\n"),
     );
   });
 
   it("writes --help from the schema: required, enum values, limits and defaults", () => {
-    const help = schemaHelp(search);
+    const help = schemaHelp(search, "tools list web_search --schema");
     expect(help.split("\n")[0]).toBe(
       "Usage: web_search --query <string> [--<argument> <value> ...]",
     );
@@ -204,13 +212,16 @@ describe("a command line from a tool's schema", () => {
     expect(help).toMatch(/--max_results <integer> +Default 5\. From 1 to 10\./);
     expect(help).toContain("--sites <string>...");
     expect(help).toContain("--json <object|->");
-    const withDefault = schemaHelp({
-      path: ["mail", "search"],
-      description: "",
-      schema: {
-        properties: { limit: { type: "integer", minimum: 1, default: 25 } },
+    const withDefault = schemaHelp(
+      {
+        path: ["mail", "search"],
+        description: "",
+        schema: {
+          properties: { limit: { type: "integer", minimum: 1, default: 25 } },
+        },
       },
-    });
+      "tools list mail --schema",
+    );
     expect(withDefault).toContain("At least 1. Default: 25.");
   });
 });
