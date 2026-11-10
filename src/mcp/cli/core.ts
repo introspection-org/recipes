@@ -1997,7 +1997,7 @@ async function callWithMcporter(args: string[]): Promise<number> {
   try {
     ({ runtime, owned } = await acquireRuntime());
     // pi-mcp takes the daemon's path; mcporter's own `call` drives mcporter's runtime.
-    if (usesPiMcpClient() || args.slice(1).some(isHelpArg))
+    if (usesPiMcpClient() || args.includes("--help") || args.includes("-h"))
       return await callWithSharedRuntime(runtime, args);
     const { handleCall } = await loadMcporterCli();
     await handleCall(runtime as Parameters<typeof handleCall>[0], args);
@@ -2036,12 +2036,6 @@ async function callWithSharedRuntime(
       output: "string",
       "no-oauth": "boolean",
     });
-    const stdinText = rest.some(
-      (arg, index) =>
-        arg === "--json=-" || (arg === "--json" && rest[index + 1] === "-"),
-    )
-      ? await readStdin()
-      : "";
     if (timeout !== undefined && !/^[1-9]\d*$/.test(String(timeout)))
       throw new Error("--timeout must be a positive integer (milliseconds).");
     if (!(OUTPUT_FORMATS as readonly unknown[]).includes(output))
@@ -2059,11 +2053,27 @@ async function callWithSharedRuntime(
       description: entry?.description ?? "",
       schema: schema ?? {},
     };
-    const parsed = parseSchemaArgs(command, rest, () => stdinText, {
-      assignments: true,
-      // With no catalog entry the server judges every argument.
-      unknown: !schema,
-    });
+    // Read stdin only when the parse takes `--json -`, not a flag's value `-`.
+    let stdinText: string | undefined;
+    const parse = () =>
+      parseSchemaArgs(
+        command,
+        rest,
+        () => {
+          if (stdinText === undefined) throw NEEDS_STDIN;
+          return stdinText;
+        },
+        // With no catalog entry the server judges every argument.
+        { assignments: true, unknown: !schema },
+      );
+    let parsed: ReturnType<typeof parse>;
+    try {
+      parsed = parse();
+    } catch (error) {
+      if (error !== NEEDS_STDIN) throw error;
+      stdinText = await readStdin();
+      parsed = parse();
+    }
     if (parsed.help) {
       stdout.write(
         `${schemaHelp(command, `mcp list ${server}.${tool} --schema`)}\n`,
@@ -2128,6 +2138,7 @@ async function callWithSharedRuntime(
 }
 
 const OUTPUT_FORMATS = ["auto", "text", "markdown", "json", "raw"] as const;
+const NEEDS_STDIN = Symbol("needs stdin");
 
 type CallOutputKind = "json" | "markdown" | "text" | "raw";
 type CallOutputFormat = CallOutputKind | "auto";

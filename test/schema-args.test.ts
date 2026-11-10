@@ -287,6 +287,55 @@ describe("a command line from a tool's schema", () => {
     ).toEqual({ time_zone: "UTC" });
   });
 
+  it("reads a flag and its alias as one argument, in the order given", () => {
+    const command = {
+      path: ["t"],
+      description: "",
+      schema: {
+        properties: {
+          multipleBlocks: { type: "boolean" },
+          orderedItems: { type: "array", items: { type: "string" } },
+          query: { type: "string" },
+          max_results: { type: "integer" },
+        },
+      },
+    };
+    const args = (argv: string[]) =>
+      parseSchemaArgs(
+        command,
+        argv,
+        () => {
+          throw new Error("stdin was read");
+        },
+        { assignments: true },
+      ).args;
+    expect(args(["--multipleBlocks", "--no-multiple-blocks"])).toEqual({
+      multipleBlocks: false,
+    });
+    expect(args(["--no-multiple-blocks", "--multipleBlocks"])).toEqual({
+      multipleBlocks: true,
+    });
+    expect(args(["--no-multipleBlocks", "--multiple-blocks"])).toEqual({
+      multipleBlocks: true,
+    });
+    expect(args(["--max_results", "3", "--max-results", "5"])).toEqual({
+      max_results: 5,
+    });
+    expect(
+      args(["--orderedItems", "first", "--ordered-items", "second"]),
+    ).toEqual({ orderedItems: ["first", "second"] });
+    // A flag's value is the flag's, whatever it looks like; stdin is not read.
+    expect(args(["--query=--json"])).toEqual({ query: "--json" });
+    expect(args(["--query", 'key="1"'])).toEqual({ query: 'key="1"' });
+    expect(args(["--query", "-"])).toEqual({ query: "-" });
+    expect(args(["--query=--multipleBlocks"])).toEqual({
+      query: "--multipleBlocks",
+    });
+    expect(() => args(["--query", "a", "query=b"])).toThrow(
+      "argument 'query' was passed more than once",
+    );
+  });
+
   it("keeps the exact names where kebab-case would collide", () => {
     const command = {
       path: ["t"],

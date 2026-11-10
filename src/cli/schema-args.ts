@@ -184,11 +184,55 @@ function options(command: SchemaCommand): ParseArgsOptionsConfig {
     json: { type: "string" },
   };
   for (const field of fields(command).filter(flagged))
-    for (const name of new Set([field.flag, field.name]))
-      config[name] = isBoolean(field.shape)
-        ? { type: "boolean" }
-        : { type: "string", multiple: field.shape.kind === "array" };
+    config[field.flag] = isBoolean(field.shape)
+      ? { type: "boolean" }
+      : { type: "string", multiple: field.shape.kind === "array" };
   return config;
+}
+
+/**
+ * `argv` with each exact property name (`--max_results`, `--no-multipleBlocks`)
+ * written as its flag, so both spellings are one option and keep their order.
+ */
+function canonical(command: SchemaCommand, argv: readonly string[]): string[] {
+  const aliases = new Map<string, string>();
+  // The flags whose next word is their value, in either spelling.
+  const takesValue = new Set(["json"]);
+  for (const field of fields(command).filter(flagged)) {
+    if (!isBoolean(field.shape)) {
+      takesValue.add(field.flag);
+      takesValue.add(field.name);
+    }
+    if (field.flag !== field.name) {
+      aliases.set(field.name, field.flag);
+      if (isBoolean(field.shape))
+        aliases.set(`no-${field.name}`, `no-${field.flag}`);
+    }
+  }
+  const out: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const word = argv[index]!;
+    if (word === "--") {
+      out.push(...argv.slice(index));
+      break;
+    }
+    if (!word.startsWith("--")) {
+      out.push(word);
+      continue;
+    }
+    const equals = word.indexOf("=");
+    const name = word.slice(2, equals === -1 ? undefined : equals);
+    const flag = aliases.get(name);
+    out.push(
+      flag === undefined
+        ? word
+        : `--${flag}${equals === -1 ? "" : word.slice(equals)}`,
+    );
+    // The next word is this flag's value, never an option to rewrite.
+    if (equals === -1 && takesValue.has(name) && index + 1 < argv.length)
+      out.push(argv[++index]!);
+  }
+  return out;
 }
 
 /** A flag's text as `type`, or the text itself for whoever runs the call to judge. */
@@ -328,7 +372,7 @@ export function parseSchemaArgs(
   let positionals: string[];
   try {
     ({ values, positionals } = parseArgs({
-      args: [...argv],
+      args: canonical(command, argv),
       options: options(command),
       strict: true,
       allowPositionals: assignments,
@@ -356,28 +400,20 @@ export function parseSchemaArgs(
   }
   const all = fields(command);
   for (const field of all.filter(flagged)) {
-    // The kebab flag and the exact name (its alias) are one argument.
-    const given = [...new Set([field.flag, field.name])].flatMap((name) => {
-      const raw = values[name];
-      return raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
-    });
-    if (given.length > 0)
-      args[field.name] = valueOf(
-        field.shape,
-        field.shape.kind === "array" ? given : given.at(-1)!,
-      );
+    const raw = values[field.flag];
+    if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
   }
   const assigned = new Set<string>();
   for (const word of positionals) {
     const match = ASSIGNMENT.exec(word);
     if (!match) throw fail(`'${word}' is not name=value or a --flag`);
     const [, name, raw] = match as unknown as [string, string, string];
-    if (assigned.has(name))
+    const field = all.find((entry) => entry.name === name);
+    if (assigned.has(name) || (field && values[field.flag] !== undefined))
       throw fail(
         `argument '${name}' was passed more than once; pass each argument exactly once`,
       );
     assigned.add(name);
-    const field = all.find((entry) => entry.name === name);
     if (!field) throw fail(`unknown argument '${name}'`);
     const { text, exact } = assignedText(usage, name, raw);
     if (exact) args[name] = text;
