@@ -104,16 +104,16 @@ function scalarOf(property: Property): string | undefined {
   return undefined;
 }
 
-/** Whether a property takes a string, in any branch of its unions. */
-function allowsString(property: Property): boolean {
+/** Whether a property takes `type` (`string`, `null`), in any branch of its unions. */
+function allowsType(property: Property, wanted: string): boolean {
   const type = property.type;
-  if (type === "string" || (Array.isArray(type) && type.includes("string")))
+  if (type === wanted || (Array.isArray(type) && type.includes(wanted)))
     return true;
   return ["anyOf", "oneOf", "allOf"].some((key) => {
     const branches = property[key];
     return (
       Array.isArray(branches) &&
-      branches.some((branch) => allowsString(record(branch)))
+      branches.some((branch) => allowsType(record(branch), wanted))
     );
   });
 }
@@ -288,27 +288,27 @@ function decode(type: string | undefined, text: string): unknown {
     const value = Number(text);
     return text.trim() && Number.isFinite(value) ? value : text;
   }
-  // No type: a number or boolean as such, anything else the text.
+  // No type: any JSON value as such (an object, a number, null), else the text.
   try {
     const value = JSON.parse(text) as unknown;
-    return typeof value === "number" || typeof value === "boolean"
-      ? value
-      : text;
+    return typeof value === "string" ? text : value;
   } catch {
     return text;
   }
 }
 
 function valueOf(
-  shape: Shape,
+  field: Pick<Field, "shape" | "property">,
   raw: string | boolean | Array<string | boolean>,
 ): unknown {
+  const { shape } = field;
   if (typeof raw === "boolean") return raw;
-  if (shape.kind !== "array")
-    return decode(
-      shape.kind === "scalar" ? shape.type : undefined,
-      String(Array.isArray(raw) ? raw.at(-1) : raw),
-    );
+  if (shape.kind !== "array") {
+    const text = String(Array.isArray(raw) ? raw.at(-1) : raw);
+    // `null` unsets a property that takes null.
+    if (text === "null" && allowsType(field.property, "null")) return null;
+    return decode(shape.kind === "scalar" ? shape.type : undefined, text);
+  }
   const texts = (Array.isArray(raw) ? raw : [raw]).map(String);
   // One value that reads as a JSON array is the whole array.
   if (texts.length === 1 && texts[0]!.trimStart().startsWith("[")) {
@@ -447,7 +447,7 @@ export function parseSchemaArgs(
   const all = fields(command);
   for (const field of all.filter(flagged)) {
     const raw = values[field.flag];
-    if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
+    if (raw !== undefined) args[field.name] = valueOf(field, raw);
   }
   const assigned = new Set<string>();
   for (const word of positionals) {
@@ -463,14 +463,13 @@ export function parseSchemaArgs(
     if (!field) throw fail(`unknown argument '${name}'`);
     const { text, exact } = assignedText(usage, name, raw);
     if (exact) args[name] = text;
-    else if (field.shape.kind !== "json")
-      args[name] = valueOf(field.shape, text);
+    else if (field.shape.kind !== "json") args[name] = valueOf(field, text);
     else
       try {
         const value = JSON.parse(text) as unknown;
         // Text the schema takes as a string stays one, though it reads as a number.
         args[name] =
-          typeof value !== "object" && allowsString(field.property)
+          typeof value !== "object" && allowsType(field.property, "string")
             ? text
             : value;
       } catch {

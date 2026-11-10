@@ -393,6 +393,43 @@ describe("a command line from a tool's schema", () => {
     expect(schemaHelp(command, "x")).toContain("--id <string>");
   });
 
+  it("reads null for a property that takes it, and JSON for an untyped one", () => {
+    const command = {
+      path: ["mcp", "call", "s.t"],
+      description: "",
+      schema: {
+        properties: {
+          slaBreachesAt: { type: ["string", "null"] },
+          slaType: { anyOf: [{ type: "string" }, { type: "null" }] },
+          name: { type: "string" },
+          payload: {},
+        },
+      },
+    };
+    const parse = (argv: string[], unknown = false) =>
+      parseSchemaArgs(command, argv, undefined, { assignments: true, unknown })
+        .args;
+    expect(parse(["slaBreachesAt=null", "slaType=null", "name=null"])).toEqual({
+      slaBreachesAt: null,
+      slaType: null,
+      name: "null",
+    });
+    expect(parse(['slaBreachesAt="null"'])).toEqual({ slaBreachesAt: "null" });
+    expect(parse(["--sla-breaches-at", "null"])).toEqual({
+      slaBreachesAt: null,
+    });
+    expect(parse(['payload={"a":1}'])).toEqual({ payload: { a: 1 } });
+    expect(parse(["payload=[1,2]"])).toEqual({ payload: [1, 2] });
+    expect(parse(["payload=null"])).toEqual({ payload: null });
+    expect(parse(['payload="x"'])).toEqual({ payload: "x" });
+    expect(parse(["--payload", '{"a":1}'])).toEqual({ payload: { a: 1 } });
+    // With no schema to read, every argument is untyped.
+    expect(parse(['other={"b":2}', "--more", "[3]"], true)).toEqual({
+      other: { b: 2 },
+      more: [3],
+    });
+  });
+
   it("keeps a boolean whose kebab flag would start with no- on its own name", () => {
     const command = {
       path: ["t"],
