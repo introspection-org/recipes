@@ -10,10 +10,13 @@ import { readFileSync } from "node:fs";
 import { createConnection } from "node:net";
 
 import {
-  type CommandSchema,
+  type JsonSchema,
   parseSchemaArgs,
   SchemaArgsError,
+  type SchemaCommand,
+  schemaGroupHelp,
   schemaHelp,
+  usageOf,
 } from "../cli/schema-args.js";
 import {
   TOOLS_SOCKET_ENV,
@@ -58,7 +61,7 @@ interface Command {
   command?: string;
   description: string;
   /** The command's own schema; `command`, which the call's name carries, set aside. */
-  schema: CommandSchema;
+  schema: JsonSchema;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -68,7 +71,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** `schema` without `command`, which the call's name carries. */
-function argumentsOf(schema: Record<string, unknown>): CommandSchema {
+function argumentsOf(schema: Record<string, unknown>): JsonSchema {
   const { command: _command, ...properties } = record(schema.properties);
   const required = Array.isArray(schema.required)
     ? schema.required.map(String).filter((name) => name !== "command")
@@ -104,29 +107,13 @@ function commandsOf(tool: ToolsBridgeTool): Command[] {
   ];
 }
 
-/** A description's first sentence, for a one-line listing. */
-function firstSentence(text: string): string {
-  const line = text.split("\n")[0] ?? "";
-  return line.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? line;
-}
-
-/** `<tool> --help`: a tool's commands. */
-function toolHelp(tool: ToolsBridgeTool, commands: Command[]): string {
-  const width =
-    Math.max(...commands.map((command) => command.command!.length)) + 2;
-  return [
-    `Usage: ${tool.name} <command> [--<argument> <value> ...]`,
-    "",
-    firstSentence(tool.description),
-    "",
-    "Commands:",
-    ...commands.map(
-      (command) =>
-        `  ${command.command!.padEnd(width)}${firstSentence(command.description)}`,
-    ),
-    "",
-    `Run \`${tool.name} <command> --help\` for a command's arguments.`,
-  ].join("\n");
+/** The adapter's command for one of a tool's commands. */
+function specOf(command: Command): SchemaCommand {
+  return {
+    path: command.command ? [command.tool, command.command] : [command.tool],
+    description: command.description,
+    schema: command.schema,
+  };
 }
 
 const isHelp = (arg: string | undefined) =>
@@ -252,11 +239,12 @@ export async function runToolsCommand(
       );
     const commands = commandsOf(tool);
     let command: Command;
-    let usage: string;
     const first = rest[0];
     if (commands.some((entry) => entry.command)) {
       if (first === undefined || isHelp(first)) {
-        io[first ? "stdout" : "stderr"].write(`${toolHelp(tool, commands)}\n`);
+        io[first ? "stdout" : "stderr"].write(
+          `${schemaGroupHelp([tool.name], tool.description, commands.map(specOf))}\n`,
+        );
         return first ? 0 : 64;
       }
       const found = commands.find((entry) => entry.command === first);
@@ -266,21 +254,16 @@ export async function runToolsCommand(
         );
       rest.shift();
       command = found;
-      usage = `${tool.name} ${first}`;
     } else {
       command = commands[0]!;
-      usage = tool.name;
       if (first === "help") rest[0] = "--help";
       else if (first !== undefined && !first.startsWith("-"))
         throw new UsageError(
           `${tool.name} has no commands: pass its arguments as flags or --json -. ${tool.name} --help`,
         );
     }
-    const spec = {
-      usage,
-      description: command.description,
-      schema: command.schema,
-    };
+    const spec = specOf(command);
+    const usage = usageOf(spec);
     const parsed = parseSchemaArgs(spec, rest, io.stdin);
     if (parsed.help) {
       io.stdout.write(`${schemaHelp(spec)}\n`);

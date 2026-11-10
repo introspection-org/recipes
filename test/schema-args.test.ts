@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  type CommandSchema,
+  type JsonSchema,
   parseSchemaArgs,
   SchemaArgsError,
+  schemaGroupHelp,
   schemaHelp,
 } from "../src/cli/schema-args.js";
 import { webSearchParameters } from "../src/search/tool.js";
 
 const search = {
-  usage: "web_search",
+  path: ["web_search"],
   description: "Search the web.",
-  schema: webSearchParameters(["tavily", "exa"]) as unknown as CommandSchema,
+  schema: webSearchParameters(["tavily", "exa"]) as unknown as JsonSchema,
 };
 const parse = (argv: string[], stdin = "") =>
   parseSchemaArgs(search, argv, () => stdin).args;
@@ -81,37 +82,116 @@ describe("a command line from a tool's schema", () => {
     expect(parseSchemaArgs(search, ["--help"]).help).toBe(true);
   });
 
-  it("takes booleans as --flag and --no-flag, and anything else as JSON", () => {
+  it("reads a third-party schema: flags what it can, --json for the rest", () => {
+    // An MCP server's inputSchema, as a server might write it.
     const command = {
-      usage: "issues list",
-      description: "",
+      path: ["github", "create_issue"],
+      description: "Create an issue in a repository.",
       schema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
         properties: {
-          includeArchived: { type: "boolean" },
-          filter: { type: "object" },
+          title: { type: "string", description: "Issue title" },
+          draft: { type: "boolean" },
+          labels: { type: "array", items: { type: "string" } },
           state: { anyOf: [{ const: "open" }, { const: "closed" }] },
+          priority: { enum: [1, 2, 3] },
           limit: { type: ["integer", "null"], minimum: 1, maximum: 50 },
+          milestone: {},
+          body: {
+            type: "object",
+            properties: { text: { type: "string" } },
+          },
+          assignee: {
+            anyOf: [{ type: "string" }, { type: "object" }],
+          },
+          template: { $ref: "#/definitions/Template" },
+          x_custom: { "x-vendor-extension": true, type: "string" },
         },
+        required: ["title", "body"],
+        definitions: { Template: { type: "object" } },
       },
     };
-    const args = (argv: string[]) => parseSchemaArgs(command, argv).args;
+    const args = (argv: string[], stdin = "") =>
+      parseSchemaArgs(command, argv, () => stdin).args;
     expect(
       args([
-        "--includeArchived",
-        "--filter",
-        '{"team":"INT"}',
+        "--title",
+        "Broken build",
+        "--draft",
+        "--labels",
+        "bug",
+        "--labels",
+        "ci",
         "--state",
         "open",
+        "--priority",
+        "2",
         "--limit",
         "10",
+        "--milestone",
+        "7",
+        "--x_custom",
+        "v",
       ]),
     ).toEqual({
-      includeArchived: true,
-      filter: { team: "INT" },
+      title: "Broken build",
+      draft: true,
+      labels: ["bug", "ci"],
       state: "open",
+      priority: 2,
       limit: 10,
+      milestone: 7,
+      x_custom: "v",
     });
-    expect(args(["--no-includeArchived"])).toEqual({ includeArchived: false });
+    expect(args(["--no-draft", "--milestone", "v1.2"])).toEqual({
+      draft: false,
+      milestone: "v1.2",
+    });
+    // Nested, union and $ref properties are --json only.
+    expect(() => args(["--body", "{}"])).toThrow(SchemaArgsError);
+    expect(
+      args(
+        ["--json", "-", "--title", "t"],
+        '{"body":{"text":"x"},"template":{}}',
+      ),
+    ).toEqual({ body: { text: "x" }, template: {}, title: "t" });
+    const help = schemaHelp(command);
+    expect(help.split("\n")[0]).toBe(
+      "Usage: github create_issue --title <string> [--<argument> <value> ...]",
+    );
+    expect(help).toContain("--state <open|closed>");
+    expect(help).toContain("--priority <1|2|3>");
+    expect(help).toContain("--labels <string>...");
+    expect(help).toContain("--milestone <value>");
+    expect(help).toMatch(
+      /Only through --json:\n {2}body +Required\.\n {2}assignee\n {2}template/,
+    );
+  });
+
+  it("lists a group's commands with their first sentence", () => {
+    expect(
+      schemaGroupHelp(["github"], "GitHub's tools. More text.", [
+        {
+          path: ["github", "create_issue"],
+          description: "Create an issue. Then more.",
+          schema: {},
+        },
+        { path: ["github", "list_issues"], description: "", schema: {} },
+      ]),
+    ).toBe(
+      [
+        "Usage: github <command> [--<argument> <value> ...]",
+        "",
+        "GitHub's tools.",
+        "",
+        "Commands:",
+        "  create_issue  Create an issue.",
+        "  list_issues   ",
+        "",
+        "Run `github <command> --help` for a command's arguments.",
+      ].join("\n"),
+    );
   });
 
   it("writes --help from the schema: required, enum values, limits and defaults", () => {
@@ -125,7 +205,7 @@ describe("a command line from a tool's schema", () => {
     expect(help).toContain("--sites <string>...");
     expect(help).toContain("--json <object|->");
     const withDefault = schemaHelp({
-      usage: "mail search",
+      path: ["mail", "search"],
       description: "",
       schema: {
         properties: { limit: { type: "integer", minimum: 1, default: 25 } },

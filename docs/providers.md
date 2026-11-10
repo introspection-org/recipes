@@ -309,10 +309,11 @@ them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-genera
   description; `test/tool-arguments.test.ts` fails on one without. A word that
   varies by provider is a `{word}` placeholder the tool fills at registration
   (`{folder}`, `{labels}`).
-- **Regenerate with `pnpm schemas`** and commit the `arguments.generated.ts`
-  beside the source. CI runs `pnpm schemas:check`, which fails when a
-  generated file is stale. Never edit the generated file, and never hand-write
-  a TypeBox schema for a tool's arguments.
+- **The build generates them** (`pnpm schemas`, which runs wherever `pnpm
+  manifest` does) into a gitignored `arguments.generated.ts` beside the
+  source; it is never committed or edited. `test/tool-arguments.test.ts` checks
+  each tool's `--help` reads them. Never hand-write a TypeBox schema for a
+  tool's arguments.
 - **The tool merges the commands with `commandParameters`**
   ([`src/command-parameters.ts`](../src/command-parameters.ts)): one flat
   object with each field once, and the commands as its `anyOf` for validators

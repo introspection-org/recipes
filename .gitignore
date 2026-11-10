@@ -28,3 +28,4 @@ __pycache__/
 .venv/
 *.egg-info/
 src/recipe/manifest.generated.ts
+src/**/arguments.generated.ts

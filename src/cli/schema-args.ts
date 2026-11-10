@@ -1,26 +1,26 @@
 /**
- * A command line from a tool's own parameter schema: each top-level property
- * is a `--flag`, its `--help` is written from the same schema, and `--json`
- * still takes every argument as one object. A flag's text is only decoded to
- * its property's type here; the call's arguments are validated against the
- * schema by the tool pipeline, as any other call's are, so a flag and the same
- * value in `--json` fail the same way.
+ * A command line from a JSON Schema, whoever wrote it: a first-party tool's
+ * generated schema or an MCP tool's `inputSchema`. Each top-level property
+ * that a flag can carry (a scalar, an enum, an array of scalars, or one with
+ * no `type`) is a `--flag`; anything else (an object, an `anyOf` of shapes, a
+ * `$ref`) is reachable through `--json`, which takes every argument as one
+ * object. `--help` is written from the same schema. A flag's text is only
+ * decoded to its property's type: what the values must be is checked by
+ * whoever runs the call, so a flag and the same value in `--json` fail alike.
  */
 
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
-/** An object schema: the properties a command takes, and those it requires. */
-export interface CommandSchema {
-  properties: Record<string, unknown>;
-  required?: readonly string[];
-}
+/** A JSON Schema as data; keywords this adapter does not read are ignored. */
+export type JsonSchema = Readonly<Record<string, unknown>>;
 
-/** A command made from a schema: what `--help` prints and what a call parses. */
+/** One command: the words that invoke it, what it does, and its arguments' schema. */
 export interface SchemaCommand {
-  /** How the command is invoked: `issues list`, `web_search`. */
-  usage: string;
+  /** `["issues", "create"]`, `["github", "create_issue"]`, `["web_search"]`. */
+  path: readonly string[];
   description: string;
-  schema: CommandSchema;
+  /** An object schema; only its `properties` and `required` are read. */
+  schema: JsonSchema;
 }
 
 /** A command line that cannot be read; `usage` names the command for its `--help`. */
@@ -36,6 +36,8 @@ export class SchemaArgsError extends Error {
 /** Flags every schema command takes, whatever its properties are named. */
 const RESERVED = new Set(["help", "json"]);
 
+const SCALAR = new Set(["string", "number", "integer", "boolean"]);
+
 type Property = Record<string, unknown>;
 
 function record(value: unknown): Property {
@@ -44,20 +46,9 @@ function record(value: unknown): Property {
     : {};
 }
 
-/** A property's own type, `null` set aside: `["string", "null"]` is a string. */
-function typeOf(property: Property): string | undefined {
-  const type = property.type;
-  if (typeof type === "string") return type;
-  if (Array.isArray(type)) {
-    const types = type.filter((entry) => entry !== "null");
-    return types.length === 1 ? String(types[0]) : undefined;
-  }
-  const values = enumOf(property);
-  if (values?.length) {
-    const kinds = new Set(values.map((value) => typeof value));
-    if (kinds.size === 1) return [...kinds][0];
-  }
-  return undefined;
+/** How a command is typed: `issues create`. */
+export function usageOf(command: Pick<SchemaCommand, "path">): string {
+  return command.path.join(" ");
 }
 
 /** The values a property allows: `enum`, a `const`, or a union of `const`s. */
@@ -74,71 +65,139 @@ function enumOf(property: Property): unknown[] | undefined {
     : undefined;
 }
 
-const SCALAR = new Set(["string", "number", "integer", "boolean"]);
-
-/** The items of an array a flag repeats: scalars other than booleans. */
-function repeated(property: Property): Property | undefined {
-  if (typeOf(property) !== "array") return undefined;
-  const items = record(property.items);
-  const type = typeOf(items);
-  return type && SCALAR.has(type) && type !== "boolean" ? items : undefined;
+/** A property's scalar type, `null` set aside; `undefined` when it has none. */
+function scalarOf(property: Property): string | undefined {
+  const { type } = property;
+  const types = (Array.isArray(type) ? type : [type]).filter(
+    (entry) => entry !== undefined && entry !== "null",
+  );
+  if (types.length === 1 && SCALAR.has(String(types[0])))
+    return String(types[0]);
+  const values = enumOf(property);
+  if (types.length === 0 && values?.length) {
+    const kinds = new Set(values.map((value) => typeof value));
+    if (kinds.size === 1) {
+      const [kind] = kinds;
+      if (kind === "number")
+        return values.every(Number.isInteger) ? "integer" : "number";
+      if (kind === "string" || kind === "boolean") return kind;
+    }
+  }
+  return undefined;
 }
 
-/** The command's flags: its top-level properties but the reserved names. */
-function flags(schema: CommandSchema): Array<[string, Property]> {
-  return Object.entries(schema.properties)
-    .filter(([name]) => !RESERVED.has(name))
-    .map(([name, property]) => [name, record(property)]);
+/** No `type` and nothing that shapes it: a string flag, decoded leniently. */
+function untyped(property: Property): boolean {
+  return (
+    property.type === undefined &&
+    enumOf(property) === undefined &&
+    !["$ref", "anyOf", "oneOf", "allOf", "properties", "items"].some(
+      (key) => key in property,
+    )
+  );
 }
+
+/** What a flag carries: one scalar, scalars repeated, or nothing (`--json` only). */
+type Shape =
+  | { kind: "scalar"; type: string | undefined }
+  | { kind: "array"; items: Property; type: string | undefined }
+  | { kind: "json" };
+
+function shapeOf(property: Property): Shape {
+  const type = scalarOf(property);
+  if (type || untyped(property)) return { kind: "scalar", type };
+  if (property.type === "array") {
+    const items = record(property.items);
+    const itemType = scalarOf(items);
+    // A repeated boolean flag has no value to repeat, so it takes --json.
+    if ((itemType && itemType !== "boolean") || (items && untyped(items)))
+      return { kind: "array", items, type: itemType };
+  }
+  return { kind: "json" };
+}
+
+interface Field {
+  name: string;
+  property: Property;
+  shape: Shape;
+  required: boolean;
+}
+
+/** A command's top-level properties, each with what a flag can carry of it. */
+function fields(command: SchemaCommand): Field[] {
+  const required = new Set(
+    Array.isArray(command.schema.required)
+      ? command.schema.required.map(String)
+      : [],
+  );
+  return Object.entries(record(command.schema.properties)).map(
+    ([name, value]) => {
+      const property = record(value);
+      return {
+        name,
+        property,
+        shape: RESERVED.has(name) ? { kind: "json" } : shapeOf(property),
+        required: required.has(name),
+      };
+    },
+  );
+}
+
+const flagged = (field: Field) => field.shape.kind !== "json";
 
 /** Booleans are boolean options, an array of scalars repeats, and the rest are strings. */
-function options(schema: CommandSchema): ParseArgsOptionsConfig {
+function options(command: SchemaCommand): ParseArgsOptionsConfig {
   const config: ParseArgsOptionsConfig = {
     help: { type: "boolean", short: "h" },
     json: { type: "string" },
   };
-  for (const [name, property] of flags(schema))
-    config[name] =
-      typeOf(property) === "boolean"
+  for (const field of fields(command).filter(flagged))
+    config[field.name] =
+      field.shape.kind === "scalar" && field.shape.type === "boolean"
         ? { type: "boolean" }
-        : { type: "string", multiple: repeated(property) !== undefined };
+        : { type: "string", multiple: field.shape.kind === "array" };
   return config;
 }
 
-/** A flag's text as its property's type, or the text itself for the pipeline to judge. */
-function decode(property: Property, text: string): unknown {
-  switch (typeOf(property)) {
-    case "string":
-      return text;
-    case "number":
-    case "integer": {
-      const value = Number(text);
-      return text.trim() && Number.isFinite(value) ? value : text;
-    }
-    default:
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        return text;
-      }
+/** A flag's text as `type`, or the text itself for whoever runs the call to judge. */
+function decode(type: string | undefined, text: string): unknown {
+  if (type === "string") return text;
+  if (type === "number" || type === "integer") {
+    const value = Number(text);
+    return text.trim() && Number.isFinite(value) ? value : text;
+  }
+  // No type: a number or boolean as such, anything else the text.
+  try {
+    const value = JSON.parse(text) as unknown;
+    return typeof value === "number" || typeof value === "boolean"
+      ? value
+      : text;
+  } catch {
+    return text;
   }
 }
 
 function valueOf(
-  property: Property,
+  shape: Shape,
   raw: string | boolean | Array<string | boolean>,
 ): unknown {
   if (typeof raw === "boolean") return raw;
-  const items = repeated(property);
-  if (!items)
-    return decode(property, String(Array.isArray(raw) ? raw.at(-1) : raw));
+  if (shape.kind !== "array")
+    return decode(
+      shape.kind === "scalar" ? shape.type : undefined,
+      String(Array.isArray(raw) ? raw.at(-1) : raw),
+    );
   const texts = (Array.isArray(raw) ? raw : [raw]).map(String);
   // One value that reads as a JSON array is the whole array.
   if (texts.length === 1 && texts[0]!.trimStart().startsWith("[")) {
-    const whole = decode(property, texts[0]!);
-    if (Array.isArray(whole)) return whole;
+    try {
+      const whole = JSON.parse(texts[0]!) as unknown;
+      if (Array.isArray(whole)) return whole;
+    } catch {
+      // Not JSON: one value of the array.
+    }
   }
-  return texts.map((text) => decode(items, text));
+  return texts.map((text) => decode(shape.type, text));
 }
 
 export interface ParsedSchemaArgs {
@@ -150,21 +209,21 @@ export interface ParsedSchemaArgs {
 /**
  * A call's arguments from its command line: the `--json` object, if any,
  * with each flag's decoded value over it. Only a line that cannot be read
- * fails here (an unknown flag, `--json` that is not an object); what the
- * values must be is the schema's, checked when the call runs.
+ * fails here (an unknown flag, `--json` that is not an object).
  */
 export function parseSchemaArgs(
   command: SchemaCommand,
   argv: readonly string[],
   stdin?: () => string,
 ): ParsedSchemaArgs {
+  const usage = usageOf(command);
   const fail = (message: string) =>
-    new SchemaArgsError(command.usage, `${command.usage}: ${message}`);
+    new SchemaArgsError(usage, `${usage}: ${message}`);
   let values: Record<string, string | boolean | Array<string | boolean>>;
   try {
     values = parseArgs({
       args: [...argv],
-      options: options(command.schema),
+      options: options(command),
       strict: true,
       allowPositionals: false,
       allowNegative: true,
@@ -189,28 +248,23 @@ export function parseSchemaArgs(
       throw fail("--json must be an object");
     args = { ...(body as Record<string, unknown>) };
   }
-  for (const [name, property] of flags(command.schema)) {
-    const raw = values[name];
-    if (raw !== undefined) args[name] = valueOf(property, raw);
+  for (const field of fields(command).filter(flagged)) {
+    const raw = values[field.name];
+    if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
   }
   return { help: false, args };
 }
 
-function placeholder(property: Property): string {
-  const type = typeOf(property);
-  if (type === "boolean") return "";
-  const items = repeated(property);
-  const shown = items ?? property;
-  const values = enumOf(shown);
+function placeholder(field: Field): string {
+  const { shape, property } = field;
+  if (shape.kind === "json") return "";
+  if (shape.kind === "scalar" && shape.type === "boolean") return "";
+  const values = enumOf(shape.kind === "array" ? shape.items : property);
   const name =
     values && values.length <= 6
       ? values.map(String).join("|")
-      : items
-        ? (typeOf(items) ?? "value")
-        : type && SCALAR.has(type)
-          ? type
-          : "json";
-  return ` <${name}>${items ? "..." : ""}`;
+      : (shape.type ?? "value");
+  return ` <${name}>${shape.kind === "array" ? "..." : ""}`;
 }
 
 /** `From 1 to 10.`, `At least 0.`, or `At most 50.` */
@@ -223,26 +277,26 @@ function range(property: Property): string | undefined {
   return undefined;
 }
 
-function note(name: string, property: Property, required: boolean): string {
+function note(field: Field): string {
+  const { name, property, shape } = field;
   const parts: string[] = [];
-  if (required) parts.push("Required.");
+  if (field.required) parts.push("Required.");
   const description = String(property.description ?? property.title ?? "")
     .split("\n")[0]!
     .trim();
   if (description)
     parts.push(/[.!?]$/.test(description) ? description : `${description}.`);
-  const items = repeated(property);
-  const values = enumOf(items ?? property);
-  if (values && values.length > 6)
+  const values = enumOf(shape.kind === "array" ? shape.items : property);
+  if (shape.kind !== "json" && values && values.length > 6)
     parts.push(`One of: ${values.map(String).join(", ")}.`);
   const bounds = range(property);
   if (bounds) parts.push(bounds);
   if ("default" in property)
     parts.push(`Default: ${JSON.stringify(property.default)}.`);
-  if (items) parts.push("Repeat it for each value, or pass a JSON array.");
-  const type = typeOf(property);
-  if (type === "boolean") parts.push(`--no-${name} for false.`);
-  else if (!items && !(type && SCALAR.has(type))) parts.push("A JSON value.");
+  if (shape.kind === "array")
+    parts.push("Repeat it for each value, or pass a JSON array.");
+  if (shape.kind === "scalar" && shape.type === "boolean")
+    parts.push(`--no-${name} for false.`);
   return parts.join(" ");
 }
 
@@ -261,34 +315,48 @@ function columns(rows: Array<[string, string]>): string[] {
   );
 }
 
-/** `--help` for a schema command, read from its schema. */
+/** A description's first sentence, for a one-line listing. */
+function firstSentence(text: string): string {
+  const line = text.trim().split("\n")[0] ?? "";
+  return line.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? line;
+}
+
+/** `--help` for one command, read from its schema. */
 export function schemaHelp(command: SchemaCommand): string {
-  const required = new Set(command.schema.required ?? []);
-  const all = flags(command.schema);
+  const usage = usageOf(command);
+  const all = fields(command);
+  const flags = all.filter(flagged);
+  const jsonOnly = all.filter((field) => !flagged(field));
   const call = [
-    command.usage,
-    ...all
-      .filter(([name]) => required.has(name))
-      .map(([name, property]) => `--${name}${placeholder(property)}`),
+    usage,
+    ...flags
+      .filter((field) => field.required)
+      .map((field) => `--${field.name}${placeholder(field)}`),
   ];
-  if (all.some(([name]) => !required.has(name)))
+  if (flags.some((field) => !field.required))
     call.push("[--<argument> <value> ...]");
   const lines = [
     `Usage: ${call.join(" ")}`,
-    `       ${command.usage} --json '{...}'    (--json - reads the object from stdin)`,
+    `       ${usage} --json '{...}'    (--json - reads the object from stdin)`,
   ];
   const description = command.description.trim().split("\n")[0];
   if (description) lines.push("", description);
-  if (all.length)
+  if (flags.length)
     lines.push(
       "",
       "Arguments:",
       ...columns(
-        all.map(([name, property]) => [
-          `--${name}${placeholder(property)}`,
-          note(name, property, required.has(name)),
+        flags.map((field) => [
+          `--${field.name}${placeholder(field)}`,
+          note(field),
         ]),
       ),
+    );
+  if (jsonOnly.length)
+    lines.push(
+      "",
+      "Only through --json:",
+      ...columns(jsonOnly.map((field) => [field.name, note(field)])),
     );
   lines.push(
     "",
@@ -301,4 +369,27 @@ export function schemaHelp(command: SchemaCommand): string {
     ]),
   );
   return lines.join("\n");
+}
+
+/** `--help` for a group of commands under `path`: each one's name and first sentence. */
+export function schemaGroupHelp(
+  path: readonly string[],
+  description: string,
+  commands: readonly SchemaCommand[],
+): string {
+  const usage = path.join(" ");
+  const names = commands.map((command) => command.path.at(-1) ?? "");
+  const width = Math.max(0, ...names.map((name) => name.length)) + 2;
+  return [
+    `Usage: ${usage} <command> [--<argument> <value> ...]`,
+    ...(description.trim() ? ["", firstSentence(description)] : []),
+    "",
+    "Commands:",
+    ...commands.map(
+      (command, index) =>
+        `  ${names[index]!.padEnd(width)}${firstSentence(command.description)}`,
+    ),
+    "",
+    `Run \`${usage} <command> --help\` for a command's arguments.`,
+  ].join("\n");
 }
