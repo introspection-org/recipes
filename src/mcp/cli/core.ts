@@ -23,8 +23,8 @@ import {
 import {
   parseSchemaArgs,
   SchemaArgsError,
-  type SchemaCommand,
   schemaHelp,
+  takeOptions,
 } from "../../cli/schema-args.js";
 import { createMcpRuntime, usesPiMcpClient } from "../pi-runtime.js";
 import { callToolWithHandshakeRetry } from "./handshake-retry.js";
@@ -2042,25 +2042,21 @@ async function callWithSharedRuntime(
   const tool = selector.slice(separator + 1);
 
   try {
-    const rest = args.slice(1);
+    // The call's own options first: its timeout bounds the catalog lookup too.
+    const {
+      options: { timeout, output = "auto" },
+      rest,
+    } = takeOptions(args.slice(1), {
+      timeout: "string",
+      output: "string",
+      "no-oauth": "boolean",
+    });
     const stdinText = rest.some(
       (arg, index) =>
         arg === "--json=-" || (arg === "--json" && rest[index + 1] === "-"),
     )
       ? await readStdin()
       : "";
-    const parse = (command: SchemaCommand, unknown: boolean) =>
-      parseSchemaArgs(command, rest, () => stdinText, {
-        assignments: true,
-        options: { timeout: "string", output: "string", "no-oauth": "boolean" },
-        unknown,
-      });
-    const path = ["mcp", "call", `${server}.${tool}`];
-    // The call's own options first: its timeout bounds the catalog lookup too.
-    const { timeout, output = "auto" } = parse(
-      { path, description: "", schema: {} },
-      true,
-    ).options;
     if (timeout !== undefined && !/^[1-9]\d*$/.test(String(timeout)))
       throw new Error("--timeout must be a positive integer (milliseconds).");
     if (!(OUTPUT_FORMATS as readonly unknown[]).includes(output))
@@ -2074,12 +2070,15 @@ async function callWithSharedRuntime(
     const entry = await loadCallCatalogEntry(runtime, server, tool, timeoutMs);
     const schema = entry?.input_schema;
     const command = {
-      path,
+      path: ["mcp", "call", `${server}.${tool}`],
       description: entry?.description ?? "",
       schema: schema ?? {},
     };
-    // With no catalog entry the server judges every argument.
-    const parsed = parse(command, !schema);
+    const parsed = parseSchemaArgs(command, rest, () => stdinText, {
+      assignments: true,
+      // With no catalog entry the server judges every argument.
+      unknown: !schema,
+    });
     if (parsed.help) {
       stdout.write(
         `${schemaHelp(command, `mcp list ${server}.${tool} --schema`)}\n`,

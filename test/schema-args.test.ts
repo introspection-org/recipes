@@ -6,6 +6,7 @@ import {
   SchemaArgsError,
   schemaGroupHelp,
   schemaHelp,
+  takeOptions,
 } from "../src/cli/schema-args.js";
 import { webSearchParameters } from "../src/search/tool.js";
 
@@ -172,7 +173,7 @@ describe("a command line from a tool's schema", () => {
     );
   });
 
-  it("takes name=value words, the caller's own flags, and unknown arguments when asked", () => {
+  it("takes name=value words, and unknown arguments when asked", () => {
     const command = {
       path: ["mcp", "call", "s.t"],
       description: "",
@@ -187,15 +188,11 @@ describe("a command line from a tool's schema", () => {
     const parse = (argv: string[], unknown = false) =>
       parseSchemaArgs(command, argv, undefined, {
         assignments: true,
-        options: { timeout: "string" },
         unknown,
       });
-    expect(
-      parse(["id=7", "limit=5", 'filter={"a":1}', "--timeout", "100"]),
-    ).toEqual({
+    expect(parse(["id=7", "limit=5", 'filter={"a":1}'])).toEqual({
       help: false,
       args: { id: "7", limit: 5, filter: { a: 1 } },
-      options: { timeout: "100" },
     });
     expect(parse(['id="7"']).args).toEqual({ id: "7" });
     expect(() => parse(["nope=1"])).toThrow("unknown argument 'nope'");
@@ -206,6 +203,32 @@ describe("a command line from a tool's schema", () => {
     });
     expect(() => parseSchemaArgs(command, ["id=7"], undefined, {})).toThrow(
       SchemaArgsError,
+    );
+  });
+
+  it("takes the caller's own options out and leaves every other word as it was", () => {
+    const names = { timeout: "string", quiet: "boolean" } as const;
+    expect(
+      takeOptions(
+        ["--flag", "--timeout", "100", "--other=x", "a=b", "--quiet"],
+        names,
+      ),
+    ).toEqual({
+      options: { timeout: "100", quiet: true },
+      rest: ["--flag", "--other=x", "a=b"],
+    });
+    expect(takeOptions(["--timeout=5", "--note", "x"], names)).toEqual({
+      options: { timeout: "5" },
+      rest: ["--note", "x"],
+    });
+    // Nothing after -- is read; a value never starts with --.
+    expect(takeOptions(["--", "--timeout", "1"], names).rest).toEqual([
+      "--",
+      "--timeout",
+      "1",
+    ]);
+    expect(() => takeOptions(["--timeout", "--quiet"], names)).toThrow(
+      "Flag '--timeout' requires a value.",
     );
   });
 

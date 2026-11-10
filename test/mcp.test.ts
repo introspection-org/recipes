@@ -681,7 +681,7 @@ describe("lazy MCP CLI discovery", () => {
       const started = Date.now();
       const call = await runMcpShim(
         shim.shimPath,
-        ["call", "stub.lookup_profile", "--timeout", "500", "id=7"],
+        ["call", "stub.lookup_profile", "--id", "7", "--timeout", "500"],
         cliEnv,
       );
       expect(Date.now() - started).toBeLessThan(5_000);

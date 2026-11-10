@@ -147,10 +147,7 @@ function fields(command: SchemaCommand): Field[] {
 const flagged = (field: Field) => field.shape.kind !== "json";
 
 /** Booleans are boolean options, an array of scalars repeats, and the rest are strings. */
-function options(
-  command: SchemaCommand,
-  own: Readonly<Record<string, "string" | "boolean">> = {},
-): ParseArgsOptionsConfig {
+function options(command: SchemaCommand): ParseArgsOptionsConfig {
   const config: ParseArgsOptionsConfig = {
     help: { type: "boolean", short: "h" },
     json: { type: "string" },
@@ -160,7 +157,6 @@ function options(
       field.shape.kind === "scalar" && field.shape.type === "boolean"
         ? { type: "boolean" }
         : { type: "string", multiple: field.shape.kind === "array" };
-  for (const [name, type] of Object.entries(own)) config[name] = { type };
   return config;
 }
 
@@ -209,8 +205,6 @@ export interface ParsedSchemaArgs {
   /** `--help` was asked for: print {@link schemaHelp} instead of calling. */
   help: boolean;
   args: Record<string, unknown>;
-  /** The caller's own flags ({@link SchemaArgsOptions.options}) the line gave. */
-  options: Record<string, string | boolean>;
 }
 
 export interface SchemaArgsOptions {
@@ -220,8 +214,6 @@ export interface SchemaArgsOptions {
    * UTF-8 text, `name=@@x` is the literal `@x`, and `name="x"` is the string `x`.
    */
   assignments?: boolean;
-  /** The caller's own flags, such as a call's `--timeout`: returned apart from the arguments. */
-  options?: Readonly<Record<string, "string" | "boolean">>;
   /** Take an argument the schema does not name, untyped, rather than refuse it. */
   unknown?: boolean;
 }
@@ -295,18 +287,9 @@ export function parseSchemaArgs(
   command: SchemaCommand,
   argv: readonly string[],
   stdin?: () => string,
-  {
-    assignments = false,
-    options: own = {},
-    unknown = false,
-  }: SchemaArgsOptions = {},
+  { assignments = false, unknown = false }: SchemaArgsOptions = {},
 ): ParsedSchemaArgs {
-  if (unknown)
-    command = withNamed(
-      command,
-      argv,
-      new Set([...RESERVED, ...Object.keys(own)]),
-    );
+  if (unknown) command = withNamed(command, argv, RESERVED);
   const usage = usageOf(command);
   const fail = (message: string) =>
     new SchemaArgsError(usage, `${usage}: ${message}`);
@@ -315,7 +298,7 @@ export function parseSchemaArgs(
   try {
     ({ values, positionals } = parseArgs({
       args: [...argv],
-      options: options(command, own),
+      options: options(command),
       strict: true,
       allowPositionals: assignments,
       allowNegative: true,
@@ -325,15 +308,7 @@ export function parseSchemaArgs(
       (error instanceof Error ? error.message : String(error)).split("\n")[0]!,
     );
   }
-  const given = Object.fromEntries(
-    Object.keys(own).flatMap((name) => {
-      const value = values[name];
-      return value === undefined
-        ? []
-        : [[name, Array.isArray(value) ? value.at(-1)! : value]];
-    }),
-  );
-  if (values.help === true) return { help: true, args: {}, options: given };
+  if (values.help === true) return { help: true, args: {} };
   let args: Record<string, unknown> = {};
   if (typeof values.json === "string") {
     const text = values.json === "-" ? (stdin?.() ?? "") : values.json;
@@ -350,7 +325,6 @@ export function parseSchemaArgs(
   }
   const all = fields(command);
   for (const field of all.filter(flagged)) {
-    if (field.name in own) continue;
     const raw = values[field.name];
     if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
   }
@@ -370,7 +344,7 @@ export function parseSchemaArgs(
         args[name] = text;
       }
   }
-  return { help: false, args, options: given };
+  return { help: false, args };
 }
 
 function placeholder(field: Field): string {
@@ -517,4 +491,49 @@ export function schemaGroupHelp(
     "",
     `Run \`${usage} <command> --help\` for a command's arguments, or \`${schemaPointer}\` for the JSON each takes.`,
   ].join("\n");
+}
+
+/**
+ * The caller's own options taken out of `argv` without reading the rest:
+ * `--name value` or `--name=value` for a string, `--name` for a boolean. Every
+ * other word stays, in order, for {@link parseSchemaArgs}. A named option is
+ * the caller's wherever it stands, since no flag takes a value that starts
+ * with `--`; nothing after `--` is read.
+ */
+export function takeOptions(
+  argv: readonly string[],
+  names: Readonly<Record<string, "string" | "boolean">>,
+): { options: Record<string, string | true>; rest: string[] } {
+  const options: Record<string, string | true> = {};
+  const rest: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const word = argv[index]!;
+    if (word === "--") {
+      rest.push(...argv.slice(index));
+      break;
+    }
+    const [flag, inline] = word.startsWith("--")
+      ? [
+          word.slice(2).split("=")[0]!,
+          word.includes("=") ? word.slice(word.indexOf("=") + 1) : undefined,
+        ]
+      : [undefined, undefined];
+    const type = flag === undefined ? undefined : names[flag];
+    if (!type) {
+      rest.push(word);
+      continue;
+    }
+    if (type === "boolean") options[flag!] = true;
+    else {
+      const value = inline ?? argv[index + 1];
+      if (
+        value === undefined ||
+        (inline === undefined && value.startsWith("--"))
+      )
+        throw new Error(`Flag '--${flag}' requires a value.`);
+      if (inline === undefined) index += 1;
+      options[flag!] = value;
+    }
+  }
+  return { options, rest };
 }

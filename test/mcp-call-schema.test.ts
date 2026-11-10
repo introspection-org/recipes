@@ -8,6 +8,7 @@ import {
   type JsonSchema,
   parseSchemaArgs,
   schemaHelp,
+  takeOptions,
 } from "../src/cli/schema-args.js";
 
 // The public MCP reference server's app servers, which list their tools with
@@ -158,6 +159,35 @@ describe("the schema CLI on a real MCP server's tools", () => {
     });
     expect(decode("map", "geocode", ["query=@@home"])).toEqual({
       query: "@home",
+    });
+  });
+
+  it("reads booleans and --timeout anywhere, as mcp call does", () => {
+    // mcp call takes its own options out first, then reads the rest by schema.
+    const call = (argv: string[]) => {
+      const { options, rest } = takeOptions(argv, {
+        timeout: "string",
+        output: "string",
+      });
+      return { options, args: decode("debug", "debug-tool", rest) };
+    };
+    expect(call(["--multipleBlocks"]).args).toEqual({ multipleBlocks: true });
+    expect(call(["--no-multipleBlocks"]).args).toEqual({
+      multipleBlocks: false,
+    });
+    expect(call(["--simulateError", "--delayMs", "5"]).args).toEqual({
+      simulateError: true,
+      delayMs: 5,
+    });
+    expect(
+      call(["--timeout", "100", "--includeMeta", "contentType=text"]),
+    ).toEqual({
+      options: { timeout: "100" },
+      args: { includeMeta: true, contentType: "text" },
+    });
+    expect(call(["--includeMeta", "--timeout", "100"])).toEqual({
+      options: { timeout: "100" },
+      args: { includeMeta: true },
     });
   });
 
