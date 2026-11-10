@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/introspection-org/recipes/compare/recipe-issues-v0.1.0...recipe-issues-v0.2.0) (2026-11-10)
+
+
+### Features
+
+* **tools:** each first-party tool is a shell command whose flags and --help come from its schema ([#500](https://github.com/introspection-org/recipes/issues/500)) ([abbe27d](https://github.com/introspection-org/recipes/commit/abbe27d8fd3a99702f407a2a9b63d51336d31d6a))
+
 ## 0.1.0 (2026-11-09)
 
 

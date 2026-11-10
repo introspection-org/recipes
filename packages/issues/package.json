@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-issues",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Linear, Jira and Introspection providers for the Introspection Recipes issues tool.",
   "license": "Apache-2.0",
   "type": "module",

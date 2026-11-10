@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.53.0](https://github.com/introspection-org/recipes/compare/v0.52.1...v0.53.0) (2026-11-10)
+
+
+### Features
+
+* **mcp:** mcp call reads a tool's arguments and --help from its input schema ([#502](https://github.com/introspection-org/recipes/issues/502)) ([18ba3a0](https://github.com/introspection-org/recipes/commit/18ba3a0f0c323e9905ae6747f8df19c380a44729))
+* **tools:** each first-party tool is a shell command whose flags and --help come from its schema ([#500](https://github.com/introspection-org/recipes/issues/500)) ([abbe27d](https://github.com/introspection-org/recipes/commit/abbe27d8fd3a99702f407a2a9b63d51336d31d6a))
+
 ## [0.52.1](https://github.com/introspection-org/recipes/compare/v0.52.0...v0.52.1) (2026-11-09)
 
 
