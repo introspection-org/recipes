@@ -367,10 +367,16 @@ export function parseSchemaArgs(
         field.shape.kind === "array" ? given : given.at(-1)!,
       );
   }
+  const assigned = new Set<string>();
   for (const word of positionals) {
     const match = ASSIGNMENT.exec(word);
     if (!match) throw fail(`'${word}' is not name=value or a --flag`);
     const [, name, raw] = match as unknown as [string, string, string];
+    if (assigned.has(name))
+      throw fail(
+        `argument '${name}' was passed more than once; pass each argument exactly once`,
+      );
+    assigned.add(name);
     const field = all.find((entry) => entry.name === name);
     if (!field) throw fail(`unknown argument '${name}'`);
     const { text, exact } = assignedText(usage, name, raw);

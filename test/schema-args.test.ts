@@ -232,6 +232,27 @@ describe("a command line from a tool's schema", () => {
     );
   });
 
+  it("refuses a name assigned twice, but not a flag's value that looks like one", () => {
+    const command = {
+      path: ["mcp", "call", "s.t"],
+      description: "",
+      schema: {
+        properties: {
+          tag: { type: "array", items: { type: "string" } },
+          query: { type: "string" },
+        },
+      },
+    };
+    const parse = (argv: string[]) =>
+      parseSchemaArgs(command, argv, undefined, { assignments: true }).args;
+    expect(parse(["--tag", "name=a", "--tag", "name=b"])).toEqual({
+      tag: ["name=a", "name=b"],
+    });
+    expect(() => parse(["query=Ada", "query=Grace"])).toThrow(
+      "argument 'query' was passed more than once",
+    );
+  });
+
   it("names flags in kebab-case and keeps each property's own name as an alias", () => {
     const command = {
       path: ["t"],
