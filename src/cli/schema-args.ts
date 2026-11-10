@@ -9,6 +9,7 @@
  * whoever runs the call, so a flag and the same value in `--json` fail alike.
  */
 
+import { readFileSync } from "node:fs";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
 /** A JSON Schema as data; keywords this adapter does not read are ignored. */
@@ -146,7 +147,10 @@ function fields(command: SchemaCommand): Field[] {
 const flagged = (field: Field) => field.shape.kind !== "json";
 
 /** Booleans are boolean options, an array of scalars repeats, and the rest are strings. */
-function options(command: SchemaCommand): ParseArgsOptionsConfig {
+function options(
+  command: SchemaCommand,
+  own: Readonly<Record<string, "string" | "boolean">> = {},
+): ParseArgsOptionsConfig {
   const config: ParseArgsOptionsConfig = {
     help: { type: "boolean", short: "h" },
     json: { type: "string" },
@@ -156,6 +160,7 @@ function options(command: SchemaCommand): ParseArgsOptionsConfig {
       field.shape.kind === "scalar" && field.shape.type === "boolean"
         ? { type: "boolean" }
         : { type: "string", multiple: field.shape.kind === "array" };
+  for (const [name, type] of Object.entries(own)) config[name] = { type };
   return config;
 }
 
@@ -204,36 +209,120 @@ export interface ParsedSchemaArgs {
   /** `--help` was asked for: print {@link schemaHelp} instead of calling. */
   help: boolean;
   args: Record<string, unknown>;
+  /** The caller's own flags ({@link SchemaArgsOptions.options}) the line gave. */
+  options: Record<string, string | boolean>;
+}
+
+export interface SchemaArgsOptions {
+  /**
+   * Also take `name=value` words, as a flag of that name or, for an argument
+   * only `--json` reaches, as its JSON value. `name=@path` reads the file as
+   * UTF-8 text, `name=@@x` is the literal `@x`, and `name="x"` is the string `x`.
+   */
+  assignments?: boolean;
+  /** The caller's own flags, such as a call's `--timeout`: returned apart from the arguments. */
+  options?: Readonly<Record<string, "string" | "boolean">>;
+  /** Take an argument the schema does not name, untyped, rather than refuse it. */
+  unknown?: boolean;
+}
+
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_.-]*)=([\s\S]*)$/;
+
+/** `command` with each argument the line names that its schema does not, untyped. */
+function withNamed(
+  command: SchemaCommand,
+  argv: readonly string[],
+  reserved: ReadonlySet<string>,
+): SchemaCommand {
+  const properties = { ...record(command.schema.properties) };
+  for (const word of argv) {
+    const name = /^--([^=]+)/.exec(word)?.[1] ?? ASSIGNMENT.exec(word)?.[1];
+    if (name && !reserved.has(name) && !(name in properties))
+      properties[name] = {};
+  }
+  return { ...command, schema: { ...command.schema, properties } };
+}
+
+/** An assignment's text: a file's for `@path`, `@x` for `@@x`, a quoted JSON string's own text, else as written. */
+function assignedText(usage: string, name: string, text: string): string {
+  if (text.startsWith('"'))
+    try {
+      const unquoted = JSON.parse(text) as unknown;
+      if (typeof unquoted === "string") return unquoted;
+    } catch {
+      // Not a JSON string: the text as written.
+    }
+  if (text.startsWith("@@")) return text.slice(1);
+  if (!text.startsWith("@")) return text;
+  const path = text.slice(1);
+  const fail = (message: string) =>
+    new SchemaArgsError(usage, `${usage}: ${message}`);
+  if (!path)
+    throw fail(`${name}=@ needs a path; use @@ for a literal leading @`);
+  let contents: Buffer;
+  try {
+    contents = readFileSync(path);
+  } catch (error) {
+    throw fail(
+      `cannot read ${path} for ${name}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(contents);
+  } catch {
+    throw fail(`${path} for ${name} is not UTF-8 text`);
+  }
 }
 
 /**
  * A call's arguments from its command line: the `--json` object, if any,
- * with each flag's decoded value over it. Only a line that cannot be read
- * fails here (an unknown flag, `--json` that is not an object).
+ * then each flag's decoded value, then each `name=value` when
+ * {@link SchemaArgsOptions.assignments} takes them. Only a line that cannot
+ * be read fails here (an unknown flag or name, `--json` that is not an object).
  */
 export function parseSchemaArgs(
   command: SchemaCommand,
   argv: readonly string[],
   stdin?: () => string,
+  {
+    assignments = false,
+    options: own = {},
+    unknown = false,
+  }: SchemaArgsOptions = {},
 ): ParsedSchemaArgs {
+  if (unknown)
+    command = withNamed(
+      command,
+      argv,
+      new Set([...RESERVED, ...Object.keys(own)]),
+    );
   const usage = usageOf(command);
   const fail = (message: string) =>
     new SchemaArgsError(usage, `${usage}: ${message}`);
   let values: Record<string, string | boolean | Array<string | boolean>>;
+  let positionals: string[];
   try {
-    values = parseArgs({
+    ({ values, positionals } = parseArgs({
       args: [...argv],
-      options: options(command),
+      options: options(command, own),
       strict: true,
-      allowPositionals: false,
+      allowPositionals: assignments,
       allowNegative: true,
-    }).values as typeof values;
+    }) as { values: typeof values; positionals: string[] });
   } catch (error) {
     throw fail(
       (error instanceof Error ? error.message : String(error)).split("\n")[0]!,
     );
   }
-  if (values.help === true) return { help: true, args: {} };
+  const given = Object.fromEntries(
+    Object.keys(own).flatMap((name) => {
+      const value = values[name];
+      return value === undefined
+        ? []
+        : [[name, Array.isArray(value) ? value.at(-1)! : value]];
+    }),
+  );
+  if (values.help === true) return { help: true, args: {}, options: given };
   let args: Record<string, unknown> = {};
   if (typeof values.json === "string") {
     const text = values.json === "-" ? (stdin?.() ?? "") : values.json;
@@ -248,11 +337,28 @@ export function parseSchemaArgs(
       throw fail("--json must be an object");
     args = { ...(body as Record<string, unknown>) };
   }
-  for (const field of fields(command).filter(flagged)) {
+  const all = fields(command);
+  for (const field of all.filter(flagged)) {
+    if (field.name in own) continue;
     const raw = values[field.name];
     if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
   }
-  return { help: false, args };
+  for (const word of positionals) {
+    const match = ASSIGNMENT.exec(word);
+    if (!match) throw fail(`'${word}' is not name=value or a --flag`);
+    const [, name, raw] = match as unknown as [string, string, string];
+    const field = all.find((entry) => entry.name === name);
+    if (!field) throw fail(`unknown argument '${name}'`);
+    const text = assignedText(usage, name, raw);
+    if (flagged(field)) args[name] = valueOf(field.shape, text);
+    else
+      try {
+        args[name] = JSON.parse(text) as unknown;
+      } catch {
+        args[name] = text;
+      }
+  }
+  return { help: false, args, options: given };
 }
 
 function placeholder(field: Field): string {

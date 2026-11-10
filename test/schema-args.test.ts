@@ -172,6 +172,43 @@ describe("a command line from a tool's schema", () => {
     );
   });
 
+  it("takes name=value words, the caller's own flags, and unknown arguments when asked", () => {
+    const command = {
+      path: ["mcp", "call", "s.t"],
+      description: "",
+      schema: {
+        properties: {
+          id: { type: "string" },
+          limit: { type: "number" },
+          filter: { type: "object" },
+        },
+      },
+    };
+    const parse = (argv: string[], unknown = false) =>
+      parseSchemaArgs(command, argv, undefined, {
+        assignments: true,
+        options: { timeout: "string" },
+        unknown,
+      });
+    expect(
+      parse(["id=7", "limit=5", 'filter={"a":1}', "--timeout", "100"]),
+    ).toEqual({
+      help: false,
+      args: { id: "7", limit: 5, filter: { a: 1 } },
+      options: { timeout: "100" },
+    });
+    expect(parse(['id="7"']).args).toEqual({ id: "7" });
+    expect(() => parse(["nope=1"])).toThrow("unknown argument 'nope'");
+    expect(() => parse(["loose"])).toThrow("is not name=value or a --flag");
+    expect(parse(["nope=1", "--other", "x"], true).args).toEqual({
+      nope: 1,
+      other: "x",
+    });
+    expect(() => parseSchemaArgs(command, ["id=7"], undefined, {})).toThrow(
+      SchemaArgsError,
+    );
+  });
+
   it("lists a group's commands with their first sentence", () => {
     expect(
       schemaGroupHelp(

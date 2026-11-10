@@ -44,6 +44,9 @@ const FORBIDDEN_DELEGATED_FLAGS = new Set([
   "--oauth-timeout",
   "--raw-strings",
   "--no-coerce",
+  "--save-images",
+  "--params",
+  "--mcp",
 ]);
 
 const LIST_OUTPUT_MODES = new Map([
@@ -199,20 +202,18 @@ function validateList(
   };
 }
 
-const CALL_FLAGS_WITH_VALUE = new Set(["--json", "--output", "--timeout"]);
-
+// A tool's own arguments are flags too (`--title x`), read from its input schema.
 function callSyntaxError(args: readonly string[]): string | undefined {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--") {
       return "mcp call positional arguments are unavailable; use key=value or --json instead.";
     }
+    if (arg === "-h") continue;
     if (arg.startsWith("--")) {
-      const flag = flagName(arg);
-      if (!CALL_FLAGS_WITH_VALUE.has(flag)) {
-        return `mcp call option '${flag}' is unavailable; use key=value or --json for tool arguments.`;
-      }
-      if (!arg.includes("=")) index += 1;
+      const next = args[index + 1];
+      if (!arg.includes("=") && next !== undefined && !next.startsWith("--"))
+        index += 1;
       continue;
     }
     if (/^[A-Za-z_][A-Za-z0-9_.-]*=/.test(arg)) continue;

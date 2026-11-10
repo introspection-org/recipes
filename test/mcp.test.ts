@@ -718,6 +718,38 @@ describe("lazy MCP CLI discovery", () => {
       expect(JSON.parse(json.stdout)).toMatchObject({
         arguments: { id: "22688", limit: 5 },
       });
+      const flags = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--id", "22688", "--limit", "5"],
+        cliEnv,
+      );
+      expect(JSON.parse(flags.stdout)).toMatchObject({
+        arguments: { id: "22688", limit: 5 },
+      });
+      const help = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--help"],
+        cliEnv,
+      );
+      expect(help).toMatchObject({ code: 0, stderr: "" });
+      expect(help.stdout.split("\n")[0]).toBe(
+        "Usage: mcp call stub.lookup_profile --id <string> [--<argument> <value> ...]",
+      );
+      expect(help.stdout).toContain("Look up one profile");
+      expect(help.stdout).toContain("--limit <number>");
+      expect(help.stdout).toContain(
+        "(`mcp list stub.lookup_profile --schema` prints its schema)",
+      );
+      const unknown = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--nope", "x"],
+        cliEnv,
+      );
+      expect(unknown.code).toBe(2);
+      expect(unknown.stderr).toContain("Unknown option '--nope'");
+      expect(unknown.stderr).toContain(
+        "Run `mcp call stub.lookup_profile --help` for its arguments.",
+      );
       expect(stub.stats.list).toBe(listCallsAfterFirstCall);
 
       const textAsJson = await runMcpShim(
@@ -1044,7 +1076,8 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "engineer" },
       });
-      expect(stub.stats.list).toBe(0);
+      // The call reads its arguments from the tool's schema: one discovery, cached.
+      expect(stub.stats.list).toBe(1);
       expect(stub.stats.call).toBe(1);
 
       const run = await runMcpCli(
@@ -1060,9 +1093,14 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "architect" },
       });
-      expect(stub.stats.list).toBe(0);
+      expect(stub.stats.list).toBe(1);
       expect(stub.stats.call).toBe(2);
 
+      // Without its cache, the next command discovers again, past a stale lock.
+      rmSync(join(cwd, ".pi", "mcp-catalogs"), {
+        recursive: true,
+        force: true,
+      });
       const persistedSession = JSON.parse(
         readFileSync(defaultMcpSessionPath(cwd), "utf8"),
       ) as McpSessionConfig;
@@ -1076,13 +1114,13 @@ describe("lazy MCP CLI discovery", () => {
       const first = await runMcpCli(["search", "candidate"], cliEnv);
       expect(first).toMatchObject({ code: 0, stderr: "" });
       expect(first.stdout).toContain("stub.search_profiles");
-      expect(stub.stats.list).toBe(1);
+      expect(stub.stats.list).toBe(2);
       expect(() => readFileSync(lock)).toThrow();
 
       const second = await runMcpCli(["list", "stub"], cliEnv);
       expect(second).toMatchObject({ code: 0, stderr: "" });
       expect(second.stdout).toContain("stub.search_profiles(query: string)");
-      expect(stub.stats.list).toBe(1);
+      expect(stub.stats.list).toBe(2);
 
       const cacheDir = join(cwd, ".pi", "mcp-catalogs");
       const cacheFiles = readdirSync(cacheDir).filter((name) =>
