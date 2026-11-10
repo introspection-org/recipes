@@ -243,17 +243,25 @@ function withNamed(
   return { ...command, schema: { ...command.schema, properties } };
 }
 
-/** An assignment's text: a file's for `@path`, `@x` for `@@x`, a quoted JSON string's own text, else as written. */
-function assignedText(usage: string, name: string, text: string): string {
+/**
+ * An assignment's text, and whether it is a string as given: a file's text for
+ * `@path` and a quoted JSON string's own text are, so neither is decoded
+ * further; `@x` for `@@x` and anything else is decoded by its property's type.
+ */
+function assignedText(
+  usage: string,
+  name: string,
+  text: string,
+): { text: string; exact: boolean } {
   if (text.startsWith('"'))
     try {
       const unquoted = JSON.parse(text) as unknown;
-      if (typeof unquoted === "string") return unquoted;
+      if (typeof unquoted === "string") return { text: unquoted, exact: true };
     } catch {
       // Not a JSON string: the text as written.
     }
-  if (text.startsWith("@@")) return text.slice(1);
-  if (!text.startsWith("@")) return text;
+  if (text.startsWith("@@")) return { text: text.slice(1), exact: false };
+  if (!text.startsWith("@")) return { text, exact: false };
   const path = text.slice(1);
   const fail = (message: string) =>
     new SchemaArgsError(usage, `${usage}: ${message}`);
@@ -268,7 +276,10 @@ function assignedText(usage: string, name: string, text: string): string {
     );
   }
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(contents);
+    return {
+      text: new TextDecoder("utf-8", { fatal: true }).decode(contents),
+      exact: true,
+    };
   } catch {
     throw fail(`${path} for ${name} is not UTF-8 text`);
   }
@@ -349,8 +360,9 @@ export function parseSchemaArgs(
     const [, name, raw] = match as unknown as [string, string, string];
     const field = all.find((entry) => entry.name === name);
     if (!field) throw fail(`unknown argument '${name}'`);
-    const text = assignedText(usage, name, raw);
-    if (flagged(field)) args[name] = valueOf(field.shape, text);
+    const { text, exact } = assignedText(usage, name, raw);
+    if (exact) args[name] = text;
+    else if (flagged(field)) args[name] = valueOf(field.shape, text);
     else
       try {
         args[name] = JSON.parse(text) as unknown;

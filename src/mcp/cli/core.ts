@@ -23,6 +23,7 @@ import {
 import {
   parseSchemaArgs,
   SchemaArgsError,
+  type SchemaCommand,
   schemaHelp,
 } from "../../cli/schema-args.js";
 import { createMcpRuntime, usesPiMcpClient } from "../pi-runtime.js";
@@ -2042,47 +2043,49 @@ async function callWithSharedRuntime(
 
   try {
     const rest = args.slice(1);
-    const { resolveCallTimeout } = await loadMcporterCli();
-    const entry = await loadCallCatalogEntry(
-      runtime,
-      server,
-      tool,
-      resolveCallTimeout(undefined),
-    );
-    const schema = entry?.input_schema;
-    const command = {
-      path: ["mcp", "call", `${server}.${tool}`],
-      description: entry?.description ?? "",
-      schema: schema ?? {},
-    };
     const stdinText = rest.some(
       (arg, index) =>
         arg === "--json=-" || (arg === "--json" && rest[index + 1] === "-"),
     )
       ? await readStdin()
       : "";
-    const parsed = parseSchemaArgs(command, rest, () => stdinText, {
-      assignments: true,
-      options: { timeout: "string", output: "string", "no-oauth": "boolean" },
-      // With no catalog entry the server judges every argument.
-      unknown: !schema,
-    });
-    if (parsed.help) {
-      stdout.write(
-        `${schemaHelp(command, `mcp list ${server}.${tool} --schema`)}\n`,
-      );
-      return 0;
-    }
-    const { timeout, output = "auto" } = parsed.options;
+    const parse = (command: SchemaCommand, unknown: boolean) =>
+      parseSchemaArgs(command, rest, () => stdinText, {
+        assignments: true,
+        options: { timeout: "string", output: "string", "no-oauth": "boolean" },
+        unknown,
+      });
+    const path = ["mcp", "call", `${server}.${tool}`];
+    // The call's own options first: its timeout bounds the catalog lookup too.
+    const { timeout, output = "auto" } = parse(
+      { path, description: "", schema: {} },
+      true,
+    ).options;
     if (timeout !== undefined && !/^[1-9]\d*$/.test(String(timeout)))
       throw new Error("--timeout must be a positive integer (milliseconds).");
     if (!(OUTPUT_FORMATS as readonly unknown[]).includes(output))
       throw new Error(
         `--output format must be one of: ${OUTPUT_FORMATS.join(", ")}.`,
       );
+    const { resolveCallTimeout } = await loadMcporterCli();
     const timeoutMs = resolveCallTimeout(
       timeout === undefined ? undefined : Number(timeout),
     );
+    const entry = await loadCallCatalogEntry(runtime, server, tool, timeoutMs);
+    const schema = entry?.input_schema;
+    const command = {
+      path,
+      description: entry?.description ?? "",
+      schema: schema ?? {},
+    };
+    // With no catalog entry the server judges every argument.
+    const parsed = parse(command, !schema);
+    if (parsed.help) {
+      stdout.write(
+        `${schemaHelp(command, `mcp list ${server}.${tool} --schema`)}\n`,
+      );
+      return 0;
+    }
     const options = { output: output as CallOutputFormat };
     const values = parsed.args;
     const signal = currentMcpCommandContext()?.signal;

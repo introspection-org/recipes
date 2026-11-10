@@ -161,6 +161,20 @@ describe("the schema CLI on a real MCP server's tools", () => {
     });
   });
 
+  it("keeps a file's text and a quoted string exact, whatever the schema", () => {
+    const dir = mkdtempSync(join(tmpdir(), "schema-args-"));
+    writeFileSync(join(dir, "n.txt"), "123");
+    const payload = (argv: string[], stdin = "") =>
+      decode("debug", "debug-log", ["type=info", ...argv], stdin).payload;
+    expect(payload([`payload=@${join(dir, "n.txt")}`])).toBe("123");
+    expect(payload(['payload="123"'])).toBe("123");
+    expect(payload(["payload=123"])).toBe(123);
+    expect(payload(["--json", "-"], '{"payload":"123"}')).toBe("123");
+    expect(
+      decode("pdf", "read_pdf_bytes", ["url=x", 'offset="10"']).offset,
+    ).toBe("10");
+  });
+
   it.skipIf(!process.env.MCP_EXAMPLE_LIVE)("matches the live servers", () => {
     const out = join(mkdtempSync(join(tmpdir(), "mcp-live-")), "tools.json");
     execFileSync(process.execPath, [

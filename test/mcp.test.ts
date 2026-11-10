@@ -188,7 +188,7 @@ function interruptNativeMcp(
 }
 
 function startStubMcpServer(
-  options: { failListAttempts?: number } = {},
+  options: { failListAttempts?: number; listDelayMs?: number } = {},
 ): Promise<{
   server: Server;
   url: string;
@@ -306,7 +306,7 @@ function startStubMcpServer(
               },
             }),
           );
-        }, 100);
+        }, options.listDelayMs ?? 100);
         return;
       }
       if (message.method === "tools/call") {
@@ -642,6 +642,60 @@ describe("static MCP session materialization", () => {
 });
 
 describe("lazy MCP CLI discovery", () => {
+  it("bounds the catalog lookup by the call's own --timeout", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-call-timeout-"));
+    const stub = await startStubMcpServer({ listDelayMs: 10_000 });
+    const cwd = join(root, "workspace");
+    const recipeDir = join(root, "recipe");
+    mkdirSync(recipeDir, { recursive: true });
+    const local = writeLocalConfig(cwd, [
+      {
+        id: "stub",
+        transport: "streamable_http",
+        url: stub.url,
+        headers: { Authorization: "Bearer ${STUB_TOKEN}" },
+      },
+    ]);
+    const env: NodeJS.ProcessEnv = {
+      PI_RECIPES_MCP_LOCAL_CONFIG: local,
+      STUB_TOKEN: "test-token",
+    };
+    try {
+      const shim = await materializeSessionMcpCli({ cwd, env });
+      await materializeMcpSession({
+        cwd,
+        env,
+        manifest: recipeManifest(recipeDir, [
+          { id: "stub", required: true, include: ["lookup_profile"] },
+        ]),
+        agentMcp: [
+          { serverId: "stub", tools: { include: ["lookup_profile"] } },
+        ],
+      });
+      const cliEnv = Object.fromEntries(
+        Object.entries(env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
+      );
+      // The catalog is not cached and answers in 10s; the call asks for 500ms.
+      const started = Date.now();
+      const call = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--timeout", "500", "id=7"],
+        cliEnv,
+      );
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(call).toMatchObject({ code: 0, stderr: "" });
+      expect(JSON.parse(call.stdout)).toMatchObject({
+        arguments: { id: 7 },
+      });
+    } finally {
+      await clearMcpSession(env, cwd);
+      stub.server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("uses the tool schema to preserve numeric-looking string arguments", async () => {
     const root = mkdtempSync(join(tmpdir(), "recipes-mcp-string-args-"));
     const stub = await startStubMcpServer();
