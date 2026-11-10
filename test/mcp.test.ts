@@ -188,7 +188,7 @@ function interruptNativeMcp(
 }
 
 function startStubMcpServer(
-  options: { failListAttempts?: number } = {},
+  options: { failListAttempts?: number; listDelayMs?: number } = {},
 ): Promise<{
   server: Server;
   url: string;
@@ -306,7 +306,7 @@ function startStubMcpServer(
               },
             }),
           );
-        }, 100);
+        }, options.listDelayMs ?? 100);
         return;
       }
       if (message.method === "tools/call") {
@@ -642,6 +642,60 @@ describe("static MCP session materialization", () => {
 });
 
 describe("lazy MCP CLI discovery", () => {
+  it("bounds the catalog lookup by the call's own --timeout", async () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-mcp-call-timeout-"));
+    const stub = await startStubMcpServer({ listDelayMs: 10_000 });
+    const cwd = join(root, "workspace");
+    const recipeDir = join(root, "recipe");
+    mkdirSync(recipeDir, { recursive: true });
+    const local = writeLocalConfig(cwd, [
+      {
+        id: "stub",
+        transport: "streamable_http",
+        url: stub.url,
+        headers: { Authorization: "Bearer ${STUB_TOKEN}" },
+      },
+    ]);
+    const env: NodeJS.ProcessEnv = {
+      PI_RECIPES_MCP_LOCAL_CONFIG: local,
+      STUB_TOKEN: "test-token",
+    };
+    try {
+      const shim = await materializeSessionMcpCli({ cwd, env });
+      await materializeMcpSession({
+        cwd,
+        env,
+        manifest: recipeManifest(recipeDir, [
+          { id: "stub", required: true, include: ["lookup_profile"] },
+        ]),
+        agentMcp: [
+          { serverId: "stub", tools: { include: ["lookup_profile"] } },
+        ],
+      });
+      const cliEnv = Object.fromEntries(
+        Object.entries(env).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
+      );
+      // The catalog is not cached and answers in 10s; the call asks for 500ms.
+      const started = Date.now();
+      const call = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--id", "7", "--timeout", "500"],
+        cliEnv,
+      );
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(call).toMatchObject({ code: 0, stderr: "" });
+      expect(JSON.parse(call.stdout)).toMatchObject({
+        arguments: { id: 7 },
+      });
+    } finally {
+      await clearMcpSession(env, cwd);
+      stub.server.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("uses the tool schema to preserve numeric-looking string arguments", async () => {
     const root = mkdtempSync(join(tmpdir(), "recipes-mcp-string-args-"));
     const stub = await startStubMcpServer();
@@ -718,6 +772,38 @@ describe("lazy MCP CLI discovery", () => {
       expect(JSON.parse(json.stdout)).toMatchObject({
         arguments: { id: "22688", limit: 5 },
       });
+      const flags = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--id", "22688", "--limit", "5"],
+        cliEnv,
+      );
+      expect(JSON.parse(flags.stdout)).toMatchObject({
+        arguments: { id: "22688", limit: 5 },
+      });
+      const help = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--help"],
+        cliEnv,
+      );
+      expect(help).toMatchObject({ code: 0, stderr: "" });
+      expect(help.stdout.split("\n")[0]).toBe(
+        "Usage: mcp call stub.lookup_profile --id <string> [--<argument> <value> ...]",
+      );
+      expect(help.stdout).toContain("Look up one profile");
+      expect(help.stdout).toContain("--limit <number>");
+      expect(help.stdout).toContain(
+        "(`mcp list stub.lookup_profile --schema` prints its schema)",
+      );
+      const unknown = await runMcpShim(
+        shim.shimPath,
+        ["call", "stub.lookup_profile", "--nope", "x"],
+        cliEnv,
+      );
+      expect(unknown.code).toBe(2);
+      expect(unknown.stderr).toContain("Unknown option '--nope'");
+      expect(unknown.stderr).toContain(
+        "Run `mcp call stub.lookup_profile --help` for its arguments.",
+      );
       expect(stub.stats.list).toBe(listCallsAfterFirstCall);
 
       const textAsJson = await runMcpShim(
@@ -1044,7 +1130,9 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "engineer" },
       });
-      expect(stub.stats.list).toBe(0);
+      // pi-mcp reads the call's arguments from the tool's schema: one discovery, cached.
+      const discovered = usesPiMcpClient() ? 1 : 0;
+      expect(stub.stats.list).toBe(discovered);
       expect(stub.stats.call).toBe(1);
 
       const run = await runMcpCli(
@@ -1060,9 +1148,14 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "architect" },
       });
-      expect(stub.stats.list).toBe(0);
+      expect(stub.stats.list).toBe(discovered);
       expect(stub.stats.call).toBe(2);
 
+      // Without its cache, the next command discovers again, past a stale lock.
+      rmSync(join(cwd, ".pi", "mcp-catalogs"), {
+        recursive: true,
+        force: true,
+      });
       const persistedSession = JSON.parse(
         readFileSync(defaultMcpSessionPath(cwd), "utf8"),
       ) as McpSessionConfig;
@@ -1076,13 +1169,13 @@ describe("lazy MCP CLI discovery", () => {
       const first = await runMcpCli(["search", "candidate"], cliEnv);
       expect(first).toMatchObject({ code: 0, stderr: "" });
       expect(first.stdout).toContain("stub.search_profiles");
-      expect(stub.stats.list).toBe(1);
+      expect(stub.stats.list).toBe(discovered + 1);
       expect(() => readFileSync(lock)).toThrow();
 
       const second = await runMcpCli(["list", "stub"], cliEnv);
       expect(second).toMatchObject({ code: 0, stderr: "" });
       expect(second.stdout).toContain("stub.search_profiles(query: string)");
-      expect(stub.stats.list).toBe(1);
+      expect(stub.stats.list).toBe(discovered + 1);
 
       const cacheDir = join(cwd, ".pi", "mcp-catalogs");
       const cacheFiles = readdirSync(cacheDir).filter((name) =>

@@ -97,17 +97,13 @@ describe("recipe-session mcporter policy", () => {
         policy(),
       ).error,
     ).toContain("requires an exact session tool selector");
+    // A tool's own arguments are flags; the call reads them from its schema.
     expect(
       validateDelegatedMcpCommand(
-        [
-          "call",
-          "contacts.search_contacts",
-          "--future-mcporter-option",
-          "value",
-        ],
+        ["call", "contacts.search_contacts", "--query", "docs", "--help"],
         policy(),
       ).error,
-    ).toContain("use key=value or --json");
+    ).toBeUndefined();
     expect(
       validateDelegatedMcpCommand(
         [
@@ -119,7 +115,7 @@ describe("recipe-session mcporter policy", () => {
         ],
         policy(),
       ).error,
-    ).toContain("use key=value or --json");
+    ).toBeUndefined();
     expect(
       validateDelegatedMcpCommand(
         ["call", "contacts.search_contacts", "query:Ada"],

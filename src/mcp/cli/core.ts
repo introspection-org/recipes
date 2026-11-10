@@ -20,6 +20,12 @@ import {
   describeConnectionIssue,
   type CallResult,
 } from "mcporter";
+import {
+  parseSchemaArgs,
+  SchemaArgsError,
+  schemaHelp,
+  takeOptions,
+} from "../../cli/schema-args.js";
 import { createMcpRuntime, usesPiMcpClient } from "../pi-runtime.js";
 import { callToolWithHandshakeRetry } from "./handshake-retry.js";
 import {
@@ -51,6 +57,7 @@ import {
 } from "../index.js";
 import {
   createMcpCliSessionPolicy,
+  FORBIDDEN_DELEGATED_FLAGS,
   validateDelegatedMcpCommand,
 } from "./policy.js";
 import type { McpCatalogServer } from "../daemon/protocol.js";
@@ -1951,21 +1958,6 @@ function createDelegatedErrorFilter(write: (text: string) => void): {
   };
 }
 
-function duplicateCallArgumentKeys(args: string[]): string[] {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const token of args.slice(1)) {
-    const rawKey = token.match(/^([A-Za-z_][A-Za-z0-9_.-]*)=/)?.[1];
-    if (!rawKey) continue;
-    const key = rawKey.replace(/-([a-zA-Z0-9])/g, (_match, char: string) =>
-      char.toUpperCase(),
-    );
-    if (seen.has(key)) duplicates.add(key);
-    seen.add(key);
-  }
-  return [...duplicates];
-}
-
 export function callJsonArgumentError(args: readonly string[]): string | null {
   for (let index = 1; index < args.length; index += 1) {
     const arg = args[index];
@@ -2006,7 +1998,22 @@ async function callWithMcporter(args: string[]): Promise<number> {
   try {
     ({ runtime, owned } = await acquireRuntime());
     // pi-mcp takes the daemon's path; mcporter's own `call` drives mcporter's runtime.
-    if (usesPiMcpClient()) return await callWithSharedRuntime(runtime, args);
+    if (usesPiMcpClient() || args.includes("--help") || args.includes("-h"))
+      return await callWithSharedRuntime(runtime, args);
+    // mcporter reads the arguments itself; a name given twice is refused first.
+    const words = takeOptions(args.slice(1), CALL_OPTIONS).rest;
+    try {
+      parseSchemaArgs(
+        { path: ["mcp", "call", args[0]!], description: "", schema: {} },
+        words,
+        () => "{}",
+        { assignments: true, unknown: true },
+      );
+    } catch (error) {
+      if (!(error instanceof SchemaArgsError)) throw error;
+      stderr.write(`${error.message}\n`);
+      return 2;
+    }
     const { handleCall } = await loadMcporterCli();
     await handleCall(runtime as Parameters<typeof handleCall>[0], args);
     return process.exitCode ?? 0;
@@ -2033,48 +2040,64 @@ async function callWithSharedRuntime(
   }
   const server = selector.slice(0, separator);
   const tool = selector.slice(separator + 1);
-  const normalizedArgs = [...args];
-  for (let index = 1; index < normalizedArgs.length; index += 1) {
-    let token = normalizedArgs[index]!;
-    const equals = token.indexOf("=");
-    if (equals > 0 && !token.startsWith("--")) {
-      const rawValue = token.slice(equals + 1);
-      try {
-        const decoded = JSON.parse(rawValue);
-        if (typeof decoded === "string") {
-          token = `${token.slice(0, equals + 1)}${decoded}`;
-          normalizedArgs[index] = token;
-        }
-      } catch {
-        // Ordinary key=value text is not JSON and needs no normalization.
-      }
-    }
-    for (const flag of ["--json", "--timeout", "--output"]) {
-      if (token.startsWith(`${flag}=`)) {
-        normalizedArgs.splice(index, 1, flag, token.slice(flag.length + 1));
-        break;
-      }
-    }
-    if (
-      normalizedArgs[index] === "--json" &&
-      normalizedArgs[index + 1] === "-"
-    ) {
-      normalizedArgs[index + 1] = await readStdin();
-    }
-  }
 
   try {
-    const { parseCallArguments, resolveCallTimeout } = await loadMcporterCli();
-    const parsed = parseCallArguments(normalizedArgs);
-    const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
-    const values = await restoreSchemaStringArguments(
-      runtime,
-      server,
-      tool,
-      parsed.args,
-      parsed.schemaStringCoercionCandidates,
-      timeoutMs,
+    // The call's own options first: its timeout bounds the catalog lookup too.
+    const {
+      options: { timeout, output = "auto" },
+      rest,
+    } = takeOptions(args.slice(1), CALL_OPTIONS);
+    if (timeout !== undefined && !/^[1-9]\d*$/.test(String(timeout)))
+      throw new Error("--timeout must be a positive integer (milliseconds).");
+    if (!(OUTPUT_FORMATS as readonly unknown[]).includes(output))
+      throw new Error(
+        `--output format must be one of: ${OUTPUT_FORMATS.join(", ")}.`,
+      );
+    const { resolveCallTimeout } = await loadMcporterCli();
+    const timeoutMs = resolveCallTimeout(
+      timeout === undefined ? undefined : Number(timeout),
     );
+    const entry = await loadCallCatalogEntry(runtime, server, tool, timeoutMs);
+    const schema = entry?.input_schema;
+    const command = {
+      path: ["mcp", "call", `${server}.${tool}`],
+      description: entry?.description ?? "",
+      schema: schema ?? {},
+      // Flags the session refuses, and the call's own, are not the tool's.
+      reserved: [
+        ...[...FORBIDDEN_DELEGATED_FLAGS].map((flag) => flag.slice(2)),
+        ...Object.keys(CALL_OPTIONS),
+      ],
+    };
+    // Read stdin only when the parse takes `--json -`, not a flag's value `-`.
+    let stdinText: string | undefined;
+    const parse = () =>
+      parseSchemaArgs(
+        command,
+        rest,
+        () => {
+          if (stdinText === undefined) throw NEEDS_STDIN;
+          return stdinText;
+        },
+        // With no catalog entry the server judges every argument.
+        { assignments: true, unknown: !schema },
+      );
+    let parsed: ReturnType<typeof parse>;
+    try {
+      parsed = parse();
+    } catch (error) {
+      if (error !== NEEDS_STDIN) throw error;
+      stdinText = await readStdin();
+      parsed = parse();
+    }
+    if (parsed.help) {
+      stdout.write(
+        `${schemaHelp(command, `mcp list ${server}.${tool} --schema`)}\n`,
+      );
+      return 0;
+    }
+    const options = { output: output as CallOutputFormat };
+    const values = parsed.args;
     const signal = currentMcpCommandContext()?.signal;
     const call = callToolWithHandshakeRetry(runtime, server, tool, () => ({
       args: values,
@@ -2096,8 +2119,8 @@ async function callWithSharedRuntime(
         })
       : await call;
     const result = createCallResult(raw);
-    const rendered = selectCallOutput(result, raw, parsed.output);
-    const serialized = serializeCallOutput(rendered, parsed.output);
+    const rendered = selectCallOutput(result, raw, options.output);
+    const serialized = serializeCallOutput(rendered, options.output);
     const configuredLimit = process.env.PI_RECIPES_MCP_MAX_OUTPUT_BYTES;
     if (configuredLimit !== undefined) {
       const limit = Number(configuredLimit);
@@ -2119,10 +2142,24 @@ async function callWithSharedRuntime(
     stdout.write(`${serialized}\n`);
     return asRecord(raw).isError === true ? 1 : 0;
   } catch (error) {
+    if (error instanceof SchemaArgsError) {
+      stderr.write(
+        `${error.message}\nRun \`${error.usage} --help\` for its arguments.\n`,
+      );
+      return 2;
+    }
     stderr.write(`${describeSharedCallError(error, server, tool)}\n`);
     return 1;
   }
 }
+
+const OUTPUT_FORMATS = ["auto", "text", "markdown", "json", "raw"] as const;
+const NEEDS_STDIN = Symbol("needs stdin");
+const CALL_OPTIONS = {
+  timeout: "string",
+  output: "string",
+  "no-oauth": "boolean",
+} as const;
 
 type CallOutputKind = "json" | "markdown" | "text" | "raw";
 type CallOutputFormat = CallOutputKind | "auto";
@@ -2233,23 +2270,12 @@ function describeSharedCallError(
   );
 }
 
-function schemaAllowsString(value: unknown): boolean {
-  const schema = asRecord(value);
-  if (!schema) return false;
-  if (schema.type === "string") return true;
-  if (Array.isArray(schema.type) && schema.type.includes("string")) return true;
-  return ["anyOf", "oneOf", "allOf"].some((key) => {
-    const branches = schema[key];
-    return Array.isArray(branches) && branches.some(schemaAllowsString);
-  });
-}
-
-async function loadCallInputSchema(
+async function loadCallCatalogEntry(
   runtime: McpRuntime,
   server: string,
   tool: string,
   timeoutMs: number,
-): Promise<Record<string, unknown> | undefined> {
+): Promise<McpToolCatalogEntry | undefined> {
   let cache = callCatalogCache.get(runtime);
   if (!cache) {
     cache = new Map();
@@ -2276,39 +2302,7 @@ async function loadCallInputSchema(
   const catalog = await withListTimeout(pending, timeoutMs).catch(
     () => undefined,
   );
-  return catalog?.find((entry) => entry.name === tool)?.input_schema;
-}
-
-async function restoreSchemaStringArguments(
-  runtime: McpRuntime,
-  server: string,
-  tool: string,
-  values: Record<string, unknown>,
-  candidates: Record<string, string> | undefined,
-  timeoutMs: number,
-): Promise<Record<string, unknown>> {
-  if (!candidates || Object.keys(candidates).length === 0) return values;
-  const inputSchema = await loadCallInputSchema(
-    runtime,
-    server,
-    tool,
-    timeoutMs,
-  );
-  const properties = asRecord(inputSchema?.properties);
-  if (!properties) return values;
-
-  let corrected: Record<string, unknown> | undefined;
-  for (const [key, rawValue] of Object.entries(candidates)) {
-    if (
-      typeof values[key] !== "number" ||
-      !schemaAllowsString(properties[key])
-    ) {
-      continue;
-    }
-    corrected ??= { ...values };
-    corrected[key] = rawValue;
-  }
-  return corrected ?? values;
+  return catalog?.find((entry) => entry.name === tool);
 }
 
 export async function main(args = process.argv.slice(2)): Promise<number> {
@@ -2329,7 +2323,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     stdout.write(`${mcpListHelpText()}\n`);
     return 0;
   }
-  if (args[0] === "call" && args.slice(1).some(isHelpArg)) {
+  if (
+    args[0] === "call" &&
+    args.slice(1).some(isHelpArg) &&
+    (args[1] === undefined || args[1].startsWith("-") || isHelpArg(args[1]))
+  ) {
     stdout.write(`${mcpCallHelpText()}\n`);
     return 0;
   }
@@ -2368,22 +2366,6 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   if (!validated.command) {
     stderr.write("mcp: invalid session command policy result.\n");
     return 1;
-  }
-  if (args[0] === "call") {
-    const duplicates = duplicateCallArgumentKeys(
-      validated.command.args.slice(1),
-    );
-    if (duplicates.length > 0) {
-      stderr.write(
-        `mcp call: argument${duplicates.length === 1 ? "" : "s"} ${duplicates
-          .map((key) => `'${key}'`)
-          .join(
-            ", ",
-          )} ${duplicates.length === 1 ? "was" : "were"} passed more than once. ` +
-          "Pass each argument exactly once.\n",
-      );
-      return 2;
-    }
   }
   const delegatedArgs = validated.command.args;
   if (delegatedArgs[0] === "list") return compactList(delegatedArgs);

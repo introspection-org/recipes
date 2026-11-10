@@ -213,8 +213,15 @@ async function help(tool: RegisteredTool & { name: string }, argv: string[]) {
 }
 
 /** The flags a command's `--help` lists, `--json` and `--help` aside. */
+/** A property's flag: its name in kebab-case, as the adapter derives it. */
+const kebab = (name: string) =>
+  name
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/_/g, "-")
+    .toLowerCase();
+
 const flagsOf = (text: string) =>
-  [...text.matchAll(/^ {2}--(\w+)/gm)]
+  [...text.matchAll(/^ {2}--([\w-]+)/gm)]
     .map((match) => match[1]!)
     .filter((flag) => flag !== "json" && flag !== "help");
 
@@ -329,7 +336,7 @@ describe("the generated schemas, as each tool's --help reads them", () => {
     for (const [name, command, generated] of cases) {
       const text = await help(tool(name), [name, command, "--help"]);
       expect(flagsOf(text), `${name} ${command}`).toEqual(
-        Object.keys(generated[command]!.properties),
+        Object.keys(generated[command]!.properties).map(kebab),
       );
     }
     const search = await help(tool("mail"), ["mail", "search", "--help"]);
@@ -374,11 +381,11 @@ describe("the generated schemas, as each tool's --help reads them", () => {
       "Usage: web_search --query <string> [--<argument> <value> ...]",
     );
     expect(flagsOf(webSearch)).toEqual(
-      Object.keys(WEB_SEARCH_ARGUMENTS.properties),
+      Object.keys(WEB_SEARCH_ARGUMENTS.properties).map(kebab),
     );
     expect(webSearch).toContain("--provider <tavily|brave>");
     expect(webSearch).toMatch(
-      /--max_results <integer> +Default 5\. From 1 to 10\./,
+      /--max-results <integer> +Default 5\. From 1 to 10\./,
     );
     expect(webSearch).toContain("--mode <fast|default|deep>");
   });

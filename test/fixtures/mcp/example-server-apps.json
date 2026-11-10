@@ -1,0 +1,973 @@
+{
+  "servers": [
+    {
+      "url": "https://example-server.modelcontextprotocol.io/debug/mcp",
+      "serverInfo": {
+        "name": "Debug MCP App Server",
+        "version": "1.0.0"
+      },
+      "tools": [
+        {
+          "name": "debug-tool",
+          "title": "Debug Tool",
+          "description": "Comprehensive debug tool for testing MCP Apps SDK. Configure content types, error simulation, delays, and more.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "contentType": {
+                "default": "text",
+                "type": "string",
+                "enum": [
+                  "text",
+                  "image",
+                  "audio",
+                  "resource",
+                  "resourceLink",
+                  "mixed"
+                ]
+              },
+              "multipleBlocks": {
+                "default": true,
+                "type": "boolean"
+              },
+              "includeStructuredContent": {
+                "default": true,
+                "type": "boolean"
+              },
+              "includeMeta": {
+                "default": true,
+                "type": "boolean"
+              },
+              "largeInput": {
+                "type": "string"
+              },
+              "simulateError": {
+                "default": false,
+                "type": "boolean"
+              },
+              "delayMs": {
+                "type": "number"
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://debug-tool/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://debug-tool/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "config": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "timestamp": {
+                "type": "string"
+              },
+              "counter": {
+                "type": "number"
+              },
+              "largeInputLength": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "config",
+              "timestamp",
+              "counter"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "debug-refresh",
+          "title": "Refresh Debug Info",
+          "description": "App-only tool for polling server state. Not visible to the model.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {}
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://debug-tool/mcp-app.html",
+              "visibility": [
+                "app"
+              ]
+            },
+            "ui/resourceUri": "ui://debug-tool/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "counter": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "timestamp",
+              "counter"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "debug-log",
+          "title": "Log to File",
+          "description": "App-only tool for logging events to the server log file. Not visible to the model.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "payload": {}
+            },
+            "required": [
+              "type",
+              "payload"
+            ]
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://debug-tool/mcp-app.html",
+              "visibility": [
+                "app"
+              ]
+            },
+            "ui/resourceUri": "ui://debug-tool/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "logged": {
+                "type": "boolean"
+              },
+              "logFile": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "logged",
+              "logFile"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://example-server.modelcontextprotocol.io/map/mcp",
+      "serverInfo": {
+        "name": "CesiumJS Map Server",
+        "version": "1.0.0"
+      },
+      "tools": [
+        {
+          "name": "show-map",
+          "title": "Show Map",
+          "description": "Display an interactive world map zoomed to a specific bounding box. Use the GeoCode tool to find the bounding box of a location. The widget is interactive and exposes tools for navigation (fly to locations) and querying the current view.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "west": {
+                "default": -0.5,
+                "description": "Western longitude (-180 to 180)",
+                "type": "number"
+              },
+              "south": {
+                "default": 51.3,
+                "description": "Southern latitude (-90 to 90)",
+                "type": "number"
+              },
+              "east": {
+                "default": 0.3,
+                "description": "Eastern longitude (-180 to 180)",
+                "type": "number"
+              },
+              "north": {
+                "default": 51.7,
+                "description": "Northern latitude (-90 to 90)",
+                "type": "number"
+              },
+              "label": {
+                "description": "Optional label to display on the map",
+                "type": "string"
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://cesium-map/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://cesium-map/mcp-app.html"
+          }
+        },
+        {
+          "name": "geocode",
+          "title": "Geocode",
+          "description": "Search for places using OpenStreetMap. Returns coordinates and bounding boxes for up to 5 matches.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Place name or address to search for (e.g., 'Paris', 'Golden Gate Bridge', '1600 Pennsylvania Ave')"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://example-server.modelcontextprotocol.io/pdf/mcp",
+      "serverInfo": {
+        "name": "PDF Server",
+        "version": "2.0.0"
+      },
+      "tools": [
+        {
+          "name": "list_pdfs",
+          "description": "List available PDFs that can be displayed",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {}
+          }
+        },
+        {
+          "name": "read_pdf_bytes",
+          "title": "Read PDF Bytes",
+          "description": "Read a range of bytes from a PDF (max 512KB per request). The model should NOT call this tool directly.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "PDF URL or local file path"
+              },
+              "offset": {
+                "default": 0,
+                "description": "Byte offset",
+                "type": "number",
+                "minimum": 0
+              },
+              "byteCount": {
+                "default": 524288,
+                "description": "Bytes to read",
+                "type": "number",
+                "minimum": 1,
+                "maximum": 524288
+              }
+            },
+            "required": [
+              "url"
+            ]
+          },
+          "_meta": {
+            "ui": {
+              "visibility": [
+                "app"
+              ]
+            }
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "string",
+                "description": "Base64 encoded bytes"
+              },
+              "offset": {
+                "type": "number"
+              },
+              "byteCount": {
+                "type": "number"
+              },
+              "totalBytes": {
+                "type": "number"
+              },
+              "hasMore": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "url",
+              "bytes",
+              "offset",
+              "byteCount",
+              "totalBytes",
+              "hasMore"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "display_pdf",
+          "title": "Display PDF",
+          "description": "Show and render a PDF in a read-only viewer.\n\nUse this tool when the user wants to view or read a PDF. The renderer displays the document for viewing. The widget exposes app-registered tools for page navigation, text extraction, searching, and zoom control.\n\nAccepts local files (use list_pdfs), client MCP root directories, or any HTTPS URL.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "url": {
+                "default": "https://arxiv.org/pdf/1706.03762",
+                "description": "PDF URL or local file path",
+                "type": "string"
+              },
+              "page": {
+                "default": 1,
+                "description": "Initial page",
+                "type": "number",
+                "minimum": 1
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://pdf-viewer/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://pdf-viewer/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "viewUUID": {
+                "type": "string",
+                "description": "UUID for this viewer instance"
+              },
+              "url": {
+                "type": "string"
+              },
+              "initialPage": {
+                "type": "number"
+              },
+              "totalBytes": {
+                "type": "number"
+              },
+              "formFieldValues": {
+                "description": "Form field values filled by the user via elicitation",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "boolean"
+                  ]
+                }
+              },
+              "formFields": {
+                "description": "Form fields with bounding boxes in model coordinates (top-left origin)",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number"
+                    },
+                    "height": {
+                      "type": "number"
+                    },
+                    "exportValue": {
+                      "description": "Radio button value — pass this to fill_form",
+                      "type": "string"
+                    },
+                    "options": {
+                      "description": "Dropdown/listbox option values",
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "page",
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "viewUUID",
+              "url",
+              "initialPage",
+              "totalBytes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "save_pdf",
+          "title": "Save PDF",
+          "description": "Save annotated PDF bytes back to a local file. The model should NOT call this tool directly — use interact with action: save_as instead.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Original PDF URL or local file path"
+              },
+              "data": {
+                "type": "string",
+                "description": "Base64-encoded PDF bytes"
+              }
+            },
+            "required": [
+              "url",
+              "data"
+            ]
+          },
+          "_meta": {
+            "ui": {
+              "visibility": [
+                "app"
+              ]
+            }
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "filePath": {
+                "type": "string"
+              },
+              "mtimeMs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "filePath",
+              "mtimeMs"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://example-server.modelcontextprotocol.io/customer-segmentation/mcp",
+      "serverInfo": {
+        "name": "Customer Segmentation Server",
+        "version": "1.0.0"
+      },
+      "tools": [
+        {
+          "name": "get-customer-data",
+          "title": "Get Customer Data",
+          "description": "Returns customer data with segment information for visualization. Optionally filter by segment.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "segment": {
+                "description": "Filter by segment (default: All)",
+                "type": "string",
+                "enum": [
+                  "All",
+                  "Enterprise",
+                  "Mid-Market",
+                  "SMB",
+                  "Startup"
+                ]
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://customer-segmentation/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://customer-segmentation/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "customers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "segment": {
+                      "type": "string"
+                    },
+                    "annualRevenue": {
+                      "type": "number"
+                    },
+                    "employeeCount": {
+                      "type": "number"
+                    },
+                    "accountAge": {
+                      "type": "number"
+                    },
+                    "engagementScore": {
+                      "type": "number"
+                    },
+                    "supportTickets": {
+                      "type": "number"
+                    },
+                    "nps": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "segment",
+                    "annualRevenue",
+                    "employeeCount",
+                    "accountAge",
+                    "engagementScore",
+                    "supportTickets",
+                    "nps"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "segments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "color": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "count",
+                    "color"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "customers",
+              "segments"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://example-server.modelcontextprotocol.io/scenario-modeler/mcp",
+      "serverInfo": {
+        "name": "SaaS Scenario Modeler",
+        "version": "1.0.0"
+      },
+      "tools": [
+        {
+          "name": "get-scenario-data",
+          "title": "Get Scenario Data",
+          "description": "Returns SaaS scenario templates and optionally computes custom projections for given inputs",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "customInputs": {
+                "description": "Custom scenario parameters to compute projections for",
+                "type": "object",
+                "properties": {
+                  "startingMRR": {
+                    "type": "number"
+                  },
+                  "monthlyGrowthRate": {
+                    "type": "number"
+                  },
+                  "monthlyChurnRate": {
+                    "type": "number"
+                  },
+                  "grossMargin": {
+                    "type": "number"
+                  },
+                  "fixedCosts": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "startingMRR",
+                  "monthlyGrowthRate",
+                  "monthlyChurnRate",
+                  "grossMargin",
+                  "fixedCosts"
+                ]
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://scenario-modeler/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://scenario-modeler/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "templates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "icon": {
+                      "type": "string"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "properties": {
+                        "startingMRR": {
+                          "type": "number"
+                        },
+                        "monthlyGrowthRate": {
+                          "type": "number"
+                        },
+                        "monthlyChurnRate": {
+                          "type": "number"
+                        },
+                        "grossMargin": {
+                          "type": "number"
+                        },
+                        "fixedCosts": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "startingMRR",
+                        "monthlyGrowthRate",
+                        "monthlyChurnRate",
+                        "grossMargin",
+                        "fixedCosts"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "projections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "month": {
+                            "type": "number"
+                          },
+                          "mrr": {
+                            "type": "number"
+                          },
+                          "grossProfit": {
+                            "type": "number"
+                          },
+                          "netProfit": {
+                            "type": "number"
+                          },
+                          "cumulativeRevenue": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "month",
+                          "mrr",
+                          "grossProfit",
+                          "netProfit",
+                          "cumulativeRevenue"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "endingMRR": {
+                          "type": "number"
+                        },
+                        "arr": {
+                          "type": "number"
+                        },
+                        "totalRevenue": {
+                          "type": "number"
+                        },
+                        "totalProfit": {
+                          "type": "number"
+                        },
+                        "mrrGrowthPct": {
+                          "type": "number"
+                        },
+                        "avgMargin": {
+                          "type": "number"
+                        },
+                        "breakEvenMonth": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "endingMRR",
+                        "arr",
+                        "totalRevenue",
+                        "totalProfit",
+                        "mrrGrowthPct",
+                        "avgMargin",
+                        "breakEvenMonth"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "keyInsight": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "icon",
+                    "parameters",
+                    "projections",
+                    "summary",
+                    "keyInsight"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "defaultInputs": {
+                "type": "object",
+                "properties": {
+                  "startingMRR": {
+                    "type": "number"
+                  },
+                  "monthlyGrowthRate": {
+                    "type": "number"
+                  },
+                  "monthlyChurnRate": {
+                    "type": "number"
+                  },
+                  "grossMargin": {
+                    "type": "number"
+                  },
+                  "fixedCosts": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "startingMRR",
+                  "monthlyGrowthRate",
+                  "monthlyChurnRate",
+                  "grossMargin",
+                  "fixedCosts"
+                ],
+                "additionalProperties": false
+              },
+              "customProjections": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "month": {
+                      "type": "number"
+                    },
+                    "mrr": {
+                      "type": "number"
+                    },
+                    "grossProfit": {
+                      "type": "number"
+                    },
+                    "netProfit": {
+                      "type": "number"
+                    },
+                    "cumulativeRevenue": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "month",
+                    "mrr",
+                    "grossProfit",
+                    "netProfit",
+                    "cumulativeRevenue"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "customSummary": {
+                "type": "object",
+                "properties": {
+                  "endingMRR": {
+                    "type": "number"
+                  },
+                  "arr": {
+                    "type": "number"
+                  },
+                  "totalRevenue": {
+                    "type": "number"
+                  },
+                  "totalProfit": {
+                    "type": "number"
+                  },
+                  "mrrGrowthPct": {
+                    "type": "number"
+                  },
+                  "avgMargin": {
+                    "type": "number"
+                  },
+                  "breakEvenMonth": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "endingMRR",
+                  "arr",
+                  "totalRevenue",
+                  "totalProfit",
+                  "mrrGrowthPct",
+                  "avgMargin",
+                  "breakEvenMonth"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "templates",
+              "defaultInputs"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "url": "https://example-server.modelcontextprotocol.io/threejs/mcp",
+      "serverInfo": {
+        "name": "Three.js Server",
+        "version": "1.0.0"
+      },
+      "tools": [
+        {
+          "name": "show_threejs_scene",
+          "title": "Show Three.js Scene",
+          "description": "Render an interactive 3D scene with custom Three.js code. Supports transparent backgrounds (alpha: true) for seamless host UI integration. Available globals: THREE, OrbitControls, EffectComposer, RenderPass, UnrealBloomPass, canvas, width, height.",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "code": {
+                "default": "const scene = new THREE.Scene();\nconst camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);\nconst renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });\nrenderer.setSize(width, height);\nrenderer.setClearColor(0x000000, 0); // Transparent background\n\nconst cube = new THREE.Mesh(\n  new THREE.BoxGeometry(1, 1, 1),\n  new THREE.MeshStandardMaterial({ color: 0x00ff88 })\n);\nscene.add(cube);\n\nscene.add(new THREE.DirectionalLight(0xffffff, 1));\nscene.add(new THREE.AmbientLight(0x404040));\n\ncamera.position.z = 3;\n\nfunction animate() {\n  requestAnimationFrame(animate);\n  cube.rotation.x += 0.01;\n  cube.rotation.y += 0.01;\n  renderer.render(scene, camera);\n}\nanimate();",
+                "description": "JavaScript code to render the 3D scene",
+                "type": "string"
+              },
+              "height": {
+                "default": 400,
+                "description": "Height in pixels",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://threejs/mcp-app.html"
+            },
+            "ui/resourceUri": "ui://threejs/mcp-app.html"
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "success"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "learn_threejs",
+          "title": "Learn Three.js",
+          "description": "Get documentation and examples for using the Three.js View",
+          "inputSchema": {
+            "type": "object",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {}
+          }
+        }
+      ]
+    }
+  ]
+}

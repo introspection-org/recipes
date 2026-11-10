@@ -318,6 +318,9 @@ them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-genera
   source; it is never committed or edited. `test/tool-arguments.test.ts` checks
   each tool's `--help` reads them. Never hand-write a TypeBox schema for a
   tool's arguments.
+- **A field's CLI flag is its name in kebab-case** (`--max-results`), which the
+  schema adapter derives; the exact name stays accepted, and a field whose
+  kebab form would collide with another keeps its exact name.
 - **The tool merges the commands with `commandParameters`**
   ([`src/command-parameters.ts`](../src/command-parameters.ts)): one flat
   object with each field once, and the commands as its `anyOf` for validators
