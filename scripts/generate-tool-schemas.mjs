@@ -27,6 +27,17 @@ const SOURCES = [
     output: "src/issues/arguments.generated.ts",
     tools: { Issues: "ISSUES_ARGUMENTS" },
   },
+  {
+    source: "src/documents/arguments.ts",
+    output: "src/documents/arguments.generated.ts",
+    tools: { Documents: "DOCUMENTS_ARGUMENTS" },
+  },
+  // A tool with no commands names its one arguments type.
+  {
+    source: "src/search/arguments.ts",
+    output: "src/search/arguments.generated.ts",
+    single: { WebSearchArguments: "WEB_SEARCH_ARGUMENTS" },
+  },
 ];
 
 const snake = (name) =>
@@ -43,7 +54,7 @@ function commandSchema(generator, type) {
   };
 }
 
-async function generate({ source, output, tools }) {
+async function generate({ source, output, tools = {}, single = {} }) {
   const text = readFileSync(new URL(source, root), "utf8");
   const generator = createGenerator({
     path: new URL(source, root).pathname,
@@ -68,6 +79,12 @@ async function generate({ source, output, tools }) {
     if (entries.length === 0)
       throw new Error(`${source} declares no ${prefix} commands`);
     blocks.push(`export const ${constant} = {\n${entries.join("\n")}\n};`);
+  }
+  for (const [type, constant] of Object.entries(single)) {
+    imports.push(type);
+    blocks.push(
+      `export const ${constant} = ${JSON.stringify(commandSchema(generator, type))} as ArgumentsSchema<${type}>;`,
+    );
   }
   const from = `./${source.split("/").pop().replace(/\.ts$/, ".js")}`;
   const module = [
