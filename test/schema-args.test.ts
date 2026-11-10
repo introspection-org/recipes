@@ -24,7 +24,7 @@ describe("a command line from a tool's schema", () => {
       parse([
         "--query",
         "croissants",
-        "--max_results",
+        "--max-results",
         "5",
         "--mode",
         "fast",
@@ -232,6 +232,76 @@ describe("a command line from a tool's schema", () => {
     );
   });
 
+  it("names flags in kebab-case and keeps each property's own name as an alias", () => {
+    const command = {
+      path: ["t"],
+      description: "",
+      schema: {
+        properties: {
+          maxResults: { type: "integer" },
+          time_zone: { type: "string" },
+          multipleBlocks: { type: "boolean" },
+        },
+      },
+    };
+    const args = (argv: string[]) => parseSchemaArgs(command, argv).args;
+    const expected = { maxResults: 5, time_zone: "UTC", multipleBlocks: true };
+    expect(
+      args(["--max-results", "5", "--time-zone", "UTC", "--multiple-blocks"]),
+    ).toEqual(expected);
+    expect(
+      args(["--maxResults", "5", "--time_zone", "UTC", "--multipleBlocks"]),
+    ).toEqual(expected);
+    expect(args(["--no-multiple-blocks"])).toEqual({ multipleBlocks: false });
+    expect(args(["--no-multipleBlocks"])).toEqual({ multipleBlocks: false });
+    const help = schemaHelp(command, "tools list t --schema");
+    expect(help).toContain("--max-results <integer>");
+    expect(help).toContain("--time-zone <string>");
+    expect(help).toContain("--no-multiple-blocks for false.");
+    expect(help).not.toMatch(/--maxResults|--time_zone|--multipleBlocks/);
+    expect(
+      parseSchemaArgs(command, ["time_zone=UTC"], undefined, {
+        assignments: true,
+      }).args,
+    ).toEqual({ time_zone: "UTC" });
+  });
+
+  it("keeps the exact names where kebab-case would collide", () => {
+    const command = {
+      path: ["t"],
+      description: "",
+      schema: {
+        properties: {
+          page_size: { type: "integer" },
+          pageSize: { type: "integer" },
+          cache: { type: "boolean" },
+          no_cache: { type: "string" },
+          plain: { type: "string" },
+        },
+      },
+    };
+    const help = schemaHelp(command, "tools list t --schema");
+    for (const flag of [
+      "--page_size",
+      "--pageSize",
+      "--cache ",
+      "--no_cache",
+      "--plain",
+    ])
+      expect(help).toContain(flag);
+    expect(help).not.toContain("--page-size");
+    expect(help).not.toContain("--no-cache <");
+    const args = (argv: string[]) => parseSchemaArgs(command, argv).args;
+    expect(args(["--page_size", "1", "--pageSize", "2"])).toEqual({
+      page_size: 1,
+      pageSize: 2,
+    });
+    expect(args(["--no-cache", "--no_cache", "x"])).toEqual({
+      cache: false,
+      no_cache: "x",
+    });
+  });
+
   it("lists a group's commands with their first sentence", () => {
     expect(
       schemaGroupHelp(
@@ -269,7 +339,8 @@ describe("a command line from a tool's schema", () => {
     );
     expect(help).toMatch(/--query <string> +Required\./);
     expect(help).toContain("--mode <fast|default|deep>");
-    expect(help).toMatch(/--max_results <integer> +Default 5\. From 1 to 10\./);
+    expect(help).toMatch(/--max-results <integer> +Default 5\. From 1 to 10\./);
+    expect(help).not.toContain("--max_results");
     expect(help).toContain("--sites <string>...");
     expect(help).toContain("--json <object|->");
     const withDefault = schemaHelp(

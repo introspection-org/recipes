@@ -119,10 +119,23 @@ function shapeOf(property: Property): Shape {
 
 interface Field {
   name: string;
+  /** The flag help shows: the name in kebab-case, unless that would collide. */
+  flag: string;
   property: Property;
   shape: Shape;
   required: boolean;
 }
+
+/** `multipleBlocks` and `max_results` as `multiple-blocks` and `max-results`. */
+function kebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
+
+const isBoolean = (shape: Shape) =>
+  shape.kind === "scalar" && shape.type === "boolean";
 
 /** A command's top-level properties, each with what a flag can carry of it. */
 function fields(command: SchemaCommand): Field[] {
@@ -131,17 +144,35 @@ function fields(command: SchemaCommand): Field[] {
       ? command.schema.required.map(String)
       : [],
   );
-  return Object.entries(record(command.schema.properties)).map(
+  const all = Object.entries(record(command.schema.properties)).map(
     ([name, value]) => {
       const property = record(value);
-      return {
-        name,
-        property,
-        shape: RESERVED.has(name) ? { kind: "json" } : shapeOf(property),
-        required: required.has(name),
-      };
+      const shape: Shape = RESERVED.has(name)
+        ? { kind: "json" }
+        : shapeOf(property);
+      return { name, property, shape, required: required.has(name) };
     },
   );
+  // Every name a flag of each property answers to, negations included.
+  const spellings = (name: string, shape: Shape) => {
+    const forms = [name, kebab(name)];
+    return isBoolean(shape)
+      ? [...forms, ...forms.map((form) => `no-${form}`)]
+      : forms;
+  };
+  const counts = new Map<string, number>();
+  for (const field of all)
+    for (const form of new Set(spellings(field.name, field.shape)))
+      counts.set(form, (counts.get(form) ?? 0) + 1);
+  // A kebab name another property also answers to stays the exact name.
+  return all.map((field) => ({
+    ...field,
+    flag: spellings(field.name, field.shape).every(
+      (form) => counts.get(form) === 1,
+    )
+      ? kebab(field.name)
+      : field.name,
+  }));
 }
 
 const flagged = (field: Field) => field.shape.kind !== "json";
@@ -153,8 +184,8 @@ function options(command: SchemaCommand): ParseArgsOptionsConfig {
     json: { type: "string" },
   };
   for (const field of fields(command).filter(flagged))
-    config[field.name] =
-      field.shape.kind === "scalar" && field.shape.type === "boolean"
+    for (const name of new Set([field.flag, field.name]))
+      config[name] = isBoolean(field.shape)
         ? { type: "boolean" }
         : { type: "string", multiple: field.shape.kind === "array" };
   return config;
@@ -325,8 +356,16 @@ export function parseSchemaArgs(
   }
   const all = fields(command);
   for (const field of all.filter(flagged)) {
-    const raw = values[field.name];
-    if (raw !== undefined) args[field.name] = valueOf(field.shape, raw);
+    // The kebab flag and the exact name (its alias) are one argument.
+    const given = [...new Set([field.flag, field.name])].flatMap((name) => {
+      const raw = values[name];
+      return raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
+    });
+    if (given.length > 0)
+      args[field.name] = valueOf(
+        field.shape,
+        field.shape.kind === "array" ? given : given.at(-1)!,
+      );
   }
   for (const word of positionals) {
     const match = ASSIGNMENT.exec(word);
@@ -370,7 +409,7 @@ function range(property: Property): string | undefined {
 }
 
 function note(field: Field): string {
-  const { name, property, shape } = field;
+  const { property, shape } = field;
   const parts: string[] = [];
   if (field.required) parts.push("Required.");
   const description = String(property.description ?? property.title ?? "")
@@ -388,7 +427,7 @@ function note(field: Field): string {
   if (shape.kind === "array")
     parts.push("Repeat it for each value, or pass a JSON array.");
   if (shape.kind === "scalar" && shape.type === "boolean")
-    parts.push(`--no-${name} for false.`);
+    parts.push(`--no-${field.flag} for false.`);
   return parts.join(" ");
 }
 
@@ -426,7 +465,7 @@ export function schemaHelp(
     usage,
     ...flags
       .filter((field) => field.required)
-      .map((field) => `--${field.name}${placeholder(field)}`),
+      .map((field) => `--${field.flag}${placeholder(field)}`),
   ];
   if (flags.some((field) => !field.required))
     call.push("[--<argument> <value> ...]");
@@ -442,7 +481,7 @@ export function schemaHelp(
       "Arguments:",
       ...columns(
         flags.map((field) => [
-          `--${field.name}${placeholder(field)}`,
+          `--${field.flag}${placeholder(field)}`,
           note(field),
         ]),
       ),

@@ -32,6 +32,12 @@
   (`pnpm schemas`) and never committed. Never hand-write a TypeBox schema for
   tool arguments. Details are in
   [Tool arguments](docs/providers.md#tool-arguments).
+- **Every CLI argument flag is kebab-case, derived by the schema adapter**
+  (`src/cli/schema-args.ts`) from the property name: `max_results` is
+  `--max-results`, `multipleBlocks` is `--multiple-blocks`. Never hand-write a
+  flag name. The exact property name stays accepted as an alias, and is what
+  `--json`, `key=value` and the tool receive; argument property names keep the
+  API's snake_case.
 
 ## Recipe isolation
 

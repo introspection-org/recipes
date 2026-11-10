@@ -51,8 +51,17 @@ const decode = (server: string, name: string, argv: string[], stdin = "") =>
   }).args;
 
 /** The arguments a help lists: flags, then those only --json reaches. */
+/** A property's flag: its name in kebab-case, as the adapter derives it. */
+const kebab = (name: string) =>
+  name
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/_/g, "-")
+    .toLowerCase();
+
 function listed(text: string): string[] {
-  const flags = [...text.matchAll(/^ {2}--(\w+)/gm)].map((match) => match[1]!);
+  const flags = [...text.matchAll(/^ {2}--([\w-]+)/gm)].map(
+    (match) => match[1]!,
+  );
   const jsonOnly = text.includes("Only through --json:")
     ? [
         ...text
@@ -71,10 +80,17 @@ describe("the schema CLI on a real MCP server's tools", () => {
     expect(tools.length).toBeGreaterThan(10);
     for (const { server, tool } of tools) {
       const text = help(server, tool.name);
+      const properties = (tool.inputSchema.properties ?? {}) as Record<
+        string,
+        { type?: string; properties?: unknown }
+      >;
+      // A flag shows kebab-case; one only --json reaches shows its name.
       expect(listed(text).sort(), `${server}.${tool.name}`).toEqual(
-        Object.keys(
-          (tool.inputSchema.properties as Record<string, unknown>) ?? {},
-        ).sort(),
+        Object.keys(properties)
+          .map((name) =>
+            text.includes(`\n  --${kebab(name)}`) ? kebab(name) : name,
+          )
+          .sort(),
       );
     }
   });
@@ -87,11 +103,11 @@ describe("the schema CLI on a real MCP server's tools", () => {
     expect(geocode).toMatch(/--query <string> +Required\./);
     const debug = help("debug", "debug-tool");
     expect(debug).toContain(
-      "--contentType <text|image|audio|resource|resourceLink|mixed>",
+      "--content-type <text|image|audio|resource|resourceLink|mixed>",
     );
     expect(debug).toMatch(/Default: "text"\./);
     expect(debug).toMatch(
-      /--simulateError +.*Default: false\..*--no-simulateError for false\./,
+      /--simulate-error +.*Default: false\..*--no-simulate-error for false\./,
     );
     expect(debug).toContain(
       "(`mcp list debug.debug-tool --schema` prints its schema)",
@@ -126,9 +142,9 @@ describe("the schema CLI on a real MCP server's tools", () => {
     ).toEqual(expected);
     expect(
       decode("debug", "debug-tool", [
-        "--contentType",
+        "--content-type",
         "text",
-        "--multipleBlocks",
+        "--multiple-blocks",
         "--delayMs",
         "5",
       ]),
