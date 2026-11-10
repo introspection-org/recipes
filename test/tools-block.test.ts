@@ -465,6 +465,43 @@ describe("first-party tools by tools.mode", () => {
     expect(tools).not.toContain("web_search");
     expect(output).toContain("Agents that search");
   });
+
+  it("validates a command's flags in the tool pipeline, as it does --json", async () => {
+    let output = "";
+    await run(
+      ["tools:", "  mode: cli", "  include: [read, bash, web_search]"],
+      [
+        () =>
+          fauxAssistantMessage(
+            [
+              fauxToolCall("bash", {
+                command: [
+                  "web_search --query agents --max_results 999",
+                  "echo ---",
+                  `web_search --json '{"query":"agents","max_results":999}'`,
+                  "echo ---",
+                  "web_search --query agents --mode slow",
+                  "true",
+                ].join("; "),
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { webSearch: true },
+    );
+    const [flags, json, mode] = output.split("---\n");
+    const refusal = (text: string) => text.split("\n\nReceived arguments")[0];
+    expect(flags).toContain('Validation failed for tool "web_search"');
+    expect(flags).toContain("max_results");
+    expect(refusal(flags!)).toBe(refusal(json!));
+    expect(mode).toContain("mode");
+    expect(mode).toContain("Run `web_search --help` for its arguments.");
+  });
 });
 
 /** A host's extension registering `web_search`, which sets no exposure of its own. */

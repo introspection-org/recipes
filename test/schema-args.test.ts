@@ -1,43 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type CommandSchema,
   parseSchemaArgs,
   SchemaArgsError,
-  schemaCommand,
   schemaHelp,
 } from "../src/cli/schema-args.js";
 import { webSearchParameters } from "../src/search/tool.js";
 
-const search = schemaCommand(
-  "web_search",
-  "Search the web.",
-  webSearchParameters(["tavily", "exa"]),
-);
+const search = {
+  usage: "web_search",
+  description: "Search the web.",
+  schema: webSearchParameters(["tavily", "exa"]) as unknown as CommandSchema,
+};
 const parse = (argv: string[], stdin = "") =>
   parseSchemaArgs(search, argv, () => stdin).args;
 
 describe("a command line from a tool's schema", () => {
-  it("makes a typed flag of each top-level property", () => {
-    expect(
-      search.flags.map((flag) => [
-        flag.name,
-        flag.kind,
-        flag.array,
-        flag.required,
-      ]),
-    ).toEqual([
-      ["query", "string", false, true],
-      ["provider", "string", false, false],
-      ["mode", "string", false, false],
-      ["max_results", "integer", false, false],
-      ["freshness", "string", false, false],
-      ["sites", "string", true, false],
-      ["content", "string", false, false],
-      ["country", "string", false, false],
-    ]);
-  });
-
-  it("converts each value to its property's type", () => {
+  it("decodes each flag to its property's type", () => {
     expect(
       parse([
         "--query",
@@ -62,19 +42,32 @@ describe("a command line from a tool's schema", () => {
     ).toEqual(["a.com", "b.com"]);
   });
 
-  it("refuses what the schema would, before any call", () => {
-    const refused = (argv: string[]) => () => parse(argv);
-    expect(refused(["--query", "x", "--max_results", "five"])).toThrow(
-      "--max_results takes an integer, not 'five'",
+  it("leaves what the values must be to the pipeline, as --json does", () => {
+    expect(parse(["--query", "x", "--max_results", "999"])).toEqual(
+      parse(["--json", '{"query":"x","max_results":999}']),
     );
-    expect(refused(["--query", "x", "--mode", "slow"])).toThrow(
-      "--mode must be one of fast, default, deep, not 'slow'",
-    );
-    expect(refused(["--max_results", "3"])).toThrow(
-      "web_search: missing --query",
-    );
-    expect(refused(["--query", "x", "--limit", "3"])).toThrow(SchemaArgsError);
-    expect(refused(["croissants"])).toThrow(SchemaArgsError);
+    expect(parse(["--query", "x", "--mode", "slow"]).mode).toBe("slow");
+    expect(parse(["--max_results", "five"])).toEqual({ max_results: "five" });
+  });
+
+  it("refuses only a line it cannot read, naming the command", () => {
+    const refused = (argv: string[]) => {
+      try {
+        parse(argv);
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    };
+    for (const argv of [
+      ["--query", "x", "--limit", "3"],
+      ["croissants"],
+      ["--json", "[1]"],
+    ]) {
+      const error = refused(argv);
+      expect(error).toBeInstanceOf(SchemaArgsError);
+      expect((error as SchemaArgsError).usage).toBe("web_search");
+    }
   });
 
   it("takes every argument as --json too, with flags over it", () => {
@@ -89,15 +82,18 @@ describe("a command line from a tool's schema", () => {
   });
 
   it("takes booleans as --flag and --no-flag, and anything else as JSON", () => {
-    const command = schemaCommand("issues list", "", {
-      type: "object",
-      properties: {
-        includeArchived: { type: "boolean" },
-        filter: { type: "object" },
-        state: { anyOf: [{ const: "open" }, { const: "closed" }] },
-        limit: { type: ["integer", "null"], minimum: 1, maximum: 50 },
+    const command = {
+      usage: "issues list",
+      description: "",
+      schema: {
+        properties: {
+          includeArchived: { type: "boolean" },
+          filter: { type: "object" },
+          state: { anyOf: [{ const: "open" }, { const: "closed" }] },
+          limit: { type: ["integer", "null"], minimum: 1, maximum: 50 },
+        },
       },
-    });
+    };
     const args = (argv: string[]) => parseSchemaArgs(command, argv).args;
     expect(
       args([
@@ -116,18 +112,25 @@ describe("a command line from a tool's schema", () => {
       limit: 10,
     });
     expect(args(["--no-includeArchived"])).toEqual({ includeArchived: false });
-    expect(() => args(["--limit", "51"])).toThrow(
-      "--limit must be from 1 to 50, not 51",
-    );
   });
 
-  it("writes --help from the same schema", () => {
+  it("writes --help from the schema: required, enum values, limits and defaults", () => {
     const help = schemaHelp(search);
     expect(help.split("\n")[0]).toBe(
       "Usage: web_search --query <string> [--<argument> <value> ...]",
     );
+    expect(help).toMatch(/--query <string> +Required\./);
     expect(help).toContain("--mode <fast|default|deep>");
+    expect(help).toMatch(/--max_results <integer> +Default 5\. From 1 to 10\./);
     expect(help).toContain("--sites <string>...");
     expect(help).toContain("--json <object|->");
+    const withDefault = schemaHelp({
+      usage: "mail search",
+      description: "",
+      schema: {
+        properties: { limit: { type: "integer", minimum: 1, default: 25 } },
+      },
+    });
+    expect(withDefault).toContain("At least 1. Default: 25.");
   });
 });

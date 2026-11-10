@@ -10,11 +10,10 @@ import { readFileSync } from "node:fs";
 import { createConnection } from "node:net";
 
 import {
+  type CommandSchema,
   parseSchemaArgs,
   SchemaArgsError,
-  schemaCommand,
   schemaHelp,
-  type SchemaCommand,
 } from "../cli/schema-args.js";
 import {
   TOOLS_SOCKET_ENV,
@@ -53,13 +52,13 @@ const HELP = [
 
 class UsageError extends Error {}
 
+/** One command of a tool, with the schema its arguments follow. */
 interface Command {
   tool: string;
   command?: string;
-  /** The arguments a call must give. */
-  required?: string[];
   description: string;
-  arguments: Record<string, unknown>;
+  /** The command's own schema; `command`, which the call's name carries, set aside. */
+  schema: CommandSchema;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -68,57 +67,41 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/** A tool's commands, from its schema: an enum on `command`, or one variant per command. */
+/** `schema` without `command`, which the call's name carries. */
+function argumentsOf(schema: Record<string, unknown>): CommandSchema {
+  const { command: _command, ...properties } = record(schema.properties);
+  const required = Array.isArray(schema.required)
+    ? schema.required.map(String).filter((name) => name !== "command")
+    : [];
+  return { properties, required };
+}
+
+/** A tool's commands, from its schema: one variant per command, an enum on `command`, or none. */
 function commandsOf(tool: ToolsBridgeTool): Command[] {
   const schema = record(tool.parameters);
   const variants = (schema.anyOf ?? schema.oneOf) as unknown[] | undefined;
   if (Array.isArray(variants))
-    return variants.map((variant) => {
-      const properties = record(record(variant).properties);
-      const { command, ...args } = properties;
-      return {
-        tool: tool.name,
-        command: String(record(command).const),
-        description: String(record(variant).description ?? ""),
-        arguments: args,
-        required: requiredOf(record(variant).required),
-      };
-    });
-  const properties = record(schema.properties);
-  const names = record(properties.command).enum;
-  const { command: _command, ...args } = properties;
-  const required = requiredOf(schema.required);
+    return variants.map((variant) => ({
+      tool: tool.name,
+      command: String(record(record(record(variant).properties).command).const),
+      description: String(record(variant).description ?? ""),
+      schema: argumentsOf(record(variant)),
+    }));
+  const names = record(record(schema.properties).command).enum;
   if (Array.isArray(names))
     return names.map((name) => ({
       tool: tool.name,
       command: String(name),
       description: "",
-      arguments: args,
-      required,
+      schema: argumentsOf(schema),
     }));
   return [
     {
       tool: tool.name,
       description: tool.description.split("\n")[0] ?? "",
-      arguments: properties,
-      required,
+      schema: argumentsOf(schema),
     },
   ];
-}
-
-/** A schema's `required`, without `command`, which the call's name carries. */
-function requiredOf(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map(String).filter((name) => name !== "command")
-    : [];
-}
-
-/** The schema command a tool command is: its flags and `--help`. */
-function specOf(command: Command, usage: string): SchemaCommand {
-  return schemaCommand(usage, command.description, {
-    properties: command.arguments,
-    required: command.required ?? [],
-  });
 }
 
 /** A description's first sentence, for a one-line listing. */
@@ -293,15 +276,29 @@ export async function runToolsCommand(
           `${tool.name} has no commands: pass its arguments as flags or --json -. ${tool.name} --help`,
         );
     }
-    const spec = specOf(command, usage);
+    const spec = {
+      usage,
+      description: command.description,
+      schema: command.schema,
+    };
     const parsed = parseSchemaArgs(spec, rest, io.stdin);
     if (parsed.help) {
       io.stdout.write(`${schemaHelp(spec)}\n`);
       return 0;
     }
-    io.stdout.write(
-      `${(await tools.call(nameOf(command), parsed.args)).text}\n`,
-    );
+    let answer: Awaited<ReturnType<typeof tools.call>>;
+    try {
+      answer = await tools.call(nameOf(command), parsed.args);
+    } catch (error) {
+      // The pipeline checked the arguments against the schema and refused them.
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Validation failed")
+      )
+        throw new SchemaArgsError(usage, error.message);
+      throw error;
+    }
+    io.stdout.write(`${answer.text}\n`);
     return 0;
   };
   try {
@@ -324,7 +321,7 @@ export async function runToolsCommand(
       for (const command of commandsOf(tool))
         io.stdout.write(
           schema
-            ? `${shownAs(command)} ${JSON.stringify({ properties: command.arguments, required: command.required ?? [] })}\n`
+            ? `${shownAs(command)} ${JSON.stringify(command.schema)}\n`
             : `${shownAs(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
@@ -409,10 +406,8 @@ export async function runToolsCommand(
     io.stderr.write(
       `${error instanceof Error ? error.message : String(error)}\n`,
     );
-    if (error instanceof SchemaArgsError) {
-      const usage = error.message.split(":")[0];
-      io.stderr.write(`Run \`${usage} --help\` for its arguments.\n`);
-    }
+    if (error instanceof SchemaArgsError)
+      io.stderr.write(`Run \`${error.usage} --help\` for its arguments.\n`);
     return error instanceof UsageError || error instanceof SchemaArgsError
       ? 64
       : 1;

@@ -60,6 +60,19 @@ async function tools(
     ],
     executeTool: async (name: string, args: unknown) => {
       calls.push({ name, args });
+      // The session validates a call's arguments against its schema, as Pi does.
+      if (name === "web_search" && !(args as { query?: string }).query)
+        return {
+          result: {
+            content: [
+              {
+                type: "text",
+                text: `Validation failed for tool "web_search":\n  - root: must have required property 'query'`,
+              },
+            ],
+          },
+          isError: true,
+        };
       return {
         result: {
           content: [{ type: "text", text: `${name} ${JSON.stringify(args)}` }],
@@ -154,17 +167,24 @@ describe("the tools command", () => {
       "Usage: web_search --query <string>",
     );
 
+    // The session refuses a missing argument; the hint names the command.
     const missing = await tools(["web_search"]);
     expect(missing.code).toBe(64);
-    expect(missing.stderr).toContain("web_search: missing --query");
-    expect(missing.stderr).toContain("Run `web_search --help`");
+    expect(missing.stderr).toContain("must have required property 'query'");
+    expect(missing.stderr).toContain(
+      "Run `web_search --help` for its arguments.",
+    );
+    const unread = await tools(["issues", "search", "--limit", "x", "--bogus"]);
+    expect(unread.stderr).toContain(
+      "Run `issues search --help` for its arguments.",
+    );
     const unknown = await tools(["mail", "search", "--subject", "x"]);
     expect(unknown.code).toBe(64);
     expect(unknown.stderr).toContain("Unknown option '--subject'");
     expect((await tools(["issues", "close"])).stderr).toContain(
       "issues has no command 'close'; it has search, get",
     );
-    expect(missing.calls).toEqual([]);
+    expect(unknown.calls).toEqual([]);
   });
 
   it("searches commands by their words", async () => {
