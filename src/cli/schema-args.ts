@@ -9,9 +9,9 @@
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
 /** How a flag's text becomes the property's value. */
-export type FlagKind = "string" | "integer" | "number" | "boolean" | "json";
+type FlagKind = "string" | "integer" | "number" | "boolean" | "json";
 
-export interface SchemaFlag {
+interface SchemaFlag {
   /** The property name, which is also the flag: `--max_results`. */
   name: string;
   kind: FlagKind;
@@ -138,7 +138,7 @@ function flagOf(
  * are `help` and `json`, which every command reserves: those stay reachable
  * through `--json`.
  */
-export function schemaFlags(
+function schemaFlags(
   schema: unknown,
   omit: readonly string[] = [],
 ): SchemaFlag[] {
@@ -164,7 +164,7 @@ export function schemaCommand(
 }
 
 /** The `parseArgs` options a command's flags declare, with `--json` and `--help`. */
-export function parseArgsOptions(
+function parseArgsOptions(
   flags: readonly SchemaFlag[],
 ): ParseArgsOptionsConfig {
   const options: ParseArgsOptionsConfig = {
