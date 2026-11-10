@@ -321,8 +321,11 @@ function firstSentence(text: string): string {
   return line.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? line;
 }
 
-/** `--help` for one command, read from its schema. */
-export function schemaHelp(command: SchemaCommand): string {
+/** `--help` for one command, read from its schema; `schemaPointer` is the command that prints its JSON Schema. */
+export function schemaHelp(
+  command: SchemaCommand,
+  schemaPointer: string,
+): string {
   const usage = usageOf(command);
   const all = fields(command);
   const flags = all.filter(flagged);
@@ -363,7 +366,7 @@ export function schemaHelp(command: SchemaCommand): string {
     ...columns([
       [
         "--json <object|->",
-        "Every argument as one JSON object; flags given beside it override its keys.",
+        `Every argument as one JSON object (\`${schemaPointer}\` prints its schema); flags given beside it override its keys.`,
       ],
       ["--help", "This help."],
     ]),
@@ -371,11 +374,15 @@ export function schemaHelp(command: SchemaCommand): string {
   return lines.join("\n");
 }
 
-/** `--help` for a group of commands under `path`: each one's name and first sentence. */
+/**
+ * `--help` for a group of commands under `path`: each one's name and first
+ * sentence. `schemaPointer` is the command that prints their JSON Schemas.
+ */
 export function schemaGroupHelp(
   path: readonly string[],
   description: string,
   commands: readonly SchemaCommand[],
+  schemaPointer: string,
 ): string {
   const usage = path.join(" ");
   const names = commands.map((command) => command.path.at(-1) ?? "");
@@ -390,6 +397,6 @@ export function schemaGroupHelp(
         `  ${names[index]!.padEnd(width)}${firstSentence(command.description)}`,
     ),
     "",
-    `Run \`${usage} <command> --help\` for a command's arguments.`,
+    `Run \`${usage} <command> --help\` for a command's arguments, or \`${schemaPointer}\` for the JSON each takes.`,
   ].join("\n");
 }
