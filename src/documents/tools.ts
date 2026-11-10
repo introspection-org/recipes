@@ -12,8 +12,14 @@ import {
 } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type, type TSchema } from "typebox";
 import { Check } from "typebox/value";
+
+import {
+  commandParameters,
+  commandVariant,
+  type ObjectSchema,
+} from "../command-parameters.js";
+import { DOCUMENTS_ARGUMENTS } from "./arguments.generated.js";
 
 import type {
   DocumentAdapter,
@@ -131,257 +137,46 @@ export function workspacePath(path: unknown, cwd: string): string {
   return full;
 }
 
-const quoteFields = {
-  quote: Type.String({
-    minLength: 1,
-    description:
-      "Text copied from the read output of the paragraph. Whitespace, curly quotes, dashes and soft hyphens are forgiven; words are not.",
-  }),
-  paragraph: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Paragraph id from read, such as p-031, that holds the quote",
-    }),
-  ),
-  near: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Nearby text that picks one match",
-    }),
-  ),
-  occurrence: Type.Optional(
-    Type.Integer({
-      minimum: 1,
-      description: "1-based match number when the quote repeats",
-    }),
-  ),
-};
-
-const writeFields = {
-  path: Type.String({ minLength: 1, description: "The document to read from" }),
-  output: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Where to save the result, under outputs/. Omit to keep editing a result this tool already saved at path.",
-    }),
-  ),
-  author: Type.String({
-    minLength: 1,
-    description: "Name every change and comment is signed with",
-  }),
-};
-
-const editSchema = Type.Object(
-  {
-    op: Type.Union([
-      Type.Literal("replace"),
-      Type.Literal("delete"),
-      Type.Literal("insert_after"),
-    ]),
-    ...quoteFields,
-    new: Type.Optional(
-      Type.String({
-        description:
-          "Replacement text (replace) or inserted text (insert_after)",
-      }),
-    ),
-    rationale: Type.String({
-      minLength: 1,
-      description: "Margin comment giving the reason",
-    }),
-  },
-  { additionalProperties: false },
-);
-
-const responseSchema = Type.Union([
-  Type.Object(
-    {
-      action: Type.Union([Type.Literal("accept"), Type.Literal("reject")]),
-      changes: Type.String({
-        minLength: 1,
-        description: "Change numbers from read, like 12-19 or 30,34",
-      }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      action: Type.Literal("reply"),
-      thread: Type.Integer({ minimum: 0 }),
-      text: Type.String({ minLength: 1 }),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      action: Type.Literal("counter"),
-      ...quoteFields,
-      new: Type.String(),
-      rationale: Type.String({ minLength: 1 }),
-      thread: Type.Optional(
-        Type.Integer({
-          minimum: 0,
-          description: "Thread to put the rationale on",
-        }),
-      ),
-    },
-    { additionalProperties: false },
-  ),
-]);
-
 interface Definition {
   description: string;
-  parameters: TSchema & { properties: Record<string, TSchema> };
+  parameters: ObjectSchema;
 }
 
 const DEFINITIONS: Record<DocumentCommand, Definition> = {
   read: {
     description:
       "Read a document. Word: each paragraph's current text after its id (quote from this text), tracked changes and comments inline by author, numbered changes and comment threads. PDF: the text page by page, filled form fields and page comments; the first line names the path used (text, tables, or page images when a page has no text layer, a scan, which you then render). Pass tables: true for a PDF with a fee schedule, SLA grid or price table. HTML: the page as markdown, each chart (a figure or inline SVG) a [chart N] line, to render. Long documents come in parts: pass the offset it gives.",
-    parameters: Type.Object(
-      {
-        path: Type.String({ minLength: 1 }),
-        offset: Type.Optional(
-          Type.Integer({
-            minimum: 0,
-            description:
-              "Where to continue, as given by the previous part: a paragraph, or the tracked-change and comment listings after the last one",
-          }),
-        ),
-        budget: Type.Optional(
-          Type.Integer({
-            minimum: 2000,
-            maximum: 80000,
-            description: "Characters per part (default 30000)",
-          }),
-        ),
-        pages: Type.Optional(
-          Type.String({
-            maxLength: 100,
-            description: "Pages to read, like 2-4,9 (paged formats)",
-          }),
-        ),
-        tables: Type.Optional(
-          Type.Boolean({
-            description:
-              "PDF: also return tables as rows of cells. Ask for it on contracts with fee schedules, SLA grids or price tables, where plain text loses which figure belongs to which row. Needs the PDF adapter's tables extra; without it you get the text and a note.",
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.read,
   },
   revise: {
     description:
       "Redline whole paragraphs without quoting: for each paragraph id from read, give its full revised text and the rationale. The tool works out the word-level tracked changes, signs them with author, and puts the rationale as a comment on the changed text. Saves to output (a copy; never the original). Returns per-paragraph applied or failed.",
-    parameters: Type.Object(
-      {
-        ...writeFields,
-        revisions: Type.Array(
-          Type.Object(
-            {
-              paragraph: Type.String({
-                minLength: 1,
-                description: "Paragraph id from read, such as p-031",
-              }),
-              text: Type.String({
-                description:
-                  "The paragraph's full revised text (empty to strike it all; unchanged to comment on it)",
-              }),
-              // Optional in the schema so one missing rationale fails that revision, not the batch.
-              rationale: Type.Optional(
-                Type.String({
-                  description: "Margin comment giving the reason (required)",
-                }),
-              ),
-            },
-            { additionalProperties: false },
-          ),
-          { minItems: 1, maxItems: 60 },
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.revise,
   },
   propose_edits: {
     description:
       "Make a batch of tracked edits (replace, delete, insert_after), each anchored to a quote and carrying its rationale as a margin comment, signed by author. Saves to output (a copy; never the original). Returns per-edit applied or failed; a failed edit lists the closest paragraphs. Resubmit only failed edits.",
-    parameters: Type.Object(
-      {
-        ...writeFields,
-        edits: Type.Array(editSchema, { minItems: 1, maxItems: 60 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.propose_edits,
   },
   comment: {
     description:
       "Add a margin comment on a quote, or reply on an existing thread (thread number from read). Signed by author; saved to output.",
-    parameters: Type.Object(
-      {
-        ...writeFields,
-        text: Type.String({ minLength: 1 }),
-        quote: Type.Optional(quoteFields.quote),
-        paragraph: quoteFields.paragraph,
-        near: quoteFields.near,
-        occurrence: quoteFields.occurrence,
-        thread: Type.Optional(Type.Integer({ minimum: 0 })),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.comment,
   },
   respond: {
     description:
       "Respond to markup already in the document: accept or reject tracked changes by number, reply on a thread, or counter with your own tracked change. Accepts and rejects run first, so numbers refer to the file as read; each accept or reject applies whole or not at all.",
-    parameters: Type.Object(
-      {
-        ...writeFields,
-        responses: Type.Array(responseSchema, { minItems: 1, maxItems: 60 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.respond,
   },
   remove_section: {
     description:
       "Remove a whole section as tracked changes while keeping numbering: strikes paragraphs from..through and leaves 'Reserved.' in the first, after any keep text such as its heading. One rationale comment.",
-    parameters: Type.Object(
-      {
-        ...writeFields,
-        from: Type.String({ minLength: 1, description: "First paragraph id" }),
-        through: Type.String({
-          minLength: 1,
-          description: "Last paragraph id",
-        }),
-        keep: Type.Optional(
-          Type.String({
-            minLength: 1,
-            description:
-              "Leading text of the first paragraph to keep, such as its heading",
-          }),
-        ),
-        rationale: Type.String({ minLength: 1 }),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.remove_section,
   },
   render: {
     description:
       "Render PDF pages, or an HTML page and its charts, to PNG files (at most 10 per call) and return their paths; open each with the read tool to see the page. Use it for PDF pages read reports have no text layer (scans), to check signatures, stamps, handwriting, charts or layout, and to check each chart on an HTML page makes sense. HTML renders the full page light and dark and each chart with a browser; without one, only inline SVG charts, and the result says so.",
-    parameters: Type.Object(
-      {
-        path: Type.String({ minLength: 1 }),
-        pages: Type.Optional(
-          Type.String({
-            maxLength: 100,
-            description:
-              "Pages to render, like 2-4,9 (default: from page 1); for HTML, chart numbers (default: the full page and every chart)",
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
+    parameters: DOCUMENTS_ARGUMENTS.render,
   },
 };
 
@@ -514,35 +309,15 @@ export function registerDocumentTools(
     return target;
   };
 
-  const variants = selected.map((command) => {
-    const definition = DEFINITIONS[command];
-    return Type.Object(
-      { command: Type.Literal(command), ...definition.parameters.properties },
-      { additionalProperties: false, description: definition.description },
-    );
-  });
-  // Providers expect a top-level object. Branches retain command-specific required fields.
-  const fields = new Map<string, TSchema[]>();
-  for (const variant of variants) {
-    for (const [key, schema] of Object.entries(variant.properties)) {
-      const known = fields.get(key) ?? [];
-      if (
-        !known.some((other) => JSON.stringify(other) === JSON.stringify(schema))
-      )
-        known.push(schema);
-      fields.set(key, known);
-    }
-  }
-  const properties = Object.fromEntries(
-    [...fields].map(([key, schemas]) => {
-      const union = schemas.length === 1 ? schemas[0]! : Type.Union(schemas);
-      return [key, key === "command" ? union : Type.Optional(union)];
-    }),
+  const parameters = commandParameters(
+    selected.map((command) =>
+      commandVariant(
+        command,
+        DEFINITIONS[command].parameters,
+        DEFINITIONS[command].description,
+      ),
+    ),
   );
-  const parameters = Type.Object(properties, {
-    additionalProperties: false,
-    anyOf: variants,
-  });
 
   pi.registerTool({
     name: "documents",
@@ -560,12 +335,12 @@ export function registerDocumentTools(
       params: { command: DocumentCommand } & Record<string, unknown>,
       signal?: AbortSignal,
     ) {
+      const { command, ...input } = params;
       if (!Check(parameters, params)) {
         throw new Error(
           "Invalid documents command or arguments; follow the command schema.",
         );
       }
-      const { command, ...input } = params;
       const source = workspacePath(input.path, cwd);
       const adapter = adapterFor(source, command);
       const ctx: DocumentAdapterContext = { cwd, signal };

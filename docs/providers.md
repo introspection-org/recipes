@@ -294,20 +294,23 @@ A result that silently stops at the first page is the bug reviews kept finding.
 
 ### Tool arguments
 
-The arguments of a first-party command tool (`mail`, `calendar`, `drive`,
-`channels`, `issues`) are TypeScript types, and their JSON Schemas are generated from
+The arguments of a first-party tool (`mail`, `calendar`, `drive`, `channels`,
+`issues`, `documents`, `web_search`) are TypeScript types, and their JSON Schemas are generated from
 them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-generator).
 
 - **One type per command,** `<Tool><Command>Arguments` in the family's
   `arguments.ts` ([`src/productivity/arguments.ts`](../src/productivity/arguments.ts),
   [`src/channels/arguments.ts`](../src/channels/arguments.ts),
-  [`src/issues/arguments.ts`](../src/issues/arguments.ts)): `MailDraftArguments`
+  [`src/issues/arguments.ts`](../src/issues/arguments.ts),
+  [`src/documents/arguments.ts`](../src/documents/arguments.ts)): `MailDraftArguments`
   is `mail draft`. A field shared by several commands is one type alias, so it
-  reaches the model once.
+  reaches the model once. A tool with no commands has one type,
+  `WebSearchArguments` in [`src/search/arguments.ts`](../src/search/arguments.ts).
 - **A field's doc comment is its description, and its tags are its limits:**
   `@minLength`, `@maxLength`, `@minimum`, `@maximum`, `@minItems`, `@maxItems`,
   `@default`, and `@asType integer` for a whole number. Every field has a
-  description; `test/tool-arguments.test.ts` fails on one without. A word that
+  description; `test/tool-arguments.test.ts` fails on one without. `web_search`
+  is the exception, held to a schema size budget. A word that
   varies by provider is a `{word}` placeholder the tool fills at registration
   (`{folder}`, `{labels}`).
 - **The build generates them** (`pnpm schemas`, which runs wherever `pnpm

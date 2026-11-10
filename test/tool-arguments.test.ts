@@ -14,7 +14,13 @@ import {
   DRIVE_ARGUMENTS,
   MAIL_ARGUMENTS,
 } from "../src/productivity/arguments.generated.js";
+import { DOCUMENTS_ARGUMENTS } from "../src/documents/arguments.generated.js";
+import { registerDocumentTools } from "../src/documents/index.js";
 import { ISSUES_ARGUMENTS } from "../src/issues/arguments.generated.js";
+import { WEB_SEARCH_ARGUMENTS } from "../src/search/arguments.generated.js";
+import { registerWebSearchTool } from "../src/search/tool.js";
+import searchProviders from "../packages/search/src/index.js";
+import { SEARCH_MAX_RESULTS } from "../src/search/types.js";
 import { registerProductivityTools } from "../src/productivity/index.js";
 import {
   PRODUCTIVITY_COMMAND_EFFECTS,
@@ -33,6 +39,7 @@ const GENERATED: Record<string, Record<string, ObjectSchema>> = {
   drive: DRIVE_ARGUMENTS,
   channels: CHANNELS_ARGUMENTS,
   issues: ISSUES_ARGUMENTS,
+  documents: DOCUMENTS_ARGUMENTS,
 };
 
 interface RegisteredTool {
@@ -249,6 +256,37 @@ function registered() {
   registerChannelTools(pi, STUB_ADAPTER, {
     target: { provider: "stub", conversation: "C1" },
   });
+  const done = async () => ({ text: "" }) as never;
+  registerDocumentTools(
+    pi as never,
+    [
+      {
+        format: "fake",
+        extensions: [".fake"],
+        capabilities: {
+          read: true,
+          proposeEdits: true,
+          revise: true,
+          comment: true,
+          respond: true,
+          removeSection: true,
+          render: true,
+        },
+        read: done,
+        proposeEdits: done,
+        revise: done,
+        comment: done,
+        respond: done,
+        removeSection: done,
+        render: done,
+      },
+    ],
+    { cwd: "/nonexistent" },
+  );
+  registerWebSearchTool(pi as never, {
+    bound: ["tavily", "brave"],
+    providers: searchProviders.providers,
+  });
   return (name: string) => ({
     name,
     ...(pi.tools.get(name) as unknown as RegisteredTool),
@@ -259,7 +297,12 @@ describe("the generated schemas, as each tool's --help reads them", () => {
   const tool = registered();
 
   it("list every command of every generated tool with its description", async () => {
-    for (const name of [...PRODUCTIVITY_TOOLS, "channels", "issues"]) {
+    for (const name of [
+      ...PRODUCTIVITY_TOOLS,
+      "channels",
+      "issues",
+      "documents",
+    ]) {
       const registeredTool = tool(name);
       const text = await help(registeredTool, [name, "--help"]);
       for (const variant of registeredTool.parameters.anyOf) {
@@ -280,6 +323,8 @@ describe("the generated schemas, as each tool's --help reads them", () => {
       ["channels", "send", CHANNELS_ARGUMENTS],
       ["issues", "create", ISSUES_ARGUMENTS],
       ["issues", "transition", ISSUES_ARGUMENTS],
+      ["documents", "read", DOCUMENTS_ARGUMENTS],
+      ["documents", "remove_section", DOCUMENTS_ARGUMENTS],
     ];
     for (const [name, command, generated] of cases) {
       const text = await help(tool(name), [name, command, "--help"]);
@@ -311,5 +356,36 @@ describe("the generated schemas, as each tool's --help reads them", () => {
     expect(transition).toContain(
       "A status name or open, in_progress, done, cancelled.",
     );
+    const respond = await help(tool("documents"), [
+      "documents",
+      "respond",
+      "--help",
+    ]);
+    expect(respond).toMatch(
+      /--author <string> +Required\. Name every change and comment is signed with\./,
+    );
+    expect(respond).toMatch(/Only through --json:\n {2}responses +Required\./);
+    const read = await help(tool("documents"), ["documents", "read", "--help"]);
+    expect(read).toMatch(
+      /--budget <integer> +Characters per part \(default 30000\)\. From 2000 to 80000\./,
+    );
+    const webSearch = await help(tool("web_search"), ["web_search", "--help"]);
+    expect(webSearch.split("\n")[0]).toBe(
+      "Usage: web_search --query <string> [--<argument> <value> ...]",
+    );
+    expect(flagsOf(webSearch)).toEqual(
+      Object.keys(WEB_SEARCH_ARGUMENTS.properties),
+    );
+    expect(webSearch).toContain("--provider <tavily|brave>");
+    expect(webSearch).toMatch(
+      /--max_results <integer> +Default 5\. From 1 to 10\./,
+    );
+    expect(webSearch).toContain("--mode <fast|default|deep>");
+  });
+
+  it("keep the limits a constant also states", () => {
+    expect(WEB_SEARCH_ARGUMENTS.properties.max_results).toMatchObject({
+      maximum: SEARCH_MAX_RESULTS,
+    });
   });
 });

@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { SpanStatusCode, trace, type Tracer } from "@opentelemetry/api";
-import { Type, type TSchema } from "typebox";
+import type { TSchema } from "typebox";
+
+import { withoutFields, withWords } from "../command-parameters.js";
+import { WEB_SEARCH_ARGUMENTS } from "./arguments.generated.js";
 import { Check } from "typebox/value";
 
 import { mcpToolName } from "../mcp/pi-client.js";
@@ -17,12 +20,8 @@ import {
   type SearchMcpClient,
 } from "./mcp.js";
 import {
-  SEARCH_CONTENT,
   SEARCH_CONTENT_CHARS,
   SEARCH_DEFAULT_RESULTS,
-  SEARCH_FRESHNESS,
-  SEARCH_MAX_RESULTS,
-  SEARCH_MODES,
   SEARCH_PROVIDER_API_VERSION,
   SearchProviderError,
   type SearchErrorInfo,
@@ -126,52 +125,19 @@ export function webSearchParameters(
   bound: readonly SearchProviderId[],
   withProvider = false,
 ): TSchema {
-  return Type.Object(
-    {
-      query: Type.String({ minLength: 1 }),
-      ...(bound.length > 1 || (withProvider && bound.length > 0)
-        ? {
-            provider: Type.Optional(
-              Type.Enum([...bound], {
-                type: "string",
-              }),
-            ),
-          }
-        : {}),
-      mode: Type.Optional(Type.Enum([...SEARCH_MODES], { type: "string" })),
-      max_results: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: SEARCH_MAX_RESULTS,
-          description: `Default ${SEARCH_DEFAULT_RESULTS}.`,
-        }),
-      ),
-      freshness: Type.Optional(
-        Type.Enum([...SEARCH_FRESHNESS], {
-          type: "string",
-          description: "Only recent pages.",
-        }),
-      ),
-      sites: Type.Optional(
-        Type.Array(Type.String(), {
-          description: '"x.org" restricts to a site; "-x.org" excludes it.',
-        }),
-      ),
-      content: Type.Optional(
-        Type.Enum([...SEARCH_CONTENT], {
-          type: "string",
-          description: "context: longer page extracts. Default: snippets.",
-        }),
-      ),
-      country: Type.Optional(
-        Type.String({
-          pattern: "^[A-Z]{2}$",
-          description: "ISO 3166-1, e.g. US.",
-        }),
-      ),
-    },
-    { additionalProperties: false },
-  );
+  const schema = withWords(WEB_SEARCH_ARGUMENTS, {
+    default_results: String(SEARCH_DEFAULT_RESULTS),
+  });
+  const provider = schema.properties.provider!;
+  return (bound.length > 1 || (withProvider && bound.length > 0)
+    ? {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          provider: { ...provider, enum: [...bound] },
+        },
+      }
+    : withoutFields(schema, ["provider"])) as unknown as TSchema;
 }
 
 export interface WebSearchOptions {
