@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadRecipeConnectors } from "../src/connector-tools.js";
 import {
   createIssuesTool,
+  formatIssuesResult,
   issuesParameters,
   issuesProviderDeclarations,
   loadRecipeIssues,
@@ -200,7 +201,7 @@ describe("registering the issues tool", () => {
       "introspection",
     ]);
     expect(tool.description).toContain(
-      "introspection: no comment; no assignee",
+      "introspection: search: Text matches the title and description of the most recent issues; the assignee is me or a member id.",
     );
     expect(
       (tool as unknown as { reachesTools(): string[] }).reachesTools(),
@@ -534,5 +535,27 @@ describe("choosing a provider", () => {
     expect(failed.content[0]!.text).toBe(
       "issues failed (not_supported): introspection does not support comment.",
     );
+  });
+
+  it("names a person known only by id, on the issue and on its comments", () => {
+    const text = formatIssuesResult({
+      command: "get",
+      provider: "introspection",
+      issue: {
+        handle: "introspection:12",
+        provider: "introspection",
+        ref: "12",
+        title: "T",
+        status: { name: "open", category: "open" },
+        assignee: { id: "member-1" },
+        comments: [
+          { body: "By a member", author: { id: "member-2" } },
+          { body: "By no one" },
+        ],
+      },
+    });
+    expect(text).toContain("assignee member-1");
+    expect(text).toContain("- member-2: By a member");
+    expect(text).toContain("- unknown: By no one");
   });
 });

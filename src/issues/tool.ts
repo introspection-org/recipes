@@ -643,7 +643,11 @@ function issueLines(issue: Issue, full: boolean): string[] {
     if (issue.comments?.length) {
       lines.push("", "Comments:");
       for (const comment of issue.comments) {
-        const by = comment.author?.name ?? comment.author?.email ?? "unknown";
+        const by =
+          comment.author?.name ??
+          comment.author?.email ??
+          comment.author?.id ??
+          "unknown";
         lines.push(
           `- ${by}${comment.created_at ? ` (${comment.created_at})` : ""}: ${comment.body}`,
         );

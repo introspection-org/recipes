@@ -7,14 +7,7 @@ import type {
   RecipeIssuesProviderModule,
 } from "@introspection-ai/recipes/issues";
 
-import {
-  firstText,
-  IssuesError,
-  isStatusCategory,
-  MAX_PAGES,
-  record,
-  text,
-} from "./common.js";
+import { firstText, IssuesError, isStatusCategory, text } from "./common.js";
 
 /** An issue's status on `/v1/issues`. */
 type IntrospectionStatus = "open" | "waiting" | "closed" | "cancelled";
@@ -30,16 +23,20 @@ export interface IntrospectionIssue {
   status: IntrospectionStatus;
   display_index?: number | null;
   tags: string[];
+  /** Absent on a data plane whose issues have no assignee yet. */
+  assignee_member_id?: string | null;
+  /** The comments, oldest first, when the read included them. */
+  comments?: IntrospectionIssueComment[] | null;
   created_at: string;
   updated_at: string;
 }
 
-/** One row of `GET /v1/events`: the envelope and its payload. */
-export interface IntrospectionEventRow {
+/** The fields of an issue's comment the provider reads (`@introspection-sdk/types` `IssueComment`). */
+export interface IntrospectionIssueComment {
   id: string;
-  timestamp: string;
-  event_name: string;
-  payload?: unknown;
+  comment: string;
+  member_id?: string | null;
+  created_at: string;
 }
 
 interface Page<T> {
@@ -48,26 +45,31 @@ interface Page<T> {
 }
 
 /**
- * The part of the SDK's Data Plane client the provider calls: its issues
- * client for the row and its events client for comments.
- * `@introspection-sdk/introspection-node`'s `DataPlaneClient` is one.
+ * The part of the SDK's Data Plane client the provider calls.
+ * `@introspection-sdk/introspection-node`'s `DataPlaneClient` is one; a
+ * release without issue comments has no `issues.comments`.
  */
 export interface IntrospectionIssuesClient {
   issues: {
     list(params: {
       limit?: number;
-      next?: string;
       status?: IntrospectionStatus | IntrospectionStatus[];
       display_index?: number;
       tag?: string;
+      relation?: "assignee"[];
+      member_id?: string;
     }): PromiseLike<Page<IntrospectionIssue>>;
-    get(issueId: string): Promise<IntrospectionIssue>;
+    get(
+      issueId: string,
+      params?: { include?: "comments"[] },
+    ): Promise<IntrospectionIssue>;
     create(params: {
       task_id: string;
       title: string;
       description: string;
       priority?: IntrospectionPriority;
       tags?: string[];
+      assignee_member_id?: string;
     }): Promise<IntrospectionIssue>;
     update(
       issueId: string,
@@ -77,20 +79,17 @@ export interface IntrospectionIssuesClient {
         priority?: IntrospectionPriority;
         status?: IntrospectionStatus;
         tags?: string[];
+        assignee_member_id?: string | null;
       },
     ): Promise<IntrospectionIssue>;
-  };
-  events: {
-    list(params: {
-      event_name: string;
-      limit?: number;
-      next?: string;
-    }): PromiseLike<Page<IntrospectionEventRow>>;
+    comments?: {
+      create(
+        issueId: string,
+        params: { comment: string },
+      ): Promise<IntrospectionIssueComment>;
+    };
   };
 }
-
-/** The family the issue events are read from; a comment is one whose payload carries `comment`. */
-const INTROSPECTION_ISSUE_EVENT = "introspection.issue";
 
 const TO_CATEGORY: Record<IntrospectionStatus, IssueStatusCategory> = {
   open: "open",
@@ -184,39 +183,47 @@ function toIssue(issue: IntrospectionIssue): ProviderIssue {
     status: { name: issue.status, category: TO_CATEGORY[issue.status] },
     priority: issue.priority,
     labels: issue.tags,
+    ...(issue.assignee_member_id
+      ? { assignee: { id: issue.assignee_member_id } }
+      : {}),
     container: { name: "project", id: issue.project_id },
     created_at: issue.created_at,
     updated_at: issue.updated_at,
   };
 }
 
-/** A comment from an `introspection.issue` event, or undefined when the event is not one. */
-function commentOf(row: IntrospectionEventRow): IssueComment | undefined {
-  const payload = record(row.payload);
-  const comment = payload.comment;
-  if (comment === undefined || comment === null) return undefined;
-  const fields = record(comment);
-  const body =
-    typeof comment === "string" ? comment : firstText(fields.body, fields.text);
-  if (body === undefined) return undefined;
-  const author = record(fields.author ?? payload.actor);
-  const authorName = firstText(fields.author, author.name, author.display_name);
-  const authorEmail = text(author.email);
-  const authorId = firstText(author.id, author.member_id, payload.member_id);
-  const by =
-    authorName || authorEmail || authorId
-      ? {
-          ...(authorName ? { name: authorName } : {}),
-          ...(authorEmail ? { email: authorEmail } : {}),
-          ...(authorId ? { id: authorId } : {}),
-        }
-      : undefined;
+function toComment(comment: IntrospectionIssueComment): IssueComment {
   return {
-    id: firstText(fields.id, row.id)!,
-    body,
-    created_at: firstText(fields.created_at, row.timestamp) ?? row.timestamp,
-    ...(by ? { author: by } : {}),
+    id: comment.id,
+    body: comment.comment,
+    created_at: comment.created_at,
+    ...(comment.member_id ? { author: { id: comment.member_id } } : {}),
   };
+}
+
+/** The list filter for `assignee`: the caller for `me`, else that member. */
+function assigneeFilter(value: string): {
+  relation: "assignee"[];
+  member_id?: string;
+} {
+  const assignee = value.trim();
+  if (assignee.toLowerCase() === "me") return { relation: ["assignee"] };
+  if (UUID.test(assignee))
+    return { relation: ["assignee"], member_id: assignee };
+  throw new IssuesError(
+    "invalid_request",
+    `Introspection issues take me or a member id as the assignee to search by, not '${value}'`,
+  );
+}
+
+/** The member a write assigns: the API takes an id, and nothing here names the caller's own. */
+function assigneeId(value: string): string {
+  const assignee = value.trim();
+  if (UUID.test(assignee)) return assignee;
+  throw new IssuesError(
+    "invalid_request",
+    `An Introspection issue is assigned by member id; this provider cannot resolve '${value}' to one`,
+  );
 }
 
 export interface IntrospectionProviderOptions {
@@ -228,9 +235,7 @@ export interface IntrospectionProviderOptions {
 
 /**
  * The `introspection` provider: the Data Plane's `/v1/issues`, on the task's
- * own session, through the JavaScript SDK. `comment` is not offered until the
- * platform accepts a comment on `PATCH /v1/issues/{id}`; `get` reads
- * comments already recorded on the issue's events.
+ * own session, through the JavaScript SDK.
  */
 export function createIntrospectionIssuesProvider(
   options: IntrospectionProviderOptions = {},
@@ -243,18 +248,26 @@ export function createIntrospectionIssuesProvider(
     capabilities: {
       commands: {
         search: {
-          note: "Text matches the title and description of the most recent issues; no assignee filter.",
+          note: "Text matches the title and description of the most recent issues; the assignee is me or a member id.",
         },
         get: {},
         create: {
-          note: "Files the issue in the Recipe's project, on the calling task.",
+          note: "Files the issue in the Recipe's project, on the calling task; the assignee is a member id, since a write cannot resolve me.",
         },
         update: {
-          note: "No assignee: an issue has an owner, not an assignee.",
+          note: "The assignee is a member id or none, since a write cannot resolve me.",
         },
+        comment: {},
         transition: { note: "Statuses: open, waiting, closed, cancelled." },
       },
-      fields: ["description", "priority", "labels", "container", "comments"],
+      fields: [
+        "description",
+        "priority",
+        "assignee",
+        "labels",
+        "container",
+        "comments",
+      ],
       hosts: [],
     },
     available: (env) => introspectionEnvironment(env) !== undefined,
@@ -282,44 +295,12 @@ export function createIntrospectionIssuesProvider(
           );
         return issue;
       };
-      const comments = async (
-        issue: IntrospectionIssue,
-      ): Promise<IssueComment[]> => {
-        const rows: IntrospectionEventRow[] = [];
-        let next: string | undefined;
-        for (let pages = 0; pages < MAX_PAGES; pages += 1) {
-          let page: Page<IntrospectionEventRow>;
-          try {
-            page = await client.events.list({
-              event_name: INTROSPECTION_ISSUE_EVENT,
-              issue_id: issue.id,
-              limit: 100,
-              ...(next ? { next } : {}),
-            } as Parameters<IntrospectionIssuesClient["events"]["list"]>[0]);
-          } catch (error) {
-            // A data plane that does not record issue events yet refuses the family.
-            const status = (error as { status?: unknown })?.status;
-            if (status === 400 || status === 422) return [];
-            throw error;
-          }
-          rows.push(...page.records);
-          next = page.next ?? undefined;
-          if (!next) break;
-        }
-        return rows
-          .map(commentOf)
-          .filter((comment): comment is IssueComment => comment !== undefined)
-          .sort((a, b) =>
-            (a.created_at ?? "").localeCompare(b.created_at ?? ""),
-          );
-      };
       return {
         async search(args) {
-          if (args.assignee !== undefined)
-            throw new IssuesError(
-              "not_supported",
-              "Introspection issues have no assignee to filter by",
-            );
+          const assignee =
+            args.assignee !== undefined
+              ? assigneeFilter(args.assignee)
+              : undefined;
           const limit = args.limit ?? 20;
           const query = args.query?.trim().toLowerCase();
           const page = await Promise.resolve(
@@ -329,8 +310,18 @@ export function createIntrospectionIssuesProvider(
                 ? { status: statusOf(args.status) }
                 : {}),
               ...(args.label !== undefined ? { tag: args.label } : {}),
+              ...assignee,
             }),
           ).catch((error: unknown) => sdkError(error, "the issues"));
+          // A data plane without assignees ignores the filter and lists every issue.
+          if (
+            assignee &&
+            page.records.some((issue) => issue.assignee_member_id === undefined)
+          )
+            throw new IssuesError(
+              "not_supported",
+              "This data plane's issues have no assignee to search by yet",
+            );
           const matched = query
             ? page.records.filter((issue) =>
                 `${issue.title}\n${issue.description}`
@@ -341,8 +332,14 @@ export function createIntrospectionIssuesProvider(
           return { issues: matched.slice(0, limit).map(toIssue) };
         },
         async get({ ref }) {
-          const issue = await find(ref);
-          return { ...toIssue(issue), comments: await comments(issue) };
+          const id = UUID.test(ref) ? ref : (await find(ref)).id;
+          const issue = await client.issues
+            .get(id, { include: ["comments"] })
+            .catch((error: unknown) => sdkError(error, "the issue"));
+          return {
+            ...toIssue(issue),
+            comments: (issue.comments ?? []).map(toComment),
+          };
         },
         async create(args) {
           const taskId = text(env.INTROSPECTION_TASK_ID);
@@ -362,6 +359,9 @@ export function createIntrospectionIssuesProvider(
                 ? { priority: priorityOf(args.priority) }
                 : {}),
               ...(args.labels !== undefined ? { tags: [...args.labels] } : {}),
+              ...(args.assignee !== undefined
+                ? { assignee_member_id: assigneeId(args.assignee) }
+                : {}),
             })
             .catch((error: unknown) => sdkError(error, "the issues"));
           return toIssue(created);
@@ -378,9 +378,39 @@ export function createIntrospectionIssuesProvider(
                 ? { priority: priorityOf(args.priority) }
                 : {}),
               ...(args.labels !== undefined ? { tags: [...args.labels] } : {}),
+              ...(args.assignee !== undefined
+                ? {
+                    assignee_member_id:
+                      args.assignee.trim().toLowerCase() === "none"
+                        ? null
+                        : assigneeId(args.assignee),
+                  }
+                : {}),
             })
             .catch((error: unknown) => sdkError(error, "the issue"));
           return toIssue(updated);
+        },
+        async comment({ ref, body }) {
+          const issue = await find(ref);
+          const comments = client.issues.comments;
+          if (!comments)
+            throw new IssuesError(
+              "not_supported",
+              "The installed Introspection SDK cannot comment on an issue yet",
+            );
+          const created = await comments
+            .create(issue.id, { comment: body })
+            .catch((error: unknown) => {
+              // The issue was just read, so a missing route is the data plane's.
+              const status = (error as { status?: unknown })?.status;
+              if (status === 404 || status === 405)
+                throw new IssuesError(
+                  "not_supported",
+                  "This data plane does not take issue comments yet",
+                );
+              return sdkError(error, "the issue");
+            });
+          return toComment(created);
         },
         async transition({ ref, status }) {
           const issue = await find(ref);
