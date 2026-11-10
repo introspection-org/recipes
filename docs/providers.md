@@ -11,11 +11,11 @@ connected.
 A **family** is a set of provider-neutral tools that Recipes owns, with one
 versioned contract for the providers behind them:
 
-| Family | Tools | First-party providers |
-| --- | --- | --- |
-| `search` | `web_search` | tavily, exa, brave, keenable, parallel, perplexity |
-| `productivity` | `mail`, `calendar`, `drive` | google, microsoft |
-| `issues` | `issues` | linear, jira, introspection |
+| Family         | Tools                       | First-party providers                              |
+| -------------- | --------------------------- | -------------------------------------------------- |
+| `search`       | `web_search`                | tavily, exa, brave, keenable, parallel, perplexity |
+| `productivity` | `mail`, `calendar`, `drive` | google, microsoft                                  |
+| `issues`       | `issues`                    | linear, jira, introspection                        |
 
 A **provider module** implements one family's contract: `{ kind, apiVersion,
 id, capabilities, … }` plus the family's calls (`search` for search,
@@ -33,7 +33,11 @@ Every family is declared the same way, in `package.json#pi`:
   "pi": {
     "issues": [
       { "provider": "linear" },
-      { "provider": "acme-tracker", "package": "@acme/recipe-issues-tracker", "options": { "queue": "support" } }
+      {
+        "provider": "acme-tracker",
+        "package": "@acme/recipe-issues-tracker",
+        "options": { "queue": "support" }
+      }
     ],
     "search": [
       { "provider": "brave" },
@@ -50,10 +54,10 @@ A declaration names one provider id and at most one source. A provider is
 always a compiled package resolved from `node_modules`, like any other
 dependency; nothing is loaded from a file in the Recipe at run time.
 
-| Source | Resolves to |
-| --- | --- |
-| none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
-| `package` | an installed package by name, such as `@acme/recipe-search`, which the Recipe lists in `dependencies` with a version, never only as a peer |
+| Source    | Resolves to                                                                                                                                                      |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none      | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
+| `package` | an installed package by name, such as `@acme/recipe-search`, which the Recipe lists in `dependencies` with a version, never only as a peer                       |
 
 A provider kept with the Recipe's own code is a local package inside the
 Recipe that it depends on (`"@acme/recipe-search": "file:./providers/search"`,
@@ -96,11 +100,11 @@ egress attaches the real one for the hosts it calls. Each module declares those
 hosts in `capabilities.hosts`, so a provider the platform does not know is still
 explicit about where it sends a member's data:
 
-| Provider | Credential |
-| --- | --- |
-| First-party SaaS (Google, Microsoft, Linear, Atlassian) | the platform's integrations and members' own connections |
-| A Recipe's own (`package`) | a project endpoint or connector for its declared hosts |
-| `introspection` | the task's own session against the Introspection API; no third-party key |
+| Provider                                                | Credential                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| First-party SaaS (Google, Microsoft, Linear, Atlassian) | the platform's integrations and members' own connections                 |
+| A Recipe's own (`package`)                              | a project endpoint or connector for its declared hosts                   |
+| `introspection`                                         | the task's own session against the Introspection API; no third-party key |
 
 ## 5. Transports: REST and MCP
 
@@ -134,14 +138,14 @@ someone connects one. A Recipe excludes it with `{ "provider":
 
 One `issues` tool with these commands:
 
-| Command | Does |
-| --- | --- |
-| `search` | find issues by text, status, assignee, project or label |
-| `get` | one issue with its comments |
-| `create` | a new issue |
-| `update` | title, description, assignee, labels, priority |
-| `comment` | add a comment |
-| `transition` | move to another status |
+| Command      | Does                                                    |
+| ------------ | ------------------------------------------------------- |
+| `search`     | find issues by text, status, assignee, project or label |
+| `get`        | one issue with its comments                             |
+| `create`     | a new issue                                             |
+| `update`     | title, description, assignee, labels, priority          |
+| `comment`    | add a comment                                           |
+| `transition` | move to another status                                  |
 
 An Introspection issue is like a task: a row the issues API changes (title,
 status, priority, tags), with immutable values attached to it, its conversation
@@ -153,25 +157,25 @@ issue's chat, which its worker agent would answer.
 Every issue is returned in one shape, with a provider-scoped handle that every
 later command takes:
 
-| Field | Linear | Jira | Introspection (`/v1/issues`) |
-| --- | --- | --- | --- |
-| `handle` | `linear:ENG-123` (identifier) | `jira:PROJ-45` (key) | `introspection:<display index>` |
-| `title` | title | summary | title |
-| `description` (markdown) | description | description, from Atlassian Document Format | description |
-| `status.name` | workflow state | status | status |
+| Field                                                          | Linear                                                                                                  | Jira                                                                  | Introspection (`/v1/issues`)                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `handle`                                                       | `linear:ENG-123` (identifier)                                                                           | `jira:PROJ-45` (key)                                                  | `introspection:<display index>`                                          |
+| `title`                                                        | title                                                                                                   | summary                                                               | title                                                                    |
+| `description` (markdown)                                       | description                                                                                             | description, from Atlassian Document Format                           | description                                                              |
+| `status.name`                                                  | workflow state                                                                                          | status                                                                | status                                                                   |
 | `status.category` (`open`, `in_progress`, `done`, `cancelled`) | state type: backlog and unstarted → open, started → in_progress, completed → done, canceled → cancelled | status category: To Do → open, In Progress → in_progress, Done → done | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
-| `priority` (`none`, `low`, `medium`, `high`, `urgent`) | 0–4 | Highest → urgent … Lowest → low | the same scale, without `none` |
-| `assignee` | assignee | assignee | none |
-| `labels` | labels | labels | tags |
-| `container` | team | project and issue type | the Recipe's project |
-| `url`, `created_at`, `updated_at` | ✓ | ✓ | ✓ |
+| `priority` (`none`, `low`, `medium`, `high`, `urgent`)         | 0–4                                                                                                     | Highest → urgent … Lowest → low                                       | the same scale, without `none`                                           |
+| `assignee`                                                     | assignee                                                                                                | assignee                                                              | none                                                                     |
+| `labels`                                                       | labels                                                                                                  | labels                                                                | tags                                                                     |
+| `container`                                                    | team                                                                                                    | project and issue type                                                | the Recipe's project                                                     |
+| `url`, `created_at`, `updated_at`                              | ✓                                                                                                       | ✓                                                                     | ✓                                                                        |
 
 The providers differ, so each declares the commands and fields it supports in
 `capabilities`, as productivity providers do:
 
 - **Comments:** Linear and Jira have them. An Introspection comment is an
   attached event, written like every other change to an issue: `PATCH
-  /v1/issues/{id}` with a nested `comment`, which the issue command writer
+/v1/issues/{id}` with a nested `comment`, which the issue command writer
   records as an `introspection.issue.comment` event.
   The issues API stays CRUD on Postgres and never returns comments; the
   provider reads them straight from the event log
@@ -186,7 +190,7 @@ The providers differ, so each declares the commands and fields it supports in
   Introspection sets `status`.
 - **Where to create:** Linear needs a team and Jira a project and issue type,
   from the declaration's options (`{ "provider": "jira", "options": {
-  "project": "OPS", "issueType": "Task" } }`) or the call. Introspection creates in the Recipe's project, on the
+"project": "OPS", "issueType": "Task" } }`) or the call. Introspection creates in the Recipe's project, on the
   calling task.
 
 Introspection issues have no `url` yet, and `/v1/issues` has no text filter, so
@@ -202,11 +206,11 @@ Recipes like `@introspection-ai/recipe-search`. Nothing about issues loads, and
 no `issues` tool is offered, unless a Recipe declares `pi.issues`; most Recipes
 don't, and the Operator does.
 
-| Provider | Transport | Server |
-| --- | --- | --- |
-| `linear` | MCP adapter | Linear's remote MCP server (`mcp.linear.app`) |
-| `jira` | MCP adapter | Atlassian's Rovo MCP server (`mcp.atlassian.com`), its Jira tools |
-| `introspection` | REST | the data plane's `/v1/issues` |
+| Provider        | Transport   | Server                                                            |
+| --------------- | ----------- | ----------------------------------------------------------------- |
+| `linear`        | MCP adapter | Linear's remote MCP server (`mcp.linear.app`)                     |
+| `jira`          | MCP adapter | Atlassian's Rovo MCP server (`mcp.atlassian.com`), its Jira tools |
+| `introspection` | REST        | the data plane's `/v1/issues`                                     |
 
 Linear and Atlassian are OAuth MCP servers. A declaration names the Recipe's
 MCP server for its provider with the `server` option (default `linear`,
@@ -219,11 +223,11 @@ the adapter's tests run against a captured tool list.
 
 ## 8. What changes per family
 
-| Family | Change |
-| --- | --- |
-| `search` | the fixed `SEARCH_PROVIDER_IDS` filter goes; `pi.search` is added; `recipe-search` serves the first-party providers through the shared loader |
-| `productivity` | gains the `package` source; loads through the shared loader |
-| `issues` | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-issues` with `linear`, `jira` and `introspection` |
+| Family         | Change                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search`       | the fixed `SEARCH_PROVIDER_IDS` filter goes; `pi.search` is added; `recipe-search` serves the first-party providers through the shared loader |
+| `productivity` | gains the `package` source; loads through the shared loader                                                                                   |
+| `issues`       | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-issues` with `linear`, `jira` and `introspection`                    |
 
 The contract version of each family stays separate, so a breaking change to one
 family's contract does not bump another's.
@@ -238,7 +242,7 @@ family's contract does not bump another's.
   person's account can, and the adapter chooses one per call (`container`, or a
   `site` option). If two separate servers or accounts are ever needed, an `id`
   alias on the declaration (`{ "provider": "jira", "id": "jira-eu", "options":
-  { "server": "atlassian-eu" } }`, handles `jira-eu:PROJ-1`) adds it
+{ "server": "atlassian-eu" } }`, handles `jira-eu:PROJ-1`) adds it
   without changing anything here.
 
 ## 10. Wiring a provider
@@ -294,12 +298,13 @@ A result that silently stops at the first page is the bug reviews kept finding.
 ### Tool arguments
 
 The arguments of a first-party command tool (`mail`, `calendar`, `drive`,
-`channels`) are TypeScript types, and their JSON Schemas are generated from
+`channels`, `issues`) are TypeScript types, and their JSON Schemas are generated from
 them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-generator).
 
 - **One type per command,** `<Tool><Command>Arguments` in the family's
   `arguments.ts` ([`src/productivity/arguments.ts`](../src/productivity/arguments.ts),
-  [`src/channels/arguments.ts`](../src/channels/arguments.ts)): `MailDraftArguments`
+  [`src/channels/arguments.ts`](../src/channels/arguments.ts),
+  [`src/issues/arguments.ts`](../src/issues/arguments.ts)): `MailDraftArguments`
   is `mail draft`. A field shared by several commands is one type alias, so it
   reaches the model once.
 - **A field's doc comment is its description, and its tags are its limits:**

@@ -9,9 +9,18 @@ import type { TSchema } from "typebox";
 import {
   commandParameters,
   commandVariant,
-  type JsonSchema,
   type ObjectSchema,
+  withoutFields,
+  withWords,
 } from "../command-parameters.js";
+import type {
+  IssuesCommentArguments,
+  IssuesCreateArguments,
+  IssuesSearchArguments,
+  IssuesTransitionArguments,
+  IssuesUpdateArguments,
+} from "./arguments.js";
+import { ISSUES_ARGUMENTS } from "./arguments.generated.js";
 
 import { isPiMcpServerTool, mcpToolName } from "../mcp/pi-client.js";
 import type { PiToolContext, PiToolInfo } from "../search/mcp.js";
@@ -23,7 +32,6 @@ import {
   type Issue,
   type IssueComment,
   type IssueField,
-  type IssuePriority,
   type IssuesCallContext,
   type IssuesCommand,
   type IssuesErrorCode,
@@ -66,26 +74,14 @@ export interface IssuesMcpClient {
   ): Promise<IssuesMcpCallToolResult>;
 }
 
-/** The arguments of one call. Which apply depends on `command`. */
-export interface IssuesToolArgs {
-  command: IssuesCommand;
-  /** For `search` and `create` when several providers are on offer. */
-  provider?: string;
-  /** `<provider>:<ref>`, for every command but `search` and `create`. */
-  handle?: string;
-  query?: string;
-  status?: string;
-  assignee?: string;
-  container?: string;
-  label?: string;
-  limit?: number;
-  title?: string;
-  description?: string;
-  priority?: IssuePriority;
-  labels?: string[];
-  issue_type?: string;
-  body?: string;
-}
+/** The arguments of one call: `command`, then those of its `Issues<Command>Arguments`. */
+export type IssuesToolArgs = { command: IssuesCommand } & Partial<
+  IssuesSearchArguments &
+    IssuesCreateArguments &
+    IssuesUpdateArguments &
+    IssuesCommentArguments &
+    IssuesTransitionArguments
+>;
 
 export type IssuesToolResult =
   | { command: "search"; provider: string; issues: Issue[] }
@@ -141,120 +137,32 @@ export function issuesMcpToolNames(
   );
 }
 
-const HANDLE = {
-  type: "string",
-  description: "The issue's handle, provider:ref, as search and get return it.",
-} as const;
+/** What each command does, for its line in `issues --help` and its variant. */
+const COMMAND_DESCRIPTIONS: Record<IssuesCommand, string> = {
+  search: "Search issues; every filter is optional.",
+  get: "Read one issue.",
+  create: "Open an issue.",
+  update: "Change an issue's fields; transition changes its status.",
+  comment: "Comment on an issue.",
+  transition: "Move an issue to a status.",
+};
 
-/** The arguments each command takes, `provider` added when several are on offer. */
-function issuesCommandArguments(
-  provider: JsonSchema | undefined,
-): Record<IssuesCommand, { description: string; schema: ObjectSchema }> {
-  const offered: Record<string, JsonSchema> = provider ? { provider } : {};
-  const assignee = {
-    type: "string",
-    description: "A name or email, or me.",
-  } as const;
-  const container = {
-    type: "string",
-    description: "A team or project.",
-  } as const;
-  const priority = { type: "string", enum: [...ISSUE_PRIORITIES] } as const;
-  const labels = {
-    type: "array",
-    items: { type: "string" },
-    description: "Replaces the labels.",
-  } as const;
+/** A command's generated schema with `provider` narrowed to `ids`, or left out for one. */
+function commandArguments(
+  command: IssuesCommand,
+  ids: readonly string[],
+): ObjectSchema {
+  const schema = withWords(ISSUES_ARGUMENTS[command], {
+    statuses: ISSUE_STATUS_CATEGORIES.join(", "),
+  });
+  const provider = schema.properties.provider;
+  if (!provider) return schema;
+  if (ids.length < 2) return withoutFields(schema, ["provider"]);
   return {
-    search: {
-      description: "Search issues; every filter is optional.",
-      schema: {
-        type: "object",
-        properties: {
-          ...offered,
-          query: { type: "string", description: "Free text." },
-          status: {
-            type: "string",
-            description: `A status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
-          },
-          assignee,
-          container,
-          label: { type: "string" },
-          limit: {
-            type: "integer",
-            minimum: 1,
-            maximum: ISSUES_SEARCH_MAX_RESULTS,
-          },
-        },
-      },
-    },
-    get: {
-      description: "Read one issue.",
-      schema: {
-        type: "object",
-        properties: { handle: HANDLE },
-        required: ["handle"],
-      },
-    },
-    create: {
-      description: "Open an issue.",
-      schema: {
-        type: "object",
-        properties: {
-          ...offered,
-          title: { type: "string", minLength: 1 },
-          description: { type: "string", description: "Markdown." },
-          container,
-          assignee,
-          priority,
-          labels,
-          issue_type: { type: "string", description: "Jira's issue type." },
-        },
-        required: ["title"],
-      },
-    },
-    update: {
-      description: "Change an issue's fields; transition changes its status.",
-      schema: {
-        type: "object",
-        properties: {
-          handle: HANDLE,
-          title: { type: "string", minLength: 1 },
-          description: { type: "string", description: "Markdown." },
-          assignee: {
-            type: "string",
-            description: "A name or email, me, or none to unassign.",
-          },
-          priority,
-          labels,
-        },
-        required: ["handle"],
-      },
-    },
-    comment: {
-      description: "Comment on an issue.",
-      schema: {
-        type: "object",
-        properties: {
-          handle: HANDLE,
-          body: { type: "string", minLength: 1, description: "Markdown." },
-        },
-        required: ["handle", "body"],
-      },
-    },
-    transition: {
-      description: "Move an issue to a status.",
-      schema: {
-        type: "object",
-        properties: {
-          handle: HANDLE,
-          status: {
-            type: "string",
-            description: `A status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
-          },
-        },
-        required: ["handle", "status"],
-      },
+    ...schema,
+    properties: {
+      ...schema.properties,
+      provider: { ...provider, enum: [...ids] },
     },
   };
 }
@@ -267,23 +175,17 @@ function issuesCommandArguments(
 export function issuesParameters(
   providers: readonly IssuesToolProvider[],
 ): TSchema {
-  const commands = ISSUES_COMMANDS.filter((command) =>
-    providers.some(
-      (provider) => provider.module.capabilities.commands[command],
-    ),
-  );
   const ids = providers.map((provider) => provider.config.provider);
-  const byCommand = issuesCommandArguments(
-    ids.length > 1
-      ? { type: "string", enum: ids, description: "Which tracker." }
-      : undefined,
-  );
   return commandParameters(
-    commands.map((command) =>
+    ISSUES_COMMANDS.filter((command) =>
+      providers.some(
+        (provider) => provider.module.capabilities.commands[command],
+      ),
+    ).map((command) =>
       commandVariant(
         command,
-        byCommand[command].schema,
-        byCommand[command].description,
+        commandArguments(command, ids),
+        COMMAND_DESCRIPTIONS[command],
       ),
     ),
   ) as unknown as TSchema;

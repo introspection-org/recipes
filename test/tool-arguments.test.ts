@@ -14,6 +14,7 @@ import {
   DRIVE_ARGUMENTS,
   MAIL_ARGUMENTS,
 } from "../src/productivity/arguments.generated.js";
+import { ISSUES_ARGUMENTS } from "../src/issues/arguments.generated.js";
 import { registerProductivityTools } from "../src/productivity/index.js";
 import {
   PRODUCTIVITY_COMMAND_EFFECTS,
@@ -28,6 +29,7 @@ const GENERATED: Record<string, Record<string, ObjectSchema>> = {
   calendar: CALENDAR_ARGUMENTS,
   drive: DRIVE_ARGUMENTS,
   channels: CHANNELS_ARGUMENTS,
+  issues: ISSUES_ARGUMENTS,
 };
 
 interface RegisteredTool {

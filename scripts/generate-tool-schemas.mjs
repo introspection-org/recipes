@@ -22,6 +22,11 @@ const SOURCES = [
     output: "src/channels/arguments.generated.ts",
     tools: { Channels: "CHANNELS_ARGUMENTS" },
   },
+  {
+    source: "src/issues/arguments.ts",
+    output: "src/issues/arguments.generated.ts",
+    tools: { Issues: "ISSUES_ARGUMENTS" },
+  },
 ];
 
 const snake = (name) =>
