@@ -34,7 +34,11 @@ const MAIL = {
 const SEARCH = {
   name: "web_search",
   description: "Search the web.",
-  parameters: { type: "object", properties: { query: { type: "string" } } },
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string" } },
+    required: ["query"],
+  },
 };
 
 /**
@@ -108,7 +112,7 @@ describe("the tools command", () => {
       "mail.search — Search the person's mail.\nmail.read — Read one message.\n",
     );
     expect((await tools(["list", "mail", "--schema"])).stdout).toContain(
-      'mail.read {"message":{"type":"string"}}',
+      'mail.read {"properties":{"message":{"type":"string"}},"required":[]}',
     );
     expect((await tools(["list", "read"])).code).toBe(64);
   });
@@ -138,6 +142,21 @@ describe("the tools command", () => {
     expect(plain.calls).toEqual([
       { name: "web_search", args: { query: "pi" } },
     ]);
+    // A command named on a tool with none is refused before the call, with the form that works.
+    const guessed = await tools([
+      "call",
+      "web_search.search",
+      "--json",
+      '{"query":"pi"}',
+    ]);
+    expect(guessed.code).toBe(64);
+    expect(guessed.calls).toEqual([]);
+    expect(guessed.stderr).toContain(
+      "web_search has no commands: call it as `tools call web_search --json -`",
+    );
+    expect((await tools(["list", "web_search", "--schema"])).stdout).toBe(
+      'web_search {"properties":{"query":{"type":"string"}},"required":["query"]}\n',
+    );
     const failed = await tools([
       "call",
       "issues.search",

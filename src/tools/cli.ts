@@ -16,6 +16,9 @@ import {
   type ToolsBridgeTool,
 } from "./bridge.js";
 
+/** First-party tools with no commands: each is called by its name alone. */
+export const COMMANDLESS_TOOLS = ["web_search"] as const;
+
 const HELP = [
   "tools: the platform's own tools (issues, mail, calendar, drive, web_search).",
   "",
@@ -29,7 +32,7 @@ const HELP = [
   "  return found;",
   "  JS",
   "",
-  "  A tool with no commands (web_search) is called as `tools call web_search`.",
+  `  A tool with no commands (${COMMANDLESS_TOOLS.join(", ")}) is called by its name alone: \`tools call ${COMMANDLESS_TOOLS[0]}\`.`,
   "  A Recipe's MCP servers are on the `mcp` command, not here.",
 ].join("\n");
 
@@ -38,6 +41,8 @@ class UsageError extends Error {}
 interface Command {
   tool: string;
   command?: string;
+  /** The arguments a call must give. */
+  required?: string[];
   description: string;
   arguments: Record<string, unknown>;
 }
@@ -61,25 +66,36 @@ function commandsOf(tool: ToolsBridgeTool): Command[] {
         command: String(record(command).const),
         description: String(record(variant).description ?? ""),
         arguments: args,
+        required: requiredOf(record(variant).required),
       };
     });
   const properties = record(schema.properties);
   const names = record(properties.command).enum;
   const { command: _command, ...args } = properties;
+  const required = requiredOf(schema.required);
   if (Array.isArray(names))
     return names.map((name) => ({
       tool: tool.name,
       command: String(name),
       description: "",
       arguments: args,
+      required,
     }));
   return [
     {
       tool: tool.name,
       description: tool.description.split("\n")[0] ?? "",
       arguments: properties,
+      required,
     },
   ];
+}
+
+/** A schema's `required`, without `command`, which the call's name carries. */
+function requiredOf(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map(String).filter((name) => name !== "command")
+    : [];
 }
 
 function nameOf(command: Command): string {
@@ -207,7 +223,7 @@ export async function runToolsCommand(
       for (const command of commandsOf(tool))
         io.stdout.write(
           schema
-            ? `${nameOf(command)} ${JSON.stringify(command.arguments)}\n`
+            ? `${nameOf(command)} ${JSON.stringify({ properties: command.arguments, required: command.required ?? [] })}\n`
             : `${nameOf(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
@@ -248,6 +264,16 @@ export async function runToolsCommand(
       const body = text ? (JSON.parse(text) as unknown) : {};
       if (!body || typeof body !== "object" || Array.isArray(body))
         throw new UsageError("--json must be an object");
+      const [toolName, commandName] = name.split(".", 2);
+      if (commandName) {
+        const tool = (await tools.list()).find(
+          (entry) => entry.name === toolName,
+        );
+        if (tool && !commandsOf(tool).some((command) => command.command))
+          throw new UsageError(
+            `${toolName} has no commands: call it as \`tools call ${toolName} --json -\``,
+          );
+      }
       io.stdout.write(
         `${(await tools.call(name, body as Record<string, unknown>)).text}\n`,
       );
