@@ -1130,8 +1130,9 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "engineer" },
       });
-      // The call reads its arguments from the tool's schema: one discovery, cached.
-      expect(stub.stats.list).toBe(1);
+      // pi-mcp reads the call's arguments from the tool's schema: one discovery, cached.
+      const discovered = usesPiMcpClient() ? 1 : 0;
+      expect(stub.stats.list).toBe(discovered);
       expect(stub.stats.call).toBe(1);
 
       const run = await runMcpCli(
@@ -1147,7 +1148,7 @@ describe("lazy MCP CLI discovery", () => {
         tool: "search_profiles",
         arguments: { query: "architect" },
       });
-      expect(stub.stats.list).toBe(1);
+      expect(stub.stats.list).toBe(discovered);
       expect(stub.stats.call).toBe(2);
 
       // Without its cache, the next command discovers again, past a stale lock.
@@ -1168,13 +1169,13 @@ describe("lazy MCP CLI discovery", () => {
       const first = await runMcpCli(["search", "candidate"], cliEnv);
       expect(first).toMatchObject({ code: 0, stderr: "" });
       expect(first.stdout).toContain("stub.search_profiles");
-      expect(stub.stats.list).toBe(2);
+      expect(stub.stats.list).toBe(discovered + 1);
       expect(() => readFileSync(lock)).toThrow();
 
       const second = await runMcpCli(["list", "stub"], cliEnv);
       expect(second).toMatchObject({ code: 0, stderr: "" });
       expect(second.stdout).toContain("stub.search_profiles(query: string)");
-      expect(stub.stats.list).toBe(2);
+      expect(stub.stats.list).toBe(discovered + 1);
 
       const cacheDir = join(cwd, ".pi", "mcp-catalogs");
       const cacheFiles = readdirSync(cacheDir).filter((name) =>

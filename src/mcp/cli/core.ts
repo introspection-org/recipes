@@ -2000,6 +2000,20 @@ async function callWithMcporter(args: string[]): Promise<number> {
     // pi-mcp takes the daemon's path; mcporter's own `call` drives mcporter's runtime.
     if (usesPiMcpClient() || args.includes("--help") || args.includes("-h"))
       return await callWithSharedRuntime(runtime, args);
+    // mcporter reads the arguments itself; a name given twice is refused first.
+    const words = takeOptions(args.slice(1), CALL_OPTIONS).rest;
+    try {
+      parseSchemaArgs(
+        { path: ["mcp", "call", args[0]!], description: "", schema: {} },
+        words,
+        () => "{}",
+        { assignments: true, unknown: true },
+      );
+    } catch (error) {
+      if (!(error instanceof SchemaArgsError)) throw error;
+      stderr.write(`${error.message}\n`);
+      return 2;
+    }
     const { handleCall } = await loadMcporterCli();
     await handleCall(runtime as Parameters<typeof handleCall>[0], args);
     return process.exitCode ?? 0;
