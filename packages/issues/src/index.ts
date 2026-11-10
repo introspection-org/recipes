@@ -39,8 +39,8 @@ export {
   linearIssuesProvider,
 };
 export type {
-  IntrospectionEventRow,
   IntrospectionIssue,
+  IntrospectionIssueComment,
   IntrospectionIssuesClient,
   IntrospectionProviderOptions,
 } from "./introspection.js";

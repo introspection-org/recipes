@@ -10,8 +10,8 @@ import {
   jiraIssuesProvider,
   LINEAR_MCP_TOOLS,
   linearIssuesProvider,
-  type IntrospectionEventRow,
   type IntrospectionIssue,
+  type IntrospectionIssueComment,
   type IntrospectionIssuesClient,
 } from "../packages/issues/src/index.js";
 import {
@@ -822,14 +822,31 @@ function introspectionIssue(
   };
 }
 
+const MEMBER = "0190c0de-0000-7000-8000-0000000000aa";
+
+/**
+ * A fake of the SDK client. `plane: "old"` is a data plane without assignees
+ * or comments: it ignores the list's member filter and the read's include,
+ * refuses an assignee on a write (422), and has no comments route (404).
+ */
 function fakeIntrospection(
   options: {
     issues?: IntrospectionIssue[];
-    events?: IntrospectionEventRow[] | { status: number };
+    comments?: IntrospectionIssueComment[];
+    plane?: "old";
+    /** An SDK release without `issues.comments`. */
+    sdk?: "old";
   } = {},
 ) {
   const calls: Array<{ method: string; args: unknown[] }> = [];
-  const issues = options.issues ?? [introspectionIssue()];
+  const old = options.plane === "old";
+  const row = (fields: Partial<IntrospectionIssue> = {}) =>
+    introspectionIssue(old ? fields : { assignee_member_id: null, ...fields });
+  const issues = options.issues ?? [row()];
+  const refuseAssignee = (params: { assignee_member_id?: unknown }) => {
+    if (old && "assignee_member_id" in params)
+      throw Object.assign(new Error("extra field"), { status: 422 });
+  };
   const client: IntrospectionIssuesClient = {
     issues: {
       list: (params) => {
@@ -839,43 +856,65 @@ function fakeIntrospection(
             (params.display_index === undefined ||
               issue.display_index === params.display_index) &&
             (params.status === undefined || issue.status === params.status) &&
-            (params.tag === undefined || issue.tags.includes(params.tag)),
+            (params.tag === undefined || issue.tags.includes(params.tag)) &&
+            (old ||
+              !params.relation?.includes("assignee") ||
+              issue.assignee_member_id === (params.member_id ?? MEMBER)),
         );
         return Promise.resolve({ records, next: null });
       },
-      get: async (id) => {
-        calls.push({ method: "issues.get", args: [id] });
+      get: async (id, params) => {
+        calls.push({
+          method: "issues.get",
+          args: params ? [id, params] : [id],
+        });
         const found = issues.find((issue) => issue.id === id);
         if (!found)
           throw Object.assign(new Error("not found"), { status: 404 });
-        return found;
+        return !old && params?.include?.includes("comments")
+          ? { ...found, comments: options.comments ?? [] }
+          : found;
       },
       create: async (params) => {
         calls.push({ method: "issues.create", args: [params] });
-        return introspectionIssue({
+        refuseAssignee(params);
+        return row({
           title: params.title,
           description: params.description,
           priority: params.priority ?? "medium",
           status: "open",
           tags: params.tags ?? [],
           display_index: 13,
+          ...(params.assignee_member_id
+            ? { assignee_member_id: params.assignee_member_id }
+            : {}),
         });
       },
       update: async (id, patch) => {
         calls.push({ method: "issues.update", args: [id, patch] });
-        return { ...introspectionIssue(), ...patch };
+        refuseAssignee(patch);
+        return { ...row(), ...patch };
       },
-    },
-    events: {
-      list: (params) => {
-        calls.push({ method: "events.list", args: [params] });
-        const events = options.events ?? [];
-        if (!Array.isArray(events))
-          return Promise.reject(
-            Object.assign(new Error("unknown family"), events),
-          );
-        return Promise.resolve({ records: events, next: null });
-      },
+      ...(options.sdk === "old"
+        ? {}
+        : {
+            comments: {
+              create: async (id, params) => {
+                calls.push({
+                  method: "issues.comments.create",
+                  args: [id, params],
+                });
+                if (old)
+                  throw Object.assign(new Error("no route"), { status: 404 });
+                return {
+                  id: "0190c0de-0000-7000-8000-0000000000c1",
+                  comment: params.comment,
+                  member_id: MEMBER,
+                  created_at: "2026-11-03T10:00:00Z",
+                };
+              },
+            },
+          }),
     },
   };
   return { client, calls };
@@ -898,16 +937,17 @@ describe("introspection", () => {
       env: sessionEnv,
     });
 
-  it("declares comment and assignee unsupported, and needs the task's session", () => {
+  it("declares every command and the assignee, and needs the task's session", () => {
     const provider = createIntrospectionIssuesProvider();
     expect(Object.keys(provider.capabilities.commands)).toEqual([
       "search",
       "get",
       "create",
       "update",
+      "comment",
       "transition",
     ]);
-    expect(provider.capabilities.fields).not.toContain("assignee");
+    expect(provider.capabilities.fields).toContain("assignee");
     expect(provider.available!(env)).toBe(true);
     expect(provider.available!({ INTROSPECTION_TOKEN: "locator" })).toBe(false);
     expect(
@@ -942,7 +982,7 @@ describe("introspection", () => {
     ]);
   });
 
-  it("matches text over the most recent issues, and refuses an assignee filter", async () => {
+  it("matches text over the most recent issues", async () => {
     const fake = fakeIntrospection({
       issues: [
         introspectionIssue(),
@@ -957,62 +997,218 @@ describe("introspection", () => {
     const { issues } = await opened.search!({ query: "TUESDAY", limit: 5 }, {});
     expect(issues.map((issue) => issue.ref)).toEqual(["12"]);
     expect(fake.calls[0]!.args[0]).toMatchObject({ limit: 200 });
-    await expect(opened.search!({ assignee: "me" }, {})).rejects.toMatchObject({
-      issues: { code: "not_supported" },
-    });
   });
 
-  it("gets an issue with comments from its events, skipping events without one", async () => {
+  it("searches by assignee: me is the caller, a member id that member", async () => {
+    const other = "0190c0de-0000-7000-8000-0000000000bb";
     const fake = fakeIntrospection({
-      events: [
+      issues: [
+        introspectionIssue({ assignee_member_id: MEMBER }),
+        introspectionIssue({ assignee_member_id: other, display_index: 3 }),
+        introspectionIssue({ assignee_member_id: null, display_index: 4 }),
+      ],
+    });
+    const opened = await open(fake);
+    const mine = await opened.search!({ assignee: " Me " }, {});
+    expect(mine.issues.map((issue) => [issue.ref, issue.assignee])).toEqual([
+      ["12", { id: MEMBER }],
+    ]);
+    const theirs = await opened.search!({ assignee: other }, {});
+    expect(theirs.issues.map((issue) => issue.ref)).toEqual(["3"]);
+    expect(fake.calls.map((call) => call.args[0])).toEqual([
+      { limit: 20, relation: ["assignee"] },
+      { limit: 20, relation: ["assignee"], member_id: other },
+    ]);
+    for (const assignee of ["Ada Lovelace", "ada@acme.test", "none"])
+      await expect(opened.search!({ assignee }, {})).rejects.toMatchObject({
+        issues: {
+          code: "invalid_request",
+          message: `Introspection issues take me or a member id as the assignee to search by, not '${assignee}'`,
+        },
+      });
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it("gets an issue with its comments in one read", async () => {
+    const fake = fakeIntrospection({
+      comments: [
         {
-          id: "e2",
-          timestamp: "2026-11-02T12:00:00Z",
-          event_name: "introspection.issue",
-          payload: { comment: { body: "Second", author: { name: "Bo" } } },
+          id: "c1",
+          comment: "First",
+          member_id: MEMBER,
+          created_at: "2026-11-02T11:00:00Z",
         },
         {
-          id: "e0",
-          timestamp: "2026-11-02T09:00:00Z",
-          event_name: "introspection.issue",
-          payload: { status: "waiting" },
-        },
-        {
-          id: "e1",
-          timestamp: "2026-11-02T11:00:00Z",
-          event_name: "introspection.issue",
-          payload: { comment: "First" },
+          id: "c2",
+          comment: "Second",
+          member_id: null,
+          created_at: "2026-11-02T12:00:00Z",
         },
       ],
     });
-    const issue = await (await open(fake)).get!({ ref: "12" }, {});
-    expect(fake.calls.map((call) => call.method)).toEqual([
-      "issues.list",
-      "events.list",
+    const opened = await open(fake);
+    const id = "0190c0de-0000-7000-8000-000000000001";
+    const issue = await opened.get!({ ref: id }, {});
+    expect(fake.calls).toEqual([
+      { method: "issues.get", args: [id, { include: ["comments"] }] },
     ]);
-    expect(fake.calls[1]!.args[0]).toEqual({
-      event_name: "introspection.issue",
-      issue_id: "0190c0de-0000-7000-8000-000000000001",
-      limit: 100,
-    });
     expect(issue.comments).toEqual([
-      { id: "e1", body: "First", created_at: "2026-11-02T11:00:00Z" },
       {
-        id: "e2",
-        body: "Second",
-        created_at: "2026-11-02T12:00:00Z",
-        author: { name: "Bo" },
+        id: "c1",
+        body: "First",
+        created_at: "2026-11-02T11:00:00Z",
+        author: { id: MEMBER },
       },
+      { id: "c2", body: "Second", created_at: "2026-11-02T12:00:00Z" },
+    ]);
+    await opened.get!({ ref: "12" }, {});
+    expect(fake.calls.slice(1)).toEqual([
+      { method: "issues.list", args: [{ display_index: 12, limit: 1 }] },
+      { method: "issues.get", args: [id, { include: ["comments"] }] },
     ]);
   });
 
-  it("reads no comments when the data plane does not record issue events yet", async () => {
-    const fake = fakeIntrospection({ events: { status: 422 } });
-    const issue = await (
+  it("comments on an issue", async () => {
+    const fake = fakeIntrospection();
+    const comment = await (
       await open(fake)
-    ).get!({ ref: "0190c0de-0000-7000-8000-000000000001" }, {});
-    expect(fake.calls[0]!.method).toBe("issues.get");
-    expect(issue.comments).toEqual([]);
+    ).comment!({ ref: "12", body: "Looks **fixed**" }, {});
+    expect(fake.calls.at(-1)).toEqual({
+      method: "issues.comments.create",
+      args: [
+        "0190c0de-0000-7000-8000-000000000001",
+        { comment: "Looks **fixed**" },
+      ],
+    });
+    expect(comment).toEqual({
+      id: "0190c0de-0000-7000-8000-0000000000c1",
+      body: "Looks **fixed**",
+      created_at: "2026-11-03T10:00:00Z",
+      author: { id: MEMBER },
+    });
+  });
+
+  it("assigns by member id on create and update, and unassigns with none", async () => {
+    const fake = fakeIntrospection();
+    const opened = await open(fake);
+    const created = await opened.create!(
+      { title: "New", assignee: MEMBER },
+      {},
+    );
+    expect(created.assignee).toEqual({ id: MEMBER });
+    const assigned = await opened.update!({ ref: "12", assignee: MEMBER }, {});
+    expect(assigned.assignee).toEqual({ id: MEMBER });
+    const cleared = await opened.update!({ ref: "12", assignee: "None" }, {});
+    expect(cleared.assignee).toBeUndefined();
+    expect(
+      fake.calls
+        .filter((call) => call.method !== "issues.list")
+        .map((call) => call.args.at(-1)),
+    ).toEqual([
+      {
+        task_id: "task-1",
+        title: "New",
+        description: "New",
+        assignee_member_id: MEMBER,
+      },
+      { assignee_member_id: MEMBER },
+      { assignee_member_id: null },
+    ]);
+  });
+
+  it("refuses to assign me, a name or an email, and none on create", async () => {
+    const fake = fakeIntrospection();
+    const opened = await open(fake);
+    const refused = (assignee: string) => ({
+      issues: {
+        code: "invalid_request",
+        message: `An Introspection issue is assigned by member id; this provider cannot resolve '${assignee}' to one`,
+      },
+    });
+    for (const assignee of ["me", "Ada Lovelace", "ada@acme.test"]) {
+      await expect(
+        opened.create!({ title: "New", assignee }, {}),
+      ).rejects.toMatchObject(refused(assignee));
+      await expect(
+        opened.update!({ ref: "12", assignee }, {}),
+      ).rejects.toMatchObject(refused(assignee));
+    }
+    await expect(
+      opened.create!({ title: "New", assignee: "none" }, {}),
+    ).rejects.toMatchObject(refused("none"));
+    expect(fake.calls.filter((call) => call.method !== "issues.list")).toEqual(
+      [],
+    );
+  });
+
+  describe("on a data plane without assignees or comments", () => {
+    it("still searches, gets, creates, updates and transitions", async () => {
+      const fake = fakeIntrospection({ plane: "old" });
+      const opened = await open(fake);
+      const { issues } = await opened.search!({ status: "waiting" }, {});
+      expect(issues.map((issue) => issue.ref)).toEqual(["12"]);
+      expect(issues[0]).not.toHaveProperty("assignee");
+      const issue = await opened.get!({ ref: "12" }, {});
+      expect(issue.comments).toEqual([]);
+      expect((await opened.create!({ title: "New" }, {})).ref).toBe("13");
+      expect(
+        (await opened.update!({ ref: "12", title: "Renamed" }, {})).title,
+      ).toBe("Renamed");
+      expect(
+        (await opened.transition!({ ref: "12", status: "done" }, {})).status,
+      ).toEqual({ name: "closed", category: "done" });
+    });
+
+    it("refuses an assignee search rather than list every issue", async () => {
+      const opened = await open(fakeIntrospection({ plane: "old" }));
+      for (const assignee of ["me", MEMBER])
+        await expect(opened.search!({ assignee }, {})).rejects.toMatchObject({
+          issues: {
+            code: "not_supported",
+            message:
+              "This data plane's issues have no assignee to search by yet",
+          },
+        });
+    });
+
+    it("reports comment as not supported", async () => {
+      const opened = await open(fakeIntrospection({ plane: "old" }));
+      await expect(
+        opened.comment!({ ref: "12", body: "hi" }, {}),
+      ).rejects.toMatchObject({
+        issues: {
+          code: "not_supported",
+          message: "This data plane does not take issue comments yet",
+        },
+      });
+    });
+  });
+
+  it("reports comment as not supported by an SDK release without it", async () => {
+    const fake = fakeIntrospection({ sdk: "old" });
+    await expect(
+      (await open(fake)).comment!({ ref: "12", body: "hi" }, {}),
+    ).rejects.toMatchObject({
+      issues: {
+        code: "not_supported",
+        message:
+          "The installed Introspection SDK cannot comment on an issue yet",
+      },
+    });
+  });
+
+  it("never reads events: the client it needs has no events client", async () => {
+    const fake = fakeIntrospection();
+    expect(Object.keys(fake.client)).toEqual(["issues"]);
+    const opened = await open(fake);
+    await opened.get!({ ref: "12" }, {});
+    await opened.comment!({ ref: "12", body: "hi" }, {});
+    expect(fake.calls.map((call) => call.method)).toEqual([
+      "issues.list",
+      "issues.get",
+      "issues.list",
+      "issues.comments.create",
+    ]);
   });
 
   it("creates on the calling task, updates the row and transitions by status", async () => {
@@ -1251,53 +1447,5 @@ describe("pages and status categories", () => {
         .filter((call) => call.tool === "listJiraIssueComments")
         .map((call) => call.args.startAt),
     ).toEqual([0, 1]);
-  });
-
-  it("follows the event pages an Introspection issue's comments span", async () => {
-    const fake = fakeIntrospection();
-    const pages: Record<
-      string,
-      { records: IntrospectionEventRow[]; next: string | null }
-    > = {
-      first: {
-        records: [
-          {
-            id: "e1",
-            timestamp: "2026-11-02T10:00:00Z",
-            event_name: "introspection.issue",
-            payload: { comment: "One" },
-          },
-        ],
-        next: "n2",
-      },
-      n2: {
-        records: [
-          {
-            id: "e2",
-            timestamp: "2026-11-02T11:00:00Z",
-            event_name: "introspection.issue",
-            payload: { comment: "Two" },
-          },
-        ],
-        next: null,
-      },
-    };
-    fake.client.events.list = (params) =>
-      Promise.resolve(pages[params.next ?? "first"]!);
-    const opened = await createIntrospectionIssuesProvider({
-      client: () => fake.client,
-    }).createSession({
-      config: { provider: "introspection", options: {} },
-      env: {
-        INTROSPECTION_BASE_API_URL: "http://dp.internal",
-        INTROSPECTION_TOKEN: "locator",
-        INTROSPECTION_TASK_ID: "task-1",
-      },
-    });
-    const issue = await opened.get!({ ref: "12" }, {});
-    expect(issue.comments?.map((comment) => comment.body)).toEqual([
-      "One",
-      "Two",
-    ]);
   });
 });

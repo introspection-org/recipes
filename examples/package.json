@@ -12,7 +12,7 @@
     "@introspection-ai/eval-simulate": ">=0.6.0",
     "@introspection-ai/recipes": "workspace:*",
     "@introspection-ai/vitest-evals": ">=0.8.0",
-    "@introspection-sdk/introspection-node": ">=0.35.0 <1.0.0",
+    "@introspection-sdk/introspection-node": ">=0.47.0",
     "@modelcontextprotocol/client": "^2.3.1",
     "@toon-format/toon": "^4.4.0",
     "@types/node": "^26.1.2",

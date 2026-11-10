@@ -10,36 +10,58 @@ import { readFileSync } from "node:fs";
 import { createConnection } from "node:net";
 
 import {
+  type JsonSchema,
+  parseSchemaArgs,
+  SchemaArgsError,
+  type SchemaCommand,
+  schemaGroupHelp,
+  schemaHelp,
+  usageOf,
+} from "../cli/schema-args.js";
+import {
   TOOLS_SOCKET_ENV,
   type ToolsBridgeRequestBody,
   type ToolsBridgeResponse,
   type ToolsBridgeTool,
 } from "./bridge.js";
 
+/** First-party tools with no commands: each is called by its name alone. */
+export const COMMANDLESS_TOOLS = ["web_search"] as const;
+
 const HELP = [
   "tools: the platform's own tools (issues, mail, calendar, drive, web_search).",
   "",
-  "  tools list [tool] [--schema]             What this agent has; a tool's commands.",
-  '  tools search "what you need" [--limit N] Commands matching the words.',
-  "  tools call <tool>.<command> --json '{...}'  One call; --json - reads it from stdin.",
-  "  tools run <<'JS' ... JS                  Two or more calls, in one script.",
+  "  Each tool is also a command of its own:",
+  "  <tool> --help                       Its commands.",
+  "  <tool> <command> --help             A command's arguments, from its schema.",
+  "  <tool> <command> --<argument> <value> ...   One call.",
+  "  A tool with no commands takes its arguments directly: web_search --query '...'.",
+  "",
+  "  tools list [tool] [--schema]        What this agent has; a tool's commands.",
+  '  tools search "what you need" [--limit N]   Commands matching the words.',
+  "  tools <tool> <command> ...          The same as <tool> <command> ...",
+  "  tools call <tool>.<command> [--json '{...}' | --<argument> <value> ...]",
+  "  tools run <<'JS' ... JS             Two or more calls, in one script.",
+  "",
+  "  Any call takes --json '{...}', or --json - to read the object from stdin.",
   "",
   "  tools run <<'JS'",
   '  const found = await tools.issues.search({ query: "checkout" });',
   "  return found;",
   "  JS",
   "",
-  "  A tool with no commands (web_search) is called as `tools call web_search`.",
   "  A Recipe's MCP servers are on the `mcp` command, not here.",
 ].join("\n");
 
 class UsageError extends Error {}
 
+/** One command of a tool, with the schema its arguments follow. */
 interface Command {
   tool: string;
   command?: string;
   description: string;
-  arguments: Record<string, unknown>;
+  /** The command's own schema; `command`, which the call's name carries, set aside. */
+  schema: JsonSchema;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -48,38 +70,58 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/** A tool's commands, from its schema: an enum on `command`, or one variant per command. */
+/** `schema` without `command`, which the call's name carries. */
+function argumentsOf(schema: Record<string, unknown>): JsonSchema {
+  const { command: _command, ...properties } = record(schema.properties);
+  const required = Array.isArray(schema.required)
+    ? schema.required.map(String).filter((name) => name !== "command")
+    : [];
+  return { properties, required };
+}
+
+/** A tool's commands, from its schema: one variant per command, an enum on `command`, or none. */
 function commandsOf(tool: ToolsBridgeTool): Command[] {
   const schema = record(tool.parameters);
   const variants = (schema.anyOf ?? schema.oneOf) as unknown[] | undefined;
   if (Array.isArray(variants))
-    return variants.map((variant) => {
-      const properties = record(record(variant).properties);
-      const { command, ...args } = properties;
-      return {
-        tool: tool.name,
-        command: String(record(command).const),
-        description: String(record(variant).description ?? ""),
-        arguments: args,
-      };
-    });
-  const properties = record(schema.properties);
-  const names = record(properties.command).enum;
-  const { command: _command, ...args } = properties;
+    return variants.map((variant) => ({
+      tool: tool.name,
+      command: String(record(record(record(variant).properties).command).const),
+      description: String(record(variant).description ?? ""),
+      schema: argumentsOf(record(variant)),
+    }));
+  const names = record(record(schema.properties).command).enum;
   if (Array.isArray(names))
     return names.map((name) => ({
       tool: tool.name,
       command: String(name),
       description: "",
-      arguments: args,
+      schema: argumentsOf(schema),
     }));
   return [
     {
       tool: tool.name,
       description: tool.description.split("\n")[0] ?? "",
-      arguments: properties,
+      schema: argumentsOf(schema),
     },
   ];
+}
+
+/** The adapter's command for one of a tool's commands. */
+function specOf(command: Command): SchemaCommand {
+  return {
+    path: command.command ? [command.tool, command.command] : [command.tool],
+    description: command.description,
+    schema: command.schema,
+  };
+}
+
+const isHelp = (arg: string | undefined) =>
+  arg === "--help" || arg === "-h" || arg === "help";
+
+/** How a command is typed in the shell: `issues search`, or `web_search`. */
+function shownAs(command: Command): string {
+  return command.command ? `${command.tool} ${command.command}` : command.tool;
 }
 
 function nameOf(command: Command): string {
@@ -187,6 +229,68 @@ export async function runToolsCommand(
     return 69;
   }
   const tools = client(socket);
+  /** `<tool> [<command>] [arguments]`: one call, or its help. */
+  const invoke = async (toolName: string, rest: string[]): Promise<number> => {
+    const catalog = await tools.list();
+    const tool = catalog.find((entry) => entry.name === toolName);
+    if (!tool)
+      throw new UsageError(
+        `${toolName} is not a first-party tool of this agent (${catalog.map((entry) => entry.name).join(", ")}); tools --help shows the commands`,
+      );
+    const commands = commandsOf(tool);
+    let command: Command;
+    const first = rest[0];
+    if (commands.some((entry) => entry.command)) {
+      if (first === undefined || isHelp(first)) {
+        io[first ? "stdout" : "stderr"].write(
+          `${schemaGroupHelp(
+            [tool.name],
+            tool.description,
+            commands.map(specOf),
+            `tools list ${tool.name} --schema`,
+          )}\n`,
+        );
+        return first ? 0 : 64;
+      }
+      const found = commands.find((entry) => entry.command === first);
+      if (!found)
+        throw new UsageError(
+          `${tool.name} has no command '${first}'; it has ${commands.map((entry) => entry.command).join(", ")}. ${tool.name} --help`,
+        );
+      rest.shift();
+      command = found;
+    } else {
+      command = commands[0]!;
+      if (first === "help") rest[0] = "--help";
+      else if (first !== undefined && !first.startsWith("-"))
+        throw new UsageError(
+          `${tool.name} has no commands: pass its arguments as flags or --json -. ${tool.name} --help`,
+        );
+    }
+    const spec = specOf(command);
+    const usage = usageOf(spec);
+    const parsed = parseSchemaArgs(spec, rest, io.stdin);
+    if (parsed.help) {
+      io.stdout.write(
+        `${schemaHelp(spec, `tools list ${command.tool} --schema`)}\n`,
+      );
+      return 0;
+    }
+    let answer: Awaited<ReturnType<typeof tools.call>>;
+    try {
+      answer = await tools.call(nameOf(command), parsed.args);
+    } catch (error) {
+      // The pipeline checked the arguments against the schema and refused them.
+      if (
+        error instanceof Error &&
+        error.message.startsWith("Validation failed")
+      )
+        throw new SchemaArgsError(usage, error.message);
+      throw error;
+    }
+    io.stdout.write(`${answer.text}\n`);
+    return 0;
+  };
   try {
     if (verb === "list") {
       const schema = args.includes("--schema");
@@ -207,8 +311,8 @@ export async function runToolsCommand(
       for (const command of commandsOf(tool))
         io.stdout.write(
           schema
-            ? `${nameOf(command)} ${JSON.stringify(command.arguments)}\n`
-            : `${nameOf(command)}${command.description ? ` — ${command.description}` : ""}\n`,
+            ? `${shownAs(command)} ${JSON.stringify(command.schema)}\n`
+            : `${shownAs(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
     }
@@ -221,7 +325,7 @@ export async function runToolsCommand(
         .flatMap(commandsOf)
         .map((command) => {
           const text =
-            `${nameOf(command)} ${command.description}`.toLowerCase();
+            `${shownAs(command)} ${command.description}`.toLowerCase();
           return {
             command,
             score: words.filter((word) => text.includes(word)).length,
@@ -232,26 +336,24 @@ export async function runToolsCommand(
         .slice(0, limit);
       for (const { command } of ranked)
         io.stdout.write(
-          `${nameOf(command)}${command.description ? ` — ${command.description}` : ""} ${JSON.stringify(command.arguments)}\n`,
+          `${shownAs(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
     }
     if (verb === "call") {
-      const json = flag(args, "--json");
-      const name = args[0];
-      if (!name)
+      const name = args.shift();
+      if (!name || name.startsWith("-"))
         throw new UsageError(
-          "Usage: tools call <tool>.<command> --json '{...}', or --json - to read it from stdin",
+          "Usage: tools call <tool>.<command> [--json '{...}' | --<argument> <value> ...]",
         );
-      // `--json -` reads the object from stdin, as `mcp call` does.
-      const text = json === "-" ? (io.stdin?.() ?? "") : json;
-      const body = text ? (JSON.parse(text) as unknown) : {};
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        throw new UsageError("--json must be an object");
-      io.stdout.write(
-        `${(await tools.call(name, body as Record<string, unknown>)).text}\n`,
+      const [toolName, commandName] = name.split(".", 2) as [
+        string,
+        string | undefined,
+      ];
+      return await invoke(
+        toolName,
+        commandName ? [commandName, ...args] : args,
       );
-      return 0;
     }
     if (verb === "run") {
       const file = args[0];
@@ -289,12 +391,16 @@ export async function runToolsCommand(
       );
       return 0;
     }
-    throw new UsageError(`tools: unknown command '${verb}'; tools --help`);
+    return await invoke(verb, args);
   } catch (error) {
     io.stderr.write(
       `${error instanceof Error ? error.message : String(error)}\n`,
     );
-    return error instanceof UsageError ? 64 : 1;
+    if (error instanceof SchemaArgsError)
+      io.stderr.write(`Run \`${error.usage} --help\` for its arguments.\n`);
+    return error instanceof UsageError || error instanceof SchemaArgsError
+      ? 64
+      : 1;
   }
 }
 

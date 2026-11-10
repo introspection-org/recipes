@@ -121,28 +121,30 @@ Every issue comes back in one shape, with a handle every later command takes:
 | `status.name`            | workflow state                                                                                   | status                                                                                                                     | status                                                                   |
 | `status.category`        | backlog, unstarted, triage → open; started → in_progress; completed → done; canceled → cancelled | To Do → open, In Progress → in_progress, Done → done; a done status named like cancelled, won't do or rejected → cancelled | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
 | `priority`               | 0 none, 1 urgent, 2 high, 3 medium, 4 low                                                        | Highest → urgent, High → high, Medium → medium, Low and Lowest → low                                                       | low to urgent, no `none`                                                 |
-| `assignee`               | assignee                                                                                         | assignee                                                                                                                   | none                                                                     |
+| `assignee`               | assignee                                                                                         | assignee                                                                                                                   | the assignee's member id                                                 |
 | `labels`                 | labels                                                                                           | labels                                                                                                                     | tags                                                                     |
 | `container`              | team                                                                                             | project, with the issue type                                                                                               | the project                                                              |
 | `url`                    | ✓                                                                                                | the site's `/browse/<key>`                                                                                                 | not yet                                                                  |
-| `comments` (on `get`)    | ✓                                                                                                | ✓                                                                                                                          | from the issue's events                                                  |
+| `comments` (on `get`)    | ✓                                                                                                | ✓                                                                                                                          | read with the issue                                                      |
 
 ## What each provider supports
 
-|              | `linear`                                                       | `jira`                                                  | `introspection`                                                |
-| ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
-| `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text matches the 200 most recent issues; no assignee filter |
-| `get`        | ✓                                                              | ✓                                                       | ✓                                                              |
-| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on the calling task                                         |
-| `update`     | ✓                                                              | ✓                                                       | ✓, no assignee                                                 |
-| `comment`    | ✓                                                              | ✓                                                       | not yet                                                        |
-| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                  |
+|              | `linear`                                                       | `jira`                                                  | `introspection`                                                           |
+| ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text matches the 200 most recent issues; assignee: `me` or a member id |
+| `get`        | ✓                                                              | ✓                                                       | ✓                                                                         |
+| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on the calling task                                                    |
+| `update`     | ✓                                                              | ✓                                                       | ✓; assignee: a member id, or `none`                                       |
+| `comment`    | ✓                                                              | ✓                                                       | ✓                                                                         |
+| `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                             |
 
-An Introspection comment is an event attached to the issue. The provider reads
-comments from `GET /v1/events?event_name=introspection.issue&issue_id=…`
-(`payload.comment`), and reads none from a data plane that does not record
-that family yet. It does not offer `comment` until the platform accepts one
-on `PATCH /v1/issues/{id}`.
+An Introspection comment is an event attached to the issue. The provider
+writes one with `POST /v1/issues/{id}/comments` and reads them with the issue
+(`GET /v1/issues/{id}?include=comments`, oldest first, at most 500). An issue's
+`assignee` carries the member's `id` alone; a write takes a member id and no
+`me`, since the runtime does not name the caller's. On a data plane without
+these, `comment` and an assignee search answer `not_supported`, and `get`
+returns no comments.
 
 ## Tool maps
 

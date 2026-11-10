@@ -30,7 +30,7 @@
     "pack:check": "pnpm pack --dry-run --json | node ../../scripts/check-npm-pack.mjs"
   },
   "dependencies": {
-    "@introspection-sdk/introspection-node": ">=0.45.0"
+    "@introspection-sdk/introspection-node": ">=0.47.0"
   },
   "devDependencies": {
     "@introspection-ai/recipes": "workspace:^",

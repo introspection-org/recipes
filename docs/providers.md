@@ -144,11 +144,11 @@ One `issues` tool with these commands:
 | `transition` | move to another status |
 
 An Introspection issue is like a task: a row the issues API changes (title,
-status, priority, tags), with immutable values attached to it, its conversation
-(the issue's worker task chat) and its events (history, requests, comments).
-The issues API writes the events for every change through one command writer;
-a comment is one more, never a change to the row, and not a message in the
-issue's chat, which its worker agent would answer.
+status, priority, tags, the people on it), with immutable values attached to
+it, its conversation (the issue's worker task chat) and its events (history,
+comments). The issues API writes the events for every change; a comment is one
+more, never a change to the row, and not a message in the issue's chat, which
+its worker agent would answer.
 
 Every issue is returned in one shape, with a provider-scoped handle that every
 later command takes:
@@ -161,7 +161,7 @@ later command takes:
 | `status.name` | workflow state | status | status |
 | `status.category` (`open`, `in_progress`, `done`, `cancelled`) | state type: backlog and unstarted → open, started → in_progress, completed → done, canceled → cancelled | status category: To Do → open, In Progress → in_progress, Done → done | open → open, waiting → in_progress, closed → done, cancelled → cancelled |
 | `priority` (`none`, `low`, `medium`, `high`, `urgent`) | 0–4 | Highest → urgent … Lowest → low | the same scale, without `none` |
-| `assignee` | assignee | assignee | none |
+| `assignee` | assignee | assignee | the assignee's member id |
 | `labels` | labels | labels | tags |
 | `container` | team | project and issue type | the Recipe's project |
 | `url`, `created_at`, `updated_at` | ✓ | ✓ | ✓ |
@@ -169,18 +169,20 @@ later command takes:
 The providers differ, so each declares the commands and fields it supports in
 `capabilities`, as productivity providers do:
 
-- **Comments:** Linear and Jira have them. An Introspection comment is an
-  attached event, written like every other change to an issue: `PATCH
-  /v1/issues/{id}` with a nested `comment`, which the issue command writer
-  records as an `introspection.issue.comment` event.
-  The issues API stays CRUD on Postgres and never returns comments; the
-  provider reads them straight from the event log
-  (`GET /v1/events?event_name=introspection.issue&issue_id=…`, `payload.comment`)
-  through the SDK's events client, with no helper of its own. Until the
-  platform accepts `comment`, the provider does not offer it. `open_requests`
-  are questions put to a person, not comments.
-- **Assignee:** Introspection's issues have an owner (`member_id`), not an
-  assignee, so `update` takes no assignee there.
+- **Comments:** all three have them. An Introspection comment is an event
+  attached to the issue, written with `POST /v1/issues/{id}/comments` and read
+  back with the issue (`GET /v1/issues/{id}?include=comments`, oldest first, at
+  most 500), so `get` makes one read and never pages the event log. A data
+  plane without that route answers `comment` with `not_supported`, and `get`
+  returns no comments from one.
+- **Assignee:** an Introspection issue is assigned to a member, and the
+  provider knows people only by member id, so the issue's `assignee` carries an
+  `id` alone. `search` takes `me` (the caller) or a member id. `create` and
+  `update` take a member id, and `update` takes `none` to unassign; a write
+  takes no `me`, since the API assigns by member id and the runtime does not
+  name the caller's. A name or email is refused with `invalid_request`. A data
+  plane whose issues have no assignee answers an assignee search with
+  `not_supported` rather than list every issue.
 - **Moving an issue:** `transition` takes a status name or category. Linear
   sets the state, Jira applies the workflow transition that reaches it, and
   Introspection sets `status`.
@@ -193,8 +195,7 @@ Introspection issues have no `url` yet, and `/v1/issues` has no text filter, so
 the `introspection` provider's `search` matches text against the most recent
 issues it lists. The `introspection` provider uses the JavaScript SDK
 (`@introspection-sdk/introspection-node`) on the task's own session, not the
-CLI: its issues client for the row and its events client for comments and
-history. It runs in the agent's process, with typed responses and no CLI to
+CLI: its issues client for the row and its comments. It runs in the agent's process, with typed responses and no CLI to
 install.
 
 All three ship in one package, `@introspection-ai/recipe-issues`, a companion of
@@ -294,12 +295,13 @@ A result that silently stops at the first page is the bug reviews kept finding.
 ### Tool arguments
 
 The arguments of a first-party command tool (`mail`, `calendar`, `drive`,
-`channels`) are TypeScript types, and their JSON Schemas are generated from
+`channels`, `issues`) are TypeScript types, and their JSON Schemas are generated from
 them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-generator).
 
 - **One type per command,** `<Tool><Command>Arguments` in the family's
   `arguments.ts` ([`src/productivity/arguments.ts`](../src/productivity/arguments.ts),
-  [`src/channels/arguments.ts`](../src/channels/arguments.ts)): `MailDraftArguments`
+  [`src/channels/arguments.ts`](../src/channels/arguments.ts),
+  [`src/issues/arguments.ts`](../src/issues/arguments.ts)): `MailDraftArguments`
   is `mail draft`. A field shared by several commands is one type alias, so it
   reaches the model once.
 - **A field's doc comment is its description, and its tags are its limits:**
@@ -308,10 +310,11 @@ them by [ts-json-schema-generator](https://github.com/vega/ts-json-schema-genera
   description; `test/tool-arguments.test.ts` fails on one without. A word that
   varies by provider is a `{word}` placeholder the tool fills at registration
   (`{folder}`, `{labels}`).
-- **Regenerate with `pnpm schemas`** and commit the `arguments.generated.ts`
-  beside the source. CI runs `pnpm schemas:check`, which fails when a
-  generated file is stale. Never edit the generated file, and never hand-write
-  a TypeBox schema for a tool's arguments.
+- **The build generates them** (`pnpm schemas`, which runs wherever `pnpm
+  manifest` does) into a gitignored `arguments.generated.ts` beside the
+  source; it is never committed or edited. `test/tool-arguments.test.ts` checks
+  each tool's `--help` reads them. Never hand-write a TypeBox schema for a
+  tool's arguments.
 - **The tool merges the commands with `commandParameters`**
   ([`src/command-parameters.ts`](../src/command-parameters.ts)): one flat
   object with each field once, and the commands as its `anyOf` for validators

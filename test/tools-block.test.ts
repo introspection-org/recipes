@@ -299,6 +299,7 @@ describe("first-party tools by tools.mode", () => {
   for (const [how, command] of [
     ["--json", `tools call issues.search --json '{"query":"found"}'`],
     ["stdin", `echo '{"query":"found"}' | tools call issues.search --json -`],
+    ["flags", `issues search --query found`],
   ])
     it(`serves the tool to bash's tools command in cli, undeclared (${how})`, async () => {
       let tools: string[] = [];
@@ -324,7 +325,9 @@ describe("first-party tools by tools.mode", () => {
       expect(tools).not.toContain("issues");
       expect(tools).not.toContain("codemode");
       expect(output).toContain("acme:A-1");
-      expect(prompt).toContain("reach them from bash with the `tools` command");
+      expect(prompt).toContain(
+        "are not tools you call directly: each is a command in bash",
+      );
     });
 
   it("refuses cli when the host supplies its own bash", async () => {
@@ -461,6 +464,43 @@ describe("first-party tools by tools.mode", () => {
     );
     expect(tools).not.toContain("web_search");
     expect(output).toContain("Agents that search");
+  });
+
+  it("validates a command's flags in the tool pipeline, as it does --json", async () => {
+    let output = "";
+    await run(
+      ["tools:", "  mode: cli", "  include: [read, bash, web_search]"],
+      [
+        () =>
+          fauxAssistantMessage(
+            [
+              fauxToolCall("bash", {
+                command: [
+                  "web_search --query agents --max_results 999",
+                  "echo ---",
+                  `web_search --json '{"query":"agents","max_results":999}'`,
+                  "echo ---",
+                  "web_search --query agents --mode slow",
+                  "true",
+                ].join("; "),
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        (context) => {
+          output = lastToolResult(context);
+          return fauxAssistantMessage("done");
+        },
+      ],
+      { webSearch: true },
+    );
+    const [flags, json, mode] = output.split("---\n");
+    const refusal = (text: string) => text.split("\n\nReceived arguments")[0];
+    expect(flags).toContain('Validation failed for tool "web_search"');
+    expect(flags).toContain("max_results");
+    expect(refusal(flags!)).toBe(refusal(json!));
+    expect(mode).toContain("mode");
+    expect(mode).toContain("Run `web_search --help` for its arguments.");
   });
 });
 

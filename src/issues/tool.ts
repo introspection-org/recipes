@@ -4,7 +4,23 @@ import {
   trace,
   type Tracer,
 } from "@opentelemetry/api";
-import { Type, type TSchema } from "typebox";
+import type { TSchema } from "typebox";
+
+import {
+  commandParameters,
+  commandVariant,
+  type ObjectSchema,
+  withoutFields,
+  withWords,
+} from "../command-parameters.js";
+import type {
+  IssuesCommentArguments,
+  IssuesCreateArguments,
+  IssuesSearchArguments,
+  IssuesTransitionArguments,
+  IssuesUpdateArguments,
+} from "./arguments.js";
+import { ISSUES_ARGUMENTS } from "./arguments.generated.js";
 
 import { isPiMcpServerTool, mcpToolName } from "../mcp/pi-client.js";
 import type { PiToolContext, PiToolInfo } from "../search/mcp.js";
@@ -16,7 +32,6 @@ import {
   type Issue,
   type IssueComment,
   type IssueField,
-  type IssuePriority,
   type IssuesCallContext,
   type IssuesCommand,
   type IssuesErrorCode,
@@ -59,26 +74,14 @@ export interface IssuesMcpClient {
   ): Promise<IssuesMcpCallToolResult>;
 }
 
-/** The arguments of one call. Which apply depends on `command`. */
-export interface IssuesToolArgs {
-  command: IssuesCommand;
-  /** For `search` and `create` when several providers are on offer. */
-  provider?: string;
-  /** `<provider>:<ref>`, for every command but `search` and `create`. */
-  handle?: string;
-  query?: string;
-  status?: string;
-  assignee?: string;
-  container?: string;
-  label?: string;
-  limit?: number;
-  title?: string;
-  description?: string;
-  priority?: IssuePriority;
-  labels?: string[];
-  issue_type?: string;
-  body?: string;
-}
+/** The arguments of one call: `command`, then those of its `Issues<Command>Arguments`. */
+export type IssuesToolArgs = { command: IssuesCommand } & Partial<
+  IssuesSearchArguments &
+    IssuesCreateArguments &
+    IssuesUpdateArguments &
+    IssuesCommentArguments &
+    IssuesTransitionArguments
+>;
 
 export type IssuesToolResult =
   | { command: "search"; provider: string; issues: Issue[] }
@@ -134,72 +137,58 @@ export function issuesMcpToolNames(
   );
 }
 
+/** What each command does, for its line in `issues --help` and its variant. */
+const COMMAND_DESCRIPTIONS: Record<IssuesCommand, string> = {
+  search: "Search issues; every filter is optional.",
+  get: "Read one issue.",
+  create: "Open an issue.",
+  update: "Change an issue's fields; transition changes its status.",
+  comment: "Comment on an issue.",
+  transition: "Move an issue to a status.",
+};
+
+/** A command's generated schema with `provider` narrowed to `ids`, or left out for one. */
+function commandArguments(
+  command: IssuesCommand,
+  ids: readonly string[],
+): ObjectSchema {
+  const schema = withWords(ISSUES_ARGUMENTS[command], {
+    statuses: ISSUE_STATUS_CATEGORIES.join(", "),
+  });
+  const provider = schema.properties.provider;
+  if (!provider) return schema;
+  if (ids.length < 2) return withoutFields(schema, ["provider"]);
+  return {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      provider: { ...provider, enum: [...ids] },
+    },
+  };
+}
+
 /**
- * The tool's parameters: the commands some provider serves, and `provider`
- * listing the providers a call may name, left out when there is one.
+ * The tool's parameters: one variant per command some provider serves, each
+ * with only its own arguments, and `provider` on search and create when
+ * several providers are on offer.
  */
 export function issuesParameters(
   providers: readonly IssuesToolProvider[],
 ): TSchema {
-  const commands = ISSUES_COMMANDS.filter((command) =>
-    providers.some(
-      (provider) => provider.module.capabilities.commands[command],
-    ),
-  );
   const ids = providers.map((provider) => provider.config.provider);
-  return Type.Object(
-    {
-      command: Type.Enum([...commands], { type: "string" }),
-      ...(ids.length > 1
-        ? {
-            provider: Type.Optional(
-              Type.Enum(ids, {
-                type: "string",
-                description: "For search and create.",
-              }),
-            ),
-          }
-        : {}),
-      handle: Type.Optional(
-        Type.String({
-          description: "provider:ref, for get, update, comment and transition.",
-        }),
+  return commandParameters(
+    ISSUES_COMMANDS.filter((command) =>
+      providers.some(
+        (provider) => provider.module.capabilities.commands[command],
       ),
-      query: Type.Optional(Type.String({ description: "search: free text." })),
-      status: Type.Optional(
-        Type.String({
-          description: `search filter, or transition target: a status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
-        }),
+    ).map((command) =>
+      commandVariant(
+        command,
+        commandArguments(command, ids),
+        COMMAND_DESCRIPTIONS[command],
       ),
-      assignee: Type.Optional(
-        Type.String({
-          description: "A name or email, me, or none (update) to unassign.",
-        }),
-      ),
-      container: Type.Optional(
-        Type.String({ description: "A team or project." }),
-      ),
-      label: Type.Optional(Type.String({ description: "search filter." })),
-      limit: Type.Optional(
-        Type.Integer({ minimum: 1, maximum: ISSUES_SEARCH_MAX_RESULTS }),
-      ),
-      title: Type.Optional(Type.String({ minLength: 1 })),
-      description: Type.Optional(Type.String({ description: "Markdown." })),
-      priority: Type.Optional(
-        Type.Enum([...ISSUE_PRIORITIES], { type: "string" }),
-      ),
-      labels: Type.Optional(
-        Type.Array(Type.String(), { description: "Replaces the labels." }),
-      ),
-      issue_type: Type.Optional(
-        Type.String({ description: "create: Jira's issue type." }),
-      ),
-      body: Type.Optional(
-        Type.String({ minLength: 1, description: "comment: markdown." }),
-      ),
-    },
-    { additionalProperties: false },
-  );
+    ),
+  ) as unknown as TSchema;
 }
 
 /** The tool description: the shared text, then what each provider does not do. */
@@ -654,7 +643,11 @@ function issueLines(issue: Issue, full: boolean): string[] {
     if (issue.comments?.length) {
       lines.push("", "Comments:");
       for (const comment of issue.comments) {
-        const by = comment.author?.name ?? comment.author?.email ?? "unknown";
+        const by =
+          comment.author?.name ??
+          comment.author?.email ??
+          comment.author?.id ??
+          "unknown";
         lines.push(
           `- ${by}${comment.created_at ? ` (${comment.created_at})` : ""}: ${comment.body}`,
         );

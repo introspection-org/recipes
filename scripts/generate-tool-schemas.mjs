@@ -1,6 +1,6 @@
 // Writes the JSON Schema of each first-party command tool's arguments from
-// the TypeScript types that declare them. `--check` fails when a generated
-// file is stale instead of writing it.
+// the TypeScript types that declare them, as part of the build (`pnpm
+// schemas`, run wherever `pnpm manifest` is); the output is not committed.
 import { readFileSync, writeFileSync } from "node:fs";
 
 import * as prettier from "prettier";
@@ -21,6 +21,11 @@ const SOURCES = [
     source: "src/channels/arguments.ts",
     output: "src/channels/arguments.generated.ts",
     tools: { Channels: "CHANNELS_ARGUMENTS" },
+  },
+  {
+    source: "src/issues/arguments.ts",
+    output: "src/issues/arguments.generated.ts",
+    tools: { Issues: "ISSUES_ARGUMENTS" },
   },
 ];
 
@@ -85,23 +90,14 @@ async function generate({ source, output, tools }) {
   };
 }
 
-const check = process.argv.includes("--check");
-const stale = [];
 for (const entry of SOURCES) {
-  const { output, path, content } = await generate(entry);
+  const { path, content } = await generate(entry);
   let current;
   try {
     current = readFileSync(path, "utf8");
   } catch {
     current = undefined;
   }
-  if (current === content) continue;
-  if (check) stale.push(output);
-  else writeFileSync(path, content);
-}
-if (stale.length > 0) {
-  console.error(
-    `Stale tool schemas: ${stale.join(", ")}. Run pnpm schemas and commit the result.`,
-  );
-  process.exit(1);
+  // Rewriting an unchanged file would make every watcher rebuild.
+  if (current !== content) writeFileSync(path, content);
 }
