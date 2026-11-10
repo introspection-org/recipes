@@ -57,6 +57,7 @@ import {
 } from "../index.js";
 import {
   createMcpCliSessionPolicy,
+  FORBIDDEN_DELEGATED_FLAGS,
   validateDelegatedMcpCommand,
 } from "./policy.js";
 import type { McpCatalogServer } from "../daemon/protocol.js";
@@ -2031,11 +2032,7 @@ async function callWithSharedRuntime(
     const {
       options: { timeout, output = "auto" },
       rest,
-    } = takeOptions(args.slice(1), {
-      timeout: "string",
-      output: "string",
-      "no-oauth": "boolean",
-    });
+    } = takeOptions(args.slice(1), CALL_OPTIONS);
     if (timeout !== undefined && !/^[1-9]\d*$/.test(String(timeout)))
       throw new Error("--timeout must be a positive integer (milliseconds).");
     if (!(OUTPUT_FORMATS as readonly unknown[]).includes(output))
@@ -2052,6 +2049,11 @@ async function callWithSharedRuntime(
       path: ["mcp", "call", `${server}.${tool}`],
       description: entry?.description ?? "",
       schema: schema ?? {},
+      // Flags the session refuses, and the call's own, are not the tool's.
+      reserved: [
+        ...[...FORBIDDEN_DELEGATED_FLAGS].map((flag) => flag.slice(2)),
+        ...Object.keys(CALL_OPTIONS),
+      ],
     };
     // Read stdin only when the parse takes `--json -`, not a flag's value `-`.
     let stdinText: string | undefined;
@@ -2139,6 +2141,11 @@ async function callWithSharedRuntime(
 
 const OUTPUT_FORMATS = ["auto", "text", "markdown", "json", "raw"] as const;
 const NEEDS_STDIN = Symbol("needs stdin");
+const CALL_OPTIONS = {
+  timeout: "string",
+  output: "string",
+  "no-oauth": "boolean",
+} as const;
 
 type CallOutputKind = "json" | "markdown" | "text" | "raw";
 type CallOutputFormat = CallOutputKind | "auto";

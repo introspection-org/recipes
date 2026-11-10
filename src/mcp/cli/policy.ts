@@ -16,7 +16,7 @@ export type McpCliPolicyResult =
   | { command: ValidatedMcpCliCommand; error?: undefined }
   | { command?: undefined; error: string };
 
-const FORBIDDEN_DELEGATED_FLAGS = new Set([
+export const FORBIDDEN_DELEGATED_FLAGS = new Set([
   "--config",
   "--root",
   "--log-level",

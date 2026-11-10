@@ -336,6 +336,36 @@ describe("a command line from a tool's schema", () => {
     );
   });
 
+  it("gives no flag to a property whose flag the caller reserves", () => {
+    const command = {
+      path: ["mcp", "call", "s.t"],
+      description: "",
+      schema: {
+        properties: {
+          name: { type: "string" },
+          timeout: { type: "integer" },
+          oauth: { type: "boolean" },
+          query: { type: "string" },
+        },
+      },
+      reserved: ["name", "timeout", "no-oauth"],
+    };
+    const help = schemaHelp(command, "mcp list s.t --schema");
+    expect(help).toContain("--query <string>");
+    expect(help).not.toMatch(/--name|--timeout|--oauth|--no-oauth/);
+    expect(help).toMatch(
+      /Only through --json:\n {2}name\n {2}timeout\n {2}oauth/,
+    );
+    const parse = (argv: string[]) =>
+      parseSchemaArgs(command, argv, undefined, { assignments: true }).args;
+    expect(parse(["name=Ada", "timeout=5", "oauth=false"])).toEqual({
+      name: "Ada",
+      timeout: 5,
+      oauth: false,
+    });
+    expect(() => parse(["--name", "Ada"])).toThrow(SchemaArgsError);
+  });
+
   it("keeps the exact names where kebab-case would collide", () => {
     const command = {
       path: ["t"],

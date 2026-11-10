@@ -22,6 +22,12 @@ export interface SchemaCommand {
   description: string;
   /** An object schema; only its `properties` and `required` are read. */
   schema: JsonSchema;
+  /**
+   * Flag names the caller keeps for itself (`timeout`): a property whose flag,
+   * or a boolean's `no-` form, is one of them is reached through `--json` and
+   * `name=value` only.
+   */
+  reserved?: readonly string[];
 }
 
 /** A command line that cannot be read; `usage` names the command for its `--help`. */
@@ -119,6 +125,8 @@ function shapeOf(property: Property): Shape {
 
 interface Field {
   name: string;
+  /** Its flag is one the caller reserves, so it has none. */
+  reserved?: boolean;
   /** The flag help shows: the name in kebab-case, unless that would collide. */
   flag: string;
   property: Property;
@@ -165,17 +173,26 @@ function fields(command: SchemaCommand): Field[] {
     for (const form of new Set(spellings(field.name, field.shape)))
       counts.set(form, (counts.get(form) ?? 0) + 1);
   // A kebab name another property also answers to stays the exact name.
-  return all.map((field) => ({
-    ...field,
-    flag: spellings(field.name, field.shape).every(
+  const reserved = new Set(command.reserved ?? []);
+  return all.map((field) => {
+    const flag = spellings(field.name, field.shape).every(
       (form) => counts.get(form) === 1,
     )
       ? kebab(field.name)
-      : field.name,
-  }));
+      : field.name;
+    const forms = isBoolean(field.shape)
+      ? [flag, field.name, `no-${flag}`, `no-${field.name}`]
+      : [flag, field.name];
+    return {
+      ...field,
+      flag,
+      reserved: forms.some((form) => reserved.has(form)),
+    };
+  });
 }
 
-const flagged = (field: Field) => field.shape.kind !== "json";
+const flagged = (field: Field) =>
+  field.shape.kind !== "json" && !field.reserved;
 
 /** Booleans are boolean options, an array of scalars repeats, and the rest are strings. */
 function options(command: SchemaCommand): ParseArgsOptionsConfig {
@@ -417,7 +434,8 @@ export function parseSchemaArgs(
     if (!field) throw fail(`unknown argument '${name}'`);
     const { text, exact } = assignedText(usage, name, raw);
     if (exact) args[name] = text;
-    else if (flagged(field)) args[name] = valueOf(field.shape, text);
+    else if (field.shape.kind !== "json")
+      args[name] = valueOf(field.shape, text);
     else
       try {
         args[name] = JSON.parse(text) as unknown;
@@ -466,9 +484,9 @@ function note(field: Field): string {
   if (bounds) parts.push(bounds);
   if ("default" in property)
     parts.push(`Default: ${JSON.stringify(property.default)}.`);
-  if (shape.kind === "array")
+  if (flagged(field) && shape.kind === "array")
     parts.push("Repeat it for each value, or pass a JSON array.");
-  if (shape.kind === "scalar" && shape.type === "boolean")
+  if (flagged(field) && isBoolean(shape))
     parts.push(`--no-${field.flag} for false.`);
   return parts.join(" ");
 }
