@@ -106,20 +106,70 @@ describe("the tools command", () => {
       "issues — Track work in the issue tracker.\nmail — The person's mail.\nweb_search — Search the web.\n",
     );
     expect((await tools(["list", "issues"])).stdout).toBe(
-      "issues.search\nissues.get\n",
+      "issues search\nissues get\n",
     );
     expect((await tools(["list", "mail"])).stdout).toBe(
-      "mail.search — Search the person's mail.\nmail.read — Read one message.\n",
+      "mail search — Search the person's mail.\nmail read — Read one message.\n",
     );
     expect((await tools(["list", "mail", "--schema"])).stdout).toContain(
-      'mail.read {"properties":{"message":{"type":"string"}},"required":[]}',
+      'mail read {"properties":{"message":{"type":"string"}},"required":[]}',
     );
     expect((await tools(["list", "read"])).code).toBe(64);
   });
 
+  it("makes each tool a command, with typed flags and --help from its schema", async () => {
+    const flags = await tools(["issues", "search", "--query", "checkout"]);
+    expect(flags.calls).toEqual([
+      { name: "issues", args: { query: "checkout", command: "search" } },
+    ]);
+    // `tools call` takes the same flags, and the dotted name stays.
+    expect(
+      (await tools(["call", "issues.search", "--query", "x"])).calls,
+    ).toEqual([{ name: "issues", args: { query: "x", command: "search" } }]);
+    expect((await tools(["web_search", "--query", "pi"])).calls).toEqual([
+      { name: "web_search", args: { query: "pi" } },
+    ]);
+    // Flags override the --json object's keys.
+    expect(
+      (
+        await tools(
+          ["mail", "search", "--json", "-", "--query", "b"],
+          '{"query":"a"}',
+        )
+      ).calls,
+    ).toEqual([{ name: "mail", args: { query: "b", command: "search" } }]);
+
+    const tool = await tools(["issues", "--help"]);
+    expect(tool.code).toBe(0);
+    expect(tool.stdout).toContain("Usage: issues <command>");
+    expect(tool.stdout).toMatch(/Commands:\n {2}search\s+\n {2}get/);
+    expect((await tools(["issues"])).code).toBe(64);
+    const command = await tools(["mail", "read", "--help"]);
+    expect(command.stdout).toContain(
+      "Usage: mail read [--<argument> <value> ...]",
+    );
+    expect(command.stdout).toContain("--message <string>");
+    expect(command.calls).toEqual([]);
+    expect((await tools(["web_search", "--help"])).stdout).toContain(
+      "Usage: web_search --query <string>",
+    );
+
+    const missing = await tools(["web_search"]);
+    expect(missing.code).toBe(64);
+    expect(missing.stderr).toContain("web_search: missing --query");
+    expect(missing.stderr).toContain("Run `web_search --help`");
+    const unknown = await tools(["mail", "search", "--subject", "x"]);
+    expect(unknown.code).toBe(64);
+    expect(unknown.stderr).toContain("Unknown option '--subject'");
+    expect((await tools(["issues", "close"])).stderr).toContain(
+      "issues has no command 'close'; it has search, get",
+    );
+    expect(missing.calls).toEqual([]);
+  });
+
   it("searches commands by their words", async () => {
     const found = await tools(["search", "mail read"]);
-    expect(found.stdout.split("\n")[0]).toMatch(/^mail\.read/);
+    expect(found.stdout.split("\n")[0]).toMatch(/^mail read/);
   });
 
   it("calls one command, and a tool with none, through the session", async () => {
@@ -152,7 +202,7 @@ describe("the tools command", () => {
     expect(guessed.code).toBe(64);
     expect(guessed.calls).toEqual([]);
     expect(guessed.stderr).toContain(
-      "web_search has no commands: call it as `tools call web_search --json -`",
+      "web_search has no commands: pass its arguments as flags or --json -",
     );
     expect((await tools(["list", "web_search", "--schema"])).stdout).toBe(
       'web_search {"properties":{"query":{"type":"string"}},"required":["query"]}\n',

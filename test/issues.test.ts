@@ -449,6 +449,32 @@ describe("choosing a provider", () => {
     ]);
   });
 
+  it("declares each command with only its own arguments", () => {
+    const schema = issuesParameters(providers([])) as unknown as {
+      anyOf: Array<{
+        properties: Record<string, { const?: string }>;
+        required: string[];
+        description: string;
+      }>;
+    };
+    const variant = (command: string) =>
+      schema.anyOf.find(
+        (entry) => entry.properties.command?.const === command,
+      )!;
+    expect(Object.keys(variant("get").properties)).toEqual([
+      "command",
+      "handle",
+    ]);
+    expect(variant("create").required).toEqual(["command", "title"]);
+    expect(variant("create").properties).not.toHaveProperty("query");
+    expect(variant("transition").required).toEqual([
+      "command",
+      "handle",
+      "status",
+    ]);
+    expect(schema.anyOf.every((entry) => entry.description)).toBe(true);
+  });
+
   it("asks for a connection when nothing is on offer", async () => {
     const list = providers([]).slice(0, 1);
     await expect(

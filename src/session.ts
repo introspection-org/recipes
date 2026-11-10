@@ -1479,7 +1479,7 @@ async function sessionBash(
     hostBash
   )
     return undefined;
-  if (toolsBinDir) await materializeToolsShim(toolsBinDir);
+  if (toolsBinDir) await materializeToolsShim(toolsBinDir, firstParty);
   const bash = createBashToolDefinition(cwd, {
     commandPrefix: settingsManager.getShellCommandPrefix(),
     shellPath: settingsManager.getShellPath(),

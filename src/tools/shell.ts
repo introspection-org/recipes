@@ -23,20 +23,31 @@ function toolsEntrypointPath(): string {
   );
 }
 
-/** Write the `tools` shim into `binDir`, for a bash call's PATH. */
-export async function materializeToolsShim(binDir: string): Promise<string> {
+/** A tool name that is safe as a file name and a shell word. */
+const COMMAND_NAME = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
+/**
+ * Write the `tools` shim into `binDir`, for a bash call's PATH, and one shim
+ * per tool in `names`, so `issues list ...` is `tools issues list ...`. A
+ * tool shim shadows a system command of the same name (`mail`) in the
+ * agent's shell only; `tools <tool>` always reaches the tool.
+ */
+export async function materializeToolsShim(
+  binDir: string,
+  names: readonly string[] = [],
+): Promise<string> {
   await mkdir(binDir, { recursive: true });
-  const shimPath = join(binDir, "tools");
-  await writeFile(
-    shimPath,
-    [
-      "#!/bin/sh",
-      `exec ${shellQuote(process.execPath)} ${shellQuote(toolsEntrypointPath())} "$@"`,
-      "",
-    ].join("\n"),
-  );
-  await chmod(shimPath, 0o755);
-  return shimPath;
+  const exec = `exec ${shellQuote(process.execPath)} ${shellQuote(toolsEntrypointPath())}`;
+  const write = async (name: string, line: string) => {
+    const path = join(binDir, name);
+    await writeFile(path, ["#!/bin/sh", line, ""].join("\n"));
+    await chmod(path, 0o755);
+    return path;
+  };
+  for (const name of names)
+    if (COMMAND_NAME.test(name) && name !== "tools")
+      await write(name, `${exec} ${shellQuote(name)} "$@"`);
+  return write("tools", `${exec} "$@"`);
 }
 
 /** The shell environment of a bash call that serves the `tools` command. */
@@ -55,11 +66,6 @@ export function toolsShellEnv(
   };
 }
 
-/**
- * The bash tool with the `tools` command: each call serves the platform
- * tools `names` on a socket for its own shell, so a `tools call` in it is a
- * nested call of that bash call.
- */
 /** The call form for each of `names` that has no commands, as the description says it. */
 function commandless(names: readonly string[]): string {
   const bare = names.filter((name) =>
@@ -68,11 +74,16 @@ function commandless(names: readonly string[]): string {
   if (!bare.length) return "";
   const tools = bare.map((name) => "`" + name + "`").join(", ");
   const calls = bare
-    .map((name) => "`tools call " + name + " --json -`")
+    .map((name) => "`" + name + " --<argument> <value>`")
     .join(", ");
-  return ` (${tools} ${bare.length === 1 ? "has" : "have"} no commands: ${calls})`;
+  return `; ${tools} ${bare.length === 1 ? "has" : "have"} no commands: ${calls}`;
 }
 
+/**
+ * The bash tool with the `tools` command: each call serves the platform
+ * tools `names` on a socket for its own shell, so a `tools call` in it is a
+ * nested call of that bash call.
+ */
 export function withToolsCommand(
   bash: ToolDefinition,
   names: readonly string[],
@@ -81,7 +92,7 @@ export function withToolsCommand(
     ...bash,
     // The tools are not declared, so this is how the model learns they exist;
     // the description reaches it even when a Recipe's SYSTEM.md replaces Pi's prompt.
-    description: `${bash.description}\n\n${names.join(", ")} are not tools you call directly: reach them from bash with the \`tools\` command. \`tools list\` shows them, \`tools list <tool> --schema\` a tool's commands and arguments, \`tools call <tool>.<command> --json -\` with the arguments on stdin in a quoted heredoc (\`<<'JSON'\`), so quotes in them need no escaping, makes one call${commandless(names)}, and \`tools run\` with a script on stdin (\`await tools.<tool>.<command>({...})\`) makes several.`,
+    description: `${bash.description}\n\n${names.join(", ")} are not tools you call directly: each is a command in bash. \`<tool> --help\` lists its commands, \`<tool> <command> --help\` a command's arguments, and \`<tool> <command> --<argument> <value> ...\` makes one call${commandless(names)}. Any call takes every argument as JSON instead with \`--json -\` and the object on stdin in a quoted heredoc (\`<<'JSON'\`), so quotes in it need no escaping. \`tools list\` shows them all, and \`tools run\` with a script on stdin (\`await tools.<tool>.<command>({...})\`) makes several calls.`,
     execute: (toolCallId, params, signal, onUpdate, ctx) =>
       withToolsBridge(ctx, names, () =>
         bash.execute(toolCallId, params, signal, onUpdate, ctx),

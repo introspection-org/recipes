@@ -10,6 +10,13 @@ import { readFileSync } from "node:fs";
 import { createConnection } from "node:net";
 
 import {
+  parseSchemaArgs,
+  SchemaArgsError,
+  schemaCommand,
+  schemaHelp,
+  type SchemaCommand,
+} from "../cli/schema-args.js";
+import {
   TOOLS_SOCKET_ENV,
   type ToolsBridgeRequestBody,
   type ToolsBridgeResponse,
@@ -22,17 +29,25 @@ export const COMMANDLESS_TOOLS = ["web_search"] as const;
 const HELP = [
   "tools: the platform's own tools (issues, mail, calendar, drive, web_search).",
   "",
-  "  tools list [tool] [--schema]             What this agent has; a tool's commands.",
-  '  tools search "what you need" [--limit N] Commands matching the words.',
-  "  tools call <tool>.<command> --json '{...}'  One call; --json - reads it from stdin.",
-  "  tools run <<'JS' ... JS                  Two or more calls, in one script.",
+  "  Each tool is also a command of its own:",
+  "  <tool> --help                       Its commands.",
+  "  <tool> <command> --help             A command's arguments, from its schema.",
+  "  <tool> <command> --<argument> <value> ...   One call.",
+  "  A tool with no commands takes its arguments directly: web_search --query '...'.",
+  "",
+  "  tools list [tool] [--schema]        What this agent has; a tool's commands.",
+  '  tools search "what you need" [--limit N]   Commands matching the words.',
+  "  tools <tool> <command> ...          The same as <tool> <command> ...",
+  "  tools call <tool>.<command> [--json '{...}' | --<argument> <value> ...]",
+  "  tools run <<'JS' ... JS             Two or more calls, in one script.",
+  "",
+  "  Any call takes --json '{...}', or --json - to read the object from stdin.",
   "",
   "  tools run <<'JS'",
   '  const found = await tools.issues.search({ query: "checkout" });',
   "  return found;",
   "  JS",
   "",
-  `  A tool with no commands (${COMMANDLESS_TOOLS.join(", ")}) is called by its name alone: \`tools call ${COMMANDLESS_TOOLS[0]}\`.`,
   "  A Recipe's MCP servers are on the `mcp` command, not here.",
 ].join("\n");
 
@@ -96,6 +111,47 @@ function requiredOf(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map(String).filter((name) => name !== "command")
     : [];
+}
+
+/** The schema command a tool command is: its flags and `--help`. */
+function specOf(command: Command, usage: string): SchemaCommand {
+  return schemaCommand(usage, command.description, {
+    properties: command.arguments,
+    required: command.required ?? [],
+  });
+}
+
+/** A description's first sentence, for a one-line listing. */
+function firstSentence(text: string): string {
+  const line = text.split("\n")[0] ?? "";
+  return line.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? line;
+}
+
+/** `<tool> --help`: a tool's commands. */
+function toolHelp(tool: ToolsBridgeTool, commands: Command[]): string {
+  const width =
+    Math.max(...commands.map((command) => command.command!.length)) + 2;
+  return [
+    `Usage: ${tool.name} <command> [--<argument> <value> ...]`,
+    "",
+    firstSentence(tool.description),
+    "",
+    "Commands:",
+    ...commands.map(
+      (command) =>
+        `  ${command.command!.padEnd(width)}${firstSentence(command.description)}`,
+    ),
+    "",
+    `Run \`${tool.name} <command> --help\` for a command's arguments.`,
+  ].join("\n");
+}
+
+const isHelp = (arg: string | undefined) =>
+  arg === "--help" || arg === "-h" || arg === "help";
+
+/** How a command is typed in the shell: `issues search`, or `web_search`. */
+function shownAs(command: Command): string {
+  return command.command ? `${command.tool} ${command.command}` : command.tool;
 }
 
 function nameOf(command: Command): string {
@@ -203,6 +259,51 @@ export async function runToolsCommand(
     return 69;
   }
   const tools = client(socket);
+  /** `<tool> [<command>] [arguments]`: one call, or its help. */
+  const invoke = async (toolName: string, rest: string[]): Promise<number> => {
+    const catalog = await tools.list();
+    const tool = catalog.find((entry) => entry.name === toolName);
+    if (!tool)
+      throw new UsageError(
+        `${toolName} is not a first-party tool of this agent (${catalog.map((entry) => entry.name).join(", ")}); tools --help shows the commands`,
+      );
+    const commands = commandsOf(tool);
+    let command: Command;
+    let usage: string;
+    const first = rest[0];
+    if (commands.some((entry) => entry.command)) {
+      if (first === undefined || isHelp(first)) {
+        io[first ? "stdout" : "stderr"].write(`${toolHelp(tool, commands)}\n`);
+        return first ? 0 : 64;
+      }
+      const found = commands.find((entry) => entry.command === first);
+      if (!found)
+        throw new UsageError(
+          `${tool.name} has no command '${first}'; it has ${commands.map((entry) => entry.command).join(", ")}. ${tool.name} --help`,
+        );
+      rest.shift();
+      command = found;
+      usage = `${tool.name} ${first}`;
+    } else {
+      command = commands[0]!;
+      usage = tool.name;
+      if (first === "help") rest[0] = "--help";
+      else if (first !== undefined && !first.startsWith("-"))
+        throw new UsageError(
+          `${tool.name} has no commands: pass its arguments as flags or --json -. ${tool.name} --help`,
+        );
+    }
+    const spec = specOf(command, usage);
+    const parsed = parseSchemaArgs(spec, rest, io.stdin);
+    if (parsed.help) {
+      io.stdout.write(`${schemaHelp(spec)}\n`);
+      return 0;
+    }
+    io.stdout.write(
+      `${(await tools.call(nameOf(command), parsed.args)).text}\n`,
+    );
+    return 0;
+  };
   try {
     if (verb === "list") {
       const schema = args.includes("--schema");
@@ -223,8 +324,8 @@ export async function runToolsCommand(
       for (const command of commandsOf(tool))
         io.stdout.write(
           schema
-            ? `${nameOf(command)} ${JSON.stringify({ properties: command.arguments, required: command.required ?? [] })}\n`
-            : `${nameOf(command)}${command.description ? ` — ${command.description}` : ""}\n`,
+            ? `${shownAs(command)} ${JSON.stringify({ properties: command.arguments, required: command.required ?? [] })}\n`
+            : `${shownAs(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
     }
@@ -237,7 +338,7 @@ export async function runToolsCommand(
         .flatMap(commandsOf)
         .map((command) => {
           const text =
-            `${nameOf(command)} ${command.description}`.toLowerCase();
+            `${shownAs(command)} ${command.description}`.toLowerCase();
           return {
             command,
             score: words.filter((word) => text.includes(word)).length,
@@ -248,36 +349,24 @@ export async function runToolsCommand(
         .slice(0, limit);
       for (const { command } of ranked)
         io.stdout.write(
-          `${nameOf(command)}${command.description ? ` — ${command.description}` : ""} ${JSON.stringify(command.arguments)}\n`,
+          `${shownAs(command)}${command.description ? ` — ${command.description}` : ""}\n`,
         );
       return 0;
     }
     if (verb === "call") {
-      const json = flag(args, "--json");
-      const name = args[0];
-      if (!name)
+      const name = args.shift();
+      if (!name || name.startsWith("-"))
         throw new UsageError(
-          "Usage: tools call <tool>.<command> --json '{...}', or --json - to read it from stdin",
+          "Usage: tools call <tool>.<command> [--json '{...}' | --<argument> <value> ...]",
         );
-      // `--json -` reads the object from stdin, as `mcp call` does.
-      const text = json === "-" ? (io.stdin?.() ?? "") : json;
-      const body = text ? (JSON.parse(text) as unknown) : {};
-      if (!body || typeof body !== "object" || Array.isArray(body))
-        throw new UsageError("--json must be an object");
-      const [toolName, commandName] = name.split(".", 2);
-      if (commandName) {
-        const tool = (await tools.list()).find(
-          (entry) => entry.name === toolName,
-        );
-        if (tool && !commandsOf(tool).some((command) => command.command))
-          throw new UsageError(
-            `${toolName} has no commands: call it as \`tools call ${toolName} --json -\``,
-          );
-      }
-      io.stdout.write(
-        `${(await tools.call(name, body as Record<string, unknown>)).text}\n`,
+      const [toolName, commandName] = name.split(".", 2) as [
+        string,
+        string | undefined,
+      ];
+      return await invoke(
+        toolName,
+        commandName ? [commandName, ...args] : args,
       );
-      return 0;
     }
     if (verb === "run") {
       const file = args[0];
@@ -315,12 +404,18 @@ export async function runToolsCommand(
       );
       return 0;
     }
-    throw new UsageError(`tools: unknown command '${verb}'; tools --help`);
+    return await invoke(verb, args);
   } catch (error) {
     io.stderr.write(
       `${error instanceof Error ? error.message : String(error)}\n`,
     );
-    return error instanceof UsageError ? 64 : 1;
+    if (error instanceof SchemaArgsError) {
+      const usage = error.message.split(":")[0];
+      io.stderr.write(`Run \`${usage} --help\` for its arguments.\n`);
+    }
+    return error instanceof UsageError || error instanceof SchemaArgsError
+      ? 64
+      : 1;
   }
 }
 

@@ -299,6 +299,7 @@ describe("first-party tools by tools.mode", () => {
   for (const [how, command] of [
     ["--json", `tools call issues.search --json '{"query":"found"}'`],
     ["stdin", `echo '{"query":"found"}' | tools call issues.search --json -`],
+    ["flags", `issues search --query found`],
   ])
     it(`serves the tool to bash's tools command in cli, undeclared (${how})`, async () => {
       let tools: string[] = [];
@@ -324,7 +325,9 @@ describe("first-party tools by tools.mode", () => {
       expect(tools).not.toContain("issues");
       expect(tools).not.toContain("codemode");
       expect(output).toContain("acme:A-1");
-      expect(prompt).toContain("reach them from bash with the `tools` command");
+      expect(prompt).toContain(
+        "are not tools you call directly: each is a command in bash",
+      );
     });
 
   it("refuses cli when the host supplies its own bash", async () => {

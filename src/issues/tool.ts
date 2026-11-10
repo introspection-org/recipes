@@ -4,7 +4,14 @@ import {
   trace,
   type Tracer,
 } from "@opentelemetry/api";
-import { Type, type TSchema } from "typebox";
+import type { TSchema } from "typebox";
+
+import {
+  commandParameters,
+  commandVariant,
+  type JsonSchema,
+  type ObjectSchema,
+} from "../command-parameters.js";
 
 import { isPiMcpServerTool, mcpToolName } from "../mcp/pi-client.js";
 import type { PiToolContext, PiToolInfo } from "../search/mcp.js";
@@ -134,9 +141,128 @@ export function issuesMcpToolNames(
   );
 }
 
+const HANDLE = {
+  type: "string",
+  description: "The issue's handle, provider:ref, as search and get return it.",
+} as const;
+
+/** The arguments each command takes, `provider` added when several are on offer. */
+function issuesCommandArguments(
+  provider: JsonSchema | undefined,
+): Record<IssuesCommand, { description: string; schema: ObjectSchema }> {
+  const offered: Record<string, JsonSchema> = provider ? { provider } : {};
+  const assignee = {
+    type: "string",
+    description: "A name or email, or me.",
+  } as const;
+  const container = {
+    type: "string",
+    description: "A team or project.",
+  } as const;
+  const priority = { type: "string", enum: [...ISSUE_PRIORITIES] } as const;
+  const labels = {
+    type: "array",
+    items: { type: "string" },
+    description: "Replaces the labels.",
+  } as const;
+  return {
+    search: {
+      description: "Search issues; every filter is optional.",
+      schema: {
+        type: "object",
+        properties: {
+          ...offered,
+          query: { type: "string", description: "Free text." },
+          status: {
+            type: "string",
+            description: `A status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
+          },
+          assignee,
+          container,
+          label: { type: "string" },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: ISSUES_SEARCH_MAX_RESULTS,
+          },
+        },
+      },
+    },
+    get: {
+      description: "Read one issue.",
+      schema: {
+        type: "object",
+        properties: { handle: HANDLE },
+        required: ["handle"],
+      },
+    },
+    create: {
+      description: "Open an issue.",
+      schema: {
+        type: "object",
+        properties: {
+          ...offered,
+          title: { type: "string", minLength: 1 },
+          description: { type: "string", description: "Markdown." },
+          container,
+          assignee,
+          priority,
+          labels,
+          issue_type: { type: "string", description: "Jira's issue type." },
+        },
+        required: ["title"],
+      },
+    },
+    update: {
+      description: "Change an issue's fields; transition changes its status.",
+      schema: {
+        type: "object",
+        properties: {
+          handle: HANDLE,
+          title: { type: "string", minLength: 1 },
+          description: { type: "string", description: "Markdown." },
+          assignee: {
+            type: "string",
+            description: "A name or email, me, or none to unassign.",
+          },
+          priority,
+          labels,
+        },
+        required: ["handle"],
+      },
+    },
+    comment: {
+      description: "Comment on an issue.",
+      schema: {
+        type: "object",
+        properties: {
+          handle: HANDLE,
+          body: { type: "string", minLength: 1, description: "Markdown." },
+        },
+        required: ["handle", "body"],
+      },
+    },
+    transition: {
+      description: "Move an issue to a status.",
+      schema: {
+        type: "object",
+        properties: {
+          handle: HANDLE,
+          status: {
+            type: "string",
+            description: `A status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
+          },
+        },
+        required: ["handle", "status"],
+      },
+    },
+  };
+}
+
 /**
- * The tool's parameters: the commands some provider serves, and `provider`
- * listing the providers a call may name, left out when there is one.
+ * The tool's parameters: one variant per command some provider serves, each
+ * with only its own arguments, and `provider` on search and create when
+ * several providers are on offer.
  */
 export function issuesParameters(
   providers: readonly IssuesToolProvider[],
@@ -147,59 +273,20 @@ export function issuesParameters(
     ),
   );
   const ids = providers.map((provider) => provider.config.provider);
-  return Type.Object(
-    {
-      command: Type.Enum([...commands], { type: "string" }),
-      ...(ids.length > 1
-        ? {
-            provider: Type.Optional(
-              Type.Enum(ids, {
-                type: "string",
-                description: "For search and create.",
-              }),
-            ),
-          }
-        : {}),
-      handle: Type.Optional(
-        Type.String({
-          description: "provider:ref, for get, update, comment and transition.",
-        }),
-      ),
-      query: Type.Optional(Type.String({ description: "search: free text." })),
-      status: Type.Optional(
-        Type.String({
-          description: `search filter, or transition target: a status name or ${ISSUE_STATUS_CATEGORIES.join(", ")}.`,
-        }),
-      ),
-      assignee: Type.Optional(
-        Type.String({
-          description: "A name or email, me, or none (update) to unassign.",
-        }),
-      ),
-      container: Type.Optional(
-        Type.String({ description: "A team or project." }),
-      ),
-      label: Type.Optional(Type.String({ description: "search filter." })),
-      limit: Type.Optional(
-        Type.Integer({ minimum: 1, maximum: ISSUES_SEARCH_MAX_RESULTS }),
-      ),
-      title: Type.Optional(Type.String({ minLength: 1 })),
-      description: Type.Optional(Type.String({ description: "Markdown." })),
-      priority: Type.Optional(
-        Type.Enum([...ISSUE_PRIORITIES], { type: "string" }),
-      ),
-      labels: Type.Optional(
-        Type.Array(Type.String(), { description: "Replaces the labels." }),
-      ),
-      issue_type: Type.Optional(
-        Type.String({ description: "create: Jira's issue type." }),
-      ),
-      body: Type.Optional(
-        Type.String({ minLength: 1, description: "comment: markdown." }),
-      ),
-    },
-    { additionalProperties: false },
+  const byCommand = issuesCommandArguments(
+    ids.length > 1
+      ? { type: "string", enum: ids, description: "Which tracker." }
+      : undefined,
   );
+  return commandParameters(
+    commands.map((command) =>
+      commandVariant(
+        command,
+        byCommand[command].schema,
+        byCommand[command].description,
+      ),
+    ),
+  ) as unknown as TSchema;
 }
 
 /** The tool description: the shared text, then what each provider does not do. */
