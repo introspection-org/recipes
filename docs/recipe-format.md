@@ -344,8 +344,8 @@ caller invokes one by prompting with its slash command and arguments.
 ### Prompt templates are suggestions
 
 A Recipe's suggestions are the things a new user can ask it to do. They are
-the prompt templates marked with `suggest: true` in their frontmatter; there
-is no separate manifest field. Templates without the mark still work as
+the prompt templates marked with `suggest` in their frontmatter; there is no
+separate manifest field. Templates without the mark still work as
 `/name` commands and are never suggested. Give each suggested template a
 short `description` (ten words or fewer), because that is what people see:
 
@@ -359,11 +359,23 @@ argument-hint: "[contract]"
 Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
 ```
 
+`suggest` also says which agents offer the template:
+
+- `suggest: true` offers it from every agent.
+- `suggest: [reviewer]` offers it only from the agent named `reviewer`.
+- `suggest: [agent, reviewer]` offers it from each agent listed.
+
+A name is an agent's `name`, such as `agent` for the default agent. Agents are
+always a list, even one: `suggest: reviewer` is not a mark.
+`introspection check` warns (`prompts.suggest_agent_unknown`) when a name
+matches none of the Recipe's agents. A host shows the suggestions of the
+agent a session runs; when that agent offers none, it shows its own defaults.
+
 - **In Pi.** A new session in the terminal (`pi --recipe <dir>`, or
   `introspection local`) with no messages asks once, "What would you like to
-  do?", with up to three marked templates (a random three, in file order,
-  when more are marked) and a row to type your own request. With none
-  marked, it does not ask. Picking one sends it as the first message;
+  do?", with up to three templates the session's agent offers (a random
+  three, in file order, when it offers more) and a row to type your own
+  request. When it offers none, it does not ask. Picking one sends it as the first message;
   a template whose `argument-hint` has a required `<argument>` is put in the
   editor instead, for you to finish. Typing sends what you typed, and Esc
   leaves the empty prompt. Set `PI_RECIPES_SUGGESTIONS_SEED` to pin which
@@ -378,20 +390,25 @@ Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
   as written. Pi's picker fills `{{today}}`, and `{{member.name}}` from
   `git config user.name`; a template typed as `/name` is sent unfilled.
 - **Other surfaces.** `listRecipeSuggestions(recipeDir)` returns the marked
-  templates as `{ name, description, argumentHint?, text, placeholders }[]`, and
-  `fillSuggestion(text, values)` fills placeholders; both are exported from
-  `@introspection-ai/recipes/suggestions`.
+  templates as `{ name, description, argumentHint?, text, placeholders, agents }[]`,
+  where `agents` is `null` when every agent offers one;
+  `listRecipeSuggestions(recipeDir, { agent })` returns only those `agent`
+  offers. `fillSuggestion(text, values)` fills placeholders; both are
+  exported from `@introspection-ai/recipes/suggestions`.
   `inspectRecipe` includes the same list as `suggestions`. A host that holds
   the Recipe's files rather than a directory, such as the control plane when
   it validates a version, reads the same list with `list_recipe_suggestions`
   from `introspection-recipe-check` (Rust or Python).
-- **YAML 1.2.** Only `suggest: true` marks a template. As in Pi, `yes`, `on`
-  and `"true"` are not booleans, so they don't count.
+- **YAML 1.2.** Only `suggest: true` marks a template for every agent. As in
+  Pi, `yes`, `on` and `"true"` are not booleans, so they don't count. Nor do
+  `false`, a plain string, an empty list, or a list with anything but
+  non-empty names.
 - **Checks.** For a marked template, the checker warns when it has no
   `description` (`prompts.description_missing`), when the description is over
   ten words (`prompts.description_long`), or when it uses a placeholder outside
-  the list above (`prompts.placeholder_unknown`). A `suggest` value that is not
-  a boolean is also a warning (`prompts.suggest_invalid`).
+  the list above (`prompts.placeholder_unknown`). A `suggest` value that is
+  neither a boolean nor a list of agent names is also a warning
+  (`prompts.suggest_invalid`).
 
 Recipe-owned Pi extensions are declared by `pi.extensions`. The deterministically
 resolved set forms the package's executable trust boundary and loads for every

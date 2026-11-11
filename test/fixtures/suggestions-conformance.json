@@ -9,9 +9,7 @@
       "prompts/long.md": "---\nsuggest: true\n---\nSummarize every clause in the attached agreement and flag anything unusual for review today",
       "prompts/hint.md": "---\nsuggest: true\ndescription: \"  Padded  \"\nargument-hint: \"\"\n---\nGo.",
       "prompts/notes.md": "---\ndescription: Take notes\n---\nTake notes.",
-      "prompts/off.md": "---\nsuggest: false\n---\nOff.",
-      "prompts/string.md": "---\nsuggest: \"true\"\n---\nString.",
-      "prompts/yes.md": "---\nsuggest: yes\n---\nYes."
+      "prompts/off.md": "---\nsuggest: false\n---\nOff."
     },
     "suggestions": [
       {
@@ -20,19 +18,22 @@
         "text": "Brief me on {{org.name}}.\nKeep it short.",
         "placeholders": [
           "org.name"
-        ]
+        ],
+        "agents": null
       },
       {
         "name": "hint",
         "description": "Padded",
         "text": "Go.",
-        "placeholders": []
+        "placeholders": [],
+        "agents": null
       },
       {
         "name": "long",
         "description": "Summarize every clause in the attached agreement and flag an...",
         "text": "Summarize every clause in the attached agreement and flag anything unusual for review today",
-        "placeholders": []
+        "placeholders": [],
+        "agents": null
       },
       {
         "name": "redline",
@@ -43,9 +44,89 @@
           "member.name",
           "today",
           "deal.id"
+        ],
+        "agents": null
+      }
+    ]
+  },
+  {
+    "name": "suggest names agents: true or a list",
+    "files": {
+      "package.json": "{\"name\":\"agents\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "agents/reviewer.yaml": "name: reviewer\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/all.md": "---\nsuggest: true\n---\nAll.",
+      "prompts/both.md": "---\nsuggest: [agent, reviewer]\n---\nBoth.",
+      "prompts/listed.md": "---\nsuggest:\n  - reviewer\n---\nListed.",
+      "prompts/one.md": "---\nsuggest: [reviewer]\n---\nOne.",
+      "prompts/unknown.md": "---\nsuggest: [drafter]\n---\nUnknown."
+    },
+    "suggestions": [
+      {
+        "name": "all",
+        "description": "All.",
+        "text": "All.",
+        "placeholders": [],
+        "agents": null
+      },
+      {
+        "name": "both",
+        "description": "Both.",
+        "text": "Both.",
+        "placeholders": [],
+        "agents": [
+          "agent",
+          "reviewer"
+        ]
+      },
+      {
+        "name": "listed",
+        "description": "Listed.",
+        "text": "Listed.",
+        "placeholders": [],
+        "agents": [
+          "reviewer"
+        ]
+      },
+      {
+        "name": "one",
+        "description": "One.",
+        "text": "One.",
+        "placeholders": [],
+        "agents": [
+          "reviewer"
+        ]
+      },
+      {
+        "name": "unknown",
+        "description": "Unknown.",
+        "text": "Unknown.",
+        "placeholders": [],
+        "agents": [
+          "drafter"
         ]
       }
     ]
+  },
+  {
+    "name": "other suggest values are not suggestions, a plain string included",
+    "files": {
+      "package.json": "{\"name\":\"invalid\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
+      "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
+      "prompts/empty-list.md": "---\nsuggest: []\n---\nEmpty list.",
+      "prompts/empty-string.md": "---\nsuggest: \"\"\n---\nEmpty string.",
+      "prompts/false.md": "---\nsuggest: false\n---\nFalse.",
+      "prompts/mixed.md": "---\nsuggest: [agent, 1]\n---\nMixed.",
+      "prompts/blank-item.md": "---\nsuggest: [agent, \"\"]\n---\nBlank item.",
+      "prompts/null.md": "---\nsuggest:\n---\nNull.",
+      "prompts/number.md": "---\nsuggest: 1\n---\nNumber.",
+      "prompts/object.md": "---\nsuggest:\n  agent: true\n---\nObject.",
+      "prompts/string.md": "---\nsuggest: \"true\"\n---\nString.",
+      "prompts/yes.md": "---\nsuggest: yes\n---\nYes.",
+      "prompts/name.md": "---\nsuggest: agent\n---\nName.",
+      "prompts/on.md": "---\nsuggest: on\n---\nOn."
+    },
+    "suggestions": []
   },
   {
     "name": "the first template with a name wins, in manifest order",
@@ -61,7 +142,8 @@
         "name": "other",
         "description": "Other.",
         "text": "Other.",
-        "placeholders": []
+        "placeholders": [],
+        "agents": null
       }
     ]
   },
@@ -79,7 +161,8 @@
         "name": "good",
         "description": "Good",
         "text": "Good.",
-        "placeholders": []
+        "placeholders": [],
+        "agents": null
       }
     ]
   },

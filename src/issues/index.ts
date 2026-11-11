@@ -1,6 +1,7 @@
 export {
   ISSUES_PROVIDER_FAMILY,
   ISSUES_PROVIDERS_PACKAGE,
+  ISSUES_SKILL,
   issuesProviderDeclarations,
   loadRecipeIssues,
 } from "./module.js";

@@ -42,6 +42,11 @@ mcp:
 Nothing about issues loads, and no `issues` tool is offered, unless a Recipe
 declares `pi.issues` and its agent selects `issues`.
 
+When it does, the host also offers the `issues` skill
+(`skills/issues/SKILL.md`), as it offers `skills/productivity/SKILL.md` with
+`mail`: handles, statuses and priorities, and a workflow for tracking the
+agent's own work.
+
 A declaration takes only these fields:
 
 | Field      | Applies to      | Meaning                                                                                   |
@@ -115,7 +120,7 @@ Every issue comes back in one shape, with a handle every later command takes:
 
 | Field                    | Linear                                                                                           | Jira                                                                                                                       | Introspection                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `handle`                 | `linear:ENG-123`                                                                                 | `jira:PROJ-45`                                                                                                             | `introspection:<display index>`                                          |
+| `handle`                 | `linear:ENG-123`                                                                                 | `jira:PROJ-45`                                                                                                             | `introspection:I-7`, the project's issue key                             |
 | `title`                  | title                                                                                            | summary                                                                                                                    | title                                                                    |
 | `description` (markdown) | description                                                                                      | description, from Atlassian Document Format (best-effort)                                                                  | description                                                              |
 | `status.name`            | workflow state                                                                                   | status                                                                                                                     | status                                                                   |
