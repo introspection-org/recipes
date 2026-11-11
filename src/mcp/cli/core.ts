@@ -9,7 +9,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { stdin as input, stderr, stdout } from "node:process";
 import { inspect, parseArgs } from "node:util";
@@ -30,6 +30,7 @@ import { createMcpRuntime, usesPiMcpClient } from "../pi-runtime.js";
 import { callToolWithHandshakeRetry } from "./handshake-retry.js";
 import {
   currentMcpCommandContext,
+  mcpCommandEnv,
   runWithMcpCommandContext,
   type McpRuntime,
 } from "./command-context.js";
@@ -60,7 +61,10 @@ import {
   FORBIDDEN_DELEGATED_FLAGS,
   validateDelegatedMcpCommand,
 } from "./policy.js";
-import type { McpCatalogServer } from "../daemon/protocol.js";
+import {
+  MCP_SESSION_ROOT_ENV,
+  type McpCatalogServer,
+} from "../daemon/protocol.js";
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000;
@@ -99,7 +103,13 @@ async function acquireRuntime(): Promise<{
   const shared = currentMcpCommandContext()?.runtime;
   return shared
     ? { runtime: shared, owned: false }
-    : { runtime: await createMcpRuntime(), owned: true };
+    : {
+        runtime: await createMcpRuntime(
+          mcpCommandEnv().MCPORTER_CONFIG,
+          mcpCommandEnv(),
+        ),
+        owned: true,
+      };
 }
 
 async function closeOwnedRuntime(
@@ -518,22 +528,22 @@ function sessionPolicyPath(): string {
   const workspacePath = defaultMcpSessionPath(sessionRoot());
   return existsSync(workspacePath)
     ? workspacePath
-    : process.env[MCP_SESSION_ENV] || workspacePath;
+    : mcpCommandEnv()[MCP_SESSION_ENV] || workspacePath;
 }
 
 function sessionMcporterConfigPath(): string {
   const workspacePath = defaultMcporterConfigPath(sessionRoot());
   return existsSync(workspacePath)
     ? workspacePath
-    : process.env.MCPORTER_CONFIG || workspacePath;
+    : mcpCommandEnv().MCPORTER_CONFIG || workspacePath;
 }
 
 function sessionRoot(): string {
-  return process.env.PI_RECIPES_MCP_SESSION_ROOT || process.cwd();
+  return mcpCommandEnv().PI_RECIPES_MCP_SESSION_ROOT || process.cwd();
 }
 
 function pinSessionMcporterConfig(): void {
-  process.env.MCPORTER_CONFIG = sessionMcporterConfigPath();
+  mcpCommandEnv().MCPORTER_CONFIG = sessionMcporterConfigPath();
 }
 
 async function sessionCliPolicy() {
@@ -958,7 +968,7 @@ function toolCount(count: number): string {
 }
 
 export function parseListTimeoutMs(args: readonly string[]): number | string {
-  const configured = process.env.MCPORTER_LIST_TIMEOUT;
+  const configured = mcpCommandEnv().MCPORTER_LIST_TIMEOUT;
   let raw =
     configured && /^[1-9]\d*$/.test(configured)
       ? configured
@@ -1628,22 +1638,23 @@ async function runMcpJavaScript(
   } = {},
 ): Promise<void> {
   const timeoutMs = positiveInteger(
-    opts.timeoutMs ?? process.env.PI_RECIPES_MCP_RUN_TIMEOUT_MS,
+    opts.timeoutMs ?? mcpCommandEnv().PI_RECIPES_MCP_RUN_TIMEOUT_MS,
     "PI_RECIPES_MCP_RUN_TIMEOUT_MS",
     DEFAULT_RUN_TIMEOUT_MS,
   );
   const callTimeoutMs = positiveInteger(
-    opts.callTimeoutMs ?? process.env.PI_RECIPES_MCP_RUN_CALL_TIMEOUT_MS,
+    opts.callTimeoutMs ?? mcpCommandEnv().PI_RECIPES_MCP_RUN_CALL_TIMEOUT_MS,
     "PI_RECIPES_MCP_RUN_CALL_TIMEOUT_MS",
     Math.min(DEFAULT_TOOL_CALL_TIMEOUT_MS, timeoutMs),
   );
   const maxCalls = positiveInteger(
-    opts.maxCalls ?? process.env.PI_RECIPES_MCP_RUN_MAX_CALLS,
+    opts.maxCalls ?? mcpCommandEnv().PI_RECIPES_MCP_RUN_MAX_CALLS,
     "PI_RECIPES_MCP_RUN_MAX_CALLS",
     DEFAULT_MAX_RUN_TOOL_CALLS,
   );
   const maxConcurrentCalls = positiveInteger(
-    opts.maxConcurrentCalls ?? process.env.PI_RECIPES_MCP_RUN_MAX_CONCURRENCY,
+    opts.maxConcurrentCalls ??
+      mcpCommandEnv().PI_RECIPES_MCP_RUN_MAX_CONCURRENCY,
     "PI_RECIPES_MCP_RUN_MAX_CONCURRENCY",
     DEFAULT_MAX_CONCURRENT_TOOL_CALLS,
   );
@@ -1827,7 +1838,12 @@ async function runCode(args: string[]): Promise<number> {
     stderr.write("mcp run accepts at most one file path.\n");
     return 2;
   }
-  const code = file ? await readFile(file, "utf8") : await readStdin();
+  const code = file
+    ? await readFile(
+        resolve(mcpCommandEnv()[MCP_SESSION_ROOT_ENV] || process.cwd(), file),
+        "utf8",
+      )
+    : await readStdin();
   if (!code.trim()) {
     stderr.write(
       "mcp run: empty script. Pass a file path or pipe JavaScript on stdin (see `mcp run --help`).\n",
@@ -1837,7 +1853,7 @@ async function runCode(args: string[]): Promise<number> {
   let timeoutMs: number;
   try {
     timeoutMs = positiveInteger(
-      process.env.PI_RECIPES_MCP_RUN_TIMEOUT_MS,
+      mcpCommandEnv().PI_RECIPES_MCP_RUN_TIMEOUT_MS,
       "PI_RECIPES_MCP_RUN_TIMEOUT_MS",
       DEFAULT_RUN_TIMEOUT_MS,
     );
@@ -1998,7 +2014,11 @@ async function callWithMcporter(args: string[]): Promise<number> {
   try {
     ({ runtime, owned } = await acquireRuntime());
     // pi-mcp takes the daemon's path; mcporter's own `call` drives mcporter's runtime.
-    if (usesPiMcpClient() || args.includes("--help") || args.includes("-h"))
+    if (
+      usesPiMcpClient(mcpCommandEnv()) ||
+      args.includes("--help") ||
+      args.includes("-h")
+    )
       return await callWithSharedRuntime(runtime, args);
     // mcporter reads the arguments itself; a name given twice is refused first.
     const words = takeOptions(args.slice(1), CALL_OPTIONS).rest;
@@ -2121,7 +2141,7 @@ async function callWithSharedRuntime(
     const result = createCallResult(raw);
     const rendered = selectCallOutput(result, raw, options.output);
     const serialized = serializeCallOutput(rendered, options.output);
-    const configuredLimit = process.env.PI_RECIPES_MCP_MAX_OUTPUT_BYTES;
+    const configuredLimit = mcpCommandEnv().PI_RECIPES_MCP_MAX_OUTPUT_BYTES;
     if (configuredLimit !== undefined) {
       const limit = Number(configuredLimit);
       if (!Number.isSafeInteger(limit) || limit <= 0) {

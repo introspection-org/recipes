@@ -13,7 +13,9 @@ import {
   MCP_DAEMON_SOCKET_ENV,
   MCP_DAEMON_TOKEN_ENV,
   MCP_SESSION_ROOT_ENV,
+  mcpDaemonSocketPath,
 } from "./daemon/protocol.js";
+import { closeHostedMcpDaemon } from "./daemon/hosted.js";
 import {
   resolvePiPackageMcpManifestPaths,
   type RecipePackageManifest,
@@ -1041,7 +1043,7 @@ export async function materializeMcpSession(
   env[MCP_DAEMON_SOCKET_ENV] =
     process.platform === "win32"
       ? `\\\\.\\pipe\\recipes-mcp-${socketKey}`
-      : join(tmpdir(), `recipes-mcp-${socketKey}.sock`);
+      : mcpDaemonSocketPath(tmpdir(), socketKey);
   // Re-materialization with identical policy must not strand a running daemon
   // behind a newly rotated client token. Rotate only when the session changes.
   env[MCP_DAEMON_TOKEN_ENV] =
@@ -1061,7 +1063,8 @@ export async function materializeMcpSession(
 export async function stopMcpDaemon(env: NodeJS.ProcessEnv): Promise<void> {
   const socketPath = env[MCP_DAEMON_SOCKET_ENV];
   const token = env[MCP_DAEMON_TOKEN_ENV];
-  if (socketPath && token) {
+  const hosted = socketPath ? await closeHostedMcpDaemon(socketPath) : false;
+  if (socketPath && token && !hosted) {
     await new Promise<void>((resolve) => {
       const socket = createConnection(socketPath);
       let settled = false;

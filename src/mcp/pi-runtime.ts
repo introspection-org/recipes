@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
 
-import { createRuntime } from "mcporter";
-
 import type { McpRuntime } from "./cli/command-context.js";
 import type { McporterConfig } from "./index.js";
 
@@ -25,14 +23,27 @@ function piMcpServes(configPath: string | undefined): boolean {
   );
 }
 
-/** The session's MCP runtime: pi-mcp's, or mcporter's when {@link MCP_CLIENT_ENV} asks for it or pi-mcp cannot serve the config. */
+/** Which client {@link createMcpRuntime} gives a session: pi-mcp, or mcporter when {@link MCP_CLIENT_ENV} asks for it or pi-mcp cannot serve the config. */
+export function mcpRuntimeKind(
+  configPath: string | undefined = process.env.MCPORTER_CONFIG,
+  env: NodeJS.ProcessEnv = process.env,
+): "pi-mcp" | "mcporter" {
+  return usesPiMcpClient(env) && piMcpServes(configPath)
+    ? "pi-mcp"
+    : "mcporter";
+}
+
+/** The session's MCP runtime, on the client {@link mcpRuntimeKind} picks. */
 export async function createMcpRuntime(
   configPath: string | undefined = process.env.MCPORTER_CONFIG,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<McpRuntime> {
-  // Loaded only here, so a session on mcporter never loads pi-mcp.
-  if (usesPiMcpClient() && piMcpServes(configPath))
+  // Each client is loaded only here, so a session loads only the one it uses.
+  if (mcpRuntimeKind(configPath, env) === "pi-mcp")
     return (await import("./pi-mcp-runtime.js")).PiMcpRuntime.fromConfigFile(
       configPath,
+      env,
     );
+  const { createRuntime } = await import("mcporter");
   return await createRuntime(configPath ? { configPath } : {});
 }

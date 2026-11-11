@@ -7,6 +7,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { callMcpDaemonTool } from "./daemon/client.js";
+import { callHostedMcpTool, hostedMcpDaemonFor } from "./daemon/hosted.js";
 import type { McpCatalogServer } from "./daemon/protocol.js";
 import { mcpSelectionAllowsTool } from "./policy.js";
 import type {
@@ -666,19 +667,28 @@ export function createMcpToolSet(options: {
           )}`,
         );
       }
-      const raw = await callMcpDaemonTool(
-        tool.serverId,
-        tool.catalog.name,
-        input,
-        {
-          env: options.env,
-          signal,
-          timeoutMs: positiveInteger(
-            options.env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
-            DEFAULT_CALL_TIMEOUT_MS,
-          ),
-        },
+      const timeoutMs = positiveInteger(
+        options.env.PI_RECIPES_MCP_CALL_TIMEOUT_MS,
+        DEFAULT_CALL_TIMEOUT_MS,
       );
+      // A session whose server this process hosts calls it without the socket.
+      const hosted = hostedMcpDaemonFor(options.env);
+      const raw = hosted
+        ? await callHostedMcpTool(
+            hosted,
+            {
+              server: tool.serverId,
+              tool: tool.catalog.name,
+              arguments: input,
+              timeoutMs,
+            },
+            signal,
+          )
+        : await callMcpDaemonTool(tool.serverId, tool.catalog.name, input, {
+            env: options.env,
+            signal,
+            timeoutMs,
+          });
       return validateResult(tool, raw, options.env);
     },
   }));
