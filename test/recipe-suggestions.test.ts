@@ -186,7 +186,8 @@ describe("listRecipeSuggestions", () => {
     const { recipeDir } = recipeWithPrompts({
       "all.md": "---\nsuggest: true\n---\nAll.",
       "both.md": "---\nsuggest: [agent, reviewer]\n---\nBoth.",
-      "review.md": "---\nsuggest: reviewer\n---\nReview.",
+      "review.md": "---\nsuggest: [reviewer]\n---\nReview.",
+      "name.md": "---\nsuggest: reviewer\n---\nName.",
     });
     const names = (agent?: string) =>
       listRecipeSuggestions(
@@ -382,7 +383,7 @@ describe("first-run picker", () => {
   it("offers only the templates the session's agent suggests", async () => {
     const templates = {
       "all.md": "---\nsuggest: true\ndescription: All\n---\nAll.",
-      "mine.md": "---\nsuggest: agent\ndescription: Mine\n---\nMine.",
+      "mine.md": "---\nsuggest: [agent]\ndescription: Mine\n---\nMine.",
       "review.md":
         "---\nsuggest: [reviewer]\ndescription: Review\n---\nReview.",
     };
@@ -403,7 +404,7 @@ describe("first-run picker", () => {
 
   it("does not ask when the session's agent suggests nothing", async () => {
     const { select, settle } = await startPicker({
-      templates: { "review.md": "---\nsuggest: reviewer\n---\nReview." },
+      templates: { "review.md": "---\nsuggest: [reviewer]\n---\nReview." },
     });
     await settle();
     expect(select).not.toHaveBeenCalled();

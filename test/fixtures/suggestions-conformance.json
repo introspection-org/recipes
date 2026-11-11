@@ -50,7 +50,7 @@
     ]
   },
   {
-    "name": "suggest names agents: true, a string or a list",
+    "name": "suggest names agents: true or a list",
     "files": {
       "package.json": "{\"name\":\"agents\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
@@ -58,8 +58,8 @@
       "prompts/all.md": "---\nsuggest: true\n---\nAll.",
       "prompts/both.md": "---\nsuggest: [agent, reviewer]\n---\nBoth.",
       "prompts/listed.md": "---\nsuggest:\n  - reviewer\n---\nListed.",
-      "prompts/one.md": "---\nsuggest: reviewer\n---\nOne.",
-      "prompts/unknown.md": "---\nsuggest: drafter\n---\nUnknown."
+      "prompts/one.md": "---\nsuggest: [reviewer]\n---\nOne.",
+      "prompts/unknown.md": "---\nsuggest: [drafter]\n---\nUnknown."
     },
     "suggestions": [
       {
@@ -109,7 +109,7 @@
     ]
   },
   {
-    "name": "other suggest values are not suggestions; quoted or YAML 1.1 booleans are agent names",
+    "name": "other suggest values are not suggestions, a plain string included",
     "files": {
       "package.json": "{\"name\":\"invalid\",\"version\":\"0.1.0\",\"pi\":{\"agents\":[\"agents/*.yaml\"],\"prompts\":[\"./prompts/*.md\"]}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n",
@@ -122,28 +122,11 @@
       "prompts/number.md": "---\nsuggest: 1\n---\nNumber.",
       "prompts/object.md": "---\nsuggest:\n  agent: true\n---\nObject.",
       "prompts/string.md": "---\nsuggest: \"true\"\n---\nString.",
-      "prompts/yes.md": "---\nsuggest: yes\n---\nYes."
+      "prompts/yes.md": "---\nsuggest: yes\n---\nYes.",
+      "prompts/name.md": "---\nsuggest: agent\n---\nName.",
+      "prompts/on.md": "---\nsuggest: on\n---\nOn."
     },
-    "suggestions": [
-      {
-        "name": "string",
-        "description": "String.",
-        "text": "String.",
-        "placeholders": [],
-        "agents": [
-          "true"
-        ]
-      },
-      {
-        "name": "yes",
-        "description": "Yes.",
-        "text": "Yes.",
-        "placeholders": [],
-        "agents": [
-          "yes"
-        ]
-      }
-    ]
+    "suggestions": []
   },
   {
     "name": "the first template with a name wins, in manifest order",

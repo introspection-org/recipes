@@ -1,6 +1,6 @@
 /**
  * Suggestions are the Recipe's Pi prompt templates marked `suggest` in their
- * frontmatter: `true` for every agent, or an agent name or list of names, among the Markdown files its `pi.prompts` selects (or
+ * frontmatter: `true` for every agent, or a list of agent names, among the Markdown files its `pi.prompts` selects (or
  * `prompts/` by convention). There is no separate manifest field. Pi turns
  * every template into a `/name` command, marked or not; this module reads the
  * marked ones so other surfaces (a web chat's chips, `introspection check`,
@@ -40,12 +40,11 @@ export interface RecipeSuggestionOptions {
 
 /**
  * The agents a `suggest` value names: `null` for `true` (every agent), the
- * names for a non-empty string or a non-empty list of them, and `undefined`
- * (not a suggestion) for anything else.
+ * names for a non-empty list of non-empty strings, and `undefined` (not a
+ * suggestion) for anything else.
  */
 function suggestAgents(value: unknown): string[] | null | undefined {
   if (value === true) return null;
-  if (typeof value === "string") return value ? [value] : undefined;
   if (
     Array.isArray(value) &&
     value.length > 0 &&

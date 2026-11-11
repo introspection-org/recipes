@@ -23,7 +23,8 @@ and missing `content` means the host supplied file identity without source
 text.
 
 `list_recipe_suggestions(snapshot)` returns the same snapshot's suggestions:
-the prompt templates marked `suggest`, in file order, as `Suggestion` values
+the prompt templates marked `suggest` (`true`, or a list of agent names), in
+file order, as `Suggestion` values
 (`name`, `description`, `argument_hint`, `text`, `placeholders` and `agents`,
 which is `None` when every agent offers it). Pass `agent="<name>"` for only
 the suggestions that agent offers. It

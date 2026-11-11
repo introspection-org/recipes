@@ -1,6 +1,6 @@
 //! Prompt templates marked `suggest` are a Recipe's suggestions: hosts show
 //! them in a first-run picker or as chips, for every agent (`true`) or the
-//! agents `suggest` names. Both read the template's
+//! agents a `suggest` list names. Both read the template's
 //! `description`, and a host fills a fixed set of `{{name}}` placeholders, so
 //! warn when either would show up wrong.
 
@@ -85,7 +85,7 @@ impl Suggestion {
 }
 
 /// What a `suggest` value marks: every agent for `true`, the names for a
-/// non-empty string or a non-empty list of them, and nothing otherwise.
+/// non-empty list of non-empty strings, and nothing otherwise.
 enum Mark {
     None,
     Every,
@@ -97,7 +97,6 @@ fn mark(value: Option<&JsonValue>) -> Mark {
     match value {
         None | Some(JsonValue::Bool(false)) => Mark::None,
         Some(JsonValue::Bool(true)) => Mark::Every,
-        Some(JsonValue::String(name)) if !name.is_empty() => Mark::Agents(vec![name.clone()]),
         Some(JsonValue::Array(items)) if !items.is_empty() => items
             .iter()
             .map(|item| {
@@ -206,7 +205,8 @@ pub(crate) fn read_suggestions(paths: &[String], ctx: &CheckContext) -> Vec<Sugg
 }
 
 /// Templates marked `suggest` are suggestions. Check what hosts show for
-/// those, that `suggest` is `true` or agent names wherever it appears, and
+/// those, that `suggest` is `true` or a list of agent names wherever it
+/// appears, and
 /// that each name is one of `agents`, the Recipe's declared agent names.
 pub(crate) fn validate_prompt_templates(
     paths: &[String],
@@ -230,7 +230,7 @@ pub(crate) fn validate_prompt_templates(
                         format!(
                             "Prompt template '{file}' is suggested for agent '{name}', which the Recipe does not declare"
                         ),
-                        Some("name an agent from agents/, or set `suggest: true` to offer it from every agent"),
+                        Some("list agents from agents/ by name, or set `suggest: true` to offer it from every agent"),
                     );
                 }
             }
@@ -239,9 +239,9 @@ pub(crate) fn validate_prompt_templates(
                     "prompts.suggest_invalid",
                     file.clone(),
                     format!(
-                        "Prompt template '{file}' has a `suggest` value that is not `true`, an agent name or a list of agent names"
+                        "Prompt template '{file}' has a `suggest` value that is not `true` or a list of agent names"
                     ),
-                    Some("set `suggest: true` for every agent, or name the agents that offer it; remove it otherwise"),
+                    Some("set `suggest: true` for every agent, or list the agents that offer it, such as `suggest: [cli]`; remove it otherwise"),
                 );
                 continue;
             }
@@ -388,7 +388,21 @@ mod tests {
             ),
             (
                 "prompts/blank.md",
-                "---\nsuggest: \"\"\ndescription: Go\n---\nGo.",
+                "---\nsuggest: [agent, \"\"]\ndescription: Go\n---\nGo.",
+            ),
+            // A plain string is not a list, even an agent's name.
+            (
+                "prompts/name.md",
+                "---\nsuggest: agent\ndescription: Go\n---\nGo.",
+            ),
+            // YAML 1.1 booleans are strings to Pi, which reads YAML 1.2.
+            (
+                "prompts/on.md",
+                "---\nsuggest: on\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/quoted.md",
+                "---\nsuggest: \"true\"\ndescription: Go\n---\nGo.",
             ),
             (
                 "prompts/good.md",
@@ -406,7 +420,10 @@ mod tests {
                 "prompts/blank.md",
                 "prompts/empty.md",
                 "prompts/mixed.md",
-                "prompts/one.md"
+                "prompts/name.md",
+                "prompts/on.md",
+                "prompts/one.md",
+                "prompts/quoted.md"
             ]
         );
         assert!(codes(&report, "prompts.suggest_agent_unknown").is_empty());
@@ -428,31 +445,17 @@ mod tests {
             ),
             (
                 "prompts/file.md",
-                "---\nsuggest: review\ndescription: Go\n---\nGo.",
+                "---\nsuggest: [review]\ndescription: Go\n---\nGo.",
             ),
             (
                 "prompts/list.md",
                 "---\nsuggest: [agent, drafter]\ndescription: Go\n---\nGo.",
             ),
-            // YAML 1.1 booleans are strings to Pi, which reads YAML 1.2.
-            (
-                "prompts/on.md",
-                "---\nsuggest: on\ndescription: Go\n---\nGo.",
-            ),
-            (
-                "prompts/quoted.md",
-                "---\nsuggest: \"true\"\ndescription: Go\n---\nGo.",
-            ),
         ]);
         assert!(report.valid, "{:?}", report.diagnostics);
         assert_eq!(
             codes(&report, "prompts.suggest_agent_unknown"),
-            vec![
-                "prompts/file.md",
-                "prompts/list.md",
-                "prompts/on.md",
-                "prompts/quoted.md"
-            ]
+            vec!["prompts/file.md", "prompts/list.md"]
         );
         assert!(codes(&report, "prompts.suggest_invalid").is_empty());
     }
@@ -463,7 +466,7 @@ mod tests {
             ("package.json", PACKAGE),
             ("agents/agent.yaml", AGENT),
             ("prompts/all.md", "---\nsuggest: true\n---\nAll."),
-            ("prompts/one.md", "---\nsuggest: reviewer\n---\nOne."),
+            ("prompts/one.md", "---\nsuggest: [reviewer]\n---\nOne."),
         ]);
         let offered = |agent: &str| {
             listed

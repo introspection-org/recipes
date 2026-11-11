@@ -362,10 +362,11 @@ Redline ${1:-the attached contract} against the playbook. Today is {{today}}.
 `suggest` also says which agents offer the template:
 
 - `suggest: true` offers it from every agent.
-- `suggest: reviewer` offers it only from the agent named `reviewer`.
+- `suggest: [reviewer]` offers it only from the agent named `reviewer`.
 - `suggest: [agent, reviewer]` offers it from each agent listed.
 
-A name is an agent's `name`, such as `agent` for the default agent.
+A name is an agent's `name`, such as `agent` for the default agent. Agents are
+always a list, even one: `suggest: reviewer` is not a mark.
 `introspection check` warns (`prompts.suggest_agent_unknown`) when a name
 matches none of the Recipe's agents. A host shows the suggestions of the
 agent a session runs; when that agent offers none, it shows its own defaults.
@@ -399,14 +400,15 @@ agent a session runs; when that agent offers none, it shows its own defaults.
   it validates a version, reads the same list with `list_recipe_suggestions`
   from `introspection-recipe-check` (Rust or Python).
 - **YAML 1.2.** Only `suggest: true` marks a template for every agent. As in
-  Pi, `yes`, `on` and `"true"` are not booleans: they read as agent names, so
-  `introspection check` warns that no such agent exists. `false`, an empty
-  string or list, or a list with anything but names is not a mark.
+  Pi, `yes`, `on` and `"true"` are not booleans, so they don't count. Nor do
+  `false`, a plain string, an empty list, or a list with anything but
+  non-empty names.
 - **Checks.** For a marked template, the checker warns when it has no
   `description` (`prompts.description_missing`), when the description is over
   ten words (`prompts.description_long`), or when it uses a placeholder outside
-  the list above (`prompts.placeholder_unknown`). A `suggest` value that is not
-  a boolean is also a warning (`prompts.suggest_invalid`).
+  the list above (`prompts.placeholder_unknown`). A `suggest` value that is
+  neither a boolean nor a list of agent names is also a warning
+  (`prompts.suggest_invalid`).
 
 Recipe-owned Pi extensions are declared by `pi.extensions`. The deterministically
 resolved set forms the package's executable trust boundary and loads for every
