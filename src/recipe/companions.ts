@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,11 +29,10 @@ const RECIPES_PACKAGE = "@introspection-ai/recipes";
 /**
  * This package's own `package.json`: `src/recipe` and `dist/recipe` both sit
  * two levels below it. Only finding the companions installed beside Recipes
- * reads it; a host that bundles Recipes passes `hostDir` instead.
+ * reads it. In a host that bundles Recipes this file is the host's code, so
+ * the installed package is found from there instead (`hostRecipesDirFrom`).
  */
-const recipesManifestPath = fileURLToPath(
-  new URL("../../package.json", import.meta.url),
-);
+const recipesModuleDir = dirname(fileURLToPath(import.meta.url));
 
 /** The version of the running `@introspection-ai/recipes`. */
 export function recipesVersion(): string {
@@ -68,7 +67,28 @@ export function isHostPeerPackage(name: string): boolean {
 
 /** Where the running `@introspection-ai/recipes` is installed; companion packages resolve from here. */
 function hostRecipesDir(): string {
-  return realpathSync(dirname(recipesManifestPath));
+  const dir = hostRecipesDirFrom(recipesModuleDir);
+  if (!dir)
+    throw new Error(
+      `${RECIPES_PACKAGE} is not installed beside ${recipesModuleDir}, so its companion packages cannot be found`,
+    );
+  return dir;
+}
+
+/**
+ * The installed Recipes for code in `moduleDir`: this package itself when the
+ * code is its own `src` or `dist`, else the copy a bundling host depends on,
+ * where an installer puts the companions beside it.
+ */
+export function hostRecipesDirFrom(moduleDir: string): string | undefined {
+  const own = join(moduleDir, "..", "..", "package.json");
+  if (existsSync(own)) {
+    const manifest = JSON.parse(readFileSync(own, "utf8")) as {
+      name?: unknown;
+    };
+    if (manifest.name === RECIPES_PACKAGE) return realpathSync(dirname(own));
+  }
+  return resolveDependencyDir(moduleDir, RECIPES_PACKAGE);
 }
 
 /** A channel or document format package, found for one Recipe. */

@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +17,11 @@ import { describe, expect, it } from "vitest";
 import { LEGAL_REDLINING_EN_US } from "../packages/documents/docx/src/index.js";
 import { loadRecipeConnectors } from "../src/connector-tools.js";
 import { loadRecipeDocuments } from "../src/documents/index.js";
-import { companionPackages, recipesVersion } from "../src/recipe/companions.js";
+import {
+  companionPackages,
+  hostRecipesDirFrom,
+  recipesVersion,
+} from "../src/recipe/companions.js";
 import { readPiPackageManifest } from "../src/recipe/package.js";
 import { recipePythonDeclarations } from "../src/recipe/python.js";
 import { pythonProject } from "./helpers/fake-uv.js";
@@ -482,6 +487,45 @@ describe("Recipes' optionalDependencies", () => {
         semver.satisfies(pkg.version, range),
         `${pkg.name}@${pkg.version} ${range}`,
       ).toBe(true);
+    }
+  });
+});
+
+describe("the Recipes a bundling host runs", () => {
+  it("is its own package when the code is Recipes' src or dist", () => {
+    expect(hostRecipesDirFrom(resolve("src/recipe"))).toBe(
+      realpathSync(resolve(".")),
+    );
+  });
+
+  it("is the copy the host depends on when Recipes is bundled into the host", () => {
+    const root = mkdtempSync(join(tmpdir(), "recipes-bundled-host-"));
+    try {
+      const host = join(root, "usr", "lib", "runtime");
+      const installed = join(
+        root,
+        "usr",
+        "lib",
+        "runtime",
+        "node_modules",
+        "@introspection-ai",
+        "recipes",
+      );
+      mkdirSync(installed, { recursive: true });
+      writeFileSync(
+        join(root, "usr", "package.json"),
+        JSON.stringify({ name: "not-recipes" }),
+      );
+      writeFileSync(
+        join(installed, "package.json"),
+        JSON.stringify({ name: "@introspection-ai/recipes" }),
+      );
+
+      expect(hostRecipesDirFrom(host)).toBe(realpathSync(installed));
+      mkdirSync(join(root, "elsewhere"));
+      expect(hostRecipesDirFrom(join(root, "elsewhere"))).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
