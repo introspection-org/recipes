@@ -330,7 +330,9 @@ mcporter always uses the standalone daemon.
 In tools mode, each Pi session—including each delegated child session—gets its
 own registered tool catalog and active set. The MCP daemon and mcporter config
 remain private to those wrappers; shell tools do not receive an `mcp` command,
-`MCPORTER_CONFIG`, or MCP session path.
+`MCPORTER_CONFIG`, or MCP session path. On pi-mcp a tool call goes straight to the server
+the session's process hosts, with the same authorization, timeout and
+cancellation, rather than through its socket.
 
 In codemode, Pi's MCP support connects each server in the background when the
 session starts and keeps no state outside the session: no `mcp.json` is read

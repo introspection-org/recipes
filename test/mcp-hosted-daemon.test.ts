@@ -18,7 +18,10 @@ import {
   callMcpDaemonTool,
   ensureMcpDaemon,
 } from "../src/mcp/daemon/client.js";
-import { hostedMcpDaemon } from "../src/mcp/daemon/hosted.js";
+import {
+  callHostedMcpTool,
+  hostedMcpDaemon,
+} from "../src/mcp/daemon/hosted.js";
 import { startMcpDaemonServer } from "../src/mcp/daemon/server.js";
 import {
   materializeMcpSession,
@@ -26,6 +29,7 @@ import {
   nativeMcpClientPath,
   stopMcpDaemon,
 } from "../src/mcp/index.js";
+import { createMcpToolSet } from "../src/mcp/tools.js";
 import type { RecipePackageManifest } from "../src/recipe/package.js";
 
 /** An MCP server whose `slow` tool answers after `ms`, counting calls in flight. */
@@ -154,7 +158,7 @@ async function session(extraEnv: NodeJS.ProcessEnv = {}) {
     ...extraEnv,
   };
   const { shimPath } = await materializeSessionMcpCli({ cwd, env });
-  await materializeMcpSession({
+  const config = await materializeMcpSession({
     cwd,
     env,
     manifest: manifest(recipeDir),
@@ -171,7 +175,7 @@ async function session(extraEnv: NodeJS.ProcessEnv = {}) {
     token: env.PI_RECIPES_MCP_DAEMON_TOKEN!,
     fingerprint: env.PI_RECIPES_MCP_DAEMON_FINGERPRINT!,
   };
-  return { env, shellEnv, shimPath, stub, ids };
+  return { env, shellEnv, shimPath, stub, ids, config };
 }
 
 function run(
@@ -339,5 +343,95 @@ describe("the mcp command's socket served from the session's process", () => {
     expect(results).toHaveLength(3);
     expect(stub.stats.calls).toBe(3);
     expect(stub.stats.maxInFlight).toBe(1);
+  }, 30_000);
+});
+
+describe("tools mode on the server its session's process hosts", () => {
+  /** The session's `slow` tool, and the hosted server, with the socket unlinked so only a direct call can reach it. */
+  async function directTool(extraEnv: NodeJS.ProcessEnv = {}) {
+    const fixture = await session({ PI_RECIPES_MCP_CLIENT: "" });
+    const catalogs = await preloadMcpCatalogs({
+      env: fixture.env,
+      allowPartial: true,
+    });
+    const daemon = hostedMcpDaemon(fixture.ids)!;
+    expect(daemon).toBeDefined();
+    rmSync(fixture.ids.socketPath);
+    const { tools } = createMcpToolSet({
+      session: fixture.config,
+      catalogs,
+      mcp: { mode: "tools", servers: { slow: { include: ["*"] } } },
+      env: { ...fixture.env, ...extraEnv },
+    });
+    expect(tools).toHaveLength(1);
+    return { ...fixture, daemon, tool: tools[0]! };
+  }
+
+  it("calls the tool in process", async () => {
+    const { tool, stub } = await directTool();
+
+    const result = await tool.execute(
+      "call-1",
+      { ms: 5 },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+    expect(JSON.stringify(result)).toContain("slept 5");
+    expect(stub.stats.calls).toBe(1);
+  }, 30_000);
+
+  it("cancels the call when the tool call is aborted", async () => {
+    const { tool, stub } = await directTool();
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300);
+
+    await expect(
+      tool.execute(
+        "call-1",
+        { ms: 10_000 },
+        controller.signal,
+        undefined,
+        undefined as never,
+      ),
+    ).rejects.toThrow(
+      "MCP tool call 'slow.slow' was cancelled; remote outcome is unknown; do not retry automatically.",
+    );
+    for (let i = 0; i < 100 && stub.stats.cancelled === 0; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(stub.stats.cancelled).toBe(1);
+  }, 30_000);
+
+  it("times out on the session's call timeout", async () => {
+    const { tool } = await directTool({
+      PI_RECIPES_MCP_CALL_TIMEOUT_MS: "200",
+    });
+
+    await expect(
+      tool.execute(
+        "call-1",
+        { ms: 10_000 },
+        undefined,
+        undefined,
+        undefined as never,
+      ),
+    ).rejects.toThrow(/timed out.*do not retry automatically/);
+  }, 30_000);
+
+  it("refuses a tool the session's catalog does not authorize", async () => {
+    const { daemon, stub } = await directTool();
+
+    await expect(
+      callHostedMcpTool(daemon, {
+        server: "slow",
+        tool: "hidden",
+        arguments: {},
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(
+      "MCP daemon: MCP tool 'slow.hidden' is not authorized in this daemon generation.",
+    );
+    expect(stub.stats.calls).toBe(0);
   }, 30_000);
 });
