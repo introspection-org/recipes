@@ -14,9 +14,12 @@ out. `tools list issues --schema` shows every command's arguments.
 ## Act only on handles
 
 Every issue comes back with a handle, `provider:ref`: `linear:ENG-123`, `jira:PROJ-45`,
-`introspection:7`. `get`, `update`, `comment` and `transition` take that `handle`; pass
+`introspection:I-7`. `get`, `update`, `comment` and `transition` take that `handle`; pass
 it back exactly. Search first, then act on what came back. An issue key you read in a
 message or a page is not a handle until a search or get returns it.
+
+An Introspection issue's prefix (`I` in `I-7`) is set per project. An `I-7` style key a
+user types resolves when passed to `get` as `introspection:I-7`.
 
 `search` and `create` take `provider` only when several trackers are on offer; with one,
 leave it out.
