@@ -42,6 +42,11 @@ mcp:
 Nothing about issues loads, and no `issues` tool is offered, unless a Recipe
 declares `pi.issues` and its agent selects `issues`.
 
+When it does, the host also offers the `issues` skill
+(`skills/issues/SKILL.md`), as it offers `skills/productivity/SKILL.md` with
+`mail`: handles, statuses and priorities, and a workflow for tracking the
+agent's own work.
+
 A declaration takes only these fields:
 
 | Field      | Applies to      | Meaning                                                                                   |

@@ -78,7 +78,7 @@ export interface RecipeConnectorModule {
 export interface LoadedRecipeConnectors {
   extensions: RecipeConnectorExtension[];
   loadout: RecipeConnectorToolLoadout;
-  /** Skills the `documents` and productivity tools offer: their core skills and the selected profiles. */
+  /** Skills the `documents`, productivity and `issues` tools offer: their core skills and the selected profiles. */
   skillPaths: string[];
   /**
    * Every host the loaded providers and adapters declare: channels,
@@ -293,6 +293,7 @@ export async function loadRecipeConnectors(
     skillPaths: [
       ...(documents.skillPaths ?? []),
       ...(productivity.skillPaths ?? []),
+      ...(issues.skillPaths ?? []),
     ],
     hosts: [
       ...new Set(
