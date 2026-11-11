@@ -46,7 +46,7 @@ async function sendCancel(requestId: string): Promise<void> {
 }
 
 async function main(args = process.argv.slice(2)): Promise<number> {
-  await ensureMcpDaemon();
+  await ensureMcpDaemon(process.env, { standalone: true });
   if (args.length === 1 && args[0] === "--start-daemon") return 0;
   const { token, fingerprint } = mcpDaemonEnvironment();
   const id = randomUUID();

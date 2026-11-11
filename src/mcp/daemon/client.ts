@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { open, readFile, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
+import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,8 @@ import {
   type McpDaemonRequest,
 } from "./protocol.js";
 import { mcpTraceContextFromEnv } from "../trace-context.js";
+import { mcpRuntimeKind } from "../pi-runtime.js";
+import { hostedMcpDaemon, hostMcpDaemon } from "./hosted.js";
 
 const START_TIMEOUT_MS = 20_000;
 const MAX_DAEMON_FRAME_BYTES = 10 * 1024 * 1024;
@@ -100,11 +103,28 @@ async function ping(env: NodeJS.ProcessEnv): Promise<boolean> {
   return ready;
 }
 
+/**
+ * Makes sure a daemon answers on the session's socket. A long-lived session
+ * host serves it from its own process when the session runs on pi-mcp;
+ * `standalone` is for a short-lived caller, such as the `mcp` command's
+ * fallback, whose process ends before the session does, and a session on
+ * mcporter always gets the standalone daemon.
+ */
 export async function ensureMcpDaemon(
   env: NodeJS.ProcessEnv = process.env,
+  options: { standalone?: boolean } = {},
 ): Promise<void> {
+  const session = mcpDaemonEnvironment(env);
+  if (!options.standalone && hostedMcpDaemon(session)) return;
   if (await ping(env)) return;
-  const { socketPath } = mcpDaemonEnvironment(env);
+  const { socketPath } = session;
+  const serverEnv = { ...process.env, ...env };
+  const inProcess =
+    !options.standalone &&
+    mcpRuntimeKind(serverEnv.MCPORTER_CONFIG, serverEnv) === "pi-mcp";
+  if (process.platform !== "win32") {
+    await mkdir(dirname(socketPath), { recursive: true, mode: 0o700 });
+  }
   const lockPath = `${socketPath}.lock`;
   let lock: Awaited<ReturnType<typeof open>> | undefined;
   try {
@@ -118,7 +138,7 @@ export async function ensureMcpDaemon(
       } catch (ownerError) {
         if ((ownerError as NodeJS.ErrnoException).code === "ESRCH") {
           await rm(lockPath, { force: true });
-          return ensureMcpDaemon(env);
+          return ensureMcpDaemon(env, options);
         }
       }
     }
@@ -127,18 +147,22 @@ export async function ensureMcpDaemon(
   if (lock) {
     try {
       await lock.writeFile(String(process.pid));
-      if (process.platform !== "win32") await rm(socketPath, { force: true });
-      const child = spawn(process.execPath, [daemonPath()], {
-        detached: true,
-        stdio: "ignore",
-        env: { ...process.env, ...env },
-        cwd: env[MCP_SESSION_ROOT_ENV] || process.cwd(),
-      });
-      await new Promise<void>((resolve, reject) => {
-        child.once("spawn", resolve);
-        child.once("error", reject);
-      });
-      child.unref();
+      if (inProcess) {
+        await hostMcpDaemon(session, serverEnv);
+      } else {
+        if (process.platform !== "win32") await rm(socketPath, { force: true });
+        const child = spawn(process.execPath, [daemonPath()], {
+          detached: true,
+          stdio: "ignore",
+          env: serverEnv,
+          cwd: env[MCP_SESSION_ROOT_ENV] || process.cwd(),
+        });
+        await new Promise<void>((resolve, reject) => {
+          child.once("spawn", resolve);
+          child.once("error", reject);
+        });
+        child.unref();
+      }
     } catch (error) {
       await rm(lockPath, { force: true });
       throw error;

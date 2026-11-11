@@ -20,13 +20,14 @@ it("starts MCP from a relocated host bundle and its generated session shim", asy
         resolveDir: root,
         contents: `
           import assert from "node:assert/strict";
-          import { spawnSync } from "node:child_process";
+          import { execFile } from "node:child_process";
           import { existsSync, mkdirSync, writeFileSync } from "node:fs";
           import { dirname, join } from "node:path";
           import { fileURLToPath } from "node:url";
           import { materializeSessionMcpCli, mcpClientEntrypointPath,
             mcpCliEntrypointPath, stopMcpDaemon } from "./src/mcp/index.ts";
           import { daemonPath, ensureMcpDaemon } from "./src/mcp/daemon/client.ts";
+          import { hostedMcpDaemon } from "./src/mcp/daemon/hosted.ts";
           const dist = dirname(fileURLToPath(import.meta.resolve("@introspection-ai/recipes")));
           assert.equal(mcpClientEntrypointPath(), join(dist, "mcp/client-entry.js"));
           assert.equal(mcpCliEntrypointPath(), join(dist, "mcp/cli/index.js"));
@@ -44,26 +45,40 @@ it("starts MCP from a relocated host bundle and its generated session shim", asy
           writeFileSync(env.MCPORTER_CONFIG, JSON.stringify({ imports: [], mcpServers: {} }));
           writeFileSync(env.PI_RECIPES_MCP_SESSION, JSON.stringify({ version: 1, servers: [] }));
           const { shimPath } = await materializeSessionMcpCli({ cwd, env });
+          const session = () => ({ socketPath: env.PI_RECIPES_MCP_DAEMON_SOCKET,
+            token: env.PI_RECIPES_MCP_DAEMON_TOKEN, fingerprint: env.PI_RECIPES_MCP_DAEMON_FINGERPRINT });
+          // Asynchronous, so a server this process hosts can answer the shim.
           function run(args, runEnv = env) {
-            const result = spawnSync(shimPath, args, { cwd, env: runEnv, encoding: "utf8", timeout: 25000 });
-            assert.equal(result.status, 0, result.stderr + result.stdout);
-            return result.stdout + result.stderr;
+            return new Promise((resolve) => {
+              execFile(shimPath, args, { cwd, env: runEnv, encoding: "utf8", timeout: 25000 },
+                (error, stdout, stderr) => {
+                  assert.equal(error?.code ?? 0, 0, stderr + stdout);
+                  resolve(stdout + stderr);
+                });
+            });
           }
           try {
             // No socket exists: native client must invoke the JS supervisor.
-            assert.match(run(["--help"]), /mcp search/);
+            assert.match(await run(["--help"]), /mcp search/);
             assert.ok(existsSync(env.PI_RECIPES_MCP_DAEMON_SOCKET));
+            // The shim's fallback starts the standalone daemon, never one in this process.
+            assert.equal(hostedMcpDaemon(session()), undefined);
           } finally { await stopMcpDaemon({ ...env }); }
-          // Exercise the daemon resolver from the relocated bundle itself.
+          // On pi-mcp the relocated bundle serves the socket from its own
+          // process, and finds the run worker from the package rather than
+          // from itself; mcporter keeps the standalone daemon.
           env.PI_RECIPES_MCP_DAEMON_SOCKET = join(cwd, "bundled.sock");
           try {
             await ensureMcpDaemon(env);
-            assert.match(run(["--help"]), /mcp search/);
+            assert.equal(Boolean(hostedMcpDaemon(session())),
+              process.env.PI_RECIPES_MCP_CLIENT !== "mcporter");
+            assert.match(await run(["--help"]), /mcp search/);
             writeFileSync(join(cwd, "probe.js"), "console.log(42)");
-            assert.match(run(["run", "probe.js"]), /42/);
+            assert.match(await run(["run", "probe.js"]), /42/);
           } finally { await stopMcpDaemon({ ...env }); }
+          assert.ok(!existsSync(join(cwd, "bundled.sock")));
           // Shells without the daemon environment take the direct CLI path.
-          assert.match(run(["--help"], { ...env, PI_RECIPES_MCP_DAEMON_SOCKET: "" }), /mcp search/);
+          assert.match(await run(["--help"], { ...env, PI_RECIPES_MCP_DAEMON_SOCKET: "" }), /mcp search/);
         `,
       },
       outfile,
@@ -71,6 +86,8 @@ it("starts MCP from a relocated host bundle and its generated session shim", asy
       platform: "node",
       format: "esm",
       external: ["@introspection-ai/recipes"],
+      // jsonc-parser's UMD `main` hides its requires from esbuild.
+      mainFields: ["module", "main"],
       banner: {
         js: 'import { createRequire as __testCreateRequire } from "node:module"; const require = __testCreateRequire(import.meta.url);',
       },

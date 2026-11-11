@@ -1,3 +1,5 @@
+import { basename, join } from "node:path";
+
 import type { McpToolCatalogEntry } from "../index.js";
 
 export const MCP_DAEMON_SOCKET_ENV = "PI_RECIPES_MCP_DAEMON_SOCKET";
@@ -7,6 +9,18 @@ export const MCP_DAEMON_PARENT_PID_ENV = "PI_RECIPES_MCP_DAEMON_PARENT_PID";
 export const MCP_SESSION_ROOT_ENV = "PI_RECIPES_MCP_SESSION_ROOT";
 export const MCP_DAEMON_GENERATION_ENV = "PI_RECIPES_MCP_DAEMON_GENERATION";
 export const MCP_DAEMON_MAX_FRAME_BYTES = 10 * 1024 * 1024;
+
+const SOCKET_DIRECTORY = /^recipes-mcp-[0-9a-f]{20}$/;
+
+/** A session's socket, in a directory of its own that only the server's user can enter. */
+export function mcpDaemonSocketPath(tmp: string, key: string): string {
+  return join(tmp, `recipes-mcp-${key}`, "mcp.sock");
+}
+
+/** Whether `directory` is one {@link mcpDaemonSocketPath} made, which a server removes once its socket is gone. */
+export function isMcpDaemonSocketDirectory(directory: string): boolean {
+  return SOCKET_DIRECTORY.test(basename(directory));
+}
 
 export interface McpDaemonTraceContext {
   traceparent: string;

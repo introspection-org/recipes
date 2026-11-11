@@ -43,6 +43,24 @@ export function currentMcpCommandContext(): McpCommandContext | undefined {
   return storage.getStore();
 }
 
+const envStorage = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+
+/**
+ * The session environment an `mcp` command reads: the one its server was
+ * started with, which a server hosted in a session's process does not share
+ * with that process.
+ */
+export function mcpCommandEnv(): NodeJS.ProcessEnv {
+  return envStorage.getStore() ?? process.env;
+}
+
+export function runWithMcpCommandEnv<T>(
+  env: NodeJS.ProcessEnv,
+  task: () => T,
+): T {
+  return envStorage.run(env, task);
+}
+
 export function runWithMcpCommandContext<T>(
   context: McpCommandContext,
   task: () => Promise<T>,
@@ -50,25 +68,52 @@ export function runWithMcpCommandContext<T>(
   return storage.run(context, task);
 }
 
+let ioRoutingHolders = 0;
+let restoreIoRouting: (() => void) | undefined;
+
+/**
+ * Routes `process.stdout` and `process.stderr` writes made inside an `mcp`
+ * command to that command's streams. Holders share one patch, so servers
+ * hosted in one process can each install it, and releasing the last one
+ * restores the original writers unless something patched them since.
+ */
 export function installMcpCommandIoRouting(): () => void {
-  const stdoutWrite = process.stdout.write.bind(process.stdout);
-  const stderrWrite = process.stderr.write.bind(process.stderr);
+  if (ioRoutingHolders === 0) {
+    const stdoutWrite = process.stdout.write;
+    const stderrWrite = process.stderr.write;
+    const boundStdout = stdoutWrite.bind(process.stdout);
+    const boundStderr = stderrWrite.bind(process.stderr);
 
-  process.stdout.write = ((chunk: unknown, ...args: unknown[]) => {
-    const target = currentMcpCommandContext()?.stdout;
-    return target
-      ? target.write(chunk as never)
-      : stdoutWrite(chunk as never, ...(args as never[]));
-  }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: unknown, ...args: unknown[]) => {
-    const target = currentMcpCommandContext()?.stderr;
-    return target
-      ? target.write(chunk as never)
-      : stderrWrite(chunk as never, ...(args as never[]));
-  }) as typeof process.stderr.write;
-
+    const routedStdout = ((chunk: unknown, ...args: unknown[]) => {
+      const target = currentMcpCommandContext()?.stdout;
+      return target
+        ? target.write(chunk as never)
+        : boundStdout(chunk as never, ...(args as never[]));
+    }) as typeof process.stdout.write;
+    const routedStderr = ((chunk: unknown, ...args: unknown[]) => {
+      const target = currentMcpCommandContext()?.stderr;
+      return target
+        ? target.write(chunk as never)
+        : boundStderr(chunk as never, ...(args as never[]));
+    }) as typeof process.stderr.write;
+    process.stdout.write = routedStdout;
+    process.stderr.write = routedStderr;
+    restoreIoRouting = () => {
+      if (process.stdout.write === routedStdout)
+        process.stdout.write = stdoutWrite;
+      if (process.stderr.write === routedStderr)
+        process.stderr.write = stderrWrite;
+    };
+  }
+  ioRoutingHolders += 1;
+  let released = false;
   return () => {
-    process.stdout.write = stdoutWrite as typeof process.stdout.write;
-    process.stderr.write = stderrWrite as typeof process.stderr.write;
+    if (released) return;
+    released = true;
+    ioRoutingHolders -= 1;
+    if (ioRoutingHolders === 0) {
+      restoreIoRouting?.();
+      restoreIoRouting = undefined;
+    }
   };
 }

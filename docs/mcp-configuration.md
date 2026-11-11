@@ -110,8 +110,7 @@ neither field can authorize a tool excluded by `include`/`exclude`.
 Deferred tools remain authorized and discoverable. Recipes registers them with
 Pi's `deferred` exposure and, when at least one connector or MCP tool is
 deferred, activates Pi's `tool_search`. Calling it ranks the deferred tools by
-the words in their names, descriptions and input schemas (BM25, default limit
-8) and declares the best matches for the next model request. Pi records the
+the words in their names, descriptions and input schemas (BM25, default limit 8) and declares the best matches for the next model request. Pi records the
 change in the session, so loaded tools survive resume. It never grants access
 beyond the Recipe manifest and agent policy. Recipes also registers `mcp_search` as a
 compatibility alias when MCP tools are deferred.
@@ -320,6 +319,13 @@ retries reads after a transient failure, never sends a `tools/call` twice, and
 cancels a call on the server when the command is interrupted. See [MCP authentication](mcp-auth.md) for OAuth and
 hosted binding details, and [Recipes extension](pi-extension.md) for the
 full session contract.
+
+On pi-mcp, the Pi process serves the command's socket for the life of the
+session, in a directory only its user can enter, and closes it when the
+session ends. It runs up to 32 commands and calls at once and queues the rest.
+A shell with no session listening, such as a process that outlives its
+session, starts the same server as a standalone daemon, and a session on
+mcporter always uses the standalone daemon.
 
 In tools mode, each Pi session—including each delegated child session—gets its
 own registered tool catalog and active set. The MCP daemon and mcporter config
