@@ -175,7 +175,7 @@ async function session(extraEnv: NodeJS.ProcessEnv = {}) {
     token: env.PI_RECIPES_MCP_DAEMON_TOKEN!,
     fingerprint: env.PI_RECIPES_MCP_DAEMON_FINGERPRINT!,
   };
-  return { env, shellEnv, shimPath, stub, ids, config };
+  return { env, shellEnv, shimPath, stub, ids, config, cwd };
 }
 
 function run(
@@ -224,6 +224,20 @@ describe("the mcp command's socket served from the session's process", () => {
     const refused = await run(shimPath, ["call", "slow.hidden"], shellEnv);
     expect(refused.code).not.toBe(0);
     expect(stub.stats.calls).toBe(2);
+  }, 30_000);
+
+  it("reads an `mcp run` script from the session's workspace", async () => {
+    const { env, shellEnv, shimPath, ids, cwd } = await session({
+      PI_RECIPES_MCP_CLIENT: "",
+    });
+    await preloadMcpCatalogs({ env });
+    expect(hostedMcpDaemon(ids)).toBeDefined();
+    writeFileSync(join(cwd, "probe.js"), "console.log(42)");
+
+    const result = await run(shimPath, ["run", "probe.js"], shellEnv);
+    expect(result.stderr).toBe("");
+    expect(result).toMatchObject({ code: 0 });
+    expect(result.stdout).toContain("42");
   }, 30_000);
 
   it.runIf(nativeClient)(
@@ -343,6 +357,42 @@ describe("the mcp command's socket served from the session's process", () => {
     expect(results).toHaveLength(3);
     expect(stub.stats.calls).toBe(3);
     expect(stub.stats.maxInFlight).toBe(1);
+  }, 30_000);
+
+  it("cancels direct calls still queued when it closes", async () => {
+    const { env, stub } = await session({ PI_RECIPES_MCP_CLIENT: "" });
+    const socketPath = join(
+      mkdtempSync(join(tmpdir(), "recipes-hosted-socket-")),
+      "mcp.sock",
+    );
+    const server = await startMcpDaemonServer({
+      socketPath,
+      token: "token",
+      fingerprint: "fingerprint",
+      env: { ...process.env, ...env },
+      maxInFlight: 1,
+      unref: true,
+    });
+    cleanups.push(() =>
+      rmSync(dirname(socketPath), { recursive: true, force: true }),
+    );
+
+    const signal = new AbortController().signal;
+    const call = (ms: number) =>
+      server.callTool(
+        { server: "slow", tool: "slow", arguments: { ms }, timeoutMs: 5_000 },
+        signal,
+      );
+    const running = call(300).catch((error: Error) => error);
+    const queued = call(0).catch((error: Error) => error);
+    for (let i = 0; i < 100 && stub.stats.calls === 0; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await server.close();
+
+    expect(await queued).toBeInstanceOf(Error);
+    await running;
+    expect(stub.stats.calls).toBe(1);
   }, 30_000);
 });
 

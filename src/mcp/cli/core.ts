@@ -9,7 +9,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { stdin as input, stderr, stdout } from "node:process";
 import { inspect, parseArgs } from "node:util";
@@ -61,7 +61,10 @@ import {
   FORBIDDEN_DELEGATED_FLAGS,
   validateDelegatedMcpCommand,
 } from "./policy.js";
-import type { McpCatalogServer } from "../daemon/protocol.js";
+import {
+  MCP_SESSION_ROOT_ENV,
+  type McpCatalogServer,
+} from "../daemon/protocol.js";
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000;
@@ -1835,7 +1838,12 @@ async function runCode(args: string[]): Promise<number> {
     stderr.write("mcp run accepts at most one file path.\n");
     return 2;
   }
-  const code = file ? await readFile(file, "utf8") : await readStdin();
+  const code = file
+    ? await readFile(
+        resolve(mcpCommandEnv()[MCP_SESSION_ROOT_ENV] || process.cwd(), file),
+        "utf8",
+      )
+    : await readStdin();
   if (!code.trim()) {
     stderr.write(
       "mcp run: empty script. Pass a file path or pipe JavaScript on stdin (see `mcp run --help`).\n",

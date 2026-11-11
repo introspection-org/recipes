@@ -135,6 +135,7 @@ export async function startMcpDaemonServer(
   let catalogDemanded = false;
   let stopping: Promise<void> | undefined;
   const active = new Map<string, AbortController>();
+  let directCalls = 0;
   let resolveClosed!: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
@@ -355,7 +356,7 @@ export async function startMcpDaemonServer(
     try {
       release = await acquire(controller.signal).catch(() => undefined);
       await joinCatalogPreload();
-      if (controller.signal.aborted) {
+      if (controller.signal.aborted || stopping) {
         send(socket, { id: request.id, exitCode: 130 });
         return;
       }
@@ -400,6 +401,7 @@ export async function startMcpDaemonServer(
     });
     let dispatched = false;
     try {
+      if (stopping) throw new Error("MCP daemon: daemon_unavailable");
       const cachedCatalog = catalogPreloadResult?.find(
         (server) =>
           server.id === call.server &&
@@ -648,7 +650,19 @@ export async function startMcpDaemonServer(
       if (stopping) {
         return Promise.reject(new Error("MCP daemon: daemon_unavailable"));
       }
-      return runWithMcpCommandEnv(env, () => authorizedCall(call, signal));
+      // Registered like a socket request, so shutdown aborts it while queued.
+      const id = `direct:${(directCalls += 1)}`;
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+      active.set(id, controller);
+      return runWithMcpCommandEnv(env, () =>
+        authorizedCall(call, controller.signal),
+      ).finally(() => {
+        signal.removeEventListener("abort", abort);
+        active.delete(id);
+      });
     },
     close: shutdown,
   };
