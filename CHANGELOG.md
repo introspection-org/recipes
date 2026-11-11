@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.54.0](https://github.com/introspection-org/recipes/compare/v0.53.0...v0.54.0) (2026-11-11)
+
+
+### Features
+
+* **issues:** offer an issues skill with the issues tool ([#505](https://github.com/introspection-org/recipes/issues/505)) ([e2090c9](https://github.com/introspection-org/recipes/commit/e2090c99134496fa27f5331662cd6dd1c9908b71))
+* **mcp:** serve the mcp command's socket from the Pi process ([#504](https://github.com/introspection-org/recipes/issues/504)) ([f1850e8](https://github.com/introspection-org/recipes/commit/f1850e898910025ba7b861369f8cde3287da449e))
+* **open:** introspection_open shows an issue ([#510](https://github.com/introspection-org/recipes/issues/510)) ([0b933c4](https://github.com/introspection-org/recipes/commit/0b933c444fa49ab783a9e7bad8c32fbe8953232a))
+* **suggestions:** a prompt template can be suggested for specific agents ([#507](https://github.com/introspection-org/recipes/issues/507)) ([38227bc](https://github.com/introspection-org/recipes/commit/38227bc8d33e0973491cb6df40aa1443a9920626))
+
+
+### Bug Fixes
+
+* **recipes:** a host that bundles Recipes finds the companions installed beside it ([#509](https://github.com/introspection-org/recipes/issues/509)) ([2138fc8](https://github.com/introspection-org/recipes/commit/2138fc8f19c58c63cfad2cbdc2612b41d56ead03))
+
 ## [0.53.0](https://github.com/introspection-org/recipes/compare/v0.52.1...v0.53.0) (2026-11-10)
 
 

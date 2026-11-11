@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/introspection-org/recipes/compare/recipe-issues-v0.2.0...recipe-issues-v0.3.0) (2026-11-11)
+
+
+### Features
+
+* **issues:** offer an issues skill with the issues tool ([#505](https://github.com/introspection-org/recipes/issues/505)) ([e2090c9](https://github.com/introspection-org/recipes/commit/e2090c99134496fa27f5331662cd6dd1c9908b71))
+
 ## [0.2.0](https://github.com/introspection-org/recipes/compare/recipe-issues-v0.1.0...recipe-issues-v0.2.0) (2026-11-10)
 
 
