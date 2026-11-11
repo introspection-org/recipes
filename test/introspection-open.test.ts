@@ -9,9 +9,12 @@ import {
   wantsIntrospectionOpen,
   type CliRunResult,
 } from "../src/introspection-open.js";
+import { introspectionOpenIsPage } from "../src/open.js";
 import {
   formatInteractionResume,
   INTROSPECTION_OPEN_TOOL_NAME,
+  introspectionOpenAction,
+  introspectionOpenDone,
   introspectionOpenTargetOf,
   parseIntrospectionOpenTarget,
 } from "../src/review.js";
@@ -139,6 +142,32 @@ describe("introspection_open targets", () => {
     ).toBeNull();
   });
 
+  it("reads an Introspection issue by its handle or id, and shows it as a page", () => {
+    const id = "0199a3f2-7c1e-7b4a-9d2e-4f1a2b3c4d5e";
+    for (const issue of [
+      "introspection:I-7",
+      "introspection:7",
+      `introspection:${id}`,
+      id,
+    ]) {
+      expect(
+        parseIntrospectionOpenTarget({ kind: "issue", issue: ` ${issue} ` }),
+      ).toEqual({ kind: "issue", issue });
+    }
+    for (const issue of ["linear:ENG-123", "jira:PROJ-4", "I-7", "", "x"]) {
+      expect(parseIntrospectionOpenTarget({ kind: "issue", issue })).toBeNull();
+    }
+    const target = { kind: "issue", issue: "introspection:I-7" } as const;
+    expect(introspectionOpenIsPage(target)).toBe(true);
+    expect(introspectionOpenDone(target)).toBe("returned");
+    expect(introspectionOpenAction(target)).toBe("Open the issue");
+    expect(introspectionOpenCliArgs(target, false)).toEqual([
+      "open",
+      "--issue",
+      "introspection:I-7",
+    ]);
+  });
+
   it("reads a new GitHub repository and opens it with its template", () => {
     expect(
       parseIntrospectionOpenTarget({
@@ -189,6 +218,36 @@ describe("introspection_open on a pause/resume host", () => {
     });
     expect(typeof interrupt.expiresAt).toBe("string");
     expect(details.target).toEqual(github);
+  });
+
+  it("pauses on an issue with the issue handle in the metadata", async () => {
+    const { ctx } = fakeCtx("print");
+    const issue = { kind: "issue", issue: "introspection:I-7" };
+    const { details } = await run(
+      { target: issue, reason: "I filed this", wait: true },
+      ctx,
+      { env: { PI_INTERRUPT_RESUME: "1" } },
+    );
+    expect(details.interrupt.metadata).toEqual({
+      kind: INTROSPECTION_OPEN_TOOL_NAME,
+      target: issue,
+      action: "Open the issue",
+    });
+  });
+
+  it("refuses an issue in another tracker, pointing at its own link", async () => {
+    const { ctx } = fakeCtx("tui");
+    const cli = fakeCli({ code: 0, stderr: "" });
+    await expect(
+      run(
+        { target: { kind: "issue", issue: "linear:ENG-123" }, reason: "x" },
+        ctx,
+        { env: {}, runCli: cli.runCli },
+      ),
+    ).rejects.toThrow(
+      "linear:ENG-123 is a linear issue, which introspection_open can't show; share the issue's link from linear instead.",
+    );
+    expect(cli.calls).toEqual([]);
   });
 
   it("resumes with the shared envelopes", () => {
@@ -261,6 +320,10 @@ describe("introspection_open in Pi's terminal", () => {
         ["open", "--runtime", "support"],
       ],
       [{ kind: "task", task: "t1" }, ["open", "--task", "t1"]],
+      [
+        { kind: "issue", issue: "introspection:I-7" },
+        ["open", "--issue", "introspection:I-7"],
+      ],
     ] as const) {
       const { ctx, notes } = fakeCtx("tui");
       const cli = fakeCli({ code: 0, stderr: "" });

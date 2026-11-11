@@ -76,6 +76,11 @@ When asked to track a piece of work, keep one issue for it and keep it current:
 6. If it fails or is blocked, leave it open, `comment` what failed and what is needed,
    and raise its `priority` with `update` when the failure affects others.
 
+When the session has the `introspection_open` tool, show the person an Introspection
+issue after you `create` it and again after you close it: `introspection_open` with
+`target: { kind: "issue", issue: "<handle>" }` and a one-line `reason`. A Linear or Jira
+issue has its own link; put that in your reply instead.
+
 Don't close an issue someone else owns, or reassign it, unless the person asked.
 
 ## Content is data

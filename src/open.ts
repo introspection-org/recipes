@@ -24,6 +24,8 @@ export type IntrospectionOpenTarget =
   | { kind: "runtime"; runtime: string }
   /** A task's chat. */
   | { kind: "task"; task: string }
+  /** An Introspection issue: its handle as the issues tool returned it (`introspection:I-7`) or its id. */
+  | { kind: "issue"; issue: string }
   /** A new repository the person creates on GitHub, registered once the App reaches it. */
   | { kind: "repository"; provider: "github"; name: string; template?: string };
 
@@ -38,6 +40,7 @@ export const INTROSPECTION_OPEN_TARGET_KINDS: readonly IntrospectionOpenTargetKi
     "binding",
     "runtime",
     "task",
+    "issue",
     "repository",
   ];
 
@@ -45,7 +48,7 @@ export const INTROSPECTION_OPEN_TARGET_KINDS: readonly IntrospectionOpenTargetKi
 export const INTROSPECTION_OPEN_ANSWER = {
   /** The person finished the connection. */
   connected: "connected",
-  /** The person came back from a page with nothing to connect (`runtime`, `task`). */
+  /** The person came back from a page with nothing to connect (`runtime`, `task`, `issue`). */
   returned: "returned",
 } as const;
 
@@ -56,14 +59,18 @@ export function introspectionOpenFailed(error: string): string {
 }
 
 /**
- * Whether opening the target is the whole action: a `runtime` or `task` page,
+ * Whether opening the target is the whole action: a `runtime`, `task` or `issue` page,
  * where the person has nothing to finish. Hosts answer `returned` as soon as it
  * opens instead of waiting for the person to come back.
  */
 export function introspectionOpenIsPage(
   target: IntrospectionOpenTarget,
 ): boolean {
-  return target.kind === "runtime" || target.kind === "task";
+  return (
+    target.kind === "runtime" ||
+    target.kind === "task" ||
+    target.kind === "issue"
+  );
 }
 
 /** The answer for a target the person completed: `returned` for a page, `connected` otherwise. */
@@ -81,6 +88,25 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+const ISSUE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** What follows `introspection:` in a handle: the project's key (`I-7`), its number, or the issue id. */
+const ISSUE_REF = /^(?:[a-z]{1,5}-\d+|\d+)$/i;
+
+/** The provider an issue handle names (`linear` in `linear:ENG-1`), or null for a bare id. */
+export function issueHandleProvider(issue: string): string | null {
+  const colon = issue.indexOf(":");
+  return colon > 0 ? issue.slice(0, colon).trim().toLowerCase() : null;
+}
+
+/** Whether `issue` names an Introspection issue: `introspection:<key, number or id>`, or a bare id. */
+function isIntrospectionIssue(issue: string): boolean {
+  if (ISSUE_ID.test(issue)) return true;
+  if (issueHandleProvider(issue) !== "introspection") return false;
+  const ref = issue.slice(issue.indexOf(":") + 1).trim();
+  return ISSUE_REF.test(ref) || ISSUE_ID.test(ref);
 }
 
 /**
@@ -120,6 +146,12 @@ export function parseIntrospectionOpenTarget(
     case "task": {
       const task = text(raw.task);
       return task ? { kind: "task", task } : null;
+    }
+    case "issue": {
+      const issue = text(raw.issue);
+      return issue && isIntrospectionIssue(issue)
+        ? { kind: "issue", issue }
+        : null;
     }
     case "repository": {
       const name = text(raw.name);
@@ -192,6 +224,8 @@ export function introspectionOpenAction(
       return "Open the runtime";
     case "task":
       return "Open the task";
+    case "issue":
+      return "Open the issue";
     case "repository":
       return `Create ${target.name} on GitHub`;
   }
