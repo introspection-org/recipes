@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import type { RecipePackageIssues } from "../recipe/package.js";
@@ -17,6 +19,11 @@ import type { RecipeToolExposure } from "../recipe/agent.js";
 
 /** The package that serves the first-party issues providers, a companion of Recipes. */
 export const ISSUES_PROVIDERS_PACKAGE = "@introspection-ai/recipe-issues";
+
+/** The `issues` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
+export const ISSUES_SKILL = fileURLToPath(
+  new URL("../../skills/issues/SKILL.md", import.meta.url),
+);
 
 /** The issues family for `loadProviderModules`: every first-party id is in one bundle. */
 export const ISSUES_PROVIDER_FAMILY: ProviderFamily<RecipeIssuesProviderModule> =
@@ -87,6 +94,7 @@ function contractProblem(
 export interface LoadedRecipeIssues {
   extension?: { owner: string; factory: ExtensionFactory };
   toolNames: string[];
+  skillPaths?: string[];
   /** The hosts the loaded providers declare (`capabilities.hosts`), whether or not the agent selects the tool. */
   hosts?: readonly string[];
 }
@@ -152,6 +160,7 @@ export async function loadRecipeIssues(
   return {
     toolNames: [ISSUES_TOOL_NAME],
     hosts,
+    skillPaths: [ISSUES_SKILL],
     extension: {
       owner: "<issues>",
       factory: (pi) => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -10,6 +10,7 @@ import {
   formatIssuesResult,
   issuesParameters,
   issuesProviderDeclarations,
+  ISSUES_SKILL,
   loadRecipeIssues,
   registerIssuesTool,
   type IssuesMcpClient,
@@ -189,6 +190,8 @@ describe("registering the issues tool", () => {
       { recipeDir, env: {} },
     );
     expect(loaded.loadout.toolNames).toEqual(["issues"]);
+    expect(loaded.skillPaths).toEqual([ISSUES_SKILL]);
+    expect(readFileSync(ISSUES_SKILL, "utf8")).toMatch(/^---\nname: issues\n/);
     const pi = createMockExtensionAPI();
     for (const extension of loaded.extensions) extension.factory(pi);
     const tool = pi.tools.get("issues")!;

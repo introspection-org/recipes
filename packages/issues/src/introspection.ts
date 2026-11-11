@@ -22,6 +22,8 @@ export interface IntrospectionIssue {
   priority: IntrospectionPriority;
   status: IntrospectionStatus;
   display_index?: number | null;
+  /** The key the app shows, such as `I-7`; absent on a data plane that predates it. */
+  display_key?: string | null;
   tags: string[];
   /** Absent on a data plane whose issues have no assignee yet. */
   assignee_member_id?: string | null;
@@ -104,6 +106,9 @@ const FROM_CATEGORY: Record<IssueStatusCategory, IntrospectionStatus> = {
   cancelled: "cancelled",
 };
 const STATUSES: readonly string[] = ["open", "waiting", "closed", "cancelled"];
+/** A key the app shows, `<PREFIX>-<n>`; the prefix is per project and may be renamed. */
+const DISPLAY_KEY = /^[a-z]{1,5}-(\d+)$/i;
+const DISPLAY_INDEX = /^\d+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** How many issues a text search reads before matching, since `/v1/issues` has no text filter. */
 const TEXT_SEARCH_WINDOW = 200;
@@ -172,12 +177,24 @@ function sdkError(error: unknown, what: string): never {
   throw error;
 }
 
+function refOf(issue: IntrospectionIssue): string {
+  const key: unknown = issue.display_key;
+  if (typeof key === "string" && key.trim()) return key.trim();
+  if (issue.display_index !== undefined && issue.display_index !== null)
+    return `I-${issue.display_index}`;
+  return issue.id;
+}
+
+/** The display index a handle names, by its number, or undefined for any other form. */
+function displayIndexOf(ref: string): number | undefined {
+  const digits =
+    DISPLAY_KEY.exec(ref)?.[1] ?? (DISPLAY_INDEX.test(ref) ? ref : undefined);
+  return digits === undefined ? undefined : Number(digits);
+}
+
 function toIssue(issue: IntrospectionIssue): ProviderIssue {
   return {
-    ref:
-      issue.display_index !== undefined && issue.display_index !== null
-        ? String(issue.display_index)
-        : issue.id,
+    ref: refOf(issue),
     title: issue.title,
     description: issue.description,
     status: { name: issue.status, category: TO_CATEGORY[issue.status] },
@@ -278,11 +295,11 @@ export function createIntrospectionIssuesProvider(
           return client.issues
             .get(ref)
             .catch((error: unknown) => sdkError(error, "the issue"));
-        const index = Number(ref);
-        if (!Number.isInteger(index) || index < 0)
+        const index = displayIndexOf(ref);
+        if (index === undefined)
           throw new IssuesError(
             "invalid_request",
-            `'introspection:${ref}' is not an Introspection issue handle`,
+            `'introspection:${ref}' is not an Introspection issue handle; use introspection:I-7 (the project's issue key), introspection:7 or an issue id`,
           );
         const page = await Promise.resolve(
           client.issues.list({ display_index: index, limit: 1 }),

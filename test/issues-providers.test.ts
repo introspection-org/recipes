@@ -969,7 +969,7 @@ describe("introspection", () => {
     });
     expect(issues).toEqual([
       {
-        ref: "12",
+        ref: "I-12",
         title: "Flaky deploy",
         description: "It fails on Tuesdays",
         status: { name: "waiting", category: "in_progress" },
@@ -980,6 +980,50 @@ describe("introspection", () => {
         updated_at: "2026-11-02T10:00:00Z",
       },
     ]);
+  });
+
+  it("builds the handle from the display key, else I-<display index>, else the id", async () => {
+    const id = "0190c0de-0000-7000-8000-000000000002";
+    const fake = fakeIntrospection({
+      issues: [
+        introspectionIssue({ display_key: "ENG-12" }),
+        introspectionIssue({ display_index: 3 }),
+        introspectionIssue({ id, display_index: null, display_key: null }),
+      ],
+    });
+    const { issues } = await (await open(fake)).search!({}, {});
+    expect(issues.map((issue) => issue.ref)).toEqual(["ENG-12", "I-3", id]);
+  });
+
+  it("finds by any prefix's key, by number, or by id", async () => {
+    const id = "0190c0de-0000-7000-8000-000000000001";
+    const fake = fakeIntrospection({
+      issues: [introspectionIssue({ display_index: 7, display_key: "I-7" })],
+    });
+    const opened = await open(fake);
+    for (const ref of ["I-7", "i-7", "ENG-7", "7"]) {
+      fake.calls.length = 0;
+      const issue = await opened.transition!({ ref, status: "done" }, {});
+      expect(issue.status.category).toBe("done");
+      expect(fake.calls[0]).toEqual({
+        method: "issues.list",
+        args: [{ display_index: 7, limit: 1 }],
+      });
+    }
+    fake.calls.length = 0;
+    await opened.transition!({ ref: id, status: "done" }, {});
+    expect(fake.calls[0]).toEqual({ method: "issues.get", args: [id] });
+    fake.calls.length = 0;
+    for (const ref of ["I-", "TOOLONG-7", "I-7a", "-7", "seven"])
+      await expect(
+        opened.transition!({ ref, status: "done" }, {}),
+      ).rejects.toMatchObject({
+        issues: {
+          code: "invalid_request",
+          message: `'introspection:${ref}' is not an Introspection issue handle; use introspection:I-7 (the project's issue key), introspection:7 or an issue id`,
+        },
+      });
+    expect(fake.calls).toEqual([]);
   });
 
   it("matches text over the most recent issues", async () => {
@@ -995,7 +1039,7 @@ describe("introspection", () => {
     });
     const opened = await open(fake);
     const { issues } = await opened.search!({ query: "TUESDAY", limit: 5 }, {});
-    expect(issues.map((issue) => issue.ref)).toEqual(["12"]);
+    expect(issues.map((issue) => issue.ref)).toEqual(["I-12"]);
     expect(fake.calls[0]!.args[0]).toMatchObject({ limit: 200 });
   });
 
@@ -1011,10 +1055,10 @@ describe("introspection", () => {
     const opened = await open(fake);
     const mine = await opened.search!({ assignee: " Me " }, {});
     expect(mine.issues.map((issue) => [issue.ref, issue.assignee])).toEqual([
-      ["12", { id: MEMBER }],
+      ["I-12", { id: MEMBER }],
     ]);
     const theirs = await opened.search!({ assignee: other }, {});
-    expect(theirs.issues.map((issue) => issue.ref)).toEqual(["3"]);
+    expect(theirs.issues.map((issue) => issue.ref)).toEqual(["I-3"]);
     expect(fake.calls.map((call) => call.args[0])).toEqual([
       { limit: 20, relation: ["assignee"] },
       { limit: 20, relation: ["assignee"], member_id: other },
@@ -1072,7 +1116,7 @@ describe("introspection", () => {
     const fake = fakeIntrospection();
     const comment = await (
       await open(fake)
-    ).comment!({ ref: "12", body: "Looks **fixed**" }, {});
+    ).comment!({ ref: "I-12", body: "Looks **fixed**" }, {});
     expect(fake.calls.at(-1)).toEqual({
       method: "issues.comments.create",
       args: [
@@ -1096,9 +1140,12 @@ describe("introspection", () => {
       {},
     );
     expect(created.assignee).toEqual({ id: MEMBER });
-    const assigned = await opened.update!({ ref: "12", assignee: MEMBER }, {});
+    const assigned = await opened.update!(
+      { ref: "I-12", assignee: MEMBER },
+      {},
+    );
     expect(assigned.assignee).toEqual({ id: MEMBER });
-    const cleared = await opened.update!({ ref: "12", assignee: "None" }, {});
+    const cleared = await opened.update!({ ref: "I-12", assignee: "None" }, {});
     expect(cleared.assignee).toBeUndefined();
     expect(
       fake.calls
@@ -1130,7 +1177,7 @@ describe("introspection", () => {
         opened.create!({ title: "New", assignee }, {}),
       ).rejects.toMatchObject(refused(assignee));
       await expect(
-        opened.update!({ ref: "12", assignee }, {}),
+        opened.update!({ ref: "I-12", assignee }, {}),
       ).rejects.toMatchObject(refused(assignee));
     }
     await expect(
@@ -1146,16 +1193,16 @@ describe("introspection", () => {
       const fake = fakeIntrospection({ plane: "old" });
       const opened = await open(fake);
       const { issues } = await opened.search!({ status: "waiting" }, {});
-      expect(issues.map((issue) => issue.ref)).toEqual(["12"]);
+      expect(issues.map((issue) => issue.ref)).toEqual(["I-12"]);
       expect(issues[0]).not.toHaveProperty("assignee");
       const issue = await opened.get!({ ref: "12" }, {});
       expect(issue.comments).toEqual([]);
-      expect((await opened.create!({ title: "New" }, {})).ref).toBe("13");
+      expect((await opened.create!({ title: "New" }, {})).ref).toBe("I-13");
       expect(
-        (await opened.update!({ ref: "12", title: "Renamed" }, {})).title,
+        (await opened.update!({ ref: "I-12", title: "Renamed" }, {})).title,
       ).toBe("Renamed");
       expect(
-        (await opened.transition!({ ref: "12", status: "done" }, {})).status,
+        (await opened.transition!({ ref: "I-12", status: "done" }, {})).status,
       ).toEqual({ name: "closed", category: "done" });
     });
 
@@ -1174,7 +1221,7 @@ describe("introspection", () => {
     it("reports comment as not supported", async () => {
       const opened = await open(fakeIntrospection({ plane: "old" }));
       await expect(
-        opened.comment!({ ref: "12", body: "hi" }, {}),
+        opened.comment!({ ref: "I-12", body: "hi" }, {}),
       ).rejects.toMatchObject({
         issues: {
           code: "not_supported",
@@ -1187,7 +1234,7 @@ describe("introspection", () => {
   it("reports comment as not supported by an SDK release without it", async () => {
     const fake = fakeIntrospection({ sdk: "old" });
     await expect(
-      (await open(fake)).comment!({ ref: "12", body: "hi" }, {}),
+      (await open(fake)).comment!({ ref: "I-12", body: "hi" }, {}),
     ).rejects.toMatchObject({
       issues: {
         code: "not_supported",
@@ -1202,7 +1249,7 @@ describe("introspection", () => {
     expect(Object.keys(fake.client)).toEqual(["issues"]);
     const opened = await open(fake);
     await opened.get!({ ref: "12" }, {});
-    await opened.comment!({ ref: "12", body: "hi" }, {});
+    await opened.comment!({ ref: "I-12", body: "hi" }, {});
     expect(fake.calls.map((call) => call.method)).toEqual([
       "issues.list",
       "issues.get",
@@ -1218,10 +1265,10 @@ describe("introspection", () => {
       { title: "New", priority: "urgent", labels: ["x"] },
       {},
     );
-    expect(created.ref).toBe("13");
-    await opened.update!({ ref: "12", title: "Renamed", labels: [] }, {});
-    const moved = await opened.transition!({ ref: "12", status: "done" }, {});
-    await opened.transition!({ ref: "12", status: "Cancelled" }, {});
+    expect(created.ref).toBe("I-13");
+    await opened.update!({ ref: "I-12", title: "Renamed", labels: [] }, {});
+    const moved = await opened.transition!({ ref: "I-12", status: "done" }, {});
+    await opened.transition!({ ref: "I-12", status: "Cancelled" }, {});
     const writes = fake.calls.filter((call) => call.method !== "issues.list");
     expect(writes).toEqual([
       {
@@ -1254,12 +1301,12 @@ describe("introspection", () => {
     ]);
     expect(moved.status).toEqual({ name: "closed", category: "done" });
     await expect(
-      opened.transition!({ ref: "12", status: "blocked" }, {}),
+      opened.transition!({ ref: "I-12", status: "blocked" }, {}),
     ).rejects.toMatchObject({
       issues: { code: "invalid_request" },
     });
     await expect(
-      opened.update!({ ref: "12", priority: "none" }, {}),
+      opened.update!({ ref: "I-12", priority: "none" }, {}),
     ).rejects.toMatchObject({
       issues: { code: "invalid_request" },
     });
