@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.25.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.24.0...introspection-recipe-check-python-v0.25.0) (2026-11-11)
+
+
+### Features
+
+* **suggestions:** a prompt template can be suggested for specific agents ([#507](https://github.com/introspection-org/recipes/issues/507)) ([38227bc](https://github.com/introspection-org/recipes/commit/38227bc8d33e0973491cb6df40aa1443a9920626))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.24.0 to 0.25.0
+
 ## [0.24.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.23.0...introspection-recipe-check-python-v0.24.0) (2026-11-09)
 
 
