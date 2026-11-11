@@ -1,7 +1,7 @@
 /**
  * The first-run picker: a new Recipe session in the terminal asks once
  * "What would you like to do?" with up to three of the Recipe's prompt
- * templates marked `suggest: true`, through the same terminal helper
+ * templates its agent suggests, through the same terminal helper
  * `ask_user_question` uses. With none marked, it does not ask.
  * Picking one sends it as the first message; typing an answer sends that;
  * Esc leaves the empty prompt. An initial message given on the command line
@@ -119,6 +119,7 @@ export interface RecipeSuggestionPicker {
     event: { reason: string },
     ctx: ExtensionContext,
     promptPaths: readonly string[],
+    agent: string,
   ): void;
   /** Dismiss a picker that is waiting or open. */
   cancel(): void;
@@ -145,14 +146,14 @@ export function createRecipeSuggestionPicker(
 
   return {
     cancel,
-    sessionStarted(event, ctx, promptPaths) {
+    sessionStarted(event, ctx, promptPaths, agent) {
       cancel();
       if (ctx.mode !== "tui") return;
       if (event.reason !== "startup" && event.reason !== "new") return;
       if (promptPaths.length === 0 || hasMessages(ctx)) return;
       const seed = env[SUGGESTIONS_SEED_ENV]?.trim();
       const suggestions = pickSuggestions(
-        readRecipeSuggestions(promptPaths),
+        readRecipeSuggestions(promptPaths, { agent }),
         3,
         seed ? seededRandom(seed) : Math.random,
       );

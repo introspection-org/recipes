@@ -423,3 +423,38 @@ def test_lists_suggestions() -> None:
             argument_hint="[contract]",
         ),
     )
+
+
+def test_lists_suggestions_for_an_agent() -> None:
+    snapshot: introspection_recipe_check.RecipeFiles = {
+        "files": [
+            {
+                "path": "package.json",
+                "content": '{"name":"s","version":"0.1.0","pi":{"agents":["agents/*.yaml"],"prompts":["./prompts/*.md"]}}',
+            },
+            {"path": "agents/agent.yaml", "content": "name: agent\n"},
+            {"path": "agents/reviewer.yaml", "content": "name: reviewer\n"},
+            {"path": "prompts/all.md", "content": "---\nsuggest: true\n---\nAll."},
+            {
+                "path": "prompts/review.md",
+                "content": "---\nsuggest: [reviewer]\n---\nReview.",
+            },
+        ]
+    }
+    listed = introspection_recipe_check.list_recipe_suggestions(snapshot)
+    assert [(s.name, s.agents) for s in listed] == [
+        ("all", None),
+        ("review", ("reviewer",)),
+    ]
+    assert [
+        s.name
+        for s in introspection_recipe_check.list_recipe_suggestions(
+            snapshot, agent="agent"
+        )
+    ] == ["all"]
+    assert [
+        s.name
+        for s in introspection_recipe_check.list_recipe_suggestions(
+            snapshot, agent="reviewer"
+        )
+    ] == ["all", "review"]

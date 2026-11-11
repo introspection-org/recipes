@@ -1975,6 +1975,7 @@ export function createRecipesExtension(
         event,
         ctx,
         launchState.resolved.promptPaths,
+        launchState.resolved.name,
       );
     });
 

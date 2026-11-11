@@ -74,10 +74,11 @@ def check_recipe_files(snapshot: RecipeFiles) -> Report:
 
 @dataclass(frozen=True, slots=True)
 class Suggestion:
-    """A prompt template marked `suggest: true`: something to offer a new user.
+    """A prompt template marked `suggest`: something to offer a new user.
 
     `text` is the raw template body. Pi arguments (`$1`, `${1:-default}`) and
     `placeholders` (`{{member.name}}` and the like) are left for the host.
+    `agents` names the agents that offer it; `None` means every agent.
     """
 
     name: str
@@ -85,10 +86,19 @@ class Suggestion:
     text: str
     placeholders: tuple[str, ...]
     argument_hint: str | None = None
+    agents: tuple[str, ...] | None = None
+
+    def offered_to(self, agent: str) -> bool:
+        return self.agents is None or agent in self.agents
 
 
-def list_recipe_suggestions(snapshot: RecipeFiles) -> tuple[Suggestion, ...]:
-    """A Recipe's suggestions, in file order; empty when none are marked."""
+def list_recipe_suggestions(
+    snapshot: RecipeFiles, *, agent: str | None = None
+) -> tuple[Suggestion, ...]:
+    """A Recipe's suggestions, in file order; empty when none are marked.
+
+    With `agent`, only the suggestions that agent offers.
+    """
     raw = cast(
         list[dict[str, object]],
         json.loads(
@@ -97,15 +107,25 @@ def list_recipe_suggestions(snapshot: RecipeFiles) -> tuple[Suggestion, ...]:
             )
         ),
     )
-    return tuple(
+    suggestions = tuple(
         Suggestion(
             name=cast(str, item["name"]),
             description=cast(str, item["description"]),
             text=cast(str, item["text"]),
             placeholders=tuple(cast(list[str], item.get("placeholders", []))),
             argument_hint=cast("str | None", item.get("argument_hint")),
+            agents=None
+            if item.get("agents") is None
+            else tuple(cast(list[str], item["agents"])),
         )
         for item in raw
+    )
+    return (
+        suggestions
+        if agent is None
+        else tuple(
+            suggestion for suggestion in suggestions if suggestion.offered_to(agent)
+        )
     )
 
 
