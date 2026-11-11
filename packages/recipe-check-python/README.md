@@ -23,7 +23,9 @@ and missing `content` means the host supplied file identity without source
 text.
 
 `list_recipe_suggestions(snapshot)` returns the same snapshot's suggestions:
-the prompt templates marked `suggest: true`, in file order, as `Suggestion`
-values (`name`, `description`, `argument_hint`, `text` and `placeholders`). It
+the prompt templates marked `suggest`, in file order, as `Suggestion` values
+(`name`, `description`, `argument_hint`, `text`, `placeholders` and `agents`,
+which is `None` when every agent offers it). Pass `agent="<name>"` for only
+the suggestions that agent offers. It
 reads them exactly as `listRecipeSuggestions` in `@introspection-ai/recipes`
 does, so a host can offer them (as chat chips, say) without starting Pi.

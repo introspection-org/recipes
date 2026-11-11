@@ -1,5 +1,5 @@
 /**
- * A Recipe's prompt templates marked `suggest: true` are its suggestions: the read API other
+ * A Recipe's prompt templates marked `suggest` are its suggestions: the read API other
  * surfaces use, the placeholder filling, and the first-run picker Pi shows in
  * a new terminal session.
  */
@@ -59,10 +59,11 @@ const TEMPLATES: Record<string, string> = {
     "---",
     "Summarize $1 for {{org.name}}.",
   ].join("\n"),
-  // Not suggestions: unmarked, off, or not a boolean. They still work as /name.
+  // Not suggestions: unmarked, off, or neither `true` nor agent names. They
+  // still work as /name.
   "notes.md": "---\ndescription: Take notes\n---\nTake notes.",
   "off.md": "---\nsuggest: false\ndescription: Off\n---\nOff.",
-  "string.md": '---\nsuggest: "true"\ndescription: String\n---\nString.',
+  "number.md": "---\nsuggest: 1\ndescription: Number\n---\nNumber.",
 };
 
 const cleanups: Array<() => void> = [];
@@ -118,6 +119,7 @@ describe("listRecipeSuggestions", () => {
         description: "Redline a contract against the playbook",
         text: "Redline ${1:-the attached contract} for {{member.name}} on {{today}}.",
         placeholders: ["member.name", "today"],
+        agents: null,
       },
       {
         name: "respond",
@@ -125,6 +127,7 @@ describe("listRecipeSuggestions", () => {
         argumentHint: "[tone]",
         text: "Draft a reply in a ${1:-neutral} tone.",
         placeholders: [],
+        agents: null,
       },
       {
         // No description: Pi falls back to the first non-empty line.
@@ -132,6 +135,7 @@ describe("listRecipeSuggestions", () => {
         description: "List the top risks in $@.",
         text: "List the top risks in $@.",
         placeholders: [],
+        agents: null,
       },
       {
         name: "summarize",
@@ -139,6 +143,7 @@ describe("listRecipeSuggestions", () => {
         argumentHint: "<file>",
         text: "Summarize $1 for {{org.name}}.",
         placeholders: ["org.name"],
+        agents: null,
       },
     ]);
   });
@@ -175,6 +180,23 @@ describe("listRecipeSuggestions", () => {
       writeFileSync(join(fixture.recipeDir, dir, "plan.md"), content);
     }
     expect(listRecipeSuggestions(fixture.recipeDir)).toEqual([]);
+  });
+
+  it("returns only the suggestions an agent offers when given one", () => {
+    const { recipeDir } = recipeWithPrompts({
+      "all.md": "---\nsuggest: true\n---\nAll.",
+      "both.md": "---\nsuggest: [agent, reviewer]\n---\nBoth.",
+      "review.md": "---\nsuggest: reviewer\n---\nReview.",
+    });
+    const names = (agent?: string) =>
+      listRecipeSuggestions(
+        recipeDir,
+        agent === undefined ? {} : { agent },
+      ).map((suggestion) => suggestion.name);
+    expect(names()).toEqual(["all", "both", "review"]);
+    expect(names("agent")).toEqual(["all", "both"]);
+    expect(names("reviewer")).toEqual(["all", "both", "review"]);
+    expect(names("drafter")).toEqual(["all"]);
   });
 
   it("is part of inspectRecipe", () => {
@@ -258,6 +280,8 @@ interface PickerOptions {
   ) => Promise<string | undefined>;
   input?: string;
   templates?: Record<string, string>;
+  /** Run the session as this agent, added beside the default `agent`. */
+  agent?: string;
   seed?: string;
   gitName?: string;
   exec?: () => Promise<{
@@ -272,6 +296,17 @@ async function startPicker(options: PickerOptions = {}) {
   const { recipeDir, workspaceDir } = recipeWithPrompts(options.templates);
   const pi = createMockExtensionAPI();
   pi.flagValues.set("recipe", recipeDir);
+  if (options.agent) {
+    const defaultAgent = readFileSync(
+      join(recipeDir, "agents", "agent.yaml"),
+      "utf8",
+    );
+    writeFileSync(
+      join(recipeDir, "agents", `${options.agent}.yaml`),
+      defaultAgent.replace(/^name: agent$/m, `name: ${options.agent}`),
+    );
+    pi.flagValues.set("agent", options.agent);
+  }
   const sendUserMessage = vi.fn();
   (pi as any).sendUserMessage = sendUserMessage;
   (pi as any).exec = vi.fn(
@@ -342,6 +377,36 @@ describe("first-run picker", () => {
         [...shown].sort((a, b) => order.indexOf(a!) - order.indexOf(b!)),
       ).toEqual(shown);
     }
+  });
+
+  it("offers only the templates the session's agent suggests", async () => {
+    const templates = {
+      "all.md": "---\nsuggest: true\ndescription: All\n---\nAll.",
+      "mine.md": "---\nsuggest: agent\ndescription: Mine\n---\nMine.",
+      "review.md":
+        "---\nsuggest: [reviewer]\ndescription: Review\n---\nReview.",
+    };
+    const shown = async (agent?: string) => {
+      const { select, settle } = await startPicker({
+        templates,
+        ...(agent ? { agent } : {}),
+      });
+      await settle();
+      return (select.mock.calls[0]![1] as string[]).slice(0, -1);
+    };
+    expect(await shown()).toEqual(["1. All — /all", "2. Mine — /mine"]);
+    expect(await shown("reviewer")).toEqual([
+      "1. All — /all",
+      "2. Review — /review",
+    ]);
+  });
+
+  it("does not ask when the session's agent suggests nothing", async () => {
+    const { select, settle } = await startPicker({
+      templates: { "review.md": "---\nsuggest: reviewer\n---\nReview." },
+    });
+    await settle();
+    expect(select).not.toHaveBeenCalled();
   });
 
   it("pins the three with the seed env var", async () => {

@@ -22,7 +22,7 @@ fn check_recipe_files_json(py: Python<'_>, snapshot_json: &str) -> PyResult<Stri
 }
 
 /// List a serialized Recipe snapshot's suggestions: its prompt templates
-/// marked `suggest: true`.
+/// marked `suggest`.
 #[pyfunction]
 fn list_recipe_suggestions_json(py: Python<'_>, snapshot_json: &str) -> PyResult<String> {
     let snapshot: RecipeFiles = serde_json::from_str(snapshot_json)

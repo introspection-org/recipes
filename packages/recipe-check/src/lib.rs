@@ -345,7 +345,8 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             }
         }
         if let Some(paths) = resources.get("prompts") {
-            prompts::validate_prompt_templates(paths, &mut ctx);
+            let agent_names = declared_agent_names(&agent_paths, &ctx);
+            prompts::validate_prompt_templates(paths, &agent_names, &mut ctx);
         }
         validate_agents(
             &agent_paths,
@@ -3110,6 +3111,18 @@ fn resolve_dependency_skills(package: &Package, ctx: &mut CheckContext) -> Depen
         }
     }
     found
+}
+
+/// The `name` each readable agent file declares, the identity a task selects
+/// it by. A file that does not parse contributes nothing; `validate_agents`
+/// reports it.
+fn declared_agent_names(agent_paths: &[String], ctx: &CheckContext) -> BTreeSet<String> {
+    agent_paths
+        .iter()
+        .filter_map(|path| ctx.content(path))
+        .filter_map(|content| serde_saphyr::from_str::<JsonValue>(content).ok())
+        .filter_map(|agent| agent.get("name")?.as_str().map(str::to_owned))
+        .collect()
 }
 
 fn validate_agents(

@@ -1,7 +1,10 @@
-//! Prompt templates marked `suggest: true` are a Recipe's suggestions: hosts
-//! show them in a first-run picker or as chips. Both read the template's
+//! Prompt templates marked `suggest` are a Recipe's suggestions: hosts show
+//! them in a first-run picker or as chips, for every agent (`true`) or the
+//! agents `suggest` names. Both read the template's
 //! `description`, and a host fills a fixed set of `{{name}}` placeholders, so
 //! warn when either would show up wrong.
+
+use std::collections::BTreeSet;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -52,7 +55,7 @@ fn frontmatter(content: &str) -> JsonValue {
         .unwrap_or_else(|| JsonValue::Object(Default::default()))
 }
 
-/// One suggestion: a prompt template marked `suggest: true`, read the way
+/// One suggestion: a prompt template marked `suggest`, read the way
 /// `listRecipeSuggestions` in `src/recipe/suggestions.ts` reads it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Suggestion {
@@ -68,6 +71,44 @@ pub struct Suggestion {
     pub text: String,
     /// The `{{name}}` placeholders the body uses, in order, without duplicates.
     pub placeholders: Vec<String>,
+    /// The agents that offer it, from `suggest`; `None` when every agent does.
+    pub agents: Option<Vec<String>>,
+}
+
+impl Suggestion {
+    /// Whether the agent named `agent` offers this suggestion.
+    pub fn offered_to(&self, agent: &str) -> bool {
+        self.agents
+            .as_ref()
+            .is_none_or(|agents| agents.iter().any(|name| name == agent))
+    }
+}
+
+/// What a `suggest` value marks: every agent for `true`, the names for a
+/// non-empty string or a non-empty list of them, and nothing otherwise.
+enum Mark {
+    None,
+    Every,
+    Agents(Vec<String>),
+    Invalid,
+}
+
+fn mark(value: Option<&JsonValue>) -> Mark {
+    match value {
+        None | Some(JsonValue::Bool(false)) => Mark::None,
+        Some(JsonValue::Bool(true)) => Mark::Every,
+        Some(JsonValue::String(name)) if !name.is_empty() => Mark::Agents(vec![name.clone()]),
+        Some(JsonValue::Array(items)) if !items.is_empty() => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned)
+            })
+            .collect::<Option<Vec<_>>>()
+            .map_or(Mark::Invalid, Mark::Agents),
+        Some(_) => Mark::Invalid,
+    }
 }
 
 /// Split frontmatter from the body as Pi's `parseFrontmatter` does. `None`
@@ -115,10 +156,14 @@ pub(crate) fn read_suggestions(paths: &[String], ctx: &CheckContext) -> Vec<Sugg
             .unwrap_or(&file)
             .trim_end_matches(".md")
             .to_owned();
-        if !seen.insert(name.clone()) || frontmatter.get("suggest") != Some(&JsonValue::Bool(true))
-        {
+        if !seen.insert(name.clone()) {
             continue;
         }
+        let agents = match mark(frontmatter.get("suggest")) {
+            Mark::Every => None,
+            Mark::Agents(agents) => Some(agents),
+            Mark::None | Mark::Invalid => continue,
+        };
         let mut description = frontmatter
             .get("description")
             .and_then(JsonValue::as_str)
@@ -154,29 +199,49 @@ pub(crate) fn read_suggestions(paths: &[String], ctx: &CheckContext) -> Vec<Sugg
             argument_hint,
             text: body,
             placeholders,
+            agents,
         });
     }
     suggestions
 }
 
-/// Templates marked `suggest: true` are suggestions. Check what hosts show
-/// for those, and that `suggest` itself is a boolean wherever it appears.
-pub(crate) fn validate_prompt_templates(paths: &[String], ctx: &mut CheckContext) {
+/// Templates marked `suggest` are suggestions. Check what hosts show for
+/// those, that `suggest` is `true` or agent names wherever it appears, and
+/// that each name is one of `agents`, the Recipe's declared agent names.
+pub(crate) fn validate_prompt_templates(
+    paths: &[String],
+    agents: &BTreeSet<String>,
+    ctx: &mut CheckContext,
+) {
     let placeholder = Regex::new(r"\{\{([A-Za-z][\w.-]*)\}\}").expect("placeholder pattern");
     for file in template_files(paths, ctx) {
         let Some(content) = ctx.content(&file).map(str::to_owned) else {
             continue;
         };
         let frontmatter = frontmatter(&content);
-        match frontmatter.get("suggest") {
-            None | Some(JsonValue::Bool(false)) => continue,
-            Some(JsonValue::Bool(true)) => {}
-            Some(_) => {
+        match mark(frontmatter.get("suggest")) {
+            Mark::None => continue,
+            Mark::Every => {}
+            Mark::Agents(names) => {
+                for name in names.iter().filter(|name| !agents.contains(*name)) {
+                    ctx.warning(
+                        "prompts.suggest_agent_unknown",
+                        file.clone(),
+                        format!(
+                            "Prompt template '{file}' is suggested for agent '{name}', which the Recipe does not declare"
+                        ),
+                        Some("name an agent from agents/, or set `suggest: true` to offer it from every agent"),
+                    );
+                }
+            }
+            Mark::Invalid => {
                 ctx.warning(
                     "prompts.suggest_invalid",
                     file.clone(),
-                    format!("Prompt template '{file}' has a `suggest` value that is not a boolean"),
-                    Some("set `suggest: true` to offer the template as a suggestion, or remove it"),
+                    format!(
+                        "Prompt template '{file}' has a `suggest` value that is not `true`, an agent name or a list of agent names"
+                    ),
+                    Some("set `suggest: true` for every agent, or name the agents that offer it; remove it otherwise"),
                 );
                 continue;
             }
@@ -305,17 +370,69 @@ mod tests {
     }
 
     #[test]
-    fn warns_when_suggest_is_not_a_boolean() {
+    fn warns_when_suggest_is_not_true_or_agent_names() {
         let report = check(&[
             ("package.json", PACKAGE),
             ("agents/agent.yaml", AGENT),
             (
-                "prompts/yes.md",
-                "---\nsuggest: \"yes\"\ndescription: Go\n---\nGo.",
-            ),
-            (
                 "prompts/one.md",
                 "---\nsuggest: 1\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/empty.md",
+                "---\nsuggest: []\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/mixed.md",
+                "---\nsuggest: [agent, 1]\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/blank.md",
+                "---\nsuggest: \"\"\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/good.md",
+                "---\nsuggest: true\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/named.md",
+                "---\nsuggest: [agent]\ndescription: Go\n---\nGo.",
+            ),
+        ]);
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert_eq!(
+            codes(&report, "prompts.suggest_invalid"),
+            vec![
+                "prompts/blank.md",
+                "prompts/empty.md",
+                "prompts/mixed.md",
+                "prompts/one.md"
+            ]
+        );
+        assert!(codes(&report, "prompts.suggest_agent_unknown").is_empty());
+    }
+
+    #[test]
+    fn warns_when_suggest_names_an_agent_the_recipe_does_not_declare() {
+        let report = check(&[
+            ("package.json", PACKAGE),
+            ("agents/agent.yaml", AGENT),
+            // The agent's declared name, not its file name, is its identity.
+            (
+                "agents/review.yaml",
+                "name: reviewer\nmodel:\n  name: test/provider-model\n",
+            ),
+            (
+                "prompts/known.md",
+                "---\nsuggest: [agent, reviewer]\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/file.md",
+                "---\nsuggest: review\ndescription: Go\n---\nGo.",
+            ),
+            (
+                "prompts/list.md",
+                "---\nsuggest: [agent, drafter]\ndescription: Go\n---\nGo.",
             ),
             // YAML 1.1 booleans are strings to Pi, which reads YAML 1.2.
             (
@@ -323,15 +440,40 @@ mod tests {
                 "---\nsuggest: on\ndescription: Go\n---\nGo.",
             ),
             (
-                "prompts/good.md",
-                "---\nsuggest: true\ndescription: Go\n---\nGo.",
+                "prompts/quoted.md",
+                "---\nsuggest: \"true\"\ndescription: Go\n---\nGo.",
             ),
         ]);
         assert!(report.valid, "{:?}", report.diagnostics);
         assert_eq!(
-            codes(&report, "prompts.suggest_invalid"),
-            vec!["prompts/on.md", "prompts/one.md", "prompts/yes.md"]
+            codes(&report, "prompts.suggest_agent_unknown"),
+            vec![
+                "prompts/file.md",
+                "prompts/list.md",
+                "prompts/on.md",
+                "prompts/quoted.md"
+            ]
         );
+        assert!(codes(&report, "prompts.suggest_invalid").is_empty());
+    }
+
+    #[test]
+    fn a_suggestion_is_offered_to_the_agents_it_names() {
+        let listed = suggestions(&[
+            ("package.json", PACKAGE),
+            ("agents/agent.yaml", AGENT),
+            ("prompts/all.md", "---\nsuggest: true\n---\nAll."),
+            ("prompts/one.md", "---\nsuggest: reviewer\n---\nOne."),
+        ]);
+        let offered = |agent: &str| {
+            listed
+                .iter()
+                .filter(|suggestion| suggestion.offered_to(agent))
+                .map(|suggestion| suggestion.name.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(offered("agent"), vec!["all"]);
+        assert_eq!(offered("reviewer"), vec!["all", "one"]);
     }
 
     #[test]
@@ -396,6 +538,7 @@ mod tests {
             argument_hint: Option<String>,
             text: String,
             placeholders: Vec<String>,
+            agents: Option<Vec<String>>,
         }
         #[derive(serde::Deserialize)]
         struct Case {
@@ -422,6 +565,7 @@ mod tests {
                     argument_hint: e.argument_hint,
                     text: e.text,
                     placeholders: e.placeholders,
+                    agents: e.agents,
                 })
                 .collect();
             assert_eq!(suggestions(&files), expected, "{}", case.name);

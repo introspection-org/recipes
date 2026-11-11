@@ -1,6 +1,6 @@
 /**
- * Suggestions are the Recipe's Pi prompt templates marked `suggest: true` in
- * their frontmatter, among the Markdown files its `pi.prompts` selects (or
+ * Suggestions are the Recipe's Pi prompt templates marked `suggest` in their
+ * frontmatter: `true` for every agent, or an agent name or list of names, among the Markdown files its `pi.prompts` selects (or
  * `prompts/` by convention). There is no separate manifest field. Pi turns
  * every template into a `/name` command, marked or not; this module reads the
  * marked ones so other surfaces (a web chat's chips, `introspection check`,
@@ -28,6 +28,42 @@ export interface RecipeSuggestion {
   text: string;
   /** The `{{name}}` placeholders the body uses, in order, without duplicates. */
   placeholders: string[];
+  /** The agents that offer it, from `suggest`; `null` when every agent does. */
+  agents: string[] | null;
+}
+
+/** Narrows a Recipe's suggestions to the ones an agent offers. */
+export interface RecipeSuggestionOptions {
+  /** An agent name; omitted, every marked template is returned. */
+  agent?: string;
+}
+
+/**
+ * The agents a `suggest` value names: `null` for `true` (every agent), the
+ * names for a non-empty string or a non-empty list of them, and `undefined`
+ * (not a suggestion) for anything else.
+ */
+function suggestAgents(value: unknown): string[] | null | undefined {
+  if (value === true) return null;
+  if (typeof value === "string") return value ? [value] : undefined;
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string" && item)
+  )
+    return [...(value as string[])];
+  return undefined;
+}
+
+function offeredTo(
+  suggestion: RecipeSuggestion,
+  options: RecipeSuggestionOptions,
+): boolean {
+  return (
+    options.agent === undefined ||
+    suggestion.agents === null ||
+    suggestion.agents.includes(options.agent)
+  );
 }
 
 /** The placeholders a host may fill in a suggestion. Nothing else is replaced. */
@@ -97,7 +133,7 @@ function parseTemplate(content: string): {
   };
 }
 
-/** A readable template, and whether it is marked `suggest: true`. */
+/** A readable template, and whether `suggest` marks it. */
 function readTemplate(
   path: string,
 ): { suggest: boolean; template: RecipeSuggestion } | undefined {
@@ -118,8 +154,9 @@ function readTemplate(
       firstLine.length > 60 ? `${firstLine.slice(0, 60)}...` : firstLine;
   }
   const argumentHint = frontmatter["argument-hint"];
+  const agents = suggestAgents(frontmatter.suggest);
   return {
-    suggest: frontmatter.suggest === true,
+    suggest: agents !== undefined,
     template: {
       name: basename(path).replace(/\.md$/, ""),
       description,
@@ -128,6 +165,7 @@ function readTemplate(
         : {}),
       text: body,
       placeholders: findPlaceholders(body),
+      agents: agents ?? null,
     },
   };
 }
@@ -141,13 +179,14 @@ function isFile(path: string): boolean {
 }
 
 /**
- * Read the templates marked `suggest: true` from resolved prompt paths, as Pi
+ * Read the templates marked `suggest` from resolved prompt paths, as Pi
  * loads them: a directory contributes its direct `.md` children, a file
  * itself. As in Pi, the first template with a name wins, so an unmarked
  * template hides a later marked one of the same name.
  */
 export function readRecipeSuggestions(
   promptPaths: readonly string[],
+  options: RecipeSuggestionOptions = {},
 ): RecipeSuggestion[] {
   const files: string[] = [];
   for (const path of promptPaths) {
@@ -175,17 +214,24 @@ export function readRecipeSuggestions(
       byName.set(read.template.name, read);
   }
   return [...byName.values()]
-    .filter((read) => read.suggest)
+    .filter((read) => read.suggest && offeredTo(read.template, options))
     .map((read) => read.template);
 }
 
 /**
- * A Recipe's suggestions: its prompt templates marked `suggest: true`, read
- * from `recipeDir` in file order. Returns an empty list when none are marked.
+ * A Recipe's suggestions: its prompt templates marked `suggest`, read from
+ * `recipeDir` in file order. With `agent`, only those that agent offers.
+ * Returns an empty list when none are marked.
  */
-export function listRecipeSuggestions(recipeDir: string): RecipeSuggestion[] {
+export function listRecipeSuggestions(
+  recipeDir: string,
+  options: RecipeSuggestionOptions = {},
+): RecipeSuggestion[] {
   const manifest = readPiPackageManifest(recipeDir);
-  return readRecipeSuggestions(packageResourcePaths(manifest, "prompts"));
+  return readRecipeSuggestions(
+    packageResourcePaths(manifest, "prompts"),
+    options,
+  );
 }
 
 /** A small seeded generator (mulberry32), so a seed pins the choice. */

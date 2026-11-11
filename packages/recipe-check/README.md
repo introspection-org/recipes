@@ -62,8 +62,10 @@ the host before it starts a session. Embed this crate directly, or use the
 `introspection-recipe-check` Python binding, to validate from a host.
 
 `list_recipe_suggestions(&input)` reads a Recipe's suggestions from the same
-snapshot: its prompt templates marked `suggest: true`, in file order, read as
-`listRecipeSuggestions` in `@introspection-ai/recipes` reads them. Shared cases
+snapshot: its prompt templates marked `suggest`, in file order, read as
+`listRecipeSuggestions` in `@introspection-ai/recipes` reads them; each
+`Suggestion` carries the `agents` that offer it (`None` for every agent), and
+`Suggestion::offered_to(agent)` filters by one. Shared cases
 in `test/fixtures/suggestions-conformance.json` keep the two in step.
 
 Diagnostics include a stable code, Recipe-relative path, optional 1-based
