@@ -109,6 +109,46 @@ function dump(path: string): Block[] {
   ) as Block[];
 }
 
+/** A Word file's page, Normal font, footer and heading runs. */
+function layoutOf(path: string): {
+  page: { width: number; height: number; left: number };
+  font: { family: string; size: number };
+  footer: string[];
+  headings: Array<
+    Array<{ text: string; bold: boolean; size: number; color: string }>
+  >;
+} {
+  return JSON.parse(
+    execFileSync(docxPython, [
+      join(fixtures, "dump_docx.py"),
+      join(cwd, path),
+      "--layout",
+    ]).toString(),
+  );
+}
+
+/** A PDF's body lines page by page, as `read` gives them, without the running header and footer. */
+async function pdfLines(path: string): Promise<string[][]> {
+  const body = text(
+    await documents.execute("lines", { command: "read", path }),
+  );
+  return body
+    .split(/\n--- page \d+\n/)
+    .slice(1)
+    .map((page) =>
+      page
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(
+          (line) =>
+            line.trim() &&
+            line !== HEADER &&
+            !/^Page \d+ of \d+$/.test(line) &&
+            !line.startsWith("---"),
+        ),
+    );
+}
+
 const text = (result: { content: Array<{ text?: string }> }) =>
   result.content.at(-1)?.text ?? "";
 
@@ -228,6 +268,30 @@ describe("documents convert", { timeout: 60_000 }, () => {
           block.text.endsWith("deliver and improve the Services."),
       ),
     ).toBe(true);
+  });
+
+  it("carries the page, fonts, headings and running header and footer into the Word file", async () => {
+    const layout = layoutOf("outputs/sow.docx");
+    expect(layout.page).toMatchObject({ width: 612, height: 792 });
+    expect(layout.page.left).toBeCloseTo(72, 0);
+    // The PDF's Helvetica is Arial in Word, at the body's 11 points.
+    expect(layout.font).toEqual({ family: "Arial", size: 11 });
+    expect(layout.footer).toEqual(["Page {PAGE} of {NUMPAGES}"]);
+    expect(
+      layout.headings.map(([run]) => [
+        run!.text,
+        run!.size,
+        run!.bold,
+        run!.color,
+      ]),
+    ).toEqual([
+      ["Professional Services Statement of Work", 18, true, "000000"],
+      ["Resident Analyst Access", 14, true, "000000"],
+      ...SOURCE.filter(
+        (block): block is Extract<Block, { type: "heading" }> =>
+          block.type === "heading" && block.level === 3,
+      ).map((block) => [block.text, 12, true, "000000"]),
+    ]);
   });
 
   it("gives a file the Word commands read and redline", async () => {
@@ -372,6 +436,14 @@ describe("documents convert", { timeout: 60_000 }, () => {
         path: "office.pdf",
         output: "outputs/office-again.docx",
       });
+      // Render both and compare them: the same pages, and most lines broken where the source broke them.
+      const source = await pdfLines("sow.pdf");
+      const rendered = await pdfLines("office.pdf");
+      expect(Math.abs(rendered.length - source.length)).toBeLessThanOrEqual(1);
+      const printed = new Set(rendered.flat());
+      const kept = source.flat().filter((line) => printed.has(line)).length;
+      expect(kept / source.flat().length).toBeGreaterThan(0.8);
+
       const again = dump("outputs/office-again.docx");
       expect(overlap(again, SOURCE)).toBeGreaterThan(0.97);
       const headings = (blocks: Block[]) =>

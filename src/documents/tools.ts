@@ -198,7 +198,7 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
   },
   convert: {
     description:
-      "Convert a document to another format as a new file under outputs/, such as a PDF to .docx so it can be redlined. Rebuilds headings, paragraphs and tables, not the layout: fonts, headers, footers, page numbers and images don't come over. Fails, writing nothing, when a page has no text layer (a scan). Then read the new file and change it in place (path set to it, no output).",
+      "Convert a document to another format as a new file under outputs/, such as a PDF to .docx so it can be redlined. Rebuilds headings, paragraphs and tables in the source's fonts, spacing, indents and running header and footer; images and exact page breaks don't come over. Fails, writing nothing, when a page has no text layer (a scan). Then read the new file and change it in place (path set to it, no output).",
     parameters: DOCUMENTS_ARGUMENTS.convert,
   },
 };

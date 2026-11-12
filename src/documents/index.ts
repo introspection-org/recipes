@@ -57,6 +57,8 @@ export type {
   DocumentResponse,
   DocumentResult,
   DocumentReviseInput,
+  DocumentRun,
+  DocumentRunningLine,
   DocumentRevision,
   DocumentWriteTarget,
 } from "./types.js";

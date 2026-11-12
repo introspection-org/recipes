@@ -44,10 +44,11 @@ copy the paragraph's current text and change only what must change.
 
 ## PDFs you are asked to mark up
 
-`convert` rebuilds the PDF as Word headings, paragraphs and tables. It does not copy the
-layout, so fonts, headers, footers and page numbers are gone. `read` the converted file
-before changing it, and check that clause numbers and tables came over as the PDF shows
-them. In your reply, say that the redline is on a Word copy converted from the PDF.
+`convert` rebuilds the PDF as Word headings, paragraphs and tables, set in the PDF's
+fonts, spacing and indents, with its running header and footer. Images and page breaks
+don't come over exactly. `read` the converted file before changing it, and check that clause
+numbers and tables came over as the PDF shows them. In your reply, say that the redline is
+on a Word copy converted from the PDF.
 
 If `convert` reports pages with no text layer, it wrote nothing. `render` those pages to
 see them, and tell the person the PDF needs OCR before it can be redlined. Don't retype

@@ -29,8 +29,12 @@ HELVETICA = [
 ]
 
 
+# The punctuation the fixtures use outside ASCII: curly quotes, dashes and the bullet.
+HELVETICA_EXTRA = {"\u2018": 222, "\u2019": 222, "\u201c": 333, "\u201d": 333, "\u2013": 556, "\u2014": 1000, "\u2022": 350}
+
+
 def width(text: str, size: float) -> float:
-    return sum(HELVETICA[ord(c) - 32] if 32 <= ord(c) < 127 else 556 for c in text) * size / 1000
+    return sum(HELVETICA[ord(c) - 32] if 32 <= ord(c) < 127 else HELVETICA_EXTRA.get(c, 556) for c in text) * size / 1000
 
 
 def wrap(text: str, size: float, room: float) -> list[str]:

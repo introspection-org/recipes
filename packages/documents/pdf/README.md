@@ -32,7 +32,8 @@ Every `read` result starts with the path it used:
 ## Converting to Word
 
 `convert` with a `.pdf` `path` and a `.docx` `output` runs this package's `export`. It
-joins pypdfium2's text lines into paragraphs and headings, and adds pdfplumber's tables
+joins pypdfium2's characters into paragraphs and headings with their fonts, underlines,
+indents and spacing, keeps the running header and footer, and adds pdfplumber's tables
 when the `tables` extra is installed. The docx package then builds the file. Both
 halves use the libraries their environments already lock. A page with no text layer
 fails the conversion, naming the page.

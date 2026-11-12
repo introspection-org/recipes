@@ -343,32 +343,55 @@ documents revise   { path: "outputs/msa.docx", author, revisions }
 The converted file is one this tool saved, so later commands edit it in place
 with no `output`, and its tracked changes are the only markup in it.
 
-`convert` rebuilds the document's structure rather than copying its layout.
-Headings, paragraphs and tables come over as Word headings, paragraphs and
-tables, which is what paragraph ids, quotes and tracked changes need. Fonts,
-columns, headers, footers, page numbers, images and exact spacing do not
-come over. A converter that reproduces the page, such as LibreOffice's PDF
-import or pdf2docx, places text in positioned boxes and line by line. The file
-looks right but redlines badly, because a sentence split across boxes can't be
-quoted or revised as one paragraph.
+`convert` rebuilds the document's structure, then sets it as the source set
+it. Headings, paragraphs and tables come over as Word headings, paragraphs and
+tables, which is what paragraph ids, quotes and tracked changes need. They
+come over with:
+
+- **the formatting of their text:** the body font as the Normal style, and runs
+  for what differs (bold, italic, underline, family, size, colour), so a bold
+  run-in clause heading stays bold inside its paragraph;
+- **the layout of the page:** page size and margins, line pitch, space before
+  each paragraph, centring, and left, hanging and first-line indents, with a
+  tab after a clause number or bullet set off by more than a space;
+- **the running header and footer,** as Word's own, with the page number and
+  count as fields;
+- **tables as drawn:** ruled or not, their text size, and a bold header row.
+
+The right margin is the one the source wrapped at: past its longest line,
+and short of every word it pushed to the next line. Printed back to PDF, the
+Word file broke 91% of its lines where the original did on a two-page
+statement of work, on the same number of pages, and 90% on a twelve-page one,
+whose text it kept to 98%.
+
+Images, columns and drawn lines that underline nothing do not come over, and
+page breaks fall where Word puts them. A converter that reproduces the page,
+such as LibreOffice's PDF import or pdf2docx, places text in positioned boxes
+and line by line. The file looks right but redlines badly, because a sentence
+split across boxes can't be quoted or revised as one paragraph.
 
 The work runs in two halves, each in its own format's Python environment, so
 neither environment gains a library and the runtime image needs nothing new:
 
-- **The PDF adapter exports an outline.** It reads pypdfium2's text lines with
-  their positions and font sizes and joins them into paragraphs. It starts a
-  new paragraph at a wider vertical gap, at a change of indent, or at a line
-  that opens with a clause number such as `1.2`, `(a)` or `(iv)`. A paragraph
+- **The PDF adapter exports an outline.** It reads pypdfium2's characters with
+  their positions, fonts, sizes (after the page's scale) and colours, and
+  underlines from the thin paths beneath them, and joins them into
+  paragraphs. It starts a
+  new paragraph at a wider vertical gap, at a change of indent, at a line
+  that opens with a clause number such as `1.2`, `(a)` or `(iv)`, or after a
+  line the next line's first word would have fit on. A paragraph
   that runs across a page break is joined back, and a word hyphenated at a line
   end is rejoined. Lines repeated at the top or bottom of the pages (running
   headers, footers and page numbers) are dropped. Lines set larger than the
-  body text become headings, with the largest at level 1. With the `tables`
+  body text, or bold lines on their own, become headings, the largest (and
+  centred before left) at level 1. Columns that line up across two or more
+  lines, such as a signature block, become a table. With the `tables`
   extra, pdfplumber's tables become table blocks and their text is left out of
   the paragraphs. Without it, a table's text comes over as paragraphs and the
   result says the extra was missing.
 - **The Word adapter creates the file.** It builds the `.docx` from the
-  outline with paper-docx and records the source's file name in the file's
-  core properties.
+  outline with paper-docx, sets the page, fonts and spacing above, and records
+  the source's file name in the file's core properties.
 
 The host runs the export, passes the outline to the creating format and
 writes only `output`. That must be a new file under `outputs/`, with the
@@ -472,13 +495,21 @@ means it builds a new file from one:
 interface DocumentOutline {
   /** The source's file name, recorded in the new file. */
   source: string;
+  font?: { family: string; size: number };
+  page?: { width: number; height: number; margins: { top: number; bottom: number; left: number; right: number } };
+  line_pitch?: number;
+  header?: DocumentRunningLine[]; // `{PAGE}` and `{NUMPAGES}` stand for fields
+  footer?: DocumentRunningLine[];
   blocks: DocumentBlock[];
 }
 
 type DocumentBlock =
-  | { type: "heading"; level: 1 | 2 | 3; text: string; page: number }
-  | { type: "paragraph"; text: string; page: number; indent?: number }
-  | { type: "table"; rows: string[][]; page: number };
+  | { type: "heading"; level: 1 | 2 | 3; text: string; page: number; runs?: DocumentRun[]; /* layout */ }
+  | { type: "paragraph"; text: string; page: number; runs?: DocumentRun[]; /* layout */ }
+  | { type: "table"; rows: string[][]; page: number; ruled?: boolean; size?: number; header?: boolean };
+
+// layout: align?: "center", indent?, first_line?, space_before? (points)
+// DocumentRun: { text, bold?, italic?, underline?, family?, size?, color? }, naming only what differs from `font`
 
 interface DocumentAdapter {
   // ...
@@ -487,7 +518,9 @@ interface DocumentAdapter {
 }
 ```
 
-`DocumentExport` is a `DocumentResult` with the `outline` beside its `text`.
+`text` always holds a block's whole text, so a creating format that ignores
+formatting still builds a correct file. `DocumentExport` is a `DocumentResult`
+with the `outline` beside its `text`.
 A Python helper answers with an `outline` key beside `text` and `details`. The
 host keeps the outline out of what the model sees and passes the export's
 `text` (its notes, such as a missing extra) through with the create's result.
