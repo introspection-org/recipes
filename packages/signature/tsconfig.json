@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "paths": {
-      "@introspection-ai/recipes/signatures": ["../../dist/signatures/index.d.ts"]
+      "@introspection-ai/recipes/signature": ["../../dist/signature/index.d.ts"]
     }
   },
   "include": ["src"]

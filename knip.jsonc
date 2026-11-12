@@ -8,7 +8,7 @@
     "packages/*/*/src/index.ts": ["duplicates"],
     "packages/search/src/index.ts": ["duplicates"],
     "packages/issues/src/index.ts": ["duplicates"],
-    "packages/signatures/src/index.ts": ["duplicates"]
+    "packages/signature/src/index.ts": ["duplicates"]
   },
   "workspaces": {
     ".": {
@@ -45,7 +45,7 @@
     "packages/issues": {
       "project": ["src/**/*.ts!"]
     },
-    "packages/signatures": {
+    "packages/signature": {
       "project": ["src/**/*.ts!"]
     },
     // Its integration tests run against the Google emulator and fake MCP

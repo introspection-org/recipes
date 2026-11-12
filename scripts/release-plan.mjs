@@ -69,7 +69,7 @@ export function readArtifacts(repo) {
     ),
     npmPackage("search", "packages/search", "recipe-search-v"),
     npmPackage("issues", "packages/issues", "recipe-issues-v"),
-    npmPackage("signatures", "packages/signatures", "recipe-signatures-v"),
+    npmPackage("signature", "packages/signature", "recipe-signature-v"),
     {
       key: "crate",
       version: checker["packages/recipe-check"],

@@ -124,9 +124,9 @@ importers:
       '@introspection-ai/recipe-search':
         specifier: workspace:>=0.1.0
         version: link:packages/search
-      '@introspection-ai/recipe-signatures':
+      '@introspection-ai/recipe-signature':
         specifier: workspace:>=0.1.0
-        version: link:packages/signatures
+        version: link:packages/signature
 
   examples:
     devDependencies:
@@ -299,7 +299,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/signatures:
+  packages/signature:
     devDependencies:
       '@introspection-ai/recipes':
         specifier: workspace:^

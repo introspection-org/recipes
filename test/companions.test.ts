@@ -405,7 +405,7 @@ describe("Recipes' optionalDependencies", () => {
     ),
     "packages/search",
     "packages/issues",
-    "packages/signatures",
+    "packages/signature",
   ];
   const workspacePackages = companionDirs.map(
     (dir) =>

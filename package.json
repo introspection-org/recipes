@@ -98,9 +98,9 @@
       "types": "./dist/issues/index.d.ts",
       "import": "./dist/issues/index.js"
     },
-    "./signatures": {
-      "types": "./dist/signatures/index.d.ts",
-      "import": "./dist/signatures/index.js"
+    "./signature": {
+      "types": "./dist/signature/index.d.ts",
+      "import": "./dist/signature/index.js"
     },
     "./test-utils": {
       "types": "./dist/test-utils.d.ts",
@@ -158,7 +158,7 @@
     "@introspection-ai/recipe-productivity-google": "workspace:>=0.1.0",
     "@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0",
     "@introspection-ai/recipe-search": "workspace:>=0.1.0",
-    "@introspection-ai/recipe-signatures": "workspace:>=0.1.0"
+    "@introspection-ai/recipe-signature": "workspace:>=0.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",

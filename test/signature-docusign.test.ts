@@ -4,13 +4,13 @@ import {
   createDocusignSession,
   DOCUMENT_NAME_FIELD,
   DOCUMENT_SHA256_FIELD,
-  docusignSignaturesProvider,
-} from "../packages/signatures/src/index.js";
+  docusignSignatureProvider,
+} from "../packages/signature/src/index.js";
 import type {
-  SignaturesCreateArgs,
-  SignaturesHttp,
-  SignaturesHttpRequest,
-} from "../src/signatures/index.js";
+  SignatureCreateArgs,
+  SignatureHttp,
+  SignatureHttpRequest,
+} from "../src/signature/index.js";
 
 const ACCOUNT = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const OTHER_ACCOUNT = "1f0e0d0c-0b0a-4908-8706-050403020100";
@@ -88,12 +88,12 @@ function envelope(status: string) {
 }
 
 type Route = (
-  request: SignaturesHttpRequest,
+  request: SignatureHttpRequest,
 ) => { status: number; body: unknown } | undefined;
 
 function fakeHttp(...routes: Route[]) {
-  const requests: SignaturesHttpRequest[] = [];
-  const http: SignaturesHttp = async (request) => {
+  const requests: SignatureHttpRequest[] = [];
+  const http: SignatureHttp = async (request) => {
     requests.push(request);
     for (const route of routes) {
       const answer = route(request);
@@ -114,7 +114,7 @@ const userinfo: Route = (request) =>
     ? { status: 200, body: USERINFO }
     : undefined;
 
-const ARGS: SignaturesCreateArgs = {
+const ARGS: SignatureCreateArgs = {
   document: {
     name: "acme-msa.docx",
     extension: "docx",
@@ -311,7 +311,7 @@ describe("DocuSign provider", () => {
     await expect(
       createDocusignSession({ http }).get({ ref: ENVELOPE }, {}),
     ).rejects.toMatchObject({
-      signatures: { code: "provider_error" },
+      signature: { code: "provider_error" },
     });
     // A production account's base URI is not a demo one.
     const prod = fakeHttp((request) =>
@@ -338,7 +338,7 @@ describe("DocuSign provider", () => {
         { ref: "../../users" },
         {},
       ),
-    ).rejects.toMatchObject({ signatures: { code: "not_found" } });
+    ).rejects.toMatchObject({ signature: { code: "not_found" } });
   });
 
   it("maps DocuSign's errors to the family's codes", async () => {
@@ -378,7 +378,7 @@ describe("DocuSign provider", () => {
       await expect(
         answering(status, body).get({ ref: ENVELOPE }, {}),
       ).rejects.toMatchObject({
-        signatures: { code },
+        signature: { code },
       });
     const consent = createDocusignSession({
       http: fakeHttp((request) =>
@@ -388,13 +388,13 @@ describe("DocuSign provider", () => {
       ).http,
     });
     await expect(consent.get({ ref: ENVELOPE }, {})).rejects.toMatchObject({
-      signatures: { code: "not_connected" },
+      signature: { code: "not_connected" },
     });
   });
 
   it("is demo unless the declaration says production", async () => {
     const seen: string[] = [];
-    const http: SignaturesHttp = async (request) => {
+    const http: SignatureHttp = async (request) => {
       seen.push(request.url);
       return { ok: false, status: 401, text: async () => "{}" };
     };
@@ -407,7 +407,7 @@ describe("DocuSign provider", () => {
       Record<string, string>
     >)
       await (
-        await docusignSignaturesProvider.createSession(config(options))
+        await docusignSignatureProvider.createSession(config(options))
       )
         .get({ ref: ENVELOPE }, {})
         .catch(() => undefined);
@@ -416,7 +416,7 @@ describe("DocuSign provider", () => {
       "https://account.docusign.com/oauth/userinfo",
     ]);
     expect(() =>
-      docusignSignaturesProvider.createSession(
+      docusignSignatureProvider.createSession(
         config({ environment: "staging" }),
       ),
     ).toThrow(/demo or production/);

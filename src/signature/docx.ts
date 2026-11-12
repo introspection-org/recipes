@@ -1,6 +1,6 @@
 /**
- * The checks and preparation `signatures create` runs on a `.docx` before
- * anything leaves the sandbox (`docs/signatures/README.md`): no pending
+ * The checks and preparation `signature create` runs on a `.docx` before
+ * anything leaves the sandbox (`docs/signature/README.md`): no pending
  * tracked changes, no comments, and each signer's own `By:` and `Date:` lines
  * found and given an anchor of their own in the copy that is sent.
  *
@@ -284,7 +284,7 @@ export interface DocxReadiness {
 
 /** A document `create` refuses; it carries the family's error, as a provider's does. */
 class DocxError extends Error {
-  readonly signatures: {
+  readonly signature: {
     code: "not_ready" | "anchor_not_found" | "ambiguous";
     message: string;
   };
@@ -294,7 +294,7 @@ class DocxError extends Error {
   ) {
     super(message);
     this.name = "DocxError";
-    this.signatures = { code, message };
+    this.signature = { code, message };
   }
 }
 

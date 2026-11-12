@@ -4,18 +4,18 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { zipParts } from "../../../src/signatures/docx.js";
-import { createSignaturesTool } from "../../../src/signatures/index.js";
+import { zipParts } from "../../../src/signature/docx.js";
+import { createSignatureTool } from "../../../src/signature/index.js";
 import {
   hasRecording,
   RECORDING,
   recordingToken,
   startRestRecording,
 } from "../../../test/helpers/polly.js";
-import { docusignSignaturesProvider } from "../src/index.js";
+import { docusignSignatureProvider } from "../src/index.js";
 
 /**
- * The `signatures` tool against DocuSign's developer sandbox: userinfo,
+ * The `signature` tool against DocuSign's developer sandbox: userinfo,
  * create a draft, read it, send it, read it again. Records with
  * `POLLY_MODE=record` and `MCP_RECORD_TOKEN_FILE` (a JSON file holding a
  * sandbox `access_token` from the JWT grant); replays the committed cassette
@@ -64,9 +64,9 @@ describe.skipIf(!RECORDING && !hasRecording(DIR, NAME))(
       const token = recordingToken();
       const polly = startRestRecording(NAME, DIR, HOSTS);
       try {
-        const tool = createSignaturesTool({
+        const tool = createSignatureTool({
           provider: {
-            module: docusignSignaturesProvider,
+            module: docusignSignatureProvider,
             config: { provider: "docusign", options: { environment: "demo" } },
           },
           cwd,
@@ -99,7 +99,7 @@ describe.skipIf(!RECORDING && !hasRecording(DIR, NAME))(
           document: { name: "recipe-test-agreement.docx" },
         });
 
-        // The person's approval is the gate's job, tested in signatures.test.ts.
+        // The person's approval is the gate's job, tested in signature.test.ts.
         const sent = await tool(
           { command: "send", envelope: handle },
           { approve: async () => ({ type: "approved" }) },

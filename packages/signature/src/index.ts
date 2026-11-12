@@ -1,4 +1,4 @@
-import type { RecipeSignaturesModule } from "@introspection-ai/recipes/signatures";
+import type { RecipeSignatureModule } from "@introspection-ai/recipes/signature";
 
 import {
   createDocusignSession,
@@ -7,20 +7,20 @@ import {
   DOCUSIGN_ENVIRONMENTS,
   docusignEnvelope,
   docusignEnvelopeDefinition,
-  docusignSignaturesProvider,
-  SignaturesError,
+  docusignSignatureProvider,
+  SignatureError,
 } from "./docusign.js";
 
-/** The signatures providers the `signatures` tool loads from this package. */
-export const signaturesProviders: RecipeSignaturesModule = {
-  kind: "signatures",
+/** The signature providers the `signature` tool loads from this package. */
+export const signatureProviders: RecipeSignatureModule = {
+  kind: "signature",
   apiVersion: 1,
   providers: {
-    docusign: docusignSignaturesProvider,
+    docusign: docusignSignatureProvider,
   },
 };
 
-export default signaturesProviders;
+export default signatureProviders;
 
 export {
   createDocusignSession,
@@ -29,8 +29,8 @@ export {
   DOCUSIGN_ENVIRONMENTS,
   docusignEnvelope,
   docusignEnvelopeDefinition,
-  docusignSignaturesProvider,
-  SignaturesError,
+  docusignSignatureProvider,
+  SignatureError,
 };
 export type {
   DocusignEnvironment,

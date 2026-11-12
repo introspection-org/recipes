@@ -2,54 +2,54 @@ import { fileURLToPath } from "node:url";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import type { RecipePackageSignatures } from "../recipe/package.js";
+import type { RecipePackageSignature } from "../recipe/package.js";
 import {
   loadProviderModules,
   type ProviderFamily,
 } from "../recipe/providers.js";
 import type { ProductivityFetch } from "../productivity/types.js";
-import { registerSignaturesTool, type SignaturesToolProvider } from "./tool.js";
+import { registerSignatureTool, type SignatureToolProvider } from "./tool.js";
 import {
-  SIGNATURES_COMMANDS,
-  SIGNATURES_MODULE_API_VERSION,
-  SIGNATURES_TOOL_NAME,
-  type RecipeSignaturesProviderModule,
+  SIGNATURE_COMMANDS,
+  SIGNATURE_MODULE_API_VERSION,
+  SIGNATURE_TOOL_NAME,
+  type RecipeSignatureProviderModule,
 } from "./types.js";
 
-/** The package that serves the first-party signatures providers, a companion of Recipes. */
-export const SIGNATURES_PROVIDERS_PACKAGE =
-  "@introspection-ai/recipe-signatures";
+/** The package that serves the first-party signature providers, a companion of Recipes. */
+export const SIGNATURE_PROVIDERS_PACKAGE =
+  "@introspection-ai/recipe-signature";
 
-/** The `signatures` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
-export const SIGNATURES_SKILL = fileURLToPath(
-  new URL("../../skills/signatures/SKILL.md", import.meta.url),
+/** The `signature` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
+export const SIGNATURE_SKILL = fileURLToPath(
+  new URL("../../skills/signature/SKILL.md", import.meta.url),
 );
 
-/** The signatures family for `loadProviderModules`: every first-party id is in one bundle. */
-export const SIGNATURES_PROVIDER_FAMILY: ProviderFamily<RecipeSignaturesProviderModule> =
+/** The signature family for `loadProviderModules`: every first-party id is in one bundle. */
+export const SIGNATURE_PROVIDER_FAMILY: ProviderFamily<RecipeSignatureProviderModule> =
   {
-    kind: "signatures",
-    apiName: "signatures module",
-    apiVersion: SIGNATURES_MODULE_API_VERSION,
-    firstPartyPackage: () => SIGNATURES_PROVIDERS_PACKAGE,
+    kind: "signature",
+    apiName: "signature module",
+    apiVersion: SIGNATURE_MODULE_API_VERSION,
+    firstPartyPackage: () => SIGNATURE_PROVIDERS_PACKAGE,
     firstPartyBundle: true,
     idOf: (module) => module.id,
   };
 
 function contractProblem(
-  module: RecipeSignaturesProviderModule,
+  module: RecipeSignatureProviderModule,
 ): string | undefined {
   if (typeof module.createSession !== "function") return "has no createSession";
   const capabilities = module.capabilities as unknown;
   if (!capabilities || typeof capabilities !== "object")
     return "has no capabilities";
   const { commands, extensions, hosts, options } =
-    capabilities as RecipeSignaturesProviderModule["capabilities"];
+    capabilities as RecipeSignatureProviderModule["capabilities"];
   if (
     !Array.isArray(commands) ||
-    SIGNATURES_COMMANDS.some((command) => !commands.includes(command))
+    SIGNATURE_COMMANDS.some((command) => !commands.includes(command))
   )
-    return `must serve every command: ${SIGNATURES_COMMANDS.join(", ")}`;
+    return `must serve every command: ${SIGNATURE_COMMANDS.join(", ")}`;
   if (!Array.isArray(extensions) || extensions.length === 0)
     return "declares no capabilities.extensions";
   if (!Array.isArray(hosts) || hosts.length === 0)
@@ -66,7 +66,7 @@ function contractProblem(
   return undefined;
 }
 
-export interface LoadedRecipeSignatures {
+export interface LoadedRecipeSignature {
   extension?: { owner: string; factory: ExtensionFactory };
   toolNames: string[];
   skillPaths?: string[];
@@ -75,12 +75,12 @@ export interface LoadedRecipeSignatures {
 }
 
 /**
- * Load the Recipe's `pi.signatures` provider and, when the agent selects the
- * `signatures` tool, one extension registering it. Without `pi.signatures`
+ * Load the Recipe's `pi.signature` provider and, when the agent selects the
+ * `signature` tool, one extension registering it. Without `pi.signature`
  * nothing loads and no tool is offered.
  */
-export async function loadRecipeSignatures(
-  declarations: readonly RecipePackageSignatures[] | undefined,
+export async function loadRecipeSignature(
+  declarations: readonly RecipePackageSignature[] | undefined,
   agentTools: readonly string[],
   options: {
     recipeDir: string;
@@ -92,15 +92,15 @@ export async function loadRecipeSignatures(
     /** A host's request hook that attaches the credential itself. */
     fetch?: ProductivityFetch;
   },
-): Promise<LoadedRecipeSignatures> {
+): Promise<LoadedRecipeSignature> {
   if (declarations === undefined || declarations.length === 0)
     return { toolNames: [] };
   if (declarations.length > 1)
     throw new Error(
-      `Recipe declares ${declarations.length} signatures providers; a Recipe sends through one`,
+      `Recipe declares ${declarations.length} signature providers; a Recipe sends through one`,
     );
   const [loaded] = await loadProviderModules(
-    SIGNATURES_PROVIDER_FAMILY,
+    SIGNATURE_PROVIDER_FAMILY,
     declarations,
     {
       recipeDir: options.recipeDir,
@@ -111,35 +111,35 @@ export async function loadRecipeSignatures(
   const problem = contractProblem(module);
   if (problem)
     throw new Error(
-      `Recipe signatures provider '${declaration.provider}' ${problem}`,
+      `Recipe signature provider '${declaration.provider}' ${problem}`,
     );
-  const settings = (declaration as RecipePackageSignatures).options ?? {};
+  const settings = (declaration as RecipePackageSignature).options ?? {};
   const schema = module.capabilities.options ?? {};
   for (const [name, value] of Object.entries(settings)) {
     if (schema[name] === undefined)
       throw new Error(
-        `Recipe signatures provider '${declaration.provider}' takes no option '${name}'${Object.keys(schema).length ? `; it takes ${Object.keys(schema).join(", ")}` : ""}`,
+        `Recipe signature provider '${declaration.provider}' takes no option '${name}'${Object.keys(schema).length ? `; it takes ${Object.keys(schema).join(", ")}` : ""}`,
       );
     if (typeof value !== schema[name])
       throw new Error(
-        `Recipe signatures provider '${declaration.provider}' option '${name}' must be a ${schema[name]}`,
+        `Recipe signature provider '${declaration.provider}' option '${name}' must be a ${schema[name]}`,
       );
   }
-  const provider: SignaturesToolProvider = {
+  const provider: SignatureToolProvider = {
     module,
     config: { provider: declaration.provider, options: settings },
   };
   const hosts = module.capabilities.hosts;
-  if (!agentTools.includes(SIGNATURES_TOOL_NAME))
+  if (!agentTools.includes(SIGNATURE_TOOL_NAME))
     return { toolNames: [], hosts };
   return {
-    toolNames: [SIGNATURES_TOOL_NAME],
+    toolNames: [SIGNATURE_TOOL_NAME],
     hosts,
-    skillPaths: [SIGNATURES_SKILL],
+    skillPaths: [SIGNATURE_SKILL],
     extension: {
-      owner: "<signatures>",
+      owner: "<signature>",
       factory: (pi) => {
-        registerSignaturesTool(pi, {
+        registerSignatureTool(pi, {
           provider,
           env: options.env ?? process.env,
           ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),

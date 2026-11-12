@@ -237,7 +237,7 @@ export function autoResolveInteractions<T>(fn: () => Promise<T>): Promise<T> {
 /**
  * Whether an approval asked for now would be approved without a person: in a
  * child agent, or with `PI_ASK_USER_AUTO_APPROVE`. A tool whose action must
- * have a person's approval, such as `signatures send`, refuses instead.
+ * have a person's approval, such as `signature send`, refuses instead.
  */
 export function approvalsAreAutomatic(
   env: NodeJS.ProcessEnv = process.env,

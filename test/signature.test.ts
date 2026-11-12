@@ -23,20 +23,20 @@ import {
   docxReadiness,
   prepareDocx,
   zipParts,
-} from "../src/signatures/docx.js";
+} from "../src/signature/docx.js";
 import {
   approvalBinding,
-  createSignaturesTool,
-  loadRecipeSignatures,
-  registerSignaturesTool,
-  SIGNATURES_FIRST_PARTY_OPTIONS,
-  SIGNATURES_SEND_APPROVAL_KIND,
+  createSignatureTool,
+  loadRecipeSignature,
+  registerSignatureTool,
+  SIGNATURE_FIRST_PARTY_OPTIONS,
+  SIGNATURE_SEND_APPROVAL_KIND,
   type ProviderEnvelope,
-  type RecipeSignaturesProviderModule,
-  type SignaturesCreateArgs,
-  type SignaturesToolArgs,
-} from "../src/signatures/index.js";
-import { docusignSignaturesProvider } from "../packages/signatures/src/index.js";
+  type RecipeSignatureProviderModule,
+  type SignatureCreateArgs,
+  type SignatureToolArgs,
+} from "../src/signature/index.js";
+import { docusignSignatureProvider } from "../packages/signature/src/index.js";
 
 const W =
   'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
@@ -195,7 +195,7 @@ afterEach(() => {
 });
 
 function workspace(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "signatures-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "signature-")));
   scratch.push(dir);
   mkdirSync(join(dir, "outputs"));
   writeFileSync(join(dir, "outputs", "acme-msa.docx"), CONTRACT);
@@ -206,11 +206,11 @@ const ENVELOPE_ID = "6f1c2a8e-1b2c-4d3e-8f90-1234567890ab";
 
 /** A provider that keeps envelopes in memory and records what it was asked. */
 function fakeProvider(initialStatus = "created") {
-  const created: SignaturesCreateArgs[] = [];
+  const created: SignatureCreateArgs[] = [];
   const sent: string[] = [];
   let envelope: ProviderEnvelope | undefined;
-  const module: RecipeSignaturesProviderModule = {
-    kind: "signatures",
+  const module: RecipeSignatureProviderModule = {
+    kind: "signature",
     apiVersion: 1,
     id: "docusign",
     capabilities: {
@@ -242,7 +242,7 @@ function fakeProvider(initialStatus = "created") {
       async get({ ref }) {
         if (!envelope || ref !== envelope.ref)
           throw Object.assign(new Error("gone"), {
-            signatures: { code: "not_found", message: "No such envelope" },
+            signature: { code: "not_found", message: "No such envelope" },
           });
         return envelope;
       },
@@ -256,7 +256,7 @@ function fakeProvider(initialStatus = "created") {
   return { module, created, sent };
 }
 
-const CREATE: SignaturesToolArgs = {
+const CREATE: SignatureToolArgs = {
   command: "create",
   path: "outputs/acme-msa.docx",
   subject: "Acme MSA for signature",
@@ -264,11 +264,11 @@ const CREATE: SignaturesToolArgs = {
   cc: [{ name: "Legal", email: "legal@example.com", routing_order: 2 }],
 };
 
-describe("signatures create", () => {
+describe("signature create", () => {
   it("sends the prepared copy with the reviewed file's digest, and emails no one", async () => {
     const cwd = workspace();
     const fake = fakeProvider();
-    const tool = createSignaturesTool({
+    const tool = createSignatureTool({
       provider: {
         module: fake.module,
         config: { provider: "docusign", options: {} },
@@ -312,7 +312,7 @@ describe("signatures create", () => {
       ),
     );
     const fake = fakeProvider();
-    const tool = createSignaturesTool({
+    const tool = createSignatureTool({
       provider: {
         module: fake.module,
         config: { provider: "docusign", options: {} },
@@ -327,20 +327,20 @@ describe("signatures create", () => {
       ["outputs/missing.docx", "invalid_request"],
     ] as const)
       await expect(tool({ ...CREATE, path })).rejects.toMatchObject({
-        signatures: { code },
+        signature: { code },
       });
     await expect(
       tool({
         ...CREATE,
         signers: [{ name: "Jane Doe", email: "not-an-email" }],
       }),
-    ).rejects.toMatchObject({ signatures: { code: "invalid_request" } });
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
     await expect(
       tool({
         ...CREATE,
         cc: [{ name: "Jane again", email: "JANE@example.com" }],
       }),
-    ).rejects.toMatchObject({ signatures: { code: "invalid_request" } });
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
     expect(fake.created).toEqual([]);
   });
 });
@@ -370,14 +370,14 @@ function fakeCtx(options: {
 }
 
 function registered(
-  module: RecipeSignaturesProviderModule,
+  module: RecipeSignatureProviderModule,
   cwd: string,
   env: NodeJS.ProcessEnv = {},
 ) {
   let tool: {
     execute: (
       id: string,
-      params: SignaturesToolArgs,
+      params: SignatureToolArgs,
       signal: AbortSignal | undefined,
       onUpdate: unknown,
       ctx?: ExtensionContext,
@@ -387,7 +387,7 @@ function registered(
       isError?: boolean;
     }>;
   };
-  registerSignaturesTool(
+  registerSignatureTool(
     {
       registerTool: ((definition: typeof tool) => (tool = definition)) as never,
     },
@@ -400,12 +400,12 @@ function registered(
   return tool!;
 }
 
-const SEND: SignaturesToolArgs = {
+const SEND: SignatureToolArgs = {
   command: "send",
   envelope: `docusign:${ENVELOPE_ID}`,
 };
 
-describe("signatures send", () => {
+describe("signature send", () => {
   it("sends once a person approves in the dialog", async () => {
     const fake = fakeProvider();
     const tool = registered(fake.module, workspace());
@@ -500,7 +500,7 @@ describe("signatures send", () => {
       }
     ).interrupt;
     expect(interrupt.metadata).toMatchObject({
-      kind: SIGNATURES_SEND_APPROVAL_KIND,
+      kind: SIGNATURE_SEND_APPROVAL_KIND,
       envelope: `docusign:${ENVELOPE_ID}`,
       document_sha256: createHash("sha256").update(CONTRACT).digest("hex"),
     });
@@ -515,7 +515,7 @@ describe("signatures send", () => {
       message: {
         role: "toolResult",
         toolCallId: "c2",
-        toolName: "signatures",
+        toolName: "signature",
         content: [{ type: "text", text }],
         details: paused.details,
       },
@@ -585,7 +585,7 @@ describe("signatures send", () => {
 // ---------------------------------------------------------------------------
 
 function recipe(pi: unknown, extra: Record<string, unknown> = {}): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "signatures-recipe-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "signature-recipe-")));
   scratch.push(dir);
   mkdirSync(join(dir, "agents"));
   writeFileSync(join(dir, "agents", "agent.yaml"), "name: agent\n");
@@ -596,19 +596,19 @@ function recipe(pi: unknown, extra: Record<string, unknown> = {}): string {
   return dir;
 }
 
-describe("pi.signatures", () => {
+describe("pi.signature", () => {
   it("parses one provider and its options, and is absent without it", () => {
     expect(
-      readPiPackageManifest(recipe({ agents: ["agents"] })).signatures,
+      readPiPackageManifest(recipe({ agents: ["agents"] })).signature,
     ).toBeUndefined();
     expect(
       readPiPackageManifest(
         recipe({
-          signatures: [
+          signature: [
             { provider: "docusign", options: { environment: "demo" } },
           ],
         }),
-      ).signatures,
+      ).signature,
     ).toEqual([{ provider: "docusign", options: { environment: "demo" } }]);
   });
 
@@ -616,18 +616,18 @@ describe("pi.signatures", () => {
     const messages = validatePiPackageManifest(
       readPiPackageManifest(
         recipe({
-          signatures: [
+          signature: [
             { provider: "docusign", options: { team: "x" } },
             { provider: "acme", package: "@acme/sign", enabled: false },
           ],
         }),
       ),
     )
-      .findings.filter((finding) => finding.code === "pi.signatures_invalid")
+      .findings.filter((finding) => finding.code === "pi.signature_invalid")
       .map((finding) => finding.message);
     expect(messages).toEqual(
       expect.arrayContaining([
-        "package.json#pi.signatures declares 2 providers; it takes at most 1",
+        "package.json#pi.signature declares 2 providers; it takes at most 1",
         expect.stringContaining("provider 'docusign' takes no option 'team'"),
         expect.stringContaining("contains unknown field(s): enabled"),
       ]),
@@ -635,13 +635,13 @@ describe("pi.signatures", () => {
   });
 
   it("holds the first-party options the provider declares", () => {
-    expect(SIGNATURES_FIRST_PARTY_OPTIONS.docusign).toEqual(
-      docusignSignaturesProvider.capabilities.options,
+    expect(SIGNATURE_FIRST_PARTY_OPTIONS.docusign).toEqual(
+      docusignSignatureProvider.capabilities.options,
     );
   });
 });
 
-describe("loadRecipeSignatures", () => {
+describe("loadRecipeSignature", () => {
   function providerPackage(dir: string) {
     const root = join(dir, "node_modules", "@acme", "sign");
     mkdirSync(root, { recursive: true });
@@ -656,45 +656,45 @@ describe("loadRecipeSignatures", () => {
     );
     writeFileSync(
       join(root, "index.js"),
-      `export default { kind: "signatures", apiVersion: 1, id: "acme",
+      `export default { kind: "signature", apiVersion: 1, id: "acme",
         capabilities: { commands: ["create", "send", "get"], extensions: ["docx"], hosts: ["sign.acme.test"], options: { region: "string" } },
         createSession: () => ({}) };\n`,
     );
   }
 
-  it("offers nothing without pi.signatures, or when the agent does not select it", async () => {
+  it("offers nothing without pi.signature, or when the agent does not select it", async () => {
     const dir = recipe({});
     expect(
-      await loadRecipeSignatures(undefined, ["signatures"], { recipeDir: dir }),
+      await loadRecipeSignature(undefined, ["signature"], { recipeDir: dir }),
     ).toEqual({
       toolNames: [],
     });
     providerPackage(dir);
     const declared = [{ provider: "acme", package: "@acme/sign" }];
     expect(
-      await loadRecipeSignatures(declared, ["documents"], { recipeDir: dir }),
+      await loadRecipeSignature(declared, ["documents"], { recipeDir: dir }),
     ).toEqual({ toolNames: [], hosts: ["sign.acme.test"] });
-    const loaded = await loadRecipeSignatures(declared, ["signatures"], {
+    const loaded = await loadRecipeSignature(declared, ["signature"], {
       recipeDir: dir,
     });
-    expect(loaded.toolNames).toEqual(["signatures"]);
-    expect(loaded.skillPaths?.[0]).toMatch(/skills\/signatures\/SKILL\.md$/);
+    expect(loaded.toolNames).toEqual(["signature"]);
+    expect(loaded.skillPaths?.[0]).toMatch(/skills\/signature\/SKILL\.md$/);
   });
 
   it("refuses an option the provider does not declare, and a second provider", async () => {
     const dir = recipe({});
     providerPackage(dir);
     await expect(
-      loadRecipeSignatures(
+      loadRecipeSignature(
         [{ provider: "acme", package: "@acme/sign", options: { team: "x" } }],
-        ["signatures"],
+        ["signature"],
         { recipeDir: dir },
       ),
     ).rejects.toThrow("takes no option 'team'; it takes region");
     await expect(
-      loadRecipeSignatures(
+      loadRecipeSignature(
         [{ provider: "acme", package: "@acme/sign" }, { provider: "docusign" }],
-        ["signatures"],
+        ["signature"],
         { recipeDir: dir },
       ),
     ).rejects.toThrow("a Recipe sends through one");

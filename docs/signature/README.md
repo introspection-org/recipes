@@ -1,9 +1,9 @@
-# Signatures tool
+# Signature tool
 
-**Status: built** (`@introspection-ai/recipes/signatures` and
-`@introspection-ai/recipe-signatures`); the sandbox recording is not yet
-committed ([Tests](#tests)). One `signatures` tool sends a reviewed document for
-e-signature. It is the `signatures` family of
+**Status: built** (`@introspection-ai/recipes/signature` and
+`@introspection-ai/recipe-signature`); the sandbox recording is not yet
+committed ([Tests](#tests)). One `signature` tool sends a reviewed document for
+e-signature. It is the `signature` family of
 [provider modules](../providers.md), and its first provider is DocuSign's
 eSignature REST API
 ([Envelopes: create](https://developers.docusign.com/docs/esign-rest-api/reference/envelopes/envelopes/create)).
@@ -27,20 +27,20 @@ sends for signature never loads it.
 ```json
 {
   "pi": {
-    "signatures": [{ "provider": "docusign" }]
+    "signature": [{ "provider": "docusign" }]
   }
 }
 ```
 
 ```yaml
-tools: [documents, signatures]
+tools: [documents, signature]
 ```
 
-Nothing about signatures loads, and no `signatures` tool is offered, unless a
-Recipe declares `pi.signatures` and its agent names `signatures` in its
+Nothing about signature loads, and no `signature` tool is offered, unless a
+Recipe declares `pi.signature` and its agent names `signature` in its
 `tools`. An agent's `include: ["*"]` does not select it: a tool that emails
 people outside the organization is chosen by name. When it is selected, the
-host also offers the `signatures` skill (`skills/signatures/SKILL.md`).
+host also offers the `signature` skill (`skills/signature/SKILL.md`).
 
 A declaration takes `provider`, `package` (a Recipe's own provider, as for
 [every family](../providers.md#2-declaring-providers)) and `options`. One
@@ -224,7 +224,7 @@ How the approval arrives depends on the host:
 | Host                      | Approval                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pi terminal (TUI) and RPC | The approval dialog; on `Approve`, the same call sends.                                                                                                                                                                                                                                                                                                       |
-| Pause/resume host         | The call returns the approval interrupt (`metadata.kind: "signatures_send"`, with the envelope, the SHA-256 and the recipients). After the person approves, the model calls `send` again; the tool finds that call's result in the session, rewritten by the host to `Approved.`, checks that it names the same envelope, document and recipients, and sends. |
+| Pause/resume host         | The call returns the approval interrupt (`metadata.kind: "signature_send"`, with the envelope, the SHA-256 and the recipients). After the person approves, the model calls `send` again; the tool finds that call's result in the session, rewritten by the host to `Approved.`, checks that it names the same envelope, document and recipients, and sends. |
 | Headless and child agents | Refused with `approval_required`. `PI_ASK_USER_AUTO_APPROVE` and a child agent's automatic approvals approve every other confirmation; they never approve a `send`.                                                                                                                                                                                           |
 | No channel                | Refused with `approval_required`, telling the model to ask in its reply.                                                                                                                                                                                                                                                                                      |
 
@@ -247,7 +247,7 @@ status and signed time. Downloading the signed document is not in this version.
 
 |           |                                                                                                                                                                              |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Package   | `@introspection-ai/recipe-signatures`, a companion of Recipes like `@introspection-ai/recipe-issues`                                                                         |
+| Package   | `@introspection-ai/recipe-signature`, a companion of Recipes like `@introspection-ai/recipe-issues`                                                                         |
 | Transport | REST, through the host's HTTP (spans, a placeholder credential, retried reads; a write is sent once)                                                                         |
 | Hosts     | `account-d.docusign.com` and `demo.docusign.net` (demo); `account.docusign.com` and the production base URIs `www`, `na2`, `na3`, `na4`, `eu`, `au` and `ca` `.docusign.net` |
 
@@ -306,7 +306,7 @@ userinfo answer names the person, so it is never recorded on a span.
   recipients at `example.com`, never a real person. The helper redacts the
   token, the account and user ids, and every email address before the
   cassette is committed; CI replays it. The test
-  (`packages/signatures/test/docusign.recording.test.ts`) is skipped until a
+  (`packages/signature/test/docusign.recording.test.ts`) is skipped until a
   cassette is committed: record it with `POLLY_MODE=record` and
   `MCP_RECORD_TOKEN_FILE` holding a sandbox `access_token`.
 

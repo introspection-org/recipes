@@ -1,13 +1,13 @@
 ---
-name: signatures
-description: How to use the signatures tool well. Load it before preparing a reviewed document for e-signature, sending it, or checking who has signed.
+name: signature
+description: How to use the signature tool well. Load it before preparing a reviewed document for e-signature, sending it, or checking who has signed.
 ---
 
-# Signatures
+# Signature
 
-The `signatures` tool sends a final, reviewed Word document for e-signature through the
+The `signature` tool sends a final, reviewed Word document for e-signature through the
 service this Recipe declares (DocuSign). Each call takes a `command`: `create`, `send` or
-`get`. `tools list signatures --schema` shows every command's arguments.
+`get`. `tools list signature --schema` shows every command's arguments.
 
 Sending a contract for signature is hard to take back: the signers get an email at once.
 Every step below exists so that what they receive is exactly what a person approved.

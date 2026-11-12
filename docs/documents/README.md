@@ -423,7 +423,7 @@ dependency of the Recipe that uses it, installed when the runtime is baked.
 ## After review: sending for signature
 
 The document tools never send a file anywhere. Once a person has reviewed the
-redline and every change is resolved, the [signatures tool](../signatures/README.md)
+redline and every change is resolved, the [signature tool](../signature/README.md)
 sends the final `.docx` under `outputs/` for e-signature, and refuses one that
 still has tracked changes or comments.
 

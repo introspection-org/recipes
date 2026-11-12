@@ -976,7 +976,7 @@ fn validate_pi_config(
         "productivity",
         "search",
         "issues",
-        "signatures",
+        "signature",
         "mcp",
         "runtime",
         "evals",
@@ -1034,8 +1034,8 @@ fn validate_pi_config(
     if let Some(issues) = pi.get("issues") {
         validate_provider_family(&ISSUES_FAMILY, issues, package, ctx);
     }
-    if let Some(signatures) = pi.get("signatures") {
-        validate_provider_family(&SIGNATURES_FAMILY, signatures, package, ctx);
+    if let Some(signature) = pi.get("signature") {
+        validate_provider_family(&SIGNATURE_FAMILY, signature, package, ctx);
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
@@ -1057,7 +1057,7 @@ const COMPANION_PACKAGES: [&str; 9] = [
     "@introspection-ai/recipe-productivity-microsoft",
     "@introspection-ai/recipe-issues",
     "@introspection-ai/recipe-search",
-    "@introspection-ai/recipe-signatures",
+    "@introspection-ai/recipe-signature",
 ];
 
 fn versioned_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
@@ -1614,10 +1614,10 @@ const ISSUES_FAMILY: ProviderFamily = ProviderFamily {
     max: None,
 };
 
-const SIGNATURES_FAMILY: ProviderFamily = ProviderFamily {
-    name: "signatures",
+const SIGNATURE_FAMILY: ProviderFamily = ProviderFamily {
+    name: "signature",
     first_party: &["docusign"],
-    bundle: "@introspection-ai/recipe-signatures",
+    bundle: "@introspection-ai/recipe-signature",
     example: "docusign",
     options: Some(|provider| match provider {
         "docusign" => &[
@@ -6311,16 +6311,16 @@ mod tests {
     }
 
     #[test]
-    fn signatures_declarations_take_one_provider_with_its_options() {
+    fn signature_declarations_take_one_provider_with_its_options() {
         let ok = check_recipe_files(&provider_recipe(
-            "signatures",
+            "signature",
             json!([{ "provider": "docusign", "options": { "environment": "demo", "account": "acme" } }]),
             json!({}),
         ));
         assert!(
             !ok.diagnostics
                 .iter()
-                .any(|d| d.code == "pi.signatures_invalid" || d.code == "pi.unknown_key"),
+                .any(|d| d.code == "pi.signature_invalid" || d.code == "pi.unknown_key"),
             "{:?}",
             ok.diagnostics
         );
@@ -6340,9 +6340,9 @@ mod tests {
             ),
         ] {
             let report =
-                check_recipe_files(&provider_recipe("signatures", declarations, json!({})));
+                check_recipe_files(&provider_recipe("signature", declarations, json!({})));
             assert!(
-                invalid_with(&report, "pi.signatures_invalid", text),
+                invalid_with(&report, "pi.signature_invalid", text),
                 "{text}: {:?}",
                 report.diagnostics
             );

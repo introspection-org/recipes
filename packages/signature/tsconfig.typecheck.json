@@ -4,7 +4,7 @@
     "noEmit": true,
     "rootDir": "../..",
     "paths": {
-      "@introspection-ai/recipes/signatures": ["../../src/signatures/index.ts"]
+      "@introspection-ai/recipes/signature": ["../../src/signature/index.ts"]
     }
   },
   "include": ["src"]

@@ -1,6 +1,6 @@
 /**
- * The arguments each `signatures` command takes, as the model sees them.
- * `scripts/generate-tool-schemas.mjs` turns each `Signatures<Command>Arguments`
+ * The arguments each `signature` command takes, as the model sees them.
+ * `scripts/generate-tool-schemas.mjs` turns each `Signature<Command>Arguments`
  * type into the JSON Schema in `arguments.generated.ts`: a field's doc comment
  * is its description and its tags are its limits.
  */
@@ -33,7 +33,7 @@ interface Recipient {
   routing_order?: number;
 }
 
-export interface SignaturesCreateArguments {
+export interface SignatureCreateArguments {
   /**
    * The final .docx under outputs/, with no tracked changes or comments
    * @minLength 1
@@ -63,10 +63,10 @@ export interface SignaturesCreateArguments {
   cc?: Recipient[];
 }
 
-export interface SignaturesSendArguments {
+export interface SignatureSendArguments {
   envelope: EnvelopeHandle;
 }
 
-export interface SignaturesGetArguments {
+export interface SignatureGetArguments {
   envelope: EnvelopeHandle;
 }

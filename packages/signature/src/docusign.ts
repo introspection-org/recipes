@@ -1,5 +1,5 @@
 /**
- * DocuSign's eSignature REST API (v2.1) as a `signatures` provider: a draft
+ * DocuSign's eSignature REST API (v2.1) as a `signature` provider: a draft
  * envelope from the prepared document, its status, and sending it.
  * https://developers.docusign.com/docs/esign-rest-api/reference/envelopes/envelopes/create
  *
@@ -11,15 +11,15 @@
 import type {
   EnvelopeRecipient,
   ProviderEnvelope,
-  RecipeSignaturesProviderModule,
-  SignaturesCallContext,
-  SignaturesCreateArgs,
-  SignaturesErrorCode,
-  SignaturesErrorInfo,
-  SignaturesHttp,
-  SignaturesHttpRequest,
-  SignaturesSession,
-} from "@introspection-ai/recipes/signatures";
+  RecipeSignatureProviderModule,
+  SignatureCallContext,
+  SignatureCreateArgs,
+  SignatureErrorCode,
+  SignatureErrorInfo,
+  SignatureHttp,
+  SignatureHttpRequest,
+  SignatureSession,
+} from "@introspection-ai/recipes/signature";
 
 /** The hosts each environment reaches: its OAuth server and its accounts' base URIs. */
 export const DOCUSIGN_ENVIRONMENTS = {
@@ -52,12 +52,12 @@ const ENVELOPE_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A typed failure the host reports as is. */
-export class SignaturesError extends Error {
-  readonly signatures: SignaturesErrorInfo;
-  constructor(code: SignaturesErrorCode, message: string) {
+export class SignatureError extends Error {
+  readonly signature: SignatureErrorInfo;
+  constructor(code: SignatureErrorCode, message: string) {
     super(message);
-    this.name = "SignaturesError";
-    this.signatures = { code, message };
+    this.name = "SignatureError";
+    this.signature = { code, message };
   }
 }
 
@@ -93,29 +93,29 @@ function failure(
   status: number,
   body: string,
   action: string,
-): SignaturesError {
+): SignatureError {
   const parsed = parse(body);
   const code = text(parsed.errorCode) ?? text(parsed.error) ?? "";
   const message =
     text(parsed.message) ?? text(parsed.error_description) ?? `HTTP ${status}`;
   const detail = `${code ? `${code}: ` : ""}${message}`.slice(0, 300);
   if (status === 401 || NOT_CONNECTED.has(code))
-    return new SignaturesError(
+    return new SignatureError(
       "not_connected",
       `DocuSign is not connected for this person (${detail}). Ask them to connect it, then try again.`,
     );
   if (status === 404 || code === "ENVELOPE_DOES_NOT_EXIST")
-    return new SignaturesError("not_found", `${action}: ${detail}`);
+    return new SignatureError("not_found", `${action}: ${detail}`);
   if (code.startsWith("ANCHOR_TAB"))
-    return new SignaturesError("anchor_not_found", `${action}: ${detail}`);
+    return new SignatureError("anchor_not_found", `${action}: ${detail}`);
   if (status === 400)
-    return new SignaturesError("invalid_request", `${action}: ${detail}`);
-  return new SignaturesError("provider_error", `${action}: ${detail}`);
+    return new SignatureError("invalid_request", `${action}: ${detail}`);
+  return new SignatureError("provider_error", `${action}: ${detail}`);
 }
 
 function envelopeId(ref: string): string {
   if (!ENVELOPE_ID.test(ref))
-    throw new SignaturesError(
+    throw new SignatureError(
       "not_found",
       `'${ref}' is not a DocuSign envelope id.`,
     );
@@ -131,7 +131,7 @@ interface Account {
 function environmentOf(value: unknown): DocusignEnvironment {
   if (value === undefined || value === "demo") return "demo";
   if (value === "production") return "production";
-  throw new SignaturesError(
+  throw new SignatureError(
     "invalid_request",
     `The docusign option environment is demo or production, not '${String(value)}'.`,
   );
@@ -173,7 +173,7 @@ export function docusignEnvelope(value: unknown): ProviderEnvelope {
   const envelope = record(value);
   const ref = text(envelope.envelopeId);
   if (!ref)
-    throw new SignaturesError(
+    throw new SignatureError(
       "provider_error",
       "DocuSign answered without an envelopeId",
     );
@@ -205,7 +205,7 @@ function anchored(anchorString: string) {
 }
 
 /** The `POST …/envelopes` body for a draft: `status: created` emails no one. */
-export function docusignEnvelopeDefinition(args: SignaturesCreateArgs) {
+export function docusignEnvelopeDefinition(args: SignatureCreateArgs) {
   const base64 = Buffer.from(args.document.bytes).toString("base64");
   let id = 0;
   const next = () => String((id += 1));
@@ -261,7 +261,7 @@ export function docusignEnvelopeDefinition(args: SignaturesCreateArgs) {
 }
 
 export interface DocusignSessionOptions {
-  http: SignaturesHttp;
+  http: SignatureHttp;
   environment?: DocusignEnvironment;
   /** The account to send from; default: the user's default account. */
   account?: string;
@@ -270,13 +270,13 @@ export interface DocusignSessionOptions {
 /** A DocuSign session over the host's HTTP. */
 export function createDocusignSession(
   options: DocusignSessionOptions,
-): SignaturesSession {
+): SignatureSession {
   const { http } = options;
   const environment = DOCUSIGN_ENVIRONMENTS[options.environment ?? "demo"];
   let account: Promise<Account> | undefined;
 
   const call = async (
-    request: SignaturesHttpRequest,
+    request: SignatureHttpRequest,
     action: string,
   ): Promise<Record<string, unknown>> => {
     const response = await http({
@@ -314,7 +314,7 @@ export function createDocusignSession(
       ? accounts.find((entry) => entry.account_id === options.account)
       : (accounts.find((entry) => entry.is_default === true) ?? accounts[0]);
     if (!chosen)
-      throw new SignaturesError(
+      throw new SignatureError(
         "not_connected",
         options.account
           ? `The connected DocuSign user has no access to account ${options.account}.`
@@ -333,7 +333,7 @@ export function createDocusignSession(
       base.protocol !== "https:" ||
       !(environment.api as readonly string[]).includes(base.hostname)
     )
-      throw new SignaturesError(
+      throw new SignatureError(
         "provider_error",
         `DocuSign named a base URI outside ${environment.api.join(", ")}; nothing was sent.`,
       );
@@ -355,7 +355,7 @@ export function createDocusignSession(
 
   const get = async (
     ref: string,
-    ctx: SignaturesCallContext,
+    ctx: SignatureCallContext,
   ): Promise<ProviderEnvelope> => {
     const id = envelopeId(ref);
     const { base } = await accountFor(ctx.signal);
@@ -387,7 +387,7 @@ export function createDocusignSession(
       );
       const ref = text(created.envelopeId);
       if (!ref)
-        throw new SignaturesError(
+        throw new SignatureError(
           "provider_error",
           "DocuSign created no envelope id",
         );
@@ -440,8 +440,8 @@ const ALL_HOSTS = [
   ...DOCUSIGN_ENVIRONMENTS.production.api,
 ];
 
-export const docusignSignaturesProvider: RecipeSignaturesProviderModule = {
-  kind: "signatures",
+export const docusignSignatureProvider: RecipeSignatureProviderModule = {
+  kind: "signature",
   apiVersion: 1,
   id: "docusign",
   capabilities: {
