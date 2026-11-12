@@ -10,7 +10,9 @@ its rationale as a margin comment, written for the other side's lawyer to read.
 
 ## A first markup
 
-1. `read` the brief and the whole contract, every part.
+1. `read` the brief and the whole contract, every part. If the contract is a PDF,
+   `convert` it to `.docx` first and redline the converted file. Tell the person, so
+   they can check it against the signed PDF before it goes to the other side.
 2. Plan by priority before editing: what moves a right, an obligation or a risk. Leave
    drafting preferences alone unless the brief asks for them.
 3. Make the changes in one `revise` batch, or as few as possible, in document order. For

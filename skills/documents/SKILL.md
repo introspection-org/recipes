@@ -1,6 +1,6 @@
 ---
 name: documents
-description: How to read Word, PDF and HTML files, check an HTML page's charts, and mark up Word files with the documents tool. Load it before opening, editing, commenting on or responding to any document.
+description: How to read Word, PDF and HTML files, check an HTML page's charts, convert a PDF to Word, and mark up Word files with the documents tool. Load it before opening, editing, commenting on or responding to any document.
 ---
 
 # Documents
@@ -21,6 +21,7 @@ Always `read` first, every part: pass `offset` from the previous part until it e
 | Answer markup already there | `respond`: accept or reject by change number, reply on a thread, or counter with your own change |
 | See a PDF page as an image (a scan, a signature, a chart) | `render`, then open the image it returns |
 | Check that each chart on an HTML page makes sense | `render` the page, then open each chart image it returns; `pages: "2"` renders chart 2 alone |
+| Mark up a PDF, which can't hold tracked changes | `convert` it to Word: `{path: "msa.pdf", output: "outputs/msa.docx"}`, then `read` the `.docx` and change it with the commands above |
 
 Every change carries its `rationale`, which becomes a margin comment.
 
@@ -30,6 +31,9 @@ The first change takes `path` (the file you were given) and `output` (a new file
 `outputs/`). Every later change takes `path` set to that output and no `output`. Never
 rebuild a file from scratch.
 
+After `convert`, the converted `.docx` is the file you change: pass it as `path` with no
+`output`.
+
 ## Quoting
 
 Copy quotes from the text after the paragraph id in `read`, within one paragraph, and
@@ -37,6 +41,17 @@ pass that `paragraph` id. Quote only enough to find the place once; `near` or
 `occurrence` picks one match when it repeats. Spacing, curly quotes and dashes are
 forgiven; words and capitalization are not. With `revise` there is nothing to quote:
 copy the paragraph's current text and change only what must change.
+
+## PDFs you are asked to mark up
+
+`convert` rebuilds the PDF as Word headings, paragraphs and tables. It does not copy the
+layout, so fonts, headers, footers and page numbers are gone. `read` the converted file
+before changing it, and check that clause numbers and tables came over as the PDF shows
+them. In your reply, say that the redline is on a Word copy converted from the PDF.
+
+If `convert` reports pages with no text layer, it wrote nothing. `render` those pages to
+see them, and tell the person the PDF needs OCR before it can be redlined. Don't retype
+a scanned page into the document.
 
 ## When something fails
 
