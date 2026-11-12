@@ -5,6 +5,7 @@
 //! Hosts own filesystem discovery and any environment-specific policy.
 
 mod judges;
+mod locate;
 mod prompts;
 pub mod resources;
 pub mod spec;
@@ -361,6 +362,14 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
     let judge_count = judges::validate_judges(&mut ctx);
     if judge_count > 0 {
         resource_counts.insert("judges".to_owned(), judge_count);
+    }
+
+    if let Some(source) = ctx.content(PACKAGE_JSON).map(str::to_owned) {
+        for diagnostic in &mut ctx.diagnostics {
+            if diagnostic.path == PACKAGE_JSON && diagnostic.span.is_none() {
+                diagnostic.span = locate::package_json_span(&source, &diagnostic.message);
+            }
+        }
     }
 
     let valid = !ctx
