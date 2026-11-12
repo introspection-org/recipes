@@ -55,7 +55,7 @@ describe("the review core", () => {
     const result = await build({
       stdin: {
         resolveDir: root,
-        contents: `import { formatReviews } from "@introspection-ai/recipes/review"; console.log(formatReviews([]));`,
+        contents: `import { formatReviews, resolveArtifactLink } from "@introspection-ai/recipes/review"; console.log(formatReviews([]), resolveArtifactLink("outputs/report.md", [{ path: "outputs/report.md" }]));`,
       },
       absWorkingDir: root,
       bundle: true,

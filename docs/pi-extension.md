@@ -173,6 +173,33 @@ Binary `ref` and text `diff` requests are refused. Without a binary-capable
 terminal cannot render binary files. Hosts upgrading from the string-only
 callback must handle both `string` and `Uint8Array` content.
 
+### Explicit artifact links
+
+Hosts resolve explicit Markdown destinations against known artifact references
+with `resolveArtifactLink` from `@introspection-ai/recipes/review`. The resolver
+is shared, browser-safe code; it neither parses prose nor reads or uploads files.
+A local host leaves an unuploaded file's authored path intact. A hosted UI can
+map `file.id` to its file page, map `source` to its pinned repository view, and
+return no URL for `path` so the link opens its existing artifact viewer.
+
+```ts
+const link = resolveArtifactLink("outputs/report.md", artifacts, {
+  workspaceRoot: "/workspace",
+  file: ({ id }) => `/files/${encodeURIComponent(id)}`,
+  path: () => undefined,
+});
+```
+
+`artifacts` belongs to the current conversation or selected document, never a
+global basename index. The latest exact workspace-path match wins. `fromPath`
+resolves links relative to a document; absolute paths require `workspaceRoot`
+and cannot escape it. Local `file:` URLs use the same workspace boundary; remote
+file authorities are refused. Percent-encoded filenames and URL fragments are supported.
+External URLs, malformed destinations, query-bearing paths and unknown files
+are left to the host's ordinary link handling. Bare paths, inline code, fenced
+code and images do not invoke this API. Opening a known reference needs no
+additional tool call; persistence remains part of the standard artifact tool.
+
 ### Reviewing several files
 
 List `review_artifacts` and the agent can ask the user to review several

@@ -208,3 +208,10 @@ export function artifactDiffCounts(diff: string): {
   }
   return { added, removed };
 }
+
+export {
+  resolveArtifactLink,
+  type ArtifactLinkReference,
+  type ArtifactLinkHost,
+  type ResolvedArtifactLink,
+} from "./artifact-links.js";
