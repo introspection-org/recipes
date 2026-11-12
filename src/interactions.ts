@@ -234,6 +234,20 @@ export function autoResolveInteractions<T>(fn: () => Promise<T>): Promise<T> {
   return interactionAutoResolution.run(true, fn);
 }
 
+/**
+ * Whether an approval asked for now would be approved without a person: in a
+ * child agent, or with `PI_ASK_USER_AUTO_APPROVE`. A tool whose action must
+ * have a person's approval, such as `signatures send`, refuses instead.
+ */
+export function approvalsAreAutomatic(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return (
+    interactionAutoResolution.getStore() === true ||
+    flagEnabled(env.PI_ASK_USER_AUTO_APPROVE)
+  );
+}
+
 /** Ask the user, resolving the best available interaction channel. */
 export async function askUser(
   request: AskUserRequest,

@@ -28,6 +28,11 @@ const SOURCES = [
     tools: { Issues: "ISSUES_ARGUMENTS" },
   },
   {
+    source: "src/signatures/arguments.ts",
+    output: "src/signatures/arguments.generated.ts",
+    tools: { Signatures: "SIGNATURES_ARGUMENTS" },
+  },
+  {
     source: "src/documents/arguments.ts",
     output: "src/documents/arguments.generated.ts",
     tools: { Documents: "DOCUMENTS_ARGUMENTS" },

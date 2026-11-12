@@ -1,6 +1,8 @@
 # Signatures tool
 
-**Status: proposed.** One `signatures` tool sends a reviewed document for
+**Status: built** (`@introspection-ai/recipes/signatures` and
+`@introspection-ai/recipe-signatures`); the sandbox recording is not yet
+committed ([Tests](#tests)). One `signatures` tool sends a reviewed document for
 e-signature. It is the `signatures` family of
 [provider modules](../providers.md), and its first provider is DocuSign's
 eSignature REST API
@@ -35,9 +37,10 @@ tools: [documents, signatures]
 ```
 
 Nothing about signatures loads, and no `signatures` tool is offered, unless a
-Recipe declares `pi.signatures` and its agent selects `signatures`. When it
-does, the host also offers the `signatures` skill
-(`skills/signatures/SKILL.md`).
+Recipe declares `pi.signatures` and its agent names `signatures` in its
+`tools`. An agent's `include: ["*"]` does not select it: a tool that emails
+people outside the organization is chosen by name. When it is selected, the
+host also offers the `signatures` skill (`skills/signatures/SKILL.md`).
 
 A declaration takes `provider`, `package` (a Recipe's own provider, as for
 [every family](../providers.md#2-declaring-providers)) and `options`. One
@@ -104,9 +107,12 @@ own:
 2. In that column it finds the cell whose text starts with `By:`, and the one
    that starts with `Date:`, in the same table. A block that keeps every line
    in one cell is handled the same way, within that cell.
-3. In the copy it sends, it appends an invisible anchor to the end of each of
-   those lines: `\s1\` and `\d1\` for the first signer, `\s2\` and `\d2\` for
-   the second, in white 1-point text. Each anchor occurs exactly once.
+3. In the copy it sends, it adds an invisible anchor to each of those lines,
+   right after the run holding the label's colon (so before any `______`
+   line): `\s1\` and `\d1\` for the first signer, `\s2\` and `\d2\` for the
+   second, in white 1-point text. Each anchor occurs exactly once. A page
+   rendered from that copy shows nothing new; its text layer, which DocuSign's
+   anchor search reads, holds each anchor once, in its signer's column.
 4. The signer's tabs are a `signHere` tab anchored on `\sN\` and a
    `dateSigned` tab anchored on `\dN\`, with `anchorIgnoreIfNotPresent:
 false`, so DocuSign refuses the envelope rather than send one without a
@@ -177,7 +183,14 @@ POST {base_uri}/restapi/v2.1/accounts/{accountId}/envelopes
       {
         "name": "introspection_document_sha256",
         "value": "<sha256 of the file under outputs/>",
-        "show": "false"
+        "show": "false",
+        "required": "false"
+      },
+      {
+        "name": "introspection_document_name",
+        "value": "acme-msa.docx",
+        "show": "false",
+        "required": "false"
       }
     ]
   }
@@ -185,7 +198,7 @@ POST {base_uri}/restapi/v2.1/accounts/{accountId}/envelopes
 ```
 
 `status: "created"` makes a draft: DocuSign stores it and emails no one. The
-document's SHA-256 travels with the envelope as a hidden custom field, so
+document's SHA-256 and name travel with the envelope as hidden custom fields, so
 `send` can show the person exactly which file they approve without trusting
 the model's word for it.
 
@@ -223,7 +236,7 @@ draft changed since (in DocuSign's web app, say) asks again.
 ## `get`
 
 ```http
-GET {base_uri}/restapi/v2.1/accounts/{accountId}/envelopes/{envelopeId}?include=recipients
+GET {base_uri}/restapi/v2.1/accounts/{accountId}/envelopes/{envelopeId}?include=recipients,custom_fields
 ```
 
 returns the envelope's status (`created`, `sent`, `delivered`, `completed`,
@@ -232,11 +245,11 @@ status and signed time. Downloading the signed document is not in this version.
 
 ## The DocuSign provider
 
-|           |                                                                                                                                          |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Package   | `@introspection-ai/recipe-signatures`, a companion of Recipes like `@introspection-ai/recipe-issues`                                     |
-| Transport | REST, through the host's HTTP (spans, a placeholder credential, retried reads; a write is sent once)                                     |
-| Hosts     | `account-d.docusign.com` and `demo.docusign.net` (demo); `account.docusign.com` and the account's `*.docusign.net` base URI (production) |
+|           |                                                                                                                                                                              |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package   | `@introspection-ai/recipe-signatures`, a companion of Recipes like `@introspection-ai/recipe-issues`                                                                         |
+| Transport | REST, through the host's HTTP (spans, a placeholder credential, retried reads; a write is sent once)                                                                         |
+| Hosts     | `account-d.docusign.com` and `demo.docusign.net` (demo); `account.docusign.com` and the production base URIs `www`, `na2`, `na3`, `na4`, `eu`, `au` and `ca` `.docusign.net` |
 
 ### Credential
 
@@ -262,22 +275,23 @@ GET https://account-d.docusign.com/oauth/userinfo
 and takes the account named by the `account` option, or the user's default
 account (`is_default`), with that account's `base_uri`. Every later request
 goes to `{base_uri}/restapi/v2.1/accounts/{account_id}/…`. A `base_uri` whose
-host is not `demo.docusign.net` (demo) or a `*.docusign.net` host
-(production) is refused, so a userinfo answer cannot send a document anywhere
-else.
+host is not one the environment declares (`demo.docusign.net` for demo, the
+production list above) is refused, so a userinfo answer cannot send a document
+anywhere else, and a demo declaration never reaches a production account. The
+userinfo answer names the person, so it is never recorded on a span.
 
 ### Errors
 
-| Code                | When                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `not_ready`         | the document has tracked changes or comments, or is not a `.docx` under `outputs/`                       |
-| `anchor_not_found`  | a signer's `Name:` line, or the `By:` line in its column, is not in the document                         |
-| `ambiguous`         | a signer's name is on more than one `Name:` line                                                         |
-| `approval_required` | `send` found no approval it can act on: none was given, it was declined, or the host cannot ask a person |
-| `invalid_request`   | arguments the message names, or an envelope that is not a draft                                          |
-| `not_connected`     | no DocuSign credential in this runtime (`401`, or DocuSign's `consent_required`)                         |
-| `not_found`         | the envelope does not exist in the account                                                               |
-| `provider_error`    | DocuSign failed; the message carries its `errorCode` and `message`, never the request                    |
+| Code                | When                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `not_ready`         | the document has tracked changes or comments, or is not a `.docx` under `outputs/`    |
+| `anchor_not_found`  | a signer's `Name:` line, or the `By:` line in its column, is not in the document      |
+| `ambiguous`         | a signer's name is on more than one `Name:` line                                      |
+| `approval_required` | `send` cannot ask a person here: a headless run, a child agent, or no channel         |
+| `invalid_request`   | arguments the message names, or an envelope that is not a draft                       |
+| `not_connected`     | no DocuSign credential in this runtime (`401`, or DocuSign's `consent_required`)      |
+| `not_found`         | the envelope does not exist in the account                                            |
+| `provider_error`    | DocuSign failed; the message carries its `errorCode` and `message`, never the request |
 
 ## Tests
 
@@ -291,7 +305,10 @@ else.
   `create`, `get`, `send`, `get`, using a dummy document from `acme` and
   recipients at `example.com`, never a real person. The helper redacts the
   token, the account and user ids, and every email address before the
-  cassette is committed; CI replays it.
+  cassette is committed; CI replays it. The test
+  (`packages/signatures/test/docusign.recording.test.ts`) is skipped until a
+  cassette is committed: record it with `POLLY_MODE=record` and
+  `MCP_RECORD_TOKEN_FILE` holding a sandbox `access_token`.
 
 ## Not in this version
 

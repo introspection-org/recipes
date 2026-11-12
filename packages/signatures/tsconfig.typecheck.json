@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "paths": {
+      "@introspection-ai/recipes/signatures": ["../../src/signatures/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

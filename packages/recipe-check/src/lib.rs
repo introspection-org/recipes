@@ -976,6 +976,7 @@ fn validate_pi_config(
         "productivity",
         "search",
         "issues",
+        "signatures",
         "mcp",
         "runtime",
         "evals",
@@ -1033,6 +1034,9 @@ fn validate_pi_config(
     if let Some(issues) = pi.get("issues") {
         validate_provider_family(&ISSUES_FAMILY, issues, package, ctx);
     }
+    if let Some(signatures) = pi.get("signatures") {
+        validate_provider_family(&SIGNATURES_FAMILY, signatures, package, ctx);
+    }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
@@ -1044,7 +1048,7 @@ fn validate_pi_config(
 /// productivity provider and search provider packages Recipes installs alongside itself, so a Recipe may omit them. They are the
 /// keys of `optionalDependencies` in the `@introspection-ai/recipes`
 /// package.json; a test keeps the two in step.
-const COMPANION_PACKAGES: [&str; 8] = [
+const COMPANION_PACKAGES: [&str; 9] = [
     "@introspection-ai/recipe-channel-slack",
     "@introspection-ai/recipe-documents-docx",
     "@introspection-ai/recipe-documents-html",
@@ -1053,6 +1057,7 @@ const COMPANION_PACKAGES: [&str; 8] = [
     "@introspection-ai/recipe-productivity-microsoft",
     "@introspection-ai/recipe-issues",
     "@introspection-ai/recipe-search",
+    "@introspection-ai/recipe-signatures",
 ];
 
 fn versioned_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
@@ -1577,6 +1582,8 @@ struct ProviderFamily {
     options: Option<fn(&str) -> OptionsSchema>,
     /// The one provider that takes `enabled`, if the family has a fallback.
     fallback: Option<&'static str>,
+    /// The most declarations the family takes; `None` for any number.
+    max: Option<usize>,
 }
 
 const SEARCH_FAMILY: ProviderFamily = ProviderFamily {
@@ -1586,6 +1593,7 @@ const SEARCH_FAMILY: ProviderFamily = ProviderFamily {
     example: "brave",
     options: None,
     fallback: None,
+    max: None,
 };
 
 const ISSUES_FAMILY: ProviderFamily = ProviderFamily {
@@ -1603,6 +1611,23 @@ const ISSUES_FAMILY: ProviderFamily = ProviderFamily {
         _ => &[],
     }),
     fallback: Some("introspection"),
+    max: None,
+};
+
+const SIGNATURES_FAMILY: ProviderFamily = ProviderFamily {
+    name: "signatures",
+    first_party: &["docusign"],
+    bundle: "@introspection-ai/recipe-signatures",
+    example: "docusign",
+    options: Some(|provider| match provider {
+        "docusign" => &[
+            ("environment", OptionType::String),
+            ("account", OptionType::String),
+        ],
+        _ => &[],
+    }),
+    fallback: None,
+    max: Some(1),
 };
 
 /// `pi.search` and `pi.issues`: first-party providers by id, with their
@@ -1628,6 +1653,19 @@ fn validate_provider_family(
         );
         return;
     };
+    if let Some(max) = family.max {
+        if declarations.len() > max {
+            ctx.error(
+                &code,
+                PACKAGE_JSON,
+                format!(
+                    "package.json#pi.{name} declares {} providers; it takes at most {max}",
+                    declarations.len()
+                ),
+                Some("declare one provider"),
+            );
+        }
+    }
     let mut allowed = vec!["provider", "package"];
     if family.options.is_some() {
         allowed.push("options");
@@ -6266,6 +6304,45 @@ mod tests {
             let report = check_recipe_files(&provider_recipe("issues", declarations, json!({})));
             assert!(
                 invalid_with(&report, "pi.issues_invalid", text),
+                "{text}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn signatures_declarations_take_one_provider_with_its_options() {
+        let ok = check_recipe_files(&provider_recipe(
+            "signatures",
+            json!([{ "provider": "docusign", "options": { "environment": "demo", "account": "acme" } }]),
+            json!({}),
+        ));
+        assert!(
+            !ok.diagnostics
+                .iter()
+                .any(|d| d.code == "pi.signatures_invalid" || d.code == "pi.unknown_key"),
+            "{:?}",
+            ok.diagnostics
+        );
+        for (declarations, text) in [
+            (json!([{ "provider": "acme" }]), "not first-party"),
+            (
+                json!([{ "provider": "docusign", "options": { "team": "x" } }]),
+                "takes no option 'team'",
+            ),
+            (
+                json!([{ "provider": "docusign", "enabled": false }]),
+                "unknown field 'enabled'",
+            ),
+            (
+                json!([{ "provider": "docusign" }, { "provider": "acme", "package": "@acme/sign" }]),
+                "takes at most 1",
+            ),
+        ] {
+            let report =
+                check_recipe_files(&provider_recipe("signatures", declarations, json!({})));
+            assert!(
+                invalid_with(&report, "pi.signatures_invalid", text),
                 "{text}: {:?}",
                 report.diagnostics
             );

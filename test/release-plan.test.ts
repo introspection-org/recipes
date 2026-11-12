@@ -124,6 +124,7 @@ describe("release plan", () => {
       ["packages/search", "search"],
       ["packages/documents/html", "html"],
       ["packages/issues", "issues"],
+      ["packages/signatures", "signatures"],
     ]) {
       expect(keys.includes(key)).toBe(manifest[path] !== undefined);
     }

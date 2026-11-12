@@ -9,6 +9,7 @@ import {
 import { loadRecipeDocuments } from "./documents/module.js";
 import { loadSearchProviders } from "./search/module.js";
 import { loadRecipeIssues } from "./issues/module.js";
+import { loadRecipeSignatures } from "./signatures/module.js";
 import { loadRecipeProductivity } from "./productivity/module.js";
 import { loadRecipePackageModule } from "./recipe/companions.js";
 import { deferTools } from "./tool-search.js";
@@ -78,7 +79,7 @@ export interface RecipeConnectorModule {
 export interface LoadedRecipeConnectors {
   extensions: RecipeConnectorExtension[];
   loadout: RecipeConnectorToolLoadout;
-  /** Skills the `documents`, productivity and `issues` tools offer: their core skills and the selected profiles. */
+  /** Skills the `documents`, productivity, `issues` and `signatures` tools offer: their core skills and the selected profiles. */
   skillPaths: string[];
   /**
    * Every host the loaded providers and adapters declare: channels,
@@ -244,6 +245,16 @@ export async function loadRecipeConnectors(
     options,
   );
   const issues = await loadRecipeIssues(manifest.issues, agentTools, options);
+  const signatures = await loadRecipeSignatures(
+    manifest.signatures,
+    agentTools,
+    {
+      recipeDir: options.recipeDir,
+      ...(options.env ? { env: options.env } : {}),
+      ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
+      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+    },
+  );
   // Search providers load here only to learn their hosts; `web_search` is
   // registered by the host or the Recipe.
   const search =
@@ -284,6 +295,11 @@ export async function loadRecipeConnectors(
       name,
       defaultActive: true,
     })),
+    ...signatures.toolNames.map((name) => ({
+      id: name,
+      name,
+      defaultActive: true,
+    })),
   ];
   const registeredNames = selected.map((tool) => tool.name);
   if (new Set(registeredNames).size !== registeredNames.length) {
@@ -294,6 +310,7 @@ export async function loadRecipeConnectors(
       ...(documents.skillPaths ?? []),
       ...(productivity.skillPaths ?? []),
       ...(issues.skillPaths ?? []),
+      ...(signatures.skillPaths ?? []),
     ],
     hosts: [
       ...new Set(
@@ -301,6 +318,7 @@ export async function loadRecipeConnectors(
           ...loaded.flatMap((connector) => connector.hosts),
           ...(productivity.hosts ?? []),
           ...(issues.hosts ?? []),
+          ...(signatures.hosts ?? []),
           ...Object.values(search).flatMap((module) => [
             module.capabilities.host,
             ...(module.capabilities.hosts ?? []),
@@ -313,6 +331,7 @@ export async function loadRecipeConnectors(
       ...(documents.extension ? [documents.extension] : []),
       ...(productivity.extension ? [productivity.extension] : []),
       ...(issues.extension ? [issues.extension] : []),
+      ...(signatures.extension ? [signatures.extension] : []),
     ],
     loadout: {
       toolNames: selected.map((tool) => tool.name),
