@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.55.0](https://github.com/introspection-org/recipes/compare/v0.54.0...v0.55.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **signature:** send a reviewed document for e-signature through DocuSign ([#515](https://github.com/introspection-org/recipes/issues/515))
+
+### Features
+
+* **documents:** convert a PDF to Word for redlining ([#511](https://github.com/introspection-org/recipes/issues/511)) ([012e287](https://github.com/introspection-org/recipes/commit/012e28708ee591c02ca8589d435b87dc51dc7898))
+* **signature:** send a reviewed document for e-signature through DocuSign ([#515](https://github.com/introspection-org/recipes/issues/515)) ([96b03f9](https://github.com/introspection-org/recipes/commit/96b03f969420adff7b1a7fcc6419b426f45865f7))
+
 ## [0.54.0](https://github.com/introspection-org/recipes/compare/v0.53.0...v0.54.0) (2026-11-11)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/introspection-org/recipes/compare/recipe-documents-docx-v0.4.0...recipe-documents-docx-v0.5.0) (2026-11-12)
+
+
+### Features
+
+* **documents:** convert a PDF to Word for redlining ([#511](https://github.com/introspection-org/recipes/issues/511)) ([012e287](https://github.com/introspection-org/recipes/commit/012e28708ee591c02ca8589d435b87dc51dc7898))
+
 ## [0.4.0](https://github.com/introspection-org/recipes/compare/recipe-documents-docx-v0.3.0...recipe-documents-docx-v0.4.0) (2026-11-03)
 
 

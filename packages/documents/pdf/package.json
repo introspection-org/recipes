@@ -1,6 +1,6 @@
 {
   "name": "@introspection-ai/recipe-documents-pdf",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "PDF format for the Introspection Recipes documents tool: read and render pages.",
   "license": "Apache-2.0",
   "type": "module",
