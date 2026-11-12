@@ -190,7 +190,6 @@ class Anonymizer {
 
 interface Entry {
   request: {
-    url: string;
     headers: Array<{ name: string; value: string }>;
     postData?: { text?: string };
   };
@@ -251,16 +250,13 @@ export function hasRecording(dir: string, name: string): boolean {
 function startRecording(
   name: string,
   dir: string,
-  host: string | readonly string[],
+  host: string,
   options: {
     body?: (body: string) => string;
     rewrite: (text: string) => string;
-    /** Rewrites each request's URL before it is written, for ids in a path. */
-    url?: (url: string) => string;
     record?: boolean;
   },
 ): Polly {
-  const hosts: readonly string[] = typeof host === "string" ? [host] : host;
   const polly = new Polly(name, {
     mode: (options.record ?? RECORDING) ? "record" : "replay",
     adapters: ["fetch"],
@@ -274,28 +270,15 @@ function startRecording(
       headers: false,
       order: true,
       body: options.body ?? false,
-      // A recording's URLs are anonymized: match its paths without their ids.
-      ...(options.url
-        ? {
-            url: {
-              pathname: (pathname: string) =>
-                pathname.replace(
-                  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-                  "{id}",
-                ),
-            },
-          }
-        : {}),
     },
   });
   polly.server
     .any()
-    .filter((request) => !hosts.includes(new URL(request.url).host))
+    .filter((request) => new URL(request.url).host !== host)
     .passthrough();
   polly.server.any().on("beforePersist", (_request, recording: Entry) => {
     redactHeaders(recording.request.headers);
     redactHeaders(recording.response.headers);
-    if (options.url) recording.request.url = options.url(recording.request.url);
     if (recording.request.postData?.text)
       recording.request.postData.text = options.rewrite(
         recording.request.postData.text,
@@ -306,29 +289,6 @@ function startRecording(
       );
   });
   return polly;
-}
-
-/**
- * A REST API's recording across `hosts`, matched in order and anonymized: ids
- * map consistently across URLs, request bodies and responses, so a replay's
- * requests name what the replayed responses named.
- */
-export function startRestRecording(
-  name: string,
-  dir: string,
-  hosts: readonly string[],
-): Polly {
-  const anonymizer = new Anonymizer();
-  return startRecording(name, dir, hosts, {
-    rewrite: (text) => {
-      try {
-        return JSON.stringify(anonymizer.value(JSON.parse(text)));
-      } catch {
-        return scrub(text);
-      }
-    },
-    url: (url) => anonymizer.text(url),
-  });
 }
 
 /** An MCP server's recording, matched by JSON-RPC call and anonymized. */

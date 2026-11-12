@@ -1,11 +1,10 @@
 /**
  * Provider-neutral signature vocabulary: the `signature` tool, its commands,
- * the envelope shape, and what a provider module implements
+ * the request shape, and what a provider module implements
  * (`docs/signature/README.md`).
  *
- * A provider receives and returns its own envelope id; the host prefixes it
- * with the provider's id to make the handle the model sees
- * (`docusign:<envelopeId>`) and strips it before calling the provider again.
+ * The host keeps a draft until `send`, and names every request by a `sig_…`
+ * handle it mints; a provider sees only its own refs.
  */
 
 /**
@@ -13,13 +12,23 @@
  * bundle that exports it, declare the version they were written against, and
  * the host refuses one that differs. Separate from the other families'.
  */
-export const SIGNATURE_MODULE_API_VERSION = 1 as const;
+export const SIGNATURE_MODULE_API_VERSION = 2 as const;
 
 /** The one tool the family serves. */
 export const SIGNATURE_TOOL_NAME = "signature";
 
-export const SIGNATURE_COMMANDS = ["create", "send", "get"] as const;
+export const SIGNATURE_COMMANDS = [
+  "prepare",
+  "send",
+  "status",
+  "void",
+] as const;
 export type SignatureCommand = (typeof SIGNATURE_COMMANDS)[number];
+
+/** The commands a provider serves; `prepare` is the host's alone. */
+export const SIGNATURE_PROVIDER_COMMANDS = ["send", "status", "void"] as const;
+export type SignatureProviderCommand =
+  (typeof SIGNATURE_PROVIDER_COMMANDS)[number];
 
 /** The first-party providers, served by `@introspection-ai/recipe-signature`. */
 export const SIGNATURE_PROVIDER_IDS = ["docusign"] as const;
@@ -45,27 +54,52 @@ export type SignatureProviderOptions = Readonly<
 export const SIGNATURE_FIRST_PARTY_OPTIONS: Readonly<
   Record<string, SignatureOptionsSchema>
 > = {
-  docusign: { environment: "string", account: "string" },
+  docusign: { account: "string", server: "string" },
 };
 
-/** The `kind` of the approval interrupt `send` raises, which a later `send` looks for. */
+/** The `kind` of the approval interrupts `send` and `void` raise, which a later call looks for. */
 export const SIGNATURE_SEND_APPROVAL_KIND = "signature_send";
+export const SIGNATURE_VOID_APPROVAL_KIND = "signature_void";
 
 // ---------------------------------------------------------------------------
-// The document and its signers
+// Statuses
+
+export const SIGNATURE_REQUEST_STATUSES = [
+  "draft",
+  "sent",
+  "viewed",
+  "completed",
+  "declined",
+  "voided",
+] as const;
+export type SignatureRequestStatus =
+  (typeof SIGNATURE_REQUEST_STATUSES)[number];
+
+export const SIGNATURE_RECIPIENT_STATUSES = [
+  "pending",
+  "sent",
+  "viewed",
+  "signed",
+  "declined",
+] as const;
+export type SignatureRecipientStatus =
+  (typeof SIGNATURE_RECIPIENT_STATUSES)[number];
+
+// ---------------------------------------------------------------------------
+// The document and its recipients
 
 export interface SignatureRecipient {
   readonly name: string;
   readonly email: string;
   /** 1 signs (or receives) first; equal orders run in parallel. */
-  readonly routing_order: number;
+  readonly order: number;
 }
 
-/** Where one signer's tabs go: anchor strings that occur once in the document sent. */
+/** Where one signer's fields go: the provider's markers, each once in the copy sent. */
 export interface SignaturePlacement {
-  /** The signHere anchor, on the signer's own `By:` line. */
+  /** The signature marker, on the signer's own `By:` line. */
   readonly sign: string;
-  /** The dateSigned anchor, on the signer's own `Date:` line, when the block has one. */
+  /** The date marker, on the signer's own `Date:` line, when the block has one. */
   readonly date?: string;
 }
 
@@ -73,63 +107,65 @@ export interface SignatureSigner extends SignatureRecipient {
   readonly placement: SignaturePlacement;
 }
 
-/** The final document, as the host checked and prepared it. */
+/** The approved document as the provider receives it. */
 export interface SignatureDocument {
   /** The file name signers see, such as `acme-msa.docx`. */
   readonly name: string;
   /** `docx`. */
   readonly extension: string;
-  /** The bytes sent: the reviewed file with each signer's anchors added. */
-  readonly bytes: Uint8Array;
-  /** SHA-256 (hex) of the reviewed file under `outputs/`, not of the bytes sent. */
+  /** SHA-256 (hex) of the reviewed file under `outputs/`, not of the copy sent. */
   readonly sha256: string;
+  /** The marked copy, for a provider that uploads it. */
+  readonly bytes: Uint8Array;
+  /** A short-lived signed link to the marked copy, when the host issues one. */
+  readonly url?: string;
 }
 
+/** A host's way to publish the marked copy at a short-lived signed link. */
+export type SignaturePublishDocument = (
+  bytes: Uint8Array,
+  file: { readonly name: string; readonly contentType: string },
+  signal?: AbortSignal,
+) => Promise<{ readonly url: string; readonly expires_at: string }>;
+
 // ---------------------------------------------------------------------------
-// The envelope
+// Requests
 
-export const ENVELOPE_STATUSES = [
-  "created",
-  "sent",
-  "delivered",
-  "completed",
-  "declined",
-  "voided",
-] as const;
-
-export interface EnvelopeRecipient {
+export interface SignatureRecipientState {
   readonly name: string;
   readonly email: string;
   readonly role: "signer" | "cc";
-  readonly routing_order: number;
-  /** The provider's own status: `created`, `sent`, `delivered`, `completed`, `declined`, … */
-  readonly status: string;
+  readonly order: number;
+  readonly status: SignatureRecipientStatus;
   readonly signed_at?: string;
 }
 
-/** One envelope, as a provider returns it: its own `ref`, which the host turns into a handle. */
-export interface ProviderEnvelope {
+/** A request as a provider reports it, by its own ref. */
+export interface ProviderSignatureRequest {
   readonly ref: string;
-  /** The provider's own status; one of {@link ENVELOPE_STATUSES} for DocuSign. */
-  readonly status: string;
-  readonly subject?: string;
-  readonly document?: { readonly name: string; readonly sha256?: string };
-  readonly recipients?: readonly EnvelopeRecipient[];
+  readonly status: SignatureRequestStatus;
+  readonly recipients?: readonly SignatureRecipientState[];
   readonly sent_at?: string;
   readonly completed_at?: string;
 }
 
-/** One envelope as the tool returns it. */
-export interface Envelope extends ProviderEnvelope {
-  /** `<provider>:<ref>`, which `send` and `get` take. */
+/** A request as the tool returns it. */
+export interface SignatureRequest {
+  /** `sig_…`, valid in this session. */
   readonly handle: string;
   readonly provider: string;
+  readonly status: SignatureRequestStatus;
+  readonly subject: string;
+  readonly document: { readonly name: string; readonly sha256: string };
+  readonly recipients: readonly SignatureRecipientState[];
+  readonly sent_at?: string;
+  readonly completed_at?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Commands
+// Session calls
 
-export interface SignatureCreateArgs {
+export interface SignatureSendArgs {
   readonly document: SignatureDocument;
   readonly subject: string;
   readonly message?: string;
@@ -141,53 +177,12 @@ export interface SignatureRefArgs {
   readonly ref: string;
 }
 
-// ---------------------------------------------------------------------------
-// Capabilities
-
-/** What a provider supports, as static data the host reads before any session exists. */
-export interface SignatureCapabilities {
-  /** The commands it serves; all three for a first-party provider. */
-  readonly commands: readonly SignatureCommand[];
-  /** The document extensions it accepts, without the dot. */
-  readonly extensions: readonly string[];
-  /** Every host the provider sends to. */
-  readonly hosts: readonly string[];
-  /** The options a declaration may set for it. Absent: none. */
-  readonly options?: SignatureOptionsSchema;
+export interface SignatureVoidArgs extends SignatureRefArgs {
+  readonly reason: string;
 }
 
 // ---------------------------------------------------------------------------
-// Errors
-
-export const SIGNATURE_ERROR_CODES = [
-  "not_ready",
-  "anchor_not_found",
-  "ambiguous",
-  "approval_required",
-  "invalid_request",
-  "not_connected",
-  "not_found",
-  "provider_error",
-] as const;
-export type SignatureErrorCode = (typeof SIGNATURE_ERROR_CODES)[number];
-
-export interface SignatureErrorInfo {
-  readonly code: SignatureErrorCode;
-  /** Safe for the model: never a token, never a document, never a raw request. */
-  readonly message: string;
-}
-
-/**
- * The shape a provider throws: any `Error` carrying `signature`. Plain data,
- * so a provider needs no host import. Any other thrown error is a
- * `provider_error`.
- */
-export interface SignatureProviderError extends Error {
-  readonly signature: SignatureErrorInfo;
-}
-
-// ---------------------------------------------------------------------------
-// Transport
+// Transports
 
 /** One HTTP request a provider sends through the host. */
 export interface SignatureHttpRequest {
@@ -219,30 +214,121 @@ export type SignatureHttp = (
   request: SignatureHttpRequest,
 ) => Promise<SignatureHttpResponse>;
 
+/** An MCP `CallToolResult`, without `_meta`. */
+export interface SignatureMcpCallToolResult {
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: unknown;
+  isError?: boolean;
+}
+
+/** Calls to the provider's bound MCP server, which the host routes and traces. */
+export interface SignatureMcpCaller {
+  hasTool(tool: string): boolean;
+  callTool(
+    tool: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<SignatureMcpCallToolResult>;
+}
+
+/** One entry of an adapter's tool map: which server tool serves what. */
+export interface SignatureMcpToolMapping {
+  /** The tool's name as the server's tool list names it. */
+  readonly tool: string;
+  /** The commands it serves, or `setup` for a lookup the provider needs. */
+  readonly serves: readonly (SignatureProviderCommand | "setup")[];
+  /** Whether the name and arguments were checked against a captured tool list. */
+  readonly verified: boolean;
+}
+
+/** A provider's hosted MCP server, which the Recipe binds behind the tool. */
+export interface SignatureMcpAdapter {
+  /** The vendor's hosted server, for docs and bindings; the bound URL may differ. */
+  readonly url: string;
+  /** The Recipe MCP server id it expects by default; the `server` option overrides it. */
+  readonly server: string;
+  /** Every tool it may call. */
+  readonly tools: readonly SignatureMcpToolMapping[];
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities
+
+/** How the document reaches the vendor: a signed link the host issues, or an upload. */
+export type SignatureDocumentPath = "link" | "upload";
+
+/** What a provider supports, as static data the host reads before any session exists. */
+export interface SignatureCapabilities {
+  /** The commands it serves, besides the host's `prepare`. */
+  readonly commands: readonly SignatureProviderCommand[];
+  /** The document extensions it accepts, without the dot. */
+  readonly extensions: readonly string[];
+  /** The paths it takes the document by; the host uses `link` when it can issue one. */
+  readonly document: readonly SignatureDocumentPath[];
+  /** How long a `status` answer stands before the provider is asked again. */
+  readonly status_interval_seconds: number;
+  /** Every host the provider sends to. */
+  readonly hosts: readonly string[];
+  /** The options a declaration may set for it. Absent: none. */
+  readonly options?: SignatureOptionsSchema;
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+
+export const SIGNATURE_ERROR_CODES = [
+  "not_ready",
+  "anchor_not_found",
+  "ambiguous",
+  "changed",
+  "approval_required",
+  "invalid_request",
+  "not_connected",
+  "not_found",
+  "rate_limited",
+  "provider_error",
+] as const;
+export type SignatureErrorCode = (typeof SIGNATURE_ERROR_CODES)[number];
+
+export interface SignatureErrorInfo {
+  readonly code: SignatureErrorCode;
+  /** Safe for the model: never a token, a link, a document or a raw request. */
+  readonly message: string;
+}
+
+/**
+ * The shape a provider throws: any `Error` carrying `signature`. Plain data,
+ * so a provider needs no host import. Any other thrown error is a
+ * `provider_error`.
+ */
+export interface SignatureProviderError extends Error {
+  readonly signature: SignatureErrorInfo;
+}
+
 // ---------------------------------------------------------------------------
 // Sessions and modules
 
 export interface SignatureCallContext {
   readonly signal?: AbortSignal;
+  /** The provider's bound MCP server, for a provider with an `mcp` adapter. */
+  readonly mcp?: SignatureMcpCaller;
 }
 
-/** One run's connection to a provider. */
+/** One run's connection to a provider. Each method is present exactly when `capabilities.commands` declares it. */
 export interface SignatureSession {
-  /** A draft envelope: stored by the provider, sent to no one. */
-  create(
-    args: SignatureCreateArgs,
-    ctx: SignatureCallContext,
-  ): Promise<ProviderEnvelope>;
-  /** The envelope with its recipients and the document's SHA-256 as recorded at create. */
-  get(
-    args: SignatureRefArgs,
-    ctx: SignatureCallContext,
-  ): Promise<ProviderEnvelope>;
-  /** Sends a draft. The host calls it only after a person approved that envelope. */
+  /** Creates the request from the approved document and sends it, in one step. */
   send(
+    args: SignatureSendArgs,
+    ctx: SignatureCallContext,
+  ): Promise<ProviderSignatureRequest>;
+  status(
     args: SignatureRefArgs,
     ctx: SignatureCallContext,
-  ): Promise<ProviderEnvelope>;
+  ): Promise<ProviderSignatureRequest>;
+  void?(
+    args: SignatureVoidArgs,
+    ctx: SignatureCallContext,
+  ): Promise<ProviderSignatureRequest>;
 }
 
 /** The declaration a session is created for: its id and options. */
@@ -254,7 +340,7 @@ export interface SignatureProviderConfig {
 export interface SignatureSessionOptions {
   readonly config: SignatureProviderConfig;
   readonly env: NodeJS.ProcessEnv;
-  /** Every request the provider sends goes through it. */
+  /** Every HTTP request the provider sends goes through it. */
   readonly http: SignatureHttp;
 }
 
@@ -268,6 +354,8 @@ export interface RecipeSignatureProviderModule {
   readonly apiVersion: typeof SIGNATURE_MODULE_API_VERSION;
   readonly id: string;
   readonly capabilities: SignatureCapabilities;
+  /** Present for a provider served through its vendor's MCP server. */
+  readonly mcp?: SignatureMcpAdapter;
   createSession(
     options: SignatureSessionOptions,
   ): SignatureSession | Promise<SignatureSession>;

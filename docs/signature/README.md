@@ -1,14 +1,16 @@
 # Signature tool
 
-**Status: proposed.** One `signature` tool sends a final, reviewed document
-out for e-signature through DocuSign, Dropbox Sign or PandaDoc, with the same
-commands for each. Each provider is served through its vendor's own remote MCP
-server, as the [issues tool](../issues/README.md) serves Linear and Jira.
-Only the document itself may take another path: a short-lived signed link the
-host issues, or, where the host has none, one upload over the vendor's REST
-API ([Getting the document to the vendor](#getting-the-document-to-the-vendor)). DocuSign's tools are captured; the
-others are not yet, and each guide lists what its capture must confirm
-([Wiring a provider](../providers.md#10-wiring-a-provider)).
+**Status: built for DocuSign** (`@introspection-ai/recipes/signature` and
+`@introspection-ai/recipe-signature`). Dropbox Sign and PandaDoc are designed
+below and not built. One `signature` tool sends a final, reviewed document
+out for e-signature, with the same commands for each provider. Each provider
+is served through its vendor's own remote MCP server, as the
+[issues tool](../issues/README.md) serves Linear and Jira. Only the document
+itself may take another path: a short-lived signed link the host issues, or,
+where the host has none, one upload over the vendor's REST API
+([Getting the document to the vendor](#getting-the-document-to-the-vendor)).
+DocuSign's tools are captured; each other guide lists what its capture must
+confirm ([Wiring a provider](../providers.md#10-wiring-a-provider)).
 
 It is the step after the [document tools](../documents/README.md):
 

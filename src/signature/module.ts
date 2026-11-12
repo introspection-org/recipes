@@ -10,10 +10,11 @@ import {
 import type { ProductivityFetch } from "../productivity/types.js";
 import { registerSignatureTool, type SignatureToolProvider } from "./tool.js";
 import {
-  SIGNATURE_COMMANDS,
   SIGNATURE_MODULE_API_VERSION,
+  SIGNATURE_PROVIDER_COMMANDS,
   SIGNATURE_TOOL_NAME,
   type RecipeSignatureProviderModule,
+  type SignaturePublishDocument,
 } from "./types.js";
 
 /** The package that serves the first-party signature providers, a companion of Recipes. */
@@ -42,15 +43,34 @@ function contractProblem(
   const capabilities = module.capabilities as unknown;
   if (!capabilities || typeof capabilities !== "object")
     return "has no capabilities";
-  const { commands, extensions, hosts, options } =
-    capabilities as RecipeSignatureProviderModule["capabilities"];
+  const {
+    commands,
+    extensions,
+    document,
+    status_interval_seconds: interval,
+    hosts,
+    options,
+  } = capabilities as RecipeSignatureProviderModule["capabilities"];
   if (
     !Array.isArray(commands) ||
-    SIGNATURE_COMMANDS.some((command) => !commands.includes(command))
+    !commands.includes("send") ||
+    !commands.includes("status") ||
+    commands.some(
+      (command) =>
+        !(SIGNATURE_PROVIDER_COMMANDS as readonly string[]).includes(command),
+    )
   )
-    return `must serve every command: ${SIGNATURE_COMMANDS.join(", ")}`;
+    return `must serve send and status, and only ${SIGNATURE_PROVIDER_COMMANDS.join(", ")}`;
   if (!Array.isArray(extensions) || extensions.length === 0)
     return "declares no capabilities.extensions";
+  if (
+    !Array.isArray(document) ||
+    document.length === 0 ||
+    document.some((path) => path !== "link" && path !== "upload")
+  )
+    return "declares no capabilities.document (link, upload)";
+  if (typeof interval !== "number" || !(interval >= 0))
+    return "declares no capabilities.status_interval_seconds";
   if (!Array.isArray(hosts) || hosts.length === 0)
     return "declares no capabilities.hosts";
   if (
@@ -62,6 +82,13 @@ function contractProblem(
       ))
   )
     return "declares capabilities.options that are not a map of option name to string or boolean";
+  if (module.mcp !== undefined) {
+    const { url, server, tools } = module.mcp;
+    if (typeof url !== "string" || typeof server !== "string" || !server)
+      return "has an MCP adapter without a url and server";
+    if (!Array.isArray(tools) || tools.length === 0)
+      return "has an MCP adapter without tools";
+  }
   return undefined;
 }
 
@@ -90,6 +117,8 @@ export async function loadRecipeSignature(
     cwd?: string;
     /** A host's request hook that attaches the credential itself. */
     fetch?: ProductivityFetch;
+    /** Publishes the marked copy at a short-lived signed link; absent, the provider uploads it. */
+    publishDocument?: SignaturePublishDocument;
   },
 ): Promise<LoadedRecipeSignature> {
   if (declarations === undefined || declarations.length === 0)
@@ -124,9 +153,13 @@ export async function loadRecipeSignature(
         `Recipe signature provider '${declaration.provider}' option '${name}' must be a ${schema[name]}`,
       );
   }
+  const server = settings.server;
   const provider: SignatureToolProvider = {
     module,
     config: { provider: declaration.provider, options: settings },
+    ...(module.mcp
+      ? { server: typeof server === "string" ? server : module.mcp.server }
+      : {}),
   };
   const hosts = module.capabilities.hosts;
   if (!agentTools.includes(SIGNATURE_TOOL_NAME))
@@ -143,6 +176,9 @@ export async function loadRecipeSignature(
           env: options.env ?? process.env,
           ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
           ...(options.fetch ? { fetch: options.fetch } : {}),
+          ...(options.publishDocument
+            ? { publishDocument: options.publishDocument }
+            : {}),
         });
       },
     },

@@ -2,19 +2,19 @@ import type { RecipeSignatureModule } from "@introspection-ai/recipes/signature"
 
 import {
   createDocusignSession,
-  DOCUMENT_NAME_FIELD,
-  DOCUMENT_SHA256_FIELD,
-  DOCUSIGN_ENVIRONMENTS,
-  docusignEnvelope,
+  DOCUSIGN_HOSTS,
+  DOCUSIGN_MCP_TOOLS,
   docusignEnvelopeDefinition,
+  docusignRecipients,
   docusignSignatureProvider,
+  docusignStatus,
   SignatureError,
 } from "./docusign.js";
 
 /** The signature providers the `signature` tool loads from this package. */
 export const signatureProviders: RecipeSignatureModule = {
   kind: "signature",
-  apiVersion: 1,
+  apiVersion: 2,
   providers: {
     docusign: docusignSignatureProvider,
   },
@@ -24,15 +24,12 @@ export default signatureProviders;
 
 export {
   createDocusignSession,
-  DOCUMENT_NAME_FIELD,
-  DOCUMENT_SHA256_FIELD,
-  DOCUSIGN_ENVIRONMENTS,
-  docusignEnvelope,
+  DOCUSIGN_HOSTS,
+  DOCUSIGN_MCP_TOOLS,
   docusignEnvelopeDefinition,
+  docusignRecipients,
   docusignSignatureProvider,
+  docusignStatus,
   SignatureError,
 };
-export type {
-  DocusignEnvironment,
-  DocusignSessionOptions,
-} from "./docusign.js";
+export type { DocusignSessionOptions } from "./docusign.js";

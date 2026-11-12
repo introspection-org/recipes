@@ -467,14 +467,72 @@ function anchorRun(anchor: string): string {
   return `<w:r><w:rPr><w:color w:val="FFFFFF"/><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:t xml:space="preserve">${anchor}</w:t></w:r>`;
 }
 
-/** Where a line's anchor goes: after the run that holds its label's colon, else at its end. */
-function anchorOffset(xml: string, paragraph: Span): number {
+/**
+ * The edit that puts a line's anchor right after its label's colon. A run
+ * holding the colon and the signature line (`By: ____`) is split in two at
+ * the colon, so the field starts where the line does; a run with more than
+ * one text node keeps its text and takes the anchor after it.
+ */
+function anchorEdit(
+  xml: string,
+  paragraph: Span,
+  anchor: string,
+): { start: number; end: number; text: string } {
   let text = "";
   for (const run of elements(xml, "w:r", paragraph.start, paragraph.end)) {
-    text += textOf(xml, run);
-    if (text.includes(":")) return run.end;
+    const own = textOf(xml, run);
+    text += own;
+    if (!text.includes(":")) continue;
+    const nodes = elements(xml, "w:t", run.start, run.end);
+    const node = nodes[0];
+    const nodeXml = node ? xml.slice(node.start, node.end) : "";
+    const inner = nodeXml.slice(
+      nodeXml.indexOf(">") + 1,
+      nodeXml.lastIndexOf("</w:t>"),
+    );
+    const colon = own.indexOf(":");
+    if (
+      nodes.length === 1 &&
+      node &&
+      decode(inner) === own &&
+      colon >= 0 &&
+      colon < own.length - 1
+    ) {
+      const open = xml.slice(run.start, node.start);
+      const close = xml.slice(node.end, run.end);
+      const cut = rawOffset(inner, colon + 1);
+      const keep = (body: string) => `<w:t xml:space="preserve">${body}</w:t>`;
+      return {
+        start: run.start,
+        end: run.end,
+        text:
+          open +
+          keep(inner.slice(0, cut)) +
+          close +
+          anchorRun(anchor) +
+          open +
+          keep(inner.slice(cut)) +
+          close,
+      };
+    }
+    return { start: run.end, end: run.end, text: anchorRun(anchor) };
   }
-  return xml.lastIndexOf("</w:p>", paragraph.end);
+  const end = xml.lastIndexOf("</w:p>", paragraph.end);
+  return { start: end, end, text: anchorRun(anchor) };
+}
+
+/** The offset in escaped XML text that follows the first `chars` characters of its decoded text. */
+function rawOffset(raw: string, chars: number): number {
+  let seen = 0;
+  let index = 0;
+  while (index < raw.length && seen < chars) {
+    if (raw[index] === "&") {
+      const semi = raw.indexOf(";", index);
+      index = semi >= 0 ? semi + 1 : index + 1;
+    } else index += 1;
+    seen += 1;
+  }
+  return index;
 }
 
 export interface PreparedDocx {
@@ -513,7 +571,7 @@ export function prepareDocx(
   const xml = docx.part("word/document.xml")!;
   const body = elements(xml, "w:body")[0] ?? { start: 0, end: xml.length };
   const tables = tablesIn(xml, body.start, body.end);
-  const inserts: Array<{ at: number; run: string }> = [];
+  const edits: Array<{ start: number; end: number; text: string }> = [];
   const placements: PreparedDocx["placements"] = [];
   const used = new Set<number>();
   signers.forEach((signer, index) => {
@@ -525,21 +583,20 @@ export function prepareDocx(
       );
     used.add(located.sign.start);
     const sign = `\\s${index + 1}\\`;
-    inserts.push({ at: anchorOffset(xml, located.sign), run: anchorRun(sign) });
+    edits.push(anchorEdit(xml, located.sign, sign));
     let date: string | undefined;
     if (located.date && !used.has(located.date.start)) {
       used.add(located.date.start);
       date = `\\d${index + 1}\\`;
-      inserts.push({
-        at: anchorOffset(xml, located.date),
-        run: anchorRun(date),
-      });
+      edits.push(anchorEdit(xml, located.date, date));
     }
     placements.push({ sign, ...(date ? { date } : {}) });
   });
   let prepared = xml;
-  for (const { at, run } of [...inserts].sort((a, b) => b.at - a.at))
-    prepared = prepared.slice(0, at) + run + prepared.slice(at);
+  for (const { start, end, text } of [...edits].sort(
+    (a, b) => b.start - a.start,
+  ))
+    prepared = prepared.slice(0, start) + text + prepared.slice(end);
   const entries = docx.entries.map((entry) =>
     entry.name === "word/document.xml"
       ? deflatedEntry(entry, new TextEncoder().encode(prepared))

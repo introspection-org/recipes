@@ -25,15 +25,17 @@ import {
   zipParts,
 } from "../src/signature/docx.js";
 import {
-  approvalBinding,
   createSignatureTool,
   loadRecipeSignature,
   registerSignatureTool,
+  sendBinding,
   SIGNATURE_FIRST_PARTY_OPTIONS,
   SIGNATURE_SEND_APPROVAL_KIND,
-  type ProviderEnvelope,
+  signatureParameters,
+  voidBinding,
+  type ProviderSignatureRequest,
   type RecipeSignatureProviderModule,
-  type SignatureCreateArgs,
+  type SignatureSendArgs,
   type SignatureToolArgs,
 } from "../src/signature/index.js";
 import { docusignSignatureProvider } from "../packages/signature/src/index.js";
@@ -163,6 +165,16 @@ describe("signature anchors", () => {
     ).toContain("By:\\s1\\_________");
   });
 
+  it("splits a run holding the label and its line, so the field starts at the colon", () => {
+    const joined = docx(
+      tbl(tr(tc(p("By: _________"))), tr(tc(p("Name: Jane Doe")))),
+    );
+    const paragraphs = docxParagraphs(
+      prepareDocx(joined, [{ name: "Jane Doe" }]).bytes,
+    );
+    expect(paragraphs).toContain("By:\\s1\\ _________");
+  });
+
   it("refuses a signer with no Name: line, one on two lines, or no By: line", () => {
     expect(() => prepareDocx(CONTRACT, [{ name: "Sam Other" }])).toThrow(
       expect.objectContaining({ code: "anchor_not_found" }),
@@ -204,98 +216,111 @@ function workspace(): string {
 
 const ENVELOPE_ID = "6f1c2a8e-1b2c-4d3e-8f90-1234567890ab";
 
-/** A provider that keeps envelopes in memory and records what it was asked. */
-function fakeProvider(initialStatus = "created") {
-  const created: SignatureCreateArgs[] = [];
-  const sent: string[] = [];
-  let envelope: ProviderEnvelope | undefined;
-  const module: RecipeSignatureProviderModule = {
-    kind: "signature",
-    apiVersion: 1,
-    id: "docusign",
-    capabilities: {
-      commands: ["create", "send", "get"],
-      extensions: ["docx"],
-      hosts: ["demo.docusign.net"],
-      options: {},
-    },
-    createSession: () => ({
-      async create(args) {
-        created.push(args);
-        envelope = {
-          ref: ENVELOPE_ID,
-          status: initialStatus,
-          subject: args.subject,
-          document: { name: args.document.name, sha256: args.document.sha256 },
-          recipients: [
-            ...args.signers.map((s) => ({
-              name: s.name,
-              email: s.email,
-              role: "signer" as const,
-              routing_order: s.routing_order,
-              status: "created",
-            })),
-          ],
-        };
-        return envelope;
-      },
-      async get({ ref }) {
-        if (!envelope || ref !== envelope.ref)
-          throw Object.assign(new Error("gone"), {
-            signature: { code: "not_found", message: "No such envelope" },
-          });
-        return envelope;
-      },
-      async send({ ref }) {
-        sent.push(ref);
-        envelope = { ...envelope!, status: "sent" };
-        return envelope;
-      },
-    }),
-  };
-  return { module, created, sent };
-}
-
-const CREATE: SignatureToolArgs = {
-  command: "create",
-  path: "outputs/acme-msa.docx",
-  subject: "Acme MSA for signature",
-  signers: [{ name: "Jane Doe", email: "jane@example.com" }],
-  cc: [{ name: "Legal", email: "legal@example.com", routing_order: 2 }],
-};
-
-describe("signature create", () => {
-  it("sends the prepared copy with the reviewed file's digest, and emails no one", async () => {
-    const cwd = workspace();
-    const fake = fakeProvider();
-    const tool = createSignatureTool({
-      provider: {
-        module: fake.module,
-        config: { provider: "docusign", options: {} },
-      },
-      cwd,
-    });
-    const result = await tool(CREATE);
-    expect(result).toMatchObject({
-      command: "create",
-      envelope: { handle: `docusign:${ENVELOPE_ID}`, status: "created" },
-    });
-    const [args] = fake.created;
-    expect(args!.document.sha256).toBe(
-      createHash("sha256").update(CONTRACT).digest("hex"),
-    );
-    expect(args!.document.name).toBe("acme-msa.docx");
-    expect(docxParagraphs(args!.document.bytes)).toContain("By:\\s1\\");
-    expect(args!.signers).toEqual([
+/** A provider that keeps one request in memory and records what it was asked. */
+function fakeProvider(
+  overrides: Partial<RecipeSignatureProviderModule["capabilities"]> = {},
+) {
+  const sent: SignatureSendArgs[] = [];
+  const voided: string[] = [];
+  let reads = 0;
+  let status: ProviderSignatureRequest["status"] = "sent";
+  const answer = (): ProviderSignatureRequest => ({
+    ref: ENVELOPE_ID,
+    status,
+    recipients: [
       {
         name: "Jane Doe",
         email: "jane@example.com",
-        routing_order: 1,
-        placement: { sign: "\\s1\\", date: "\\d1\\" },
+        role: "signer",
+        order: 1,
+        status: status === "completed" ? "signed" : "sent",
       },
-    ]);
-    expect(args!.cc).toEqual([
-      { name: "Legal", email: "legal@example.com", routing_order: 2 },
+    ],
+  });
+  const module: RecipeSignatureProviderModule = {
+    kind: "signature",
+    apiVersion: 2,
+    id: "docusign",
+    capabilities: {
+      commands: ["send", "status", "void"],
+      extensions: ["docx"],
+      document: ["link", "upload"],
+      status_interval_seconds: 900,
+      hosts: ["demo.docusign.net"],
+      options: {},
+      ...overrides,
+    },
+    createSession: () => ({
+      async send(args) {
+        sent.push(args);
+        return answer();
+      },
+      async status() {
+        reads += 1;
+        return answer();
+      },
+      async void({ ref }) {
+        voided.push(ref);
+        status = "voided";
+        return answer();
+      },
+    }),
+  };
+  return {
+    module,
+    sent,
+    voided,
+    reads: () => reads,
+    complete: () => {
+      status = "completed";
+    },
+  };
+}
+
+const PREPARE: SignatureToolArgs = {
+  command: "prepare",
+  path: "outputs/acme-msa.docx",
+  subject: "Acme MSA for signature",
+  signers: [{ name: "Jane Doe", email: "jane@example.com" }],
+  cc: [{ name: "Legal", email: "legal@example.com", order: 2 }],
+};
+
+const approveAll = async () => ({ type: "approved" as const });
+
+function toolFor(
+  fake: ReturnType<typeof fakeProvider>,
+  cwd: string,
+  extra: Partial<Parameters<typeof createSignatureTool>[0]> = {},
+) {
+  return createSignatureTool({
+    provider: {
+      module: fake.module,
+      config: { provider: "docusign", options: {} },
+    },
+    cwd,
+    ...extra,
+  });
+}
+
+describe("signature prepare", () => {
+  it("keeps a draft in the host and calls no provider", async () => {
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace());
+    const result = await tool(PREPARE);
+    expect(result.command).toBe("prepare");
+    expect(result.request).toMatchObject({
+      status: "draft",
+      provider: "docusign",
+      subject: "Acme MSA for signature",
+      document: {
+        name: "acme-msa.docx",
+        sha256: createHash("sha256").update(CONTRACT).digest("hex"),
+      },
+    });
+    expect(result.request.handle).toMatch(/^sig_[\w-]+$/);
+    expect(result.request.recipients.map((r) => r.status)).toEqual([
+      "pending",
+      "pending",
     ]);
     expect(fake.sent).toEqual([]);
   });
@@ -312,13 +337,7 @@ describe("signature create", () => {
       ),
     );
     const fake = fakeProvider();
-    const tool = createSignatureTool({
-      provider: {
-        module: fake.module,
-        config: { provider: "docusign", options: {} },
-      },
-      cwd,
-    });
+    const tool = toolFor(fake, cwd);
     for (const [path, code] of [
       ["original.docx", "not_ready"],
       ["outputs/link.docx", "not_ready"],
@@ -326,22 +345,274 @@ describe("signature create", () => {
       ["outputs/marked.docx", "not_ready"],
       ["outputs/missing.docx", "invalid_request"],
     ] as const)
-      await expect(tool({ ...CREATE, path })).rejects.toMatchObject({
+      await expect(tool({ ...PREPARE, path })).rejects.toMatchObject({
         signature: { code },
       });
     await expect(
       tool({
-        ...CREATE,
+        ...PREPARE,
         signers: [{ name: "Jane Doe", email: "not-an-email" }],
       }),
     ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
     await expect(
       tool({
-        ...CREATE,
+        ...PREPARE,
         cc: [{ name: "Jane again", email: "JANE@example.com" }],
       }),
     ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
-    expect(fake.created).toEqual([]);
+    expect(fake.sent).toEqual([]);
+  });
+});
+
+describe("signature send", () => {
+  it("uploads the marked copy with the reviewed file's digest once approved", async () => {
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace());
+    const { request } = await tool(PREPARE);
+    const result = await tool(
+      { command: "send", request: request.handle },
+      { approve: approveAll },
+    );
+    expect(result).toMatchObject({
+      command: "send",
+      done: true,
+      request: { status: "sent" },
+    });
+    const [args] = fake.sent;
+    expect(args!.document.url).toBeUndefined();
+    expect(args!.document.sha256).toBe(request.document.sha256);
+    expect(docxParagraphs(args!.document.bytes)).toContain("By:\\s1\\");
+    expect(args!.signers).toEqual([
+      {
+        name: "Jane Doe",
+        email: "jane@example.com",
+        order: 1,
+        placement: { sign: "\\s1\\", date: "\\d1\\" },
+      },
+    ]);
+    expect(args!.cc).toEqual([
+      { name: "Legal", email: "legal@example.com", order: 2 },
+    ]);
+    await expect(
+      tool(
+        { command: "send", request: request.handle },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+    expect(fake.sent).toHaveLength(1);
+  });
+
+  it("passes a short-lived signed link when the host issues one, minted only after approval", async () => {
+    const fake = fakeProvider();
+    const published: Uint8Array[] = [];
+    const now = new Date("2026-11-12T05:00:00Z");
+    const tool = toolFor(fake, workspace(), {
+      now: () => now,
+      publishDocument: async (bytes) => {
+        published.push(bytes);
+        return {
+          url: "https://files.acme.test/signed/abc",
+          expires_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
+        };
+      },
+    });
+    const { request } = await tool(PREPARE);
+    await tool(
+      { command: "send", request: request.handle },
+      { approve: async () => ({ type: "pending", result: {} as never }) },
+    );
+    expect(published).toEqual([]);
+    const result = await tool(
+      { command: "send", request: request.handle },
+      { approve: approveAll },
+    );
+    expect(published).toHaveLength(1);
+    expect(fake.sent[0]!.document.url).toBe(
+      "https://files.acme.test/signed/abc",
+    );
+    expect(JSON.stringify(result)).not.toContain("files.acme.test");
+  });
+
+  it("refuses a link that lives longer than ten minutes, and a link-only provider without one", async () => {
+    const now = new Date("2026-11-12T05:00:00Z");
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace(), {
+      now: () => now,
+      publishDocument: async () => ({
+        url: "https://files.acme.test/signed/abc",
+        expires_at: new Date(now.getTime() + 60 * 60_000).toISOString(),
+      }),
+    });
+    const { request } = await tool(PREPARE);
+    await expect(
+      tool(
+        { command: "send", request: request.handle },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+    const linkOnly = fakeProvider({ document: ["link"] });
+    const plain = toolFor(linkOnly, workspace());
+    const draft = await plain(PREPARE);
+    await expect(
+      plain(
+        { command: "send", request: draft.request.handle },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+    expect([...fake.sent, ...linkOnly.sent]).toEqual([]);
+  });
+
+  it("refuses a file that changed after prepare", async () => {
+    const cwd = workspace();
+    const fake = fakeProvider();
+    const tool = toolFor(fake, cwd);
+    const { request } = await tool(PREPARE);
+    writeFileSync(
+      join(cwd, "outputs", "acme-msa.docx"),
+      docx(TWO_COLUMNS + p("New clause")),
+    );
+    await expect(
+      tool(
+        { command: "send", request: request.handle },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "changed" } });
+    expect(fake.sent).toEqual([]);
+  });
+
+  it("refuses without a way to ask, and a handle it did not mint", async () => {
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace());
+    const { request } = await tool(PREPARE);
+    await expect(
+      tool({ command: "send", request: request.handle }),
+    ).rejects.toMatchObject({ signature: { code: "approval_required" } });
+    await expect(
+      tool(
+        { command: "send", request: `docusign:${ENVELOPE_ID}` },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "not_found" } });
+    expect(fake.sent).toEqual([]);
+  });
+
+  it("binds an approval to the draft, its document and its recipients", () => {
+    const record = {
+      handle: "sig_a",
+      provider: "docusign",
+      status: "draft" as const,
+      path: "outputs/acme-msa.docx",
+      name: "acme-msa.docx",
+      extension: "docx",
+      sha256: "a".repeat(64),
+      subject: "Acme MSA",
+      signers: [
+        {
+          name: "Jane Doe",
+          email: "jane@example.com",
+          order: 1,
+          placement: { sign: "\\s1\\" },
+        },
+      ],
+      cc: [],
+    };
+    const binding = sendBinding(record);
+    expect(
+      sendBinding({
+        ...record,
+        signers: [{ ...record.signers[0]!, email: "other@example.com" }],
+      }),
+    ).not.toBe(binding);
+    expect(sendBinding({ ...record, sha256: "b".repeat(64) })).not.toBe(
+      binding,
+    );
+    expect(
+      voidBinding({ ...record, ref: ENVELOPE_ID }, "Wrong version"),
+    ).not.toBe(voidBinding({ ...record, ref: ENVELOPE_ID }, "Another reason"));
+  });
+});
+
+describe("signature status and void", () => {
+  it("reads a draft without the provider, then keeps an answer for the provider's interval", async () => {
+    let now = new Date("2026-11-12T05:00:00Z");
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace(), { now: () => now });
+    const { request } = await tool(PREPARE);
+    expect(
+      (await tool({ command: "status", request: request.handle })).request
+        .status,
+    ).toBe("draft");
+    expect(fake.reads()).toBe(0);
+    await tool(
+      { command: "send", request: request.handle },
+      { approve: approveAll },
+    );
+    const first = await tool({ command: "status", request: request.handle });
+    expect(first).toMatchObject({
+      request: { status: "sent" },
+      next_check_after: "2026-11-12T05:15:00.000Z",
+    });
+    fake.complete();
+    now = new Date("2026-11-12T05:10:00Z");
+    expect(
+      (await tool({ command: "status", request: request.handle })).request
+        .status,
+    ).toBe("sent");
+    expect(fake.reads()).toBe(1);
+    now = new Date("2026-11-12T05:16:00Z");
+    expect(
+      (await tool({ command: "status", request: request.handle })).request,
+    ).toMatchObject({
+      status: "completed",
+      recipients: [{ status: "signed" }],
+    });
+    expect(fake.reads()).toBe(2);
+  });
+
+  it("voids a sent request once approved, never a draft or a completed one", async () => {
+    const fake = fakeProvider();
+    const tool = toolFor(fake, workspace());
+    const { request } = await tool(PREPARE);
+    await expect(
+      tool(
+        { command: "void", request: request.handle, reason: "Wrong version" },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+    await tool(
+      { command: "send", request: request.handle },
+      { approve: approveAll },
+    );
+    await expect(
+      tool({
+        command: "void",
+        request: request.handle,
+        reason: "Wrong version",
+      }),
+    ).rejects.toMatchObject({ signature: { code: "approval_required" } });
+    const voided = await tool(
+      { command: "void", request: request.handle, reason: "Wrong version" },
+      { approve: approveAll },
+    );
+    expect(voided).toMatchObject({ done: true, request: { status: "voided" } });
+    expect(fake.voided).toEqual([ENVELOPE_ID]);
+    await expect(
+      tool(
+        { command: "void", request: request.handle, reason: "Again" },
+        { approve: approveAll },
+      ),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+  });
+
+  it("offers void only when the provider serves it", async () => {
+    const fake = fakeProvider({ commands: ["send", "status"] });
+    const tool = toolFor(fake, workspace());
+    await expect(
+      tool({ command: "void", request: "sig_x", reason: "x" }),
+    ).rejects.toMatchObject({ signature: { code: "invalid_request" } });
+    expect(JSON.stringify(signatureParameters(fake.module))).not.toContain(
+      '"void"',
+    );
   });
 });
 
@@ -369,6 +640,12 @@ function fakeCtx(options: {
   } as unknown as ExtensionContext;
 }
 
+type Executed = {
+  content: Array<{ type: string; text: string }>;
+  details: Record<string, unknown>;
+  isError?: boolean;
+};
+
 function registered(
   module: RecipeSignatureProviderModule,
   cwd: string,
@@ -381,11 +658,7 @@ function registered(
       signal: AbortSignal | undefined,
       onUpdate: unknown,
       ctx?: ExtensionContext,
-    ) => Promise<{
-      content: Array<{ type: string; text: string }>;
-      details: Record<string, unknown>;
-      isError?: boolean;
-    }>;
+    ) => Promise<Executed>;
   };
   registerSignatureTool(
     {
@@ -400,19 +673,35 @@ function registered(
   return tool!;
 }
 
-const SEND: SignatureToolArgs = {
-  command: "send",
-  envelope: `docusign:${ENVELOPE_ID}`,
-};
+const handleOf = (result: Executed) =>
+  (result.details as { request: { handle: string } }).request.handle;
 
-describe("signature send", () => {
+/** A tool result as the session stores it. */
+const stored = (toolCallId: string, result: Executed, text?: string) => ({
+  type: "message",
+  message: {
+    role: "toolResult",
+    toolCallId,
+    toolName: "signature",
+    content: text ? [{ type: "text", text }] : result.content,
+    details: result.details,
+  },
+});
+
+describe("signature approvals on each host", () => {
   it("sends once a person approves in the dialog", async () => {
     const fake = fakeProvider();
     const tool = registered(fake.module, workspace());
-    await tool.execute("c1", CREATE, undefined, undefined, fakeCtx({}));
+    const draft = await tool.execute(
+      "c1",
+      PREPARE,
+      undefined,
+      undefined,
+      fakeCtx({}),
+    );
     const result = await tool.execute(
       "c2",
-      SEND,
+      { command: "send", request: handleOf(draft) },
       undefined,
       undefined,
       fakeCtx({ hasUI: true, select: "Approve" }),
@@ -420,16 +709,22 @@ describe("signature send", () => {
     expect(result.content[0]!.text).toMatch(
       /^Sent: the signers have been emailed/,
     );
-    expect(fake.sent).toEqual([ENVELOPE_ID]);
+    expect(fake.sent).toHaveLength(1);
   });
 
   it("leaves the draft when the person requests changes", async () => {
     const fake = fakeProvider();
     const tool = registered(fake.module, workspace());
-    await tool.execute("c1", CREATE, undefined, undefined, fakeCtx({}));
+    const draft = await tool.execute(
+      "c1",
+      PREPARE,
+      undefined,
+      undefined,
+      fakeCtx({}),
+    );
     const result = await tool.execute(
       "c2",
-      SEND,
+      { command: "send", request: handleOf(draft) },
       undefined,
       undefined,
       fakeCtx({ hasUI: true, select: "Request changes", input: "Add our CFO" }),
@@ -446,10 +741,17 @@ describe("signature send", () => {
     const headless = registered(fake.module, cwd, {
       PI_ASK_USER_AUTO_APPROVE: "1",
     });
-    await headless.execute("c1", CREATE, undefined, undefined, fakeCtx({}));
+    const draft = await headless.execute(
+      "c1",
+      PREPARE,
+      undefined,
+      undefined,
+      fakeCtx({}),
+    );
+    const send = { command: "send" as const, request: handleOf(draft) };
     const auto = await headless.execute(
       "c2",
-      SEND,
+      send,
       undefined,
       undefined,
       fakeCtx({ hasUI: true, select: "Approve" }),
@@ -458,41 +760,62 @@ describe("signature send", () => {
     expect(auto.content[0]!.text).toMatch(/approval_required/);
 
     const child = registered(fake.module, cwd);
+    const childDraft = await child.execute(
+      "c3",
+      PREPARE,
+      undefined,
+      undefined,
+      fakeCtx({}),
+    );
+    const childSend = {
+      command: "send" as const,
+      request: handleOf(childDraft),
+    };
     const inChild = await autoResolveInteractions(() =>
       child.execute(
-        "c3",
-        SEND,
+        "c4",
+        childSend,
         undefined,
         undefined,
         fakeCtx({ hasUI: true, select: "Approve" }),
       ),
     );
     expect(inChild.content[0]!.text).toMatch(/approval_required/);
-
     const noChannel = await child.execute(
-      "c4",
-      SEND,
+      "c5",
+      childSend,
       undefined,
       undefined,
       fakeCtx({}),
     );
     expect(noChannel.content[0]!.text).toMatch(/approval_required/);
-
-    const noContext = await child.execute("c5", SEND, undefined, undefined);
+    const noContext = await child.execute(
+      "c6",
+      childSend,
+      undefined,
+      undefined,
+    );
     expect(noContext.content[0]!.text).toMatch(/approval_required/);
     expect(fake.sent).toEqual([]);
   });
 
-  it("on a pause/resume host, sends on the next call once the approval is in the session", async () => {
+  it("on a pause/resume host, finds the draft and the approval in the session after a restart", async () => {
     const fake = fakeProvider();
     const cwd = workspace();
     const env = { PI_INTERRUPT_RESUME: "1" };
-    const tool = registered(fake.module, cwd, env);
     const branch: Branch = { entries: [] };
     const ctx = fakeCtx({ branch });
-    await tool.execute("c1", CREATE, undefined, undefined, ctx);
-
-    const paused = await tool.execute("c2", SEND, undefined, undefined, ctx);
+    const before = registered(fake.module, cwd, env);
+    const draft = await before.execute(
+      "c1",
+      PREPARE,
+      undefined,
+      undefined,
+      ctx,
+    );
+    branch.entries.push(stored("c1", draft));
+    const send = { command: "send" as const, request: handleOf(draft) };
+    const paused = await before.execute("c2", send, undefined, undefined, ctx);
     expect(paused.content[0]!.text).toBe("Awaiting user response.");
     const interrupt = (
       paused.details as {
@@ -501,7 +824,7 @@ describe("signature send", () => {
     ).interrupt;
     expect(interrupt.metadata).toMatchObject({
       kind: SIGNATURE_SEND_APPROVAL_KIND,
-      envelope: `docusign:${ENVELOPE_ID}`,
+      request: handleOf(draft),
       document_sha256: createHash("sha256").update(CONTRACT).digest("hex"),
     });
     expect(JSON.stringify(interrupt.display)).toContain(
@@ -509,76 +832,37 @@ describe("signature send", () => {
     );
     expect(fake.sent).toEqual([]);
 
-    // The model asking again without an approval only asks again.
-    const result = (text: string) => ({
-      type: "message",
-      message: {
-        role: "toolResult",
-        toolCallId: "c2",
-        toolName: "signature",
-        content: [{ type: "text", text }],
-        details: paused.details,
-      },
-    });
-    branch.entries.push(result("Awaiting user response."));
+    // A new process: nothing in memory, everything in the session.
+    const after = registered(fake.module, cwd, env);
+    branch.entries.push(stored("c2", paused, "Awaiting user response."));
     expect(
-      (await tool.execute("c3", SEND, undefined, undefined, ctx)).content[0]!
+      (await after.execute("c3", send, undefined, undefined, ctx)).content[0]!
         .text,
     ).toBe("Awaiting user response.");
-
-    // A result some other tool wrote does not count.
     branch.entries.push({
       type: "message",
-      message: { ...result("Approved.").message, toolName: "bash" },
+      message: {
+        ...stored("c2", paused, "Approved.").message,
+        toolName: "bash",
+      },
     });
-    await tool.execute("c4", SEND, undefined, undefined, ctx);
+    await after.execute("c4", send, undefined, undefined, ctx);
     expect(fake.sent).toEqual([]);
 
-    // The host rewrites the paused result on resume.
-    branch.entries.push(result("Approved."));
-    const sent = await tool.execute("c5", SEND, undefined, undefined, ctx);
+    branch.entries.push(stored("c2", paused, "Approved."));
+    const sent = await after.execute("c5", send, undefined, undefined, ctx);
     expect(sent.content[0]!.text).toMatch(/^Sent:/);
-    expect(fake.sent).toEqual([ENVELOPE_ID]);
-
-    // Sent once: a repeat is refused, not sent again.
-    const again = await tool.execute("c6", SEND, undefined, undefined, ctx);
+    expect(fake.sent).toHaveLength(1);
+    branch.entries.push(stored("c5", sent));
+    const again = await registered(fake.module, cwd, env).execute(
+      "c6",
+      send,
+      undefined,
+      undefined,
+      ctx,
+    );
     expect(again.content[0]!.text).toMatch(/invalid_request.*not a draft/);
-    expect(fake.sent).toEqual([ENVELOPE_ID]);
-  });
-
-  it("binds an approval to the envelope, its document and its recipients", () => {
-    const envelope = {
-      ref: ENVELOPE_ID,
-      handle: `docusign:${ENVELOPE_ID}`,
-      provider: "docusign",
-      status: "created",
-      subject: "Acme MSA",
-      document: { name: "acme-msa.docx", sha256: "a".repeat(64) },
-      recipients: [
-        {
-          name: "Jane Doe",
-          email: "jane@example.com",
-          role: "signer" as const,
-          routing_order: 1,
-          status: "created",
-        },
-      ],
-    };
-    const binding = approvalBinding(envelope);
-    expect(
-      approvalBinding({
-        ...envelope,
-        recipients: [
-          { ...envelope.recipients[0]!, email: "other@example.com" },
-        ],
-      }),
-    ).not.toBe(binding);
-    expect(
-      approvalBinding({
-        ...envelope,
-        document: { ...envelope.document, sha256: "b".repeat(64) },
-      }),
-    ).not.toBe(binding);
+    expect(fake.sent).toHaveLength(1);
   });
 });
 
@@ -604,12 +888,10 @@ describe("pi.signature", () => {
     expect(
       readPiPackageManifest(
         recipe({
-          signature: [
-            { provider: "docusign", options: { environment: "demo" } },
-          ],
+          signature: [{ provider: "docusign", options: { account: "acme" } }],
         }),
       ).signature,
-    ).toEqual([{ provider: "docusign", options: { environment: "demo" } }]);
+    ).toEqual([{ provider: "docusign", options: { account: "acme" } }]);
   });
 
   it("reports more than one provider, unknown options and fields", () => {
@@ -656,8 +938,8 @@ describe("loadRecipeSignature", () => {
     );
     writeFileSync(
       join(root, "index.js"),
-      `export default { kind: "signature", apiVersion: 1, id: "acme",
-        capabilities: { commands: ["create", "send", "get"], extensions: ["docx"], hosts: ["sign.acme.test"], options: { region: "string" } },
+      `export default { kind: "signature", apiVersion: 2, id: "acme",
+        capabilities: { commands: ["send", "status"], extensions: ["docx"], document: ["upload"], status_interval_seconds: 60, hosts: ["sign.acme.test"], options: { region: "string" } },
         createSession: () => ({}) };\n`,
     );
   }

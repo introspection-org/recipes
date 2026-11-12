@@ -1,53 +1,55 @@
 /**
- * DocuSign's eSignature REST API (v2.1) as a `signature` provider: a draft
- * envelope from the prepared document, its status, and sending it.
- * https://developers.docusign.com/docs/esign-rest-api/reference/envelopes/envelopes/create
+ * DocuSign as a `signature` provider, through the Docusign MCP Server
+ * (`docs/signature/docusign.md`, tools captured in
+ * `test/fixtures/signature/docusign-tools.json`). The server's
+ * `createEnvelope` takes a document only by `remoteUrl`, so without the
+ * host's signed link the envelope is created by one REST upload with the same
+ * person's token; everything else is an MCP call.
  *
- * The provider holds no credential: every request goes through the host's
- * HTTP, which sends a placeholder the egress replaces with a token from the
- * platform's JWT grant.
+ * The provider holds no credential: the MCP server's connection and the
+ * host's HTTP carry the person's token.
  */
 
 import type {
-  EnvelopeRecipient,
-  ProviderEnvelope,
+  ProviderSignatureRequest,
   RecipeSignatureProviderModule,
   SignatureCallContext,
-  SignatureCreateArgs,
   SignatureErrorCode,
   SignatureErrorInfo,
   SignatureHttp,
-  SignatureHttpRequest,
+  SignatureMcpCaller,
+  SignatureMcpToolMapping,
+  SignatureRecipientState,
+  SignatureRecipientStatus,
+  SignatureRequestStatus,
+  SignatureSendArgs,
   SignatureSession,
 } from "@introspection-ai/recipes/signature";
 
-/** The hosts each environment reaches: its OAuth server and its accounts' base URIs. */
-export const DOCUSIGN_ENVIRONMENTS = {
-  demo: {
-    auth: "account-d.docusign.com",
-    api: ["demo.docusign.net"],
-  },
-  production: {
-    auth: "account.docusign.com",
-    api: [
-      "www.docusign.net",
-      "na2.docusign.net",
-      "na3.docusign.net",
-      "na4.docusign.net",
-      "eu.docusign.net",
-      "au.docusign.net",
-      "ca.docusign.net",
-    ],
-  },
+/** The MCP tools the provider calls, as the developer server's tool list names them. */
+export const DOCUSIGN_MCP_TOOLS: readonly SignatureMcpToolMapping[] = [
+  { tool: "getUserInfo", serves: ["setup"], verified: true },
+  { tool: "createEnvelope", serves: ["send"], verified: true },
+  { tool: "getEnvelope", serves: ["status"], verified: true },
+  { tool: "listRecipients", serves: ["status"], verified: true },
+  { tool: "updateEnvelope", serves: ["void"], verified: true },
+];
+
+/** The MCP servers and the REST hosts an account's `base_uri` may name. */
+export const DOCUSIGN_HOSTS = {
+  mcp: ["mcp-d.docusign.com", "mcp.docusign.com"],
+  api: [
+    "demo.docusign.net",
+    "www.docusign.net",
+    "na2.docusign.net",
+    "na3.docusign.net",
+    "na4.docusign.net",
+    "eu.docusign.net",
+    "au.docusign.net",
+    "ca.docusign.net",
+  ],
 } as const;
 
-export type DocusignEnvironment = keyof typeof DOCUSIGN_ENVIRONMENTS;
-
-/** The hidden custom fields `create` records, which `get` reads back for the approval. */
-export const DOCUMENT_SHA256_FIELD = "introspection_document_sha256";
-export const DOCUMENT_NAME_FIELD = "introspection_document_name";
-
-const API_VERSION = "/restapi/v2.1";
 const ENVELOPE_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,18 +90,22 @@ const NOT_CONNECTED = new Set([
   "invalid_grant",
 ]);
 
-/** A failed answer as the family's error: DocuSign's `errorCode` and `message`, never the request. */
-function failure(status: number, body: string, action: string): SignatureError {
+/** A DocuSign failure as the family's error: its `errorCode` and `message`, never the request. */
+function failure(status: number | undefined, body: string, action: string) {
   const parsed = parse(body);
   const code = text(parsed.errorCode) ?? text(parsed.error) ?? "";
   const message =
-    text(parsed.message) ?? text(parsed.error_description) ?? `HTTP ${status}`;
+    text(parsed.message) ??
+    text(parsed.error_description) ??
+    (body.trim().slice(0, 200) || `HTTP ${status ?? "error"}`);
   const detail = `${code ? `${code}: ` : ""}${message}`.slice(0, 300);
   if (status === 401 || NOT_CONNECTED.has(code))
     return new SignatureError(
       "not_connected",
       `DocuSign is not connected for this person (${detail}). Ask them to connect it, then try again.`,
     );
+  if (status === 429 || code === "HOURLY_APIINVOCATION_LIMIT_EXCEEDED")
+    return new SignatureError("rate_limited", `${action}: ${detail}`);
   if (status === 404 || code === "ENVELOPE_DOES_NOT_EXIST")
     return new SignatureError("not_found", `${action}: ${detail}`);
   if (code.startsWith("ANCHOR_TAB"))
@@ -118,34 +124,51 @@ function envelopeId(ref: string): string {
   return ref.toLowerCase();
 }
 
-interface Account {
-  id: string;
-  /** `{base_uri}/restapi/v2.1/accounts/{id}` */
-  base: string;
+const ENVELOPE_STATUS: Record<string, SignatureRequestStatus> = {
+  created: "draft",
+  sent: "sent",
+  delivered: "viewed",
+  signed: "completed",
+  completed: "completed",
+  declined: "declined",
+  voided: "voided",
+  timedout: "voided",
+};
+
+const RECIPIENT_STATUS: Record<string, SignatureRecipientStatus> = {
+  created: "pending",
+  sent: "sent",
+  autoresponded: "sent",
+  delivered: "viewed",
+  signed: "signed",
+  completed: "signed",
+  declined: "declined",
+};
+
+/** An envelope's status as the family's. `deleted` is gone. */
+export function docusignStatus(value: unknown): SignatureRequestStatus {
+  const status = text(value) ?? "";
+  if (status === "deleted")
+    throw new SignatureError(
+      "not_found",
+      "The envelope was deleted in DocuSign.",
+    );
+  return ENVELOPE_STATUS[status] ?? "sent";
 }
 
-function environmentOf(value: unknown): DocusignEnvironment {
-  if (value === undefined || value === "demo") return "demo";
-  if (value === "production") return "production";
-  throw new SignatureError(
-    "invalid_request",
-    `The docusign option environment is demo or production, not '${String(value)}'.`,
-  );
-}
-
-/** The envelope's recipients, signers then copies, in the family's shape. */
-function recipientsOf(value: unknown): EnvelopeRecipient[] {
+/** A `listRecipients` answer: signers, then copies. */
+export function docusignRecipients(value: unknown): SignatureRecipientState[] {
   const recipients = record(value);
-  const of = (list: unknown, role: "signer" | "cc"): EnvelopeRecipient[] =>
-    (Array.isArray(list) ? list : []).map((raw) => {
+  const of = (list: unknown, role: "signer" | "cc") =>
+    (Array.isArray(list) ? list : []).map((raw): SignatureRecipientState => {
       const entry = record(raw);
       const signed = text(entry.signedDateTime);
       return {
         name: text(entry.name) ?? "",
         email: text(entry.email) ?? "",
         role,
-        routing_order: Number(entry.routingOrder ?? 1),
-        status: text(entry.status) ?? "created",
+        order: Number(entry.routingOrder ?? 1),
+        status: RECIPIENT_STATUS[text(entry.status) ?? ""] ?? "pending",
         ...(signed ? { signed_at: signed } : {}),
       };
     });
@@ -155,58 +178,29 @@ function recipientsOf(value: unknown): EnvelopeRecipient[] {
   ];
 }
 
-function customField(envelope: Record<string, unknown>, name: string) {
-  const fields = record(envelope.customFields).textCustomFields;
-  for (const raw of Array.isArray(fields) ? fields : []) {
-    const field = record(raw);
-    if (field.name === name) return text(field.value);
-  }
-  return undefined;
-}
-
-/** A `GET …/envelopes/{id}` answer in the family's shape. */
-export function docusignEnvelope(value: unknown): ProviderEnvelope {
-  const envelope = record(value);
-  const ref = text(envelope.envelopeId);
-  if (!ref)
-    throw new SignatureError(
-      "provider_error",
-      "DocuSign answered without an envelopeId",
-    );
-  const subject = text(envelope.emailSubject);
-  const name = customField(envelope, DOCUMENT_NAME_FIELD);
-  const sha256 = customField(envelope, DOCUMENT_SHA256_FIELD);
-  const sent = text(envelope.sentDateTime);
-  const completed = text(envelope.completedDateTime);
-  return {
-    ref,
-    status: text(envelope.status) ?? "created",
-    ...(subject ? { subject } : {}),
-    ...(name ? { document: { name, ...(sha256 ? { sha256 } : {}) } } : {}),
-    recipients: recipientsOf(envelope.recipients),
-    ...(sent ? { sent_at: sent } : {}),
-    ...(completed ? { completed_at: completed } : {}),
-  };
-}
-
-/** One anchored tab: placed where the anchor's text starts, refused by DocuSign when it is absent. */
-function anchored(anchorString: string) {
+/** One anchored tab on recipient `id`: DocuSign refuses the envelope when the anchor is absent. */
+function anchored(anchorString: string, recipientId: string) {
   return {
     anchorString,
     anchorUnits: "pixels",
     anchorXOffset: "0",
     anchorYOffset: "0",
     anchorIgnoreIfNotPresent: "false",
+    anchorMatchWholeWord: "true",
+    documentId: "1",
+    recipientId,
   };
 }
 
-/** The `POST …/envelopes` body for a draft: `status: created` emails no one. */
-export function docusignEnvelopeDefinition(args: SignatureCreateArgs) {
-  const base64 = Buffer.from(args.document.bytes).toString("base64");
+/** The envelope definition `send` creates, sent at once; the document goes by link or upload. */
+export function docusignEnvelopeDefinition(args: SignatureSendArgs) {
   let id = 0;
   const next = () => String((id += 1));
+  const document = args.document.url
+    ? { remoteUrl: args.document.url }
+    : { documentBase64: Buffer.from(args.document.bytes).toString("base64") };
   return {
-    status: "created",
+    status: "sent",
     emailSubject: args.subject,
     ...(args.message ? { emailBlurb: args.message } : {}),
     documents: [
@@ -214,93 +208,89 @@ export function docusignEnvelopeDefinition(args: SignatureCreateArgs) {
         documentId: "1",
         name: args.document.name,
         fileExtension: args.document.extension,
-        documentBase64: base64,
+        ...document,
       },
     ],
     recipients: {
-      signers: args.signers.map((signer) => ({
-        recipientId: next(),
-        routingOrder: String(signer.routing_order),
-        name: signer.name,
-        email: signer.email,
-        tabs: {
-          signHereTabs: [anchored(signer.placement.sign)],
-          ...(signer.placement.date
-            ? { dateSignedTabs: [anchored(signer.placement.date)] }
-            : {}),
-        },
-      })),
+      signers: args.signers.map((signer) => {
+        const recipientId = next();
+        return {
+          recipientId,
+          routingOrder: String(signer.order),
+          name: signer.name,
+          email: signer.email,
+          tabs: {
+            signHereTabs: [anchored(signer.placement.sign, recipientId)],
+            ...(signer.placement.date
+              ? {
+                  dateSignedTabs: [
+                    anchored(signer.placement.date, recipientId),
+                  ],
+                }
+              : {}),
+          },
+        };
+      }),
       carbonCopies: args.cc.map((cc) => ({
         recipientId: next(),
-        routingOrder: String(cc.routing_order),
+        routingOrder: String(cc.order),
         name: cc.name,
         email: cc.email,
       })),
     },
-    customFields: {
-      textCustomFields: [
-        {
-          name: DOCUMENT_SHA256_FIELD,
-          value: args.document.sha256,
-          show: "false",
-          required: "false",
-        },
-        {
-          name: DOCUMENT_NAME_FIELD,
-          value: args.document.name,
-          show: "false",
-          required: "false",
-        },
-      ],
-    },
   };
 }
 
+/** The JSON a DocuSign MCP tool answered, or its failure. */
+async function mcpCall(
+  mcp: SignatureMcpCaller | undefined,
+  tool: string,
+  args: Record<string, unknown>,
+  ctx: SignatureCallContext,
+  action: string,
+): Promise<Record<string, unknown>> {
+  if (!mcp || !mcp.hasTool(tool))
+    throw new SignatureError(
+      "not_connected",
+      `The DocuSign MCP server is not connected (no ${tool}). Bind it behind the signature tool and ask the person to connect it.`,
+    );
+  const result = await mcp.callTool(tool, args, ctx.signal);
+  const body = (result.content ?? [])
+    .map((block) => block.text ?? "")
+    .join("\n");
+  if (result.isError) throw failure(undefined, body, action);
+  const structured = record(result.structuredContent);
+  return Object.keys(structured).length ? structured : parse(body);
+}
+
+interface Account {
+  id: string;
+  /** `{base_uri}/restapi/v2.1/accounts/{id}`, for the upload. */
+  base: string;
+}
+
 export interface DocusignSessionOptions {
+  /** The host's HTTP, for the upload. */
   http: SignatureHttp;
-  environment?: DocusignEnvironment;
   /** The account to send from; default: the user's default account. */
   account?: string;
 }
 
-/** A DocuSign session over the host's HTTP. */
+/** A DocuSign session: MCP for every call but the upload. */
 export function createDocusignSession(
   options: DocusignSessionOptions,
 ): SignatureSession {
   const { http } = options;
-  const environment = DOCUSIGN_ENVIRONMENTS[options.environment ?? "demo"];
   let account: Promise<Account> | undefined;
 
-  const call = async (
-    request: SignatureHttpRequest,
-    action: string,
-  ): Promise<Record<string, unknown>> => {
-    const response = await http({
-      ...request,
-      headers: {
-        Accept: "application/json",
-        ...(request.body !== undefined
-          ? { "Content-Type": "application/json" }
-          : {}),
-        ...request.headers,
-      },
-    });
-    const body = await response.text();
-    if (!response.ok) throw failure(response.status, body, action);
-    return parse(body);
-  };
-
-  const resolveAccount = async (signal?: AbortSignal): Promise<Account> => {
-    const info = await call(
-      {
-        method: "GET",
-        url: `https://${environment.auth}/oauth/userinfo`,
-        template: "/oauth/userinfo",
-        read: true,
-        // It names the person and every account they hold.
-        record: false,
-        ...(signal ? { signal } : {}),
-      },
+  const resolveAccount = async (
+    ctx: SignatureCallContext,
+  ): Promise<Account> => {
+    const info = await mcpCall(
+      ctx.mcp,
+      "getUserInfo",
+      {},
+      ctx,
       "Reading the DocuSign user",
     );
     const accounts = (Array.isArray(info.accounts) ? info.accounts : []).map(
@@ -327,21 +317,21 @@ export function createDocusignSession(
       !id ||
       !base ||
       base.protocol !== "https:" ||
-      !(environment.api as readonly string[]).includes(base.hostname)
+      !(DOCUSIGN_HOSTS.api as readonly string[]).includes(base.hostname)
     )
       throw new SignatureError(
         "provider_error",
-        `DocuSign named a base URI outside ${environment.api.join(", ")}; nothing was sent.`,
+        "DocuSign named an account host outside its known API hosts; nothing was sent.",
       );
     return {
       id,
-      base: `${base.origin}${API_VERSION}/accounts/${encodeURIComponent(id)}`,
+      base: `${base.origin}/restapi/v2.1/accounts/${encodeURIComponent(id)}`,
     };
   };
 
-  const accountFor = (signal?: AbortSignal) => {
+  const accountFor = (ctx: SignatureCallContext) => {
     if (!account) {
-      account = resolveAccount(signal);
+      account = resolveAccount(ctx);
       account.catch(() => {
         account = undefined;
       });
@@ -349,109 +339,119 @@ export function createDocusignSession(
     return account;
   };
 
-  const get = async (
+  const status = async (
     ref: string,
     ctx: SignatureCallContext,
-  ): Promise<ProviderEnvelope> => {
-    const id = envelopeId(ref);
-    const { base } = await accountFor(ctx.signal);
-    const envelope = await call(
-      {
-        method: "GET",
-        url: `${base}/envelopes/${id}?include=recipients,custom_fields`,
-        template: "/accounts/{accountId}/envelopes/{envelopeId}",
-        read: true,
-        ...(ctx.signal ? { signal: ctx.signal } : {}),
-      },
+  ): Promise<ProviderSignatureRequest> => {
+    const envelopeIdValue = envelopeId(ref);
+    const { id } = await accountFor(ctx);
+    const envelope = await mcpCall(
+      ctx.mcp,
+      "getEnvelope",
+      { accountId: id, envelopeId: envelopeIdValue },
+      ctx,
       "Reading the envelope",
     );
-    return docusignEnvelope(envelope);
+    const recipients = await mcpCall(
+      ctx.mcp,
+      "listRecipients",
+      { accountId: id, envelopeId: envelopeIdValue },
+      ctx,
+      "Reading the recipients",
+    );
+    const sent = text(envelope.sentDateTime);
+    const completed = text(envelope.completedDateTime);
+    return {
+      ref: envelopeIdValue,
+      status: docusignStatus(envelope.status),
+      recipients: docusignRecipients(recipients),
+      ...(sent ? { sent_at: sent } : {}),
+      ...(completed ? { completed_at: completed } : {}),
+    };
   };
 
   return {
-    async create(args, ctx) {
-      const { base } = await accountFor(ctx.signal);
-      const created = await call(
-        {
+    async send(args, ctx) {
+      const { id, base } = await accountFor(ctx);
+      const definition = docusignEnvelopeDefinition(args);
+      let created: Record<string, unknown>;
+      if (args.document.url)
+        created = await mcpCall(
+          ctx.mcp,
+          "createEnvelope",
+          { accountId: id, envelopeDefinition: definition },
+          ctx,
+          "Creating the envelope",
+        );
+      else {
+        const response = await http({
           method: "POST",
           url: `${base}/envelopes`,
           template: "/accounts/{accountId}/envelopes",
-          body: JSON.stringify(docusignEnvelopeDefinition(args)),
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(definition),
           ...(ctx.signal ? { signal: ctx.signal } : {}),
-        },
-        "Creating the envelope",
-      );
+        });
+        const body = await response.text();
+        if (!response.ok)
+          throw failure(response.status, body, "Creating the envelope");
+        created = parse(body);
+      }
       const ref = text(created.envelopeId);
       if (!ref)
         throw new SignatureError(
           "provider_error",
           "DocuSign created no envelope id",
         );
-      return {
-        ref,
-        status: text(created.status) ?? "created",
-        subject: args.subject,
-        document: { name: args.document.name, sha256: args.document.sha256 },
-        recipients: [
-          ...args.signers.map((signer) => ({
-            name: signer.name,
-            email: signer.email,
-            role: "signer" as const,
-            routing_order: signer.routing_order,
-            status: "created",
-          })),
-          ...args.cc.map((cc) => ({
-            name: cc.name,
-            email: cc.email,
-            role: "cc" as const,
-            routing_order: cc.routing_order,
-            status: "created",
-          })),
-        ],
-      };
+      return status(ref, ctx);
     },
-    get: (args, ctx) => get(args.ref, ctx),
-    async send(args, ctx) {
-      const id = envelopeId(args.ref);
-      const { base } = await accountFor(ctx.signal);
-      await call(
+    status: (args, ctx) => status(args.ref, ctx),
+    async void(args, ctx) {
+      const envelopeIdValue = envelopeId(args.ref);
+      const { id } = await accountFor(ctx);
+      await mcpCall(
+        ctx.mcp,
+        "updateEnvelope",
         {
-          method: "PUT",
-          url: `${base}/envelopes/${id}`,
-          template: "/accounts/{accountId}/envelopes/{envelopeId}",
-          body: JSON.stringify({ status: "sent" }),
-          ...(ctx.signal ? { signal: ctx.signal } : {}),
+          accountId: id,
+          envelopeId: envelopeIdValue,
+          envelopeUpdate: {
+            status: "voided",
+            voidedReason: args.reason.slice(0, 200),
+          },
         },
-        "Sending the envelope",
+        ctx,
+        "Voiding the envelope",
       );
-      return get(id, ctx);
+      return status(envelopeIdValue, ctx);
     },
   };
 }
 
-const ALL_HOSTS = [
-  DOCUSIGN_ENVIRONMENTS.demo.auth,
-  ...DOCUSIGN_ENVIRONMENTS.demo.api,
-  DOCUSIGN_ENVIRONMENTS.production.auth,
-  ...DOCUSIGN_ENVIRONMENTS.production.api,
-];
-
 export const docusignSignatureProvider: RecipeSignatureProviderModule = {
   kind: "signature",
-  apiVersion: 1,
+  apiVersion: 2,
   id: "docusign",
   capabilities: {
-    commands: ["create", "send", "get"],
+    commands: ["send", "status", "void"],
     extensions: ["docx"],
-    hosts: ALL_HOSTS,
-    options: { environment: "string", account: "string" },
+    document: ["link", "upload"],
+    status_interval_seconds: 900,
+    hosts: [...DOCUSIGN_HOSTS.mcp, ...DOCUSIGN_HOSTS.api],
+    options: { account: "string", server: "string" },
+  },
+  mcp: {
+    url: "https://mcp.docusign.com/mcp",
+    server: "docusign",
+    tools: DOCUSIGN_MCP_TOOLS,
   },
   createSession({ config, http }) {
-    const environment = environmentOf(config.options.environment);
     const account = config.options.account;
     return createDocusignSession({
       http,
-      environment,
       ...(typeof account === "string" && account ? { account } : {}),
     });
   },

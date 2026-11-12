@@ -1,424 +1,373 @@
+import { readFileSync } from "node:fs";
+
+import { Ajv } from "ajv";
 import { describe, expect, it } from "vitest";
 
 import {
   createDocusignSession,
-  DOCUMENT_NAME_FIELD,
-  DOCUMENT_SHA256_FIELD,
+  DOCUSIGN_MCP_TOOLS,
   docusignSignatureProvider,
 } from "../packages/signature/src/index.js";
 import type {
-  SignatureCreateArgs,
+  SignatureCallContext,
   SignatureHttp,
   SignatureHttpRequest,
+  SignatureMcpCallToolResult,
+  SignatureSendArgs,
 } from "../src/signature/index.js";
 
 const ACCOUNT = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const OTHER_ACCOUNT = "1f0e0d0c-0b0a-4908-8706-050403020100";
 const ENVELOPE = "6f1c2a8e-1b2c-4d3e-8f90-1234567890ab";
-const BASE = `https://demo.docusign.net/restapi/v2.1/accounts/${ACCOUNT}`;
 
-/** `GET /oauth/userinfo`, as DocuSign answers it. */
+interface CapturedTool {
+  name: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** The tools the provider calls, as the developer server listed them. */
+const CAPTURE = JSON.parse(
+  readFileSync(
+    new URL("./fixtures/signature/docusign-tools.json", import.meta.url),
+    "utf8",
+  ),
+) as { tools: CapturedTool[]; all_tools: string[] };
+
+/** `getUserInfo`, as the server answers it (the person's details left out). */
 const USERINFO = {
-  sub: "00000000-0000-4000-8000-000000000001",
-  name: "Example User",
-  email: "user@example.com",
   accounts: [
     {
       account_id: OTHER_ACCOUNT,
       is_default: false,
-      account_name: "Acme Sandbox Two",
       base_uri: "https://demo.docusign.net",
     },
     {
       account_id: ACCOUNT,
       is_default: true,
-      account_name: "Acme Sandbox",
       base_uri: "https://demo.docusign.net",
     },
   ],
 };
 
-/** `GET /envelopes/{id}?include=recipients,custom_fields`, as DocuSign answers it. */
 function envelope(status: string) {
   return {
     envelopeId: ENVELOPE,
     status,
-    emailSubject: "Acme MSA for signature",
-    createdDateTime: "2026-11-12T03:00:00.0000000Z",
-    ...(status === "sent"
-      ? { sentDateTime: "2026-11-12T03:05:00.0000000Z" }
+    statusDateTime: "2026-11-12T04:37:35.2300000Z",
+    ...(status !== "created"
+      ? { sentDateTime: "2026-11-12T04:37:35.2300000Z" }
       : {}),
-    recipients: {
-      signers: [
-        {
-          recipientId: "1",
-          name: "Jane Doe",
-          email: "jane@example.com",
-          routingOrder: "1",
-          status,
-        },
-      ],
-      carbonCopies: [
-        {
-          recipientId: "2",
-          name: "Legal",
-          email: "legal@example.com",
-          routingOrder: "2",
-          status: "created",
-        },
-      ],
-    },
-    customFields: {
-      textCustomFields: [
-        {
-          fieldId: "1",
-          name: DOCUMENT_SHA256_FIELD,
-          value: "a".repeat(64),
-          show: "false",
-        },
-        {
-          fieldId: "2",
-          name: DOCUMENT_NAME_FIELD,
-          value: "acme-msa.docx",
-          show: "false",
-        },
-      ],
-    },
+    ...(status === "completed"
+      ? { completedDateTime: "2026-11-12T04:45:17.5200000Z" }
+      : {}),
   };
 }
 
-type Route = (
-  request: SignatureHttpRequest,
-) => { status: number; body: unknown } | undefined;
+function recipients(status: string) {
+  return {
+    signers: [
+      {
+        recipientId: "1",
+        name: "Jane Doe",
+        email: "jane@example.com",
+        routingOrder: "1",
+        status,
+        ...(status === "completed"
+          ? { signedDateTime: "2026-11-12T04:45:17.5200000Z" }
+          : {}),
+      },
+    ],
+    carbonCopies: [
+      {
+        recipientId: "2",
+        name: "Legal",
+        email: "legal@example.com",
+        routingOrder: "2",
+        status: "created",
+      },
+    ],
+  };
+}
 
-function fakeHttp(...routes: Route[]) {
+/**
+ * A fake of the DocuSign MCP server: it validates every call against the
+ * captured input schema, refuses a tool it does not list, and answers as the
+ * server does, with JSON in a text block.
+ */
+function fakeServer(state = { status: "sent" }) {
+  const ajv = new Ajv({ strict: false, allErrors: true });
+  const validators = new Map(
+    CAPTURE.tools.map((tool) => [tool.name, ajv.compile(tool.inputSchema)]),
+  );
+  const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
+  const json = (value: unknown): SignatureMcpCallToolResult => ({
+    content: [{ type: "text", text: JSON.stringify(value) }],
+  });
+  const mcp = {
+    hasTool: (tool: string) => CAPTURE.all_tools.includes(tool),
+    async callTool(tool: string, args: Record<string, unknown>) {
+      const validate = validators.get(tool);
+      if (!validate) throw new Error(`the fake has no capture of ${tool}`);
+      if (!validate(args))
+        throw new Error(
+          `${tool} arguments break the captured schema: ${ajv.errorsText(validate.errors)}`,
+        );
+      calls.push({ tool, args });
+      switch (tool) {
+        case "getUserInfo":
+          return json(USERINFO);
+        case "createEnvelope":
+          return json({ envelopeId: ENVELOPE, status: "sent" });
+        case "getEnvelope":
+          return json(envelope(state.status));
+        case "listRecipients":
+          return json(recipients(state.status));
+        case "updateEnvelope": {
+          const update = args.envelopeUpdate as { status?: string };
+          if (state.status === "completed")
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    errorCode: "ENVELOPE_CANNOT_VOID_INVALID_STATE",
+                    message:
+                      "Only envelopes in the 'Sent' or 'Delivered' states may be voided.",
+                  }),
+                },
+              ],
+            };
+          state.status = update.status ?? state.status;
+          return json({ envelopeId: ENVELOPE });
+        }
+      }
+      throw new Error(`unexpected ${tool}`);
+    },
+  };
+  return { mcp, calls, state };
+}
+
+/** The host's HTTP, recording each request, for the upload. */
+function fakeHttp(
+  status = 201,
+  body: unknown = { envelopeId: ENVELOPE, status: "sent" },
+) {
   const requests: SignatureHttpRequest[] = [];
   const http: SignatureHttp = async (request) => {
     requests.push(request);
-    for (const route of routes) {
-      const answer = route(request);
-      if (answer)
-        return {
-          ok: answer.status < 400,
-          status: answer.status,
-          text: async () => JSON.stringify(answer.body),
-        };
-    }
-    throw new Error(`unexpected ${request.method} ${request.url}`);
+    return {
+      ok: status < 400,
+      status,
+      text: async () => JSON.stringify(body),
+    };
   };
   return { http, requests };
 }
 
-const userinfo: Route = (request) =>
-  request.url === "https://account-d.docusign.com/oauth/userinfo"
-    ? { status: 200, body: USERINFO }
-    : undefined;
-
-const ARGS: SignatureCreateArgs = {
+const ARGS: SignatureSendArgs = {
   document: {
-    name: "acme-msa.docx",
+    name: "acme-sow.docx",
     extension: "docx",
-    bytes: new TextEncoder().encode("docx bytes"),
     sha256: "a".repeat(64),
+    bytes: new TextEncoder().encode("the marked copy"),
   },
-  subject: "Acme MSA for signature",
+  subject: "Acme SOW for signature",
   message: "Please sign.",
   signers: [
     {
       name: "Jane Doe",
       email: "jane@example.com",
-      routing_order: 1,
+      order: 1,
       placement: { sign: "\\s1\\", date: "\\d1\\" },
     },
-    {
-      name: "Alex Acme",
-      email: "alex@example.com",
-      routing_order: 2,
-      placement: { sign: "\\s2\\" },
-    },
   ],
-  cc: [{ name: "Legal", email: "legal@example.com", routing_order: 3 }],
+  cc: [{ name: "Legal", email: "legal@example.com", order: 2 }],
 };
 
-describe("DocuSign provider", () => {
-  it("creates a draft from the user's default account, with anchored tabs and the document's digest", async () => {
-    const { http, requests } = fakeHttp(userinfo, (request) =>
-      request.method === "POST" && request.url === `${BASE}/envelopes`
-        ? {
-            status: 201,
-            body: {
-              envelopeId: ENVELOPE,
-              uri: `/envelopes/${ENVELOPE}`,
-              statusDateTime: "2026-11-12T03:00:00.0000000Z",
-              status: "created",
-            },
-          }
-        : undefined,
-    );
-    const session = createDocusignSession({ http });
-    const created = await session.create(ARGS, {});
-    expect(created).toMatchObject({
-      ref: ENVELOPE,
-      status: "created",
-      document: { name: "acme-msa.docx", sha256: "a".repeat(64) },
+describe("docusign provider", () => {
+  it("maps every command to a captured tool", () => {
+    for (const mapping of DOCUSIGN_MCP_TOOLS) {
+      expect(CAPTURE.all_tools).toContain(mapping.tool);
+      expect(mapping.verified).toBe(true);
+    }
+    expect(docusignSignatureProvider.mcp?.tools).toBe(DOCUSIGN_MCP_TOOLS);
+  });
+
+  it("uploads over REST without a link, with anchored tabs and the default account", async () => {
+    const server = fakeServer();
+    const host = fakeHttp();
+    const session = createDocusignSession({ http: host.http });
+    const ctx: SignatureCallContext = { mcp: server.mcp };
+    const sent = await session.send(ARGS, ctx);
+    expect(sent).toMatchObject({ ref: ENVELOPE, status: "sent" });
+    const [request] = host.requests;
+    expect(request).toMatchObject({
+      method: "POST",
+      url: `https://demo.docusign.net/restapi/v2.1/accounts/${ACCOUNT}/envelopes`,
     });
-    expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual([
-      "GET https://account-d.docusign.com/oauth/userinfo",
-      `POST ${BASE}/envelopes`,
-    ]);
-    // The userinfo answer names the person: it is never recorded on a span.
-    expect(requests[0]!.record).toBe(false);
-    const body = JSON.parse(requests[1]!.body!) as Record<string, unknown>;
-    const anchor = (anchorString: string) => ({
-      anchorString,
-      anchorUnits: "pixels",
-      anchorXOffset: "0",
-      anchorYOffset: "0",
+    const body = JSON.parse(request!.body!);
+    expect(body.status).toBe("sent");
+    expect(body.documents[0]).toEqual({
+      documentId: "1",
+      name: "acme-sow.docx",
+      fileExtension: "docx",
+      documentBase64: Buffer.from("the marked copy").toString("base64"),
+    });
+    expect(body.recipients.signers[0].tabs.signHereTabs[0]).toMatchObject({
+      anchorString: "\\s1\\",
       anchorIgnoreIfNotPresent: "false",
+      documentId: "1",
+      recipientId: "1",
     });
-    expect(body).toEqual({
-      status: "created",
-      emailSubject: "Acme MSA for signature",
-      emailBlurb: "Please sign.",
-      documents: [
-        {
-          documentId: "1",
-          name: "acme-msa.docx",
-          fileExtension: "docx",
-          documentBase64: Buffer.from("docx bytes").toString("base64"),
+    expect(body.recipients.carbonCopies[0]).toMatchObject({
+      recipientId: "2",
+      routingOrder: "2",
+    });
+    expect(server.calls.map((call) => call.tool)).toEqual([
+      "getUserInfo",
+      "getEnvelope",
+      "listRecipients",
+    ]);
+  });
+
+  it("creates through the MCP server from a signed link, never uploading", async () => {
+    const server = fakeServer();
+    const host = fakeHttp();
+    const session = createDocusignSession({ http: host.http });
+    await session.send(
+      {
+        ...ARGS,
+        document: {
+          ...ARGS.document,
+          url: "https://files.acme.test/signed/abc",
         },
-      ],
-      recipients: {
-        signers: [
-          {
-            recipientId: "1",
-            routingOrder: "1",
-            name: "Jane Doe",
-            email: "jane@example.com",
-            tabs: {
-              signHereTabs: [anchor("\\s1\\")],
-              dateSignedTabs: [anchor("\\d1\\")],
-            },
-          },
-          {
-            recipientId: "2",
-            routingOrder: "2",
-            name: "Alex Acme",
-            email: "alex@example.com",
-            tabs: { signHereTabs: [anchor("\\s2\\")] },
-          },
-        ],
-        carbonCopies: [
-          {
-            recipientId: "3",
-            routingOrder: "3",
-            name: "Legal",
-            email: "legal@example.com",
-          },
-        ],
       },
-      customFields: {
-        textCustomFields: [
-          {
-            name: DOCUMENT_SHA256_FIELD,
-            value: "a".repeat(64),
-            show: "false",
-            required: "false",
-          },
-          {
-            name: DOCUMENT_NAME_FIELD,
-            value: "acme-msa.docx",
-            show: "false",
-            required: "false",
-          },
-        ],
-      },
+      { mcp: server.mcp },
+    );
+    expect(host.requests).toEqual([]);
+    const create = server.calls.find((call) => call.tool === "createEnvelope");
+    const definition = create!.args.envelopeDefinition as {
+      documents: Array<Record<string, unknown>>;
+    };
+    expect(create!.args.accountId).toBe(ACCOUNT);
+    expect(definition.documents[0]).toEqual({
+      documentId: "1",
+      name: "acme-sow.docx",
+      fileExtension: "docx",
+      remoteUrl: "https://files.acme.test/signed/abc",
     });
   });
 
-  it("reads an envelope back with its recipients and recorded document, and sends a draft", async () => {
-    let status = "created";
-    const at = (account: string) =>
-      `https://demo.docusign.net/restapi/v2.1/accounts/${account}/envelopes/${ENVELOPE}`;
-    const { http, requests } = fakeHttp(userinfo, (request) => {
-      if (
-        [ACCOUNT, OTHER_ACCOUNT].some(
-          (account) =>
-            request.url === `${at(account)}?include=recipients,custom_fields`,
-        )
-      )
-        return { status: 200, body: envelope(status) };
-      if (request.method === "PUT" && request.url === at(ACCOUNT)) {
-        expect(JSON.parse(request.body!)).toEqual({ status: "sent" });
-        status = "sent";
-        return { status: 200, body: { envelopeId: ENVELOPE } };
-      }
-      return undefined;
-    });
-    const session = createDocusignSession({ http, account: OTHER_ACCOUNT });
-    const draft = await session.get({ ref: ENVELOPE }, {});
-    expect(draft).toEqual({
+  it("reads status in the family's terms", async () => {
+    const server = fakeServer({ status: "completed" });
+    const session = createDocusignSession({ http: fakeHttp().http });
+    expect(
+      await session.status({ ref: ENVELOPE }, { mcp: server.mcp }),
+    ).toEqual({
       ref: ENVELOPE,
-      status: "created",
-      subject: "Acme MSA for signature",
-      document: { name: "acme-msa.docx", sha256: "a".repeat(64) },
+      status: "completed",
+      sent_at: "2026-11-12T04:37:35.2300000Z",
+      completed_at: "2026-11-12T04:45:17.5200000Z",
       recipients: [
         {
           name: "Jane Doe",
           email: "jane@example.com",
           role: "signer",
-          routing_order: 1,
-          status: "created",
+          order: 1,
+          status: "signed",
+          signed_at: "2026-11-12T04:45:17.5200000Z",
         },
         {
           name: "Legal",
           email: "legal@example.com",
           role: "cc",
-          routing_order: 2,
-          status: "created",
+          order: 2,
+          status: "pending",
         },
       ],
     });
-    // The account option chose the account; without it, the default one.
-    expect(requests[1]!.url).toContain(`/accounts/${OTHER_ACCOUNT}/`);
-    const sent = await createDocusignSession({ http }).send(
-      { ref: ENVELOPE },
-      {},
-    );
-    expect(sent).toMatchObject({
-      status: "sent",
-      sent_at: "2026-11-12T03:05:00.0000000Z",
-    });
   });
 
-  it("refuses a base URI outside the environment's hosts, and an envelope id that is not one", async () => {
-    const { http } = fakeHttp((request) =>
-      request.url.endsWith("/oauth/userinfo")
-        ? {
-            status: 200,
-            body: {
-              accounts: [
-                {
-                  account_id: ACCOUNT,
-                  is_default: true,
-                  base_uri: "https://attacker.example.com",
-                },
-              ],
-            },
-          }
-        : undefined,
+  it("voids through updateEnvelope, and reports DocuSign's refusal", async () => {
+    const server = fakeServer();
+    const session = createDocusignSession({ http: fakeHttp().http });
+    const voided = await session.void!(
+      { ref: ENVELOPE, reason: "Wrong version" },
+      { mcp: server.mcp },
     );
-    await expect(
-      createDocusignSession({ http }).get({ ref: ENVELOPE }, {}),
-    ).rejects.toMatchObject({
-      signature: { code: "provider_error" },
+    expect(voided.status).toBe("voided");
+    const update = server.calls.find((call) => call.tool === "updateEnvelope");
+    expect(update!.args.envelopeUpdate).toEqual({
+      status: "voided",
+      voidedReason: "Wrong version",
     });
-    // A production account's base URI is not a demo one.
-    const prod = fakeHttp((request) =>
-      request.url === "https://account-d.docusign.com/oauth/userinfo"
-        ? {
-            status: 200,
-            body: {
-              accounts: [
-                {
-                  account_id: ACCOUNT,
-                  is_default: true,
-                  base_uri: "https://na3.docusign.net",
-                },
-              ],
-            },
-          }
-        : undefined,
-    );
+    const done = fakeServer({ status: "completed" });
     await expect(
-      createDocusignSession({ http: prod.http }).get({ ref: ENVELOPE }, {}),
-    ).rejects.toThrow(/outside demo\.docusign\.net/);
+      session.void!({ ref: ENVELOPE, reason: "Too late" }, { mcp: done.mcp }),
+    ).rejects.toMatchObject({ signature: { code: "provider_error" } });
+  });
+
+  it("chooses the declared account, and refuses a host outside DocuSign's", async () => {
+    const server = fakeServer();
+    const host = fakeHttp();
+    await createDocusignSession({
+      http: host.http,
+      account: OTHER_ACCOUNT,
+    }).send(ARGS, {
+      mcp: server.mcp,
+    });
+    expect(host.requests[0]!.url).toContain(`/accounts/${OTHER_ACCOUNT}/`);
+
+    const elsewhere = {
+      ...server.mcp,
+      async callTool(tool: string, args: Record<string, unknown>) {
+        if (tool === "getUserInfo")
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  accounts: [
+                    {
+                      account_id: ACCOUNT,
+                      is_default: true,
+                      base_uri: "https://evil.example",
+                    },
+                  ],
+                }),
+              },
+            ],
+          };
+        return server.mcp.callTool(tool, args);
+      },
+    };
     await expect(
-      createDocusignSession({ http: fakeHttp(userinfo).http }).get(
-        { ref: "../../users" },
+      createDocusignSession({ http: host.http }).send(ARGS, { mcp: elsewhere }),
+    ).rejects.toMatchObject({ signature: { code: "provider_error" } });
+  });
+
+  it("maps a failed upload and a missing server to the family's errors", async () => {
+    const server = fakeServer();
+    await expect(
+      createDocusignSession({
+        http: fakeHttp(400, {
+          errorCode: "ANCHOR_TAB_STRING_NOT_FOUND",
+          message:
+            "The specified Anchor Tab string was not found in the document.",
+        }).http,
+      }).send(ARGS, { mcp: server.mcp }),
+    ).rejects.toMatchObject({ signature: { code: "anchor_not_found" } });
+    await expect(
+      createDocusignSession({
+        http: fakeHttp(401, { errorCode: "USER_AUTHENTICATION_FAILED" }).http,
+      }).send(ARGS, { mcp: server.mcp }),
+    ).rejects.toMatchObject({ signature: { code: "not_connected" } });
+    await expect(
+      createDocusignSession({ http: fakeHttp().http }).status(
+        { ref: ENVELOPE },
         {},
       ),
-    ).rejects.toMatchObject({ signature: { code: "not_found" } });
-  });
-
-  it("maps DocuSign's errors to the family's codes", async () => {
-    const answering = (status: number, body: unknown) =>
-      createDocusignSession({
-        http: fakeHttp(userinfo, (request) =>
-          request.url.includes("/envelopes") ? { status, body } : undefined,
-        ).http,
-      });
-    for (const [status, body, code] of [
-      [
-        401,
-        { errorCode: "USER_AUTHENTICATION_FAILED", message: "token expired" },
-        "not_connected",
-      ],
-      [
-        404,
-        { errorCode: "ENVELOPE_DOES_NOT_EXIST", message: "gone" },
-        "not_found",
-      ],
-      [
-        400,
-        { errorCode: "ANCHOR_TAB_STRING_NOT_FOUND", message: "\\s1\\" },
-        "anchor_not_found",
-      ],
-      [
-        400,
-        { errorCode: "ENVELOPE_INVALID_STATUS", message: "sent" },
-        "invalid_request",
-      ],
-      [
-        503,
-        { errorCode: "SERVICE_UNAVAILABLE", message: "later" },
-        "provider_error",
-      ],
-    ] as const)
-      await expect(
-        answering(status, body).get({ ref: ENVELOPE }, {}),
-      ).rejects.toMatchObject({
-        signature: { code },
-      });
-    const consent = createDocusignSession({
-      http: fakeHttp((request) =>
-        request.url.endsWith("/oauth/userinfo")
-          ? { status: 400, body: { error: "consent_required" } }
-          : undefined,
-      ).http,
-    });
-    await expect(consent.get({ ref: ENVELOPE }, {})).rejects.toMatchObject({
-      signature: { code: "not_connected" },
-    });
-  });
-
-  it("is demo unless the declaration says production", async () => {
-    const seen: string[] = [];
-    const http: SignatureHttp = async (request) => {
-      seen.push(request.url);
-      return { ok: false, status: 401, text: async () => "{}" };
-    };
-    const config = (options: Record<string, string>) => ({
-      config: { provider: "docusign", options },
-      env: {},
-      http,
-    });
-    for (const options of [{}, { environment: "production" }] as Array<
-      Record<string, string>
-    >)
-      await (
-        await docusignSignatureProvider.createSession(config(options))
-      )
-        .get({ ref: ENVELOPE }, {})
-        .catch(() => undefined);
-    expect(seen).toEqual([
-      "https://account-d.docusign.com/oauth/userinfo",
-      "https://account.docusign.com/oauth/userinfo",
-    ]);
-    expect(() =>
-      docusignSignatureProvider.createSession(
-        config({ environment: "staging" }),
-      ),
-    ).toThrow(/demo or production/);
+    ).rejects.toMatchObject({ signature: { code: "not_connected" } });
   });
 });

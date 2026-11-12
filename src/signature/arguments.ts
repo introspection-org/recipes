@@ -6,10 +6,10 @@
  */
 
 /**
- * The envelope's handle, provider:id, as create returned it
+ * The request's handle, sig_…, as prepare returned it
  * @minLength 1
  */
-type EnvelopeHandle = string;
+type RequestHandle = string;
 
 /** Someone who signs or receives a copy */
 interface Recipient {
@@ -30,10 +30,10 @@ interface Recipient {
    * @maximum 99
    * @default 1
    */
-  routing_order?: number;
+  order?: number;
 }
 
-export interface SignatureCreateArguments {
+export interface SignaturePrepareArguments {
   /**
    * The final .docx under outputs/, with no tracked changes or comments
    * @minLength 1
@@ -64,9 +64,19 @@ export interface SignatureCreateArguments {
 }
 
 export interface SignatureSendArguments {
-  envelope: EnvelopeHandle;
+  request: RequestHandle;
 }
 
-export interface SignatureGetArguments {
-  envelope: EnvelopeHandle;
+export interface SignatureStatusArguments {
+  request: RequestHandle;
+}
+
+export interface SignatureVoidArguments {
+  request: RequestHandle;
+  /**
+   * Why it is cancelled; the signers see it
+   * @minLength 1
+   * @maxLength 200
+   */
+  reason: string;
 }

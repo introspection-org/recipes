@@ -6,19 +6,23 @@ export {
 } from "./module.js";
 export type { LoadedRecipeSignature } from "./module.js";
 export {
-  approvalBinding,
   approvedInSession,
   createSignatureTool,
   formatSignatureResult,
   registerSignatureTool,
+  restoreFromSession,
+  sendBinding,
   sessionApproval,
   signatureParameters,
+  voidBinding,
 } from "./tool.js";
 export type {
   SignatureApprovalOutcome,
   SignatureApprovalRequest,
   SignatureApprove,
   SignatureCall,
+  SignatureMcpClient,
+  SignatureRecord,
   SignatureTool,
   SignatureToolArgs,
   SignatureToolOptions,

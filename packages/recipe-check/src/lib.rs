@@ -1621,8 +1621,8 @@ const SIGNATURE_FAMILY: ProviderFamily = ProviderFamily {
     example: "docusign",
     options: Some(|provider| match provider {
         "docusign" => &[
-            ("environment", OptionType::String),
             ("account", OptionType::String),
+            ("server", OptionType::String),
         ],
         _ => &[],
     }),
@@ -6314,7 +6314,7 @@ mod tests {
     fn signature_declarations_take_one_provider_with_its_options() {
         let ok = check_recipe_files(&provider_recipe(
             "signature",
-            json!([{ "provider": "docusign", "options": { "environment": "demo", "account": "acme" } }]),
+            json!([{ "provider": "docusign", "options": { "server": "docusign-demo", "account": "acme" } }]),
             json!({}),
         ));
         assert!(

@@ -1,6 +1,6 @@
 # DocuSign signature provider
 
-**Status: proposed; tools captured.** The tools below were captured from the
+**Status: built** (`packages/signature/src/docusign.ts`); tools captured. The tools below were captured from the
 developer server (`docusign-mcp-server` v2.2.2, 42 tools) on 2026-11-12; the
 ones the provider calls are in
 [`test/fixtures/signature/docusign-tools.json`](../../test/fixtures/signature/docusign-tools.json).
