@@ -158,6 +158,21 @@ available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
 host keeps it and registers neither the built-in tool nor `/recipe view`.
 
+### Binary artifacts in a browser host
+
+A host with `storeArtifact` can also show DOCX, PDF and common image files
+through the same `show_artifact({ path })` tool. The host receives the original
+`Uint8Array` and MIME type, persists it, and returns its file id. The recorded
+result carries `kind: "file"`, that id and byte count, with empty `content`;
+no binary payload is put in the conversation. Browser hosts render those bytes
+with their file preview component, including after a conversation reload.
+
+The existing working-directory and symlink boundary applies, with a 25 MiB cap.
+Binary `ref` and text `diff` requests are refused. Without a binary-capable
+`storeArtifact` implementation the host must not opt into this contract; the
+terminal cannot render binary files. Hosts upgrading from the string-only
+callback must handle both `string` and `Uint8Array` content.
+
 ### Reviewing several files
 
 List `review_artifacts` and the agent can ask the user to review several
