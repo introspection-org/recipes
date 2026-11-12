@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "paths": {
+      "@introspection-ai/recipes/signature": ["../../dist/signature/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

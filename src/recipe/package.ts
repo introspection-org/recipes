@@ -31,6 +31,11 @@ import {
 } from "../issues/types.js";
 import { PRODUCTIVITY_COMMANDS } from "../productivity/types.js";
 import { SEARCH_PROVIDER_IDS } from "../search/types.js";
+import {
+  SIGNATURE_FIRST_PARTY_OPTIONS,
+  SIGNATURE_PROVIDER_IDS,
+  type SignatureProviderOptions,
+} from "../signature/types.js";
 import { isCompanionPackage, isHostPeerPackage } from "./companions.js";
 import { type RecipeProviderDeclaration } from "./providers.js";
 
@@ -197,6 +202,16 @@ export interface RecipePackageIssues extends RecipeProviderDeclaration {
   options?: IssuesProviderOptions;
 }
 
+/**
+ * The provider the `signature` tool sends through: first-party by id, from
+ * `@introspection-ai/recipe-signature`, or the Recipe's own by `package`. A
+ * Recipe declares one.
+ */
+export interface RecipePackageSignature extends RecipeProviderDeclaration {
+  /** What the provider reads, checked against its `capabilities.options`. */
+  options?: SignatureProviderOptions;
+}
+
 export function recipeProductivityPackageName(provider: string): string {
   return `@introspection-ai/recipe-productivity-${provider}`;
 }
@@ -233,6 +248,8 @@ export interface RecipePackageManifest {
   search?: RecipePackageSearch[];
   /** Absent without `pi.issues`: then nothing about issues loads. */
   issues?: RecipePackageIssues[];
+  /** Absent without `pi.signature`: then nothing about signature loads. */
+  signature?: RecipePackageSignature[];
   mcp: RecipePackageMcpConfig;
   runtime?: RecipeRuntimeRequirements;
 }
@@ -285,6 +302,7 @@ const PI_KEYS = new Set([
   "productivity",
   "search",
   "issues",
+  "signature",
   "evals",
   "mcp",
   "runtime",
@@ -459,6 +477,14 @@ function sourceShapeFindings(
     ...providerFamilyFindings(
       ISSUES_DECLARATIONS,
       pi.issues,
+      packageName,
+      dependencies,
+    ),
+  );
+  findings.push(
+    ...providerFamilyFindings(
+      SIGNATURE_DECLARATIONS,
+      pi.signature,
       packageName,
       dependencies,
     ),
@@ -788,12 +814,14 @@ function providerSourceProblems(
  * else, beside the fallback's `enabled`.
  */
 interface ProviderFamilyDeclarations {
-  key: "search" | "issues";
+  key: "search" | "issues" | "signature";
   firstParty: readonly string[];
   /** The options schema of each first-party id; absent when the family takes no options. */
   options?: Readonly<Record<string, IssuesOptionsSchema>>;
   /** The one provider that takes `enabled`, if the family has a fallback. */
   fallback?: string;
+  /** The most declarations the family takes; absent: any number. */
+  max?: number;
 }
 
 const SEARCH_DECLARATIONS: ProviderFamilyDeclarations = {
@@ -806,6 +834,13 @@ const ISSUES_DECLARATIONS: ProviderFamilyDeclarations = {
   firstParty: ISSUES_PROVIDER_IDS,
   options: ISSUES_FIRST_PARTY_OPTIONS,
   fallback: ISSUES_FALLBACK_PROVIDER,
+};
+
+const SIGNATURE_DECLARATIONS: ProviderFamilyDeclarations = {
+  key: "signature",
+  firstParty: SIGNATURE_PROVIDER_IDS,
+  options: SIGNATURE_FIRST_PARTY_OPTIONS,
+  max: 1,
 };
 
 function providerFamilyFindings(
@@ -827,6 +862,12 @@ function providerFamilyFindings(
     ...(family.fallback ? ["enabled"] : []),
   ];
   const findings: RecipeValidationFinding[] = [];
+  if (family.max !== undefined && value.length > family.max)
+    findings.push(
+      invalid(
+        `package.json#pi.${family.key} declares ${value.length} providers; it takes at most ${family.max}`,
+      ),
+    );
   const providers = new Set<string>();
   for (const [index, raw] of value.entries()) {
     const at = `package.json#pi.${family.key}[${index}]`;
@@ -1501,6 +1542,28 @@ function parseIssues(value: unknown[]): RecipePackageIssues[] {
   return declarations;
 }
 
+function parseSignature(value: unknown[]): RecipePackageSignature[] {
+  const seen = new Set<string>();
+  const declarations: RecipePackageSignature[] = [];
+  for (const raw of value) {
+    const declaration = asRecord(raw);
+    const provider = stringValue(declaration.provider);
+    if (!provider || seen.has(provider)) continue;
+    seen.add(provider);
+    const options = Object.fromEntries(
+      Object.entries(asRecord(declaration.options)).filter(
+        ([, value]) => typeof value === "string" || typeof value === "boolean",
+      ),
+    ) as SignatureProviderOptions;
+    declarations.push({
+      provider,
+      ...parseProviderSource(declaration),
+      ...(Object.keys(options).length > 0 ? { options } : {}),
+    });
+  }
+  return declarations;
+}
+
 function parseProductivity(value: unknown): RecipePackageProductivity[] {
   const declarations: RecipePackageProductivity[] = [];
   for (const raw of Array.isArray(value) ? value : []) {
@@ -1598,6 +1661,9 @@ export function readPiPackageManifest(
     productivity: parseProductivity(pi.productivity),
     ...(Array.isArray(pi.search) ? { search: parseSearch(pi.search) } : {}),
     ...(Array.isArray(pi.issues) ? { issues: parseIssues(pi.issues) } : {}),
+    ...(Array.isArray(pi.signature)
+      ? { signature: parseSignature(pi.signature) }
+      : {}),
     mcp: parseMcpConfig(pi.mcp),
     runtime: parseRuntimeRequirements(pi.runtime),
   };

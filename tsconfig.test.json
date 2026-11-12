@@ -18,6 +18,9 @@
       ],
       "@introspection-ai/recipes/issues": [
         "./src/issues/index.ts"
+      ],
+      "@introspection-ai/recipes/signature": [
+        "./src/signature/index.ts"
       ]
     }
   },

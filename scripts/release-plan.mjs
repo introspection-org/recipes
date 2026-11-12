@@ -28,14 +28,15 @@ const USER_AGENT = "recipes-release (github.com/introspection-org/recipes)";
 
 /** Every published artifact, by the manifest entry that versions it. */
 export function readArtifacts(repo) {
-  const json = (file) => JSON.parse(readFileSync(path.join(repo, file), "utf8"));
+  const json = (file) =>
+    JSON.parse(readFileSync(path.join(repo, file), "utf8"));
   const root = json(".release-please-manifest.json");
   const checker = json(".release-please-checker-manifest.json");
   const npmName = (dir) => json(path.join(dir, "package.json")).name;
   const npmVersion = (dir) => json(path.join(dir, "package.json")).version;
   const wheels = json("packages/recipe-check-python/wheels.json");
   const mcpClients = json("packages/mcp-client/npm/targets.json").map(
-    (t) => `@introspection-ai/mcp-client-${t.pkg}`
+    (t) => `@introspection-ai/mcp-client-${t.pkg}`,
   );
 
   const npmPackage = (key, dir, tagPrefix, extraNames = []) => ({
@@ -59,15 +60,16 @@ export function readArtifacts(repo) {
     npmPackage(
       "google",
       "packages/productivity/google",
-      "recipe-productivity-google-v"
+      "recipe-productivity-google-v",
     ),
     npmPackage(
       "microsoft",
       "packages/productivity/microsoft",
-      "recipe-productivity-microsoft-v"
+      "recipe-productivity-microsoft-v",
     ),
     npmPackage("search", "packages/search", "recipe-search-v"),
     npmPackage("issues", "packages/issues", "recipe-issues-v"),
+    npmPackage("signature", "packages/signature", "recipe-signature-v"),
     {
       key: "crate",
       version: checker["packages/recipe-check"],
@@ -123,7 +125,7 @@ export async function plan(artifacts, { tags, isPublished, pypiFiles }) {
   for (const a of artifacts) {
     if (a.packageVersion !== undefined && a.packageVersion !== a.version) {
       throw new Error(
-        `${a.key}: manifest says ${a.version} but package.json says ${a.packageVersion}`
+        `${a.key}: manifest says ${a.version} but package.json says ${a.packageVersion}`,
       );
     }
     const missing = [];
@@ -136,7 +138,12 @@ export async function plan(artifacts, { tags, isPublished, pypiFiles }) {
       }
     }
     const tagged = tags.has(a.tag);
-    result.push({ ...a, missing, tagged, publish: tagged && missing.length > 0 });
+    result.push({
+      ...a,
+      missing,
+      tagged,
+      publish: tagged && missing.length > 0,
+    });
   }
   return result;
 }
@@ -150,7 +157,7 @@ function remoteTags(repo) {
     out
       .split("\n")
       .filter(Boolean)
-      .map((line) => line.split("\trefs/tags/")[1])
+      .map((line) => line.split("\trefs/tags/")[1]),
   );
 }
 
@@ -163,7 +170,9 @@ async function get(url) {
 
 /** Filenames PyPI holds for a release; empty when the version does not exist. */
 async function pypiFiles(name, version) {
-  const response = await get(`https://pypi.org/pypi/${name}/${pythonVersion(version)}/json`);
+  const response = await get(
+    `https://pypi.org/pypi/${name}/${pythonVersion(version)}/json`,
+  );
   if (!response) return [];
   return (await response.json()).urls.map((file) => file.filename);
 }
@@ -173,13 +182,18 @@ async function isPublished(registry, name, version) {
   switch (registry) {
     case "npm":
       try {
-        execFileSync("npm", ["view", `${name}@${version}`, "version"], { stdio: "pipe" });
+        execFileSync("npm", ["view", `${name}@${version}`, "version"], {
+          stdio: "pipe",
+        });
         return true;
       } catch {
         return false;
       }
     case "crates.io":
-      return (await get(`https://crates.io/api/v1/crates/${name}/${version}`)) !== undefined;
+      return (
+        (await get(`https://crates.io/api/v1/crates/${name}/${version}`)) !==
+        undefined
+      );
     default:
       throw new Error(`unknown registry ${registry}`);
   }
@@ -188,7 +202,11 @@ async function isPublished(registry, name, version) {
 async function main() {
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const artifacts = readArtifacts(repo);
-  const results = await plan(artifacts, { tags: remoteTags(repo), isPublished, pypiFiles });
+  const results = await plan(artifacts, {
+    tags: remoteTags(repo),
+    isPublished,
+    pypiFiles,
+  });
 
   const outputs = [];
   for (const r of results) {
@@ -196,9 +214,13 @@ async function main() {
     if (r.publish) status = `PUBLISH (missing: ${r.missing.join(", ")})`;
     else if (r.missing.length > 0) {
       status = `not released: tag ${r.tag} does not exist`;
-      console.log(`::warning::${r.key} ${r.version} is in the manifest but ${r.tag} is not tagged`);
+      console.log(
+        `::warning::${r.key} ${r.version} is in the manifest but ${r.tag} is not tagged`,
+      );
     }
-    console.log(`${r.key.padEnd(7)} ${r.version.padEnd(10)} ${r.registry.padEnd(10)} ${status}`);
+    console.log(
+      `${r.key.padEnd(7)} ${r.version.padEnd(10)} ${r.registry.padEnd(10)} ${status}`,
+    );
     outputs.push(`${r.key}=${r.publish}`);
   }
   const npm = results.some((r) => r.registry === "npm" && r.publish);

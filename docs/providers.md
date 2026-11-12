@@ -16,6 +16,7 @@ versioned contract for the providers behind them:
 | `search` | `web_search` | tavily, exa, brave, keenable, parallel, perplexity |
 | `productivity` | `mail`, `calendar`, `drive` | google, microsoft |
 | `issues` | `issues` | linear, jira, introspection |
+| `signature` | `signature` | docusign, dropbox-sign, pandadoc |
 
 A **provider module** implements one family's contract: `{ kind, apiVersion,
 id, capabilities, … }` plus the family's calls (`search` for search,
@@ -52,7 +53,7 @@ dependency; nothing is loaded from a file in the Recipe at run time.
 
 | Source | Resolves to |
 | --- | --- |
-| none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`) |
+| none | the first-party package: `@introspection-ai/recipe-<family>-<id>`, or the family's bundle (`@introspection-ai/recipe-search`, `@introspection-ai/recipe-issues`, `@introspection-ai/recipe-signature`) |
 | `package` | an installed package by name, such as `@acme/recipe-search`, which the Recipe lists in `dependencies` with a version, never only as a peer |
 
 A provider kept with the Recipe's own code is a local package inside the
@@ -225,6 +226,7 @@ the adapter's tests run against a captured tool list.
 | `search` | the fixed `SEARCH_PROVIDER_IDS` filter goes; `pi.search` is added; `recipe-search` serves the first-party providers through the shared loader |
 | `productivity` | gains the `package` source; loads through the shared loader |
 | `issues` | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-issues` with `linear`, `jira` and `introspection` |
+| `signature` | new: the contract and the tool in Recipes, and `@introspection-ai/recipe-signature` with `docusign`, `dropbox-sign` and `pandadoc`, each an MCP adapter; one provider per Recipe ([signature](signature/README.md)) |
 
 The contract version of each family stays separate, so a breaking change to one
 family's contract does not bump another's.

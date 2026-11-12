@@ -115,6 +115,7 @@ jobs:
       microsoft: ${{ steps.plan.outputs.microsoft }}
       search: ${{ steps.plan.outputs.search }}
       issues: ${{ steps.plan.outputs.issues }}
+      signature: ${{ steps.plan.outputs.signature }}
       crate: ${{ steps.plan.outputs.crate }}
       python: ${{ steps.plan.outputs.python }}
       python_wheels: ${{ steps.plan.outputs.python_wheels }}
@@ -267,6 +268,7 @@ jobs:
           publish_microsoft: ${{ needs.plan.outputs.microsoft }}
           publish_search: ${{ needs.plan.outputs.search }}
           publish_issues: ${{ needs.plan.outputs.issues }}
+          publish_signature: ${{ needs.plan.outputs.signature }}
           NATIVE_BUILD_RESULT: ${{ needs.build-native-tools.result }}
         shell: bash
         run: |
@@ -342,6 +344,9 @@ jobs:
           fi
           if [[ "$publish_issues" == "true" ]]; then
             channel_dirs+=("packages/issues")
+          fi
+          if [[ "$publish_signature" == "true" ]]; then
+            channel_dirs+=("packages/signature")
           fi
 
           # One companion that cannot publish (a new package with no trusted

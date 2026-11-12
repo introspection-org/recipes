@@ -98,6 +98,10 @@
       "types": "./dist/issues/index.d.ts",
       "import": "./dist/issues/index.js"
     },
+    "./signature": {
+      "types": "./dist/signature/index.d.ts",
+      "import": "./dist/signature/index.js"
+    },
     "./test-utils": {
       "types": "./dist/test-utils.d.ts",
       "import": "./dist/test-utils.js"
@@ -153,7 +157,8 @@
     "@introspection-ai/recipe-issues": "workspace:>=0.1.0",
     "@introspection-ai/recipe-productivity-google": "workspace:>=0.1.0",
     "@introspection-ai/recipe-productivity-microsoft": "workspace:>=0.1.0",
-    "@introspection-ai/recipe-search": "workspace:>=0.1.0"
+    "@introspection-ai/recipe-search": "workspace:>=0.1.0",
+    "@introspection-ai/recipe-signature": "workspace:>=0.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=1.1.0 <2.0.0",
