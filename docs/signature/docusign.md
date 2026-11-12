@@ -125,6 +125,8 @@ recipient:
   tab, both in the Acme column (`listRecipients` with
   `include_anchor_tab_locations`), and none in Talent's.
 - `updateEnvelope` sent it; `getEnvelope` read `sent`.
+- The signer signed from the email; `getEnvelope` read `completed`, and
+  `listRecipients` showed the signature tab `signed` and the date tab filled.
 
 That run used the upload path: the envelope was created over REST with
 `documentBase64`, then sent and read through the MCP server.
