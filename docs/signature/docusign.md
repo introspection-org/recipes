@@ -1,13 +1,19 @@
 # DocuSign signature provider
 
-**Status: proposed; first to build.** The tool names come from DocuSign's own
-sample code for its MCP server
-([`docusign/mcp-agent-foundry-procurement-python`](https://github.com/docusign/mcp-agent-foundry-procurement-python),
-`scripts/test_all_mcp_tools.py`), not from a captured tool list. The envelope
-shape comes from DocuSign's eSignature REST v2.1 OpenAPI description
-([`docusign/OpenAPI-Specifications`](https://github.com/docusign/OpenAPI-Specifications)),
-which the server passes through. The capture settles what is marked *to
-capture*.
+**Status: proposed; tools captured.** The tools below were captured from the
+developer server (`docusign-mcp-server` v2.2.2, 42 tools) on 2026-11-12; the
+ones the provider calls are in
+[`test/fixtures/signature/docusign-tools.json`](../../test/fixtures/signature/docusign-tools.json).
+The envelope shape follows DocuSign's eSignature REST v2.1 OpenAPI description
+([`docusign/OpenAPI-Specifications`](https://github.com/docusign/OpenAPI-Specifications)).
+
+**⚠️ The MCP server cannot take the document.** `createEnvelope` accepts a
+document only as a `remoteUrl`, "a publicly accessible HTTPS URL", and says
+it "does not accept base64 file uploads". The reviewed contract is a file in
+the session, and the host does not publish one, so the envelope is created
+over REST (`POST /restapi/v2.1/accounts/{accountId}/envelopes` with
+`documentBase64`) with the same token. Everything else the provider needs, the
+server serves.
 
 The `docusign` provider serves the [`signature` tool](README.md) through the
 Docusign MCP Server, a remote server DocuSign hosts.
@@ -27,16 +33,18 @@ mcp:
 
 ## Commands
 
-Every tool takes `accountId`.
+Every tool but `getUserInfo` takes `accountId`.
 
 | Command | Tool | Arguments |
 | --- | --- | --- |
-| `send` | `createEnvelope` | `envelopeDefinition` with `status: "sent"` (below) |
+| `send` | REST `POST …/envelopes` (the server's `createEnvelope` takes no file) | the envelope definition below, with `status: "sent"` |
 | `status` | `getEnvelope`, `listRecipients` | `envelopeId` |
 | `void` | `updateEnvelope` | `envelopeId`, `envelopeUpdate: { status: "voided", voidedReason }` |
-| setup | *to capture* | the person's accounts, to choose `accountId` |
+| setup | `getUserInfo` | none; returns the person's accounts and each one's base URI |
 
-The envelope definition `send` passes:
+The envelope definition `send` posts. The server's own `createEnvelope`
+schema takes the same recipients and anchor tabs (`signHereTabs`,
+`dateSignedTabs` with `anchorString`), only not the document:
 
 ```json
 {
@@ -105,15 +113,11 @@ A recipient's `created` is `pending`, `sent` is `sent`, `delivered` is
 - **Size.** 25 MB per document, and less in `documentBase64`, which grows by
   a third.
 
-## To capture
+## Still to confirm
 
-Against the developer server, with `introspection bindings mcp capture
-docusign`:
-
-- the current tool names and input schemas: the sample targets an older
-  endpoint, and the current server may rename tools;
-- which tool lists the person's accounts, for `accountId`;
-- that `createEnvelope` passes anchor tabs through and accepts a `.docx` in
-  `documentBase64`;
-- the error shapes for `401`, a refused anchor (`ANCHOR_TAB_STRING_NOT_FOUND`)
-  and throttling.
+- A recording against the developer account: `getUserInfo`, the REST create
+  with the anchors, `getEnvelope`, `listRecipients`, `updateEnvelope` to void.
+- Whether `updateEnvelope` to `voided` is refused for a completed envelope
+  with a readable error.
+- The REST host for the account (`base_uri` from `getUserInfo`), which the
+  egress has to allow alongside the MCP server.
