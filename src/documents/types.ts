@@ -23,6 +23,10 @@ export interface DocumentCapabilities {
   readonly removeSection?: boolean;
   /** Page images written as PNG files, for pages with no text layer or to check layout. */
   readonly render?: boolean;
+  /** The document's content as a `DocumentOutline`: the source side of `convert`. */
+  readonly export?: boolean;
+  /** A new file built from a `DocumentOutline`: the output side of `convert`. */
+  readonly create?: boolean;
 }
 
 /** A tracked edit anchored to quoted text. */
@@ -120,6 +124,93 @@ export interface DocumentRenderInput {
   outputDir: string;
 }
 
+export interface DocumentExportInput {
+  path: string;
+  pages?: string;
+}
+
+/** Headings, paragraphs and tables in reading order, with their formatting: what `convert` carries between formats. */
+export interface DocumentOutline {
+  /** The source's file name, recorded in the new file. */
+  source: string;
+  /** The body text's font: what a run names only where it differs. */
+  font?: { family: string; size: number };
+  /** Page size and margins, in points. */
+  page?: {
+    width: number;
+    height: number;
+    margins: { top: number; bottom: number; left: number; right: number };
+  };
+  /** Baseline to baseline, in points. */
+  line_pitch?: number;
+  /** Running lines; `{PAGE}` and `{NUMPAGES}` stand for the page number and count. */
+  header?: DocumentRunningLine[];
+  footer?: DocumentRunningLine[];
+  header_distance?: number;
+  footer_distance?: number;
+  blocks: DocumentBlock[];
+}
+
+export interface DocumentRunningLine {
+  /** A tab sends what follows it to the right margin when `split`. */
+  text: string;
+  split?: boolean;
+  bold?: boolean;
+  size?: number;
+}
+
+/** A stretch of text in one style. Only what differs from the outline's body font is named. */
+export interface DocumentRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  family?: string;
+  size?: number;
+  /** `#rrggbb`. */
+  color?: string;
+}
+
+/** How a heading or paragraph is set, in points. `text` always holds the whole text, `runs` its formatting. */
+interface DocumentTextBlock {
+  text: string;
+  page: number;
+  runs?: DocumentRun[];
+  align?: "center";
+  /** The left edge of its wrapped lines, from the body's left edge. */
+  indent?: number;
+  /** The first line against the wrapped lines: negative for a hanging clause number or bullet. */
+  first_line?: number;
+  space_before?: number;
+  /** The source started a new page here, short of the last one's foot. */
+  page_break_before?: boolean;
+}
+
+export type DocumentBlock =
+  | ({ type: "heading"; level: 1 | 2 | 3 } & DocumentTextBlock)
+  | ({ type: "paragraph" } & DocumentTextBlock)
+  | {
+      type: "table";
+      rows: string[][];
+      page: number;
+      /** Drawn with lines; a signature block usually is not. */
+      ruled?: boolean;
+      size?: number;
+      /** The first row is bold. */
+      header?: boolean;
+    };
+
+/** An export's notes for the model (`text`) and the outline the host passes on. */
+export interface DocumentExport extends DocumentResult {
+  outline: DocumentOutline;
+}
+
+export interface DocumentCreateInput {
+  outline: DocumentOutline;
+  /** Absolute path of the new file; never an existing one. */
+  output: string;
+}
+
 export interface DocumentImage {
   label: string;
   /** Base64 image bytes. */
@@ -172,5 +263,13 @@ export interface DocumentAdapter {
   render?(
     ctx: DocumentAdapterContext,
     input: DocumentRenderInput,
+  ): Promise<DocumentResult>;
+  export?(
+    ctx: DocumentAdapterContext,
+    input: DocumentExportInput,
+  ): Promise<DocumentExport>;
+  create?(
+    ctx: DocumentAdapterContext,
+    input: DocumentCreateInput,
   ): Promise<DocumentResult>;
 }

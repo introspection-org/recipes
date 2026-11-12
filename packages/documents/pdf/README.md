@@ -1,7 +1,9 @@
 # @introspection-ai/recipe-documents-pdf
 
-The PDF format for the Recipes [`documents` tool](../../../docs/documents/README.md): `read` and
-`render`. PDFs are never changed, so the write commands are not registered.
+The PDF format for the Recipes [`documents` tool](../../../docs/documents/README.md): `read`,
+`render`, and the source side of `convert`. PDFs are never changed, so the write commands are
+not registered. To redline one, `convert` it to Word with the docx format declared too (see
+[PDF to Word](../../../docs/documents/README.md#pdf-to-word-convert)).
 
 ```json
 { "pi": { "documents": [{ "format": "pdf" }] } }
@@ -26,6 +28,15 @@ Every `read` result starts with the path it used:
 - **page images (no text layer)**: a page with no text is a scan. `read` says so and names
   the pages; `render` writes them as PNG files and returns their paths, and the agent opens
   each with Pi's `read` tool. `render` also suits signatures, stamps, charts and layout.
+
+## Converting to Word
+
+`convert` with a `.pdf` `path` and a `.docx` `output` runs this package's `export`. It
+joins pypdfium2's characters into paragraphs and headings with their fonts, underlines,
+indents and spacing, keeps the running header and footer, and adds pdfplumber's tables
+when the `tables` extra is installed. The docx package then builds the file. Both
+halves use the libraries their environments already lock. A page with no text layer
+fails the conversion, naming the page.
 
 ## Python
 

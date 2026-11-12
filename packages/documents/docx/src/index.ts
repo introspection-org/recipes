@@ -7,6 +7,7 @@ import type {
   DocumentAdapterContext,
   DocumentCapabilities,
   DocumentCommentInput,
+  DocumentCreateInput,
   DocumentHelperRunner,
   DocumentProposeEditsInput,
   DocumentReadInput,
@@ -46,6 +47,7 @@ export const DOCX_DOCUMENT_CAPABILITIES: DocumentCapabilities = {
   respond: true,
   removeSection: true,
   render: false,
+  create: true,
 };
 
 export class DocxDocumentAdapter implements DocumentAdapter {
@@ -98,6 +100,10 @@ export class DocxDocumentAdapter implements DocumentAdapter {
     input: DocumentRemoveSectionInput,
   ) {
     return this.call(ctx, "remove_section", input);
+  }
+
+  create(ctx: DocumentAdapterContext, input: DocumentCreateInput) {
+    return this.call(ctx, "create", input);
   }
 }
 

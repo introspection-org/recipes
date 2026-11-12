@@ -16,7 +16,8 @@ Two properties follow, as for [channels](../channels/README.md):
 - **The original is never changed.** Every write takes the document to read
   (`path`) and a new file under `outputs/` to save (`output`). Later calls
   edit that saved file in place by passing it as `path`. The tool refuses to
-  write outside `outputs/` or over a file it did not save.
+  write outside `outputs/` or over a file it did not save. `convert` follows
+  the same rule: it reads one file and saves a new one in another format.
 
 Agents select `tools: [documents]`.
 
@@ -207,6 +208,7 @@ doesn't ship fails when the Recipe loads, with the names it does ship.
 | `respond` | `path`, `output?`, `author`, `responses[]` | `respond` | not registered |
 | `remove_section` | `path`, `output?`, `author`, `from`, `through`, `keep?`, `rationale` | `removeSection` | not registered |
 | `render` | `path`, `pages?` | `render` | With a browser, the full page light and dark and each chart as its own element screenshot, at 2x; without one, each inline `<svg>` chart through resvg, naming what it could not draw. `pages` picks charts. |
+| `convert` | `path`, `output`, `pages?` | `export` on the format of `path`, `create` on the format of `output` | A new file in the output's format, rebuilt from the source's headings, paragraphs and tables. See [PDF to Word](#pdf-to-word-convert). |
 
 An edit is `{ op: "replace" | "delete" | "insert_after", quote, paragraph?,
 near?, occurrence?, new?, rationale }`. A response is `{ action: "accept" |
@@ -228,6 +230,7 @@ candidate paragraphs. It never returns the whole document; `read` does that.
 | `respond` | Accept or reject by change number (tracked moves resolve as a pair), reply, or counter | not registered | not registered |
 | `remove_section` | Strikes the paragraphs, leaves `Reserved.` after `keep`, keeps numbering | not registered | not registered |
 | `render` | not registered | PNG files of pages, at most 10 per call; returns their paths for Pi's `read` tool | With a browser, the full page light and dark and each chart as its own element screenshot, at 2x; without one, each inline `<svg>` chart through resvg, naming what it could not draw. `pages` picks charts. |
+| `convert` | `create`: a new `.docx` from an outline, with Heading 1–3, Normal paragraphs and Table Grid tables | `export`: the outline of the pages' text, as headings, paragraphs and, with the `tables` extra, tables | not registered |
 
 ### docx: revise or propose_edits
 
@@ -241,10 +244,11 @@ sits inside someone else's change. A revision whose text is unchanged becomes a
 comment on that paragraph, and a revision without a rationale fails alone rather
 than failing the batch's schema check.
 
-`compare` is used only when its result keeps the body's block structure:
-paper-docx 0.2.0 inserts empty paragraphs for some multi-paragraph batches, which
-would move every later paragraph id, so such a result is discarded for the
-tracked path.
+`compare` is used only when its result keeps the body's block structure and
+each table's rows and cells: paper-docx 0.2.0 inserts empty paragraphs for some
+multi-paragraph batches, and rebuilds a table whose cells it changes by deleting
+and re-inserting whole rows, the other party's cells included. Either would move
+paragraph ids, so such a result is discarded for the tracked path.
 
 ### docx: anchors
 
@@ -306,7 +310,8 @@ Every PDF `read` starts with `Path:` and the route it took:
   directory, or under `pagesDir` when the host passes one to
   `registerDocumentTools`.
 
-PDFs are never changed: every write command is absent for `.pdf`.
+PDFs are never changed: every write command is absent for `.pdf`. To redline
+one, `convert` it to Word (below).
 
 #### The `tables` extra
 
@@ -324,10 +329,104 @@ then `uv lock`. The helper imports pdfplumber only when a read asks for tables,
 and nothing is fetched at run time. A profile for contract or pricing work may
 recommend the extra; a Recipe that only reads briefs can leave it out.
 
+### PDF to Word: `convert`
+
+A PDF can't hold tracked changes, so to redline one the agent converts it to
+Word and marks up the Word file like any other:
+
+```text
+documents convert  { path: "msa.pdf", output: "outputs/msa.docx" }
+documents read     { path: "outputs/msa.docx" }
+documents revise   { path: "outputs/msa.docx", author, revisions }
+```
+
+The converted file is one this tool saved, so later commands edit it in place
+with no `output`, and its tracked changes are the only markup in it.
+
+`convert` rebuilds the document's structure, then sets it as the source set
+it. Headings, paragraphs and tables come over as Word headings, paragraphs and
+tables, which is what paragraph ids, quotes and tracked changes need. They
+come over with:
+
+- **the formatting of their text:** the body font as the Normal style, and runs
+  for what differs (bold, italic, underline, family, size, colour), so a bold
+  run-in clause heading stays bold inside its paragraph;
+- **the layout of the page:** page size and margins, line pitch, space before
+  each paragraph, centring, and left, hanging and first-line indents, with a
+  tab after a clause number or bullet set off by more than a space;
+- **the running header and footer,** as Word's own, with the page number and
+  count as fields;
+- **tables as drawn:** ruled or not, their text size, and a bold header row.
+- **filled form fields:** a completed form's values live in its fields, not its
+  text, so they are set into the page where the PDF shows them, in the body
+  font, and the result counts them so the agent checks each one.
+
+The right margin is the one the source wrapped at: past its longest line,
+and short of every word it pushed to the next line. Printed back to PDF, the
+Word file broke 91% of its lines where the original did on a two-page
+statement of work, on the same number of pages, and 90% on a twelve-page one,
+whose text it kept to 98%.
+
+Images, columns and drawn lines that underline nothing do not come over, and
+page breaks fall where Word puts them. A converter that reproduces the page,
+such as LibreOffice's PDF import or pdf2docx, places text in positioned boxes
+and line by line. The file looks right but redlines badly, because a sentence
+split across boxes can't be quoted or revised as one paragraph.
+
+The work runs in two halves, each in its own format's Python environment, so
+neither environment gains a library and the runtime image needs nothing new:
+
+- **The PDF adapter exports an outline.** It reads pypdfium2's characters with
+  their positions, fonts, sizes (after the page's scale) and colours, and
+  underlines from the thin paths beneath them, and joins them into
+  paragraphs. It starts a
+  new paragraph at a wider vertical gap, at a change of indent, at a line
+  that opens with a clause number such as `1.2`, `(a)` or `(iv)`, or after a
+  line the next line's first word would have fit on. A paragraph
+  that runs across a page break is joined back, and a word hyphenated at a line
+  end is rejoined. Lines repeated at the top or bottom of the pages (running
+  headers, footers and page numbers) are dropped. Lines set larger than the
+  body text, or bold lines on their own, become headings, the largest (and
+  centred before left) at level 1. Columns that line up across two or more
+  lines, such as a signature block, become a table. With the `tables`
+  extra, pdfplumber's tables become table blocks and their text is left out of
+  the paragraphs. Without it, a table's text comes over as paragraphs and the
+  result says the extra was missing.
+- **The Word adapter creates the file.** It builds the `.docx` from the
+  outline with paper-docx, sets the page, fonts and spacing above, and records
+  the source's file name in the file's core properties.
+
+The host runs the export, passes the outline to the creating format and
+writes only `output`. That must be a new file under `outputs/`, with the
+extension of a format that creates. The source is never changed.
+
+Clause numbers stay as the text the PDF shows, not Word list numbering, so
+they never renumber under an edit.
+
+`convert` fails, and writes nothing, when:
+
+- **A page in range has no text layer (a scan).** The error names the pages.
+  A contract with a page silently missing is worse than none: the agent
+  renders those pages and tells the person the PDF needs a text layer (OCR)
+  first. OCR is not part of the tool.
+- **The PDF is password-protected,** with the same message as `read`.
+- **The output's format doesn't create files,** or the source's format doesn't
+  export. The error names the formats that do.
+
+The result reports the pages converted and the counts of headings, paragraphs
+and tables. It also reports how many repeated lines were dropped and whether
+tables were detected, and reminds the agent that the layout was rebuilt.
+
+In a `commands` allowlist, `convert` on the PDF declaration allows exporting
+and on the Word declaration allows creating. The command is registered when
+some declared format exports and some creates, and a call needs both of its
+ends allowed.
+
 ## Limits
 
 - `read` returns about 50,000 characters per part; pass the `offset` it gives.
 - A batch takes at most 60 edits or responses.
+- `convert` takes the whole PDF unless `pages` narrows it.
 - Paragraph ids are body-block positions. Edits never add or remove blocks, so
   ids hold for a whole redline; a document edited elsewhere gets new ids.
 - Change numbers for `respond` are positions in the file as read: read again
@@ -390,6 +489,46 @@ const pdf: RecipeDocumentFormatModule = {
 
 export default pdf;
 ```
+
+Two optional capabilities connect formats for `convert`. `export` means the
+adapter returns a document's content as a `DocumentOutline`, and `create`
+means it builds a new file from one:
+
+```ts
+interface DocumentOutline {
+  /** The source's file name, recorded in the new file. */
+  source: string;
+  font?: { family: string; size: number };
+  page?: { width: number; height: number; margins: { top: number; bottom: number; left: number; right: number } };
+  line_pitch?: number;
+  header?: DocumentRunningLine[]; // `{PAGE}` and `{NUMPAGES}` stand for fields
+  footer?: DocumentRunningLine[];
+  blocks: DocumentBlock[];
+}
+
+type DocumentBlock =
+  | { type: "heading"; level: 1 | 2 | 3; text: string; page: number; runs?: DocumentRun[]; /* layout */ }
+  | { type: "paragraph"; text: string; page: number; runs?: DocumentRun[]; /* layout */ }
+  | { type: "table"; rows: string[][]; page: number; ruled?: boolean; size?: number; header?: boolean };
+
+// layout: align?: "center", indent?, first_line?, space_before? (points)
+// DocumentRun: { text, bold?, italic?, underline?, family?, size?, color? }, naming only what differs from `font`
+
+interface DocumentAdapter {
+  // ...
+  export?(ctx: DocumentAdapterContext, input: DocumentExportInput): Promise<DocumentExport>;
+  create?(ctx: DocumentAdapterContext, input: DocumentCreateInput): Promise<DocumentResult>;
+}
+```
+
+`text` always holds a block's whole text, so a creating format that ignores
+formatting still builds a correct file. `DocumentExport` is a `DocumentResult`
+with the `outline` beside its `text`.
+A Python helper answers with an `outline` key beside `text` and `details`. The
+host keeps the outline out of what the model sees and passes the export's
+`text` (its notes, such as a missing extra) through with the create's result.
+Both capabilities are additive, so the contract stays at `apiVersion` 1. A
+host that predates them loads such a format without `convert`.
 
 `apiVersion` names the contract the format was written against; the host
 refuses a different one, naming the package, both versions and the fix.

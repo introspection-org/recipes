@@ -1,8 +1,9 @@
 # @introspection-ai/recipe-documents-docx
 
 The Word (`.docx`) format for the Recipes [`documents` tool](../../../docs/documents/README.md):
-`read`, `propose_edits`, `comment`, `respond` and `remove_section`, on paper-docx.
-`render` is not registered.
+`read`, `propose_edits`, `comment`, `respond` and `remove_section`, on paper-docx, and
+the creating side of `convert`: a new `.docx` built from another format's outline, such
+as a PDF to redline. `render` is not registered.
 
 Recipes installs this package alongside itself (an `optionalDependencies` entry), so a
 Recipe that declares the format without listing the package uses that copy, with its Python

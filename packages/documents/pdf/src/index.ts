@@ -6,6 +6,8 @@ import type {
   DocumentAdapter,
   DocumentAdapterContext,
   DocumentCapabilities,
+  DocumentExport,
+  DocumentExportInput,
   DocumentHelperRunner,
   DocumentReadInput,
   DocumentRenderInput,
@@ -32,6 +34,7 @@ export const PDF_HELPER = fileURLToPath(
  * PDFs are read and rendered here, never changed: the write commands are absent for .pdf.
  * read: pypdfium2 text, plus pdfplumber table cells when asked and the `tables` extra is installed.
  * render: PNG files in the directory the host passes, returned as paths for Pi's `read` tool.
+ * export: the pages' headings, paragraphs and tables as an outline, the source side of `convert`.
  */
 export const PDF_DOCUMENT_CAPABILITIES: DocumentCapabilities = {
   read: true,
@@ -41,6 +44,7 @@ export const PDF_DOCUMENT_CAPABILITIES: DocumentCapabilities = {
   respond: false,
   removeSection: false,
   render: true,
+  export: true,
 };
 
 export class PdfDocumentAdapter implements DocumentAdapter {
@@ -80,6 +84,17 @@ export class PdfDocumentAdapter implements DocumentAdapter {
     input: DocumentRenderInput,
   ): Promise<DocumentResult> {
     return this.call(ctx, "render", input);
+  }
+
+  async export(
+    ctx: DocumentAdapterContext,
+    input: DocumentExportInput,
+  ): Promise<DocumentExport> {
+    const result = (await this.call(ctx, "export", input)) as DocumentExport;
+    if (!result.outline || !Array.isArray(result.outline.blocks)) {
+      throw new Error("the PDF helper returned no outline");
+    }
+    return result;
   }
 }
 

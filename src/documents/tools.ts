@@ -37,6 +37,7 @@ export const DOCUMENT_COMMANDS = [
   "respond",
   "remove_section",
   "render",
+  "convert",
 ] as const;
 
 export type DocumentCommand = (typeof DOCUMENT_COMMANDS)[number];
@@ -60,14 +61,26 @@ export function documentCommandsFor(
   if (capabilities.respond) supported.push("respond");
   if (capabilities.removeSection) supported.push("remove_section");
   if (capabilities.render) supported.push("render");
+  if (capabilities.export || capabilities.create) supported.push("convert");
   return supported;
+}
+
+/** `convert` needs one format that exports and one that creates; each format declares only its own end. */
+function convertible(adapters: readonly DocumentAdapter[]): boolean {
+  return (
+    adapters.some((adapter) => adapter.capabilities.export) &&
+    adapters.some((adapter) => adapter.capabilities.create)
+  );
 }
 
 export function documentConnectorTools(_capabilities: DocumentCapabilities) {
   return [{ id: "documents", name: "documents", defaultActive: true }];
 }
 
-const METHOD: Record<DocumentCommand, keyof DocumentAdapter> = {
+const METHOD: Record<
+  Exclude<DocumentCommand, "convert">,
+  keyof DocumentAdapter
+> = {
   read: "read",
   revise: "revise",
   propose_edits: "proposeEdits",
@@ -79,8 +92,13 @@ const METHOD: Record<DocumentCommand, keyof DocumentAdapter> = {
 
 /** A capability claimed but not implemented would be discovered by failing a call; caught at registration. */
 function assertImplemented(adapter: DocumentAdapter): void {
-  const missing = documentCommandsFor(adapter.capabilities).filter(
-    (command) => typeof adapter[METHOD[command]] !== "function",
+  const methods: Array<keyof DocumentAdapter> = documentCommandsFor(
+    adapter.capabilities,
+  ).flatMap((command) => (command === "convert" ? [] : [METHOD[command]]));
+  if (adapter.capabilities.export) methods.push("export");
+  if (adapter.capabilities.create) methods.push("create");
+  const missing = methods.filter(
+    (method) => typeof adapter[method] !== "function",
   );
   if (missing.length > 0) {
     throw new Error(
@@ -178,6 +196,11 @@ const DEFINITIONS: Record<DocumentCommand, Definition> = {
       "Render PDF pages, or an HTML page and its charts, to PNG files (at most 10 per call) and return their paths; open each with the read tool to see the page. Use it for PDF pages read reports have no text layer (scans), to check signatures, stamps, handwriting, charts or layout, and to check each chart on an HTML page makes sense. HTML renders the full page light and dark and each chart with a browser; without one, only inline SVG charts, and the result says so.",
     parameters: DOCUMENTS_ARGUMENTS.render,
   },
+  convert: {
+    description:
+      "Convert a document to another format as a new file under outputs/, such as a PDF to .docx so it can be redlined. Rebuilds headings, paragraphs and tables in the source's fonts, spacing, indents and running header and footer; images and exact page breaks don't come over. Fails, writing nothing, when a page has no text layer (a scan). Then read the new file and change it in place (path set to it, no output).",
+    parameters: DOCUMENTS_ARGUMENTS.convert,
+  },
 };
 
 function toolResult(result: DocumentResult) {
@@ -223,6 +246,7 @@ export function registerDocumentTools(
   const supported = new Set(
     adapters.flatMap((adapter) => documentCommandsFor(adapter.capabilities)),
   );
+  if (!convertible(adapters)) supported.delete("convert");
   for (const command of options.commands ?? []) {
     if (!supported.has(command))
       throw new Error(`Unsupported documents command: ${command}`);
@@ -248,10 +272,7 @@ export function registerDocumentTools(
     return mkdtemp(join(pagesDir, `${basename(source, extname(source))}-`));
   };
 
-  const adapterFor = (
-    path: string,
-    command: DocumentCommand,
-  ): DocumentAdapter => {
+  const opener = (path: string): DocumentAdapter => {
     const extension = extname(path).toLowerCase();
     const adapter = byExtension.get(extension);
     if (!adapter) {
@@ -259,6 +280,31 @@ export function registerDocumentTools(
         `documents doesn't open ${extension || "files without an extension"}; it opens ${[...byExtension.keys()].join(", ")}`,
       );
     }
+    return adapter;
+  };
+
+  /** The adapter for one end of a conversion, or an error naming the formats that serve that end. */
+  const convertEnd = (
+    path: string,
+    end: "export" | "create",
+  ): DocumentAdapter => {
+    const adapter = opener(path);
+    if (adapter.capabilities[end]) return adapter;
+    const formats = adapters
+      .filter((other) => other.capabilities[end])
+      .map((other) => other.format);
+    throw new Error(
+      end === "export"
+        ? `convert can't read ${adapter.format} files; it converts from ${formats.join(", ")}`
+        : `convert can't write ${adapter.format} files; it converts to ${formats.join(", ")}`,
+    );
+  };
+
+  const adapterFor = (
+    path: string,
+    command: DocumentCommand,
+  ): DocumentAdapter => {
+    const adapter = opener(path);
     if (!documentCommandsFor(adapter.capabilities).includes(command)) {
       const formats = adapters.filter((other) =>
         documentCommandsFor(other.capabilities).includes(command),
@@ -273,6 +319,7 @@ export function registerDocumentTools(
   const outputFor = async (
     source: string,
     output: unknown,
+    extension = extname(source),
   ): Promise<string> => {
     const target = output === undefined ? source : workspacePath(output, cwd);
     // An in-place write may only target a file this tool saved in this session,
@@ -292,8 +339,12 @@ export function registerDocumentTools(
         `output must be under ${relative(cwd, outputsDir) || outputsDir}/`,
       );
     }
-    if (extname(target).toLowerCase() !== extname(source).toLowerCase()) {
-      throw new Error(`output must keep the ${extname(source)} extension`);
+    if (extname(target).toLowerCase() !== extension.toLowerCase()) {
+      throw new Error(
+        extension === extname(source)
+          ? `output must keep the ${extname(source)} extension`
+          : `output must end in ${extension}`,
+      );
     }
     if (!written.has(target)) {
       try {
@@ -342,14 +393,48 @@ export function registerDocumentTools(
         );
       }
       const source = workspacePath(input.path, cwd);
-      const adapter = adapterFor(source, command);
       const ctx: DocumentAdapterContext = { cwd, signal };
+      if (command === "convert") {
+        const from = convertEnd(source, "export");
+        if (input.output === undefined) {
+          throw new Error("convert needs output: a new file under outputs/");
+        }
+        const to = convertEnd(workspacePath(input.output, cwd), "create");
+        const output = await outputFor(
+          source,
+          input.output,
+          extname(String(input.output)),
+        );
+        if (written.has(output)) {
+          throw new Error(
+            `${relative(cwd, output)} was already written: convert to a new file`,
+          );
+        }
+        const exported = await from.export!(ctx, {
+          path: source,
+          ...(typeof input.pages === "string" ? { pages: input.pages } : {}),
+        });
+        const created = await to.create!(ctx, {
+          outline: exported.outline,
+          output,
+        });
+        written.add(output);
+        return toolResult({
+          text: [created.text, exported.text].filter(Boolean).join("\n"),
+          details: {
+            ...created.details,
+            export: exported.details ?? {},
+            output: relative(cwd, output),
+          },
+        });
+      }
+      const adapter = adapterFor(source, command);
       let result: DocumentResult;
       if (WRITE_COMMANDS.has(command)) {
         const output = await outputFor(source, input.output);
         const call = { ...input, source, output } as never;
         result = await (
-          adapter[METHOD[command]] as (
+          adapter[METHOD[command as Exclude<DocumentCommand, "convert">]] as (
             ctx: DocumentAdapterContext,
             input: never,
           ) => Promise<DocumentResult>
@@ -361,7 +446,7 @@ export function registerDocumentTools(
         };
       } else {
         result = await (
-          adapter[METHOD[command]] as (
+          adapter[METHOD[command as Exclude<DocumentCommand, "convert">]] as (
             ctx: DocumentAdapterContext,
             input: never,
           ) => Promise<DocumentResult>

@@ -274,6 +274,8 @@ export async function loadRecipeDocuments(
                 adapter.capabilities.removeSection && has("remove_section"),
               ),
               render: Boolean(adapter.capabilities.render && has("render")),
+              export: Boolean(adapter.capabilities.export && has("convert")),
+              create: Boolean(adapter.capabilities.create && has("convert")),
             },
           });
         });
