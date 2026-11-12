@@ -24,7 +24,7 @@ mcp:
 
 | Command | Tool (*to capture*) | API it should reach |
 | --- | --- | --- |
-| `send` | send for signature | `POST /v3/signature_request/send`: the [signed link](README.md#the-document-link) to the marked copy as `file_urls[]`, `signers[]` (`name`, `email_address`, `order`), `cc_email_addresses[]`, `title`, `subject`, `message`, `use_text_tags: true`, `hide_text_tags: false` |
+| `send` | send for signature | `POST /v3/signature_request/send`: the [signed link](README.md#getting-the-document-to-the-vendor) to the marked copy as `file_urls[]`, `signers[]` (`name`, `email_address`, `order`), `cc_email_addresses[]`, `title`, `subject`, `message`, `use_text_tags: true`, `hide_text_tags: false` |
 | `status` | check status | `GET /v3/signature_request/{id}` |
 | `void` | cancel | `POST /v3/signature_request/cancel/{id}` |
 

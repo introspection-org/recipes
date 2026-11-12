@@ -70,7 +70,7 @@ The provider is not offered until a capture shows:
 
 - the tool names and input schemas;
 - that `documents_create` with `source: "file"` takes the
-  [signed link](README.md#the-document-link) to the file, as PandaDoc's REST
+  [signed link](README.md#getting-the-document-to-the-vendor) to the file, as PandaDoc's REST
   API takes a public HTTPS `url`;
 - that field tags in a `.docx` are read through that path;
 - a delete tool, for a document whose send failed.

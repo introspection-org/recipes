@@ -7,11 +7,14 @@ ones the provider calls are in
 The envelope shape follows DocuSign's eSignature REST v2.1 OpenAPI description
 ([`docusign/OpenAPI-Specifications`](https://github.com/docusign/OpenAPI-Specifications)).
 
-**The document goes by link.** `createEnvelope` accepts a document only as a
-`remoteUrl` ("a publicly accessible HTTPS URL, max 25 MB per file") and
-refuses base64, so the provider passes the host's short-lived signed link
-([The document link](README.md#the-document-link)). A test on the developer
-account created a draft from a public URL this way.
+**The document goes by link, or by one REST upload.** `createEnvelope`
+accepts a document only as a `remoteUrl` ("a publicly accessible HTTPS URL,
+max 25 MB per file") and refuses base64. With the host's signed link the
+provider calls it; without one, it creates the envelope over REST
+(`POST {base_uri}/restapi/v2.1/accounts/{accountId}/envelopes` with
+`documentBase64`), with the same token
+([Getting the document to the vendor](README.md#getting-the-document-to-the-vendor)).
+Everything else goes through the MCP server.
 
 The `docusign` provider serves the [`signature` tool](README.md) through the
 Docusign MCP Server, a remote server DocuSign hosts.
@@ -35,7 +38,7 @@ Every tool but `getUserInfo` takes `accountId`.
 
 | Command | Tool | Arguments |
 | --- | --- | --- |
-| `send` | `createEnvelope` | `envelopeDefinition` below, with `status: "sent"` |
+| `send` | `createEnvelope` with a signed link, else REST `POST …/envelopes` | the envelope definition below, with `status: "sent"`, and `remoteUrl` or `documentBase64` |
 | `status` | `getEnvelope`, `listRecipients` | `envelopeId` |
 | `void` | `updateEnvelope` | `envelopeId`, `envelopeUpdate: { status: "voided", voidedReason }` |
 | setup | `getUserInfo` | none; returns the person's accounts and each one's base URI |
@@ -48,7 +51,7 @@ The envelope definition `send` passes:
   "emailSubject": "Acme MSA for signature",
   "emailBlurb": "Please sign the attached agreement.",
   "documents": [
-    { "documentId": "1", "name": "acme-msa.docx", "fileExtension": "docx", "remoteUrl": "<the signed link to the marked copy>" }
+    { "documentId": "1", "name": "acme-msa.docx", "fileExtension": "docx", "remoteUrl": "<signed link>" }
   ],
   "recipients": {
     "signers": [
@@ -123,7 +126,8 @@ recipient:
   `include_anchor_tab_locations`), and none in Talent's.
 - `updateEnvelope` sent it; `getEnvelope` read `sent`.
 
-That run created the envelope over REST, before this design chose links.
+That run used the upload path: the envelope was created over REST with
+`documentBase64`, then sent and read through the MCP server.
 
 ## Still to confirm
 

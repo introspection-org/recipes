@@ -3,9 +3,10 @@
 **Status: proposed.** One `signature` tool sends a final, reviewed document
 out for e-signature through DocuSign, Dropbox Sign or PandaDoc, with the same
 commands for each. Each provider is served through its vendor's own remote MCP
-server, as the [issues tool](../issues/README.md) serves Linear and Jira, and
-the document reaches the vendor as a short-lived signed link the host issues
-([The document link](#the-document-link)). DocuSign's tools are captured; the
+server, as the [issues tool](../issues/README.md) serves Linear and Jira.
+Only the document itself may take another path: a short-lived signed link the
+host issues, or, where the host has none, one upload over the vendor's REST
+API ([Getting the document to the vendor](#getting-the-document-to-the-vendor)). DocuSign's tools are captured; the
 others are not yet, and each guide lists what its capture must confirm
 ([Wiring a provider](../providers.md#10-wiring-a-provider)).
 
@@ -151,9 +152,9 @@ can send without someone finishing it in its web app.
    and every signer and cc with their email and order. The card is built from
    the draft, never from text the model wrote for it. `void` shows the
    request, its recipients and the reason.
-3. Only on `approved` does the host publish the marked copy as a signed link
-   ([below](#the-document-link)) and call the provider, which creates and
-   sends the request in one step.
+3. Only on `approved` does the host call the provider, handing it the marked
+   copy ([below](#getting-the-document-to-the-vendor)); the provider creates
+   and sends the request in one step.
 
 | Host | Approval |
 | --- | --- |
@@ -173,28 +174,40 @@ every provider alike
 ([Policy and approvals](../productivity/README.md#policy-and-approvals)). The
 model never can.
 
-## The document link
+## Getting the document to the vendor
 
 No vendor's MCP server takes a file's bytes: DocuSign's `createEnvelope`
 accepts a document only as a `remoteUrl` and refuses base64, and the others
-take a URL or a file in the person's own storage. So the host hands the
-provider a link, and the vendor fetches the document from it:
+take a URL or a file in the person's own storage. So the document reaches the
+vendor one of two ways, chosen by the host, and every other call stays on the
+MCP server:
 
-- **The host issues it, not Recipes.** A host passes `publishDocument(bytes,
-  { name, contentType })` to the tool, returning `{ url, expires_at }`. On
-  Introspection it is a signed URL on the task's file, from the platform's
-  file store. A host without it does not offer `send`.
-- **It is short-lived and unguessable**: valid for 10 minutes at most, one
-  document, the marked copy the person approved and nothing else. It is minted
-  only after approval, inside `send`, and never shown to the model: the
-  provider receives it, the result does not carry it, and spans redact it.
-- **The vendor fetches it once**, while creating the request; after that the
-  request holds its own copy. A link that expires before the vendor fetched it
-  is a `provider_error`, and the person approves again.
+| Path | When | How |
+| --- | --- | --- |
+| **Signed link** | the host passes `publishDocument` | the host publishes the marked copy and the provider passes the link to the server's create tool (DocuSign's `remoteUrl`, Dropbox Sign's `file_urls`) |
+| **Upload** | otherwise | the provider creates the request with one call to the vendor's REST API carrying the file (DocuSign's `documentBase64`), with the same person's token, and the MCP server serves the rest |
 
-Anyone holding the link can download the contract while it is valid, so the
-window is the risk to keep small. A host decides whether that is acceptable
-for its documents; one that cannot accept it does not offer `send`.
+A provider declares which paths it supports in `capabilities.document`
+(`["link", "upload"]` for DocuSign). The upload's REST host (DocuSign's
+account `base_uri`) is in the provider's `hosts` and needs the egress to allow
+it, beside the MCP server.
+
+A signed link, when the host issues one:
+
+- **comes from the host, not Recipes:** `publishDocument(bytes, { name,
+  contentType })` returns `{ url, expires_at }`. On Introspection it would be
+  a signed download URL on the task's file from the platform's file store;
+- **is short-lived and unguessable:** valid for 10 minutes at most, for one
+  document, the marked copy the person approved. It is minted only after
+  approval, inside `send`, and never shown to the model: the result does not
+  carry it, and spans redact it;
+- **is fetched once,** while the vendor creates the request, which then holds
+  its own copy. A link that expires first is a `provider_error`, and the
+  person approves again.
+
+Anyone holding the link can download the contract while it is valid, so a host
+offers it only where that window is acceptable for its documents; the upload
+path never exposes the file.
 
 ## Status
 
@@ -233,7 +246,11 @@ declares is served by a verified mapping.
 A provider holds no credential. Each person connects the vendor's MCP server
 once with the vendor's OAuth, and the host attaches their token to the
 server's requests, as for any Recipe MCP server
-([MCP authentication](../mcp-auth.md)). Every request runs as that person,
+([MCP authentication](../mcp-auth.md)). The upload path's REST call uses
+the **same token**: DocuSign's MCP server and its REST API accept one OAuth
+access token from the same sign-in (tested with the `signature` scope), so
+the egress attaches it to the provider's REST host as well, and the person
+connects once. Every request runs as that person,
 from their own account and plan, so the request is sent in their name. A
 sandbox account connects the same way. A person who has not connected gets
 `not_connected`, and the agent asks them with `introspection_open`.
@@ -261,8 +278,9 @@ As for [issues](../providers.md#7-the-issues-family): a module with `kind:
 `server`, `tools`). Its session implements:
 
 - `send({ document, subject, message, signers, cc })`: create the request
-  from `document.url`, the [link](#the-document-link) to the marked copy, and
-  send it, returning the provider's ref and status;
+  from `document.url` when the host gave a [signed link](#getting-the-document-to-the-vendor),
+  else from `document.bytes` by upload, and send it, returning the provider's
+  ref and status;
 - `status({ ref })`;
 - `void({ ref, reason })`.
 
