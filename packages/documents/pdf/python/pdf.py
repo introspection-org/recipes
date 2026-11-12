@@ -10,6 +10,7 @@ fetched at run time.
 """
 
 import ctypes
+import io
 import json
 import os
 import re
@@ -232,6 +233,8 @@ class Style:
     italic: bool
     color: str  # "#rrggbb"
     underline: bool = False
+    # Set from a filled form field: its font is the field's, so it takes the body's.
+    form: bool = False
 
 
 @dataclass
@@ -258,6 +261,8 @@ class Line:
     centered: bool
     segments: list[tuple[float, str]] = field(default_factory=list)
     runs: list[tuple[str, Style]] = field(default_factory=list)
+    # The share of the line that is filled form values.
+    form: float = 0.0
     # Where the text after a leading clause number or bullet starts, when a tab rather than a space set it there.
     tab_x: float | None = None
     # The width of the line's first word: whether it would have fit at the end of the line above.
@@ -394,8 +399,9 @@ def build_line(chars: list[Char], number: int, width: float, height: float) -> L
         x0=x0,
         x1=x1,
         top=height - max(c.top for c in visible),
-        size=statistics.mode(c.style.size for c in visible),
+        size=statistics.mode(c.style.size for c in ([c for c in visible if not c.style.form] or visible)),
         bold=sum(1 for c in visible if c.style.bold) / len(visible),
+        form=sum(1 for c in visible if c.style.form) / len(visible),
         soft_hyphen=chars[-1].soft_hyphen,
         centered=abs((x0 + x1) / 2 - width / 2) < 0.01 * width and x1 - x0 < 0.8 * width,
         segments=segments,
@@ -417,7 +423,7 @@ def outside(line: Line, left: float, right: float) -> Line | None:
     return build_line(kept, line.page, *line.page_size) if kept else None
 
 
-def page_lines(page, number: int) -> list[Line]:
+def page_lines(page, number: int, fields: list[tuple[float, float, float, float]] = ()) -> list[Line]:
     """pdfium's lines in reading order, each with its box, size, boldness, columns and styled runs."""
     import pypdfium2.raw as raw
 
@@ -450,6 +456,9 @@ def page_lines(page, number: int) -> list[Line]:
             style = blank if char.isspace() else char_style(textpage, index, buffer, cache)
             if not char.isspace() and underlined(rules, left, bottom, right):
                 style = replace(style, underline=True)
+            middle = ((left + right) / 2, (bottom + top) / 2)
+            if not char.isspace() and any(fl <= middle[0] <= fr and fb <= middle[1] <= ft for fl, fb, fr, ft in fields):
+                style = replace(style, form=True)
             chars.append(Char(char, left, bottom, right, top, style))
         flush()
     finally:
@@ -490,7 +499,7 @@ def column_tables(lines: list[Line]) -> list[tuple[int, int]]:
     return runs
 
 
-def pdfplumber_tables(path: str, numbers: list[int]):
+def pdfplumber_tables(path, numbers: list[int]):
     """Ruled tables by page: (top, bottom, x0, x1, rows), or None without the `tables` extra."""
     try:
         import pdfplumber
@@ -501,9 +510,38 @@ def pdfplumber_tables(path: str, numbers: list[int]):
         for number in numbers:
             for table in document.pages[number - 1].find_tables():
                 rows = [[" ".join(str(cell or "").split()) for cell in row] for row in table.extract()]
+                if not any(cell for row in rows for cell in row):
+                    continue  # boxes with nothing in them, such as a form field's border
                 x0, top, x1, bottom = table.bbox
                 found.setdefault(number, []).append((top, bottom, x0, x1, rows))
     return found
+
+
+def flatten_forms(document, numbers: list[int]) -> tuple[list[str], dict[int, list]]:
+    """Set filled form fields into their pages' content, so their values are text like any other.
+
+    Returns the fields that had values and each page's widget rectangles (left, bottom, right, top), so their
+    text is known for a field's. Only the copy in memory changes; the file is never written."""
+    import pypdfium2.raw as raw
+
+    document.init_forms()
+    _, fields = comments_and_fields(document, numbers)
+    rects: dict[int, list] = {}
+    if fields:
+        for number in numbers:
+            page = document[number - 1]
+            for index in range(raw.FPDFPage_GetAnnotCount(page.raw)):
+                annot = raw.FPDFPage_GetAnnot(page.raw, index)
+                try:
+                    if raw.FPDFAnnot_GetSubtype(annot) == NOT_COMMENTS["widget"]:
+                        box = raw.FS_RECTF()
+                        if raw.FPDFAnnot_GetRect(annot, box):
+                            rects.setdefault(number, []).append((box.left, box.bottom, box.right, box.top))
+                finally:
+                    raw.FPDFPage_CloseAnnot(annot)
+            raw.FPDFPage_Flatten(page.raw, raw.FLAT_NORMALDISPLAY)
+            page.close()
+    return fields, rects
 
 
 def export(request: dict) -> dict:
@@ -511,10 +549,12 @@ def export(request: dict) -> dict:
     document = open_document(path)
     total = len(document)
     numbers = page_numbers(request.get("pages"), total)
+    # A filled form keeps its values in widgets, not the page's text: without this they would vanish.
+    fields, field_rects = flatten_forms(document, numbers)
     pages, heights, scanned = [], [], []
     for number in numbers:
         page = document[number - 1]
-        lines = page_lines(page, number)
+        lines = page_lines(page, number, field_rects.get(number, []))
         if not lines:
             scanned.append(number)
         pages.append(lines)
@@ -528,7 +568,14 @@ def export(request: dict) -> dict:
         )
 
     keys = furniture_keys(pages, heights) if len(numbers) > 1 else set()
-    ruled = pdfplumber_tables(path, numbers)
+    if fields:
+        # pdfplumber reads the flattened copy, so a value in a table cell comes over with the table.
+        flattened = io.BytesIO()
+        document.save(flattened)
+        flattened.seek(0)
+        ruled = pdfplumber_tables(flattened, numbers)
+    else:
+        ruled = pdfplumber_tables(path, numbers)
     dropped = 0
     # The left and right edges of every table, for a page with too little body text to measure.
     extents: list[float] = []
@@ -622,9 +669,9 @@ def export(request: dict) -> dict:
                 run["italic"] = True
             if style.underline:
                 run["underline"] = True
-            if heading or style.family != font[0]:
+            if not style.form and (heading or style.family != font[0]):
                 run["family"] = style.family
-            if heading or style.size != font[1]:
+            if not style.form and (heading or style.size != font[1]):
                 run["size"] = style.size
             if style.color != "#000000":
                 run["color"] = style.color
@@ -633,7 +680,12 @@ def export(request: dict) -> dict:
 
     def heading(line: Line) -> bool:
         words = len(line.text.split())
-        return 0 < words <= 20 and not line.text.endswith(",") and (line.size >= body * 1.15 or line.bold >= 0.9)
+        return (
+            0 < words <= 20
+            and line.form < 0.5
+            and not line.text.endswith(",")
+            and (line.size >= body * 1.15 or line.bold >= 0.9)
+        )
 
     def full(line: Line) -> bool:
         return line.x1 > right - 0.12 * (right - left)
@@ -762,6 +814,11 @@ def export(request: dict) -> dict:
 
     count = lambda kind: sum(1 for block in outline if block["type"] == kind)
     notes = []
+    if fields:
+        notes.append(
+            f"Set {len(fields)} filled form field(s) into the text where the PDF shows them: "
+            "check each value against the PDF."
+        )
     if dropped:
         notes.append(f"Dropped {dropped} running header, footer or page-number line(s).")
     if ruled is None:
@@ -777,6 +834,7 @@ def export(request: dict) -> dict:
             "paragraphs": count("paragraph"),
             "tables": count("table"),
             "dropped": dropped,
+            "form_fields": len(fields),
             "tables_extra": "missing" if ruled is None else "used",
         },
         "outline": {

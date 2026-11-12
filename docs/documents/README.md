@@ -357,6 +357,9 @@ come over with:
 - **the running header and footer,** as Word's own, with the page number and
   count as fields;
 - **tables as drawn:** ruled or not, their text size, and a bold header row.
+- **filled form fields:** a completed form's values live in its fields, not its
+  text, so they are set into the page where the PDF shows them, in the body
+  font, and the result counts them so the agent checks each one.
 
 The right margin is the one the source wrapped at: past its longest line,
 and short of every word it pushed to the next line. Printed back to PDF, the

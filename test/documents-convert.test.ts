@@ -491,6 +491,27 @@ describe("documents convert", { timeout: 60_000 }, () => {
     );
   });
 
+  it("keeps the values filled into a PDF form, which live in its fields rather than its text", async () => {
+    execFileSync(docxPython, [
+      join(fixtures, "make_annotated_pdf.py"),
+      join(cwd, "form.pdf"),
+    ]);
+    const result = await documents.execute("18", {
+      command: "convert",
+      path: "form.pdf",
+      output: "outputs/form.docx",
+    });
+    expect(text(result)).toContain(
+      "Set 1 filled form field(s) into the text where the PDF shows them",
+    );
+    expect(result.details.export).toMatchObject({ form_fields: 1 });
+    // The value, in the body's font: not a heading in the field's size, nor its box read as a table.
+    expect(dump("outputs/form.docx")).toEqual([
+      { type: "paragraph", text: "Clause 1. Fees are due in thirty days." },
+      { type: "paragraph", text: "GiantCo Ltd" },
+    ]);
+  });
+
   it("keeps a note set beside a ruled table, in reading order", async () => {
     const fees: Block = {
       type: "table",
