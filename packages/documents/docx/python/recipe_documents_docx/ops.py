@@ -20,6 +20,7 @@ from docx.revision import _move_units  # no public API pairs a move's sites; pap
 from docx.search import find_text
 
 from .anchors import AnchorFailure, Located, fold, locate, snippet
+from .create import create
 from .model import ADDED, BODY, CONTAINERS, REMOVED, W, census, change_lines, margin_lines, run_text, thread_lines, units, walk
 
 TEXT_BUDGET = 50_000
@@ -815,6 +816,14 @@ def comment_changes(document, unit_id: str, new: str, old: str, rationale: str, 
     comment_at(document, Located(unit, start, max(end, start + 1)), rationale, author, initials)
 
 
+def block_shape(document) -> list:
+    """Each body block's tag, with a table's cells per row (nested tables included)."""
+    return [
+        (child.tag, [len(row.findall(f"{W}tc")) for row in child.iter(f"{W}tr")] if child.tag == f"{W}tbl" else None)
+        for child in document.element.body
+    ]
+
+
 def revise(request: dict) -> dict:
     """Paragraph-level revisions with no quoting: the agent gives each paragraph's revised text.
 
@@ -867,10 +876,9 @@ def revise(request: dict) -> dict:
         result = None
         try:
             result = compare(source, working_copy(candidates), author=author, granularity="word")
-            shape = [child.tag for child in document.element.body]
-            if [child.tag for child in result.document.element.body] != shape:
-                # Paragraph ids are block positions: a redline that adds or removes blocks would
-                # move every id after it, so it is not used.
+            if block_shape(result.document) != block_shape(document):
+                # Paragraph ids are block positions and table cells: a redline that adds or removes
+                # blocks, rows or cells would move ids after it, so it is not used.
                 raise ValueError("compare changed the paragraph structure")
             compared = candidates
         except Exception as error:
@@ -936,4 +944,5 @@ COMMANDS = {
     "comment": comment,
     "respond": respond,
     "remove_section": remove_section,
+    "create": create,
 }
