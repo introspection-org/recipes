@@ -65,7 +65,9 @@ tools: [mail, calendar, drive]
   provider call.
 - One declaration per Recipe. Two providers in one Recipe would give the
   model two mailboxes behind one tool name, so it is refused at registration
-  rather than resolved by an argument.
+  rather than resolved by an argument. The [signature
+  design](signature.md#declare-a-provider) relaxes this to one provider per
+  tool, so a Recipe can pair a mail provider with a signature provider.
 - The packages follow the companion rule in `AGENTS.md`: a peer by default
   (the platform provides it), a dependency with an exact version only to pin
   it, and listed in Recipes' `optionalDependencies` so the copy beside
@@ -76,6 +78,10 @@ The host fails when an agent selects a tool that the declaration does not
 enable.
 
 ## Commands
+
+Sending a reviewed document for signature or as a tracked link is designed as
+two more tools, `signature` and `links`, in [Signature and tracked
+links](signature.md).
 
 ### `mail`
 
@@ -347,7 +353,8 @@ Where the host differs from, or settles, the design above:
   tool.
 - **Shared and delegated access**: shared mailboxes, delegated calendars,
   shared drives.
-- **Sharing and permissions** on files.
+- **Sharing and permissions** on files. Tracked links to a document are
+  designed separately as the [`links`](signature.md#links) tool.
 - **Contacts and directory lookup.**
 - **Tenant-wide access** (Google domain-wide delegation, Microsoft
   application permissions). These need a host decision about whose data a

@@ -26,6 +26,7 @@ at run time.
 | Add Slack tools to a Recipe | [Slack channel connector](channels/slack.md) |
 | Read and mark up Word, PDF and HTML files from a Recipe | [Document tools](documents/README.md) |
 | Work with a person's mail, calendar and files | [Productivity tools](productivity/README.md) |
+| Send a reviewed document for signature or as a tracked link | [Signature and tracked links](productivity/signature.md) |
 | Search the web from a Recipe | [Web search](search/README.md) |
 | Track work in Linear, Jira or Introspection | [Issues tool](issues/README.md) |
 | Bring a provider for search, productivity or issues | [Provider modules](providers.md) |
