@@ -1,7 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  // The documents tests build the adapters' Python environments with uv.
-  "ignoreBinaries": ["uv"],
+  // The documents tests build the adapters' Python environments with uv, and
+  // render a converted Word file with LibreOffice when it is installed.
+  "ignoreBinaries": ["uv", "soffice"],
   "ignoreIssues": {
     // A companion exports its module by name and as the default export the
     // host's loader imports.
