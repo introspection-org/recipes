@@ -1,10 +1,12 @@
 """Lay out headings, paragraphs and ruled tables as a paged PDF, written by hand (no PDF library).
 
-python make_text_pdf.py <blocks.json> <out.pdf> [--header TEXT]
+python make_text_pdf.py <blocks.json> <out.pdf> [--header TEXT] [--bare]
 
 blocks.json is a list of {"type": "heading", "level": 1-3, "text"}, {"type": "paragraph", "text"}
 and {"type": "table", "rows": [[cell, ...], ...], "ruled"?: false}, the shape `convert` exports. An
-unruled table is laid out in columns with no lines, as a signature block is. Every page gets
+unruled table is laid out in columns with no lines, as a signature block is. A table with
+"beside": "text" takes the left 60% of the line and sets the text, wrapped, to its right. --bare
+leaves out the running header and footer. Every page gets
 the running header and a "Page N of M" footer, which a conversion should drop. Paragraphs wrap
 at the margin and run across page breaks, so a conversion has to join them back.
 """
@@ -55,8 +57,9 @@ def literal(text: str) -> bytes:
 
 
 class Pages:
-    def __init__(self, header: str):
+    def __init__(self, header: str, bare: bool = False):
         self.header = header
+        self.bare = bare
         self.pages: list[list[bytes]] = []
         self.new_page()
 
@@ -91,9 +94,14 @@ class Pages:
             self.text(MARGIN, self.y, line, BODY)
         self.y -= GAP
 
-    def table(self, rows: list[list[str]], ruled: bool = True):
+    def table(self, rows: list[list[str]], ruled: bool = True, beside: str = ""):
         columns = max(len(row) for row in rows)
-        cell = (WIDTH - 2 * MARGIN) / columns
+        span = (WIDTH - 2 * MARGIN) * (0.6 if beside else 1)
+        cell = span / columns
+        if beside:
+            room = WIDTH - 2 * MARGIN - span - 18
+            for index, line in enumerate(wrap(beside, BODY, room)):
+                self.text(MARGIN + span + 18, self.y - ROW + 5 - index * LEADING, line, BODY)
         height = ROW if ruled else ROW * 1.6
         self.room(height * len(rows) + GAP)
         self.y -= 0 if ruled else GAP
@@ -112,6 +120,9 @@ class Pages:
         total = len(self.pages)
         streams = []
         for number, body in enumerate(self.pages, 1):
+            if self.bare:
+                streams.append(b"\n".join(body))
+                continue
             furniture = [
                 b"BT /F1 9 Tf %g %g Td %s Tj ET" % (MARGIN, HEIGHT - 40, literal(self.header)),
                 b"BT /F1 9 Tf %g %g Td %s Tj ET" % (WIDTH / 2 - 25, 36, literal(f"Page {number} of {total}")),
@@ -153,14 +164,14 @@ def main() -> None:
     header = sys.argv[4] if len(sys.argv) > 4 and sys.argv[3] == "--header" else "Confidential"
     with open(source, encoding="utf-8") as handle:
         blocks = json.load(handle)
-    pages = Pages(header)
+    pages = Pages(header, bare="--bare" in sys.argv)
     for block in blocks:
         if block["type"] == "heading":
             pages.heading(block["level"], block["text"])
         elif block["type"] == "paragraph":
             pages.paragraph(block["text"])
         else:
-            pages.table(block["rows"], ruled=block.get("ruled", True))
+            pages.table(block["rows"], ruled=block.get("ruled", True), beside=block.get("beside", ""))
     write(pages.finish(), target)
 
 

@@ -86,7 +86,11 @@ function tool(pdf: string): Tool {
 }
 
 /** Lay blocks out as a paged PDF with a running header and page-number footer. */
-function layOut(blocks: Block[], name: string): string {
+function layOut(
+  blocks: Array<Block & { beside?: string }>,
+  name: string,
+  bare = false,
+): string {
   const source = join(cwd, `${name}.json`);
   writeFileSync(source, JSON.stringify(blocks));
   execFileSync(docxPython, [
@@ -95,6 +99,7 @@ function layOut(blocks: Block[], name: string): string {
     join(cwd, `${name}.pdf`),
     "--header",
     HEADER,
+    ...(bare ? ["--bare"] : []),
   ]);
   return `${name}.pdf`;
 }
@@ -111,7 +116,7 @@ function dump(path: string): Block[] {
 
 /** A Word file's page, Normal font, footer and heading runs. */
 function layoutOf(path: string): {
-  page: { width: number; height: number; left: number };
+  page: { width: number; height: number; left: number; right: number };
   font: { family: string; size: number };
   footer: string[];
   headings: Array<
@@ -484,6 +489,79 @@ describe("documents convert", { timeout: 60_000 }, () => {
     await expect(convert("outputs/sow.docx")).rejects.toThrow(
       "outputs/sow.docx was already written: convert to a new file",
     );
+  });
+
+  it("keeps a note set beside a ruled table, in reading order", async () => {
+    const fees: Block = {
+      type: "table",
+      rows: [
+        ["Service", "Fee"],
+        ["Pilot", "$40,000"],
+        ["Support", "$9,000"],
+      ],
+    };
+    const pdf = layOut(
+      [
+        { type: "paragraph", text: "Customer will pay the fees below." },
+        {
+          ...fees,
+          beside: "Note: fees rise with the consumer price index each January.",
+        },
+        { type: "paragraph", text: "Fees are payable within thirty days." },
+      ],
+      "beside",
+      true,
+    );
+    await documents.execute("16", {
+      command: "convert",
+      path: pdf,
+      output: "outputs/beside.docx",
+    });
+    expect(dump("outputs/beside.docx")).toEqual([
+      { type: "paragraph", text: "Customer will pay the fees below." },
+      fees,
+      {
+        type: "paragraph",
+        text: "Note: fees rise with the consumer price index each January.",
+      },
+      { type: "paragraph", text: "Fees are payable within thirty days." },
+    ]);
+  });
+
+  it("keeps a usable page width when there is no body text to measure: only tables, or only headings", async () => {
+    const only: Array<[string, Block[]]> = [
+      [
+        "only-table",
+        [
+          {
+            type: "table",
+            rows: [
+              ["Service", "Fee"],
+              ["Pilot", "$40,000"],
+            ],
+          },
+        ],
+      ],
+      [
+        "only-headings",
+        [
+          { type: "heading", level: 1, text: "Schedule A" },
+          { type: "heading", level: 2, text: "Pricing" },
+        ],
+      ],
+    ];
+    for (const [name, blocks] of only) {
+      await documents.execute("17", {
+        command: "convert",
+        path: layOut(blocks, name, true),
+        output: `outputs/${name}.docx`,
+      });
+      const { page } = layoutOf(`outputs/${name}.docx`);
+      // The text sits an inch in from each side, as the PDF set it.
+      expect(page.left).toBeCloseTo(72, -1);
+      expect(page.right).toBeCloseTo(72, -1);
+      expect(dump(`outputs/${name}.docx`)).toEqual(blocks);
+    }
   });
 
   it("without the tables extra, still finds tables whose columns line up, and says the extra is missing", async () => {

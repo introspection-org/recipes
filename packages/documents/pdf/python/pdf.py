@@ -262,6 +262,9 @@ class Line:
     tab_x: float | None = None
     # The width of the line's first word: whether it would have fit at the end of the line above.
     first_word: float = 0.0
+    # Its characters and the page's size, so part of the line can be cut away (beside a table).
+    chars: list[Char] = field(default_factory=list)
+    page_size: tuple[float, float] = (0.0, 0.0)
 
 
 def family_of(name: str) -> str:
@@ -366,6 +369,54 @@ def line_runs(chars: list[Char], tab: float | None = None) -> list[tuple[str, St
     return [(text, style) for text, style in runs if text]
 
 
+def build_line(chars: list[Char], number: int, width: float, height: float) -> Line | None:
+    """One line from its characters: its box, size, boldness, columns and styled runs; None when it has no text."""
+    visible = [c for c in chars if not c.text.isspace()]
+    if not visible:
+        return None
+    x0 = min(c.left for c in visible)
+    x1 = max(c.right for c in visible)
+    widths = sorted(c.right - c.left for c in visible)
+    gap = COLUMN_GAP * max(widths[len(widths) // 2], 1.0)
+    segments, start, run, previous = [], visible[0].left, [], None
+    for char in chars:
+        if previous is not None and not char.text.isspace() and char.left - previous.right > gap:
+            segments.append((start, " ".join("".join(run).split())))
+            start, run = char.left, []
+        run.append(char.text)
+        if not char.text.isspace():
+            previous = char
+    segments.append((start, " ".join("".join(run).split())))
+    tab = tab_stop(chars)
+    return Line(
+        page=number,
+        text=" ".join("".join(c.text for c in chars).split()),
+        x0=x0,
+        x1=x1,
+        top=height - max(c.top for c in visible),
+        size=statistics.mode(c.style.size for c in visible),
+        bold=sum(1 for c in visible if c.style.bold) / len(visible),
+        soft_hyphen=chars[-1].soft_hyphen,
+        centered=abs((x0 + x1) / 2 - width / 2) < 0.01 * width and x1 - x0 < 0.8 * width,
+        segments=segments,
+        runs=line_runs(chars, tab),
+        tab_x=tab,
+        first_word=first_word(visible, chars),
+        chars=chars,
+        page_size=(width, height),
+    )
+
+
+def outside(line: Line, left: float, right: float) -> Line | None:
+    """The part of the line outside [left, right], such as a note beside a table; None when none of it is."""
+    kept = [c for c in line.chars if not left - 1 <= (c.left + c.right) / 2 <= right + 1]
+    if len([c for c in kept if not c.text.isspace()]) == len([c for c in line.chars if not c.text.isspace()]):
+        return line
+    while kept and kept[0].text.isspace():
+        kept.pop(0)
+    return build_line(kept, line.page, *line.page_size) if kept else None
+
+
 def page_lines(page, number: int) -> list[Line]:
     """pdfium's lines in reading order, each with its box, size, boldness, columns and styled runs."""
     import pypdfium2.raw as raw
@@ -380,38 +431,9 @@ def page_lines(page, number: int) -> list[Line]:
     blank = Style("", 0, False, False, "#000000")
 
     def flush():
-        visible = [c for c in chars if not c.text.isspace()]
-        if visible:
-            x0 = min(c.left for c in visible)
-            x1 = max(c.right for c in visible)
-            widths = sorted(c.right - c.left for c in visible)
-            gap = COLUMN_GAP * max(widths[len(widths) // 2], 1.0)
-            segments, start, run, previous = [], visible[0].left, [], None
-            for char in chars:
-                if previous is not None and not char.text.isspace() and char.left - previous.right > gap:
-                    segments.append((start, " ".join("".join(run).split())))
-                    start, run = char.left, []
-                run.append(char.text)
-                if not char.text.isspace():
-                    previous = char
-            segments.append((start, " ".join("".join(run).split())))
-            lines.append(
-                Line(
-                    page=number,
-                    text=" ".join("".join(c.text for c in chars).split()),
-                    x0=x0,
-                    x1=x1,
-                    top=height - max(c.top for c in visible),
-                    size=statistics.mode(c.style.size for c in visible),
-                    bold=sum(1 for c in visible if c.style.bold) / len(visible),
-                    soft_hyphen=chars[-1].soft_hyphen,
-                    centered=abs((x0 + x1) / 2 - width / 2) < 0.01 * width and x1 - x0 < 0.8 * width,
-                    segments=segments,
-                    runs=line_runs(chars, tab_stop(chars)),
-                    tab_x=tab_stop(chars),
-                    first_word=first_word(visible, chars),
-                )
-            )
+        line = build_line(list(chars), number, width, height)
+        if line is not None:
+            lines.append(line)
         chars.clear()
 
     try:
@@ -508,6 +530,8 @@ def export(request: dict) -> dict:
     keys = furniture_keys(pages, heights) if len(numbers) > 1 else set()
     ruled = pdfplumber_tables(path, numbers)
     dropped = 0
+    # The left and right edges of every table, for a page with too little body text to measure.
+    extents: list[float] = []
     furniture: list[tuple[Line, float]] = []
     # (page, top, kind, value, where the next block's spacing is measured from)
     items: list[tuple] = []
@@ -521,9 +545,16 @@ def export(request: dict) -> dict:
                 furniture.append((line, height))
             else:
                 kept.append(line)
-        for top, bottom, _x0, _x1, rows in (ruled or {}).get(number, []):
-            inside = [line for line in kept if top - 2 <= line.top <= bottom + 2]
-            kept = [line for line in kept if line not in inside]
+        for top, bottom, x0, x1, rows in (ruled or {}).get(number, []):
+            inside = [line for line in kept if top - 2 <= line.top <= bottom + 2 and line.x1 > x0 and line.x0 < x1]
+            # Only the table's own text goes: a note beside it, or the outside part of a line crossing it, stays
+            # where it was in reading order.
+            kept = [
+                part
+                for part in ((outside(line, x0, x1) if line in inside else line) for line in kept)
+                if part is not None
+            ]
+            extents += [x0, x1]
             table = {"rows": rows, **table_style(inside), "ruled": True}
             items.append((number, top, "table", table, bottom - 0.72 * kept[0].size if kept else bottom))
         claimed: set[int] = set()
@@ -531,6 +562,7 @@ def export(request: dict) -> dict:
             columns = len(kept[start].segments)
             rows = [[text for _, text in line.segments] + [""] * (columns - len(line.segments)) for line in kept[start:end]]
             table = {"rows": rows, **table_style(kept[start:end]), "ruled": False}
+            extents += [min(line.x0 for line in kept[start:end]), max(line.x1 for line in kept[start:end])]
             items.append((number, kept[start].top, "table", table, kept[end - 1].top))
             claimed.update(range(start, end))
         items += [(number, line.top, "line", line, line.top) for index, line in enumerate(kept) if index not in claimed]
@@ -544,7 +576,10 @@ def export(request: dict) -> dict:
         weights[line.size] = weights.get(line.size, 0) + len(line.text)
     body = max(weights, key=weights.get) if weights else 0
     plain = [line for line in body_lines if line.size == body and line.bold < 0.5]
-    left = min((line.x0 for line in plain), default=0)
+    # Plain body lines give the text's edges; without enough of them (only tables, only headings), every line
+    # and table does, and with nothing at all, an inch.
+    measured = plain if len(plain) >= 3 else body_lines
+    left = min([line.x0 for line in measured] + ([] if measured is plain else extents), default=72)
     edges = sorted(line.x1 for line in plain)
     right = edges[int(0.95 * (len(edges) - 1))] if edges else 0
     pitches = [
@@ -747,7 +782,7 @@ def export(request: dict) -> dict:
         "outline": {
             "source": os.path.basename(path),
             **({"font": {"family": font[0], "size": font[1]}} if font[0] else {}),
-            "page": page_layout(document, numbers, body_lines, pitch, left, text_edge(plain, wraps)),
+            "page": page_layout(document, numbers, body_lines, pitch, left, text_edge(plain, wraps, body_lines, extents)),
             "line_pitch": round(pitch, 1),
             **running_lines(furniture, numbers, total),
             "blocks": outline,
@@ -755,9 +790,13 @@ def export(request: dict) -> dict:
     }
 
 
-def text_edge(plain: list[Line], wraps: list[float]) -> float:
-    """The right margin the source wrapped at: past its longest line, short of every word it pushed down."""
-    longest = max((line.x1 for line in plain), default=0)
+def text_edge(plain: list[Line], wraps: list[float], lines: list[Line], extents: list[float]) -> float:
+    """The right margin the source wrapped at: past its longest line, short of every word it pushed down.
+
+    Without three plain lines to measure, the furthest any line or table reaches; nothing wrapped there."""
+    if len(plain) < 3:
+        return max([line.x1 for line in lines] + extents, default=0)
+    longest = max(line.x1 for line in plain)
     pushed = sorted(edge for edge in wraps if edge > longest)
     # A word pushed down only just past the longest line bounds the margin; split the difference.
     return (longest + pushed[0]) / 2 if pushed else longest
@@ -785,6 +824,13 @@ def page_layout(document, numbers: list[int], lines: list[Line], pitch: float, l
     # about 0.72 of its size above its baseline.
     top = statistics.median(firsts.values()) - (0.8 * pitch - 0.72 * size) if firsts else 72
     bottom = height - max(lasts.values()) if lasts else 72
+    # Too little measured to trust (a short line, nothing at all): the left margin mirrored, as most pages are set.
+    if right - left < width / 3:
+        right = width - left
+    if top > height / 3:
+        top = 72
+    if bottom > height / 3:
+        bottom = 72
     return {
         "width": round(width, 1),
         "height": round(height, 1),

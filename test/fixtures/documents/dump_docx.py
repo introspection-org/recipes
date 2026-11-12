@@ -48,7 +48,12 @@ def layout(document) -> dict:
                 ]
             )
     return {
-        "page": {"width": section.page_width.pt, "height": section.page_height.pt, "left": section.left_margin.pt},
+        "page": {
+            "width": section.page_width.pt,
+            "height": section.page_height.pt,
+            "left": section.left_margin.pt,
+            "right": section.right_margin.pt,
+        },
         "font": {"family": normal.name, "size": normal.size.pt if normal.size else None},
         "footer": footer,
         "headings": headings,
