@@ -347,7 +347,9 @@ Where the host differs from, or settles, the design above:
   tool.
 - **Shared and delegated access**: shared mailboxes, delegated calendars,
   shared drives.
-- **Sharing and permissions** on files.
+- **Sharing and permissions** on files. Sending a reviewed document out for
+  signature is its own family, [signature](../signature/README.md), so it can
+  pair with either productivity provider; tracked links are deferred there.
 - **Contacts and directory lookup.**
 - **Tenant-wide access** (Google domain-wide delegation, Microsoft
   application permissions). These need a host decision about whose data a

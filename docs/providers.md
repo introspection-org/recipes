@@ -16,6 +16,7 @@ versioned contract for the providers behind them:
 | `search` | `web_search` | tavily, exa, brave, keenable, parallel, perplexity |
 | `productivity` | `mail`, `calendar`, `drive` | google, microsoft |
 | `issues` | `issues` | linear, jira, introspection |
+| `signature` | `signature` | docusign, pandadoc ([proposed](signature/README.md)) |
 
 A **provider module** implements one family's contract: `{ kind, apiVersion,
 id, capabilities, … }` plus the family's calls (`search` for search,
