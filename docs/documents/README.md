@@ -244,10 +244,11 @@ sits inside someone else's change. A revision whose text is unchanged becomes a
 comment on that paragraph, and a revision without a rationale fails alone rather
 than failing the batch's schema check.
 
-`compare` is used only when its result keeps the body's block structure:
-paper-docx 0.2.0 inserts empty paragraphs for some multi-paragraph batches, which
-would move every later paragraph id, so such a result is discarded for the
-tracked path.
+`compare` is used only when its result keeps the body's block structure and
+each table's rows and cells: paper-docx 0.2.0 inserts empty paragraphs for some
+multi-paragraph batches, and rebuilds a table whose cells it changes by deleting
+and re-inserting whole rows, the other party's cells included. Either would move
+paragraph ids, so such a result is discarded for the tracked path.
 
 ### docx: anchors
 
@@ -476,7 +477,7 @@ interface DocumentOutline {
 
 type DocumentBlock =
   | { type: "heading"; level: 1 | 2 | 3; text: string; page: number }
-  | { type: "paragraph"; text: string; page: number }
+  | { type: "paragraph"; text: string; page: number; indent?: number }
   | { type: "table"; rows: string[][]; page: number };
 
 interface DocumentAdapter {

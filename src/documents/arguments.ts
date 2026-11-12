@@ -229,6 +229,24 @@ export interface DocumentsRemoveSectionArguments {
   rationale: string;
 }
 
+export interface DocumentsConvertArguments {
+  /**
+   * The document to convert, such as a PDF to redline
+   * @minLength 1
+   */
+  path: string;
+  /**
+   * The new file under outputs/, in the format to convert to, such as outputs/contract.docx
+   * @minLength 1
+   */
+  output: string;
+  /**
+   * Pages to convert, like 2-4,9 (default: every page)
+   * @maxLength 100
+   */
+  pages?: string;
+}
+
 export interface DocumentsRenderArguments {
   path: Path;
   /**

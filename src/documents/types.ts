@@ -23,6 +23,10 @@ export interface DocumentCapabilities {
   readonly removeSection?: boolean;
   /** Page images written as PNG files, for pages with no text layer or to check layout. */
   readonly render?: boolean;
+  /** The document's content as a `DocumentOutline`: the source side of `convert`. */
+  readonly export?: boolean;
+  /** A new file built from a `DocumentOutline`: the output side of `convert`. */
+  readonly create?: boolean;
 }
 
 /** A tracked edit anchored to quoted text. */
@@ -120,6 +124,40 @@ export interface DocumentRenderInput {
   outputDir: string;
 }
 
+export interface DocumentExportInput {
+  path: string;
+  pages?: string;
+}
+
+/** Headings, paragraphs and tables in reading order: what `convert` carries between formats. */
+export interface DocumentOutline {
+  /** The source's file name, recorded in the new file. */
+  source: string;
+  blocks: DocumentBlock[];
+}
+
+export type DocumentBlock =
+  | { type: "heading"; level: 1 | 2 | 3; text: string; page: number }
+  | {
+      type: "paragraph";
+      text: string;
+      page: number;
+      /** Points from the body's left edge, such as a nested bullet's. */
+      indent?: number;
+    }
+  | { type: "table"; rows: string[][]; page: number };
+
+/** An export's notes for the model (`text`) and the outline the host passes on. */
+export interface DocumentExport extends DocumentResult {
+  outline: DocumentOutline;
+}
+
+export interface DocumentCreateInput {
+  outline: DocumentOutline;
+  /** Absolute path of the new file; never an existing one. */
+  output: string;
+}
+
 export interface DocumentImage {
   label: string;
   /** Base64 image bytes. */
@@ -172,5 +210,13 @@ export interface DocumentAdapter {
   render?(
     ctx: DocumentAdapterContext,
     input: DocumentRenderInput,
+  ): Promise<DocumentResult>;
+  export?(
+    ctx: DocumentAdapterContext,
+    input: DocumentExportInput,
+  ): Promise<DocumentExport>;
+  create?(
+    ctx: DocumentAdapterContext,
+    input: DocumentCreateInput,
   ): Promise<DocumentResult>;
 }

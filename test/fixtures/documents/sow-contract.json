@@ -1,0 +1,156 @@
+[
+  {
+    "type": "heading",
+    "level": 1,
+    "text": "Professional Services Statement of Work"
+  },
+  {
+    "type": "heading",
+    "level": 2,
+    "text": "Resident Analyst Access"
+  },
+  {
+    "type": "paragraph",
+    "text": "This Statement of Work is issued under and subject to the terms and conditions of the Master Services Agreement between Acme Analytics, Inc. (“Acme”) and Talent Co. (“Customer”), dated March 6, 2026 (the “Agreement”)."
+  },
+  {
+    "type": "heading",
+    "level": 3,
+    "text": "A. Description and Scope of Services"
+  },
+  {
+    "type": "paragraph",
+    "text": "1. Services. Acme will provide Customer with the Resident Analyst Access professional services described in this Statement of Work (the “Services”), subject to the quantities, hours, duration and other scope limits set out in the Order Form."
+  },
+  {
+    "type": "paragraph",
+    "text": "2. Resident Analyst. Acme will assign a resident analyst who will be available for up to the number of hours per week stated in the Order Form (the “Weekly Allotment”) to give advice and guidance on the Acme platform. The analyst will work with Customer to agree an engagement plan with near-term and longer-term priorities, and may help with the following:"
+  },
+  {
+    "type": "paragraph",
+    "text": "• Configuring Customer’s workspace, single sign-on and role-based access rules;"
+  },
+  {
+    "type": "paragraph",
+    "text": "• Connecting the platform to Customer’s data warehouse; and"
+  },
+  {
+    "type": "paragraph",
+    "text": "• Guiding Customer’s team in applying modelling practices to its own requirements and use cases."
+  },
+  {
+    "type": "heading",
+    "level": 3,
+    "text": "B. Term and Use of the Weekly Allotment"
+  },
+  {
+    "type": "paragraph",
+    "text": "1. Term. The Services begin on the Service Start Date stated in the Order Form and continue until the Service End Date stated there (the “Services Term”). Customer will not be due any credit or refund for any portion of the Weekly Allotment it does not use during the applicable week, and unused hours never roll over from one week to another."
+  },
+  {
+    "type": "paragraph",
+    "text": "2. Scheduling. The Weekly Allotment is structured to accommodate planned and unplanned time off, including vacation, local holidays and sick days, by Customer and by Acme, while keeping Acme to its responsibilities under this Statement of Work. All Services must be scheduled with the analyst in weekly increments on mutually agreed dates, subject to the availability of the analyst. Customer will give Acme no fewer than seven days of written notice of any change it wants to make to the schedule, and the parties will work in good faith to change the schedule accordingly. Any change to the schedule leaves the Weekly Allotment as it was, and hours that a change moves out of one week are not added to another week."
+  },
+  {
+    "type": "paragraph",
+    "text": "3. Reporting. At the end of each month the analyst will send Customer a short written report listing the sessions held, the hours used against the Weekly Allotment, the topics covered and the recommendations made, together with any risks the analyst sees to the engagement plan. Customer may ask for a review meeting on any report within ten business days of receiving it, and the parties will use the meeting to agree any changes to the priorities for the following month. Reports are Customer’s confidential information, and Acme will use them only to deliver and improve the Services."
+  },
+  {
+    "type": "heading",
+    "level": 3,
+    "text": "C. Fees"
+  },
+  {
+    "type": "paragraph",
+    "text": "Customer will pay the fees below, invoiced monthly in advance. Fees are payable within thirty days of the invoice date and are exclusive of taxes."
+  },
+  {
+    "type": "table",
+    "rows": [
+      [
+        "Service",
+        "Hours per week",
+        "Monthly fee",
+        "Term"
+      ],
+      [
+        "Resident Analyst",
+        "20",
+        "$24,000",
+        "12 months"
+      ],
+      [
+        "Onboarding workshop",
+        "8",
+        "$6,500",
+        "One time"
+      ],
+      [
+        "Additional hours",
+        "As ordered",
+        "$310 per hour",
+        "As used"
+      ]
+    ]
+  },
+  {
+    "type": "heading",
+    "level": 3,
+    "text": "D. Assumptions and Dependencies"
+  },
+  {
+    "type": "paragraph",
+    "text": "Successful delivery of the Services depends on the assumptions in this section. A material deviation from them may affect the schedule or the fees, and Acme will tell Customer promptly when it sees one."
+  },
+  {
+    "type": "paragraph",
+    "text": "i. Customer will make available in a timely manner the technical data, facilities, programs, files, documentation and sample data that Acme reasonably needs to perform the Services."
+  },
+  {
+    "type": "paragraph",
+    "text": "ii. Customer will give timely and adequate access to its equipment and to the supporting infrastructure that Acme reasonably requires. Acme will not postpone the Service Start Date because access was granted late."
+  },
+  {
+    "type": "paragraph",
+    "text": "iii. All sessions will be conducted in English and remotely, unless the parties agree otherwise in writing."
+  },
+  {
+    "type": "heading",
+    "level": 3,
+    "text": "E. Change Orders"
+  },
+  {
+    "type": "paragraph",
+    "text": "If the parties decide that the scope or the Weekly Allotment needs to change in a way that moves the Service Start Date or the Service End Date, Acme will give Customer a written change order describing the purpose, scope, timeline and any other requirements, constraints and assumptions for the requested change. Acme will not act on a material change to the Services until both parties have signed the change order."
+  },
+  {
+    "type": "paragraph",
+    "text": "The parties have signed this Statement of Work by their authorized representatives as of the last date written below."
+  },
+  {
+    "type": "table",
+    "ruled": false,
+    "rows": [
+      [
+        "ACME ANALYTICS, INC.",
+        "TALENT CO."
+      ],
+      [
+        "By: ______________________",
+        "By: ______________________"
+      ],
+      [
+        "Name: Jordan Lee",
+        "Name: ____________________"
+      ],
+      [
+        "Title: VP, Professional Services",
+        "Title: ___________________"
+      ],
+      [
+        "Date: ____________________",
+        "Date: ____________________"
+      ]
+    ]
+  }
+]
