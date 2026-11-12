@@ -158,6 +158,48 @@ available in Pi's interactive terminal, ...` so the model can tell the user
 where to look. If a Recipe extension registers its own `show_artifact`, the
 host keeps it and registers neither the built-in tool nor `/recipe view`.
 
+### Binary artifacts in a browser host
+
+A host with `storeArtifact` can also show DOCX, PDF and common image files
+through the same `show_artifact({ path })` tool. The host receives the original
+`Uint8Array` and MIME type, persists it, and returns its file id. The recorded
+result carries `kind: "file"`, that id and byte count, with empty `content`;
+no binary payload is put in the conversation. Browser hosts render those bytes
+with their file preview component, including after a conversation reload.
+
+The existing working-directory and symlink boundary applies, with a 25 MiB cap.
+Binary `ref` and text `diff` requests are refused. Without a binary-capable
+`storeArtifact` implementation the host must not opt into this contract; the
+terminal cannot render binary files. Hosts upgrading from the string-only
+callback must handle both `string` and `Uint8Array` content.
+
+### Explicit artifact links
+
+Hosts resolve explicit Markdown destinations against known artifact references
+with `resolveArtifactLink` from `@introspection-ai/recipes/review`. The resolver
+is shared, browser-safe code; it neither parses prose nor reads or uploads files.
+A local host leaves an unuploaded file's authored path intact. A hosted UI can
+map `file.id` to its file page, map `source` to its pinned repository view, and
+return no URL for `path` so the link opens its existing artifact viewer.
+
+```ts
+const link = resolveArtifactLink("outputs/report.md", artifacts, {
+  workspaceRoot: "/workspace",
+  file: ({ id }) => `/files/${encodeURIComponent(id)}`,
+  path: () => undefined,
+});
+```
+
+`artifacts` belongs to the current conversation or selected document, never a
+global basename index. The latest exact workspace-path match wins. `fromPath`
+resolves links relative to a document; absolute paths require `workspaceRoot`
+and cannot escape it. Local `file:` URLs use the same workspace boundary; remote
+file authorities are refused. Percent-encoded filenames and URL fragments are supported.
+External URLs, malformed destinations, query-bearing paths and unknown files
+are left to the host's ordinary link handling. Bare paths, inline code, fenced
+code and images do not invoke this API. Opening a known reference needs no
+additional tool call; persistence remains part of the standard artifact tool.
+
 ### Reviewing several files
 
 List `review_artifacts` and the agent can ask the user to review several

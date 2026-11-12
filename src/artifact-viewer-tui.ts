@@ -24,6 +24,8 @@ import {
   type OverlayOptions,
 } from "@earendil-works/pi-tui";
 
+import type { ArtifactKind } from "./artifact.js";
+
 /** Where the panel sits: the top-right corner, 45% wide, full height. */
 /** Below this many columns the panel isn't drawn. */
 export const ARTIFACT_PANEL_MIN_TERMINAL_COLUMNS = 100;
@@ -45,7 +47,7 @@ export interface ArtifactDocument {
   /** The path shown in the title, relative to the working directory. */
   title: string;
   /** Markdown renders; HTML and text are highlighted. */
-  kind: "markdown" | "html" | "text";
+  kind: ArtifactKind;
   /** The file, or undefined when it is gone. */
   text: string | undefined;
   /** The highlighting language. */
