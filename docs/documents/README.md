@@ -420,6 +420,13 @@ a pinned one.
 A skill that teaches a format library, such as Paper's `docx` skill, is a
 dependency of the Recipe that uses it, installed when the runtime is baked.
 
+## After review: sending for signature
+
+The document tools never send a file anywhere. Once a person has reviewed the
+redline and every change is resolved, the [signatures tool](../signatures/README.md)
+sends the final `.docx` under `outputs/` for e-signature, and refuses one that
+still has tracked changes or comments.
+
 ## Format pages
 
 - Word: this page; `packages/documents/docx/README.md`.
