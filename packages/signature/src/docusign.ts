@@ -89,11 +89,7 @@ const NOT_CONNECTED = new Set([
 ]);
 
 /** A failed answer as the family's error: DocuSign's `errorCode` and `message`, never the request. */
-function failure(
-  status: number,
-  body: string,
-  action: string,
-): SignatureError {
+function failure(status: number, body: string, action: string): SignatureError {
   const parsed = parse(body);
   const code = text(parsed.errorCode) ?? text(parsed.error) ?? "";
   const message =

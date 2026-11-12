@@ -299,10 +299,7 @@ export function createSignatureTool(
         `${path} is not a ${provider.module.capabilities.extensions.map((e) => `.${e}`).join(" or ")} file.`,
       );
     if (!statSync(real).isFile())
-      throw new SignatureToolError(
-        "invalid_request",
-        `${path} is not a file.`,
-      );
+      throw new SignatureToolError("invalid_request", `${path} is not a file.`);
     return {
       bytes: new Uint8Array(readFileSync(real)),
       name: basename(real),

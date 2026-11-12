@@ -245,16 +245,12 @@ export async function loadRecipeConnectors(
     options,
   );
   const issues = await loadRecipeIssues(manifest.issues, agentTools, options);
-  const signature = await loadRecipeSignature(
-    manifest.signature,
-    agentTools,
-    {
-      recipeDir: options.recipeDir,
-      ...(options.env ? { env: options.env } : {}),
-      ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
-      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-    },
-  );
+  const signature = await loadRecipeSignature(manifest.signature, agentTools, {
+    recipeDir: options.recipeDir,
+    ...(options.env ? { env: options.env } : {}),
+    ...(options.hostDir !== undefined ? { hostDir: options.hostDir } : {}),
+    ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+  });
   // Search providers load here only to learn their hosts; `web_search` is
   // registered by the host or the Recipe.
   const search =

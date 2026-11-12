@@ -6339,8 +6339,7 @@ mod tests {
                 "takes at most 1",
             ),
         ] {
-            let report =
-                check_recipe_files(&provider_recipe("signature", declarations, json!({})));
+            let report = check_recipe_files(&provider_recipe("signature", declarations, json!({})));
             assert!(
                 invalid_with(&report, "pi.signature_invalid", text),
                 "{text}: {:?}",

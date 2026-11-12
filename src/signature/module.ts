@@ -17,8 +17,7 @@ import {
 } from "./types.js";
 
 /** The package that serves the first-party signature providers, a companion of Recipes. */
-export const SIGNATURE_PROVIDERS_PACKAGE =
-  "@introspection-ai/recipe-signature";
+export const SIGNATURE_PROVIDERS_PACKAGE = "@introspection-ai/recipe-signature";
 
 /** The `signature` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
 export const SIGNATURE_SKILL = fileURLToPath(
