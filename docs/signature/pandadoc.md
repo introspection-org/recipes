@@ -35,8 +35,9 @@ mcp:
   recipient's. A role name takes no underscores.
 - **Creation is asynchronous.** A new document is `document.uploaded` for a
   few seconds, then `document.draft`; `document.error` ends it. The provider
-  polls for up to 30 seconds. If sending then fails, the provider deletes the
-  document it created, when the server has a tool for that (*to capture*).
+  polls for up to 30 seconds, well within the link's lifetime. If sending
+  then fails, the provider deletes the document it created, when the server
+  has a tool for that (*to capture*).
 - **A cc** is a recipient without a role.
 
 ## Status mapping
@@ -68,9 +69,8 @@ A recipient is `signed` when `has_completed`, else `sent`.
 The provider is not offered until a capture shows:
 
 - the tool names and input schemas;
-- how `documents_create` with `source: "file"` takes the file: bytes, or only
-  a public HTTPS URL. A URL would need the host to publish the reviewed
-  contract, which it will not do, so the provider would need REST
-  (`POST /public/v1/documents`, multipart) for that one step;
+- that `documents_create` with `source: "file"` takes the
+  [signed link](README.md#the-document-link) to the file, as PandaDoc's REST
+  API takes a public HTTPS `url`;
 - that field tags in a `.docx` are read through that path;
 - a delete tool, for a document whose send failed.

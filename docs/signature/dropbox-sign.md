@@ -24,7 +24,7 @@ mcp:
 
 | Command | Tool (*to capture*) | API it should reach |
 | --- | --- | --- |
-| `send` | send for signature | `POST /v3/signature_request/send`: the marked copy as `files[]`, `signers[]` (`name`, `email_address`, `order`), `cc_email_addresses[]`, `title`, `subject`, `message`, `use_text_tags: true`, `hide_text_tags: false` |
+| `send` | send for signature | `POST /v3/signature_request/send`: the [signed link](README.md#the-document-link) to the marked copy as `file_urls[]`, `signers[]` (`name`, `email_address`, `order`), `cc_email_addresses[]`, `title`, `subject`, `message`, `use_text_tags: true`, `hide_text_tags: false` |
 | `status` | check status | `GET /v3/signature_request/{id}` |
 | `void` | cancel | `POST /v3/signature_request/cancel/{id}` |
 
@@ -70,8 +70,7 @@ A signature's `awaiting_signature` is `sent`, or `viewed` once
 The provider is not offered until a capture shows:
 
 - the Sign tools' names and input schemas;
-- that the send tool takes the file's bytes, not only a path in the person's
-  Dropbox. If it takes only a path, the host uploads the marked copy to an
-  app folder first and deletes it after, and that needs its own review;
+- that the send tool takes a file URL (`file_urls`), not only a path in the
+  person's Dropbox;
 - that it takes `use_text_tags` and `test_mode`;
 - the error shapes.

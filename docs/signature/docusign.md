@@ -7,13 +7,11 @@ ones the provider calls are in
 The envelope shape follows DocuSign's eSignature REST v2.1 OpenAPI description
 ([`docusign/OpenAPI-Specifications`](https://github.com/docusign/OpenAPI-Specifications)).
 
-**⚠️ The MCP server cannot take the document.** `createEnvelope` accepts a
-document only as a `remoteUrl`, "a publicly accessible HTTPS URL", and says
-it "does not accept base64 file uploads". The reviewed contract is a file in
-the session, and the host does not publish one, so the envelope is created
-over REST (`POST /restapi/v2.1/accounts/{accountId}/envelopes` with
-`documentBase64`) with the same token. Everything else the provider needs, the
-server serves.
+**The document goes by link.** `createEnvelope` accepts a document only as a
+`remoteUrl` ("a publicly accessible HTTPS URL, max 25 MB per file") and
+refuses base64, so the provider passes the host's short-lived signed link
+([The document link](README.md#the-document-link)). A test on the developer
+account created a draft from a public URL this way.
 
 The `docusign` provider serves the [`signature` tool](README.md) through the
 Docusign MCP Server, a remote server DocuSign hosts.
@@ -37,14 +35,12 @@ Every tool but `getUserInfo` takes `accountId`.
 
 | Command | Tool | Arguments |
 | --- | --- | --- |
-| `send` | REST `POST …/envelopes` (the server's `createEnvelope` takes no file) | the envelope definition below, with `status: "sent"` |
+| `send` | `createEnvelope` | `envelopeDefinition` below, with `status: "sent"` |
 | `status` | `getEnvelope`, `listRecipients` | `envelopeId` |
 | `void` | `updateEnvelope` | `envelopeId`, `envelopeUpdate: { status: "voided", voidedReason }` |
 | setup | `getUserInfo` | none; returns the person's accounts and each one's base URI |
 
-The envelope definition `send` posts. The server's own `createEnvelope`
-schema takes the same recipients and anchor tabs (`signHereTabs`,
-`dateSignedTabs` with `anchorString`), only not the document:
+The envelope definition `send` passes:
 
 ```json
 {
@@ -52,7 +48,7 @@ schema takes the same recipients and anchor tabs (`signHereTabs`,
   "emailSubject": "Acme MSA for signature",
   "emailBlurb": "Please sign the attached agreement.",
   "documents": [
-    { "documentId": "1", "name": "acme-msa.docx", "fileExtension": "docx", "documentBase64": "<the marked copy>" }
+    { "documentId": "1", "name": "acme-msa.docx", "fileExtension": "docx", "remoteUrl": "<the signed link to the marked copy>" }
   ],
   "recipients": {
     "signers": [
@@ -75,7 +71,9 @@ schema takes the same recipients and anchor tabs (`signHereTabs`,
 - `emailSubject` is at most 100 characters and is refused, not cut, beyond
   that; `emailBlurb` at most 10,000. A name or email is at most 100.
 - DocuSign converts a `.docx` to PDF itself; `fileExtension` is required for
-  it.
+  it, since a signed link's path need not end in `.docx`.
+- Each tab also takes `documentId` and `recipientId`, which the server's
+  schema requires.
 - DocuSign searches every document for an anchor and places a tab at each
   occurrence, which is why each signer has their own marker
   ([Placing fields](README.md#placing-fields)). It leaves the anchor text in
@@ -110,14 +108,26 @@ A recipient's `created` is `pending`, `sent` is `sent`, `delivered` is
 - **Rate limits.** 3,000 calls an hour per account and 500 per 30 seconds,
   and one status read per envelope every 15 minutes:
   `status_interval_seconds` is 900.
-- **Size.** 25 MB per document, and less in `documentBase64`, which grows by
-  a third.
+- **Size.** 25 MB per document.
+
+## Tested
+
+On the developer account, 2026-11-12, with the demo user as the only
+recipient:
+
+- `getUserInfo` returned one account and its base URI.
+- `createEnvelope` made a draft from a public URL.
+- A two-column block (Acme and Talent) with the markers written after the
+  Acme `By:` and `Date:` lines: DocuSign placed one signature and one date
+  tab, both in the Acme column (`listRecipients` with
+  `include_anchor_tab_locations`), and none in Talent's.
+- `updateEnvelope` sent it; `getEnvelope` read `sent`.
+
+That run created the envelope over REST, before this design chose links.
 
 ## Still to confirm
 
-- A recording against the developer account: `getUserInfo`, the REST create
-  with the anchors, `getEnvelope`, `listRecipients`, `updateEnvelope` to void.
-- Whether `updateEnvelope` to `voided` is refused for a completed envelope
-  with a readable error.
-- The REST host for the account (`base_uri` from `getUserInfo`), which the
-  egress has to allow alongside the MCP server.
+- `createEnvelope` with a `.docx` behind a signed link whose path has no
+  extension, and the markers in it.
+- `updateEnvelope` to `voided`, and its error for a completed envelope.
+- A Polly recording of `prepare`, `send`, `status` and `void` for CI.

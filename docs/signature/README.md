@@ -3,9 +3,10 @@
 **Status: proposed.** One `signature` tool sends a final, reviewed document
 out for e-signature through DocuSign, Dropbox Sign or PandaDoc, with the same
 commands for each. Each provider is served through its vendor's own remote MCP
-server, as the [issues tool](../issues/README.md) serves Linear and Jira. No
-tool name below has been checked against a live tool list yet; each guide
-lists what the capture must confirm
+server, as the [issues tool](../issues/README.md) serves Linear and Jira, and
+the document reaches the vendor as a short-lived signed link the host issues
+([The document link](#the-document-link)). DocuSign's tools are captured; the
+others are not yet, and each guide lists what its capture must confirm
 ([Wiring a provider](../providers.md#10-wiring-a-provider)).
 
 It is the step after the [document tools](../documents/README.md):
@@ -150,8 +151,9 @@ can send without someone finishing it in its web app.
    and every signer and cc with their email and order. The card is built from
    the draft, never from text the model wrote for it. `void` shows the
    request, its recipients and the reason.
-3. Only on `approved` does it call the provider, which creates and sends the
-   request in one step.
+3. Only on `approved` does the host publish the marked copy as a signed link
+   ([below](#the-document-link)) and call the provider, which creates and
+   sends the request in one step.
 
 | Host | Approval |
 | --- | --- |
@@ -170,6 +172,29 @@ and `signature void`, so a Cedar rule or an approved mission decides them for
 every provider alike
 ([Policy and approvals](../productivity/README.md#policy-and-approvals)). The
 model never can.
+
+## The document link
+
+No vendor's MCP server takes a file's bytes: DocuSign's `createEnvelope`
+accepts a document only as a `remoteUrl` and refuses base64, and the others
+take a URL or a file in the person's own storage. So the host hands the
+provider a link, and the vendor fetches the document from it:
+
+- **The host issues it, not Recipes.** A host passes `publishDocument(bytes,
+  { name, contentType })` to the tool, returning `{ url, expires_at }`. On
+  Introspection it is a signed URL on the task's file, from the platform's
+  file store. A host without it does not offer `send`.
+- **It is short-lived and unguessable**: valid for 10 minutes at most, one
+  document, the marked copy the person approved and nothing else. It is minted
+  only after approval, inside `send`, and never shown to the model: the
+  provider receives it, the result does not carry it, and spans redact it.
+- **The vendor fetches it once**, while creating the request; after that the
+  request holds its own copy. A link that expires before the vendor fetched it
+  is a `provider_error`, and the person approves again.
+
+Anyone holding the link can download the contract while it is valid, so the
+window is the risk to keep small. A host decides whether that is acceptable
+for its documents; one that cannot accept it does not offer `send`.
 
 ## Status
 
@@ -201,9 +226,7 @@ answer for the provider's `status_interval_seconds` and returns it with
 A provider maps each command to its server's tools, each mapping marked
 `verified` only once checked against a captured tool list, as
 `LINEAR_MCP_TOOLS` is. A provider is offered only when every command it
-declares is served by a verified mapping. A REST call is added only for a
-command the server cannot serve, such as taking a file; each guide says what
-the capture must settle.
+declares is served by a verified mapping.
 
 ## Authentication
 
@@ -238,7 +261,8 @@ As for [issues](../providers.md#7-the-issues-family): a module with `kind:
 `server`, `tools`). Its session implements:
 
 - `send({ document, subject, message, signers, cc })`: create the request
-  from the marked copy and send it, returning the provider's ref and status;
+  from `document.url`, the [link](#the-document-link) to the marked copy, and
+  send it, returning the provider's ref and status;
 - `status({ ref })`;
 - `void({ ref, reason })`.
 
