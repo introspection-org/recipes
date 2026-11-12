@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.26.0...introspection-recipe-check-v0.27.0) (2026-11-12)
+
+
+### Features
+
+* **recipe-check:** give package.json#pi diagnostics a line and column ([#518](https://github.com/introspection-org/recipes/issues/518)) ([22f73f6](https://github.com/introspection-org/recipes/commit/22f73f665cb148158635c84794285c176d8cfee2))
+
 ## [0.26.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.25.0...introspection-recipe-check-v0.26.0) (2026-11-12)
 
 
