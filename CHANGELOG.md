@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.56.0](https://github.com/introspection-org/recipes/compare/v0.55.0...v0.56.0) (2026-11-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* ArtifactStore callbacks must accept Uint8Array as well as string content; binary results use the file artifact kind.
+
+### Features
+
+* **batch:** run a Recipe agent over a JSONL of inputs, resumably ([#521](https://github.com/introspection-org/recipes/issues/521)) ([338913c](https://github.com/introspection-org/recipes/commit/338913c9bea27fe1aca923805356f26689334c2e))
+* support binary artifacts and portable Markdown links ([#520](https://github.com/introspection-org/recipes/issues/520)) ([9ad74c8](https://github.com/introspection-org/recipes/commit/9ad74c8b8b8f8538168507e163917f2171d2b401))
+
+
+### Bug Fixes
+
+* **deps:** share the host's @opentelemetry/api, so baggage set by the host reaches Recipes' spans ([#523](https://github.com/introspection-org/recipes/issues/523)) ([eb9bd70](https://github.com/introspection-org/recipes/commit/eb9bd70aaded93e02d955cb6b5989428cda81160))
+
 ## [0.55.0](https://github.com/introspection-org/recipes/compare/v0.54.0...v0.55.0) (2026-11-12)
 
 
