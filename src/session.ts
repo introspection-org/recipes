@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { context as otelContext, propagation } from "@opentelemetry/api";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Api, CredentialStore } from "@earendil-works/pi-ai";
@@ -339,15 +340,58 @@ export interface CreateAgentSessionInternalOptions extends CreateAgentSessionOpt
   ) => Promise<RecipeSessionHandle>;
 }
 
+/** The baggage entry a session takes its conversation id from when `meta` names none. */
+export const CONVERSATION_ID_BAGGAGE = "gen_ai.conversation.id";
+
 export interface RecipeSessionOtelOptions extends Omit<
   InstrumentSessionOptions,
   "meta" | "mcpTool"
 > {
   /**
-   * Span identity. Missing fields derive from the resolved Recipe; a fresh
-   * conversation id is generated per session by default.
+   * Span identity. Missing fields derive from the resolved Recipe. The
+   * conversation id falls back to the `gen_ai.conversation.id` baggage entry
+   * active when the session is created, then to a fresh id per session. Every
+   * other baggage entry is added to the session's spans.
    */
   meta?: Partial<AgentMeta>;
+}
+
+/**
+ * The session's span options: identity from `meta`, falling back to the
+ * baggage active when the session is created (a batch line's conversation, a
+ * host's correlation ids), whose other entries are added to every span.
+ */
+function sessionOtel(
+  otel: RecipeSessionOtelOptions,
+  recipe: { name: string; manifest: { name: string } },
+): InstrumentSessionOptions {
+  const baggage = Object.fromEntries(
+    (propagation.getBaggage(otelContext.active())?.getAllEntries() ?? []).map(
+      ([key, entry]) => [key, entry.value],
+    ),
+  );
+  const {
+    [CONVERSATION_ID_BAGGAGE]: baggageConversationId,
+    ...baggageAttributes
+  } = baggage;
+  const hostAttributes = otel.extraAttributes;
+  return {
+    ...otel,
+    ...(Object.keys(baggageAttributes).length > 0
+      ? {
+          extraAttributes: () => ({
+            ...baggageAttributes,
+            ...(hostAttributes?.() ?? {}),
+          }),
+        }
+      : {}),
+    meta: {
+      conversationId:
+        otel.meta?.conversationId ?? baggageConversationId ?? randomUUID(),
+      agentId: otel.meta?.agentId ?? `${recipe.manifest.name}/${recipe.name}`,
+      agentName: otel.meta?.agentName ?? recipe.name,
+    },
+  };
 }
 
 export interface RecipeSessionHandle {
@@ -736,17 +780,7 @@ async function createSessionForAgent(
     ? opts.memoryOverride(loadedMemory)
     : loadedMemory;
   const memoryPrompt = formatMemoryForPrompt(memoryResult.memory);
-  const otel = opts.otel
-    ? {
-        ...opts.otel,
-        meta: {
-          conversationId: opts.otel.meta?.conversationId ?? randomUUID(),
-          agentId:
-            opts.otel.meta?.agentId ?? `${recipe.manifest.name}/${recipe.name}`,
-          agentName: opts.otel.meta?.agentName ?? recipe.name,
-        },
-      }
-    : undefined;
+  const otel = opts.otel ? sessionOtel(opts.otel, recipe) : undefined;
 
   // Model + credentials, fail-closed before any MCP runtime starts.
   const modelSpec = recipe.modelSpec;
