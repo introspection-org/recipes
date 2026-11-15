@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.27.0...introspection-recipe-check-v0.27.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **deps:** share the host's @opentelemetry/api, so baggage set by the host reaches Recipes' spans ([#523](https://github.com/introspection-org/recipes/issues/523)) ([eb9bd70](https://github.com/introspection-org/recipes/commit/eb9bd70aaded93e02d955cb6b5989428cda81160))
+
 ## [0.27.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.26.0...introspection-recipe-check-v0.27.0) (2026-11-12)
 
 
