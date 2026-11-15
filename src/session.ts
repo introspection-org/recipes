@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { context as otelContext, propagation } from "@opentelemetry/api";
+import { CONVERSATION_ID_BAGGAGE } from "./otel-baggage.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Api, CredentialStore } from "@earendil-works/pi-ai";
@@ -339,9 +340,6 @@ export interface CreateAgentSessionInternalOptions extends CreateAgentSessionOpt
     options: CreateAgentSessionInternalOptions,
   ) => Promise<RecipeSessionHandle>;
 }
-
-/** The baggage entry a session takes its conversation id from when `meta` names none. */
-export const CONVERSATION_ID_BAGGAGE = "gen_ai.conversation.id";
 
 export interface RecipeSessionOtelOptions extends Omit<
   InstrumentSessionOptions,
