@@ -462,6 +462,90 @@ describe("show_artifact tool", () => {
     expect(stored).toHaveLength(1);
   });
 
+  it("stores binary bytes through show_artifact and records only the file reference", async () => {
+    const bytes = Buffer.from([80, 75, 3, 4, 0, 255, 128, 192]);
+    writeFileSync(join(workspace, "redline.docx"), bytes);
+    const uploads: Array<{
+      path: string;
+      content: string | Uint8Array;
+      mimeType: string;
+    }> = [];
+    const { show, overlays } = await setup(
+      {
+        storeArtifact: async (artifact) => {
+          uploads.push(artifact);
+          return { id: "docx-file" };
+        },
+      },
+      "rpc",
+    );
+    const result = await show("redline.docx");
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]).toEqual({
+      path: "redline.docx",
+      content: bytes,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    expect(result.details).toEqual({
+      path: "redline.docx",
+      shown: false,
+      kind: "file",
+      content: "",
+      file: { id: "docx-file", bytes: bytes.length },
+    });
+    expect(overlays).toHaveLength(0);
+  });
+
+  it("refuses binary git operations, paths outside the workspace and oversized files before storing", async () => {
+    let uploads = 0;
+    const { show } = await setup(
+      {
+        storeArtifact: async () => {
+          uploads++;
+          return { id: "file" };
+        },
+      },
+      "rpc",
+    );
+    writeFileSync(
+      join(workspace, "redline.docx"),
+      Buffer.from([80, 75, 0, 255]),
+    );
+    await expect(show("redline.docx", { ref: "HEAD" })).rejects.toThrow(
+      /do not support ref or text diff/,
+    );
+    await expect(show("redline.docx", { diff: "previous" })).rejects.toThrow(
+      /do not support ref or text diff/,
+    );
+    await expect(show("../outside.docx")).rejects.toThrow(
+      /outside the working directory/,
+    );
+    const outside = mkdtempSync(join(tmpdir(), "artifact-outside-"));
+    try {
+      writeFileSync(
+        join(outside, "private.docx"),
+        Buffer.from([80, 75, 0, 255]),
+      );
+      symlinkSync(
+        join(outside, "private.docx"),
+        join(workspace, "linked.docx"),
+      );
+      await expect(show("linked.docx")).rejects.toThrow(
+        /links outside the working directory/,
+      );
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+    writeFileSync(
+      join(workspace, "huge.docx"),
+      Buffer.alloc(25 * 1024 * 1024 + 1),
+    );
+    await expect(show("huge.docx")).rejects.toThrow(/over the 25600 KB/);
+    await expect(show("missing.docx")).rejects.toThrow(/does not exist/);
+    expect(uploads).toBe(0);
+  });
+
   it("without a store, refuses a file past 1 MB as before", async () => {
     writeFileSync(join(workspace, "big.txt"), "x".repeat(1100 * 1024));
     const { show } = await setup({}, "rpc");
@@ -680,7 +764,9 @@ describe("path validation", () => {
     await expect(show("../elsewhere.md")).rejects.toThrow(
       /outside the working directory/,
     );
-    await expect(show("photo.png")).rejects.toThrow(/not a text file/);
+    await expect(show("photo.png")).rejects.toThrow(
+      /does not support binary artifact previews/,
+    );
     expect(overlays).toHaveLength(0);
   });
 });

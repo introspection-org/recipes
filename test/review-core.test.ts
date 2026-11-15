@@ -55,7 +55,7 @@ describe("the review core", () => {
     const result = await build({
       stdin: {
         resolveDir: root,
-        contents: `import { formatReviews } from "@introspection-ai/recipes/review"; console.log(formatReviews([]));`,
+        contents: `import { formatReviews, resolveArtifactLink } from "@introspection-ai/recipes/review"; console.log(formatReviews([]), resolveArtifactLink("outputs/report.md", [{ path: "outputs/report.md" }]));`,
       },
       absWorkingDir: root,
       bundle: true,
@@ -100,6 +100,21 @@ describe("the review core", () => {
   it("reads a shown artifact's details as a host receives them", () => {
     expect(artifactKind("docs/brief.md")).toBe("markdown");
     expect(artifactKind("page.HTM")).toBe("html");
+    expect(artifactKind("redline.DOCX")).toBe("file");
+    expect(artifactKind("diagram.png")).toBe("file");
+    expect(
+      artifactDetails({
+        path: "redline.docx",
+        shown: false,
+        kind: "file",
+        content: "",
+        file: { id: "docx-file", bytes: 123 },
+      }),
+    ).toMatchObject({
+      kind: "file",
+      hasContent: false,
+      file: { id: "docx-file", bytes: 123 },
+    });
     expect(artifactKind("agents/agent.yaml")).toBe("text");
     expect(
       artifactDetails({

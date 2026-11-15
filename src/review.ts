@@ -17,6 +17,10 @@ export {
 
 export {
   SHOW_ARTIFACT_TOOL_NAME,
+  resolveArtifactLink,
+  type ArtifactLinkReference,
+  type ArtifactLinkHost,
+  type ResolvedArtifactLink,
   artifactDetails,
   artifactDiffCounts,
   artifactDiffLines,

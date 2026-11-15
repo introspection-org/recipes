@@ -8,11 +8,13 @@
 
 export const SHOW_ARTIFACT_TOOL_NAME = "show_artifact";
 
-/** How a file renders: markdown rendered, HTML as a page in a browser, the rest as highlighted text. */
-export type ArtifactKind = "markdown" | "html" | "text";
+/** How a file renders: markdown, HTML, highlighted text, or a binary file preview. */
+export type ArtifactKind = "markdown" | "html" | "text" | "file";
 
 /** How a path's file renders, from its extension. */
 export function artifactKind(path: string): ArtifactKind {
+  if (/\.(docx|pdf|png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(path))
+    return "file";
   if (/\.(md|markdown)$/i.test(path)) return "markdown";
   return /\.html?$/i.test(path) ? "html" : "text";
 }
@@ -55,12 +57,12 @@ export type ArtifactRepositoryResolver = (
 ) => { id: string; maxBytes?: number } | undefined;
 
 /**
- * Keeps a shown file too large to carry in a result, for a host that renders
+ * Keeps a binary file or text too large to carry in a result, for a host that renders
  * artifacts from its own store; resolves to the store's id.
  */
 export type ArtifactStore = (artifact: {
   path: string;
-  content: string;
+  content: string | Uint8Array;
   mimeType: string;
 }) => Promise<{ id: string }>;
 
@@ -120,7 +122,7 @@ export function artifactDetails(
   const details = asRecord(value);
   const path = nonEmpty(details?.path);
   if (!details || !path) return undefined;
-  const kinds: readonly ArtifactKind[] = ["markdown", "html", "text"];
+  const kinds: readonly ArtifactKind[] = ["markdown", "html", "text", "file"];
   const kind = kinds.includes(details.kind as ArtifactKind)
     ? (details.kind as ArtifactKind)
     : artifactKind(path);
@@ -206,3 +208,10 @@ export function artifactDiffCounts(diff: string): {
   }
   return { added, removed };
 }
+
+export {
+  resolveArtifactLink,
+  type ArtifactLinkReference,
+  type ArtifactLinkHost,
+  type ResolvedArtifactLink,
+} from "./artifact-links.js";

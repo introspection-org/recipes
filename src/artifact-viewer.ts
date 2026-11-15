@@ -298,7 +298,7 @@ const DEFAULT_DEBOUNCE_MS = 100;
 const description = [
   "Show a file to the user beside the conversation: markdown rendered, code and other text highlighted, HTML as source (a browser host renders it).",
   "Call this when you want the user to read a file you wrote (a brief, test cases, a report, code), especially before asking them to approve it, instead of only printing its path.",
-  "`path` is relative to the working directory and must be a text file. `ref` and `diff` work like git, in the working directory's repository:",
+  "`path` is relative to the working directory and may be text, or a DOCX, PDF or image when the host supports file previews. `ref` and `diff` apply only to text and work like git, in the working directory's repository:",
   "- `{ path }`: the file as it is now.",
   '- `{ path, ref: "HEAD~1" }`: the file at a commit, like `git show HEAD~1:path`.',
   '- `{ path, diff: "HEAD" }`: what changed since a commit, like `git diff HEAD -- path`.',
@@ -404,10 +404,12 @@ export function resolveArtifactPath(
   path: string,
   {
     anyText = false,
+    allowBinary = false,
     inWorkingTree = true,
     maxBytes = ARTIFACT_MAX_BYTES,
   }: {
     anyText?: boolean;
+    allowBinary?: boolean;
     /** The largest file accepted. */
     maxBytes?: number;
     /** False for a path read from a git commit: it need not exist now, and git's version is checked instead. */
@@ -463,7 +465,7 @@ export function resolveArtifactPath(
       `${input} is ${Math.ceil(stats.size / 1024)} KB, over the ${maxBytes / 1024} KB the viewer reads; show a smaller file or a part of it.`,
     );
   }
-  if (anyText && looksBinary(absolutePath)) {
+  if (anyText && !allowBinary && looksBinary(absolutePath)) {
     throw new Error(`${input} is not a text file, so it can't be shown.`);
   }
   // A symlink inside the working directory may still point outside it.
@@ -1210,10 +1212,25 @@ function commandArgs(
   };
 }
 
+const BINARY_ARTIFACT_MIME_TYPES: Record<string, string> = {
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
+};
+
 const ARTIFACT_MIME_TYPES: Record<ArtifactKind, string> = {
   markdown: "text/markdown",
   html: "text/html",
   text: "text/plain",
+  file: "application/octet-stream",
 };
 
 /**
@@ -1238,6 +1255,46 @@ function createShowArtifactTool(
     parameters,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const ref = params.ref?.trim() || undefined;
+      if (artifactKind(params.path.trim()) === "file") {
+        if (!store)
+          throw new Error(
+            "This host does not support binary artifact previews.",
+          );
+        if (ref || params.diff !== undefined) {
+          throw new Error(
+            "Binary artifacts do not support ref or text diff; show the working file instead.",
+          );
+        }
+        const target = resolveArtifactPath(ctx.cwd, params.path, {
+          anyText: true,
+          allowBinary: true,
+          maxBytes: STORED_ARTIFACT_MAX_BYTES,
+        });
+        const content = readFileSync(target.absolutePath);
+        const stored = await store({
+          path: target.relativePath,
+          content,
+          mimeType:
+            BINARY_ARTIFACT_MIME_TYPES[
+              extname(target.relativePath).toLowerCase()
+            ]!,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Stored ${target.relativePath} for the host's file preview. The terminal panel cannot display binary files.`,
+            },
+          ],
+          details: {
+            path: target.relativePath,
+            shown: false,
+            kind: "file",
+            content: "",
+            file: { id: stored.id, bytes: content.byteLength },
+          },
+        };
+      }
       const maxBytes =
         store || resolveRepository
           ? STORED_ARTIFACT_MAX_BYTES
