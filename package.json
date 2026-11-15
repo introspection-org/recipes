@@ -168,7 +168,7 @@
     "@earendil-works/pi-ai": ">=1.1.0 <2.0.0",
     "@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
     "@earendil-works/pi-tui": ">=1.1.0 <2.0.0",
-    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/api": ">=1.9.0 <2.0.0",
     "typebox": "*"
   },
   "devDependencies": {
