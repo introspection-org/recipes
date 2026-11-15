@@ -18,6 +18,7 @@
       "@introspection-ai/recipes/api-bindings": ["../src/api/api-bindings.ts"],
       "@introspection-ai/recipes/pi-extension": ["../src/pi-extension.ts"],
       "@introspection-ai/recipes/agents": ["../src/agents.ts"],
+      "@introspection-ai/recipes/batch": ["../src/batch/index.ts"],
       "@introspection-ai/recipes/recipe": ["../src/recipe/resolve.ts"],
       "@introspection-ai/recipes/review": ["../src/review.ts"],
       "@introspection-ai/recipes/session": ["../src/api/session.ts"],
@@ -25,7 +26,9 @@
       "@introspection-ai/recipes/channels": ["../src/channels/index.ts"],
       "@introspection-ai/recipes/python": ["../src/python.ts"],
       "@introspection-ai/recipes/documents": ["../src/documents/index.ts"],
-      "@introspection-ai/recipes/productivity": ["../src/productivity/index.ts"],
+      "@introspection-ai/recipes/productivity": [
+        "../src/productivity/index.ts"
+      ],
       "@introspection-ai/recipes/search": ["../src/search/index.ts"],
       "@introspection-ai/recipes/signature": ["../src/signature/index.ts"],
       "@introspection-ai/recipes/issues": ["../src/issues/index.ts"],

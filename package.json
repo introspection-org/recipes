@@ -62,6 +62,10 @@
       "types": "./dist/agents.d.ts",
       "import": "./dist/agents.js"
     },
+    "./batch": {
+      "types": "./dist/batch/index.d.ts",
+      "import": "./dist/batch/index.js"
+    },
     "./recipe": {
       "types": "./dist/recipe/resolve.d.ts",
       "import": "./dist/recipe/resolve.js"
