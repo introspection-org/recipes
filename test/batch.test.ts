@@ -18,7 +18,7 @@ import {
   parseInputLines,
   ResultShards,
   runBatch,
-  runBatchFromFiles,
+  runBatchWith,
   type BatchFiles,
   type BatchProgress,
   type BatchRunController,
@@ -209,10 +209,9 @@ describe("runBatch", () => {
       output: `answer to ${prompt}`,
     }));
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "prompts.jsonl",
         output_name: "results.jsonl",
         concurrency: 4,
         max_attempts: 3,
@@ -220,7 +219,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -268,10 +267,9 @@ describe("runBatch", () => {
       output: "ok",
     }));
 
-    await runBatch(
+    await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 1,
@@ -279,7 +277,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -324,10 +322,9 @@ describe("runBatch", () => {
       output: "ok",
     }));
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 8,
         max_attempts: 3,
@@ -335,7 +332,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -368,10 +365,9 @@ describe("runBatch", () => {
       return { status: "failed", error: "schema validation failed" };
     });
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 3,
@@ -379,7 +375,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -424,10 +420,9 @@ describe("runBatch", () => {
       return start(input);
     };
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 3,
@@ -435,7 +430,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -473,10 +468,9 @@ describe("runBatch", () => {
       return { status: "completed", output: "ok" };
     });
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 1,
         max_attempts: 1,
@@ -485,7 +479,7 @@ describe("runBatch", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         now: () => clock,
         sleep: noSleep,
@@ -524,7 +518,6 @@ describe("runBatch json repair", () => {
   }
   const params = {
     agent: "summarize",
-    input_path: "p",
     output_name: "results.jsonl",
     concurrency: 2,
     max_attempts: 1,
@@ -539,10 +532,10 @@ describe("runBatch json repair", () => {
       pa: ['{"answer":{"summary":"x"}]}', '{"answer":{"summary":"x"}}'],
     });
 
-    const summary = await runBatch(params, {
+    const summary = await runBatchWith(params, {
       controller: controllerOf(controller),
       files,
-      inputPath: INPUT,
+      input: INPUT,
       results: jsonlResults(files, OUTPUT),
       sleep: noSleep,
     });
@@ -564,10 +557,10 @@ describe("runBatch json repair", () => {
     });
     const controller = scripted({ pa: ["Sure! {", "still {", "nope {"] });
 
-    const summary = await runBatch(params, {
+    const summary = await runBatchWith(params, {
       controller: controllerOf(controller),
       files,
-      inputPath: INPUT,
+      input: INPUT,
       results: jsonlResults(files, OUTPUT),
       sleep: noSleep,
     });
@@ -586,12 +579,12 @@ describe("runBatch json repair", () => {
     });
     const controller = scripted({ pa: ["plain prose"] });
 
-    await runBatch(
+    await runBatchWith(
       { ...params, output_format: undefined },
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -622,10 +615,9 @@ describe("runBatch restart and shutdown", () => {
       output: "ok",
     }));
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 1,
@@ -633,7 +625,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results,
         sleep: noSleep,
       },
@@ -710,10 +702,9 @@ describe("runBatch restart and shutdown", () => {
     });
     const snapshots: string[] = [];
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 1,
@@ -721,7 +712,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         signal: stop.signal,
@@ -776,10 +767,9 @@ describe("runBatch restart and shutdown", () => {
       },
     };
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 3,
@@ -787,7 +777,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         signal: stop.signal,
@@ -840,10 +830,9 @@ describe("runBatch restart and shutdown", () => {
       return { status: "completed", output: "ok" };
     });
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 3,
@@ -851,7 +840,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         signal: stop.signal,
@@ -879,10 +868,9 @@ describe("runBatch restart and shutdown", () => {
       error: "provider returned 429 Too Many Requests",
     }));
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 1,
         max_attempts: 3,
@@ -890,7 +878,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         // The stop lands while the line waits to retry.
         sleep: async () => stop.abort(),
@@ -943,10 +931,9 @@ describe("runBatch restart and shutdown", () => {
       async message() {},
     };
 
-    await runBatch(
+    await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 3,
@@ -954,7 +941,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         signal: stop.signal,
@@ -971,10 +958,9 @@ describe("runBatch restart and shutdown", () => {
       output: "ok",
     }));
 
-    const summary = await runBatch(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 2,
         max_attempts: 1,
@@ -982,7 +968,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
       },
@@ -1002,10 +988,9 @@ describe("runBatch restart and shutdown", () => {
     }));
     const snapshots: BatchProgress[] = [];
 
-    await runBatch(
+    await runBatchWith(
       {
         agent: "summarize",
-        input_path: "p",
         output_name: "results.jsonl",
         concurrency: 1,
         max_attempts: 1,
@@ -1013,7 +998,7 @@ describe("runBatch restart and shutdown", () => {
       {
         controller: controllerOf(controller),
         files,
-        inputPath: INPUT,
+        input: INPUT,
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         onProgress: async (progress) => {
@@ -1040,17 +1025,16 @@ describe("resume by input fingerprint", () => {
     });
     const params = {
       agent: "summarize",
-      input_path: "p",
       output_name: "results.jsonl",
       concurrency: 2,
       max_attempts: 1,
     };
-    await runBatch(params, {
+    await runBatchWith(params, {
       controller: controllerOf(
         new FakeController(() => ({ status: "completed", output: "ok" })),
       ),
       files: before,
-      inputPath: INPUT,
+      input: INPUT,
       results: jsonlResults(before, OUTPUT),
       sleep: noSleep,
     });
@@ -1066,10 +1050,10 @@ describe("resume by input fingerprint", () => {
       status: "completed",
       output: "ok",
     }));
-    const summary = await runBatch(params, {
+    const summary = await runBatchWith(params, {
       controller: controllerOf(controller),
       files: after,
-      inputPath: INPUT,
+      input: INPUT,
       results: jsonlResults(after, OUTPUT),
       sleep: noSleep,
     });
@@ -1098,7 +1082,6 @@ describe("batch params", () => {
   it("defaults concurrency, attempts and the results name", () => {
     const params = parseBatchParams({
       agent: "summarize",
-      input_path: "prompts.jsonl",
     });
     expect(params).toMatchObject({
       concurrency: 8,
@@ -1179,8 +1162,8 @@ class EchoRuns implements AgentRunController {
   async shutdown() {}
 }
 
-describe("runBatchFromFiles", () => {
-  it("runs any AgentRunController over local files, and a second run resumes", async () => {
+describe("runBatch", () => {
+  it("runs a JSONL file in a directory, returns every result, and a second run resumes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "batch-run-"));
     await writeFile(
       join(dir, "prompts.jsonl"),
@@ -1189,33 +1172,89 @@ describe("runBatchFromFiles", () => {
         { custom_id: "b", prompt: "second" },
       ),
     );
-    const params = { agent: "summarize", input_path: "prompts.jsonl" };
 
-    const first = await runBatchFromFiles({
-      params,
+    const first = await runBatch({
+      agent: "summarize",
+      input: "prompts.jsonl",
       controller: new EchoRuns(),
       directory: dir,
     });
     expect(first).toMatchObject({ total: 2, completed: 2, failed: 0 });
-    const results = (await readFile(join(dir, "results.jsonl"), "utf8"))
+    expect(
+      first.results.map((line) => [line.custom_id, line.result.output]),
+    ).toEqual([
+      ["a", "FIRST"],
+      ["b", "SECOND"],
+    ]);
+    expect(first.results[0].metadata).toEqual({ source: "acme" });
+    const written = (await readFile(join(dir, "results.jsonl"), "utf8"))
       .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(results.map((line) => [line.custom_id, line.result.output])).toEqual(
-      expect.arrayContaining([
-        ["a", "FIRST"],
-        ["b", "SECOND"],
-      ]),
-    );
-    expect(results.find((line) => line.custom_id === "a").metadata).toEqual({
-      source: "acme",
-    });
+      .split("\n");
+    expect(written).toHaveLength(2);
 
-    const second = await runBatchFromFiles({
-      params,
+    const second = await runBatch({
+      agent: "summarize",
+      input: "prompts.jsonl",
       controller: new EchoRuns(),
       directory: dir,
     });
     expect(second).toMatchObject({ already_completed: 2, completed: 0 });
+    expect(second.results).toHaveLength(2);
+  });
+
+  it("takes the lines themselves, with no files at all", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "b", prompt: "second" },
+      ],
+      controller: new EchoRuns(),
+      concurrency: 2,
+    });
+    expect(outcome.results.map((line) => line.result.output)).toEqual([
+      "FIRST",
+      "SECOND",
+    ]);
+  });
+
+  it("streams each result to onResult as its line finishes", async () => {
+    const seen: string[] = [];
+    await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "b", prompt: "second" },
+      ],
+      controller: new EchoRuns(),
+      concurrency: 1,
+      onResult: (result) => {
+        seen.push(`${result.custom_id}:${result.result.output}`);
+      },
+    });
+    expect(seen).toEqual(["a:FIRST", "b:SECOND"]);
+  });
+
+  it("refuses a repeated custom_id and an unknown option before any line runs", async () => {
+    const controller = new EchoRuns();
+    await expect(
+      runBatch({
+        agent: "summarize",
+        input: [
+          { custom_id: "a", prompt: "first" },
+          { custom_id: "a", prompt: "again" },
+        ],
+        controller,
+      }),
+    ).rejects.toThrow(/input 2 repeats custom_id a/);
+    await expect(
+      runBatch({
+        agent: "summarize",
+        input: [{ custom_id: "a", prompt: "first" }],
+        controller,
+        // @ts-expect-error a misspelt option fails fast
+        concurrenzy: 2,
+      }),
+    ).rejects.toThrow(/invalid batch params/);
   });
 });

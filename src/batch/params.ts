@@ -10,8 +10,6 @@ const BatchParamsSchema = Type.Object(
   {
     /** The Recipe agent each input line runs as, in a fresh session of its own. */
     agent: Type.String({ minLength: 1 }),
-    /** The JSONL of inputs. */
-    input_path: Type.String({ minLength: 1 }),
     /** The results' file name: letters, digits, `-` and `_`, ending `.jsonl`. */
     output_name: Type.String({
       pattern: "^[A-Za-z0-9_-]+\\.jsonl$",

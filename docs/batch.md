@@ -1,106 +1,194 @@
 # Batch runs
 
-A batch runs one Recipe agent over many independent inputs: each line of a
-JSONL file is a prompt, answered in a fresh session of its own, and each answer
-is appended to a results file as the line finishes. Code decides what runs next
-and when to stop; the model only ever answers one prompt.
+Run one agent over many prompts. Each prompt is answered in its own fresh
+session, and each answer is recorded as soon as it finishes. Batches suit work
+where you have many independent questions for the same agent: summarizing a
+set of documents, classifying records, or extracting fields from a backlog of
+text.
 
-`@introspection-ai/recipes/batch` is self-contained. It reads the input, drives
-sessions through an `AgentRunController`, and writes results to local files;
-nothing else is needed to run, stop and resume a batch. A host that wants more
-(copying results elsewhere, reporting progress, per-line conversations) plugs it
-in through the optional hooks below, and the core never depends on it.
+A batch can be stopped at any time and picks up where it left off: prompts
+that already succeeded are skipped, and everything else runs again.
 
-## Run a batch
+## Quick start
+
+Pass the prompts in, and get the answers back:
 
 ```ts
-import { runBatchFromFiles } from "@introspection-ai/recipes/batch";
+import { resolveRecipe } from "@introspection-ai/recipes";
+import {
+  createInProcessRunController,
+  runBatch,
+} from "@introspection-ai/recipes/batch";
 
-const summary = await runBatchFromFiles({
-  params: { agent: "summarize", input_path: "prompts.jsonl", concurrency: 4 },
-  controller, // any AgentRunController: your host's, or Recipes' in-process one
-  directory: "./batch",
+const recipe = resolveRecipe({ recipeDir: "./my-recipe" });
+const controller = createInProcessRunController({
+  recipe,
+  cwd: process.cwd(),
+  concurrency: 4,
 });
-// { total, already_completed, completed, failed, not_started, stopped }
-```
 
-`runBatchFromFiles` reads `input_path` (relative to `directory`) and appends to
-`<directory>/<output_name>`. For full control, call `runBatch(params, deps)`
-with your own `BatchFiles`, a `BatchResults` store (`jsonlResults` or
-`ResultShards`), and the hooks.
+const { results } = await runBatch({
+  agent: "summarize",
+  input: [
+    {
+      custom_id: "doc-1",
+      prompt: "Summarize this report in three sentences: ...",
+    },
+    {
+      custom_id: "doc-2",
+      prompt: "Summarize this report in three sentences: ...",
+    },
+  ],
+  controller,
+  concurrency: 4,
+});
+await controller.shutdown();
 
-## Input and results
-
-Each input line names the caller's id, the prompt, and optional metadata copied
-onto its result unread:
-
-```json
-{
-  "custom_id": "doc-1",
-  "prompt": "Summarize: ...",
-  "metadata": { "source": "acme" }
+for (const line of results) {
+  console.log(line.custom_id, line.result.output);
 }
 ```
 
-Each result line follows the Message Batches shape:
+Everything runs in your process, with your Recipe's model settings and
+provider credentials. Nothing is uploaded anywhere.
+
+## Resumable batches
+
+For a large batch, give it a `directory`. Results are then written to
+`<directory>/results.jsonl` as each prompt finishes, and running the same batch
+again only runs what is left:
+
+```ts
+const outcome = await runBatch({
+  agent: "summarize",
+  input: "prompts.jsonl", // read from the directory; inline prompts work too
+  directory: "./batch",
+  controller,
+});
+console.log(outcome);
+// { total: 1000, already_completed: 600, completed: 400, failed: 0, not_started: 0, stopped: false, results: [...] }
+```
+
+Without a `directory`, results are kept in memory and returned, and the batch
+cannot resume after the process exits.
+
+## Streaming results
+
+To act on each answer as it arrives (write it to your own database, update a
+UI), pass `onResult`:
+
+```ts
+await runBatch({
+  agent: "summarize",
+  input,
+  controller,
+  onResult: async (line) => {
+    await saveSummary(line.custom_id, line.result.output); // your own code
+  },
+});
+```
+
+`onResult` is called once per prompt, in the order prompts finish.
+
+## Input format
+
+`input` is either an array of prompts, or the path (or `file:` URL) of a JSONL
+file with one prompt per line. Each prompt has:
+
+| Field       | Required | Meaning                                                                    |
+| ----------- | -------- | -------------------------------------------------------------------------- |
+| `custom_id` | yes      | Your id for the prompt. It must be unique in the batch.                    |
+| `prompt`    | yes      | What the agent is asked.                                                   |
+| `metadata`  | no       | Any object. It is copied onto the prompt's result as is, for your own use. |
+
+As a file:
+
+```jsonl
+{"custom_id": "doc-1", "prompt": "Summarize this report in three sentences: ..."}
+{"custom_id": "doc-2", "prompt": "Summarize this report in three sentences: ...", "metadata": {"source": "acme"}}
+```
+
+A malformed prompt or a repeated `custom_id` stops the batch before anything
+runs, and the error says which one.
+
+## Results format
+
+Each result has the same shape as Anthropic's Message Batches results:
 
 ```json
 {
   "custom_id": "doc-1",
-  "result": { "type": "succeeded", "output": "...", "run_id": "..." },
+  "result": {
+    "type": "succeeded",
+    "output": "The report finds ...",
+    "run_id": "..."
+  },
   "batch": { "record_index": 0, "input_sha256": "...", "attempts": 1 },
   "metadata": { "source": "acme" }
 }
 ```
 
-`result.type` is `succeeded`, `errored`, or `canceled` (a line still running
-when the run was cancelled). A line that runs again appends again; the last
-line per `custom_id` wins.
+- `result.type` is `succeeded`, `errored` (with `result.error.message`), or
+  `canceled` (the prompt was still running when the batch was cancelled).
+- `batch.record_index` is the prompt's position in the input, and
+  `batch.attempts` is how many times it ran.
+- `runBatch` returns the latest result for every prompt, in input order. In a
+  results file, a prompt that runs again is appended again, so read the last
+  line for each `custom_id`.
 
-## Params
+## Options
 
-| Param           | Default         | Meaning                                                                                         |
-| --------------- | --------------- | ----------------------------------------------------------------------------------------------- |
-| `agent`         | required        | The Recipe agent each line runs as.                                                             |
-| `input_path`    | required        | The input JSONL.                                                                                |
-| `output_name`   | `results.jsonl` | The results file name.                                                                          |
-| `concurrency`   | 8 (max 32)      | Lines in flight at once.                                                                        |
-| `max_attempts`  | 3 (max 5)       | Attempts when the provider rate-limits a line; any other failure is final.                      |
-| `deadline_ms`   | none            | Stop starting lines after this long; the rest wait for the next run.                            |
-| `output_format` | `text`          | `json` sends an answer that does not parse back to its session, up to `MAX_JSON_REPAIRS` times. |
+| Option          | Default         | Meaning                                                                                          |
+| --------------- | --------------- | ------------------------------------------------------------------------------------------------ |
+| `agent`         | required        | The Recipe agent that answers each prompt.                                                       |
+| `input`         | required        | The prompts, or a JSONL file of them.                                                            |
+| `controller`    | required        | Runs each prompt: `createInProcessRunController`, or your own `AgentRunController`.              |
+| `directory`     | none            | Where results are written and resumed from. A relative `input` path is read from here too.       |
+| `output_name`   | `results.jsonl` | The results file name in `directory`.                                                            |
+| `concurrency`   | 8 (max 32)      | How many prompts run at once.                                                                    |
+| `max_attempts`  | 3 (max 5)       | How many times a rate-limited prompt is tried. Other failures are not retried.                   |
+| `deadline_ms`   | none            | Stop starting new prompts after this long. Prompts not started run next time.                    |
+| `output_format` | `text`          | With `json`, an answer that is not valid JSON is sent back to the agent to fix, up to two times. |
+| `signal`        | none            | Abort it to stop gracefully.                                                                     |
+| `onResult`      | none            | Called with each result as it is recorded.                                                       |
+| `onProgress`    | none            | Called with the counts after every prompt and when the batch stops.                              |
 
-`parseBatchParams` validates them, refuses unknown keys, and fills defaults.
+Unknown options are rejected, so a typo fails fast instead of being ignored.
 
-## Resume, stop and cancel
+## Stopping and resuming
 
-The results are the run's durable state. Running again skips every line whose
-latest result succeeded for the same agent and prompt (`input_sha256`); a line
-whose prompt or agent changed runs again, and so does one that failed. A crash
-loses only the lines in flight, which run again (at least once).
+- **Abort the `signal`** to stop gracefully. No new prompts start, the ones
+  already running finish and are recorded, and the rest are counted as
+  `not_started`.
+- **Stop the process outright** and only the prompts that were running are
+  lost; with a `directory`, they run again next time.
+- **Run again with the same `directory`** and the batch skips every prompt
+  whose last result succeeded for the same agent and prompt text. A prompt
+  whose text or agent changed runs again, as does any prompt that failed.
 
-- Aborting `signal` stops starting lines; the lines in flight finish and are
-  recorded, the rest are `not_started`.
-- Aborting `cancel` records the lines still in flight as `canceled`, so the next
-  run retries them.
-- A rate-limited line backs off and retries, and the concurrency halves until
-  the provider recovers (`AdaptiveLimiter`). A line stopped during its backoff
-  is recorded with the attempt it made.
+When the provider rate-limits a prompt, the batch waits and retries it, and
+lowers its concurrency until requests succeed again.
 
-## Hooks
+## Agents that use subagents
 
-All optional; the core works without any of them.
+Each prompt is one run of the controller. If the batch's agent starts
+subagents of its own, those count against the same controller, so give the
+controller a higher `concurrency` than the batch's. If the two are equal, every
+subagent is refused while all the batch's slots are busy.
 
-- `onProgress(progress)` runs after every line and when the run stops. A host
-  may checkpoint or copy results here. With `ResultShards`, `seal()` closes the
-  lines recorded so far into the next numbered file, which never changes again,
-  so each sealed file needs copying once.
-- `lineScope(line, record)` gives each line its own conversation id and wraps
-  its session, so a line's whole exchange can be read back by that id.
-- `files` replaces the local file system (`nodeBatchFiles`) with any store.
+## Hosting batches
 
-## Subagents
+Applications that run batches for others can take full control with
+`runBatchWith(params, deps)`. It takes validated settings (`parseBatchParams`)
+and lets you supply each part yourself:
 
-Each line is one run of the controller. If the batch's agent delegates to
-subagents, give the controller room for them beyond `concurrency`: a
-controller whose active-run limit equals `concurrency` refuses every delegation
-while all line slots are busy.
+- **`results`**: where results are kept. `jsonlResults` appends to one file;
+  `ResultShards` closes finished results into numbered files that never change
+  once written, so each only needs copying somewhere durable once.
+- **`files`**: replaces the local file system with your own storage.
+- **`lineScope`**: gives each prompt its own conversation id and wraps its
+  session, so its full exchange can be read back later.
+- **`cancel`**: a second signal for when a stopping batch can wait no longer;
+  prompts still running are recorded as `canceled` and run again next time.
+
+None of these are needed to run a batch with `runBatch`.

@@ -5,6 +5,7 @@ import {
   completedIds,
   inputFingerprint,
   parseInputLines,
+  validateInputLines,
   type BatchInputLine,
   type BatchResultLine,
   type BatchResultType,
@@ -31,7 +32,8 @@ export interface BatchProgress extends BatchSummary {
 export interface BatchRunDeps {
   controller: BatchRunController;
   files: BatchFiles;
-  inputPath: string;
+  /** The lines to run, or the path of a JSONL file holding them. */
+  input: string | readonly unknown[];
   /** Where results are recorded, and read back on a resume. */
   results: BatchResults;
   now?: () => number;
@@ -48,6 +50,8 @@ export interface BatchRunDeps {
    * from it: a host may checkpoint, persist or copy results here.
    */
   onProgress?: (progress: BatchProgress) => Promise<void>;
+  /** Called with each line's result once it is recorded, in the order lines finish. */
+  onResult?: (result: BatchResultLine) => Promise<void> | void;
   /**
    * Each line's own conversation, when the host keeps one per line: the id
    * its session records under, and a wrapper the line's session starts
@@ -111,7 +115,7 @@ const RETRY_BASE_DELAY_MS = 2_000;
  * session settles, and a restart skips every line already completed. A crash
  * loses only the lines in flight, which run again (at-least-once).
  */
-export async function runBatch(
+export async function runBatchWith(
   params: BatchParams,
   deps: BatchRunDeps,
 ): Promise<BatchSummary> {
@@ -119,11 +123,16 @@ export async function runBatch(
   const sleep =
     deps.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const inputText = await deps.files.read(deps.inputPath);
-  if (inputText === null) {
-    throw new Error(`batch input ${deps.inputPath} does not exist`);
+  let lines: BatchInputLine[];
+  if (typeof deps.input === "string") {
+    const inputText = await deps.files.read(deps.input);
+    if (inputText === null) {
+      throw new Error(`batch input ${deps.input} does not exist`);
+    }
+    lines = parseInputLines(inputText);
+  } else {
+    lines = validateInputLines(deps.input);
   }
-  const lines = parseInputLines(inputText);
   const done = completedIds(await deps.results.read());
   const recordIndex = new Map(
     lines.map((line, index) => [line.custom_id, index]),
@@ -310,6 +319,7 @@ export async function runBatch(
       // Null: the run stopped before this line started; it counts as not started.
       if (result === null) return;
       await record(result);
+      await deps.onResult?.(result);
       if (result.result.type === "succeeded") summary.completed += 1;
       else summary.failed += 1;
       await progress(stopped() ? "stopping" : "running");

@@ -16,6 +16,17 @@ export function jsonlResults(files: BatchFiles, path: string): BatchResults {
   };
 }
 
+/** Results kept in memory: for a batch run once in this process, with nothing to resume. */
+export function memoryResults(): BatchResults {
+  let text = "";
+  return {
+    read: async () => text,
+    append: async (line) => {
+      text += `${line}\n`;
+    },
+  };
+}
+
 /** `results` → `results-00001.jsonl`: sortable, and never written twice. */
 export function shardName(stem: string, index: number): string {
   return `${stem}-${String(index).padStart(5, "0")}.jsonl`;

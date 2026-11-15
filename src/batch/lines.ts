@@ -45,40 +45,51 @@ export interface BatchResultLine {
   metadata?: Record<string, unknown>;
 }
 
-/** Parse the input JSONL, refusing a malformed line or a repeated `custom_id` by line number. */
-export function parseInputLines(text: string): BatchInputLine[] {
-  const lines: BatchInputLine[] = [];
+/**
+ * Check input lines given as values, refusing a malformed line or a repeated
+ * `custom_id`. `label(i)` names the i-th value in an error, so a file's
+ * errors name its line numbers.
+ */
+export function validateInputLines(
+  values: readonly unknown[],
+  label: (index: number) => string = (index) => `input ${index + 1}`,
+): BatchInputLine[] {
   const seen = new Set<string>();
-  text.split("\n").forEach((raw, index) => {
-    if (!raw.trim()) return;
-    const lineNumber = index + 1;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      throw new Error(`input line ${lineNumber} is not JSON: ${String(error)}`);
-    }
-    if (!Check(InputLine, parsed)) {
-      const problems = [...Errors(InputLine, parsed)]
+  return values.map((value, index) => {
+    if (!Check(InputLine, value)) {
+      const problems = [...Errors(InputLine, value)]
         .map((error) => `${error.instancePath || "/"} ${error.message}`)
         .join("; ");
       throw new Error(
-        `input line ${lineNumber} needs a custom_id and a prompt: ${problems}`,
+        `${label(index)} needs a custom_id and a prompt: ${problems}`,
       );
     }
-    if (seen.has(parsed.custom_id)) {
-      throw new Error(
-        `input line ${lineNumber} repeats custom_id ${parsed.custom_id}`,
-      );
+    if (seen.has(value.custom_id)) {
+      throw new Error(`${label(index)} repeats custom_id ${value.custom_id}`);
     }
-    seen.add(parsed.custom_id);
-    lines.push({
-      custom_id: parsed.custom_id,
-      prompt: parsed.prompt,
-      ...(parsed.metadata ? { metadata: parsed.metadata } : {}),
-    });
+    seen.add(value.custom_id);
+    return {
+      custom_id: value.custom_id,
+      prompt: value.prompt,
+      ...(value.metadata ? { metadata: value.metadata } : {}),
+    };
   });
-  return lines;
+}
+
+/** Parse the input JSONL, refusing a malformed line or a repeated `custom_id` by line number. */
+export function parseInputLines(text: string): BatchInputLine[] {
+  const values: unknown[] = [];
+  const lineNumbers: number[] = [];
+  text.split("\n").forEach((raw, index) => {
+    if (!raw.trim()) return;
+    try {
+      values.push(JSON.parse(raw));
+    } catch (error) {
+      throw new Error(`input line ${index + 1} is not JSON: ${String(error)}`);
+    }
+    lineNumbers.push(index + 1);
+  });
+  return validateInputLines(values, (i) => `input line ${lineNumbers[i]}`);
 }
 
 /** The fingerprint of what a line asks: a changed prompt or agent is a different question. */
