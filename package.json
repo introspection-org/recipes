@@ -146,7 +146,6 @@
   "dependencies": {
     "@earendil-works/pi-mcp": ">=1.1.0 <2.0.0",
     "@introspection-sdk/introspection-pi": ">=0.47.0",
-    "@opentelemetry/api": "^1.9.1",
     "ajv": "^8.20.0",
     "mcporter": "0.16.1",
     "minimatch": "^10.2.6",
@@ -169,6 +168,7 @@
     "@earendil-works/pi-ai": ">=1.1.0 <2.0.0",
     "@earendil-works/pi-coding-agent": ">=1.1.0 <2.0.0",
     "@earendil-works/pi-tui": ">=1.1.0 <2.0.0",
+    "@opentelemetry/api": "^1.10.0",
     "typebox": "*"
   },
   "devDependencies": {
@@ -177,6 +177,7 @@
     "@earendil-works/pi-coding-agent": "1.5.0",
     "@earendil-works/pi-tui": "1.5.0",
     "@eslint/js": "9.39.5",
+    "@opentelemetry/api": "^1.10.0",
     "@pollyjs/adapter-fetch": "^6.0.7",
     "@pollyjs/core": "^6.0.6",
     "@pollyjs/persister-fs": "^6.0.6",

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
 import { context as otelContext, propagation } from "@opentelemetry/api";
-import { CONVERSATION_ID_BAGGAGE } from "../session.js";
+import { CONVERSATION_ID_BAGGAGE } from "../otel-baggage.js";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "./files.js";
 import {

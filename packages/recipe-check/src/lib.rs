@@ -1091,8 +1091,9 @@ fn object_keys(value: Option<&JsonValue>) -> BTreeSet<String> {
 
 /// The packages the host imports itself and so always provides: Recipes and
 /// Recipes' own `peerDependencies`. A test keeps the two in step.
-const HOST_PEER_PACKAGES: [&str; 6] = [
+const HOST_PEER_PACKAGES: [&str; 7] = [
     "@introspection-ai/recipes",
+    "@opentelemetry/api",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-coding-agent",
