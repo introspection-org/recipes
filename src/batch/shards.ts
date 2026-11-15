@@ -35,13 +35,13 @@ export function memoryResults(): BatchResults {
   };
 }
 
-/** `results` → `results-00001.jsonl`: sortable, and never written twice. */
+/** `results` → `results-0001.jsonl`: sortable, and never written twice. */
 export function shardName(stem: string, index: number): string {
-  return `${stem}-${String(index).padStart(5, "0")}.jsonl`;
+  return `${stem}-${String(index).padStart(4, "0")}.jsonl`;
 }
 
 function shardIndex(stem: string, name: string): number | null {
-  const match = new RegExp(`^${stem}-(\\d{5,})\\.jsonl$`).exec(name);
+  const match = new RegExp(`^${stem}-(\\d{4,})\\.jsonl$`).exec(name);
   return match ? Number(match[1]) : null;
 }
 
