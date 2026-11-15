@@ -1,7 +1,13 @@
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "./files.js";
-import type { BatchInputLine, BatchResultLine } from "./lines.js";
+import {
+  inputFingerprint,
+  parseInputLines,
+  validateInputLines,
+  type BatchInputLine,
+  type BatchResultLine,
+} from "./lines.js";
 import { parseBatchParams, type BatchParams } from "./params.js";
 import {
   runBatchWith,
@@ -106,19 +112,27 @@ export async function runBatch(
     ...settings
   } = options;
   const params = parseBatchParams(settings);
-  const inputPath =
-    input instanceof URL
-      ? fileURLToPath(input)
-      : typeof input === "string" && directory && !isAbsolute(input)
-        ? join(directory, input)
-        : input;
+  let lines: BatchInputLine[];
+  if (typeof input === "string" || input instanceof URL) {
+    const path =
+      input instanceof URL
+        ? fileURLToPath(input)
+        : directory && !isAbsolute(input)
+          ? join(directory, input)
+          : input;
+    const text = await files.read(path);
+    if (text === null) throw new Error(`batch input ${path} does not exist`);
+    lines = parseInputLines(text);
+  } else {
+    lines = validateInputLines(input);
+  }
   const results = directory
     ? jsonlResults(files, join(directory, params.output_name))
     : memoryResults();
   const summary = await runBatchWith(params, {
     controller,
     files,
-    input: inputPath,
+    input: lines,
     results,
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
@@ -130,10 +144,14 @@ export async function runBatch(
     const line = JSON.parse(raw) as BatchResultLine;
     latest.set(line.custom_id, line);
   }
-  return {
-    ...summary,
-    results: [...latest.values()].sort(
-      (a, b) => a.batch.record_index - b.batch.record_index,
-    ),
-  };
+  // The current input decides what is returned and in what order: a stored
+  // result counts only if it answered this agent and this prompt text.
+  const current = lines.flatMap((line) => {
+    const result = latest.get(line.custom_id);
+    return result &&
+      result.batch.input_sha256 === inputFingerprint(params.agent, line)
+      ? [result]
+      : [];
+  });
+  return { ...summary, results: current };
 }

@@ -162,6 +162,18 @@ export async function runBatchWith(
     (deps.cancel?.aborted ?? false) ||
     (deadline !== null && now() >= deadline);
 
+  // A controller may answer a cancelled wait by rejecting (Recipes'
+  // in-process one does) rather than returning the run still running; both
+  // mean the session did not settle, so the line is recorded as canceled.
+  const waitFor = async (id: string): Promise<Settled> => {
+    try {
+      return await deps.controller.wait(id, deps.cancel);
+    } catch (error) {
+      if (deps.cancel?.aborted) return { agent_run_id: id, status: "running" };
+      throw error;
+    }
+  };
+
   const runOnce = async (line: BatchInputLine): Promise<Settled> => {
     let started: { agent_run_id: string };
     try {
@@ -181,10 +193,7 @@ export async function runBatchWith(
       };
     }
     try {
-      let settled: Settled = await deps.controller.wait(
-        started.agent_run_id,
-        deps.cancel,
-      );
+      let settled: Settled = await waitFor(started.agent_run_id);
       for (
         let repair = 1;
         params.output_format === "json" &&
@@ -198,7 +207,7 @@ export async function runBatchWith(
           started.agent_run_id,
           `Your reply was not valid JSON (${problem}). Reply again with only the corrected JSON object: no prose, no code fence.`,
         );
-        settled = await deps.controller.wait(started.agent_run_id, deps.cancel);
+        settled = await waitFor(started.agent_run_id);
         if (repair === MAX_JSON_REPAIRS && settled.status === "completed") {
           const still = jsonProblem(settled.output);
           if (still !== null) {

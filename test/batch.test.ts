@@ -1235,6 +1235,62 @@ describe("runBatch", () => {
     expect(seen).toEqual(["a:FIRST", "b:SECOND"]);
   });
 
+  it("returns the current input's results in its order, after a reorder or a removal", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-order-"));
+    const a = { custom_id: "a", prompt: "first" };
+    const b = { custom_id: "b", prompt: "second" };
+    await runBatch({
+      agent: "summarize",
+      input: [a, b],
+      controller: new EchoRuns(),
+      directory: dir,
+    });
+
+    const reordered = await runBatch({
+      agent: "summarize",
+      input: [b, a],
+      controller: new EchoRuns(),
+      directory: dir,
+    });
+    expect(reordered.results.map((line) => line.custom_id)).toEqual(["b", "a"]);
+
+    const reduced = await runBatch({
+      agent: "summarize",
+      input: [b],
+      controller: new EchoRuns(),
+      directory: dir,
+    });
+    expect(reduced.results.map((line) => line.custom_id)).toEqual(["b"]);
+  });
+
+  it("resumes past a results file whose last line a crash cut off", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-torn-"));
+    const input = [
+      { custom_id: "a", prompt: "first" },
+      { custom_id: "b", prompt: "second" },
+    ];
+    await runBatch({
+      agent: "summarize",
+      input,
+      controller: new EchoRuns(),
+      directory: dir,
+    });
+    const path = join(dir, "results.jsonl");
+    const [first] = (await readFile(path, "utf8")).split("\n");
+    // As a crash mid-append leaves it: one whole line, then half of the next.
+    await writeFile(path, `${first}\n{"custom_id": "b", "res`);
+
+    const resumed = await runBatch({
+      agent: "summarize",
+      input,
+      controller: new EchoRuns(),
+      directory: dir,
+    });
+    expect(resumed).toMatchObject({ already_completed: 1, completed: 1 });
+    const lines = (await readFile(path, "utf8")).trim().split("\n");
+    expect(lines.map((line) => JSON.parse(line).custom_id)).toEqual(["a", "b"]);
+  });
+
   it("refuses a repeated custom_id and an unknown option before any line runs", async () => {
     const controller = new EchoRuns();
     await expect(
@@ -1256,5 +1312,48 @@ describe("runBatch", () => {
         concurrenzy: 2,
       }),
     ).rejects.toThrow(/invalid batch params/);
+  });
+});
+
+describe("cancellation with a controller whose wait rejects", () => {
+  it("records the line in flight as canceled and still returns the summary", async () => {
+    const files = memoryFiles({
+      [INPUT]: jsonl({ custom_id: "slow", prompt: "p" }),
+    });
+    const cancel = new AbortController();
+    const controller: BatchRunController = {
+      async start() {
+        return summary({ agent_run_id: "r1" });
+      },
+      wait(_id, signal) {
+        cancel.abort();
+        return Promise.reject(signal?.reason ?? new Error("wait aborted"));
+      },
+      async message() {
+        return summary({ agent_run_id: "r1" });
+      },
+      async close() {
+        return summary({ agent_run_id: "r1", status: "closed" });
+      },
+    };
+
+    const outcome = await runBatchWith(
+      parseBatchParams({ agent: "summarize", max_attempts: 1 }),
+      {
+        controller,
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        cancel: cancel.signal,
+      },
+    );
+
+    expect(outcome.failed).toBe(1);
+    const [line] = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((raw) => JSON.parse(raw));
+    expect(line.result.type).toBe("canceled");
   });
 });

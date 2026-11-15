@@ -11,7 +11,15 @@ export interface BatchResults {
 /** Results in one JSONL file: the simplest store, resumable from the file itself. */
 export function jsonlResults(files: BatchFiles, path: string): BatchResults {
   return {
-    read: async () => (await files.read(path)) ?? "",
+    // A crash mid-append can leave a last line with no newline; it is
+    // dropped, as ResultShards drops one, so that line runs again and the
+    // next append starts on a line of its own.
+    read: async () => {
+      const text = (await files.read(path)) ?? "";
+      const complete = text.slice(0, text.lastIndexOf("\n") + 1);
+      if (complete !== text) await files.write(path, complete);
+      return complete;
+    },
     append: (line) => files.appendLine(path, line),
   };
 }
