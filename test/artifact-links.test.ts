@@ -77,6 +77,18 @@ describe("shared artifact links", () => {
     ).toBe(repository);
   });
 
+  it("matches an encoded question mark in a filename, but never a query", () => {
+    const artifact = { path: "outputs/Q&A?.md" };
+    expect(
+      resolveArtifactLink("outputs/Q%26A%3F.md", [artifact])?.artifact,
+    ).toBe(artifact);
+    // A literal `?` starts a query, so the same name unencoded resolves nothing.
+    expect(resolveArtifactLink("outputs/Q&A?.md", [artifact])).toBeUndefined();
+    expect(
+      resolveArtifactLink("outputs/report.md?raw=1", [local]),
+    ).toBeUndefined();
+  });
+
   it("accepts only absolute paths inside the declared workspace", () => {
     expect(
       resolveArtifactLink("/workspace/outputs/report.md", [stored], {

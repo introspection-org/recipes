@@ -55,6 +55,9 @@ function workspacePath(
       return undefined;
     destination = url.pathname;
   }
+  // A literal `?` starts a query; an encoded one (`%3F`) is part of a
+  // filename, so the check runs before decoding.
+  if (destination.includes("?")) return undefined;
   let path: string;
   try {
     path = decodeURIComponent(destination);
@@ -65,7 +68,7 @@ function workspacePath(
   if (
     !path ||
     path !== path.trim() ||
-    /[?\\]/.test(path) ||
+    path.includes("\\") ||
     [...path].some(
       (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
     ) ||
