@@ -138,20 +138,22 @@ Each result has the same shape as Anthropic's Message Batches results:
 
 ## Options
 
-| Option          | Default         | Meaning                                                                                          |
-| --------------- | --------------- | ------------------------------------------------------------------------------------------------ |
-| `agent`         | required        | The Recipe agent that answers each prompt.                                                       |
-| `input`         | required        | The prompts, or a JSONL file of them.                                                            |
-| `controller`    | required        | Runs each prompt: `createInProcessRunController`, or your own `AgentRunController`.              |
-| `directory`     | none            | Where results are written and resumed from. A relative `input` path is read from here too.       |
-| `output_name`   | `results.jsonl` | The results file name in `directory`.                                                            |
-| `concurrency`   | 8 (max 32)      | How many prompts run at once.                                                                    |
-| `max_attempts`  | 3 (max 5)       | How many times a rate-limited prompt is tried. Other failures are not retried.                   |
-| `deadline_ms`   | none            | Stop starting new prompts after this long. Prompts not started run next time.                    |
-| `output_format` | `text`          | With `json`, an answer that is not valid JSON is sent back to the agent to fix, up to two times. |
-| `signal`        | none            | Abort it to stop gracefully.                                                                     |
-| `onResult`      | none            | Called with each result as it is recorded.                                                       |
-| `onProgress`    | none            | Called with the counts after every prompt and when the batch stops.                              |
+| Option          | Default         | Meaning                                                                                                                                                   |
+| --------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`         | required        | The Recipe agent that answers each prompt.                                                                                                                |
+| `input`         | required        | The prompts, or a JSONL file of them.                                                                                                                     |
+| `controller`    | required        | Runs each prompt: `createInProcessRunController`, or your own `AgentRunController`.                                                                       |
+| `directory`     | none            | Where results are written and resumed from. A relative `input` path is read from here too.                                                                |
+| `output_name`   | `results.jsonl` | The results file name in `directory`.                                                                                                                     |
+| `concurrency`   | 8 (max 32)      | How many prompts run at once.                                                                                                                             |
+| `max_attempts`  | 3 (max 5)       | How many times a rate-limited prompt is tried. Other failures are not retried.                                                                            |
+| `deadline_ms`   | none            | Stop starting new prompts after this long. Prompts not started run next time.                                                                             |
+| `output_format` | `text`          | With `json`, an answer that is not valid JSON is sent back to the agent to fix, up to two times.                                                          |
+| `signal`        | none            | Abort it to stop gracefully.                                                                                                                              |
+| `onResult`      | none            | Called with each result as it is recorded.                                                                                                                |
+| `onProgress`    | none            | Called with the counts after every prompt and when the batch stops.                                                                                       |
+| `batch_id`      | derived         | Names the batch in each prompt's conversation id. Derived from the results file with a `directory`, so a resumed batch keeps its ids; random without one. |
+| `baggage`       | none            | Extra OpenTelemetry baggage set around each prompt's session: an object, or a function of the prompt.                                                     |
 
 Unknown options are rejected, so a typo fails fast instead of being ignored.
 
@@ -168,6 +170,32 @@ Unknown options are rejected, so a typo fails fast instead of being ignored.
 
 When the provider rate-limits a prompt, the batch waits and retries it, and
 lowers its concurrency until requests succeed again.
+
+## Traces
+
+Each prompt runs as its own conversation, with the id
+`<batch_id>:<index>`. That id is on the prompt's result as
+`result.conversation_id`, so a result and its trace join on it.
+
+The batch sets the id as OpenTelemetry baggage (`gen_ai.conversation.id`)
+around the prompt's session. A Recipes session takes its conversation id from
+that baggage, unless its `otel.meta` names one, and so do the subagents it
+starts. Any other baggage entries, including your own from `baggage`, are added
+to every span the session records:
+
+```ts
+await runBatch({
+  agent: "summarize",
+  input,
+  controller,
+  baggage: (line) => ({ "acme.document_id": line.custom_id }),
+});
+```
+
+Baggage only flows through `await` when your OpenTelemetry SDK has registered
+an async context manager, which the Node SDK does by default. If your SDK also
+propagates W3C baggage on outgoing HTTP requests, these entries are sent with
+those requests too, so keep them to ids rather than anything sensitive.
 
 ## Agents that use subagents
 

@@ -1,4 +1,7 @@
-import { isAbsolute, join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { isAbsolute, join, resolve } from "node:path";
+import { context as otelContext, propagation } from "@opentelemetry/api";
+import { CONVERSATION_ID_BAGGAGE } from "../session.js";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "./files.js";
 import {
@@ -12,8 +15,10 @@ import { parseBatchParams, type BatchParams } from "./params.js";
 import {
   runBatchWith,
   type BatchProgress,
+  type BatchRecord,
   type BatchRunController,
   type BatchSummary,
+  type LineScope,
 } from "./runner.js";
 import { jsonlResults, memoryResults } from "./shards.js";
 
@@ -86,6 +91,57 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   onResult?: (result: BatchResultLine) => Promise<void> | void;
   /** Replaces the local file system. */
   files?: BatchFiles;
+  /**
+   * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
+   * Defaults to an id derived from the results file, so a resumed batch keeps
+   * its conversation ids, or a random one without a `directory`.
+   */
+  batch_id?: string;
+  /**
+   * OpenTelemetry baggage set around each prompt's session, beside its
+   * conversation id. Recipes sessions add every entry to their spans.
+   */
+  baggage?:
+    | Record<string, string>
+    | ((line: BatchInputLine, record: BatchRecord) => Record<string, string>);
+}
+
+/** A prompt's conversation: `<batch_id>:<index>`, padded so ids sort in input order. */
+export function batchConversationId(
+  batchId: string,
+  record: BatchRecord,
+): string {
+  const width = String(Math.max(0, record.count - 1)).length;
+  return `${batchId}:${String(record.index).padStart(width, "0")}`;
+}
+
+/**
+ * Each prompt's own conversation: its session runs inside baggage naming it
+ * (`gen_ai.conversation.id`) and carrying `baggage`, so a Recipes session and
+ * every subagent it starts record their spans under that conversation.
+ */
+export function baggageLineScope(
+  batchId: string,
+  baggage: RunBatchOptions["baggage"] = {},
+): (line: BatchInputLine, record: BatchRecord) => LineScope {
+  return (line, record) => {
+    const conversationId = batchConversationId(batchId, record);
+    const entries = {
+      ...(typeof baggage === "function" ? baggage(line, record) : baggage),
+      [CONVERSATION_ID_BAGGAGE]: conversationId,
+    };
+    return {
+      conversationId,
+      run: (_attempt, fn) => {
+        const active = otelContext.active();
+        let bag = propagation.getBaggage(active) ?? propagation.createBaggage();
+        for (const [key, value] of Object.entries(entries)) {
+          bag = bag.setEntry(key, { value });
+        }
+        return otelContext.with(propagation.setBaggage(active, bag), fn);
+      },
+    };
+  };
 }
 
 /** What `runBatch` returns: the counts, and the latest result of every line, in input order. */
@@ -109,6 +165,8 @@ export async function runBatch(
     onProgress,
     onResult,
     files = nodeBatchFiles,
+    batch_id,
+    baggage,
     ...settings
   } = options;
   const params = parseBatchParams(settings);
@@ -126,14 +184,21 @@ export async function runBatch(
   } else {
     lines = validateInputLines(input);
   }
-  const results = directory
-    ? jsonlResults(files, join(directory, params.output_name))
+  const resultsPath = directory ? resolve(directory, params.output_name) : null;
+  const results = resultsPath
+    ? jsonlResults(files, resultsPath)
     : memoryResults();
+  const batchId =
+    batch_id ??
+    (resultsPath
+      ? createHash("sha256").update(resultsPath).digest("hex").slice(0, 16)
+      : randomUUID());
   const summary = await runBatchWith(params, {
     controller,
     files,
     input: lines,
     results,
+    lineScope: baggageLineScope(batchId, baggage),
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
     ...(onResult ? { onResult } : {}),

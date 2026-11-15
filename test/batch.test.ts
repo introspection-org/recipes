@@ -23,6 +23,7 @@ import {
   type BatchProgress,
   type BatchRunController,
 } from "../src/batch/index.js";
+import { activeBaggage, useAsyncContext } from "./helpers/otel-context.js";
 
 /** What resume compares: the line's fingerprint under the "summarize" agent these tests run. */
 const sha = (prompt: string) =>
@@ -1355,5 +1356,58 @@ describe("cancellation with a controller whose wait rejects", () => {
       .split("\n")
       .map((raw) => JSON.parse(raw));
     expect(line.result.type).toBe("canceled");
+  });
+});
+
+describe("runBatch baggage", () => {
+  it("runs each prompt inside baggage naming its conversation, plus the caller's entries", async () => {
+    const teardown = useAsyncContext();
+    try {
+      const seen: Record<string, string>[] = [];
+      const controller = new EchoRuns();
+      const start = controller.start.bind(controller);
+      controller.start = async (input) => {
+        seen.push(activeBaggage());
+        return start(input);
+      };
+      const dir = await mkdtemp(join(tmpdir(), "batch-baggage-"));
+      const input = [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "b", prompt: "second" },
+      ];
+
+      const outcome = await runBatch({
+        agent: "summarize",
+        input,
+        controller,
+        directory: dir,
+        concurrency: 1,
+        baggage: (line) => ({ "acme.custom_id": line.custom_id }),
+      });
+
+      const ids = outcome.results.map((line) => line.result.conversation_id);
+      expect(seen).toEqual([
+        { "gen_ai.conversation.id": ids[0], "acme.custom_id": "a" },
+        { "gen_ai.conversation.id": ids[1], "acme.custom_id": "b" },
+      ]);
+      expect(ids[0]).toMatch(/:0$/);
+      expect(ids[1]).toMatch(/:1$/);
+
+      // The same directory is the same batch: a resumed prompt keeps its conversation.
+      input.push({ custom_id: "c", prompt: "third" });
+      const resumed = await runBatch({
+        agent: "summarize",
+        input,
+        controller,
+        directory: dir,
+      });
+      const resumedIds = resumed.results.map(
+        (line) => line.result.conversation_id,
+      );
+      expect(resumedIds.slice(0, 2)).toEqual(ids);
+      expect(resumedIds[2]).toBe(`${ids[0]?.split(":")[0]}:2`);
+    } finally {
+      teardown();
+    }
   });
 });
