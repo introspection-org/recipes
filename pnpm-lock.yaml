@@ -46,7 +46,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: ^1.10.0
         version: 1.10.0
       '@pollyjs/adapter-fetch':
         specifier: ^6.0.7
