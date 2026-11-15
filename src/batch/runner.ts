@@ -273,13 +273,15 @@ export async function runBatchWith(
         ...(line.metadata ? { metadata: line.metadata } : {}),
       };
     };
+    // The last attempt that ran, so a stop before the next one still records it.
+    let previous: { settled: Settled; attempt: number } | null = null;
     for (let attempt = 1; ; attempt += 1) {
       const release = await limiter.acquire();
-      // Capacity can free up after the run stopped: a line that has not
-      // started yet stays unstarted for the next run.
+      // Capacity can free up after the run stopped: a line that never started
+      // stays unstarted for the next run; one that ran keeps its last attempt.
       if (stopped()) {
         release();
-        return null;
+        return previous ? resultLine(previous.settled, previous.attempt) : null;
       }
       let settled: Settled;
       try {
@@ -302,6 +304,7 @@ export async function runBatchWith(
       // The attempt ran: a stop that lands during the wait records it, as a
       // stop that landed just before the wait does.
       if (stopped()) return resultLine(settled, attempt);
+      previous = { settled, attempt };
     }
   };
 

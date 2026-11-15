@@ -894,7 +894,7 @@ describe("runBatch restart and shutdown", () => {
     expect(JSON.parse(recorded[0]).custom_id).toBe("limited");
   });
 
-  it("does not start a line that was waiting for capacity when the run stopped", async () => {
+  it("keeps the attempt of a rate-limited line whose retry was waiting for capacity at the stop", async () => {
     const files = memoryFiles({
       [INPUT]: jsonl(
         { custom_id: "slow", prompt: "p0" },
@@ -932,7 +932,7 @@ describe("runBatch restart and shutdown", () => {
       async message() {},
     };
 
-    await runBatchWith(
+    const summary = await runBatchWith(
       {
         agent: "summarize",
         output_name: "results.jsonl",
@@ -950,6 +950,15 @@ describe("runBatch restart and shutdown", () => {
     );
 
     expect(controller.started.filter((p) => p === "p1")).toHaveLength(1);
+    // The attempt that ran is recorded as failed, never counted as not started.
+    expect(summary).toMatchObject({ completed: 1, failed: 1, not_started: 0 });
+    const limited = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((raw) => JSON.parse(raw))
+      .find((line) => line.custom_id === "limited");
+    expect(limited?.batch.attempts).toBe(1);
   });
 
   it("records nothing and starts nothing for an empty input", async () => {
