@@ -261,7 +261,7 @@ importers:
     devDependencies:
       '@emulators/core':
         specifier: ^0.13.0
-        version: 0.13.0
+        version: 0.13.1
       '@emulators/google':
         specifier: ^0.13.0
         version: 0.13.0
@@ -501,6 +501,9 @@ packages:
 
   '@emulators/core@0.13.0':
     resolution: {integrity: sha512-uh9Z2ZsxsmrHyZQHENRKXRImqTAbHCqrPWCzDSQ/OKwVsiJFZhNZOu1bm/h8jsRsFU5kISuOJcD9XNMP1afwlQ==}
+
+  '@emulators/core@0.13.1':
+    resolution: {integrity: sha512-otPAqo7b1Me+Ak84Yw+oyvpSnPKu+X7XDgbscFrkwXmZ3lb5HjlN4wbMeQ01a6f5p562DtlKhpIUU+Q2mvfDRQ==}
 
   '@emulators/google@0.13.0':
     resolution: {integrity: sha512-fEw2+oBgUtK8wahSrezwJx/FJfNHy1ciZvlhKMA6vneYVwSf1EJNeI45k3CCheAXfrVhegN7mrw/1XrRVuuaaA==}
@@ -3895,6 +3898,10 @@ snapshots:
   '@emulators/core@0.13.0':
     dependencies:
       jose: 6.2.14
+
+  '@emulators/core@0.13.1':
+    dependencies:
+      jose: 6.2.17
 
   '@emulators/google@0.13.0':
     dependencies:
