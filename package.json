@@ -189,7 +189,7 @@
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-only-warn": "1.2.1",
     "knip": "6.44.0",
-    "prettier": "3.9.10",
+    "prettier": "3.10.1",
     "ts-json-schema-generator": "^2.9.0",
     "typebox": "^1.0.56",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
