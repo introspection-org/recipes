@@ -28,7 +28,7 @@ import { mcpDaemonRequestContext } from "../trace-context.js";
 const SHUTDOWN_GRACE_MS = 1_000;
 const CATALOG_PRELOAD_BACKOFF_MS = [100, 250, 500, 1_000, 2_000] as const;
 /** In-flight `execute` and `call` requests a server runs at once; the rest queue. */
-export const MCP_DAEMON_MAX_IN_FLIGHT = 32;
+const MCP_DAEMON_MAX_IN_FLIGHT = 32;
 
 export interface McpDaemonServerOptions {
   socketPath: string;
