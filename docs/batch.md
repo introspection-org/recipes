@@ -192,8 +192,8 @@ await runBatch({
 });
 ```
 
-Recipes uses your process's own `@opentelemetry/api` (a peer dependency), so it
-sees the context and baggage your SDK registers. Baggage only flows through `await` when your OpenTelemetry SDK has registered
+Recipes uses your process's own `@opentelemetry/api` (a peer dependency, any
+1.x from 1.9), so it sees the context and baggage your SDK registers. Baggage only flows through `await` when your OpenTelemetry SDK has registered
 an async context manager, which the Node SDK does by default. If your SDK also
 propagates W3C baggage on outgoing HTTP requests, these entries are sent with
 those requests too, so keep them to ids rather than anything sensitive.
