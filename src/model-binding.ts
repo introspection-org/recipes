@@ -8,7 +8,11 @@ import {
   getModel,
   type Model,
 } from "@earendil-works/pi-ai/compat";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type {
+  ModelRegistry,
+  ModelRoute,
+  ModelRouteRequest,
+} from "@earendil-works/pi-coding-agent";
 import { expectedProviderEnvVars } from "./provider-env.js";
 
 const AMBIENT_CREDENTIAL_SENTINEL = "<authenticated>";
@@ -72,16 +76,24 @@ function parseRecipeModelSpec(spec: string): RecipeModelIdentity {
   return { provider, modelId, lookupProvider };
 }
 
+function servesSpec(model: Model<Api>, spec: string): boolean {
+  const { lookupProvider, modelId } = parseRecipeModelSpec(spec);
+  return (
+    model.id === modelId &&
+    (model.provider === lookupProvider ||
+      (PROVIDER_ALIASES[lookupProvider]?.includes(model.provider) ?? false))
+  );
+}
+
 export function assertRecipeModelTransport(
   modelSpec: string,
   model: Model<Api> | undefined,
+  fallbacks: readonly string[] = [],
 ): RecipeModelIdentity {
   const identity = parseRecipeModelSpec(modelSpec);
   if (
     model &&
-    ((model.provider !== identity.lookupProvider &&
-      !PROVIDER_ALIASES[identity.lookupProvider]?.includes(model.provider)) ||
-      model.id !== identity.modelId)
+    ![modelSpec, ...fallbacks].some((spec) => servesSpec(model, spec))
   ) {
     throw new RecipeModelTransportError(modelSpec, model.provider, model.id);
   }
@@ -133,6 +145,97 @@ export async function resolveRecipeAgentModel(
       return { ...alias, headers: { ...(alias.headers ?? {}) } };
   }
   return model;
+}
+
+/** The models a Recipe agent can run here, in order, and one store holding their credentials. */
+export interface RecipeAgentModels {
+  models: Model<Api>[];
+  credentials: CredentialStore;
+}
+
+/**
+ * Resolve an agent's model and its `ai.fallbacks`, keeping each that this host
+ * has a credential for (an alias counts, as `resolveRecipeAgentModel` says).
+ * The first is the model the session starts on. Fallbacks need a Pi host and
+ * no store from the caller: a host that passes its own store bills the model
+ * the Recipe names, so it gets that model or its credential error.
+ */
+export async function resolveRecipeAgentModels(opts: {
+  modelSpec: string;
+  fallbacks?: readonly string[];
+  env: NodeJS.ProcessEnv;
+  credentials?: CredentialStore;
+  modelRegistry?: ModelRegistry;
+}): Promise<RecipeAgentModels> {
+  const specs =
+    opts.modelRegistry && !opts.credentials
+      ? [opts.modelSpec, ...(opts.fallbacks ?? [])]
+      : [opts.modelSpec];
+  const found: { model: Model<Api>; credentials: CredentialStore }[] = [];
+  let firstError: unknown;
+  for (const spec of specs) {
+    try {
+      const model = await resolveRecipeAgentModel(
+        spec,
+        opts.env,
+        opts.modelRegistry,
+      );
+      const credentials = await resolveRecipeCredentials({
+        provider: model.provider,
+        env: opts.env,
+        model,
+        ...(opts.credentials ? { credentials: opts.credentials } : {}),
+        ...(opts.modelRegistry ? { modelRegistry: opts.modelRegistry } : {}),
+      });
+      found.push({ model, credentials });
+    } catch (error) {
+      if (
+        !(error instanceof RecipeCredentialError) &&
+        !(error instanceof RecipeModelError)
+      )
+        throw error;
+      firstError ??= error;
+    }
+  }
+  if (found.length === 0) throw firstError;
+  if (found.length === 1)
+    return { models: [found[0]!.model], credentials: found[0]!.credentials };
+  const credentials = new InMemoryCredentialStore();
+  for (const { model, credentials: store } of found) {
+    const credential = await store.read(model.provider);
+    if (credential)
+      await credentials.modify(model.provider, async () => credential);
+  }
+  return { models: found.map(({ model }) => model), credentials };
+}
+
+function sameModel(a: Model<Api>, b: Model<Api>): boolean {
+  return a.provider === b.provider && a.id === b.id;
+}
+
+/**
+ * Route one request of a session with fallbacks: a retry after a failed
+ * request moves to the next model, and every other request stays on the model
+ * that last answered, so its prompt cache keeps working.
+ */
+export function routeRecipeFallbacks(
+  models: readonly Model<Api>[],
+  request: ModelRouteRequest,
+): ModelRoute {
+  const after = request.reason === "retry" ? request.failed : undefined;
+  const model = after
+    ? models[
+        Math.min(
+          models.findIndex((candidate) => sameModel(candidate, after.model)) +
+            1,
+          models.length - 1,
+        )
+      ]!
+    : (models.find(
+        (candidate) =>
+          request.previous && sameModel(candidate, request.previous.model),
+      ) ?? models[0]!);
+  return { model, thinkingLevel: request.thinkingLevel };
 }
 
 /**

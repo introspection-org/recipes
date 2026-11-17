@@ -7,10 +7,7 @@ import type {
   ModelRegistry,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import {
-  resolveRecipeCredentials,
-  resolveRecipeAgentModel,
-} from "../model-binding.js";
+import { resolveRecipeAgentModels } from "../model-binding.js";
 import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import {
   MAX_AGENT_RUN_DEPTH,
@@ -47,6 +44,7 @@ export interface CreateIsolatedChildSessionOptions {
   clock?: RecipeClockOptions;
   credentialsResolved?: boolean;
   modelOverride?: Model<Api>;
+  modelFallbacks?: readonly Model<Api>[];
   otel?: RecipeSessionOtelOptions;
   onEvent?: (event: AgentSessionEvent) => void;
   /** The run this child serves; its own runs are attributed to it. */
@@ -100,19 +98,22 @@ export async function createIsolatedChildSession(
       ? async (options) => {
           const agent = options.recipe.selectAgent(options.agentName);
           const env = options.env ?? process.env;
-          const model = applyRecipeAgentModelConfigToModel(
-            await resolveRecipeAgentModel(agent.modelSpec, env, registry),
-            agent.modelConfig,
-          );
-          const credentials = await resolveRecipeCredentials({
-            provider: model.provider,
+          const {
+            models: [model, ...fallbacks],
+            credentials,
+          } = await resolveRecipeAgentModels({
+            modelSpec: agent.modelSpec,
+            fallbacks: agent.modelConfig?.fallbacks,
             env,
-            model,
             modelRegistry: registry,
           });
           return (opts.sessionFactory ?? createAgentSessionInternal)({
             ...options,
-            modelOverride: model,
+            modelOverride: applyRecipeAgentModelConfigToModel(
+              model!,
+              agent.modelConfig,
+            ),
+            ...(fallbacks.length > 0 ? { modelFallbacks: fallbacks } : {}),
             credentials,
             credentialsResolved: true,
           });
@@ -138,6 +139,9 @@ export async function createIsolatedChildSession(
       ...(opts.clock ? { clock: opts.clock } : {}),
       ...(opts.credentialsResolved ? { credentialsResolved: true } : {}),
       ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
+      ...(opts.modelFallbacks?.length
+        ? { modelFallbacks: opts.modelFallbacks }
+        : {}),
       ...(opts.otel ? { otel: opts.otel } : {}),
       ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
       mcpRuntimeDir,

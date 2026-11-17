@@ -132,6 +132,17 @@ All remaining agent fields are optional. Omitted `tools`, `skills`, and
 provider or session default. Omitted agent instructions preserve `SYSTEM.md`
 when present, or Pi's normal base prompt otherwise.
 
+`ai.fallbacks` MAY list, in order, other `<provider>/<model_id>` models. They
+apply when the agent runs as a subagent in a local Pi, never on a hosted
+runtime or when the host passes its own credentials. The agent starts on its
+`ai.model` when Pi has a credential for it, otherwise on the first fallback
+that has one. When a request fails and Pi retries it (a rate limit, an
+overloaded or failing provider, a timeout such as `ai.options.timeout_ms`),
+the retry goes to the next model, and the agent stays on the model that last
+answered. A model named under `openai` also runs as the same model under
+`openai-codex` when Pi is logged in to ChatGPT and has no OpenAI key, whether
+it is the `ai.model` or a fallback; that alias also applies only to subagents.
+
 `phases` MAY list, in order, the phases the agent moves through, each the
 prefix of its step skills (`build` for `build-draft`). It changes only what
 Pi's footer shows: the phase of the step skill last read, with the agent's

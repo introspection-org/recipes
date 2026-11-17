@@ -4,7 +4,11 @@ import { CONVERSATION_ID_BAGGAGE } from "./otel-baggage.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Api, CredentialStore } from "@earendil-works/pi-ai";
-import { getModel, type Model } from "@earendil-works/pi-ai/compat";
+import {
+  getModel,
+  getSupportedThinkingLevels,
+  type Model,
+} from "@earendil-works/pi-ai/compat";
 import {
   createBashToolDefinition,
   createCodemodeExtension,
@@ -112,6 +116,7 @@ import {
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
+  routeRecipeFallbacks,
   RecipeCredentialError,
   RecipeModelError,
   RecipeModelTransportError,
@@ -149,6 +154,9 @@ import {
   toolsShellEnv,
   withToolsCommand,
 } from "./tools/shell.js";
+
+/** Provider id of the virtual model that routes a session with fallbacks. */
+const FALLBACK_PROVIDER = "recipe-fallbacks";
 
 function sessionSettingsManager(
   base: SettingsManager,
@@ -200,6 +208,7 @@ function sessionSettingsManager(
  * `required: true` MCP server with no binding throws `McpBindingError`, and a
  * model whose provider has no credential throws `RecipeCredentialError`.
  */
+
 export interface CreateAgentSessionOptions {
   /** Immutable Recipe graph used by this root session and all of its children. */
   recipe: ResolvedRecipe;
@@ -214,6 +223,11 @@ export interface CreateAgentSessionOptions {
    * configuration; this replaces only catalog lookup and transport wiring.
    */
   modelOverride?: Model<Api>;
+  /**
+   * Models to move to, in order, when a request to `modelOverride` fails and
+   * Pi retries it, each with its credential in `credentials`.
+   */
+  modelFallbacks?: readonly Model<Api>[];
   /** Explicit local MCP binding file. Default: `<cwd|recipe.recipeDir>/.pi/mcp.local.json`. */
   mcpBindingsPath?: string;
   /** Inline MCP bindings, for hosts that synthesize them instead of reading a file. */
@@ -785,6 +799,7 @@ async function createSessionForAgent(
   const { lookupProvider, modelId } = assertRecipeModelTransport(
     modelSpec,
     opts.modelOverride,
+    recipe.modelConfig?.fallbacks,
   );
   const credentialProvider = opts.modelOverride?.provider ?? lookupProvider;
   const credentials =
@@ -1115,6 +1130,30 @@ async function createSessionForAgent(
     }
     model = cloneModelForRecipe(selectedModel);
     applyRecipeAgentModelConfigToModel(model, recipe.modelConfig);
+    let sessionModel = model;
+    if (opts.modelFallbacks?.length) {
+      const candidates = [
+        model,
+        ...opts.modelFallbacks.map((fallback) =>
+          applyRecipeAgentModelConfigToModel(
+            cloneModelForRecipe(fallback),
+            recipe.modelConfig,
+          ),
+        ),
+      ];
+      services.modelRuntime.registerVirtualModel({
+        provider: FALLBACK_PROVIDER,
+        id: recipe.name,
+        name: `${model.name ?? model.id} with fallbacks`,
+        thinkingLevels: getSupportedThinkingLevels(model),
+        contextWindow: Math.min(...candidates.map((c) => c.contextWindow)),
+        maxTokens: Math.min(...candidates.map((c) => c.maxTokens)),
+        input: model.input,
+        route: (request) => routeRecipeFallbacks(candidates, request),
+      });
+      sessionModel =
+        services.modelRuntime.getModel(FALLBACK_PROVIDER, recipe.name) ?? model;
+    }
 
     if (opts.runController) {
       agentRuns = opts.runController;
@@ -1248,7 +1287,7 @@ async function createSessionForAgent(
     const created = await createAgentSessionFromServices({
       services,
       sessionManager: opts.sessionManager ?? SessionManager.inMemory(cwd),
-      model,
+      model: sessionModel,
       ...(recipe.thinkingLevel ? { thinkingLevel: recipe.thinkingLevel } : {}),
       tools: selectedToolNames,
       ...piMcpSessionOptions,
