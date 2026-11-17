@@ -133,6 +133,21 @@ describe("resolveRecipeAgentModels", () => {
     ).rejects.toThrow(/"openai"/);
   });
 
+  it("never takes the alias when the host passes its own store", async () => {
+    const credentials = new InMemoryCredentialStore();
+    await credentials.modify("openai", async () => ({
+      type: "api_key",
+      key: "sk-host",
+    }));
+    const { models } = await resolveRecipeAgentModels({
+      ...specs,
+      env: {},
+      credentials,
+      modelRegistry: registry(["openai-codex"]),
+    });
+    expect(models.map((m) => m.provider)).toEqual(["openai"]);
+  });
+
   it("ignores fallbacks when the host passes its own store", async () => {
     const credentials = new InMemoryCredentialStore();
     await expect(
@@ -183,7 +198,7 @@ describe("routeRecipeFallbacks", () => {
 });
 
 describe("a session with fallbacks", () => {
-  it("answers from the fallback when the named model returns 429", async () => {
+  it("answers from the fallback when the named model returns 429, through each model's configured transport", async () => {
     const fixture = writeFixtureRecipe();
     cleanups.push(fixture.cleanup);
     writeFileSync(
@@ -205,13 +220,36 @@ describe("a session with fallbacks", () => {
       provider: "faux-b",
       models: [{ id: "faux-b-1" }],
     });
+    const streamed: Array<[string, string | undefined, string | undefined]> =
+      [];
     primary.setResponses([
-      fauxAssistantMessage("", {
-        stopReason: "error",
-        errorMessage: "429 Too Many Requests",
-      }),
+      (_context, _options, _state, model) => {
+        streamed.push([
+          model.provider,
+          model.baseUrl,
+          model.headers?.["x-proxy"],
+        ]);
+        return fauxAssistantMessage("", {
+          stopReason: "error",
+          errorMessage: "429 Too Many Requests",
+        });
+      },
     ]);
-    fallback.setResponses([fauxAssistantMessage("from the fallback")]);
+    fallback.setResponses([
+      (_context, _options, _state, model) => {
+        streamed.push([
+          model.provider,
+          model.baseUrl,
+          model.headers?.["x-proxy"],
+        ]);
+        return fauxAssistantMessage("from the fallback");
+      },
+    ]);
+    const throughProxy = (model: any, name: string) => ({
+      ...model,
+      baseUrl: `https://${name}.proxy.test/v1`,
+      headers: { ...(model.headers ?? {}), "x-proxy": name },
+    });
     const credentials = new InMemoryCredentialStore();
     for (const provider of ["faux", "faux-b"])
       await credentials.modify(provider, async () => ({
@@ -224,9 +262,8 @@ describe("a session with fallbacks", () => {
       cwd: fixture.workspaceDir,
       env: cleanEnv(),
       credentials,
-      credentialsResolved: true,
-      modelOverride: primary.getModel(),
-      modelFallbacks: [fallback.getModel()],
+      modelOverride: throughProxy(primary.getModel(), "primary"),
+      modelFallbacks: [throughProxy(fallback.getModel(), "fallback")],
       settingsManager: SettingsManager.inMemory({
         retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
       }),
@@ -245,5 +282,9 @@ describe("a session with fallbacks", () => {
     expect(last.provider).toBe("faux-b");
     expect(last.content).toEqual([{ type: "text", text: "from the fallback" }]);
     expect(primary.state.callCount).toBe(1);
+    expect(streamed).toEqual([
+      ["faux", "https://primary.proxy.test/v1", "primary"],
+      ["faux-b", "https://fallback.proxy.test/v1", "fallback"],
+    ]);
   });
 });

@@ -825,6 +825,8 @@ async function createSessionForAgent(
     (opts.agentRun?.depth ?? 0) < MAX_AGENT_RUN_DEPTH;
 
   let model: Model<Api> | undefined;
+
+  let candidates: Model<Api>[] | undefined;
   let session: AgentSession | undefined;
   let agentRuns: AgentRunController | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -1132,7 +1134,7 @@ async function createSessionForAgent(
     applyRecipeAgentModelConfigToModel(model, recipe.modelConfig);
     let sessionModel = model;
     if (opts.modelFallbacks?.length) {
-      const candidates = [
+      const routed = [
         model,
         ...opts.modelFallbacks.map((fallback) =>
           applyRecipeAgentModelConfigToModel(
@@ -1141,15 +1143,16 @@ async function createSessionForAgent(
           ),
         ),
       ];
+      candidates = routed;
       services.modelRuntime.registerVirtualModel({
         provider: FALLBACK_PROVIDER,
         id: recipe.name,
         name: `${model.name ?? model.id} with fallbacks`,
         thinkingLevels: getSupportedThinkingLevels(model),
-        contextWindow: Math.min(...candidates.map((c) => c.contextWindow)),
-        maxTokens: Math.min(...candidates.map((c) => c.maxTokens)),
+        contextWindow: Math.min(...routed.map((c) => c.contextWindow)),
+        maxTokens: Math.min(...routed.map((c) => c.maxTokens)),
         input: model.input,
-        route: (request) => routeRecipeFallbacks(candidates, request),
+        route: (request) => routeRecipeFallbacks(routed, request),
       });
       sessionModel =
         services.modelRuntime.getModel(FALLBACK_PROVIDER, recipe.name) ?? model;
@@ -1299,6 +1302,22 @@ async function createSessionForAgent(
     }
     normalizeSessionToolsForModel(session, model);
     applyRecipeAgentModelConfigToSession(session, recipe.modelConfig);
+    if (candidates) {
+      // A routed model arrives as its catalog entry; stream the configured copy,
+      // with its base URL, headers and compat.
+      const configured = candidates;
+      const stream = session.agent.streamFunction;
+      session.agent.streamFunction = (requested, context, streamOptions) =>
+        stream(
+          configured.find(
+            (candidate) =>
+              candidate.provider === requested.provider &&
+              candidate.id === requested.id,
+          ) ?? requested,
+          context,
+          streamOptions,
+        );
+    }
     await session.bindExtensions({});
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));

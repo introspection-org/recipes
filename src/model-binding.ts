@@ -156,9 +156,9 @@ export interface RecipeAgentModels {
 /**
  * Resolve an agent's model and its `ai.fallbacks`, keeping each that this host
  * has a credential for (an alias counts, as `resolveRecipeAgentModel` says).
- * The first is the model the session starts on. Fallbacks need a Pi host and
- * no store from the caller: a host that passes its own store bills the model
- * the Recipe names, so it gets that model or its credential error.
+ * The first is the model the session starts on. Fallbacks and the alias need a
+ * Pi host and no store from the caller: a host that passes its own store bills
+ * the model the Recipe names, so it gets that model or its credential error.
  */
 export async function resolveRecipeAgentModels(opts: {
   modelSpec: string;
@@ -175,11 +175,9 @@ export async function resolveRecipeAgentModels(opts: {
   let firstError: unknown;
   for (const spec of specs) {
     try {
-      const model = await resolveRecipeAgentModel(
-        spec,
-        opts.env,
-        opts.modelRegistry,
-      );
+      const model = opts.credentials
+        ? resolveRecipeModel(spec, opts.modelRegistry)
+        : await resolveRecipeAgentModel(spec, opts.env, opts.modelRegistry);
       const credentials = await resolveRecipeCredentials({
         provider: model.provider,
         env: opts.env,
