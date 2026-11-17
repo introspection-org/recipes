@@ -196,6 +196,13 @@ async function hasCredential(
 ): Promise<boolean> {
   const auth = await modelRegistry.getApiKeyAndHeaders(model);
   if (auth.ok && (auth.apiKey || auth.env)) return true;
+  // A transport authenticated by headers counts, as `resolveRecipeCredentials` accepts it.
+  const headers = { ...(model.headers ?? {}) };
+  for (const [name, value] of Object.entries((auth.ok && auth.headers) || {})) {
+    if (value === null) delete headers[name];
+    else headers[name] = value;
+  }
+  if (Object.keys(headers).length > 0) return true;
   return Boolean(
     getEnvApiKey(model.provider, env as Record<string, string>) ??
     env[`${model.provider.toUpperCase().replace(/-/g, "_")}_API_KEY`],

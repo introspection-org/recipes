@@ -88,6 +88,29 @@ describe("resolveRecipeAgentModel", () => {
     ).not.toThrow();
   });
 
+  it("keeps a declared transport authenticated by headers over the subscription", async () => {
+    const gateway = {
+      ...registry(["openai-codex"]),
+      getApiKeyAndHeaders: async (model: any) =>
+        model.provider === "openai"
+          ? { ok: true, headers: { authorization: "Bearer gateway" } }
+          : { ok: true, apiKey: "codex-token", env: {} },
+    } as any;
+    expect(
+      await resolveRecipeAgentModel("openai/gpt-6-luna", {}, gateway),
+    ).toBe(openai);
+
+    const configured = { ...openai, headers: { "x-api-key": "gateway" } };
+    const withHeaders = {
+      ...registry(["openai-codex"]),
+      find: (provider: string, id: string) =>
+        provider === "openai" ? configured : registry([]).find(provider, id),
+    } as any;
+    expect(
+      await resolveRecipeAgentModel("openai/gpt-6-luna", {}, withHeaders),
+    ).toBe(configured);
+  });
+
   it("keeps the named model when nothing serves it, so its credential error names it", async () => {
     const model = await resolveRecipeAgentModel(
       "openai/gpt-6-luna",
