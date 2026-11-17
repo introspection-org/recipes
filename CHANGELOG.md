@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.57.0](https://github.com/introspection-org/recipes/compare/v0.56.0...v0.57.0) (2026-11-17)
+
+
+### Features
+
+* **models:** fall back to another model when a subagent's has no credential or a request fails ([#541](https://github.com/introspection-org/recipes/issues/541)) ([0b04712](https://github.com/introspection-org/recipes/commit/0b047124a390250ae6d7a1679b5d599196bd9868))
+* **pi:** offer up to four suggestions in the first-run picker ([#540](https://github.com/introspection-org/recipes/issues/540)) ([e499b62](https://github.com/introspection-org/recipes/commit/e499b629ea23ea34ea7718aebea0bddf2d8ec431))
+
+
+### Bug Fixes
+
+* **batch:** name result shards with four digits ([#526](https://github.com/introspection-org/recipes/issues/526)) ([12acda1](https://github.com/introspection-org/recipes/commit/12acda1a9b7718a1e34d3f08c334fc446dc4cf36))
+* **deps:** accept @opentelemetry/api from 1.9, so hosts on the 2.x SDK share one copy ([#525](https://github.com/introspection-org/recipes/issues/525)) ([659309d](https://github.com/introspection-org/recipes/commit/659309d19cd86431e1d2d393022cd930bf95170c))
+
 ## [0.56.0](https://github.com/introspection-org/recipes/compare/v0.55.0...v0.56.0) (2026-11-15)
 
 
