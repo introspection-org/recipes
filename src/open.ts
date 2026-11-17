@@ -27,7 +27,22 @@ export type IntrospectionOpenTarget =
   /** An Introspection issue: its handle as the issues tool returned it (`introspection:I-7`) or its id. */
   | { kind: "issue"; issue: string }
   /** A new repository the person creates on GitHub, registered once the App reaches it. */
-  | { kind: "repository"; provider: "github"; name: string; template?: string };
+  | { kind: "repository"; provider: "github"; name: string; template?: string }
+  /**
+   * A report to Introspection support about a fault in the platform, not the
+   * Recipe. The person reads it, adds a note and sends it; the agent never sends it.
+   */
+  | {
+      kind: "error_report";
+      /** Why the agent judges it a platform fault, in one or two sentences. */
+      summary: string;
+      /** The error as the platform or a tool returned it. */
+      error?: string;
+      /** The task whose run met the error. */
+      task?: string;
+      /** The conversation that met the error, when it isn't this task's. */
+      conversation?: string;
+    };
 
 export type IntrospectionOpenTargetKind = IntrospectionOpenTarget["kind"];
 
@@ -42,6 +57,7 @@ export const INTROSPECTION_OPEN_TARGET_KINDS: readonly IntrospectionOpenTargetKi
     "task",
     "issue",
     "repository",
+    "error_report",
   ];
 
 /** The answers a host resumes an `introspection_open` interrupt with, as `payload.answer`. */
@@ -50,6 +66,8 @@ export const INTROSPECTION_OPEN_ANSWER = {
   connected: "connected",
   /** The person came back from a page with nothing to connect (`runtime`, `task`, `issue`). */
   returned: "returned",
+  /** The person sent the error report to support. */
+  reported: "reported",
 } as const;
 
 /** `failed: <error>`, the answer for a flow the provider ended with an error. */
@@ -75,9 +93,19 @@ export function introspectionOpenIsPage(
 
 /** The answer for a target the person completed: `returned` for a page, `connected` otherwise. */
 export function introspectionOpenDone(target: IntrospectionOpenTarget): string {
+  if (target.kind === "error_report") return INTROSPECTION_OPEN_ANSWER.reported;
   return introspectionOpenIsPage(target)
     ? INTROSPECTION_OPEN_ANSWER.returned
     : INTROSPECTION_OPEN_ANSWER.connected;
+}
+
+/** The longest error an `error_report` carries, as support's form accepts it. */
+export const ERROR_REPORT_ERROR_MAX_LENGTH = 4000;
+/** The longest summary an `error_report` carries. */
+export const ERROR_REPORT_SUMMARY_MAX_LENGTH = 1000;
+
+function clipped(value: string | null, max: number): string | null {
+  return value === null ? null : Array.from(value).slice(0, max).join("");
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -166,6 +194,23 @@ export function parseIntrospectionOpenTarget(
         ...(template ? { template } : {}),
       };
     }
+    case "error_report": {
+      const summary = clipped(
+        text(raw.summary),
+        ERROR_REPORT_SUMMARY_MAX_LENGTH,
+      );
+      const error = clipped(text(raw.error), ERROR_REPORT_ERROR_MAX_LENGTH);
+      const task = text(raw.task);
+      const conversation = text(raw.conversation);
+      if (!summary) return null;
+      return {
+        kind: "error_report",
+        summary,
+        ...(error ? { error } : {}),
+        ...(task ? { task } : {}),
+        ...(conversation ? { conversation } : {}),
+      };
+    }
     default:
       return null;
   }
@@ -228,5 +273,7 @@ export function introspectionOpenAction(
       return "Open the issue";
     case "repository":
       return `Create ${target.name} on GitHub`;
+    case "error_report":
+      return "Report the error to Introspection";
   }
 }

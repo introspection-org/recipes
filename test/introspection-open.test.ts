@@ -1,4 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { autoResolveInteractions } from "../src/interactions.js";
@@ -455,6 +457,82 @@ describe("introspection_open without wait", () => {
     });
     expect(text).toContain("Nothing was opened and nothing paused");
     expect(details.interrupt).toBeUndefined();
+  });
+});
+
+describe("introspection_open error reports", () => {
+  const report = {
+    kind: "error_report",
+    summary: "The egress refused gmail.googleapis.com for a connected account.",
+    error: "provider_error: fetch failed",
+    task: "task-1",
+  };
+
+  it("reads a report with a summary, clips its error, and answers reported", () => {
+    const parsed = parseIntrospectionOpenTarget({
+      ...report,
+      error: "x".repeat(5000),
+      extra: "dropped",
+    });
+    expect(parsed).toMatchObject({ kind: "error_report", task: "task-1" });
+    expect(parsed && "error" in parsed && parsed.error?.length).toBe(4000);
+    expect(parsed).not.toHaveProperty("extra");
+    expect(
+      parseIntrospectionOpenTarget({ kind: "error_report", summary: " " }),
+    ).toBeNull();
+    expect(introspectionOpenAction(parsed!)).toBe(
+      "Report the error to Introspection",
+    );
+    expect(introspectionOpenDone(parsed!)).toBe("reported");
+    expect(introspectionOpenIsPage(parsed!)).toBe(false);
+    expect(introspectionOpenCliArgs(parsed!, true)).toBeNull();
+  });
+
+  it("pauses on a hosted card with the report in the metadata", async () => {
+    const { ctx } = fakeCtx("rpc");
+    const { details } = await run(
+      {
+        target: report,
+        reason: "This looks like a platform fault.",
+        wait: true,
+      },
+      ctx,
+      { env: { PI_INTERRUPT_RESUME: "1" } },
+    );
+    expect(details.interrupt.metadata.target).toEqual(report);
+  });
+
+  it("opens the form in the browser from a draft file the CLI reads, then removes it", async () => {
+    const { ctx, notes } = fakeCtx("tui");
+    let draft: unknown;
+    let path = "";
+    const calls: string[][] = [];
+    const { text } = await run(
+      {
+        target: report,
+        reason: "This looks like a platform fault.",
+        wait: true,
+      },
+      ctx,
+      {
+        env: {},
+        runCli: async (args) => {
+          calls.push([...args]);
+          path = args[2]!;
+          draft = JSON.parse(readFileSync(path, "utf8"));
+          return { code: 0, stderr: "" };
+        },
+      },
+    );
+    expect(calls).toEqual([["open", "--error-report", path]]);
+    expect(draft).toEqual({
+      summary: report.summary,
+      error: report.error,
+      task: "task-1",
+    });
+    expect(existsSync(dirname(path))).toBe(false);
+    expect(text).toBe("Answer: returned");
+    expect(notes[0]).toContain("opens in your browser");
   });
 });
 

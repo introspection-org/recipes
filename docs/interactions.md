@@ -97,7 +97,8 @@ introspection_open({
     | { kind: "runtime"; runtime: string }
     | { kind: "task"; task: string }
     | { kind: "issue"; issue: string }  // introspection:I-7 as the issues tool returned it, or the issue's id
-    | { kind: "repository"; provider: "github"; name: string; template?: string },
+    | { kind: "repository"; provider: "github"; name: string; template?: string }
+    | { kind: "error_report"; summary: string; error?: string; task?: string; conversation?: string },
   reason: string,  // one line the card shows
   wait?: boolean,  // default false
 })
@@ -114,6 +115,7 @@ envelopes:
 | -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------- |
 | Connected                                          | `{ status: "resolved", payload: { answer: "connected" } }`       | `Answer: connected`       |
 | Came back from a `runtime`, `task` or `issue` page | `{ status: "resolved", payload: { answer: "returned" } }`        | `Answer: returned`        |
+| Sent an `error_report` to support                  | `{ status: "resolved", payload: { answer: "reported" } }`        | `Answer: reported`        |
 | The provider failed                                | `{ status: "resolved", payload: { answer: "failed: <error>" } }` | `Answer: failed: <error>` |
 | Not now                                            | `{ status: "cancelled" }`                                        | the declined envelope     |
 | Reply in chat                                      | `{ status: "cancelled", payload: { dismissed: true } }`          | the dismissed text        |
@@ -132,6 +134,16 @@ Without `wait`, nothing pauses: Pi's terminal opens a `runtime`, `task`,
 `issue` or `binding` page, or starts an `integration` install, through the CLI, and the
 result says the person has not acted yet; elsewhere the result tells the model
 to ask in its reply.
+
+An `error_report` target is for a fault in the platform that no change to the
+Recipe can fix. The agent drafts it and never sends it: a host shows support's
+report form prefilled with the summary, the error and the task or conversation,
+and the person adds a note and sends it, answering `reported`. In Pi's terminal
+the tool writes the draft to a file only the user can read and runs
+`open --error-report <file>`, which opens the same form in the browser; whether
+the person sent it isn't known there, so it answers `returned`, and the file is
+removed once the CLI exits. The draft never rides a URL's query or the CLI's
+arguments.
 
 An `issue` target names an Introspection issue only. A handle from another
 tracker (`linear:ENG-123`) fails, telling the agent to share that tracker's

@@ -14,6 +14,9 @@
  */
 
 import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type {
   ExtensionContext,
@@ -26,6 +29,7 @@ import { Type } from "typebox";
 import type { AskUserOutcome } from "./interaction-text.js";
 import { askUser, ASK_USER_REASON_INPUT_REQUIRED } from "./interactions.js";
 import {
+  INTROSPECTION_OPEN_ANSWER,
   INTROSPECTION_OPEN_TOOL_NAME,
   introspectionOpenAction,
   introspectionOpenDone,
@@ -176,6 +180,35 @@ const target = Type.Union([
         "The person creates a new repository on GitHub, which is then registered with the project.",
     },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal("error_report"),
+      summary: Type.String({
+        description:
+          "Why you judge it a fault in the platform rather than the Recipe, in one or two sentences the person and support read.",
+      }),
+      error: Type.Optional(
+        Type.String({
+          description:
+            "The error exactly as the platform or tool returned it, with no credentials, tokens or personal data.",
+        }),
+      ),
+      task: Type.Optional(
+        Type.String({ description: "The id of the task that met the error." }),
+      ),
+      conversation: Type.Optional(
+        Type.String({
+          description:
+            "The id of the conversation that met the error, when it isn't the task's.",
+        }),
+      ),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Ask the person to send Introspection support a report of a platform fault, prefilled; they read it, add a note and send it. Only for a fault the Recipe can't fix.",
+    },
+  ),
 ]);
 
 const parameters = Type.Object(
@@ -199,6 +232,7 @@ const description = [
   "Ask the person to open an Introspection page: install an integration (GitHub, Slack), create a GitHub repository, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, or look at a Runtime, task or Introspection issue.",
   "Name the target; never write a link yourself. With wait: true the conversation pauses until they finish, and the result is `Answer: connected`, `Answer: returned`, `Answer: failed: <reason>`, or a decline.",
   "A runtime, task or issue page has nothing to finish: with wait: true it answers `Answer: returned` as soon as the page opens, without waiting for the person to come back.",
+  "An error_report shows support's report form, prefilled, for a fault in the platform that no change to the Recipe can fix; it answers `Answer: reported` once the person sends it, or `Answer: returned` in a terminal, where the form opens in the browser and whether they sent it isn't known. Never call it for a fault in the Recipe.",
   "The answer is what the person did, not proof: after `connected`, read the real state with the CLI (`introspection integrations list`, `introspection connectors connections list`, `introspection bindings mcp list`) before saying it is connected.",
   "Call it on its own in a turn, not beside a question, so the person does one thing at a time.",
 ].join("\n");
@@ -207,6 +241,7 @@ const description = [
 export function introspectionOpenCliArgs(
   target: IntrospectionOpenTarget,
   wait: boolean,
+  draft?: string,
 ): string[] | null {
   const waitFlag = wait ? ["--wait"] : [];
   switch (target.kind) {
@@ -234,10 +269,25 @@ export function introspectionOpenCliArgs(
         ...(target.template ? ["--template", target.template] : []),
         ...waitFlag,
       ];
+    case "error_report":
+      // The CLI reads the draft from a file, so the error never rides argv,
+      // and opens the form without waiting: the browser alone sees the send.
+      return draft ? ["open", "--error-report", draft] : null;
     case "connector":
     case "sso":
       return null;
   }
+}
+
+/** Write an error report's draft where the CLI reads it, in a folder only this user can read. */
+async function writeErrorReportDraft(
+  target: Extract<IntrospectionOpenTarget, { kind: "error_report" }>,
+): Promise<{ path: string; dispose: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), "introspection-report-"));
+  const path = join(dir, "report.json");
+  const { kind: _kind, ...draft } = target;
+  await writeFile(path, JSON.stringify(draft), { mode: 0o600 });
+  return { path, dispose: () => rm(dir, { recursive: true, force: true }) };
 }
 
 function lastLine(text: string): string {
@@ -299,6 +349,9 @@ async function runLoopback(
   signal: AbortSignal | undefined,
   runCli: CliRunner,
 ): Promise<AskUserOutcome> {
+  if (target.kind === "error_report") {
+    return openErrorReport(target, reason, ui, signal, runCli);
+  }
   // A runtime, task or issue page has nothing to finish: like the hosted card, opening
   // it is the answer, so the CLI only opens it and the agent carries on.
   const page = introspectionOpenIsPage(target);
@@ -322,6 +375,40 @@ async function runLoopback(
       lastLine(result.stderr) || `exit code ${result.code ?? "unknown"}`,
     ),
   };
+}
+
+/** Open support's form, prefilled, in the browser; the person sends it there. */
+async function openErrorReport(
+  target: Extract<IntrospectionOpenTarget, { kind: "error_report" }>,
+  reason: string,
+  ui: ExtensionUIContext,
+  signal: AbortSignal | undefined,
+  runCli: CliRunner,
+): Promise<AskUserOutcome> {
+  const draft = await writeErrorReportDraft(target);
+  try {
+    ui.notify(
+      `${reason}\nThe report opens in your browser: read it, add a note and send it to support from there.`,
+      "info",
+    );
+    const result = await runCli(
+      introspectionOpenCliArgs(target, false, draft.path) ?? [],
+      signal,
+    );
+    if (signal?.aborted) throw new Error("User interaction aborted");
+    if (result.missing) return askInDialog(target, reason, ui, signal);
+    if (result.code === 0) {
+      return { type: "answered", answer: INTROSPECTION_OPEN_ANSWER.returned };
+    }
+    return {
+      type: "answered",
+      answer: introspectionOpenFailed(
+        lastLine(result.stderr) || `exit code ${result.code ?? "unknown"}`,
+      ),
+    };
+  } finally {
+    await draft.dispose();
+  }
 }
 
 function textResult(text: string, target: IntrospectionOpenTarget) {
