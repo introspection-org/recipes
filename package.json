@@ -148,7 +148,7 @@
     "@introspection-sdk/introspection-pi": ">=0.47.0",
     "ajv": "^8.20.0",
     "mcporter": "0.17.0",
-    "minimatch": "^10.2.6",
+    "minimatch": "^11.0.8",
     "semver": "^7.8.5",
     "yaml": "^2.9.0"
   },
