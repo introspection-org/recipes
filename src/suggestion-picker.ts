@@ -27,7 +27,7 @@ import {
 
 export const SUGGESTIONS_QUESTION = "What would you like to do?";
 /** With "Type something", the most the question shows without scrolling. */
-export const SUGGESTIONS_SHOWN = 4;
+const SUGGESTIONS_SHOWN = 4;
 /** Pins which four suggestions show, for tests and evals. */
 export const SUGGESTIONS_SEED_ENV = "PI_RECIPES_SUGGESTIONS_SEED";
 
