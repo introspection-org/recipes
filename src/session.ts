@@ -4,7 +4,11 @@ import { CONVERSATION_ID_BAGGAGE } from "./otel-baggage.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Api, CredentialStore } from "@earendil-works/pi-ai";
-import { getModel, type Model } from "@earendil-works/pi-ai/compat";
+import {
+  getModel,
+  getSupportedThinkingLevels,
+  type Model,
+} from "@earendil-works/pi-ai/compat";
 import {
   createBashToolDefinition,
   createCodemodeExtension,
@@ -112,6 +116,7 @@ import {
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
+  routeRecipeFallbacks,
   RecipeCredentialError,
   RecipeModelError,
   RecipeModelTransportError,
@@ -149,6 +154,9 @@ import {
   toolsShellEnv,
   withToolsCommand,
 } from "./tools/shell.js";
+
+/** Provider id of the virtual model that routes a session with fallbacks. */
+const FALLBACK_PROVIDER = "recipe-fallbacks";
 
 function sessionSettingsManager(
   base: SettingsManager,
@@ -200,6 +208,7 @@ function sessionSettingsManager(
  * `required: true` MCP server with no binding throws `McpBindingError`, and a
  * model whose provider has no credential throws `RecipeCredentialError`.
  */
+
 export interface CreateAgentSessionOptions {
   /** Immutable Recipe graph used by this root session and all of its children. */
   recipe: ResolvedRecipe;
@@ -214,6 +223,11 @@ export interface CreateAgentSessionOptions {
    * configuration; this replaces only catalog lookup and transport wiring.
    */
   modelOverride?: Model<Api>;
+  /**
+   * Models to move to, in order, when a request to `modelOverride` fails and
+   * Pi retries it, each with its credential in `credentials`.
+   */
+  modelFallbacks?: readonly Model<Api>[];
   /** Explicit local MCP binding file. Default: `<cwd|recipe.recipeDir>/.pi/mcp.local.json`. */
   mcpBindingsPath?: string;
   /** Inline MCP bindings, for hosts that synthesize them instead of reading a file. */
@@ -471,14 +485,17 @@ function stripAdditionalProperties(
  * declarations. Normalize the final Recipe toolset after host tools and the
  * shared agent tool have been registered so every host gets the same behavior.
  */
+function isGeminiModel(model: Model<Api>): boolean {
+  return [model.id, model.name].some((value) =>
+    value?.toLowerCase().includes("gemini"),
+  );
+}
+
 function normalizeSessionToolsForModel(
   session: AgentSession,
   model: Model<Api>,
 ): void {
-  const isGemini = [model.id, model.name].some((value) =>
-    value?.toLowerCase().includes("gemini"),
-  );
-  if (!isGemini) return;
+  if (!isGeminiModel(model)) return;
   const mutableSession = session as MutableAgentSession;
   for (const tool of mutableSession.agent?.state?.tools ?? []) {
     tool.parameters = stripAdditionalProperties(tool.parameters);
@@ -785,6 +802,7 @@ async function createSessionForAgent(
   const { lookupProvider, modelId } = assertRecipeModelTransport(
     modelSpec,
     opts.modelOverride,
+    recipe.modelConfig?.fallbacks,
   );
   const credentialProvider = opts.modelOverride?.provider ?? lookupProvider;
   const credentials =
@@ -810,6 +828,8 @@ async function createSessionForAgent(
     (opts.agentRun?.depth ?? 0) < MAX_AGENT_RUN_DEPTH;
 
   let model: Model<Api> | undefined;
+
+  let candidates: Model<Api>[] | undefined;
   let session: AgentSession | undefined;
   let agentRuns: AgentRunController | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -1115,6 +1135,31 @@ async function createSessionForAgent(
     }
     model = cloneModelForRecipe(selectedModel);
     applyRecipeAgentModelConfigToModel(model, recipe.modelConfig);
+    let sessionModel = model;
+    if (opts.modelFallbacks?.length) {
+      const routed = [
+        model,
+        ...opts.modelFallbacks.map((fallback) =>
+          applyRecipeAgentModelConfigToModel(
+            cloneModelForRecipe(fallback),
+            recipe.modelConfig,
+          ),
+        ),
+      ];
+      candidates = routed;
+      services.modelRuntime.registerVirtualModel({
+        provider: FALLBACK_PROVIDER,
+        id: recipe.name,
+        name: `${model.name ?? model.id} with fallbacks`,
+        thinkingLevels: getSupportedThinkingLevels(model),
+        contextWindow: Math.min(...routed.map((c) => c.contextWindow)),
+        maxTokens: Math.min(...routed.map((c) => c.maxTokens)),
+        input: model.input,
+        route: (request) => routeRecipeFallbacks(routed, request),
+      });
+      sessionModel =
+        services.modelRuntime.getModel(FALLBACK_PROVIDER, recipe.name) ?? model;
+    }
 
     if (opts.runController) {
       agentRuns = opts.runController;
@@ -1248,7 +1293,7 @@ async function createSessionForAgent(
     const created = await createAgentSessionFromServices({
       services,
       sessionManager: opts.sessionManager ?? SessionManager.inMemory(cwd),
-      model,
+      model: sessionModel,
       ...(recipe.thinkingLevel ? { thinkingLevel: recipe.thinkingLevel } : {}),
       tools: selectedToolNames,
       ...piMcpSessionOptions,
@@ -1260,6 +1305,40 @@ async function createSessionForAgent(
     }
     normalizeSessionToolsForModel(session, model);
     applyRecipeAgentModelConfigToSession(session, recipe.modelConfig);
+    if (candidates) {
+      // A routed model arrives as its catalog entry; stream the configured copy,
+      // with its base URL, headers and compat.
+      const configured = candidates;
+      const stream = session.agent.streamFunction;
+      session.agent.streamFunction = (requested, context, streamOptions) => {
+        const routed =
+          configured.find(
+            (candidate) =>
+              candidate.provider === requested.provider &&
+              candidate.id === requested.id,
+          ) ?? requested;
+        // The session's tools were normalized for its first model only.
+        const sent = isGeminiModel(routed)
+          ? ({
+              ...context,
+              messages: context.messages.map((message) =>
+                message.role === "system" && message.toolsAdded
+                  ? {
+                      ...message,
+                      toolsAdded: message.toolsAdded.map((tool) => ({
+                        ...tool,
+                        parameters: stripAdditionalProperties(
+                          tool.parameters,
+                        ) as typeof tool.parameters,
+                      })),
+                    }
+                  : message,
+              ),
+            } as typeof context)
+          : context;
+        return stream(routed, sent, streamOptions);
+      };
+    }
     await session.bindExtensions({});
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);
     const registered = new Set(session.getAllTools().map((tool) => tool.name));

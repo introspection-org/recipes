@@ -132,6 +132,17 @@ All remaining agent fields are optional. Omitted `tools`, `skills`, and
 provider or session default. Omitted agent instructions preserve `SYSTEM.md`
 when present, or Pi's normal base prompt otherwise.
 
+`ai.fallbacks` MAY list, in order, other `<provider>/<model_id>` models. They
+apply when the agent runs as a subagent in a local Pi, never on a hosted
+runtime or when the host passes its own credentials. The agent starts on its
+`ai.model` when Pi has a credential for it, otherwise on the first fallback
+that has one. When a request fails and Pi retries it (a rate limit, an
+overloaded or failing provider, a timeout such as `ai.options.timeout_ms`),
+the retry goes to the next model, and the agent stays on the model that last
+answered. A model named under `openai` also runs as the same model under
+`openai-codex` when Pi is logged in to ChatGPT and has no OpenAI key, whether
+it is the `ai.model` or a fallback; that alias also applies only to subagents.
+
 `phases` MAY list, in order, the phases the agent moves through, each the
 prefix of its step skills (`build` for `build-draft`). It changes only what
 Pi's footer shows: the phase of the step skill last read, with the agent's
@@ -373,13 +384,13 @@ agent a session runs; when that agent offers none, it shows its own defaults.
 
 - **In Pi.** A new session in the terminal (`pi --recipe <dir>`, or
   `introspection local`) with no messages asks once, "What would you like to
-  do?", with up to three templates the session's agent offers (a random
-  three, in file order, when it offers more) and a row to type your own
+  do?", with up to four templates the session's agent offers (a random
+  four, in file order, when it offers more) and a row to type your own
   request. When it offers none, it does not ask. Picking one sends it as the first message;
   a template whose `argument-hint` has a required `<argument>` is put in the
   editor instead, for you to finish. Typing sends what you typed, and Esc
   leaves the empty prompt. Set `PI_RECIPES_SUGGESTIONS_SEED` to pin which
-  three show. The picker never appears on resume, outside the terminal UI,
+  four show. The picker never appears on resume, outside the terminal UI,
   or when Pi starts with a message.
 - **Starting with one.** Pi expands a template given as the initial message,
   so `pi --recipe <dir> "/redline nda.docx"` (or

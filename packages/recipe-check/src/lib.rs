@@ -3763,7 +3763,13 @@ fn validate_agent_ai(
         );
         return;
     };
-    const AI_KEYS: &[&str] = &["model", "thinking_level", "options", "providers"];
+    const AI_KEYS: &[&str] = &[
+        "model",
+        "fallbacks",
+        "thinking_level",
+        "options",
+        "providers",
+    ];
     for key in ai.keys().filter(|key| !AI_KEYS.contains(&key.as_str())) {
         ctx.error(
             "agent.ai_key_unknown",
@@ -3789,6 +3795,35 @@ fn validate_agent_ai(
             "Agent ai.model must be a non-empty string",
             None::<String>,
         );
+    }
+    if let Some(value) = ai.get("fallbacks") {
+        match value.as_array() {
+            Some(fallbacks) => {
+                for fallback in fallbacks {
+                    match fallback.as_str() {
+                        Some(spec) if valid_model_spec(spec.trim()) => {}
+                        Some(spec) => ctx.error(
+                            "agent.ai.fallback_invalid",
+                            path,
+                            format!("Recipe agent '{name}' has invalid ai.fallbacks entry '{spec}' - expected '<provider>/<model_id>'"),
+                            Some("use an available provider and model identifier"),
+                        ),
+                        None => ctx.error(
+                            "agent.ai.fallbacks_invalid",
+                            path,
+                            "Agent ai.fallbacks must be a list of '<provider>/<model_id>' strings",
+                            None::<String>,
+                        ),
+                    }
+                }
+            }
+            None => ctx.error(
+                "agent.ai.fallbacks_invalid",
+                path,
+                "Agent ai.fallbacks must be a list of '<provider>/<model_id>' strings",
+                None::<String>,
+            ),
+        }
     }
     if let Some(value) = ai.get("thinking_level") {
         if !value.as_str().is_some_and(|level| {
@@ -7412,6 +7447,39 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "agent.ai.options_key_blocked"));
+
+        let fallbacks = recipe_files(&[
+            ("package.json", &manifest),
+            (
+                "agents/agent.yaml",
+                "name: agent\nai:\n  model: openai/gpt-6-luna\n  fallbacks: [openai-codex/gpt-6-luna, anthropic/claude-sonnet-5-5]\n",
+            ),
+        ]);
+        let report = check_recipe_files(&fallbacks);
+        assert!(report.valid, "{:?}", report.diagnostics);
+
+        for (fallbacks, code) in [
+            ("anthropic/claude-sonnet-5-5", "agent.ai.fallbacks_invalid"),
+            (
+                "[anthropic/claude-sonnet-5-5, 3]",
+                "agent.ai.fallbacks_invalid",
+            ),
+            ("[claude-sonnet-5-5]", "agent.ai.fallback_invalid"),
+        ] {
+            let agent =
+                format!("name: agent\nai:\n  model: openai/gpt-6-luna\n  fallbacks: {fallbacks}\n");
+            let invalid =
+                recipe_files(&[("package.json", &manifest), ("agents/agent.yaml", &agent)]);
+            let report = check_recipe_files(&invalid);
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == code),
+                "{fallbacks}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]
