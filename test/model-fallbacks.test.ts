@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   assertRecipeModelTransport,
+  createRecipeFallbackRouter,
   RecipeCredentialError,
   resolveRecipeAgentModels,
   routeRecipeFallbacks,
@@ -207,6 +208,31 @@ describe("routeRecipeFallbacks", () => {
       sonnet,
     );
     expect(route({ reason: "user", previous: { model: sonnet } })).toBe(sonnet);
+  });
+});
+
+describe("createRecipeFallbackRouter", () => {
+  const retry = (model: any) =>
+    ({ reason: "retry", failed: { model }, thinkingLevel: "low" }) as any;
+
+  it("retries a failing model the given number of times before moving on", () => {
+    const route = createRecipeFallbackRouter([luna, sonnet], {
+      afterRetries: 2,
+    });
+    expect(route(retry(luna)).model).toBe(luna);
+    expect(route(retry(luna)).model).toBe(luna);
+    expect(route(retry(luna)).model).toBe(sonnet);
+    expect(route(retry(sonnet)).model).toBe(sonnet);
+  });
+
+  it("starts the count again once a request succeeds", () => {
+    const route = createRecipeFallbackRouter([luna, sonnet], {
+      afterRetries: 1,
+    });
+    expect(route(retry(luna)).model).toBe(luna);
+    route({ reason: "user", previous: { model: luna } } as any);
+    expect(route(retry(luna)).model).toBe(luna);
+    expect(route(retry(luna)).model).toBe(sonnet);
   });
 });
 

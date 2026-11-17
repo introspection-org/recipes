@@ -66,6 +66,10 @@
       "types": "./dist/batch/index.d.ts",
       "import": "./dist/batch/index.js"
     },
+    "./judges": {
+      "types": "./dist/judges/index.d.ts",
+      "import": "./dist/judges/index.js"
+    },
     "./recipe": {
       "types": "./dist/recipe/resolve.d.ts",
       "import": "./dist/recipe/resolve.js"

@@ -307,20 +307,44 @@ export function routeRecipeFallbacks(
   models: readonly Model<Api>[],
   request: ModelRouteRequest,
 ): ModelRoute {
-  const after = request.reason === "retry" ? request.failed : undefined;
-  const model = after
-    ? models[
-        Math.min(
-          models.findIndex((candidate) => sameModel(candidate, after.model)) +
-            1,
-          models.length - 1,
-        )
-      ]!
-    : (models.find(
-        (candidate) =>
-          request.previous && sameModel(candidate, request.previous.model),
-      ) ?? models[0]!);
-  return { model, thinkingLevel: request.thinkingLevel };
+  return createRecipeFallbackRouter(models)(request);
+}
+
+/**
+ * A session's fallback router. `afterRetries` is how many retries a failing
+ * model gets before the next one is tried: 0 moves on at the first retry,
+ * which suits one interactive session; a batch that expects rate limits sets
+ * it higher, so a model that is only throttled is waited for rather than
+ * abandoned. The count restarts once a request succeeds.
+ */
+export function createRecipeFallbackRouter(
+  models: readonly Model<Api>[],
+  options: { afterRetries?: number | undefined } = {},
+): (request: ModelRouteRequest) => ModelRoute {
+  const afterRetries = Math.max(0, options.afterRetries ?? 0);
+  let retried = 0;
+  return (request) => {
+    const failed = request.reason === "retry" ? request.failed : undefined;
+    if (!failed) {
+      retried = 0;
+      const model =
+        models.find(
+          (candidate) =>
+            request.previous && sameModel(candidate, request.previous.model),
+        ) ?? models[0]!;
+      return { model, thinkingLevel: request.thinkingLevel };
+    }
+    const index = Math.max(
+      0,
+      models.findIndex((candidate) => sameModel(candidate, failed.model)),
+    );
+    retried += 1;
+    if (retried <= afterRetries || index === models.length - 1) {
+      return { model: models[index]!, thinkingLevel: request.thinkingLevel };
+    }
+    retried = 0;
+    return { model: models[index + 1]!, thinkingLevel: request.thinkingLevel };
+  };
 }
 
 /**
