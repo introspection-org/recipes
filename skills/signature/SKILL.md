@@ -19,13 +19,13 @@ The document must be final:
 1. It is a `.docx` the `documents` tool saved under `outputs/`. Never send the file the
    person gave you, and never a PDF: convert a PDF with `documents convert` and review
    the Word copy.
-2. Every tracked change is resolved. `documents read` must show no changes on its
-   `markup:` line. Accept or reject what is left with `documents respond`, only as the
+2. Every tracked change is resolved. `documents read`'s first line must say
+   0 tracked change(s). Accept or reject what is left with `documents respond`, only as the
    person decided; never accept the other side's changes on your own judgement.
 3. It has no comments, open or resolved. You cannot delete one, so ask the person to
    remove them in Word.
 4. Each signer's name is filled in on the `Name:` line of their side of the signature
-   block, spelled as you will pass it. That line is how the tool finds where they sign.
+   block, in a table, spelled as you will pass it. That line is how the tool finds where they sign.
 
 `prepare` checks all of this and refuses a document that fails, naming what is left.
 Fix that and prepare again; don't work around it.
@@ -78,7 +78,7 @@ new answer can exist.
 ## When a command fails
 
 - `not_ready`: resolve what the message names (tracked changes, comments, the path).
-- `anchor_not_found`: a signer's name is not on a `Name:` line, or their column has no
+- `anchor_not_found`: a signer's name is not on a `Name:` line in a table, or their column has no
   `By:` line. Check the spelling against the document.
 - `ambiguous`: the signer's name is on more than one `Name:` line. Tell the person.
 - `not_connected`: the person has not connected the signing service. Ask them to, with
