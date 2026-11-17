@@ -384,13 +384,13 @@ agent a session runs; when that agent offers none, it shows its own defaults.
 
 - **In Pi.** A new session in the terminal (`pi --recipe <dir>`, or
   `introspection local`) with no messages asks once, "What would you like to
-  do?", with up to three templates the session's agent offers (a random
-  three, in file order, when it offers more) and a row to type your own
+  do?", with up to four templates the session's agent offers (a random
+  four, in file order, when it offers more) and a row to type your own
   request. When it offers none, it does not ask. Picking one sends it as the first message;
   a template whose `argument-hint` has a required `<argument>` is put in the
   editor instead, for you to finish. Typing sends what you typed, and Esc
   leaves the empty prompt. Set `PI_RECIPES_SUGGESTIONS_SEED` to pin which
-  three show. The picker never appears on resume, outside the terminal UI,
+  four show. The picker never appears on resume, outside the terminal UI,
   or when Pi starts with a message.
 - **Starting with one.** Pi expands a template given as the initial message,
   so `pi --recipe <dir> "/redline nda.docx"` (or
