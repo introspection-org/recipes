@@ -352,27 +352,31 @@ async function startPicker(options: PickerOptions = {}) {
 }
 
 describe("first-run picker", () => {
-  it("asks once in a new TUI session with three numbered templates and a typed row", async () => {
+  it("asks once in a new TUI session with four numbered templates and a typed row", async () => {
     const { select, settle } = await startPicker();
     await settle();
     expect(select).toHaveBeenCalledTimes(1);
     const [title, choices] = select.mock.calls[0]!;
     expect(title).toBe(SUGGESTIONS_QUESTION);
-    expect(choices).toHaveLength(4);
-    expect(choices[3]).toBe(`4. ${ASK_USER_TYPED_ANSWER_OPTION}`);
-    for (const choice of choices.slice(0, 3))
+    expect(choices).toHaveLength(5);
+    expect(choices[4]).toBe(`5. ${ASK_USER_TYPED_ANSWER_OPTION}`);
+    for (const choice of choices.slice(0, 4))
       expect(choice).toMatch(/^\d\. .+/);
   });
 
-  it("offers only marked templates, a random three in file order", async () => {
-    const order = ["redline", "respond", "risks", "summarize"];
+  it("offers only marked templates, a random four in file order", async () => {
+    const order = ["redline", "respond", "risks", "summarize", "translate"];
+    const templates = {
+      ...TEMPLATES,
+      "translate.md": "---\nsuggest: true\n---\nTranslate $@.\n",
+    };
     for (const seed of ["a", "b", "c", "d", "e"]) {
-      const { select, settle } = await startPicker({ seed });
+      const { select, settle } = await startPicker({ seed, templates });
       await settle();
       const shown = (select.mock.calls[0]![1] as string[])
-        .slice(0, 3)
+        .slice(0, 4)
         .map((choice) => /\/(\w+)$/.exec(choice)?.[1]);
-      expect(shown).toHaveLength(3);
+      expect(shown).toHaveLength(4);
       for (const name of shown) expect(order).toContain(name);
       expect(
         [...shown].sort((a, b) => order.indexOf(a!) - order.indexOf(b!)),
