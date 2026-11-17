@@ -636,10 +636,10 @@ describe("runBatch restart and shutdown", () => {
     expect(controller.started).toEqual(["pb"]);
     expect(summary).toMatchObject({ already_completed: 1, completed: 1 });
     expect(await results.sealed()).toEqual([
-      "results-00001.jsonl",
-      "results-00002.jsonl",
+      "results-0001.jsonl",
+      "results-0002.jsonl",
     ]);
-    expect(files.text("/outputs/results-00001.jsonl")).not.toContain('"b"');
+    expect(files.text("/outputs/results-0001.jsonl")).not.toContain('"b"');
     expect(files.text("/work/results.open.jsonl")).toBe("");
     const recorded = (await results.read())
       .trim()
@@ -650,30 +650,30 @@ describe("runBatch restart and shutdown", () => {
 
   it("loads only its own shards: another stem, progress and stray files are not results", async () => {
     const files = memoryFiles({
-      "/outputs/results-00001.jsonl": '{"custom_id":"a"}\n',
-      "/outputs/results-00002.jsonl": '{"custom_id":"b"}\n',
-      "/outputs/other-00001.jsonl": '{"custom_id":"other"}\n',
+      "/outputs/results-0001.jsonl": '{"custom_id":"a"}\n',
+      "/outputs/results-0002.jsonl": '{"custom_id":"b"}\n',
+      "/outputs/other-0001.jsonl": '{"custom_id":"other"}\n',
       "/outputs/results.jsonl": '{"custom_id":"legacy"}\n',
       "/outputs/results-1.jsonl": '{"custom_id":"short"}\n',
-      "/outputs/results-00003.jsonl.tmp": '{"custom_id":"half"}\n',
+      "/outputs/results-0003.jsonl.tmp": '{"custom_id":"half"}\n',
       "/outputs/progress.json": '{"completed":99}',
-      "/outputs/nested/results-00004.jsonl": '{"custom_id":"nested"}\n',
+      "/outputs/nested/results-0004.jsonl": '{"custom_id":"nested"}\n',
     });
     const results = new ResultShards(files, "/outputs", "/work", "results");
 
     expect(await results.sealed()).toEqual([
-      "results-00001.jsonl",
-      "results-00002.jsonl",
+      "results-0001.jsonl",
+      "results-0002.jsonl",
     ]);
     expect(await results.read()).toBe('{"custom_id":"a"}\n{"custom_id":"b"}\n');
     await results.append('{"custom_id":"c"}');
-    expect(await results.seal()).toBe("results-00003.jsonl");
+    expect(await results.seal()).toBe("results-0003.jsonl");
   });
 
   it("never writes a sealed shard again: a new run seals into the next number", async () => {
     const files = memoryFiles({
-      "/outputs/results-00001.jsonl": '{"custom_id":"a"}\n',
-      "/outputs/results-00007.jsonl": '{"custom_id":"b"}\n',
+      "/outputs/results-0001.jsonl": '{"custom_id":"a"}\n',
+      "/outputs/results-0007.jsonl": '{"custom_id":"b"}\n',
       "/outputs/progress.json": "{}",
     });
     const results = new ResultShards(files, "/outputs", "/work", "results");
@@ -681,10 +681,27 @@ describe("runBatch restart and shutdown", () => {
     expect(await results.read()).toBe('{"custom_id":"a"}\n{"custom_id":"b"}\n');
     expect(await results.seal()).toBeNull();
     await results.append('{"custom_id":"c"}');
-    expect(await results.seal()).toBe("results-00008.jsonl");
-    expect(files.text("/outputs/results-00007.jsonl")).toBe(
+    expect(await results.seal()).toBe("results-0008.jsonl");
+    expect(files.text("/outputs/results-0007.jsonl")).toBe(
       '{"custom_id":"b"}\n',
     );
+  });
+
+  it("reads the five-digit shards an earlier version sealed, and seals after them", async () => {
+    const files = memoryFiles({
+      "/outputs/results-00001.jsonl": '{"custom_id":"a"}\n',
+      "/outputs/results-00002.jsonl": '{"custom_id":"b"}\n',
+    });
+    const results = new ResultShards(files, "/outputs", "/work", "results");
+
+    expect(await results.read()).toBe('{"custom_id":"a"}\n{"custom_id":"b"}\n');
+    await results.append('{"custom_id":"c"}');
+    expect(await results.seal()).toBe("results-0003.jsonl");
+    expect(await results.sealed()).toEqual([
+      "results-00001.jsonl",
+      "results-00002.jsonl",
+      "results-0003.jsonl",
+    ]);
   });
 
   it("starts no new line once stopped, and records the lines in flight", async () => {
