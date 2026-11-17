@@ -1,6 +1,8 @@
 import {
   InMemoryCredentialStore,
   type Api,
+  type Credential,
+  type CredentialInfo,
   type CredentialStore,
 } from "@earendil-works/pi-ai";
 import {
@@ -25,6 +27,81 @@ const AMBIENT_CREDENTIAL_SENTINEL = "<authenticated>";
 const PROVIDER_ALIASES: Record<string, readonly string[]> = {
   openai: ["openai-codex"],
 };
+
+/** How long a token read through the parent stays valid for the child: past Pi's five-minute refresh window, so the child never refreshes it itself. */
+const PARENT_OAUTH_VALIDITY_MS = 10 * 60_000;
+
+/**
+ * A child session's credential for a provider the host's Pi signs in to with
+ * OAuth (`openai-codex`, a Claude subscription). Each read asks the parent's
+ * registry for a current token, so the parent's Pi refreshes it and the child
+ * never does. Pi's Codex provider accepts only an OAuth credential.
+ */
+class ParentOAuthCredentialStore implements CredentialStore {
+  constructor(
+    private readonly provider: string,
+    private readonly model: Model<Api>,
+    private readonly registry: ModelRegistry,
+  ) {}
+
+  async read(providerId: string): Promise<Credential | undefined> {
+    if (providerId !== this.provider) return undefined;
+    const auth = await this.registry.getApiKeyAndHeaders(this.model);
+    if (!auth.ok || !auth.apiKey) return undefined;
+    return {
+      type: "oauth",
+      access: auth.apiKey,
+      refresh: "",
+      expires: Date.now() + PARENT_OAUTH_VALIDITY_MS,
+    };
+  }
+
+  async list(): Promise<readonly CredentialInfo[]> {
+    return [{ providerId: this.provider, type: "oauth" }];
+  }
+
+  async modify(
+    providerId: string,
+    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+  ): Promise<Credential | undefined> {
+    return fn(await this.read(providerId));
+  }
+
+  async delete(): Promise<void> {}
+}
+
+/** One store per provider, for a session whose models span providers. */
+class ProviderCredentialStores implements CredentialStore {
+  constructor(private readonly stores: ReadonlyMap<string, CredentialStore>) {}
+
+  read(providerId: string): Promise<Credential | undefined> {
+    return (
+      this.stores.get(providerId)?.read(providerId) ??
+      Promise.resolve(undefined)
+    );
+  }
+
+  async list(): Promise<readonly CredentialInfo[]> {
+    const lists = await Promise.all(
+      [...this.stores].map(async ([provider, store]) =>
+        (await store.list()).filter((info) => info.providerId === provider),
+      ),
+    );
+    return lists.flat();
+  }
+
+  async modify(
+    providerId: string,
+    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+  ): Promise<Credential | undefined> {
+    const store = this.stores.get(providerId);
+    return store ? store.modify(providerId, fn) : fn(undefined);
+  }
+
+  async delete(providerId: string): Promise<void> {
+    await this.stores.get(providerId)?.delete(providerId);
+  }
+}
 
 export interface RecipeModelIdentity {
   provider: string;
@@ -200,13 +277,14 @@ export async function resolveRecipeAgentModels(opts: {
   if (found.length === 0) throw firstError;
   if (found.length === 1)
     return { models: [found[0]!.model], credentials: found[0]!.credentials };
-  const credentials = new InMemoryCredentialStore();
-  for (const { model, credentials: store } of found) {
-    const credential = await store.read(model.provider);
-    if (credential)
-      await credentials.modify(model.provider, async () => credential);
-  }
-  return { models: found.map(({ model }) => model), credentials };
+  return {
+    models: found.map(({ model }) => model),
+    credentials: new ProviderCredentialStores(
+      new Map(
+        found.map(({ model, credentials }) => [model.provider, credentials]),
+      ),
+    ),
+  };
 }
 
 function sameModel(a: Model<Api>, b: Model<Api>): boolean {
@@ -277,6 +355,12 @@ export async function resolveRecipeCredentials(opts: {
         }
         opts.model.headers = headers;
       }
+      if (auth.apiKey && opts.modelRegistry.isUsingOAuth?.(opts.model))
+        return new ParentOAuthCredentialStore(
+          opts.provider,
+          opts.model,
+          opts.modelRegistry,
+        );
     }
   }
 

@@ -106,3 +106,34 @@ describe("resolveRecipeAgentModel", () => {
     ).toThrow(RecipeModelTransportError);
   });
 });
+
+describe("a child's OAuth credential", () => {
+  it("reads a current token through the parent's Pi on every request", async () => {
+    let issued = 0;
+    const model = { provider: "openai-codex", id: "gpt-6-luna" } as any;
+    const modelRegistry = {
+      isUsingOAuth: () => true,
+      getApiKeyAndHeaders: async () => ({
+        ok: true,
+        apiKey: `token-${++issued}`,
+        env: {},
+      }),
+    } as any;
+
+    const store = await resolveRecipeCredentials({
+      provider: "openai-codex",
+      env: {},
+      model,
+      modelRegistry,
+    });
+
+    expect(await store.read("openai-codex")).toMatchObject({
+      type: "oauth",
+      access: "token-2",
+    });
+    expect(await store.read("openai-codex")).toMatchObject({
+      access: "token-3",
+    });
+    expect(await store.read("anthropic")).toBeUndefined();
+  });
+});
