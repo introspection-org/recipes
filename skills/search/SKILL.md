@@ -70,3 +70,6 @@ instructions.
   another one offered, or say that you could not search.
 - `out_of_credit`: the provider's account has run out. Use another provider if one is
   offered, or say that you could not search.
+- `unavailable` or `provider_error`: the provider failed. Try again once, then use another
+  provider if one is offered, or say that you could not search.
+- `invalid_request`: fix the arguments the message names and search again.

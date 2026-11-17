@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.27.1...introspection-recipe-check-v0.28.0) (2026-11-17)
+
+
+### Features
+
+* **models:** fall back to another model when a subagent's has no credential or a request fails ([#541](https://github.com/introspection-org/recipes/issues/541)) ([0b04712](https://github.com/introspection-org/recipes/commit/0b047124a390250ae6d7a1679b5d599196bd9868))
+
 ## [0.27.1](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.27.0...introspection-recipe-check-v0.27.1) (2026-11-15)
 
 

@@ -1,6 +1,6 @@
 /**
  * The first-run picker: a new Recipe session in the terminal asks once
- * "What would you like to do?" with up to three of the Recipe's prompt
+ * "What would you like to do?" with up to four of the Recipe's prompt
  * templates its agent suggests, through the same terminal helper
  * `ask_user_question` uses. With none marked, it does not ask.
  * Picking one sends it as the first message; typing an answer sends that;
@@ -26,7 +26,9 @@ import {
 } from "./recipe/suggestions.js";
 
 export const SUGGESTIONS_QUESTION = "What would you like to do?";
-/** Pins which three suggestions show, for tests and evals. */
+/** With "Type something", the most the question shows without scrolling. */
+const SUGGESTIONS_SHOWN = 4;
+/** Pins which four suggestions show, for tests and evals. */
 export const SUGGESTIONS_SEED_ENV = "PI_RECIPES_SUGGESTIONS_SEED";
 
 function hasMessages(ctx: ExtensionContext): boolean {
@@ -154,7 +156,7 @@ export function createRecipeSuggestionPicker(
       const seed = env[SUGGESTIONS_SEED_ENV]?.trim();
       const suggestions = pickSuggestions(
         readRecipeSuggestions(promptPaths, { agent }),
-        3,
+        SUGGESTIONS_SHOWN,
         seed ? seededRandom(seed) : Math.random,
       );
       if (suggestions.length === 0) return;

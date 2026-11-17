@@ -32,7 +32,13 @@ const MODEL_KEYS = new Set([
   "providers",
 ]);
 
-const AI_KEYS = new Set(["model", "thinking_level", "options", "providers"]);
+const AI_KEYS = new Set([
+  "model",
+  "fallbacks",
+  "thinking_level",
+  "options",
+  "providers",
+]);
 
 const BLOCKED_AI_OPTION_KEYS = new Set([
   "apiKey",
@@ -110,6 +116,8 @@ type RecipeAgentVercelAiGatewayRouting = Record<string, unknown>;
 
 export interface RecipeAgentModelConfig {
   name?: string;
+  /** Models to move to, in order, when `name` has no credential or a request to it fails and Pi retries. */
+  fallbacks?: string[];
   thinkingLevel?: ThinkingLevel;
   streamOptions?: RecipeAgentModelStreamOptions;
   openrouter?: OpenRouterRouting;
@@ -511,6 +519,19 @@ export function parseRecipeAgentAiConfig(
   assertKnownKeys(context, "ai", value, AI_KEYS);
 
   const name = optionalString(context, "ai.model", value.model);
+  const fallbacks = optionalStringArray(
+    context,
+    "ai.fallbacks",
+    value.fallbacks,
+  )?.map((spec) => spec.trim());
+  for (const spec of fallbacks ?? []) {
+    const slash = spec.indexOf("/");
+    if (slash <= 0 || slash === spec.length - 1) {
+      throw new RecipeModelConfigError(
+        `${context} has invalid ai.fallbacks entry "${spec}": expected "<provider>/<model_id>"`,
+      );
+    }
+  }
   const thinkingLevel = parseThinkingLevel(
     context,
     "ai.thinking_level",
@@ -523,6 +544,7 @@ export function parseRecipeAgentAiConfig(
   const providers = parseProviders(context, value.providers, "ai");
   return {
     ...(name ? { name } : {}),
+    ...(fallbacks?.length ? { fallbacks } : {}),
     ...(thinkingLevel ? { thinkingLevel } : {}),
     ...(streamOptions && hasKeys(streamOptions) ? { streamOptions } : {}),
     ...(providers ?? {}),
