@@ -11,7 +11,7 @@ import {
 } from "./session.js";
 import {
   resolveRecipeCredentials,
-  resolveRecipeModel,
+  resolveRecipeAgentModel,
 } from "../model-binding.js";
 import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import { type ResolvedRecipe } from "../recipe/resolve.js";
@@ -228,7 +228,11 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
 
     const resolved = this.opts.recipe.selectAgent(this.opts.agentName);
     const model = applyRecipeAgentModelConfigToModel(
-      resolveRecipeModel(resolved.modelSpec, this.opts.modelRegistry),
+      await resolveRecipeAgentModel(
+        resolved.modelSpec,
+        this.opts.env ?? process.env,
+        this.opts.modelRegistry,
+      ),
       resolved.modelConfig,
     );
     const credentials = await resolveRecipeCredentials({

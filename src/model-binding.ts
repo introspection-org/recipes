@@ -13,6 +13,15 @@ import { expectedProviderEnvVars } from "./provider-env.js";
 
 const AMBIENT_CREDENTIAL_SENTINEL = "<authenticated>";
 
+/**
+ * Providers that serve the same model ids on a subscription. A Recipe names
+ * `openai/<model>`; on a host logged in to ChatGPT, the model runs as
+ * `openai-codex/<model>` when `openai` has no credential there.
+ */
+const PROVIDER_ALIASES: Record<string, readonly string[]> = {
+  openai: ["openai-codex"],
+};
+
 export interface RecipeModelIdentity {
   provider: string;
   modelId: string;
@@ -70,7 +79,8 @@ export function assertRecipeModelTransport(
   const identity = parseRecipeModelSpec(modelSpec);
   if (
     model &&
-    (model.provider !== identity.lookupProvider ||
+    ((model.provider !== identity.lookupProvider &&
+      !PROVIDER_ALIASES[identity.lookupProvider]?.includes(model.provider)) ||
       model.id !== identity.modelId)
   ) {
     throw new RecipeModelTransportError(modelSpec, model.provider, model.id);
@@ -87,6 +97,41 @@ export function resolveRecipeModel(
     modelRegistry?.find(lookupProvider, modelId) ??
     getModel(lookupProvider as never, modelId as never);
   if (!model) throw new RecipeModelError(modelSpec);
+  return model;
+}
+
+async function hasCredential(
+  model: Model<Api>,
+  env: NodeJS.ProcessEnv,
+  modelRegistry: ModelRegistry,
+): Promise<boolean> {
+  const auth = await modelRegistry.getApiKeyAndHeaders(model);
+  if (auth.ok && (auth.apiKey || auth.env)) return true;
+  return Boolean(
+    getEnvApiKey(model.provider, env as Record<string, string>) ??
+    env[`${model.provider.toUpperCase().replace(/-/g, "_")}_API_KEY`],
+  );
+}
+
+/**
+ * The model a Recipe agent runs on this host: the one it names, or the same
+ * model id under an alias provider (`openai` -> `openai-codex`) when the named
+ * provider has no credential here and the alias has one. The alias is a copy,
+ * so the registry's own models are never changed.
+ */
+export async function resolveRecipeAgentModel(
+  modelSpec: string,
+  env: NodeJS.ProcessEnv,
+  modelRegistry?: ModelRegistry,
+): Promise<Model<Api>> {
+  const model = resolveRecipeModel(modelSpec, modelRegistry);
+  if (!modelRegistry || (await hasCredential(model, env, modelRegistry)))
+    return model;
+  for (const provider of PROVIDER_ALIASES[model.provider] ?? []) {
+    const alias = modelRegistry.find(provider, model.id);
+    if (alias && (await hasCredential(alias, env, modelRegistry)))
+      return { ...alias, headers: { ...(alias.headers ?? {}) } };
+  }
   return model;
 }
 

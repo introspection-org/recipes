@@ -9,7 +9,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   resolveRecipeCredentials,
-  resolveRecipeModel,
+  resolveRecipeAgentModel,
 } from "../model-binding.js";
 import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import {
@@ -99,11 +99,11 @@ export async function createIsolatedChildSession(
     registry
       ? async (options) => {
           const agent = options.recipe.selectAgent(options.agentName);
+          const env = options.env ?? process.env;
           const model = applyRecipeAgentModelConfigToModel(
-            resolveRecipeModel(agent.modelSpec, registry),
+            await resolveRecipeAgentModel(agent.modelSpec, env, registry),
             agent.modelConfig,
           );
-          const env = options.env ?? process.env;
           const credentials = await resolveRecipeCredentials({
             provider: model.provider,
             env,
