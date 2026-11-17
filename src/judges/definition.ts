@@ -152,7 +152,9 @@ function parseQuestions(
     if (
       !isRecord(criteria) ||
       typeof criteria.true !== "string" ||
-      typeof criteria.false !== "string"
+      typeof criteria.false !== "string" ||
+      !criteria.true.trim() ||
+      !criteria.false.trim()
     ) {
       throw new JudgeDefinitionError(
         `${path}: question "${name}" needs \`criteria\` with a \`true\` and a \`false\` description`,

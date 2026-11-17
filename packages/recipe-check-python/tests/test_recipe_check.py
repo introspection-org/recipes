@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import cast
 
 import introspection_recipe_check
 import pytest
@@ -50,15 +52,20 @@ def test_judge_parser_preserves_cloud_compatibility_surface() -> None:
                 "content": (
                     "name: helpful\n"
                     "instructions: Grade the answer.\n"
-                    "llm:\n"
-                    "  model: gpt-5\n"
+                    "ai:\n"
+                    "  model: openai/gpt-5\n"
                 ),
             }
         ]
     )
 
     assert parsed[0].source_path == "judges/helpful.yaml"
-    assert parsed[0].definition.to_dict()["name"] == "helpful"
+    assert parsed[0].definition.to_dict() == {
+        "name": "helpful",
+        "on": {},
+        "ai": {"model": "openai/gpt-5"},
+        "instructions": "Grade the answer.",
+    }
 
     legacy = introspection_recipe_check.parse_judge_definitions(
         [
@@ -67,13 +74,83 @@ def test_judge_parser_preserves_cloud_compatibility_surface() -> None:
                 "content": (
                     "judge: legacy\n"
                     "instructions: Grade the answer.\n"
-                    "llm:\n"
-                    "  model: gpt-5\n"
+                    "ai:\n"
+                    "  model: openai/gpt-5\n"
                 ),
             }
         ]
     )
     assert legacy[0].definition.to_dict()["name"] == "legacy"
+
+
+def test_judge_parser_reads_a_classifier_judge() -> None:
+    parsed = introspection_recipe_check.parse_judge_definitions(
+        [
+            {
+                "path": "judges/polite.yaml",
+                "content": (
+                    "name: polite\n"
+                    "ai:\n"
+                    "  model: acme/classifier-1\n"
+                    "  fallbacks: [acme/classifier-2]\n"
+                    "questions:\n"
+                    "  polite:\n"
+                    "    instructions: Is the reply polite?\n"
+                    "    criteria:\n"
+                    '      "true": Courteous throughout.\n'
+                    '      "false": Rude or dismissive.\n'
+                ),
+            }
+        ]
+    )
+
+    definition = parsed[0].definition.to_dict()
+    assert definition["ai"] == {
+        "model": "acme/classifier-1",
+        "fallbacks": ["acme/classifier-2"],
+    }
+    assert definition["questions"] == {
+        "polite": {
+            "instructions": "Is the reply polite?",
+            "criteria": {
+                "true": "Courteous throughout.",
+                "false": "Rude or dismissive.",
+            },
+            "threshold": 0.5,
+        }
+    }
+    assert "instructions" not in definition
+
+
+def test_judge_parser_rejects_the_removed_llm_block() -> None:
+    with pytest.raises(
+        ValueError, match=re.escape("ai: { model: <provider>/<model> }")
+    ):
+        introspection_recipe_check.parse_judge_definitions(
+            [
+                {
+                    "path": "judges/legacy.yaml",
+                    "content": (
+                        "name: legacy\n"
+                        "instructions: Grade the answer.\n"
+                        "llm:\n"
+                        "  model: gpt-5\n"
+                    ),
+                }
+            ]
+        )
+
+
+def test_judge_schema_describes_ai_and_both_judge_kinds() -> None:
+    schema = introspection_recipe_check.judge_definition_schema()
+    properties = cast(dict[str, object], schema["properties"])
+
+    assert "llm" not in properties
+    assert {"ai", "instructions", "questions"} <= properties.keys()
+    assert schema["oneOf"] == [
+        {"required": ["instructions"]},
+        {"required": ["questions"]},
+    ]
 
 
 TEMPLATE_MANIFEST = """
@@ -377,7 +454,7 @@ def test_mission_judges_are_parsed_apart_from_online_ones() -> None:
     sources: list[introspection_recipe_check.JudgeSource] = [
         {
             "path": "judges/helpful.yaml",
-            "content": "name: helpful\ninstructions: Grade.\nllm:\n  model: gpt-5\n",
+            "content": "name: helpful\ninstructions: Grade.\nai:\n  model: openai/gpt-5\n",
         },
         {"path": "judges/booking.yaml", "content": MISSION_JUDGE},
     ]
