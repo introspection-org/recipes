@@ -38,8 +38,8 @@ After `convert`, the converted `.docx` is the file you change: pass it as `path`
 
 Copy quotes from the text after the paragraph id in `read`, within one paragraph, and
 pass that `paragraph` id. Quote only enough to find the place once; `near` or
-`occurrence` picks one match when it repeats. Spacing, curly quotes and dashes are
-forgiven; words and capitalization are not. With `revise` there is nothing to quote:
+`occurrence` picks one match when it repeats. Spacing, curly quotes, dashes,
+capitalization, soft hyphens and a leading list number are forgiven; words are not. With `revise` there is nothing to quote:
 copy the paragraph's current text and change only what must change.
 
 ## PDFs you are asked to mark up
@@ -62,6 +62,10 @@ the rest still went in. Resubmit only the failed ones, with `path` set to the sa
 - `not_found`: use the `closest` text it lists, or `read` again; your earlier changes may
   have moved the text. If the paragraph changed a lot, `revise` it by id.
 - `ambiguous`: add `paragraph`, `near` or `occurrence`.
+- `paragraph_not_found`: take the paragraph id from a fresh `read`.
+- `occurrence_out_of_range`: the quote appears fewer times than `occurrence` says;
+  count again in a fresh `read`.
+- `empty_quote`: pass the text to change.
 - `crosses_marker` or `unaddressable`: the change crosses something Word keeps (a tab, a
   field, a content control). Change the words on each side separately, or `revise` the
   paragraph with its full new text.

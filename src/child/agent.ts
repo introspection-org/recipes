@@ -9,10 +9,7 @@ import {
   createIsolatedChildSession,
   type IsolatedChildSessionHandle,
 } from "./session.js";
-import {
-  resolveRecipeCredentials,
-  resolveRecipeModel,
-} from "../model-binding.js";
+import { resolveRecipeAgentModels } from "../model-binding.js";
 import { applyRecipeAgentModelConfigToModel } from "../recipe/model.js";
 import { type ResolvedRecipe } from "../recipe/resolve.js";
 
@@ -227,19 +224,22 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
     if (this.session) return;
 
     const resolved = this.opts.recipe.selectAgent(this.opts.agentName);
-    const model = applyRecipeAgentModelConfigToModel(
-      resolveRecipeModel(resolved.modelSpec, this.opts.modelRegistry),
-      resolved.modelConfig,
-    );
-    const credentials = await resolveRecipeCredentials({
-      provider: model.provider,
+    const {
+      models: [first, ...fallbacks],
+      credentials,
+    } = await resolveRecipeAgentModels({
+      modelSpec: resolved.modelSpec,
+      fallbacks: resolved.modelConfig?.fallbacks,
       env: this.opts.env ?? process.env,
-      model,
       ...(this.opts.credentials ? { credentials: this.opts.credentials } : {}),
       ...(this.opts.modelRegistry
         ? { modelRegistry: this.opts.modelRegistry }
         : {}),
     });
+    const model = applyRecipeAgentModelConfigToModel(
+      first!,
+      resolved.modelConfig,
+    );
     this.handle = await createIsolatedChildSession({
       recipe: this.opts.recipe,
       agentName: resolved.name,
@@ -248,6 +248,7 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
       credentials,
       credentialsResolved: true,
       modelOverride: model,
+      ...(fallbacks.length > 0 ? { modelFallbacks: fallbacks } : {}),
       onEvent: (event) => this.handleSessionEvent(event),
       ...(this.opts.agentRunId ? { agentRunId: this.opts.agentRunId } : {}),
       ...(this.opts.modelRegistry
