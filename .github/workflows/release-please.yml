@@ -318,8 +318,8 @@ jobs:
             fi
           fi
 
-          # Channel and document adapters peer-depend on @introspection-ai/recipes,
-          # so they publish after the root and check the core version they need.
+          # Companions never depend on Recipes (CONTRIBUTING.md), so nothing here
+          # waits for the root to become visible on npm.
           channel_dirs=()
           if [[ "$publish_slack" == "true" ]]; then
             channel_dirs+=("packages/channels/slack")
@@ -360,33 +360,6 @@ jobs:
               channel_tag="latest"
               if [[ "$channel_version" == *-* ]]; then
                 channel_tag="beta"
-              fi
-              core_range="$(node -p "require('./$channel_dir/package.json').peerDependencies?.['@introspection-ai/recipes'] ?? require('./package.json').version")"
-              core_is_current_release=false
-              if [[ "$core_range" == workspace:* ]]; then
-                core_range="$(node -p "require('./package.json').version")"
-                if [[ "$publish_root" == "true" ]]; then
-                  core_is_current_release=true
-                fi
-              fi
-              # A recipes version published moments ago takes a while to become
-              # visible; wait for it rather than fail the companions behind it.
-              core_visible=false
-              if [[ "$core_is_current_release" == "true" ]]; then
-                core_visible=true
-              else
-                for attempt in $(seq 1 30); do
-                  if npm view "@introspection-ai/recipes@$core_range" version >/dev/null 2>&1; then
-                    core_visible=true
-                    break
-                  fi
-                  echo "waiting for @introspection-ai/recipes@$core_range on npm ($attempt/30)"
-                  sleep 10
-                done
-              fi
-              if [[ "$core_visible" != "true" ]]; then
-                echo "$channel_name@$channel_version requires an unpublished @introspection-ai/recipes version." >&2
-                exit 1
               fi
               if npm view "$channel_name@$channel_version" version >/dev/null 2>&1; then
                 echo "$channel_name@$channel_version is already published"

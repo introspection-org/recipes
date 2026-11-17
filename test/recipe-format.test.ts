@@ -1028,6 +1028,19 @@ describe("release train isolation", () => {
     expect(workflow).not.toContain("npm access set status=public");
   });
 
+  it("publishes a companion without waiting for Recipes on npm", () => {
+    const root = join(import.meta.dirname, "..");
+    const workflow = readFileSync(
+      join(root, ".github", "workflows", "release-please.yml"),
+      "utf8",
+    );
+
+    // A companion has no dependency or peer on Recipes, so a root version the
+    // registry is slow to list must not keep every companion off npm.
+    expect(workflow).not.toContain('npm view "@introspection-ai/recipes@');
+    expect(workflow).not.toContain("requires an unpublished");
+  });
+
   it("publishes to the final tag, because OIDC cannot move one afterwards", () => {
     const root = join(import.meta.dirname, "..");
     const workflow = readFileSync(
