@@ -100,7 +100,7 @@ export function assertRecipeModelTransport(
   return identity;
 }
 
-export function resolveRecipeModel(
+function resolveRecipeModel(
   modelSpec: string,
   modelRegistry?: ModelRegistry,
 ): Model<Api> {
@@ -185,7 +185,9 @@ export async function resolveRecipeAgentModels(opts: {
         ...(opts.credentials ? { credentials: opts.credentials } : {}),
         ...(opts.modelRegistry ? { modelRegistry: opts.modelRegistry } : {}),
       });
-      found.push({ model, credentials });
+      // An alias can resolve two entries to one model, which a retry would never move past.
+      if (!found.some((entry) => sameModel(entry.model, model)))
+        found.push({ model, credentials });
     } catch (error) {
       if (
         !(error instanceof RecipeCredentialError) &&

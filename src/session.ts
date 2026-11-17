@@ -485,14 +485,17 @@ function stripAdditionalProperties(
  * declarations. Normalize the final Recipe toolset after host tools and the
  * shared agent tool have been registered so every host gets the same behavior.
  */
+function isGeminiModel(model: Model<Api>): boolean {
+  return [model.id, model.name].some((value) =>
+    value?.toLowerCase().includes("gemini"),
+  );
+}
+
 function normalizeSessionToolsForModel(
   session: AgentSession,
   model: Model<Api>,
 ): void {
-  const isGemini = [model.id, model.name].some((value) =>
-    value?.toLowerCase().includes("gemini"),
-  );
-  if (!isGemini) return;
+  if (!isGeminiModel(model)) return;
   const mutableSession = session as MutableAgentSession;
   for (const tool of mutableSession.agent?.state?.tools ?? []) {
     tool.parameters = stripAdditionalProperties(tool.parameters);
@@ -1307,16 +1310,34 @@ async function createSessionForAgent(
       // with its base URL, headers and compat.
       const configured = candidates;
       const stream = session.agent.streamFunction;
-      session.agent.streamFunction = (requested, context, streamOptions) =>
-        stream(
+      session.agent.streamFunction = (requested, context, streamOptions) => {
+        const routed =
           configured.find(
             (candidate) =>
               candidate.provider === requested.provider &&
               candidate.id === requested.id,
-          ) ?? requested,
-          context,
-          streamOptions,
-        );
+          ) ?? requested;
+        // The session's tools were normalized for its first model only.
+        const sent = isGeminiModel(routed)
+          ? ({
+              ...context,
+              messages: context.messages.map((message) =>
+                message.role === "system" && message.toolsAdded
+                  ? {
+                      ...message,
+                      toolsAdded: message.toolsAdded.map((tool) => ({
+                        ...tool,
+                        parameters: stripAdditionalProperties(
+                          tool.parameters,
+                        ) as typeof tool.parameters,
+                      })),
+                    }
+                  : message,
+              ),
+            } as typeof context)
+          : context;
+        return stream(routed, sent, streamOptions);
+      };
     }
     await session.bindExtensions({});
     await waitForRequiredPiMcpServers(piMcp, piServers, opts.mcpDiscovery, env);

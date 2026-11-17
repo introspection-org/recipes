@@ -123,6 +123,19 @@ describe("resolveRecipeAgentModels", () => {
     ]);
   });
 
+  it("keeps one of two entries that resolve to the same model, so a retry can move past it", async () => {
+    const { models } = await resolveRecipeAgentModels({
+      modelSpec: "openai/gpt-6-luna",
+      fallbacks: ["openai-codex/gpt-6-luna", "anthropic/claude-sonnet-5-5"],
+      env: {},
+      modelRegistry: registry(["openai-codex", "anthropic"]),
+    });
+    expect(models.map((m) => `${m.provider}/${m.id}`)).toEqual([
+      "openai-codex/gpt-6-luna",
+      "anthropic/claude-sonnet-5-5",
+    ]);
+  });
+
   it("names the model the Recipe asked for when nothing has a credential", async () => {
     await expect(
       resolveRecipeAgentModels({
@@ -286,5 +299,99 @@ describe("a session with fallbacks", () => {
       ["faux", "https://primary.proxy.test/v1", "primary"],
       ["faux-b", "https://fallback.proxy.test/v1", "fallback"],
     ]);
+  });
+
+  it("sends a Gemini fallback tool schemas without additionalProperties", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    writeFileSync(
+      join(fixture.recipeDir, "agents", "agent.yaml"),
+      [
+        "name: agent",
+        "ai:",
+        "  model: faux/faux-1",
+        "  fallbacks: [faux-g/gemini-faux]",
+        "tools: [read, strict_lookup]",
+        "system_instructions:",
+        "  mode: append",
+        "  content: Fallback agent",
+        "",
+      ].join("\n"),
+    );
+    const schemas = (messages: readonly any[]) =>
+      JSON.stringify(
+        messages.flatMap((message) =>
+          message.role === "system"
+            ? (message.toolsAdded ?? []).map((tool: any) => tool.parameters)
+            : [],
+        ),
+      );
+    const sent: Record<string, string> = {};
+    const primary = fauxProvider();
+    const gemini = fauxProvider({
+      provider: "faux-g",
+      models: [{ id: "gemini-faux" }],
+    });
+    primary.setResponses([
+      (context) => {
+        sent.primary = schemas(context.messages);
+        return fauxAssistantMessage("", {
+          stopReason: "error",
+          errorMessage: "503 Service Unavailable",
+        });
+      },
+    ]);
+    gemini.setResponses([
+      (context) => {
+        sent.gemini = schemas(context.messages);
+        return fauxAssistantMessage("from Gemini");
+      },
+    ]);
+    const credentials = new InMemoryCredentialStore();
+    for (const provider of ["faux", "faux-g"])
+      await credentials.modify(provider, async () => ({
+        type: "api_key",
+        key: "test-key",
+      }));
+    const strictTool = {
+      name: "strict_lookup",
+      label: "Strict lookup",
+      description: "Looks a key up.",
+      parameters: {
+        type: "object",
+        properties: { key: { type: "string" } },
+        required: ["key"],
+        additionalProperties: false,
+      },
+      execute: async () => ({
+        content: [{ type: "text", text: "found" }],
+        details: {},
+      }),
+    } as any;
+
+    const handle = await createAgentSession({
+      recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
+      cwd: fixture.workspaceDir,
+      env: cleanEnv(),
+      credentials,
+      modelOverride: primary.getModel(),
+      modelFallbacks: [gemini.getModel()],
+      customTools: [strictTool],
+      settingsManager: SettingsManager.inMemory({
+        retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+      }),
+      extensionFactories: [
+        (pi) => pi.registerProvider(primary.provider),
+        (pi) => pi.registerProvider(gemini.provider),
+      ],
+      mcpBindings: { servers: [] },
+    });
+    cleanups.push(() => handle.dispose());
+
+    await handle.session.prompt("hello");
+
+    expect(sent.primary).toContain("additionalProperties");
+    expect(sent.gemini).toBeDefined();
+    expect(sent.gemini).not.toContain("additionalProperties");
   });
 });
