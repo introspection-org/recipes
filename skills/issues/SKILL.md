@@ -9,7 +9,8 @@ The `issues` tool tracks work in the tracker this Recipe declares: Linear, Jira,
 Introspection's own issues when neither is connected. Each call takes a `command`:
 `search`, `get`, `create`, `update`, `comment` or `transition`. Only the commands a
 provider serves are offered, and the tool's description says what each provider leaves
-out. `tools list issues --schema` shows every command's arguments.
+out. The tool's schema lists every command's arguments (in `cli` tools mode,
+`tools list issues --schema`).
 
 ## Act only on handles
 
