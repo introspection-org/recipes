@@ -424,19 +424,22 @@ fn is_non_empty_string(value: &Value) -> bool {
 
 /// A judge declares its model once: as `ai:`, or as the older `llm:`, which
 /// the strict parser maps to `ai:`.
+/// Declaring both keys is refused even when one is null, as the strict parser
+/// refuses it.
 fn validate_model(map: &Map<String, Value>, path: &str, ctx: &mut CheckContext) {
+    let both = map.contains_key("ai") && map.contains_key("llm");
     let ai = map.get("ai").filter(|value| !value.is_null());
     let llm = map.get("llm").filter(|value| !value.is_null());
     match (ai, llm) {
-        (Some(ai), None) => validate_ai(ai, path, ctx),
-        (None, Some(llm)) => validate_llm(llm, path, ctx),
-        (Some(_), Some(_)) => ctx.error(
+        _ if both => ctx.error(
             "judge.kind_invalid",
             path,
             "Judge declares its model as either `ai:` or the older `llm:`, not both",
             Some("keep `ai: { model: <provider>/<model> }` and remove `llm:`"),
         ),
-        (None, None) => ctx.error(
+        (Some(ai), None) => validate_ai(ai, path, ctx),
+        (None, Some(llm)) => validate_llm(llm, path, ctx),
+        (Some(_), Some(_)) | (None, None) => ctx.error(
             "judge.kind_invalid",
             path,
             "Judge declares its model as either `ai:` or the older `llm:`",
@@ -1161,6 +1164,12 @@ ai:
         for (ai, code) in [
             ("", "judge.kind_invalid"),
             ("ai: null\n", "judge.kind_invalid"),
+            (
+                "ai:\n  model: openai/gpt-5\nllm: null\n",
+                "judge.kind_invalid",
+            ),
+            ("llm:\n  model: gpt-5\nai: null\n", "judge.kind_invalid"),
+            ("llm: null\n", "judge.kind_invalid"),
             ("ai: openai/gpt-5\n", "judge.ai_invalid"),
             ("ai: {}\n", "judge.ai.model_missing"),
             ("ai:\n  thinking_level: low\n", "judge.ai.model_missing"),
