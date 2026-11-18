@@ -193,7 +193,7 @@ def test_judge_parser_rejects_both_ai_and_llm() -> None:
 
 
 def test_judge_parser_rejects_a_gate_regex_javascript_cannot_compile() -> None:
-    with pytest.raises(ValueError, match=re.escape("JavaScript regex (v flag)")):
+    with pytest.raises(ValueError, match=re.escape("JavaScript regex")):
         introspection_recipe_check.parse_judge_definitions(
             [
                 {
@@ -204,7 +204,29 @@ def test_judge_parser_rejects_a_gate_regex_javascript_cannot_compile() -> None:
                         "on:\n"
                         "  - event: message\n"
                         "    match:\n"
-                        "      text: '/[(]/'\n"
+                        "      text: '/(?P<word>a)/'\n"
+                        "ai:\n"
+                        "  model: openai/gpt-5\n"
+                    ),
+                }
+            ]
+        )
+
+
+def test_judge_parser_accepts_a_gate_regex_only_one_javascript_flag_compiles() -> None:
+    # The first compiles under the u flag only, the second under the v flag only.
+    for pattern in (r"/[\w-]+@acme/", r"/[\w--\d]+/"):
+        introspection_recipe_check.parse_judge_definitions(
+            [
+                {
+                    "path": "judges/gate.yaml",
+                    "content": (
+                        "name: gate\n"
+                        "instructions: Grade the answer.\n"
+                        "on:\n"
+                        "  - event: message\n"
+                        "    match:\n"
+                        f"      text: '{pattern}'\n"
                         "ai:\n"
                         "  model: openai/gpt-5\n"
                     ),

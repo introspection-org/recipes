@@ -179,13 +179,23 @@ describe("judge definitions", () => {
     expect(warnings).toEqual([expect.stringContaining("llm.local")]);
   });
 
-  it("refuses a gate regex JavaScript's v flag cannot compile", () => {
+  it("refuses a gate regex JavaScript cannot compile", () => {
     expect(() =>
       parseJudgeDefinition(
         "judges/gate.yaml",
-        "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/[(]/'\n",
+        "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/(?P<word>a)/'\n",
       ),
-    ).toThrow(/JavaScript regex \(v flag\)/);
+    ).toThrow(/JavaScript regex/);
+  });
+
+  it("reads a gate regex only the u flag compiles", () => {
+    const judge = parseJudgeDefinition(
+      "judges/gate.yaml",
+      "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/[\\w-]+@acme/'\n",
+    );
+    expect(judge.on).toEqual([
+      { event: "message", match: { text: "/[\\w-]+@acme/" } },
+    ]);
   });
 
   it("names the binary when recipe-check cannot be run", () => {
@@ -266,6 +276,15 @@ describe("judge gate", () => {
     ).toBe(false);
     expect(applies([{ event: "tool", match: { result: "/^Echo/" } }])).toBe(
       true,
+    );
+  });
+
+  it("falls back to the u flag for a pattern the v flag refuses", () => {
+    expect(
+      applies([{ event: "tool", match: { name: "/^[\\w-]+_echo$/" } }]),
+    ).toBe(true);
+    expect(applies([{ event: "tool", match: { name: "/^[a-z-]+$/" } }])).toBe(
+      false,
     );
   });
 

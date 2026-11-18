@@ -941,9 +941,10 @@ fn validate_match_target(target: &Value) -> Result<(), JudgeSpecError> {
 
 /// Why a gate's `/pattern/flags` does not compile in both engines that read
 /// it, or `None` when it does: Rust's `regex` here and in the platform's
-/// evaluator, and JavaScript's `RegExp` with the `v` flag in the Recipes judge
-/// runner. A pattern must mean the same in both, so either refusing it is an
-/// error.
+/// evaluator, and JavaScript's `RegExp` in the Recipes judge runner, which
+/// tries the `v` flag and falls back to `u`. `regress` stands in for the
+/// runner's engine and is not identical to it, so the runner can still refuse
+/// a pattern this accepts.
 pub(crate) fn gate_regex_error(pattern: &str, flags: &str) -> Option<String> {
     let mut builder = RegexBuilder::new(pattern);
     builder.case_insensitive(flags.contains('i'));
@@ -952,15 +953,17 @@ pub(crate) fn gate_regex_error(pattern: &str, flags: &str) -> Option<String> {
     if let Err(err) = builder.build() {
         return Some(format!("Rust regex: {err}"));
     }
-    // `u` is implied by `v`, and JavaScript refuses the two together.
-    let js_flags = flags
-        .chars()
-        .filter(|flag| *flag != 'u')
-        .chain(['v'])
-        .collect::<String>();
-    regress::Regex::with_flags(pattern, js_flags.as_str())
-        .err()
-        .map(|err| format!("JavaScript regex (v flag): {err}"))
+    // The runner adds the mode itself, and JavaScript refuses `u` with `v`.
+    let own = flags.chars().filter(|flag| *flag != 'u');
+    let compile = |mode: char| {
+        let js_flags = own.clone().chain([mode]).collect::<String>();
+        regress::Regex::with_flags(pattern, js_flags.as_str()).err()
+    };
+    let unicode_sets = compile('v')?;
+    let unicode = compile('u')?;
+    Some(format!(
+        "JavaScript regex: {unicode_sets} (v flag); {unicode} (u flag)"
+    ))
 }
 
 fn regex_literal(value: &str) -> Result<Option<(&str, &str)>, JudgeSpecError> {
@@ -1583,22 +1586,52 @@ ai:
         assert_eq!(normalized.on, json!({}));
     }
 
+    fn gate_regex_result(pattern: &str) -> Result<(), String> {
+        let yaml = format!("name: g\ninstructions: Grade.\non:\n  - event: message\n    match:\n      text: '{pattern}'\nai:\n  model: openai/gpt-5\n");
+        parse_judge_definitions(&[source("judges/g.yaml", &yaml)])
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
+
     #[test]
     fn a_gate_regex_must_compile_in_rust_and_javascript() {
-        let gate = |pattern: &str| {
-            format!("name: g\ninstructions: Grade.\non:\n  - event: message\n    match:\n      text: '{pattern}'\nai:\n  model: openai/gpt-5\n")
-        };
-        assert!(
-            parse_judge_definitions(&[source("judges/g.yaml", &gate(r"/[\w&&[^_]]+/iu"))]).is_ok()
-        );
-        let rust = parse_judge_definitions(&[source("judges/g.yaml", &gate("/foo(?=bar)/"))])
-            .unwrap_err()
-            .to_string();
+        assert_eq!(gate_regex_result(r"/[\w&&[^_]]+/iu"), Ok(()));
+        let rust = gate_regex_result("/foo(?=bar)/").unwrap_err();
         assert!(rust.contains("Rust regex"), "{rust}");
-        let js = parse_judge_definitions(&[source("judges/g.yaml", &gate("/[(]/"))])
-            .unwrap_err()
-            .to_string();
-        assert!(js.contains("JavaScript regex (v flag)"), "{js}");
+        let js = gate_regex_result("/(?P<word>a)/").unwrap_err();
+        assert!(js.contains("JavaScript regex"), "{js}");
+        assert!(js.contains("(v flag)") && js.contains("(u flag)"), "{js}");
+        let neither = gate_regex_result("/(abc/i").unwrap_err();
+        assert!(neither.contains("invalid regex"), "{neither}");
+    }
+
+    #[test]
+    fn a_gate_regex_compiles_under_the_v_flag_or_failing_that_the_u_flag() {
+        // The v flag refuses these (an unescaped `-`, `/`, `|` or `(` in a class).
+        for pattern in [
+            r"/[\w-]+@acme/",
+            "/[a-z-]/",
+            "/[^/]+/",
+            "/[|]/",
+            "/[(]/",
+            r"/[\w-]+@acme/imsu",
+        ] {
+            assert_eq!(gate_regex_result(pattern), Ok(()), "{pattern}");
+        }
+        // Class set operations, which the u flag refuses.
+        for pattern in [r"/[\w--\d]+/", "/[[a-z_]&&[^0-9]]/", r"/[\w--\d]+/iu"] {
+            assert_eq!(gate_regex_result(pattern), Ok(()), "{pattern}");
+        }
+    }
+
+    // Known gaps between `regress` and the runner's engine: the checker
+    // accepts these and the runner refuses them (`[[:alpha:]]` it reads as a
+    // nested class, not a POSIX one).
+    #[test]
+    fn a_gate_regex_the_runner_refuses_can_pass_the_checker() {
+        for pattern in [r"/\Afoo\z/", r"/\-/", r"/\#/", "/[[:alpha:]]/"] {
+            assert_eq!(gate_regex_result(pattern), Ok(()), "{pattern}");
+        }
     }
 
     #[test]

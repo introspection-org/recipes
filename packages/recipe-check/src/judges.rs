@@ -764,7 +764,7 @@ fn validate_match_target(
                         "judge.on.regex_invalid",
                         path,
                         format!("Judge on[{index}].match.{field} contains invalid regex '{value}': {err}"),
-                        Some("write a pattern that both Rust's regex and JavaScript's RegExp with the v flag compile"),
+                        Some("write a pattern that both Rust's regex and JavaScript's RegExp (with the v flag, or failing that the u flag) compile"),
                     );
                 }
             }
@@ -1148,15 +1148,41 @@ ai:
             "{}",
             rust[0].message
         );
-        // An unescaped `(` in a class: Rust compiles it, the v flag refuses it.
-        let js = judge_diagnostics(&[("judges/probe.yaml", Some(&gate("/[(]/")))]);
+        // A Rust named group: JavaScript refuses it under both flags.
+        let js = judge_diagnostics(&[("judges/probe.yaml", Some(&gate("/(?P<word>a)/")))]);
         assert_eq!(js.len(), 1);
         assert_eq!(js[0].code, "judge.on.regex_invalid");
         assert!(
-            js[0].message.contains("JavaScript regex (v flag)"),
+            js[0].message.contains("JavaScript regex"),
             "{}",
             js[0].message
         );
+        assert_eq!(codes(&gate("/(abc/i")), ["judge.on.regex_invalid"]);
+    }
+
+    #[test]
+    fn a_gate_regex_compiles_under_the_v_flag_or_failing_that_the_u_flag() {
+        let gate = |pattern: &str| {
+            MINIMAL.replace(
+                "instructions:",
+                &format!(
+                    "on:\n  - event: message\n    match:\n      text: '{pattern}'\ninstructions:"
+                ),
+            )
+        };
+        for pattern in [
+            r"/[\w-]+@acme/",
+            "/[a-z-]/",
+            "/[^/]+/",
+            "/[|]/",
+            "/[(]/",
+            r"/[\w-]+@acme/imsu",
+            r"/[\w--\d]+/",
+            "/[[a-z_]&&[^0-9]]/",
+            r"/[\w--\d]+/iu",
+        ] {
+            assert_eq!(codes(&gate(pattern)), [] as [&str; 0], "{pattern}");
+        }
     }
 
     #[test]

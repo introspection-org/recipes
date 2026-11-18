@@ -221,12 +221,22 @@ on:
 
 Match keys are non-empty field paths. Regex literals support unique `i`, `m`,
 `s`, and `u` flags. A pattern must compile both as a Rust regex, which the
-hosted platform evaluates, and as a JavaScript `RegExp` with the `v` flag, which
-the runner evaluates. The checker reports `judge.on.regex_invalid` for a
-pattern either one refuses, such as a lookahead (`(?=…)`, which Rust refuses)
-or an unescaped `(` in a class (`[(]`, which the `v` flag refuses). `environment`, `runtime_group`, and
+hosted platform evaluates, and as a JavaScript `RegExp`, which the runner
+evaluates. The runner compiles a pattern with the `v` flag and, when that
+refuses it, with the `u` flag, so `[\w-]+` (which only `u` compiles) and
+`[\w--\d]+` (which only `v` compiles) are both valid. The checker reports
+`judge.on.regex_invalid` for a pattern either engine refuses, such as a
+lookahead (`(?=…)`, which Rust refuses) or a Rust named group (`(?P<name>…)`,
+which JavaScript refuses under both flags). `environment`, `runtime_group`, and
 paths ending in `pattern_id` are platform-owned and cannot appear as authored
 match fields. The runner owns dotted-path traversal and gate evaluation.
+
+The checker compiles the JavaScript side with a Rust implementation of the
+`RegExp` grammar, not with the runner's own engine, and the two differ at the
+edges: the checker accepts `\Afoo\z`, `\-` and `\#`, which the runner refuses,
+and `[[:alpha:]]` is a POSIX class to Rust and a nested class to JavaScript. A
+pattern the checker accepts can therefore still be refused by the runner at
+run time, where it records an error for that judgement.
 
 ## Diagnostics
 
