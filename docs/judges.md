@@ -88,7 +88,8 @@ node node_modules/@introspection-ai/recipes/dist/judges/cli.js \
 `judges.json` is exactly what `introspection-recipe-check judges` prints for the
 Recipe's `judges/`: an array of
 `{ "source_path", "definition", "warnings"? }`, which is the
-`ParsedJudgeDefinition` of `parse_judge_definitions`. In code, pass the same
+`ParsedJudgeDefinition` of `parse_judge_definitions`. Each `definition` carries
+its model only as `ai:`, never `llm:`. In code, pass the same
 array as `loadJudges(recipeDir, { definitions })`. The judge files are still
 read, for each judge's `definition_hash`.
 

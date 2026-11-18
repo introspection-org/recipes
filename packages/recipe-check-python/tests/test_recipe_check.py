@@ -167,6 +167,8 @@ def test_judge_parser_maps_the_older_llm_block_to_ai() -> None:
     }
     assert parsed[0].warnings == ()
     assert parsed[1].definition.to_dict()["ai"] == {"model": "openai/gpt-5"}
+    # A parsed definition carries only `ai`: the `llm:` block is gone.
+    assert all("llm" not in judge.definition.to_dict() for judge in parsed)
     assert len(parsed[1].warnings) == 1
     assert "llm.local" in parsed[1].warnings[0]
 
@@ -215,7 +217,10 @@ def test_judge_schema_describes_ai_and_both_judge_kinds() -> None:
     schema = introspection_recipe_check.judge_definition_schema()
     properties = cast(dict[str, dict[str, object]], schema["properties"])
 
+    # `llm:` is still authored, so the schema describes it, as a deprecated
+    # block of its own rather than a field of the parsed definition.
     assert properties["llm"]["deprecated"] is True
+    assert properties["llm"]["$ref"] == "#/$defs/LlmBlock"
     assert {"ai", "instructions", "questions"} <= properties.keys()
     assert schema["oneOf"] == [
         {"required": ["instructions"]},

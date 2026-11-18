@@ -29,13 +29,13 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 /// The default `llm.transport.timeout_ms` of the older `llm:` block.
-pub const DEFAULT_JUDGE_TIMEOUT_MS: u64 = 60_000;
+const LLM_TIMEOUT_MS: u64 = 60_000;
 /// The default `llm.transport.max_retry_delay_ms` of the older `llm:` block.
-pub const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 5_000;
+const LLM_MAX_RETRY_DELAY_MS: u64 = 5_000;
 /// The most output tokens `llm.request.max_tokens` asks for.
-pub const MAX_JUDGE_OUTPUT_TOKENS: u64 = 131_072;
+pub(crate) const LLM_MAX_OUTPUT_TOKENS: u64 = 131_072;
 /// The `llm.provider` an `llm:` block that names none runs on.
-pub const DEFAULT_JUDGE_LLM_PROVIDER: &str = "openai";
+const LLM_DEFAULT_PROVIDER: &str = "openai";
 
 /// The most questions one classifier judge asks.
 pub const MAX_JUDGE_QUESTIONS: usize = 8;
@@ -91,15 +91,9 @@ pub struct JudgeDefinition {
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(schema_with = "gate_schema"))]
     pub on: Value,
-    /// The model that answers, declared as an agent's `ai:` block. A judge
-    /// declares this or the older `llm:`, never both; a normalized definition
-    /// always carries `ai`.
-    #[serde(default = "JudgeAiConfig::unset")]
+    /// The model that answers, declared as an agent's `ai:` block. An authored
+    /// judge may declare the older `llm:` instead, which parsing maps to this.
     pub ai: JudgeAiConfig,
-    /// The older model block, still read: normalization maps it to `ai` and
-    /// clears it, so a normalized definition never carries it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub llm: Option<JudgeLlmConfig>,
     /// The grading rubric of a judge a chat model answers. A judge declares
     /// this or `questions`, never both.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,126 +148,162 @@ pub struct JudgeAiConfig {
     pub providers: Option<Value>,
 }
 
-impl JudgeAiConfig {
-    /// The block of a judge that declares no `ai:`, which normalization
-    /// fills from `llm:` or refuses.
-    pub fn unset() -> Self {
-        Self {
-            model: String::new(),
-            fallbacks: Vec::new(),
-            thinking_level: None,
-            options: None,
-            providers: None,
-        }
-    }
-
-    /// Whether this is [`JudgeAiConfig::unset`].
-    pub fn is_unset(&self) -> bool {
-        *self == Self::unset()
-    }
+/// A judge as authored: [`JudgeDefinition`] plus the older `llm:` model
+/// block, which [`parse_judge_definitions`] maps to `ai:`. It is read only
+/// here, and it is what the authored schema describes.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "schema",
+    derive(schemars::JsonSchema),
+    schemars(rename = "JudgeDefinition")
+)]
+struct AuthoredJudgeDefinition {
+    /// `online` (the default) judges every runtime conversation when it ends.
+    /// A judge that grades only eval trials belongs to its eval suite, not to
+    /// `judges/`.
+    #[serde(rename = "type", default)]
+    kind: JudgeType,
+    /// Unique judge name within the recipe (at most 255 characters).
+    #[serde(alias = "judge")]
+    #[cfg_attr(feature = "schema", schemars(length(max = 255), pattern(r"\S")))]
+    name: String,
+    /// Optional human description (at most 2000 characters).
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(length(max = 2000)))]
+    description: Option<String>,
+    /// Applicability gate: `{}` (always) or a list of
+    /// `{ event, match? }` matchers where `event` is one of
+    /// `message`, `tool`, or `feedback`.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "gate_schema"))]
+    on: Value,
+    /// The model that answers, declared as an agent's `ai:` block. A judge
+    /// declares this or the older `llm:`, never both.
+    #[serde(default, deserialize_with = "present")]
+    #[cfg_attr(feature = "schema", schemars(with = "JudgeAiConfig"))]
+    ai: Option<JudgeAiConfig>,
+    /// The older model block, still read and mapped to `ai`. Prefer `ai`.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "LlmBlock"))]
+    llm: Option<LlmBlock>,
+    /// The grading rubric of a judge a chat model answers. A judge declares
+    /// this or `questions`, never both.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "instructions_schema"))]
+    instructions: Option<String>,
+    /// The yes-or-no questions of a judge a classifier answers, by name.
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(schema_with = "classifier_questions_schema")
+    )]
+    questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
 }
 
-/// The older model block of a judge, mapped to [`JudgeAiConfig`] by
-/// [`normalize_judge_definition`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+/// The older model block of a judge, mapped to [`JudgeAiConfig`] when a
+/// judge is parsed.
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct JudgeLlmConfig {
+struct LlmBlock {
     /// Provider slug (lowercase ASCII, digits, and `-`). Defaults to `openai`.
     #[serde(default = "default_provider")]
     #[cfg_attr(feature = "schema", schemars(pattern(r"^[a-z0-9-]{1,64}$")))]
-    pub provider: String,
+    provider: String,
     /// Model name. Required and non-empty (at most 255 bytes), with no
     /// surrounding whitespace.
     #[cfg_attr(
         feature = "schema",
         schemars(length(min = 1, max = 255), pattern(r"^\S([\s\S]*\S)?$"))
     )]
-    pub model: String,
+    model: String,
     #[serde(default)]
-    pub request: JudgeLlmRequest,
+    request: LlmRequest,
     /// Read and dropped: the host owns timeouts and retries.
     #[serde(default)]
-    pub transport: JudgeLlmTransport,
+    transport: LlmTransport,
     /// An OpenAI-compatible local endpoint, which `ai:` cannot express: it is
     /// dropped with a warning.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local: Option<JudgeLlmLocal>,
+    #[serde(default)]
+    local: Option<LlmLocal>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct JudgeLlmRequest {
+struct LlmRequest {
     /// Sampling temperature between 0 and 2. Defaults to 0, which leaves the
     /// model its own default.
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(range(min = 0.0, max = 2.0)))]
-    pub temperature: f64,
+    temperature: f64,
     /// Maximum output tokens (1..=131072).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 131_072)))]
-    pub max_tokens: Option<u64>,
+    max_tokens: Option<u64>,
     /// Reasoning effort, read as `ai.thinking_level` (`none` is `off`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     #[cfg_attr(
         feature = "schema",
         schemars(pattern(r"^(none|off|minimal|low|medium|high|xhigh|max)$"))
     )]
-    pub reasoning_effort: Option<String>,
+    reasoning_effort: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct JudgeLlmTransport {
+struct LlmTransport {
     /// Request timeout in milliseconds (1..=600000). Defaults to 60000.
     #[serde(default = "default_timeout_ms")]
     #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 600_000)))]
-    pub timeout_ms: u64,
+    timeout_ms: u64,
     /// Retry attempts (0..=10). Defaults to 0.
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(range(max = 10)))]
-    pub max_retries: u64,
+    max_retries: u64,
     /// Exponential backoff cap in milliseconds (..=60000). Defaults to 5000.
     #[serde(default = "default_max_retry_delay_ms")]
     #[cfg_attr(feature = "schema", schemars(range(max = 60_000)))]
-    pub max_retry_delay_ms: u64,
+    max_retry_delay_ms: u64,
 }
 
-impl Default for JudgeLlmTransport {
+impl Default for LlmTransport {
     fn default() -> Self {
         Self {
-            timeout_ms: DEFAULT_JUDGE_TIMEOUT_MS,
+            timeout_ms: LLM_TIMEOUT_MS,
             max_retries: 0,
-            max_retry_delay_ms: DEFAULT_MAX_RETRY_DELAY_MS,
+            max_retry_delay_ms: LLM_MAX_RETRY_DELAY_MS,
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct JudgeLlmLocal {
+// Read only so a malformed endpoint is refused; `ai:` cannot express it.
+#[allow(dead_code)]
+struct LlmLocal {
     /// HTTP(S) base URL; HTTPS required outside loopback. No credentials,
     /// query, or fragment.
     #[cfg_attr(feature = "schema", schemars(pattern(r"^https?://\S+$")))]
-    pub base_url: String,
+    base_url: String,
     /// Environment variable naming the API key (identifier characters only).
     #[cfg_attr(feature = "schema", schemars(pattern(r"^[A-Za-z_][A-Za-z0-9_]*$")))]
-    pub api_key_env: String,
+    api_key_env: String,
 }
 
 fn default_provider() -> String {
-    DEFAULT_JUDGE_LLM_PROVIDER.to_owned()
+    LLM_DEFAULT_PROVIDER.to_owned()
 }
 
 fn default_timeout_ms() -> u64 {
-    DEFAULT_JUDGE_TIMEOUT_MS
+    LLM_TIMEOUT_MS
 }
 
 fn default_max_retry_delay_ms() -> u64 {
-    DEFAULT_MAX_RETRY_DELAY_MS
+    LLM_MAX_RETRY_DELAY_MS
 }
 
 /// The `ai.thinking_level` an `llm.request.reasoning_effort` reads as, or
@@ -302,7 +332,7 @@ pub(crate) fn llm_local_warning(context: &str) -> String {
 /// `max_tokens` and a non-zero `temperature` as options, `reasoning_effort` as
 /// the thinking level. `transport` is the host's, and `local` cannot be
 /// expressed; both are dropped.
-pub fn judge_llm_to_ai(llm: &JudgeLlmConfig) -> Result<JudgeAiConfig, JudgeSpecError> {
+fn judge_llm_to_ai(llm: &LlmBlock) -> Result<JudgeAiConfig, JudgeSpecError> {
     let mut options = Map::new();
     if llm.request.temperature != 0.0 {
         options.insert("temperature".to_owned(), json!(llm.request.temperature));
@@ -329,7 +359,7 @@ pub fn judge_llm_to_ai(llm: &JudgeLlmConfig) -> Result<JudgeAiConfig, JudgeSpecE
 }
 
 /// The errors of an `llm:` block's own bounds, which `ai:` does not check.
-fn llm_errors(llm: &JudgeLlmConfig) -> Option<String> {
+fn llm_errors(llm: &LlmBlock) -> Option<String> {
     let provider = &llm.provider;
     if provider.is_empty()
         || provider.len() > 64
@@ -350,10 +380,10 @@ fn llm_errors(llm: &JudgeLlmConfig) -> Option<String> {
     }
     if request
         .max_tokens
-        .is_some_and(|tokens| !(1..=MAX_JUDGE_OUTPUT_TOKENS).contains(&tokens))
+        .is_some_and(|tokens| !(1..=LLM_MAX_OUTPUT_TOKENS).contains(&tokens))
     {
         return Some(format!(
-            "llm.request.max_tokens must be an integer between 1 and {MAX_JUDGE_OUTPUT_TOKENS}"
+            "llm.request.max_tokens must be an integer between 1 and {LLM_MAX_OUTPUT_TOKENS}"
         ));
     }
     let transport = &llm.transport;
@@ -690,12 +720,12 @@ pub fn parse_judge_definitions(
                 "{context} declares both `ai` and `llm`: declare the model once, as `ai: {{ model: <provider>/<model> }}`"
             );
         }
-        let definition: JudgeDefinition = match serde_saphyr::from_str(&source.content) {
-            Ok(definition) => definition,
+        let authored: AuthoredJudgeDefinition = match serde_saphyr::from_str(&source.content) {
+            Ok(authored) => authored,
             Err(err) => spec_bail!("parsing judge YAML {}: {err}", source.path),
         };
-        let warnings = judge_definition_warnings(&definition, &context);
-        let definition = normalize_judge_definition(definition, &context)?;
+        let warnings = authored_judge_warnings(&authored, &context);
+        let definition = normalize_judge_definition(authored_judge(authored, &context)?, &context)?;
         if !seen.insert(definition.name.clone()) {
             spec_bail!("duplicate judge name {:?}", definition.name);
         }
@@ -714,9 +744,9 @@ fn declares_both_models(content: &str) -> bool {
         .is_some_and(|value| value.get("llm").is_some() && value.get("ai").is_some())
 }
 
-/// What normalizing `definition` will ignore, as warnings.
-pub fn judge_definition_warnings(definition: &JudgeDefinition, context: &str) -> Vec<String> {
-    definition
+/// What mapping `authored` to a [`JudgeDefinition`] ignores, as warnings.
+fn authored_judge_warnings(authored: &AuthoredJudgeDefinition, context: &str) -> Vec<String> {
+    authored
         .llm
         .as_ref()
         .filter(|llm| llm.local.is_some())
@@ -724,9 +754,43 @@ pub fn judge_definition_warnings(definition: &JudgeDefinition, context: &str) ->
         .unwrap_or_default()
 }
 
+/// The definition an authored judge declares: its `ai:` block, or the `ai:`
+/// block its older `llm:` block reads as ([`judge_llm_to_ai`]), never both
+/// and never neither.
+fn authored_judge(
+    authored: AuthoredJudgeDefinition,
+    context: &str,
+) -> Result<JudgeDefinition, JudgeSpecError> {
+    let ai = match (authored.ai, authored.llm) {
+        (Some(_), Some(_)) => spec_bail!(
+            "{context} declares both `ai` and `llm`: declare the model once, as `ai: {{ model: <provider>/<model> }}`"
+        ),
+        (Some(ai), None) => ai,
+        (None, Some(llm)) => {
+            if let Some(message) = llm_errors(&llm) {
+                spec_bail!("{context} has an invalid llm block: {message}");
+            }
+            judge_llm_to_ai(&llm).map_err(|err| {
+                JudgeSpecError::new(format!("{context} has an invalid llm block: {err}"))
+            })?
+        }
+        (None, None) => spec_bail!(
+            "{context} declares its model as either `ai: {{ model: <provider>/<model> }}` or the older `llm:`"
+        ),
+    };
+    Ok(JudgeDefinition {
+        kind: authored.kind,
+        name: authored.name,
+        description: authored.description,
+        on: authored.on,
+        ai,
+        instructions: authored.instructions,
+        questions: authored.questions,
+    })
+}
+
 /// Validate one definition against the authored contract and apply spec
-/// normalization: `on: null` becomes `{}`, model names are trimmed, and an
-/// `llm:` block becomes the `ai:` block it reads as ([`judge_llm_to_ai`]).
+/// normalization: `on: null` becomes `{}` and model names are trimmed.
 pub fn normalize_judge_definition(
     mut definition: JudgeDefinition,
     context: &str,
@@ -749,22 +813,6 @@ pub fn normalize_judge_definition(
         .is_some_and(|description| description.chars().count() > 2_000)
     {
         spec_bail!("{context} has a description longer than 2000 characters");
-    }
-    match (definition.llm.take(), definition.ai.is_unset()) {
-        (Some(_), false) => spec_bail!(
-            "{context} declares both `ai` and `llm`: declare the model once, as `ai: {{ model: <provider>/<model> }}`"
-        ),
-        (Some(llm), true) => {
-            if let Some(message) = llm_errors(&llm) {
-                spec_bail!("{context} has an invalid llm block: {message}");
-            }
-            definition.ai = judge_llm_to_ai(&llm)
-                .map_err(|err| JudgeSpecError::new(format!("{context} has an invalid llm block: {err}")))?;
-        }
-        (None, true) => spec_bail!(
-            "{context} declares its model as either `ai: {{ model: <provider>/<model> }}` or the older `llm:`"
-        ),
-        (None, false) => {}
     }
     definition.ai.model = definition.ai.model.trim().to_owned();
     for fallback in &mut definition.ai.fallbacks {
@@ -951,7 +999,7 @@ fn regex_literal(value: &str) -> Result<Option<(&str, &str)>, JudgeSpecError> {
 /// `ai:` block shares.
 #[cfg(feature = "schema")]
 pub fn judge_definition_json_schema() -> String {
-    let schema = schemars::schema_for!(JudgeDefinition);
+    let schema = schemars::schema_for!(AuthoredJudgeDefinition);
     let mut value = serde_json::to_value(&schema).expect("judge schema serializes");
     value["oneOf"] = json!([
         { "required": ["instructions"] },
@@ -967,7 +1015,7 @@ pub fn judge_definition_json_schema() -> String {
     // no default for a client to fill in.
     let properties = &mut value["properties"];
     properties["llm"] = json!({
-        "$ref": "#/$defs/JudgeLlmConfig",
+        "$ref": "#/$defs/LlmBlock",
         "deprecated": true,
         "description": properties["llm"]["description"].clone(),
     });
@@ -1472,7 +1520,8 @@ ai:
         assert_eq!(definition.ai.model, "openai/gpt-5");
         assert_eq!(definition.ai.thinking_level.as_deref(), Some("high"));
         assert_eq!(definition.ai.options, None);
-        assert_eq!(definition.llm, None);
+        let value = serde_json::to_value(definition).unwrap();
+        assert!(value.get("llm").is_none(), "{value}");
     }
 
     #[test]
@@ -1519,26 +1568,18 @@ ai:
     }
 
     #[test]
-    fn normalizing_a_definition_built_in_code_maps_its_llm() {
+    fn normalizing_a_definition_built_in_code_fills_its_gate() {
         let definition = JudgeDefinition {
             kind: JudgeType::Online,
             name: "coded".to_owned(),
             description: None,
             on: Value::Null,
-            ai: JudgeAiConfig::unset(),
-            llm: Some(JudgeLlmConfig {
-                provider: DEFAULT_JUDGE_LLM_PROVIDER.to_owned(),
-                model: "gpt-5".to_owned(),
-                request: JudgeLlmRequest::default(),
-                transport: JudgeLlmTransport::default(),
-                local: None,
-            }),
+            ai: serde_json::from_value(json!({ "model": " openai/gpt-5 " })).unwrap(),
             instructions: Some("Grade.".to_owned()),
             questions: None,
         };
         let normalized = normalize_judge_definition(definition, "coded").unwrap();
         assert_eq!(normalized.ai.model, "openai/gpt-5");
-        assert_eq!(normalized.llm, None);
         assert_eq!(normalized.on, json!({}));
     }
 
@@ -1629,7 +1670,7 @@ ai:
             ),
             (
                 "name: g\ninstructions: Grade.\nai:\n  model: ''\n",
-                "declares its model as either",
+                "ai.model must be a non-empty string",
             ),
             (
                 "name: g\ninstructions: Grade.\nai:\n  model: gpt-5\n",

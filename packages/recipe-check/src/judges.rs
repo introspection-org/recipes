@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use crate::spec::{
     gate_regex_error, is_classifier_question_name, llm_local_warning, thinking_level_for_effort,
     validate_mission_judge as validate_mission_judge_spec, MissionJudgeDefinition,
-    MAX_JUDGE_OUTPUT_TOKENS, MAX_JUDGE_QUESTIONS, MISSION_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+    LLM_MAX_OUTPUT_TOKENS, MAX_JUDGE_QUESTIONS, MISSION_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
 };
 use crate::{span_from_message, validate_ai_block, AiOwner, CheckContext};
 
@@ -558,12 +558,12 @@ fn validate_request(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
     if let Some(value) = request.get("max_tokens").filter(|value| !value.is_null()) {
         let valid = value
             .as_u64()
-            .is_some_and(|tokens| (1..=MAX_JUDGE_OUTPUT_TOKENS).contains(&tokens));
+            .is_some_and(|tokens| (1..=LLM_MAX_OUTPUT_TOKENS).contains(&tokens));
         if !valid {
             ctx.error(
                 "judge.llm.request.max_tokens_invalid",
                 path,
-                format!("Judge llm.request.max_tokens must be an integer between 1 and {MAX_JUDGE_OUTPUT_TOKENS}"),
+                format!("Judge llm.request.max_tokens must be an integer between 1 and {LLM_MAX_OUTPUT_TOKENS}"),
                 Some("choose a bounded maximum output token count"),
             );
         }
