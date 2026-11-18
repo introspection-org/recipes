@@ -64,14 +64,14 @@ run finished, whatever the verdicts.
 `input` is one or more JSONL files, or the lines themselves. Several files run
 as one batch. Each line is one conversation:
 
-| Field                 | Required | Meaning                                                                                 |
-| --------------------- | -------- | --------------------------------------------------------------------------------------- |
-| `custom_id`           | yes      | Your id for the conversation, unique across every input file.                           |
-| `trajectory`          | yes      | The conversation: a trajectory export's records, or events already normalized.          |
-| `conversation_id`     | no       | The platform conversation this is. Defaults to `custom_id`.                             |
-| `system_instructions` | no       | The agent's effective system instructions, when they are evidence too.                  |
-| `feedback_events`     | no       | Feedback on the conversation, for a judge whose `on` matches `feedback`.                |
-| `environment`         | no       | Where the conversation ran. A judge's `sample_rate` applies only to `production` lines. |
+| Field                 | Required | Meaning                                                                                      |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `custom_id`           | yes      | Your id for the conversation, unique across every input file. Defaults to `conversation_id`. |
+| `trajectory`          | yes      | The conversation: a trajectory export's records, or events already normalized.               |
+| `conversation_id`     | no       | The platform conversation this is. Defaults to `custom_id`.                                  |
+| `system_instructions` | no       | The agent's effective system instructions, when they are evidence too.                       |
+| `feedback_events`     | no       | Feedback on the conversation, for a judge whose `on` matches `feedback`.                     |
+| `environment`         | no       | Where the conversation ran. A judge's `sample_rate` applies only to `production` lines.      |
 
 A trajectory export's records are keyed by `role` (`user`, `assistant`, `tool`,
 `reasoning`, `meta`); reasoning and meta records are not evidence. Normalized
@@ -110,8 +110,8 @@ events are keyed by `type`:
 }
 ```
 
-A line that is not JSON, lacks a `custom_id` or `trajectory`, or repeats a
-`custom_id` stops the run before anything is judged. A line whose trajectory
+A line that is not JSON, lacks a `trajectory`, has neither a `custom_id` nor a
+`conversation_id`, or repeats a `custom_id` stops the run before anything is judged. A line whose trajectory
 cannot be read, such as a tool result with no call, records an `error` for that
 conversation and the rest carry on.
 

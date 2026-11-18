@@ -22,7 +22,10 @@ import {
 
 /** One conversation to judge: a line of an input file. */
 export interface JudgeInputLine {
-  /** Your id for the conversation. It must be unique across every input file. */
+  /**
+   * Your id for the conversation, unique across every input file. A line
+   * without one is named by its `conversation_id`.
+   */
   custom_id: string;
   /** The platform conversation this is, when it is one. Defaults to `custom_id`. */
   conversation_id?: string;
@@ -156,22 +159,22 @@ async function readLines(
   }
   const seen = new Map<string, string>();
   return lines.map(({ value, label }) => {
-    if (
-      !isRecord(value) ||
-      typeof value.custom_id !== "string" ||
-      !value.custom_id ||
-      !Array.isArray(value.trajectory)
-    ) {
-      throw new Error(`${label} needs a custom_id and a trajectory array`);
+    if (!isRecord(value) || !Array.isArray(value.trajectory)) {
+      throw new Error(`${label} needs a trajectory array`);
     }
-    const earlier = seen.get(value.custom_id);
+    // An exported conversation names itself by its conversation id.
+    const customId = value.custom_id ?? value.conversation_id;
+    if (typeof customId !== "string" || !customId) {
+      throw new Error(`${label} needs a custom_id or a conversation_id`);
+    }
+    const earlier = seen.get(customId);
     if (earlier) {
       throw new Error(
-        `${label} repeats custom_id ${value.custom_id}, first seen at ${earlier}`,
+        `${label} repeats custom_id ${customId}, first seen at ${earlier}`,
       );
     }
-    seen.set(value.custom_id, label);
-    return value as unknown as JudgeInputLine;
+    seen.set(customId, label);
+    return { ...value, custom_id: customId } as unknown as JudgeInputLine;
   });
 }
 

@@ -446,6 +446,25 @@ describe("runJudges", () => {
     );
   });
 
+  it("names a line without a custom_id by its conversation id", async () => {
+    const { controller } = scripted(reply);
+    const { results } = await runJudges({
+      judges: [judges[0]!],
+      input: [{ conversation_id: "conv-1", trajectory: EXPORT } as never],
+      controller,
+    });
+    expect(results).toMatchObject([
+      { custom_id: "conv-1", conversation_id: "conv-1", result: "pass" },
+    ]);
+    await expect(
+      runJudges({
+        judges: [judges[0]!],
+        input: [{ trajectory: EXPORT } as never],
+        controller,
+      }),
+    ).rejects.toThrow(/custom_id or a conversation_id/);
+  });
+
   it("records a reply outside the contract as an error, never a fail", async () => {
     const { controller } = scripted(
       () => '{"reasoning":"x","verdict":"unsure"}',
