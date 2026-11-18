@@ -799,6 +799,70 @@ describe("createJudgeRunController", () => {
     expect(String(asked[0]!.state.conversation)).toContain("hi there");
   });
 
+  it("adds up a classifier judge's usage across its fallbacks, and leaves it out when none was reported", async () => {
+    const tokens = (input: number, output: number) => ({
+      input,
+      output,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: input + output,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    });
+    const judge = async (
+      failed: Awaited<ReturnType<JudgeClassifier>>["usage"],
+      answered: Awaited<ReturnType<JudgeClassifier>>["usage"],
+    ) => {
+      const fixture = writeFixtureRecipe();
+      cleanups.push(fixture.cleanup);
+      const judges = [
+        parseJudgeDefinition("judges/polite.yaml", CLASSIFIER_JUDGE)!,
+      ];
+      const controller = createJudgeRunController({
+        recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
+        judges,
+        cwd: fixture.workspaceDir,
+        classify: async (request): ReturnType<JudgeClassifier> =>
+          request.model === "typesafe/jev-latest"
+            ? {
+                answers: {},
+                stopReason: "error",
+                errorMessage: "503 unavailable",
+                ...(failed ? { usage: failed } : {}),
+              }
+            : {
+                answers: {
+                  greeted: { type: "bool", probability: 0.99 },
+                  apologised: { type: "bool", probability: 0.7 },
+                },
+                stopReason: "stop" as const,
+                ...(answered ? { usage: answered } : {}),
+              },
+      });
+      cleanups.push(() => controller.shutdown());
+      const { results } = await runJudges({
+        judges,
+        input: [line("talk-1", SMALL_TALK)],
+        controller,
+      });
+      return results[0]!;
+    };
+
+    expect((await judge(tokens(100, 1), tokens(50, 2))).usage).toEqual({
+      input_tokens: 150,
+      output_tokens: 3,
+      total_tokens: 153,
+    });
+    // A last reply without usage keeps what the failed call reported.
+    expect((await judge(tokens(100, 1), undefined)).usage).toEqual({
+      input_tokens: 100,
+      output_tokens: 1,
+      total_tokens: 101,
+    });
+    const unreported = await judge(undefined, undefined);
+    expect(unreported).toMatchObject({ model: "openai/gpt-6-luna" });
+    expect(unreported).not.toHaveProperty("usage");
+  });
+
   it("fails a classifier judge's line when the run was given no classifier", async () => {
     const fixture = writeFixtureRecipe();
     cleanups.push(fixture.cleanup);

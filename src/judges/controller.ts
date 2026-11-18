@@ -297,7 +297,11 @@ export function createJudgeRunController(
           state: { conversation: summary.prompt },
           questions,
         });
-        const usage = addUsage(undefined, reply.usage);
+        // Every model tried used tokens, the ones that failed included.
+        const usage = addUsage(
+          details.get(summary.agent_run_id)?.usage,
+          reply.usage,
+        );
         details.set(summary.agent_run_id, {
           model,
           ...(usage ? { usage } : {}),
