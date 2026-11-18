@@ -20,6 +20,7 @@ import {
   runJudges,
   samplesIn,
   toJudgeInput,
+  trajectoryFromPiSession,
   type JudgeClassifier,
   type JudgeInputLine,
 } from "../src/judges/index.js";
@@ -833,5 +834,122 @@ describe("the judges command-line entry", () => {
     await expect(
       judgeCli({ recipe: fixture.recipeDir, input: ["x"], judge: ["nope"] }),
     ).rejects.toThrow(/no judge named nope; its judges are greeting/);
+  });
+});
+
+describe("a Pi session as evidence", () => {
+  const SESSION = [
+    { type: "session", version: 3, id: "C1" },
+    { type: "model_change", id: "m", parentId: null },
+    {
+      type: "message",
+      id: "s",
+      parentId: "m",
+      message: { role: "system", content: "", sections: { preamble: "x" } },
+    },
+    {
+      type: "message",
+      id: "u",
+      parentId: "s",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "say hello" }] },
+    },
+    // An abandoned branch: a reply the user rewound past.
+    {
+      type: "message",
+      id: "dead",
+      parentId: "u",
+      message: { role: "assistant", content: [{ type: "text", text: "nope" }] },
+    },
+    {
+      type: "message",
+      id: "a",
+      parentId: "u",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "private" },
+          {
+            type: "toolCall",
+            id: "c1",
+            name: "mcp_hello_echo",
+            arguments: { message: "hello" },
+          },
+        ],
+      },
+    },
+    {
+      type: "message",
+      id: "t",
+      parentId: "a",
+      message: {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "mcp_hello_echo",
+        isError: false,
+        content: [{ type: "text", text: "Echo: hello" }],
+      },
+    },
+    {
+      type: "message",
+      id: "f",
+      parentId: "t",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done." }],
+      },
+    },
+  ]
+    .map((entry) => JSON.stringify(entry))
+    .join("\n");
+
+  it("reads the active branch's messages and tool calls, without the system prompt or reasoning", () => {
+    expect(trajectoryFromPiSession(SESSION)).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "say hello",
+        timestamp: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "tool_call",
+        id: "c1",
+        name: "mcp_hello_echo",
+        arguments: { message: "hello" },
+      },
+      {
+        type: "tool_result",
+        tool_call_id: "c1",
+        name: "mcp_hello_echo",
+        content: "Echo: hello",
+      },
+      { type: "message", role: "assistant", content: "Done." },
+    ]);
+    expect(() => trajectoryFromPiSession("{}")).toThrow(/not a Pi session/);
+  });
+
+  it("judges a line that names a session file", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const session = join(fixture.workspaceDir, "session.jsonl");
+    writeFileSync(session, SESSION);
+    const input = join(fixture.workspaceDir, "in.jsonl");
+    writeFileSync(
+      input,
+      `${JSON.stringify({ custom_id: "C1", session_file: session })}\n`,
+    );
+    const prompts: string[] = [];
+    const { controller } = scripted((_name, prompt) => {
+      prompts.push(prompt);
+      return '{"reasoning":"echoed","verdict":"pass"}';
+    });
+    const { results } = await runJudges({
+      judges: [parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!],
+      input: [input],
+      controller,
+    });
+    expect(results).toMatchObject([{ custom_id: "C1", result: "pass" }]);
+    expect(prompts[0]).toContain("Echo: hello");
+    expect(prompts[0]).not.toContain("private");
   });
 });

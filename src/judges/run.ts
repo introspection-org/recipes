@@ -7,6 +7,7 @@ import type { BatchRunController } from "../batch/runner.js";
 import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
+import { trajectoryFromPiSession } from "./session.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
   evidenceHash,
@@ -34,6 +35,11 @@ export interface JudgeInputLine {
    * events already normalized (keyed by `type`).
    */
   trajectory: unknown[];
+  /**
+   * In an input file, a line may name a Pi session file in place of
+   * `trajectory`; the session's active branch is read as the conversation.
+   */
+  session_file?: string;
   /** The agent's effective system instructions, when they are evidence too. */
   system_instructions?: string;
   /** Feedback on the conversation, for a judge whose gate matches `feedback`. */
@@ -158,9 +164,29 @@ async function readLines(
     });
   }
   const seen = new Map<string, string>();
+  for (const line of lines) {
+    const { value, label } = line;
+    if (
+      !isRecord(value) ||
+      typeof value.session_file !== "string" ||
+      value.trajectory !== undefined
+    ) {
+      continue;
+    }
+    const session = await files.read(value.session_file);
+    if (session === null) {
+      throw new Error(`${label}: ${value.session_file} does not exist`);
+    }
+    const { session_file: _file, ...rest } = value;
+    try {
+      line.value = { ...rest, trajectory: trajectoryFromPiSession(session) };
+    } catch (error) {
+      throw new Error(`${label}: ${value.session_file}: ${message(error)}`);
+    }
+  }
   return lines.map(({ value, label }) => {
     if (!isRecord(value) || !Array.isArray(value.trajectory)) {
-      throw new Error(`${label} needs a trajectory array`);
+      throw new Error(`${label} needs a trajectory array or a session_file`);
     }
     // An exported conversation names itself by its conversation id.
     const customId = value.custom_id ?? value.conversation_id;

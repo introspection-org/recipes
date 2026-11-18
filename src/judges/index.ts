@@ -31,6 +31,7 @@ export {
   type RunJudgesOptions,
   type SkippedJudgement,
 } from "./run.js";
+export { trajectoryFromPiSession } from "./session.js";
 export {
   evidenceHash,
   normalizeReplayTrajectory,

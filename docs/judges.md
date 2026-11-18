@@ -110,6 +110,11 @@ events are keyed by `type`:
 }
 ```
 
+A line may name a Pi session file in place of `trajectory`, as
+`{"custom_id": "C1", "session_file": "tasks/C1/.introspection/session/….jsonl"}`:
+the session's active branch is read as the conversation, without its system
+prompt or reasoning.
+
 A line that is not JSON, lacks a `trajectory`, has neither a `custom_id` nor a
 `conversation_id`, or repeats a `custom_id` stops the run before anything is judged. A line whose trajectory
 cannot be read, such as a tool result with no call, records an `error` for that
