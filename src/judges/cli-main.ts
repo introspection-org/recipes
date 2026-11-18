@@ -14,6 +14,7 @@ import {
   type JudgeRunController,
 } from "./controller.js";
 import { loadJudges, type JudgeDefinition } from "./definition.js";
+import { JUDGE_REPORT_SCHEMA_VERSION } from "./identity.js";
 import {
   runJudges,
   type JudgeInputLine,
@@ -34,11 +35,15 @@ Run a Recipe's judges over conversations and print the judgements as JSON.
   --concurrency <n>            Judgements in flight at once. Default 8.
   --max-attempts <n>           Tries of a rate-limited judgement. Default 3.
   --fallback-after-retries <n> Retries of a judge's model before its next ai.fallbacks entry. Default 2.
+  --schema                     Print the protocol version, {"schema_version": 2}, and exit.
+
+The judges are read by introspection-recipe-check: $INTROSPECTION_RECIPE_CHECK,
+else the one on PATH.
 `;
 
 /** What the runner prints: every judgement, what was skipped, and the counts by result. */
 export interface JudgeCliReport {
-  schema_version: 1;
+  schema_version: typeof JUDGE_REPORT_SCHEMA_VERSION;
   results: JudgementLine[];
   skipped: SkippedJudgement[];
   counts: Record<JudgementLine["result"], number>;
@@ -208,7 +213,7 @@ export async function judgeCli(
     });
     const counts = { pass: 0, fail: 0, not_applicable: 0, error: 0 };
     for (const line of outcome.results) counts[line.result] += 1;
-    return { schema_version: 1, ...outcome, counts };
+    return { schema_version: JUDGE_REPORT_SCHEMA_VERSION, ...outcome, counts };
   } finally {
     await controller.shutdown?.();
   }

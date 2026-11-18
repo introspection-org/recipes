@@ -158,13 +158,38 @@ describe("judge definitions", () => {
     });
   });
 
-  it("refuses the removed llm block, naming ai", () => {
+  it("reads the older llm block as the ai block recipe-check maps it to", () => {
+    const warnings: string[] = [];
+    const judge = parseJudgeDefinition(
+      "judges/old.yaml",
+      "name: old\nllm:\n  provider: anthropic\n  model: claude-sonnet-5-5\n  request:\n    max_tokens: 512\n    reasoning_effort: low\n  local:\n    base_url: http://localhost:8080\n    api_key_env: LOCAL_KEY\ninstructions: x\n",
+      { onWarning: (warning) => warnings.push(warning) },
+    );
+    expect(judge).toMatchObject({
+      kind: "llm",
+      ai: {
+        name: "anthropic/claude-sonnet-5-5",
+        thinkingLevel: "low",
+      },
+    });
+    expect(warnings).toEqual([expect.stringContaining("llm.local")]);
+  });
+
+  it("refuses a gate regex JavaScript's v flag cannot compile", () => {
     expect(() =>
       parseJudgeDefinition(
-        "judges/old.yaml",
-        "name: old\nllm:\n  provider: openai\n  model: gpt-5\ninstructions: x\n",
+        "judges/gate.yaml",
+        "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/[(]/'\n",
       ),
-    ).toThrow(/`llm` is no longer read.*`ai:/);
+    ).toThrow(/JavaScript regex \(v flag\)/);
+  });
+
+  it("names the binary when recipe-check cannot be run", () => {
+    expect(() =>
+      parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE, {
+        recipeCheck: "/nonexistent/introspection-recipe-check",
+      }),
+    ).toThrow(/INTROSPECTION_RECIPE_CHECK/);
   });
 
   it("refuses a judge with both instructions and questions, or neither", () => {
@@ -182,7 +207,7 @@ describe("judge definitions", () => {
         "judges/env.yaml",
         "name: env\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      environment: production\n",
       ),
-    ).toThrow(/cannot match on "environment"/);
+    ).toThrow(/automatic platform context/);
   });
 
   it("skips a mission judge and loads the rest of judges/ by file order", () => {
@@ -349,7 +374,7 @@ describe("judge verdicts", () => {
       completeClassifierVerdict(judge.questions, answer(0.9, 0.5)),
     ).toEqual({
       verdict: "pass",
-      reasoning: "greeted 0.90 >= 0.80; apologised 0.50 >= 0.50",
+      reasoning: "apologised 0.50 >= 0.50; greeted 0.90 >= 0.80",
       scores: { greeted: 0.9, apologised: 0.5 },
     });
     expect(
@@ -425,7 +450,7 @@ describe("runJudges", () => {
     );
     expect(outcome.results[2]).toMatchObject({
       scores: { greeted: 0.95, apologised: 0.1 },
-      reasoning: "greeted 0.95 >= 0.80; apologised 0.10 < 0.50",
+      reasoning: "apologised 0.10 < 0.50; greeted 0.95 >= 0.80",
     });
     expect(outcome.results[2]!.judgement_id).toBeUndefined();
     const written = readFileSync(join(directory, "results.jsonl"), "utf8")
@@ -804,7 +829,7 @@ describe("the judges command-line entry", () => {
       },
     );
     expect(seen).toEqual([["greeting"]]);
-    expect(report.schema_version).toBe(1);
+    expect(report.schema_version).toBe(2);
     expect(report.counts).toEqual({
       pass: 2,
       fail: 0,

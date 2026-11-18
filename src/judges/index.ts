@@ -10,9 +10,13 @@ export {
   JudgeDefinitionError,
   loadJudges,
   parseJudgeDefinition,
+  parseJudgeDefinitions,
+  RECIPE_CHECK_BIN_ENV,
   type ClassifierJudgeDefinition,
   type JudgeDefinition,
+  type JudgeDefinitionOptions,
   type JudgeQuestion,
+  type JudgeSource,
   type LlmJudgeDefinition,
 } from "./definition.js";
 export {
