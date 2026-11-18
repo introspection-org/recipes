@@ -18,6 +18,7 @@ import {
 import {
   completeClassifierVerdict,
   completeLlmVerdict,
+  stripCodeFence,
   type JudgeVerdict,
   type Verdict,
 } from "./verdict.js";
@@ -142,6 +143,13 @@ interface Pair {
 
 /** The batch's agent name; each line's own judge is resolved from its id. */
 const BATCH_AGENT = "judges";
+
+/** A run whose output has had one surrounding code fence removed. */
+function unfenced<T extends { output?: string | undefined }>(run: T): T {
+  return typeof run.output === "string"
+    ? { ...run, output: stripCodeFence(run.output) }
+    : run;
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -384,8 +392,12 @@ export async function runJudges(
           : input,
       );
     },
-    wait: (id, signal) => options.controller.wait(id, signal),
-    message: (id, text) => options.controller.message(id, text),
+    // A fenced JSON reply is still an answer: unfence it before the batch's
+    // JSON check, which would otherwise ask the judge to repair it.
+    wait: async (id, signal) =>
+      unfenced(await options.controller.wait(id, signal)),
+    message: async (id, text) =>
+      unfenced(await options.controller.message(id, text)),
     close: (id) => options.controller.close(id),
   };
   const completed = new Map<string, JudgementLine>();

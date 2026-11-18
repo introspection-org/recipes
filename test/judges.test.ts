@@ -28,6 +28,7 @@ import {
   type JudgeInputLine,
 } from "../src/judges/index.js";
 import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli-main.js";
+import { stripCodeFence } from "../src/judges/verdict.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createAgentSessionInternal } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
@@ -343,13 +344,26 @@ describe("judge evidence", () => {
 });
 
 describe("judge verdicts", () => {
-  it("reads an LLM verdict, fenced or not", () => {
-    expect(
-      completeLlmVerdict(
-        "transcript",
-        '```json\n{"reasoning":"ok","verdict":"PASS"}\n```',
-      ),
-    ).toEqual({ verdict: "pass", reasoning: "ok" });
+  it.each([
+    ["a json fence", '```json\n{"reasoning":"ok","verdict":"PASS"}\n```'],
+    [
+      "an upper-case JSON fence",
+      '  ```JSON\n{"reasoning":"ok","verdict":"pass"}\n```\n',
+    ],
+    ["a bare fence", '```\n{"reasoning":"ok","verdict":"pass"}\n```'],
+    ["no fence", '\n{"reasoning":"ok","verdict":"pass"}\n'],
+  ])("reads an LLM verdict in %s", (_, reply) => {
+    expect(completeLlmVerdict("transcript", reply)).toEqual({
+      verdict: "pass",
+      reasoning: "ok",
+    });
+  });
+
+  it("strips one surrounding fence and nothing else", () => {
+    expect(stripCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+    expect(stripCodeFence('```{"a":1}```')).toBe('{"a":1}');
+    expect(stripCodeFence('{"a":"```"}')).toBe('{"a":"```"}');
+    expect(stripCodeFence('prose ```json\n{"a":1}\n```')).not.toBe('{"a":1}');
   });
 
   it("refuses a verdict outside the vocabulary and output that echoes the transcript", () => {
@@ -492,6 +506,28 @@ describe("runJudges", () => {
         controller,
       }),
     ).rejects.toThrow(/custom_id or a conversation_id/);
+  });
+
+  it.each([
+    ["a json fence", '```json\n{"reasoning":"ok","verdict":"fail"}\n```'],
+    ["a bare fence", '```\n{"reasoning":"ok","verdict":"fail"}\n```'],
+    ["no fence", '{"reasoning":"ok","verdict":"fail"}'],
+  ])("grades a reply in %s without asking for a repair", async (_, text) => {
+    const { controller } = scripted(() => text);
+    const repairs: string[] = [];
+    const { results } = await runJudges({
+      judges: [judges[0]!],
+      input: [line("fence-1", EXPORT)],
+      controller: {
+        ...controller,
+        message: async (id, prompt) => {
+          repairs.push(prompt);
+          return controller.message(id, prompt);
+        },
+      },
+    });
+    expect(repairs).toEqual([]);
+    expect(results).toMatchObject([{ result: "fail", reasoning: "ok" }]);
   });
 
   it("records a reply outside the contract as an error, never a fail", async () => {

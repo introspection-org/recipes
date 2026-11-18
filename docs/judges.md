@@ -203,8 +203,9 @@ A skipped judgement is not written to the results.
 
 - **An LLM judge** runs as a fresh session with the judge's `ai:` settings, no
   tools, and the judge's `instructions` as its whole system prompt. The
-  conversation is the prompt. A reply that is not JSON is sent back to be
-  fixed, up to two times, and then checked: the verdict must be in the
+  conversation is the prompt. One code fence around the reply (```` ```json ````
+  in any case, or a bare ```` ``` ````) is dropped first. A reply that is still
+  not JSON is sent back to be fixed, up to two times, and then checked: the verdict must be in the
   vocabulary, and the reply must not repeat a span of the conversation.
 - **A classifier judge** is one decision-model call through `classify`, with
   the judge's questions and a transcript slimmed to fit: long tool arguments
