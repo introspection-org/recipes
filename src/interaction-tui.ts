@@ -153,10 +153,15 @@ export function showChoiceTui(
           const marker = multiple
             ? `${selected.has(index) ? "[x]" : "[ ]"} `
             : "";
-          // Titles only: a list of choices reads at a glance; the
-          // question carries the context.
+          // The description follows its label, dimmed, on the same row, as
+          // the other hosts show it; a long one is cut at the width.
           const label = `${marker}${index + 1}. ${option.label}`;
-          add(prefix + theme.fg(active ? "accent" : "text", label));
+          const description = option.description?.trim();
+          add(
+            prefix +
+              theme.fg(active ? "accent" : "text", label) +
+              (description ? theme.fg("dim", ` — ${description}`) : ""),
+          );
         }
 
         // The last row is an input: a placeholder until something is
