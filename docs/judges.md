@@ -54,14 +54,43 @@ node node_modules/@introspection-ai/recipes/dist/judges/cli.js \
 ```
 
 The script is started by Node rather than loaded by Pi, so it finds Pi's own
-packages in the installed Pi: the `pi` on `PATH`, or the folder `PI_PACKAGE_DIR`
-names.
+packages in the folder `PI_PACKAGE_DIR` names, else in the installed Pi whose
+`pi` is on `PATH`. With `PI_PACKAGE_DIR` set, it needs no `pi` executable.
 
 `--input -` reads conversations from standard input, and `--judge <name>`
 keeps only the judges named. It runs on this machine's Pi: its logins and
 provider keys, with each judge's `ai.fallbacks`. It prints one JSON report,
 `{ schema_version, results, skipped, counts, stopped }`, and exits 0 when the
 run finished, whatever the verdicts.
+
+`--schema` prints the protocol the script speaks, `{"schema_version":2}`, and
+exits 0 without loading Pi. A host checks it before running: the report's
+`schema_version` is the same number.
+
+### Where the judge definitions come from
+
+The runner doesn't parse judge YAML. `introspection-recipe-check` normalizes
+it, so the runner, the checker and the hosted platform all read the same
+definition, and an [older `llm:` block](recipe-judges.md#the-older-llm-block)
+means the same everywhere. By default, `loadJudges` runs the binary that
+`INTROSPECTION_RECIPE_CHECK` names, or the `introspection-recipe-check` on
+`PATH`, as `introspection-recipe-check judges`, with the judge files as JSON
+`[{ "path", "content" }]` on standard input.
+
+A host that links the recipe-check crate passes the definitions itself, and
+nothing is spawned:
+
+```bash
+node node_modules/@introspection-ai/recipes/dist/judges/cli.js \
+  --recipe ./my-recipe --input monday.jsonl --definitions judges.json
+```
+
+`judges.json` is exactly what `introspection-recipe-check judges` prints for the
+Recipe's `judges/`: an array of
+`{ "source_path", "definition", "warnings"? }`, which is the
+`ParsedJudgeDefinition` of `parse_judge_definitions`. In code, pass the same
+array as `loadJudges(recipeDir, { definitions })`. The judge files are still
+read, for each judge's `definition_hash`.
 
 ## Input
 
@@ -138,6 +167,9 @@ One line per judge and conversation, by judge and then in input order:
   "result": "pass",
   "status": "ok",
   "reasoning": "Answered with the order's shipping status.",
+  "sequence_hash": "4be1…",
+  "model": "openai/gpt-5",
+  "usage": { "input_tokens": 1830, "output_tokens": 41, "total_tokens": 1871 },
   "run_id": "agent-run-1a2b3c4d",
   "attempts": 1
 }
@@ -146,8 +178,16 @@ One line per judge and conversation, by judge and then in input order:
 - `result` is `pass`, `fail`, `not_applicable` or `error`. A judge that could
   not reach a verdict records `error` with the reason in `error`; it is never
   counted as a `fail`.
-- A classifier judge adds `scores`, its probability of yes for each question,
-  and its `reasoning` names each score against its threshold.
+- A classifier judge adds `scores`, its probability of yes for each question
+  from 0 to 1, and its `reasoning` names each score against its threshold.
+  Questions are listed in name order.
+- `sequence_hash` is the hash of the evidence the judge read (`evidenceHash`
+  of its input).
+- `model` is the `<provider>/<model>` that answered, after any `ai.fallbacks`.
+  `usage` is the tokens the judgement took, counting cached prompt tokens as
+  input. It is present only when the model reported tokens, never as zeros.
+  Both come from the controller's `runDetails`; a judgement resumed from an
+  earlier run has neither.
 - `definition_hash` is the SHA-256 of the judge file. Judgements compare only
   when it and `contract_version` match.
 - `judgement_id` is present when the judge has a registered id (see
