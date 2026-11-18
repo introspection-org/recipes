@@ -13,7 +13,11 @@ import {
   createJudgeRunController,
   type JudgeRunController,
 } from "./controller.js";
-import { loadJudges, type JudgeDefinition } from "./definition.js";
+import {
+  loadJudges,
+  type JudgeDefinition,
+  type NormalizedJudgeDefinition,
+} from "./definition.js";
 import { JUDGE_REPORT_SCHEMA_VERSION } from "./identity.js";
 import {
   runJudges,
@@ -35,10 +39,12 @@ Run a Recipe's judges over conversations and print the judgements as JSON.
   --concurrency <n>            Judgements in flight at once. Default 8.
   --max-attempts <n>           Tries of a rate-limited judgement. Default 3.
   --fallback-after-retries <n> Retries of a judge's model before its next ai.fallbacks entry. Default 2.
+  --definitions <file>         The Recipe's judges, already normalized: JSON as
+                               introspection-recipe-check judges prints it. Nothing is spawned.
   --schema                     Print the protocol version, {"schema_version": 2}, and exit.
 
-The judges are read by introspection-recipe-check: $INTROSPECTION_RECIPE_CHECK,
-else the one on PATH.
+Without --definitions, the judges are read by introspection-recipe-check:
+$INTROSPECTION_RECIPE_CHECK, else the one on PATH.
 `;
 
 /** What the runner prints: every judgement, what was skipped, and the counts by result. */
@@ -56,6 +62,7 @@ export interface JudgeCliArgs {
   judge: string[];
   out?: string;
   operational?: string;
+  definitions?: string;
   concurrency?: number;
   maxAttempts?: number;
   fallbackAfterRetries?: number;
@@ -80,6 +87,7 @@ export function parseJudgeCliArgs(argv: readonly string[]): JudgeCliArgs {
       judge: { type: "string", multiple: true },
       out: { type: "string" },
       operational: { type: "string" },
+      definitions: { type: "string" },
       concurrency: { type: "string" },
       "max-attempts": { type: "string" },
       "fallback-after-retries": { type: "string" },
@@ -106,6 +114,7 @@ export function parseJudgeCliArgs(argv: readonly string[]): JudgeCliArgs {
     judge: values.judge ?? [],
     ...(values.out ? { out: values.out } : {}),
     ...(values.operational ? { operational: values.operational } : {}),
+    ...(values.definitions ? { definitions: values.definitions } : {}),
     ...(concurrency ? { concurrency } : {}),
     ...(maxAttempts ? { maxAttempts } : {}),
     ...(fallbackAfterRetries !== undefined ? { fallbackAfterRetries } : {}),
@@ -130,7 +139,8 @@ export interface JudgeCliDeps {
   controller?: (
     judges: readonly JudgeDefinition[],
   ) => Promise<
-    BatchRunController & Partial<Pick<JudgeRunController, "shutdown">>
+    BatchRunController &
+      Partial<Pick<JudgeRunController, "shutdown" | "runDetails">>
   >;
   readStdin?: () => Promise<string>;
   signal?: AbortSignal;
@@ -152,7 +162,16 @@ export async function judgeCli(
   deps: JudgeCliDeps = {},
 ): Promise<JudgeCliReport> {
   const recipeDir = resolve(args.recipe);
-  const all = loadJudges(recipeDir);
+  const all = loadJudges(
+    recipeDir,
+    args.definitions
+      ? {
+          definitions: JSON.parse(
+            await readFile(args.definitions, "utf8"),
+          ) as NormalizedJudgeDefinition[],
+        }
+      : {},
+  );
   const unknown = args.judge.filter(
     (name) => !all.some((judge) => judge.name === name),
   );

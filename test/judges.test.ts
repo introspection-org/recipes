@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRunSummary } from "../src/agents.js";
 import type { BatchRunController } from "../src/batch/index.js";
@@ -12,6 +14,7 @@ import {
   completeLlmVerdict,
   createJudgeRunController,
   evaluateGate,
+  evidenceHash,
   gateView,
   judgementId,
   loadJudges,
@@ -598,6 +601,36 @@ describe("one conversation under many judges", () => {
   });
 });
 
+describe("runJudges reports who answered", () => {
+  it("names the model and its usage, and leaves out usage Pi counted as zero", async () => {
+    const judge = parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!;
+    const { controller } = scripted(
+      () => '{"reasoning":"echoed","verdict":"pass"}',
+    );
+    const usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    const { results } = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT), line("echo-2", EXPORT)],
+      controller: {
+        ...controller,
+        runDetails: (id) =>
+          id === "run-1"
+            ? { model: "faux/faux-1", usage }
+            : {
+                model: "faux-b/faux-b-1",
+                usage: { input_tokens: 9, output_tokens: 1, total_tokens: 10 },
+              },
+      },
+    });
+    expect(results[0]).toMatchObject({ model: "faux/faux-1" });
+    expect(results[0]).not.toHaveProperty("usage");
+    expect(results[1]).toMatchObject({
+      model: "faux-b/faux-b-1",
+      usage: { input_tokens: 9, output_tokens: 1, total_tokens: 10 },
+    });
+  });
+});
+
 describe("createJudgeRunController", () => {
   it("runs an LLM judge as a tool-less session that falls back once its model has been retried twice", async () => {
     const fixture = writeFixtureRecipe();
@@ -664,8 +697,18 @@ describe("createJudgeRunController", () => {
     });
 
     expect(results).toMatchObject([
-      { judge: "greeting", result: "pass", reasoning: "echoed" },
+      {
+        judge: "greeting",
+        result: "pass",
+        reasoning: "echoed",
+        // The fallback answered, and the hash is of the evidence it read.
+        model: "faux-b/faux-b-1",
+        sequence_hash: evidenceHash(toJudgeInput(EXPORT)),
+      },
     ]);
+    // Usage is reported only when Pi counted tokens, and never as zero.
+    const usage = results[0]!.usage;
+    if (usage) expect(usage.total_tokens).toBeGreaterThan(0);
     expect(primary.state.callCount).toBe(3);
     expect(seen).toHaveLength(1);
     expect(seen[0]!.system).toContain("Did the assistant echo the message?");
@@ -700,6 +743,20 @@ describe("createJudgeRunController", () => {
                 apologised: { type: "bool", probability: 0.7 },
               },
               stopReason: "stop" as const,
+              usage: {
+                input: 120,
+                output: 4,
+                cacheRead: 30,
+                cacheWrite: 0,
+                totalTokens: 154,
+                cost: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  total: 0,
+                },
+              },
             };
       },
     });
@@ -711,7 +768,15 @@ describe("createJudgeRunController", () => {
       controller,
     });
 
-    expect(results).toMatchObject([{ judge: "polite", result: "pass" }]);
+    expect(results).toMatchObject([
+      {
+        judge: "polite",
+        result: "pass",
+        model: "openai/gpt-6-luna",
+        usage: { input_tokens: 150, output_tokens: 4, total_tokens: 154 },
+        sequence_hash: evidenceHash(toJudgeInput(SMALL_TALK)),
+      },
+    ]);
     expect(asked.map((request) => request.model)).toEqual([
       "typesafe/jev-latest",
       "openai/gpt-6-luna",
@@ -847,6 +912,111 @@ describe("the judges command-line entry", () => {
         .split("\n"),
     ).toHaveLength(2);
   });
+
+  it("reads --definitions in place of recipe-check, spawning nothing", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    mkdirSync(join(fixture.recipeDir, "judges"));
+    writeFileSync(
+      join(fixture.recipeDir, "judges", "greeting.yaml"),
+      LLM_JUDGE,
+    );
+    // What a host that links recipe-check passes: the binary's own output.
+    const printed = spawnSync(
+      process.env.INTROSPECTION_RECIPE_CHECK!,
+      ["judges"],
+      {
+        input: JSON.stringify([
+          { path: "judges/greeting.yaml", content: LLM_JUDGE },
+        ]),
+        encoding: "utf8",
+      },
+    );
+    expect(printed.status).toBe(0);
+    const definitions = join(fixture.workspaceDir, "definitions.json");
+    writeFileSync(definitions, printed.stdout);
+    // A recipe-check that cannot run: reaching for it would fail the run.
+    vi.stubEnv("INTROSPECTION_RECIPE_CHECK", "/nonexistent/recipe-check");
+    cleanups.push(() => {
+      vi.unstubAllEnvs();
+    });
+    expect(() => loadJudges(fixture.recipeDir)).toThrow(
+      /INTROSPECTION_RECIPE_CHECK/,
+    );
+
+    const args = parseJudgeCliArgs([
+      "--recipe",
+      fixture.recipeDir,
+      "--input",
+      "-",
+      "--definitions",
+      definitions,
+    ]);
+    expect(args.definitions).toBe(definitions);
+    const report = await judgeCli(args, {
+      readStdin: async () => `${JSON.stringify(line("echo-1", EXPORT))}\n`,
+      controller: async () =>
+        scripted(() => '{"reasoning":"echoed","verdict":"pass"}').controller,
+    });
+    expect(report.results).toMatchObject([
+      { judge: "greeting", result: "pass" },
+    ]);
+  });
+
+  it("prints its protocol for --schema, and runs on PI_PACKAGE_DIR with no pi binary", () => {
+    const cli = fileURLToPath(
+      new URL("../dist/judges/cli.js", import.meta.url),
+    );
+    const bare = { PATH: "", HOME: process.env.HOME ?? "" };
+    const schema = spawnSync(process.execPath, [cli, "--schema"], {
+      env: bare,
+      encoding: "utf8",
+    });
+    expect(schema.status).toBe(0);
+    expect(schema.stdout).toBe('{"schema_version":2}\n');
+
+    // The runtime image: Pi's packages under PI_PACKAGE_DIR, no `pi` on PATH.
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const input = join(fixture.workspaceDir, "in.jsonl");
+    writeFileSync(input, "");
+    const definitions = join(fixture.workspaceDir, "definitions.json");
+    writeFileSync(definitions, "[]");
+    const run = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--recipe",
+        fixture.recipeDir,
+        "--input",
+        input,
+        "--definitions",
+        definitions,
+      ],
+      {
+        cwd: fixture.workspaceDir,
+        env: {
+          ...bare,
+          HOME: fixture.workspaceDir,
+          PI_PACKAGE_DIR: realpathSync(
+            fileURLToPath(
+              new URL(
+                "../node_modules/@earendil-works/pi-coding-agent",
+                import.meta.url,
+              ),
+            ),
+          ),
+        },
+        encoding: "utf8",
+      },
+    );
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      schema_version: 2,
+      results: [],
+    });
+  }, 60_000);
 
   it("names the Recipe's judges when asked for one it does not have", async () => {
     const fixture = writeFixtureRecipe();

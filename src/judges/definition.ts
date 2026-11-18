@@ -63,8 +63,11 @@ export interface JudgeSource {
   content: string;
 }
 
-/** What `introspection-recipe-check judges` prints for each online judge. */
-interface NormalizedJudge {
+/**
+ * What `introspection-recipe-check judges` prints for each online judge, and
+ * what a host that links the crate passes in its place (`definitions`).
+ */
+export interface NormalizedJudgeDefinition {
   source_path: string;
   definition: {
     name: string;
@@ -78,6 +81,12 @@ interface NormalizedJudge {
 }
 
 export interface JudgeDefinitionOptions {
+  /**
+   * The judges already normalized, as `introspection-recipe-check judges`
+   * prints them: a host that links recipe-check passes them, and nothing is
+   * spawned.
+   */
+  definitions?: readonly NormalizedJudgeDefinition[];
   /** The `introspection-recipe-check` binary. Default: `$INTROSPECTION_RECIPE_CHECK`, else the one on PATH. */
   recipeCheck?: string;
   /** Called with each warning the normalization raised. Default: write it to stderr. */
@@ -101,7 +110,7 @@ function recipeCheckBinary(options: JudgeDefinitionOptions): string {
 function normalizeJudges(
   sources: readonly JudgeSource[],
   options: JudgeDefinitionOptions,
-): NormalizedJudge[] {
+): NormalizedJudgeDefinition[] {
   const binary = recipeCheckBinary(options);
   const result = spawnSync(binary, ["judges"], {
     input: JSON.stringify(sources),
@@ -118,11 +127,11 @@ function normalizeJudges(
       result.stderr.trim() || `${binary} judges exited with ${result.status}`,
     );
   }
-  return JSON.parse(result.stdout) as NormalizedJudge[];
+  return JSON.parse(result.stdout) as NormalizedJudgeDefinition[];
 }
 
 function toDefinition(
-  normalized: NormalizedJudge,
+  normalized: NormalizedJudgeDefinition,
   content: string,
 ): JudgeDefinition {
   const { definition, source_path: path } = normalized;
@@ -157,12 +166,16 @@ export function parseJudgeDefinitions(
   const warn =
     options.onWarning ??
     ((warning: string) => process.stderr.write(`warning: ${warning}\n`));
-  return normalizeJudges(sources, options).map((normalized) => {
-    for (const warning of normalized.warnings ?? []) warn(warning);
-    return toDefinition(
-      normalized,
-      contents.get(normalized.source_path)!.content,
-    );
+  const normalized = options.definitions ?? normalizeJudges(sources, options);
+  return normalized.map((judge) => {
+    const source = contents.get(judge.source_path);
+    if (!source) {
+      throw new JudgeDefinitionError(
+        `the judge definitions name ${judge.source_path}, which is not among the Recipe's judge files`,
+      );
+    }
+    for (const warning of judge.warnings ?? []) warn(warning);
+    return toDefinition(judge, source.content);
   });
 }
 

@@ -4,6 +4,7 @@ import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
 import { runBatch } from "../batch/index.js";
 import type { BatchResultLine } from "../batch/lines.js";
 import type { BatchRunController } from "../batch/runner.js";
+import type { JudgeRunController, JudgeUsage } from "./controller.js";
 import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
@@ -73,6 +74,12 @@ export interface JudgementLine {
   reasoning?: string;
   /** A classifier judge's probability of yes for each question. */
   scores?: Record<string, number>;
+  /** The hash of the evidence the judge read: `evidenceHash` of its input. */
+  sequence_hash?: string;
+  /** The `<provider>/<model>` that answered, after any `ai.fallbacks`. */
+  model?: string;
+  /** The tokens the judgement took; absent when the model reported none. */
+  usage?: JudgeUsage;
   error?: string;
   /** The batch run that produced it, and how many attempts it took. */
   run_id?: string;
@@ -93,8 +100,12 @@ export interface RunJudgesOptions {
    * files of them, in any mix. Everything runs as one batch.
    */
   input: readonly (string | URL | JudgeInputLine)[];
-  /** Runs each judgement: `createJudgeRunController`, or your own. */
-  controller: BatchRunController;
+  /**
+   * Runs each judgement: `createJudgeRunController`, or your own. With
+   * `runDetails`, each judgement names the model that answered and its usage.
+   */
+  controller: BatchRunController &
+    Partial<Pick<JudgeRunController, "runDetails">>;
   /**
    * Where the run keeps its state and writes `results.jsonl`. Running again
    * with the same directory skips every judgement that already succeeded for
@@ -229,6 +240,16 @@ export async function runJudges(
   const pairId = (judge: JudgeDefinition, line: JudgeInputLine) =>
     `${judge.name}@${judge.definitionHash.slice(0, 12)}/${line.custom_id}`;
 
+  const runDetails = (runId: string | undefined) => {
+    const details = runId ? options.controller.runDetails?.(runId) : undefined;
+    return {
+      ...(details?.model ? { model: details.model } : {}),
+      ...(details?.usage && details.usage.total_tokens > 0
+        ? { usage: details.usage }
+        : {}),
+    };
+  };
+
   const judgement = (
     judge: JudgeDefinition,
     line: JudgeInputLine,
@@ -264,6 +285,8 @@ export async function runJudges(
               : {}),
             ...(outcome.scores ? { scores: outcome.scores } : {}),
           }),
+      ...(evidence ? { sequence_hash: evidence } : {}),
+      ...runDetails(batch?.result.run_id),
       ...(batch?.result.run_id ? { run_id: batch.result.run_id } : {}),
       ...(batch ? { attempts: batch.batch.attempts } : {}),
     };

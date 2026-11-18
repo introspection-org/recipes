@@ -4,6 +4,8 @@ export {
   judgeRecipe,
   type JudgeClassifier,
   type JudgeRunController,
+  type JudgeRunDetails,
+  type JudgeUsage,
   type JudgeRunControllerOptions,
 } from "./controller.js";
 export {
@@ -17,6 +19,7 @@ export {
   type JudgeDefinitionOptions,
   type JudgeQuestion,
   type JudgeSource,
+  type NormalizedJudgeDefinition,
   type LlmJudgeDefinition,
 } from "./definition.js";
 export {
