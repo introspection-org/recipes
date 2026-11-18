@@ -24,7 +24,7 @@ import {
   type JudgeClassifier,
   type JudgeInputLine,
 } from "../src/judges/index.js";
-import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli.js";
+import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli-main.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createAgentSessionInternal } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";

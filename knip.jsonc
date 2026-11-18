@@ -9,7 +9,7 @@
     "packages/*/*/src/index.ts": ["duplicates"],
     "packages/search/src/index.ts": ["duplicates"],
     "packages/issues/src/index.ts": ["duplicates"],
-    "packages/signature/src/index.ts": ["duplicates"]
+    "packages/signature/src/index.ts": ["duplicates"],
   },
   "workspaces": {
     ".": {
@@ -23,37 +23,40 @@
         "src/mcp/client-entry.ts!",
         // The `tools` command's shim runs it by path (src/tools/shell.ts).
         "src/tools/entry.ts!",
+        // Run by path as a Node script, and loaded by it as resolution hooks.
+        "src/judges/cli.ts!",
+        "src/judges/resolve-hooks.ts!",
         "test/**/*.test.ts",
         // Imported by path from the provider package a fixture writes.
-        "test/helpers/in-memory-google.ts"
+        "test/helpers/in-memory-google.ts",
       ],
       "project": [
         "src/**/*.ts!",
         "scripts/*.mjs!",
         "packages/mcp-client/npm/*.mjs!",
-        "test/**/*.ts"
+        "test/**/*.ts",
       ],
       // Loaded from the Recipe's install first, then from Pi's own copy
       // (src/recipe/extensions.ts::loadJiti), so the host never pins it.
-      "ignoreDependencies": ["jiti"]
+      "ignoreDependencies": ["jiti"],
     },
     "packages/*/*": {
-      "project": ["src/**/*.ts!"]
+      "project": ["src/**/*.ts!"],
     },
     "packages/search": {
-      "project": ["src/**/*.ts!"]
+      "project": ["src/**/*.ts!"],
     },
     "packages/issues": {
-      "project": ["src/**/*.ts!"]
+      "project": ["src/**/*.ts!"],
     },
     "packages/signature": {
-      "project": ["src/**/*.ts!"]
+      "project": ["src/**/*.ts!"],
     },
     // Its integration tests run against the Google emulator and fake MCP
     // servers, which are its own devDependencies.
     "packages/productivity/google": {
       "entry": ["test/**/*.test.ts"],
-      "project": ["src/**/*.ts!", "test/**/*.ts"]
+      "project": ["src/**/*.ts!", "test/**/*.ts"],
     },
     "examples": {
       // The docs snippets: extensions and evals a Recipe loads by path, and
@@ -62,9 +65,9 @@
         "**/extensions/*.ts",
         "**/*.eval.ts",
         "**/fakes/**/*.ts",
-        "test/**/*.test.ts"
+        "test/**/*.test.ts",
       ],
-      "project": ["**/*.ts"]
-    }
-  }
+      "project": ["**/*.ts"],
+    },
+  },
 }

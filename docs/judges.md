@@ -53,6 +53,10 @@ node node_modules/@introspection-ai/recipes/dist/judges/cli.js \
   --recipe ./my-recipe --input monday.jsonl --input tuesday.jsonl --out ./judged
 ```
 
+The script is started by Node rather than loaded by Pi, so it finds Pi's own
+packages in the installed Pi: the `pi` on `PATH`, or the folder `PI_PACKAGE_DIR`
+names.
+
 `--input -` reads conversations from standard input, and `--judge <name>`
 keeps only the judges named. It runs on this machine's Pi: its logins and
 provider keys, with each judge's `ai.fallbacks`. It prints one JSON report,
