@@ -962,7 +962,18 @@ pub fn judge_definition_json_schema() -> String {
         { "required": ["ai"], "not": { "required": ["llm"] } },
         { "required": ["llm"], "not": { "required": ["ai"] } }
     ]);
-    value["properties"]["llm"]["deprecated"] = json!(true);
+    // Each is a block when present: strict parsing reads `llm: null` as no
+    // `llm` and `ai: null` as an error, so neither may be null, and `ai` has
+    // no default for a client to fill in.
+    let properties = &mut value["properties"];
+    properties["llm"] = json!({
+        "$ref": "#/$defs/JudgeLlmConfig",
+        "deprecated": true,
+        "description": properties["llm"]["description"].clone(),
+    });
+    if let Some(ai) = properties["ai"].as_object_mut() {
+        ai.remove("default");
+    }
     serde_json::to_string_pretty(&value).expect("judge schema serializes")
 }
 
@@ -1784,6 +1795,28 @@ ai:
             assert!(properties.contains_key(field), "missing {field}");
         }
         assert_eq!(properties["llm"]["deprecated"], json!(true));
+        // Neither model block may be null or defaulted: strict parsing would
+        // read either as no model.
+        for field in ["ai", "llm"] {
+            assert!(
+                properties[field].get("anyOf").is_none(),
+                "{field} is nullable"
+            );
+            assert!(
+                properties[field].get("default").is_none(),
+                "{field} has a default"
+            );
+            assert!(properties[field]["$ref"].is_string(), "{field}");
+        }
+        for null_model in [
+            "name: g\ninstructions: Grade.\nllm: null\n",
+            "name: g\ninstructions: Grade.\nai: null\n",
+        ] {
+            assert!(
+                parse_judge_definitions(&[source("judges/g.yaml", null_model)]).is_err(),
+                "{null_model}"
+            );
+        }
         assert_eq!(schema["additionalProperties"], json!(false));
         let required = schema["required"].as_array().unwrap();
         assert!(required.contains(&json!("name")), "name must be required");
