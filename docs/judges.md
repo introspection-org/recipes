@@ -1,9 +1,10 @@
 # Running judges
 
-Run a Recipe's [judges](recipe-judges.md) over conversations. Every run is a
-[batch](batch.md), whether it holds one conversation or thousands: each judge
-grades each conversation it applies to as one line, so a run has the batch's
-concurrency, its rate-limit retries and its resume.
+Run a Recipe's [judges](recipe-judges.md) over conversations. Every run is one
+[batch](batch.md): each judge and conversation pair is a line of it. One
+conversation under ten judges and a thousand conversations under one judge are
+the same run, with the batch's concurrency, its rate-limit retries and its
+resume.
 
 ## Quick start
 
@@ -199,17 +200,17 @@ Sampling is stable: the same judge and conversation are always in or out.
 
 ## Options
 
-| Option         | Default  | Meaning                                                         |
-| -------------- | -------- | --------------------------------------------------------------- |
-| `judges`       | required | The judges to run: `loadJudges(recipeDir)`, or a subset.        |
-| `input`        | required | The conversations: JSONL paths (or `file:` URLs), or lines.     |
-| `controller`   | required | Runs each judgement: `createJudgeRunController`, or your own.   |
-| `directory`    | none     | Where the run keeps its state and writes `results.jsonl`.       |
-| `concurrency`  | 8        | Judgements in flight at once, per judge.                        |
-| `max_attempts` | 3        | How many times a rate-limited judgement is tried.               |
-| `operational`  | none     | Platform settings by judge name.                                |
-| `signal`       | none     | Abort it to stop gracefully; `stopped` is then `true`.          |
-| `onResult`     | none     | Called with each judgement once its judge's batch has finished. |
+| Option         | Default  | Meaning                                                       |
+| -------------- | -------- | ------------------------------------------------------------- |
+| `judges`       | required | The judges to run: `loadJudges(recipeDir)`, or a subset.      |
+| `input`        | required | The conversations: JSONL paths (or `file:` URLs), or lines.   |
+| `controller`   | required | Runs each judgement: `createJudgeRunController`, or your own. |
+| `directory`    | none     | Where the run keeps its state and writes `results.jsonl`.     |
+| `concurrency`  | 8        | Judgements in flight at once, across every judge.             |
+| `max_attempts` | 3        | How many times a rate-limited judgement is tried.             |
+| `operational`  | none     | Platform settings by judge name.                              |
+| `signal`       | none     | Abort it to stop gracefully; `stopped` is then `true`.        |
+| `onResult`     | none     | Called with each judgement as it completes.                   |
 
 Give the controller at least the run's `concurrency`: an LLM judge's sessions
 count against the controller's own limit.

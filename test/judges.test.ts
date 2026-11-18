@@ -499,6 +499,60 @@ describe("runJudges", () => {
   });
 });
 
+describe("one conversation under many judges", () => {
+  it("runs its judges at once, as lines of one batch", async () => {
+    const judges = ["a", "b", "c"].map((name) =>
+      parseJudgeDefinition(
+        `judges/${name}.yaml`,
+        `name: ${name}\nai:\n  model: faux/faux-1\ninstructions: Grade it.\n`,
+      )!,
+    );
+    let inFlight = 0;
+    let peak = 0;
+    const waits = new Map<string, Promise<AgentRunSummary>>();
+    const controller: BatchRunController = {
+      async start(input) {
+        const id = `run-${input.name}`;
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        waits.set(
+          id,
+          new Promise((resolve) =>
+            setTimeout(() => {
+              inFlight -= 1;
+              resolve(
+                summary({
+                  agent_run_id: id,
+                  status: "completed",
+                  output: '{"reasoning":"ok","verdict":"pass"}',
+                }),
+              );
+            }, 20),
+          ),
+        );
+        return summary({ agent_run_id: id });
+      },
+      wait: (id) => waits.get(id)!,
+      message: async (id) => summary({ agent_run_id: id }),
+      close: async (id) => summary({ agent_run_id: id, status: "closed" }),
+    };
+    const seen: string[] = [];
+    const { results } = await runJudges({
+      judges,
+      input: [line("talk-1", SMALL_TALK)],
+      controller,
+      onResult: (result) => void seen.push(result.judge),
+    });
+    expect(peak).toBe(3);
+    expect(results.map((r) => [r.judge, r.result])).toEqual([
+      ["a", "pass"],
+      ["b", "pass"],
+      ["c", "pass"],
+    ]);
+    expect(seen.sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
 describe("createJudgeRunController", () => {
   it("runs an LLM judge as a tool-less session that falls back once its model has been retried twice", async () => {
     const fixture = writeFixtureRecipe();

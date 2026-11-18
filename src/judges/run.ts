@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
 import { runBatch } from "../batch/index.js";
-import type { BatchInputLine, BatchResultLine } from "../batch/lines.js";
+import type { BatchResultLine } from "../batch/lines.js";
 import type { BatchRunController } from "../batch/runner.js";
 import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
@@ -12,7 +12,6 @@ import {
   evidenceHash,
   renderTrajectoryInput,
   toJudgeInput,
-  type JudgeInput,
 } from "./trajectory.js";
 import {
   completeClassifierVerdict,
@@ -93,13 +92,13 @@ export interface RunJudgesOptions {
    * the same judge definition and transcript. Without it, nothing is written.
    */
   directory?: string;
-  /** Judgements in flight at once, per judge. Default 8. */
+  /** Judgements in flight at once, across every judge. Default 8. */
   concurrency?: number;
   /** Attempts per judgement when the provider rate-limits it. Default 3. */
   max_attempts?: number;
   operational?: Readonly<Record<string, JudgeOperationalConfig>>;
   signal?: AbortSignal;
-  /** Called with each judgement as it is completed. */
+  /** Called with each judgement as it completes, in the order they finish. */
   onResult?: (line: JudgementLine) => Promise<void> | void;
   /** Replaces the local file system. */
   files?: BatchFiles;
@@ -113,13 +112,16 @@ export interface JudgesOutcome {
   stopped: boolean;
 }
 
-interface Prepared {
+/** One judge's judgement of one conversation, ready to run as a batch line. */
+interface Pair {
+  judge: JudgeDefinition;
   line: JudgeInputLine;
-  input: JudgeInput;
   transcript: string;
   evidence: string;
-  conversationId: string;
 }
+
+/** The batch's agent name; each line's own judge is resolved from its id. */
+const BATCH_AGENT = "judges";
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -174,33 +176,75 @@ async function readLines(
 }
 
 /**
- * Run every judge over every conversation it applies to, as one batch per
- * judge, and return the judgements. A judge whose gate does not match a
- * conversation is skipped, not graded; a judge that cannot reach a verdict
- * records `error`, never `fail`.
+ * Run every judge over every conversation it applies to, as one batch, and
+ * return the judgements. A judge whose gate does not match a conversation is
+ * skipped, not graded; a judge that cannot reach a verdict records `error`,
+ * never `fail`.
  *
- * Each judgement is one line of a batch: an LLM judge's line is a fresh
- * session with the judge's `ai:` settings, and a classifier judge's line is
- * one decision-model call. The batch gives both its pool, its rate-limit
- * retries and its resume.
+ * Each judge and conversation pair is one line of the batch: an LLM judge's
+ * line is a fresh session with the judge's `ai:` settings, and a classifier
+ * judge's line is one decision-model call. One conversation under many judges
+ * and many conversations under one judge are the same run, sharing the
+ * batch's pool, its rate-limit retries and its resume.
  */
 export async function runJudges(
   options: RunJudgesOptions,
 ): Promise<JudgesOutcome> {
   const files = options.files ?? nodeBatchFiles;
   const lines = await readLines(options.input, files);
-  const results: JudgementLine[] = [];
   const skipped: SkippedJudgement[] = [];
-  let stopped = false;
+  const pairs = new Map<string, Pair>();
+  const failed = new Map<string, JudgementLine>();
+  // A changed definition is a different judge: its lines have ids of their
+  // own, so a rerun grades them rather than resuming the old definition's.
+  const pairId = (judge: JudgeDefinition, line: JudgeInputLine) =>
+    `${judge.name}@${judge.definitionHash.slice(0, 12)}/${line.custom_id}`;
+
+  const judgement = (
+    judge: JudgeDefinition,
+    line: JudgeInputLine,
+    outcome: JudgeVerdict | { error: string },
+    evidence?: string,
+    batch?: BatchResultLine,
+  ): JudgementLine => {
+    const judgeId = options.operational?.[judge.name]?.judge_id;
+    const conversationId = line.conversation_id ?? line.custom_id;
+    return {
+      custom_id: line.custom_id,
+      judge: judge.name,
+      conversation_id: conversationId,
+      definition_hash: judge.definitionHash,
+      contract_version: CONTRACT_VERSION,
+      ...(judgeId && evidence
+        ? {
+            judgement_id: judgementId(
+              judgeId,
+              judge.definitionHash,
+              evidence,
+              conversationId,
+            ),
+          }
+        : {}),
+      ...("error" in outcome
+        ? { result: "error", status: "error", error: outcome.error }
+        : {
+            result: outcome.verdict,
+            status: "ok",
+            ...(outcome.reasoning !== undefined
+              ? { reasoning: outcome.reasoning }
+              : {}),
+            ...(outcome.scores ? { scores: outcome.scores } : {}),
+          }),
+      ...(batch?.result.run_id ? { run_id: batch.result.run_id } : {}),
+      ...(batch ? { attempts: batch.batch.attempts } : {}),
+    };
+  };
 
   for (const judge of options.judges) {
     const operational = options.operational?.[judge.name] ?? {};
-    const prepared = new Map<string, Prepared>();
-    const failed = new Map<string, string>();
     for (const line of lines) {
       const skip = (reason: SkippedJudgement["reason"]) =>
         skipped.push({ custom_id: line.custom_id, judge: judge.name, reason });
-      const conversationId = line.conversation_id ?? line.custom_id;
       if (operational.enabled === false) {
         skip("disabled");
         continue;
@@ -209,7 +253,7 @@ export async function runJudges(
         line.environment === "production" &&
         !samplesIn(
           operational.judge_id ?? judge.name,
-          conversationId,
+          line.conversation_id ?? line.custom_id,
           operational.sample_rate ?? 1,
         )
       ) {
@@ -226,9 +270,9 @@ export async function runJudges(
           skip("gate");
           continue;
         }
-        prepared.set(line.custom_id, {
+        pairs.set(pairId(judge, line), {
+          judge,
           line,
-          input,
           transcript:
             judge.kind === "classifier"
               ? renderTrajectoryInput(input, {
@@ -237,120 +281,103 @@ export async function runJudges(
                 })
               : renderTrajectoryInput(input),
           evidence: evidenceHash(input),
-          conversationId,
         });
       } catch (error) {
-        failed.set(line.custom_id, message(error));
+        const result = judgement(judge, line, { error: message(error) });
+        failed.set(pairId(judge, line), result);
+        await options.onResult?.(result);
       }
-    }
-
-    const judgement = (
-      line: JudgeInputLine,
-      outcome: JudgeVerdict | { error: string },
-      batch?: BatchResultLine,
-    ): JudgementLine => {
-      const ready = prepared.get(line.custom_id);
-      const conversationId = line.conversation_id ?? line.custom_id;
-      return {
-        custom_id: line.custom_id,
-        judge: judge.name,
-        conversation_id: conversationId,
-        definition_hash: judge.definitionHash,
-        contract_version: CONTRACT_VERSION,
-        ...(operational.judge_id && ready
-          ? {
-              judgement_id: judgementId(
-                operational.judge_id,
-                judge.definitionHash,
-                ready.evidence,
-                conversationId,
-              ),
-            }
-          : {}),
-        ...("error" in outcome
-          ? { result: "error", status: "error", error: outcome.error }
-          : {
-              result: outcome.verdict,
-              status: "ok",
-              ...(outcome.reasoning !== undefined
-                ? { reasoning: outcome.reasoning }
-                : {}),
-              ...(outcome.scores ? { scores: outcome.scores } : {}),
-            }),
-        ...(batch?.result.run_id ? { run_id: batch.result.run_id } : {}),
-        ...(batch ? { attempts: batch.batch.attempts } : {}),
-      };
-    };
-
-    const complete = (batch: BatchResultLine): JudgementLine => {
-      const ready = prepared.get(batch.custom_id)!;
-      if (batch.result.type !== "succeeded") {
-        return judgement(
-          ready.line,
-          { error: batch.result.error?.message ?? `run ${batch.result.type}` },
-          batch,
-        );
-      }
-      try {
-        const output = batch.result.output ?? "";
-        return judgement(
-          ready.line,
-          judge.kind === "classifier"
-            ? completeClassifierVerdict(
-                judge.questions,
-                (JSON.parse(output) as { answers: Record<string, unknown> })
-                  .answers,
-              )
-            : completeLlmVerdict(ready.transcript, output),
-          batch,
-        );
-      } catch (error) {
-        return judgement(ready.line, { error: message(error) }, batch);
-      }
-    };
-
-    const batchInput: BatchInputLine[] = [...prepared.values()].map(
-      ({ line, transcript }) => ({
-        custom_id: line.custom_id,
-        prompt: transcript,
-      }),
-    );
-    const completed = new Map<string, JudgementLine>();
-    if (batchInput.length > 0) {
-      const outcome = await runBatch({
-        agent: judge.name,
-        input: batchInput,
-        controller: options.controller,
-        ...(options.directory
-          ? {
-              directory: join(options.directory, "batch"),
-              // A changed definition is a different judge: it starts a file of
-              // its own rather than resuming the old definition's answers.
-              output_name: `${judge.name}-${judge.definitionHash.slice(0, 12)}.jsonl`,
-            }
-          : {}),
-        ...(judge.kind === "llm" ? { output_format: "json" as const } : {}),
-        ...(options.concurrency ? { concurrency: options.concurrency } : {}),
-        ...(options.max_attempts ? { max_attempts: options.max_attempts } : {}),
-        ...(options.signal ? { signal: options.signal } : {}),
-        files,
-      });
-      stopped ||= outcome.stopped;
-      for (const batch of outcome.results) {
-        completed.set(batch.custom_id, complete(batch));
-      }
-    }
-    for (const line of lines) {
-      const error = failed.get(line.custom_id);
-      const result = error
-        ? judgement(line, { error })
-        : completed.get(line.custom_id);
-      if (!result) continue;
-      results.push(result);
-      await options.onResult?.(result);
     }
   }
 
+  const complete = (batch: BatchResultLine): JudgementLine => {
+    const { judge, line, transcript, evidence } = pairs.get(batch.custom_id)!;
+    if (batch.result.type !== "succeeded") {
+      return judgement(
+        judge,
+        line,
+        { error: batch.result.error?.message ?? `run ${batch.result.type}` },
+        evidence,
+        batch,
+      );
+    }
+    try {
+      const output = batch.result.output ?? "";
+      return judgement(
+        judge,
+        line,
+        judge.kind === "classifier"
+          ? completeClassifierVerdict(
+              judge.questions,
+              (JSON.parse(output) as { answers: Record<string, unknown> })
+                .answers,
+            )
+          : completeLlmVerdict(transcript, output),
+        evidence,
+        batch,
+      );
+    } catch (error) {
+      return judgement(judge, line, { error: message(error) }, evidence, batch);
+    }
+  };
+
+  // The batch names one agent; each line's judge is the one its id was built
+  // from, so the controller is asked for that judge.
+  const controller: BatchRunController = {
+    start: (input) => {
+      const pair = pairs.get(input.label ?? "");
+      return options.controller.start(
+        pair
+          ? { ...input, name: pair.judge.name, label: pair.line.custom_id }
+          : input,
+      );
+    },
+    wait: (id, signal) => options.controller.wait(id, signal),
+    message: (id, text) => options.controller.message(id, text),
+    close: (id) => options.controller.close(id),
+  };
+  const completed = new Map<string, JudgementLine>();
+  let stopped = false;
+  if (pairs.size > 0) {
+    const outcome = await runBatch({
+      agent: BATCH_AGENT,
+      input: [...pairs].map(([id, { transcript }]) => ({
+        custom_id: id,
+        prompt: transcript,
+      })),
+      controller,
+      // A classifier's answers are JSON too, so one format serves every line.
+      output_format: "json",
+      ...(options.directory
+        ? { directory: join(options.directory, "batch") }
+        : {}),
+      ...(options.concurrency ? { concurrency: options.concurrency } : {}),
+      ...(options.max_attempts ? { max_attempts: options.max_attempts } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      files,
+      // A line resumed from an earlier run was reported then, and is in the
+      // returned results below.
+      onResult: async (batch) => {
+        const result = complete(batch);
+        completed.set(batch.custom_id, result);
+        await options.onResult?.(result);
+      },
+    });
+    stopped = outcome.stopped;
+    for (const batch of outcome.results) {
+      if (!completed.has(batch.custom_id)) {
+        completed.set(batch.custom_id, complete(batch));
+      }
+    }
+  }
+
+  const results = options.judges.flatMap((judge) =>
+    lines.flatMap((line) => {
+      const id = pairId(judge, line);
+      const result = failed.get(id) ?? completed.get(id);
+      return result ? [result] : [];
+    }),
+  );
   if (options.directory) {
     await files.write(
       join(options.directory, "results.jsonl"),
