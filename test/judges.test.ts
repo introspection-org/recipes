@@ -193,7 +193,7 @@ describe("judge definitions", () => {
       "judges/gate.yaml",
       "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/[\\w-]+@acme/'\n",
     );
-    expect(judge.on).toEqual([
+    expect(judge?.on).toEqual([
       { event: "message", match: { text: "/[\\w-]+@acme/" } },
     ]);
   });
