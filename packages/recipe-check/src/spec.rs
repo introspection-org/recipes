@@ -28,6 +28,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+/// The default `llm.transport.timeout_ms` of the older `llm:` block.
+pub const DEFAULT_JUDGE_TIMEOUT_MS: u64 = 60_000;
+/// The default `llm.transport.max_retry_delay_ms` of the older `llm:` block.
+pub const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 5_000;
+/// The most output tokens `llm.request.max_tokens` asks for.
+pub const MAX_JUDGE_OUTPUT_TOKENS: u64 = 131_072;
+/// The `llm.provider` an `llm:` block that names none runs on.
+pub const DEFAULT_JUDGE_LLM_PROVIDER: &str = "openai";
+
 /// The most questions one classifier judge asks.
 pub const MAX_JUDGE_QUESTIONS: usize = 8;
 /// The probability of `true` at which a classifier question passes, unless it
@@ -82,8 +91,15 @@ pub struct JudgeDefinition {
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(schema_with = "gate_schema"))]
     pub on: Value,
-    /// The model that answers, declared as an agent's `ai:` block.
+    /// The model that answers, declared as an agent's `ai:` block. A judge
+    /// declares this or the older `llm:`, never both; a normalized definition
+    /// always carries `ai`.
+    #[serde(default = "JudgeAiConfig::unset")]
     pub ai: JudgeAiConfig,
+    /// The older model block, still read: normalization maps it to `ai` and
+    /// clears it, so a normalized definition never carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm: Option<JudgeLlmConfig>,
     /// The grading rubric of a judge a chat model answers. A judge declares
     /// this or `questions`, never both.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -136,6 +152,218 @@ pub struct JudgeAiConfig {
     )]
     #[cfg_attr(feature = "schema", schemars(with = "Map<String, Value>"))]
     pub providers: Option<Value>,
+}
+
+impl JudgeAiConfig {
+    /// The block of a judge that declares no `ai:`, which normalization
+    /// fills from `llm:` or refuses.
+    pub fn unset() -> Self {
+        Self {
+            model: String::new(),
+            fallbacks: Vec::new(),
+            thinking_level: None,
+            options: None,
+            providers: None,
+        }
+    }
+
+    /// Whether this is [`JudgeAiConfig::unset`].
+    pub fn is_unset(&self) -> bool {
+        *self == Self::unset()
+    }
+}
+
+/// The older model block of a judge, mapped to [`JudgeAiConfig`] by
+/// [`normalize_judge_definition`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct JudgeLlmConfig {
+    /// Provider slug (lowercase ASCII, digits, and `-`). Defaults to `openai`.
+    #[serde(default = "default_provider")]
+    #[cfg_attr(feature = "schema", schemars(pattern(r"^[a-z0-9-]{1,64}$")))]
+    pub provider: String,
+    /// Model name. Required and non-empty (at most 255 bytes), with no
+    /// surrounding whitespace.
+    #[cfg_attr(
+        feature = "schema",
+        schemars(length(min = 1, max = 255), pattern(r"^\S([\s\S]*\S)?$"))
+    )]
+    pub model: String,
+    #[serde(default)]
+    pub request: JudgeLlmRequest,
+    /// Read and dropped: the host owns timeouts and retries.
+    #[serde(default)]
+    pub transport: JudgeLlmTransport,
+    /// An OpenAI-compatible local endpoint, which `ai:` cannot express: it is
+    /// dropped with a warning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<JudgeLlmLocal>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct JudgeLlmRequest {
+    /// Sampling temperature between 0 and 2. Defaults to 0, which leaves the
+    /// model its own default.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0.0, max = 2.0)))]
+    pub temperature: f64,
+    /// Maximum output tokens (1..=131072).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 131_072)))]
+    pub max_tokens: Option<u64>,
+    /// Reasoning effort, read as `ai.thinking_level` (`none` is `off`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(pattern(r"^(none|off|minimal|low|medium|high|xhigh|max)$"))
+    )]
+    pub reasoning_effort: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct JudgeLlmTransport {
+    /// Request timeout in milliseconds (1..=600000). Defaults to 60000.
+    #[serde(default = "default_timeout_ms")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 600_000)))]
+    pub timeout_ms: u64,
+    /// Retry attempts (0..=10). Defaults to 0.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(range(max = 10)))]
+    pub max_retries: u64,
+    /// Exponential backoff cap in milliseconds (..=60000). Defaults to 5000.
+    #[serde(default = "default_max_retry_delay_ms")]
+    #[cfg_attr(feature = "schema", schemars(range(max = 60_000)))]
+    pub max_retry_delay_ms: u64,
+}
+
+impl Default for JudgeLlmTransport {
+    fn default() -> Self {
+        Self {
+            timeout_ms: DEFAULT_JUDGE_TIMEOUT_MS,
+            max_retries: 0,
+            max_retry_delay_ms: DEFAULT_MAX_RETRY_DELAY_MS,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct JudgeLlmLocal {
+    /// HTTP(S) base URL; HTTPS required outside loopback. No credentials,
+    /// query, or fragment.
+    #[cfg_attr(feature = "schema", schemars(pattern(r"^https?://\S+$")))]
+    pub base_url: String,
+    /// Environment variable naming the API key (identifier characters only).
+    #[cfg_attr(feature = "schema", schemars(pattern(r"^[A-Za-z_][A-Za-z0-9_]*$")))]
+    pub api_key_env: String,
+}
+
+fn default_provider() -> String {
+    DEFAULT_JUDGE_LLM_PROVIDER.to_owned()
+}
+
+fn default_timeout_ms() -> u64 {
+    DEFAULT_JUDGE_TIMEOUT_MS
+}
+
+fn default_max_retry_delay_ms() -> u64 {
+    DEFAULT_MAX_RETRY_DELAY_MS
+}
+
+/// The `ai.thinking_level` an `llm.request.reasoning_effort` reads as, or
+/// `None` when it names no thinking level.
+pub(crate) fn thinking_level_for_effort(effort: &str) -> Option<&'static str> {
+    Some(match effort {
+        "none" | "off" => "off",
+        "minimal" => "minimal",
+        "low" => "low",
+        "medium" => "medium",
+        "high" => "high",
+        "xhigh" => "xhigh",
+        "max" => "max",
+        _ => return None,
+    })
+}
+
+/// The warning an `llm.local` endpoint draws: `ai:` has no way to say it.
+pub(crate) fn llm_local_warning(context: &str) -> String {
+    format!(
+        "{context} declares llm.local, which ai: cannot express, so it is ignored and the judge runs on its provider's hosted model"
+    )
+}
+
+/// The `ai:` block an `llm:` block reads as: `provider/model`, the request's
+/// `max_tokens` and a non-zero `temperature` as options, `reasoning_effort` as
+/// the thinking level. `transport` is the host's, and `local` cannot be
+/// expressed; both are dropped.
+pub fn judge_llm_to_ai(llm: &JudgeLlmConfig) -> Result<JudgeAiConfig, JudgeSpecError> {
+    let mut options = Map::new();
+    if llm.request.temperature != 0.0 {
+        options.insert("temperature".to_owned(), json!(llm.request.temperature));
+    }
+    if let Some(max_tokens) = llm.request.max_tokens {
+        options.insert("max_tokens".to_owned(), json!(max_tokens));
+    }
+    let thinking_level = match llm.request.reasoning_effort.as_deref() {
+        None => None,
+        Some(effort) => match thinking_level_for_effort(effort) {
+            Some(level) => Some(level.to_owned()),
+            None => spec_bail!(
+                "llm.request.reasoning_effort {effort:?} names no thinking level; use none, minimal, low, medium, high, xhigh, or max"
+            ),
+        },
+    };
+    Ok(JudgeAiConfig {
+        model: format!("{}/{}", llm.provider.trim(), llm.model.trim()),
+        fallbacks: Vec::new(),
+        thinking_level,
+        options: (!options.is_empty()).then_some(options),
+        providers: None,
+    })
+}
+
+/// The errors of an `llm:` block's own bounds, which `ai:` does not check.
+fn llm_errors(llm: &JudgeLlmConfig) -> Option<String> {
+    let provider = &llm.provider;
+    if provider.is_empty()
+        || provider.len() > 64
+        || !provider
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+    {
+        return Some("llm.provider must be a lowercase provider slug".to_owned());
+    }
+    if llm.model.trim().is_empty() || llm.model.len() > 255 || llm.model != llm.model.trim() {
+        return Some(
+            "llm.model must be a non-empty string without surrounding whitespace".to_owned(),
+        );
+    }
+    let request = &llm.request;
+    if !(request.temperature.is_finite() && (0.0..=2.0).contains(&request.temperature)) {
+        return Some("llm.request.temperature must be a number between 0 and 2".to_owned());
+    }
+    if request
+        .max_tokens
+        .is_some_and(|tokens| !(1..=MAX_JUDGE_OUTPUT_TOKENS).contains(&tokens))
+    {
+        return Some(format!(
+            "llm.request.max_tokens must be an integer between 1 and {MAX_JUDGE_OUTPUT_TOKENS}"
+        ));
+    }
+    let transport = &llm.transport;
+    if !(1..=600_000).contains(&transport.timeout_ms)
+        || transport.max_retries > 10
+        || transport.max_retry_delay_ms > 60_000
+    {
+        return Some("llm.transport is out of bounds".to_owned());
+    }
+    None
 }
 
 /// An optional field that, as in an agent's `ai:` block, may be left out but
@@ -429,12 +657,16 @@ pub struct JudgeSource {
 pub struct ParsedJudgeDefinition {
     pub source_path: String,
     pub definition: JudgeDefinition,
+    /// What the definition declares that normalization had to ignore, such as
+    /// an `llm.local` endpoint `ai:` cannot express.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// Strictly parse authored judge YAML sources into normalized definitions.
 ///
 /// Sources are processed in path order. Any invalid definition (malformed
-/// YAML, unknown fields, a removed `llm` block, an invalid `ai` block,
+/// YAML, unknown fields, both or neither of `ai` and `llm`, an invalid model block,
 /// instructions, questions or gate, duplicate names across the batch) fails
 /// the whole batch. `type: mission`
 /// judges are not online evals and are skipped; see
@@ -452,37 +684,49 @@ pub fn parse_judge_definitions(
     let mut seen = HashSet::new();
     let mut parsed = Vec::with_capacity(ordered.len());
     for source in ordered {
-        if declares_llm(&source.content) {
+        let context = format!("judge YAML {}", source.path);
+        if declares_both_models(&source.content) {
             spec_bail!(
-                "judge YAML {} declares `llm`, which was removed: declare the model as `ai: {{ model: <provider>/<model> }}`, as an agent does",
-                source.path
+                "{context} declares both `ai` and `llm`: declare the model once, as `ai: {{ model: <provider>/<model> }}`"
             );
         }
         let definition: JudgeDefinition = match serde_saphyr::from_str(&source.content) {
             Ok(definition) => definition,
             Err(err) => spec_bail!("parsing judge YAML {}: {err}", source.path),
         };
-        let definition =
-            normalize_judge_definition(definition, &format!("judge YAML {}", source.path))?;
+        let warnings = judge_definition_warnings(&definition, &context);
+        let definition = normalize_judge_definition(definition, &context)?;
         if !seen.insert(definition.name.clone()) {
             spec_bail!("duplicate judge name {:?}", definition.name);
         }
         parsed.push(ParsedJudgeDefinition {
             source_path: source.path,
             definition,
+            warnings,
         });
     }
     Ok(parsed)
 }
 
-fn declares_llm(content: &str) -> bool {
+fn declares_both_models(content: &str) -> bool {
     serde_saphyr::from_str::<Value>(content)
         .ok()
-        .is_some_and(|value| value.get("llm").is_some())
+        .is_some_and(|value| value.get("llm").is_some() && value.get("ai").is_some())
+}
+
+/// What normalizing `definition` will ignore, as warnings.
+pub fn judge_definition_warnings(definition: &JudgeDefinition, context: &str) -> Vec<String> {
+    definition
+        .llm
+        .as_ref()
+        .filter(|llm| llm.local.is_some())
+        .map(|_| vec![llm_local_warning(context)])
+        .unwrap_or_default()
 }
 
 /// Validate one definition against the authored contract and apply spec
-/// normalization (`on: null` becomes `{}`, model names are trimmed).
+/// normalization: `on: null` becomes `{}`, model names are trimmed, and an
+/// `llm:` block becomes the `ai:` block it reads as ([`judge_llm_to_ai`]).
 pub fn normalize_judge_definition(
     mut definition: JudgeDefinition,
     context: &str,
@@ -505,6 +749,22 @@ pub fn normalize_judge_definition(
         .is_some_and(|description| description.chars().count() > 2_000)
     {
         spec_bail!("{context} has a description longer than 2000 characters");
+    }
+    match (definition.llm.take(), definition.ai.is_unset()) {
+        (Some(_), false) => spec_bail!(
+            "{context} declares both `ai` and `llm`: declare the model once, as `ai: {{ model: <provider>/<model> }}`"
+        ),
+        (Some(llm), true) => {
+            if let Some(message) = llm_errors(&llm) {
+                spec_bail!("{context} has an invalid llm block: {message}");
+            }
+            definition.ai = judge_llm_to_ai(&llm)
+                .map_err(|err| JudgeSpecError::new(format!("{context} has an invalid llm block: {err}")))?;
+        }
+        (None, true) => spec_bail!(
+            "{context} declares its model as either `ai: {{ model: <provider>/<model> }}` or the older `llm:`"
+        ),
+        (None, false) => {}
     }
     definition.ai.model = definition.ai.model.trim().to_owned();
     for fallback in &mut definition.ai.fallbacks {
@@ -621,11 +881,7 @@ fn validate_match_target(target: &Value) -> Result<(), JudgeSpecError> {
         }
         Value::String(value) => {
             if let Some((pattern, flags)) = regex_literal(value)? {
-                let mut builder = RegexBuilder::new(pattern);
-                builder.case_insensitive(flags.contains('i'));
-                builder.multi_line(flags.contains('m'));
-                builder.dot_matches_new_line(flags.contains('s'));
-                if let Err(err) = builder.build() {
+                if let Some(err) = gate_regex_error(pattern, flags) {
                     spec_bail!("invalid regex {value:?}: {err}");
                 }
             }
@@ -633,6 +889,30 @@ fn validate_match_target(target: &Value) -> Result<(), JudgeSpecError> {
         _ => {}
     }
     Ok(())
+}
+
+/// Why a gate's `/pattern/flags` does not compile in both engines that read
+/// it, or `None` when it does: Rust's `regex` here and in the platform's
+/// evaluator, and JavaScript's `RegExp` with the `v` flag in the Recipes judge
+/// runner. A pattern must mean the same in both, so either refusing it is an
+/// error.
+pub(crate) fn gate_regex_error(pattern: &str, flags: &str) -> Option<String> {
+    let mut builder = RegexBuilder::new(pattern);
+    builder.case_insensitive(flags.contains('i'));
+    builder.multi_line(flags.contains('m'));
+    builder.dot_matches_new_line(flags.contains('s'));
+    if let Err(err) = builder.build() {
+        return Some(format!("Rust regex: {err}"));
+    }
+    // `u` is implied by `v`, and JavaScript refuses the two together.
+    let js_flags = flags
+        .chars()
+        .filter(|flag| *flag != 'u')
+        .chain(['v'])
+        .collect::<String>();
+    regress::Regex::with_flags(pattern, js_flags.as_str())
+        .err()
+        .map(|err| format!("JavaScript regex (v flag): {err}"))
 }
 
 fn regex_literal(value: &str) -> Result<Option<(&str, &str)>, JudgeSpecError> {
@@ -677,6 +957,12 @@ pub fn judge_definition_json_schema() -> String {
         { "required": ["instructions"] },
         { "required": ["questions"] }
     ]);
+    // The model is `ai`, or the older `llm` normalization maps to it.
+    value["anyOf"] = json!([
+        { "required": ["ai"], "not": { "required": ["llm"] } },
+        { "required": ["llm"], "not": { "required": ["ai"] } }
+    ]);
+    value["properties"]["llm"]["deprecated"] = json!(true);
     serde_json::to_string_pretty(&value).expect("judge schema serializes")
 }
 
@@ -1143,18 +1429,124 @@ ai:
     }
 
     #[test]
-    fn rejects_the_removed_llm_block_with_its_replacement() {
-        let error = parse_judge_definitions(&[source(
+    fn normalizes_the_older_llm_block_to_ai() {
+        let parsed = parse_judge_definitions(&[source(
             "judges/legacy.yaml",
-            "name: legacy\ninstructions: Grade.\nllm:\n  model: gpt-5\n",
+            "name: legacy\ninstructions: Grade.\nllm:\n  provider: anthropic\n  model: claude-sonnet-5-5\n  request:\n    temperature: 0.2\n    max_tokens: 512\n    reasoning_effort: none\n  transport:\n    timeout_ms: 30000\n",
         )])
-        .unwrap_err()
-        .to_string();
-        assert!(
-            error.contains("judges/legacy.yaml")
-                && error.contains("ai: { model: <provider>/<model> }"),
-            "{error}"
+        .unwrap();
+        assert!(parsed[0].warnings.is_empty());
+        assert_eq!(
+            serde_json::to_value(&parsed[0].definition).unwrap(),
+            json!({
+                "name": "legacy",
+                "on": {},
+                "ai": {
+                    "model": "anthropic/claude-sonnet-5-5",
+                    "thinking_level": "off",
+                    "options": { "temperature": 0.2, "max_tokens": 512 },
+                },
+                "instructions": "Grade.",
+            })
         );
+
+        // The provider defaults to openai, and a temperature of 0 is the
+        // model's own default.
+        let bare = parse_judge_definitions(&[source(
+            "judges/bare.yaml",
+            "name: bare\ninstructions: Grade.\nllm:\n  model: gpt-5\n  request:\n    reasoning_effort: high\n",
+        )])
+        .unwrap();
+        let definition = &bare[0].definition;
+        assert_eq!(definition.ai.model, "openai/gpt-5");
+        assert_eq!(definition.ai.thinking_level.as_deref(), Some("high"));
+        assert_eq!(definition.ai.options, None);
+        assert_eq!(definition.llm, None);
+    }
+
+    #[test]
+    fn an_llm_local_endpoint_is_dropped_with_a_warning() {
+        let parsed = parse_judge_definitions(&[source(
+            "judges/local.yaml",
+            "name: local\ninstructions: Grade.\nllm:\n  model: gpt-5\n  local:\n    base_url: http://localhost:8080\n    api_key_env: LOCAL_KEY\n",
+        )])
+        .unwrap();
+        assert_eq!(parsed[0].definition.ai.model, "openai/gpt-5");
+        assert_eq!(parsed[0].definition.ai.providers, None);
+        assert_eq!(parsed[0].warnings.len(), 1);
+        assert!(
+            parsed[0].warnings[0].contains("judges/local.yaml")
+                && parsed[0].warnings[0].contains("llm.local"),
+            "{:?}",
+            parsed[0].warnings
+        );
+        let value = serde_json::to_value(&parsed[0]).unwrap();
+        assert!(value["warnings"].is_array());
+    }
+
+    #[test]
+    fn a_judge_declares_ai_or_llm_never_both_or_neither() {
+        for (content, expected) in [
+            (
+                "name: g\ninstructions: Grade.\nllm:\n  model: gpt-5\nai:\n  model: openai/gpt-5\n",
+                "declares both `ai` and `llm`",
+            ),
+            (
+                "name: g\ninstructions: Grade.\n",
+                "declares its model as either",
+            ),
+            (
+                "name: g\ninstructions: Grade.\nllm:\n  model: gpt-5\n  request:\n    reasoning_effort: extreme\n",
+                "names no thinking level",
+            ),
+        ] {
+            let error = parse_judge_definitions(&[source("judges/g.yaml", content)])
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{expected}: {error}");
+        }
+    }
+
+    #[test]
+    fn normalizing_a_definition_built_in_code_maps_its_llm() {
+        let definition = JudgeDefinition {
+            kind: JudgeType::Online,
+            name: "coded".to_owned(),
+            description: None,
+            on: Value::Null,
+            ai: JudgeAiConfig::unset(),
+            llm: Some(JudgeLlmConfig {
+                provider: DEFAULT_JUDGE_LLM_PROVIDER.to_owned(),
+                model: "gpt-5".to_owned(),
+                request: JudgeLlmRequest::default(),
+                transport: JudgeLlmTransport::default(),
+                local: None,
+            }),
+            instructions: Some("Grade.".to_owned()),
+            questions: None,
+        };
+        let normalized = normalize_judge_definition(definition, "coded").unwrap();
+        assert_eq!(normalized.ai.model, "openai/gpt-5");
+        assert_eq!(normalized.llm, None);
+        assert_eq!(normalized.on, json!({}));
+    }
+
+    #[test]
+    fn a_gate_regex_must_compile_in_rust_and_javascript() {
+        let gate = |pattern: &str| {
+            format!("name: g\ninstructions: Grade.\non:\n  - event: message\n    match:\n      text: '{pattern}'\nai:\n  model: openai/gpt-5\n")
+        };
+        assert!(
+            parse_judge_definitions(&[source("judges/g.yaml", &gate(r"/[\w&&[^_]]+/iu"))]).is_ok()
+        );
+        let rust = parse_judge_definitions(&[source("judges/g.yaml", &gate("/foo(?=bar)/"))])
+            .unwrap_err()
+            .to_string();
+        assert!(rust.contains("Rust regex"), "{rust}");
+        let js = parse_judge_definitions(&[source("judges/g.yaml", &gate("/[(]/"))])
+            .unwrap_err()
+            .to_string();
+        assert!(js.contains("JavaScript regex (v flag)"), "{js}");
     }
 
     #[test]
@@ -1226,7 +1618,7 @@ ai:
             ),
             (
                 "name: g\ninstructions: Grade.\nai:\n  model: ''\n",
-                "ai.model must be a non-empty string",
+                "declares its model as either",
             ),
             (
                 "name: g\ninstructions: Grade.\nai:\n  model: gpt-5\n",
@@ -1236,7 +1628,10 @@ ai:
                 "name: g\ninstructions: Grade.\nai:\n  thinking_level: low\n",
                 "missing field `model`",
             ),
-            ("name: g\ninstructions: Grade.\n", "missing field `ai`"),
+            (
+                "name: g\ninstructions: Grade.\n",
+                "declares its model as either",
+            ),
             (
                 "name: g\ninstructions: Grade.\nai:\n  model: openai/gpt-5\n  fallbacks: [gpt-5]\n",
                 "invalid ai.fallbacks entry 'gpt-5'",
@@ -1388,15 +1783,20 @@ ai:
         ] {
             assert!(properties.contains_key(field), "missing {field}");
         }
-        assert!(!properties.contains_key("llm"));
+        assert_eq!(properties["llm"]["deprecated"], json!(true));
         assert_eq!(schema["additionalProperties"], json!(false));
         let required = schema["required"].as_array().unwrap();
-        for field in ["name", "ai"] {
-            assert!(required.contains(&json!(field)), "{field} must be required");
-        }
+        assert!(required.contains(&json!("name")), "name must be required");
         assert_eq!(
             schema["oneOf"],
             json!([{ "required": ["instructions"] }, { "required": ["questions"] }])
+        );
+        assert_eq!(
+            schema["anyOf"],
+            json!([
+                { "required": ["ai"], "not": { "required": ["llm"] } },
+                { "required": ["llm"], "not": { "required": ["ai"] } }
+            ])
         );
         // A schema-guided client must not be able to produce a definition
         // the strict parser rejects: instructions is a non-null, non-blank
