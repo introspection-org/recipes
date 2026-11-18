@@ -700,6 +700,34 @@ describe("runJudges reports who answered", () => {
       model: "faux/faux-1",
       usage,
     });
+
+    // A crash mid-append leaves a torn last line; the next run trims it, so
+    // the details appended after it still read back.
+    const details = join(directory, "run-details.jsonl");
+    writeFileSync(details, `${readFileSync(details, "utf8")}{"run_id":"run-`);
+    const third = scripted(answer);
+    await runJudges({
+      judges: [judge],
+      input: [line("echo-2", EXPORT)],
+      controller: {
+        ...third.controller,
+        runDetails: () => ({ model: "faux/faux-2", usage }),
+      },
+      directory,
+    });
+    const resumed = await runJudges({
+      judges: [judge],
+      input: [line("echo-2", EXPORT)],
+      controller: { ...scripted(answer).controller, runDetails: () => ({}) },
+      directory,
+    });
+    expect(resumed.results[0]).toMatchObject({ model: "faux/faux-2", usage });
+    expect(
+      readFileSync(details, "utf8")
+        .trim()
+        .split("\n")
+        .map((raw) => JSON.parse(raw).model),
+    ).toEqual(["faux/faux-1", "faux/faux-2"]);
   });
 });
 

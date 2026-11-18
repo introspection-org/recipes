@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
 import { runBatch } from "../batch/index.js";
+import { jsonlResults } from "../batch/shards.js";
 import type { BatchResultLine } from "../batch/lines.js";
 import type { BatchRunController } from "../batch/runner.js";
 import type {
@@ -149,15 +150,17 @@ interface Pair {
 const BATCH_AGENT = "judges";
 
 /**
- * The run details recorded under `path`, by run id. A line a crash cut short
- * is skipped: its run has no recorded line in the batch either.
+ * The run details recorded under `path`, by run id. A last line a crash cut
+ * short is trimmed from the file, as the batch trims its own results, so the
+ * next append starts a line of its own; its run has no recorded line in the
+ * batch either, and runs again.
  */
 async function readRunDetails(
   files: BatchFiles,
   path: string,
 ): Promise<Map<string, JudgeRunDetails>> {
   const details = new Map<string, JudgeRunDetails>();
-  for (const raw of ((await files.read(path)) ?? "").split("\n")) {
+  for (const raw of (await jsonlResults(files, path).read()).split("\n")) {
     if (!raw.trim()) continue;
     try {
       const { run_id: runId, ...rest } = JSON.parse(raw) as {
@@ -165,7 +168,7 @@ async function readRunDetails(
       } & JudgeRunDetails;
       if (typeof runId === "string") details.set(runId, rest);
     } catch {
-      // A torn last line.
+      // Not a details line; nothing reads it.
     }
   }
   return details;
