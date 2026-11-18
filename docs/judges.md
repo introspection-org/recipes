@@ -42,6 +42,22 @@ for (const line of results) {
 The judgements are returned and, with a `directory`, written to
 `<directory>/results.jsonl`.
 
+## From the command line
+
+The package ships the same run as a script, for a host that launches it as a
+process:
+
+```bash
+node node_modules/@introspection-ai/recipes/dist/judges/cli.js \
+  --recipe ./my-recipe --input monday.jsonl --input tuesday.jsonl --out ./judged
+```
+
+`--input -` reads conversations from standard input, and `--judge <name>`
+keeps only the judges named. It runs on this machine's Pi: its logins and
+provider keys, with each judge's `ai.fallbacks`. It prints one JSON report,
+`{ schema_version, results, skipped, counts, stopped }`, and exits 0 when the
+run finished, whatever the verdicts.
+
 ## Input
 
 `input` is one or more JSONL files, or the lines themselves. Several files run

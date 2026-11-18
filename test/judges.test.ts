@@ -23,6 +23,7 @@ import {
   type JudgeClassifier,
   type JudgeInputLine,
 } from "../src/judges/index.js";
+import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createAgentSessionInternal } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
@@ -654,5 +655,110 @@ describe("createJudgeRunController", () => {
     expect(results).toMatchObject([
       { result: "error", error: /asks a classifier/ },
     ]);
+  });
+});
+
+describe("the judges command-line entry", () => {
+  it("parses repeated inputs and judges, and refuses a run with no input", () => {
+    expect(
+      parseJudgeCliArgs([
+        "--recipe",
+        "r",
+        "--input",
+        "a.jsonl",
+        "--input",
+        "-",
+        "--judge",
+        "greeting",
+        "--concurrency",
+        "4",
+        "--fallback-after-retries",
+        "0",
+      ]),
+    ).toEqual({
+      recipe: "r",
+      input: ["a.jsonl", "-"],
+      judge: ["greeting"],
+      concurrency: 4,
+      fallbackAfterRetries: 0,
+    });
+    expect(() => parseJudgeCliArgs(["--recipe", "r"])).toThrow(/--input/);
+    expect(() =>
+      parseJudgeCliArgs([
+        "--recipe",
+        "r",
+        "--input",
+        "a",
+        "--concurrency",
+        "x",
+      ]),
+    ).toThrow(/whole number/);
+  });
+
+  it("judges files and stdin together with the named judges, and reports counts", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const directory = join(fixture.recipeDir, "judges");
+    mkdirSync(directory);
+    writeFileSync(join(directory, "greeting.yaml"), LLM_JUDGE);
+    writeFileSync(join(directory, "polite.yaml"), CLASSIFIER_JUDGE);
+    const file = join(fixture.workspaceDir, "a.jsonl");
+    writeFileSync(file, `${JSON.stringify(line("echo-1", EXPORT))}\n`);
+    const operational = join(fixture.workspaceDir, "operational.json");
+    writeFileSync(
+      operational,
+      JSON.stringify({
+        greeting: { judge_id: "018f0000-0000-7000-8000-000000000001" },
+      }),
+    );
+    const seen: string[][] = [];
+    const report = await judgeCli(
+      {
+        recipe: fixture.recipeDir,
+        input: [file, "-"],
+        judge: ["greeting"],
+        out: join(fixture.workspaceDir, "out"),
+        operational,
+      },
+      {
+        readStdin: async () => `${JSON.stringify(line("echo-2", EXPORT))}\n`,
+        controller: async (judges) => {
+          seen.push(judges.map((judge) => judge.name));
+          return scripted(() => '{"reasoning":"echoed","verdict":"pass"}')
+            .controller;
+        },
+      },
+    );
+    expect(seen).toEqual([["greeting"]]);
+    expect(report.schema_version).toBe(1);
+    expect(report.counts).toEqual({
+      pass: 2,
+      fail: 0,
+      not_applicable: 0,
+      error: 0,
+    });
+    expect(report.results.map((r) => r.custom_id)).toEqual([
+      "echo-1",
+      "echo-2",
+    ]);
+    expect(report.results[0]!.judgement_id).toBeDefined();
+    expect(
+      readFileSync(join(fixture.workspaceDir, "out", "results.jsonl"), "utf8")
+        .trim()
+        .split("\n"),
+    ).toHaveLength(2);
+  });
+
+  it("names the Recipe's judges when asked for one it does not have", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    mkdirSync(join(fixture.recipeDir, "judges"));
+    writeFileSync(
+      join(fixture.recipeDir, "judges", "greeting.yaml"),
+      LLM_JUDGE,
+    );
+    await expect(
+      judgeCli({ recipe: fixture.recipeDir, input: ["x"], judge: ["nope"] }),
+    ).rejects.toThrow(/no judge named nope; its judges are greeting/);
   });
 });

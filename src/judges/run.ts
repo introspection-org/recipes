@@ -81,10 +81,10 @@ export interface SkippedJudgement {
 export interface RunJudgesOptions {
   judges: readonly JudgeDefinition[];
   /**
-   * The conversations: inline lines, or the paths (or `file:` URLs) of one or
-   * more JSONL files of them. Several files run as one batch.
+   * The conversations: inline lines, and the paths (or `file:` URLs) of JSONL
+   * files of them, in any mix. Everything runs as one batch.
    */
-  input: readonly JudgeInputLine[] | readonly (string | URL)[];
+  input: readonly (string | URL | JudgeInputLine)[];
   /** Runs each judgement: `createJudgeRunController`, or your own. */
   controller: BatchRunController;
   /**
