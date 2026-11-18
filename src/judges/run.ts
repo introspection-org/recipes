@@ -4,7 +4,11 @@ import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
 import { runBatch } from "../batch/index.js";
 import type { BatchResultLine } from "../batch/lines.js";
 import type { BatchRunController } from "../batch/runner.js";
-import type { JudgeRunController, JudgeUsage } from "./controller.js";
+import type {
+  JudgeRunController,
+  JudgeRunDetails,
+  JudgeUsage,
+} from "./controller.js";
 import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
@@ -144,6 +148,29 @@ interface Pair {
 /** The batch's agent name; each line's own judge is resolved from its id. */
 const BATCH_AGENT = "judges";
 
+/**
+ * The run details recorded under `path`, by run id. A line a crash cut short
+ * is skipped: its run has no recorded line in the batch either.
+ */
+async function readRunDetails(
+  files: BatchFiles,
+  path: string,
+): Promise<Map<string, JudgeRunDetails>> {
+  const details = new Map<string, JudgeRunDetails>();
+  for (const raw of ((await files.read(path)) ?? "").split("\n")) {
+    if (!raw.trim()) continue;
+    try {
+      const { run_id: runId, ...rest } = JSON.parse(raw) as {
+        run_id?: unknown;
+      } & JudgeRunDetails;
+      if (typeof runId === "string") details.set(runId, rest);
+    } catch {
+      // A torn last line.
+    }
+  }
+  return details;
+}
+
 /** A run whose output has had one surrounding code fence removed. */
 function unfenced<T extends { output?: string | undefined }>(run: T): T {
   return typeof run.output === "string"
@@ -248,8 +275,20 @@ export async function runJudges(
   const pairId = (judge: JudgeDefinition, line: JudgeInputLine) =>
     `${judge.name}@${judge.definitionHash.slice(0, 12)}/${line.custom_id}`;
 
+  // Who answered each run and its usage, kept beside the batch's state: a
+  // resumed run's controller never saw the runs that already completed.
+  const detailsPath = options.directory
+    ? join(options.directory, "run-details.jsonl")
+    : undefined;
+  const recorded = detailsPath
+    ? await readRunDetails(files, detailsPath)
+    : new Map<string, JudgeRunDetails>();
   const runDetails = (runId: string | undefined) => {
-    const details = runId ? options.controller.runDetails?.(runId) : undefined;
+    if (!runId) return {};
+    // The controller knows the runs it made; a resumed run's earlier ones are
+    // only on disk.
+    const live = options.controller.runDetails?.(runId);
+    const details = live?.model || live?.usage ? live : recorded.get(runId);
     return {
       ...(details?.model ? { model: details.model } : {}),
       ...(details?.usage && details.usage.total_tokens > 0
@@ -398,7 +437,18 @@ export async function runJudges(
       unfenced(await options.controller.wait(id, signal)),
     message: async (id, text) =>
       unfenced(await options.controller.message(id, text)),
-    close: (id) => options.controller.close(id),
+    // The batch closes a session before it records the line, so the line's
+    // details are on disk before the line is.
+    close: async (id) => {
+      const details = options.controller.runDetails?.(id);
+      if (detailsPath && (details?.model || details?.usage)) {
+        await files.appendLine(
+          detailsPath,
+          JSON.stringify({ run_id: id, ...details }),
+        );
+      }
+      return options.controller.close(id);
+    },
   };
   const completed = new Map<string, JudgementLine>();
   let stopped = false;

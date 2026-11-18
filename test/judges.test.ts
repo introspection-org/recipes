@@ -665,6 +665,42 @@ describe("runJudges reports who answered", () => {
       usage: { input_tokens: 9, output_tokens: 1, total_tokens: 10 },
     });
   });
+
+  it("keeps the model and usage of judgements a resumed run already had", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const directory = fixture.workspaceDir;
+    const judge = parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!;
+    const answer = () => '{"reasoning":"echoed","verdict":"pass"}';
+    const usage = { input_tokens: 9, output_tokens: 1, total_tokens: 10 };
+    const first = scripted(answer);
+    const before = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT)],
+      controller: {
+        ...first.controller,
+        runDetails: () => ({ model: "faux/faux-1", usage }),
+      },
+      directory,
+    });
+    expect(before.results[0]).toMatchObject({ model: "faux/faux-1", usage });
+
+    // A fresh controller, as a restarted process has, knows no earlier run.
+    const second = scripted(answer);
+    const after = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT)],
+      controller: { ...second.controller, runDetails: () => ({}) },
+      directory,
+    });
+    expect(second.started).toEqual([]);
+    expect(after.results[0]).toMatchObject({ model: "faux/faux-1", usage });
+    const written = readFileSync(join(directory, "results.jsonl"), "utf8");
+    expect(JSON.parse(written.trim())).toMatchObject({
+      model: "faux/faux-1",
+      usage,
+    });
+  });
 });
 
 describe("createJudgeRunController", () => {

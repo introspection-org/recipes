@@ -187,8 +187,9 @@ One line per judge and conversation, by judge and then in input order:
 - `model` is the `<provider>/<model>` that answered, after any `ai.fallbacks`.
   `usage` is the tokens the judgement took, counting cached prompt tokens as
   input. It is present only when the model reported tokens, never as zeros.
-  Both come from the controller's `runDetails`; a judgement resumed from an
-  earlier run has neither.
+  Both come from the controller's `runDetails`. With a `directory`, they are
+  also kept in `<directory>/run-details.jsonl`, so a judgement resumed from an
+  earlier run keeps them.
 - `definition_hash` is the SHA-256 of the judge file. Judgements compare only
   when it and `contract_version` match.
 - `judgement_id` is present when the judge has a registered id (see
