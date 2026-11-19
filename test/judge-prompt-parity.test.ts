@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JudgeInput } from "../src/judges/trajectory.js";
 import {
-  CLASSIFIER_BUDGET_UNITS,
-  renderTrajectoryInput,
+  CLASSIFIER_BUDGET_TOKENS,
+  MAX_PROMPT_TOKENS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
 } from "../src/prompts/index.js";
 
 // Today's judge prompts, pinned before they move onto the prompt builders, so
@@ -28,7 +30,7 @@ const base: JudgeInput = {
 
 const CASES: Record<
   string,
-  { input: JudgeInput; options?: Parameters<typeof renderTrajectoryInput>[1] }
+  { input: JudgeInput; classify?: boolean; maxTokens?: number }
 > = {
   whole: { input: base },
   with_system: { input: { ...base, system_instructions: "Be brief." } },
@@ -38,18 +40,29 @@ const CASES: Record<
   },
   classifier: {
     input: { ...base, system_instructions: "S" },
-    options: { maxUnits: CLASSIFIER_BUDGET_UNITS, slim: true },
+    classify: true,
+    maxTokens: CLASSIFIER_BUDGET_TOKENS,
   },
   cut: {
     input: { ...base, system_instructions: "S" },
-    options: { maxUnits: 900 },
+    maxTokens: 300,
   },
-  cut_on_surrogate: { input: base, options: { maxUnits: 6_001 } },
-  slim_and_cut: { input: base, options: { maxUnits: 700, slim: true } },
+  cut_on_surrogate: { input: base, maxTokens: 2_000 },
+  slim_and_cut: {
+    input: base,
+    classify: true,
+    maxTokens: 233,
+  },
 };
 
 describe("a judge's prompt", () => {
-  it.each(Object.entries(CASES))("renders %s", (_, { input, options }) => {
-    expect(renderTrajectoryInput(input, options)).toMatchSnapshot();
-  });
+  it.each(Object.entries(CASES))(
+    "renders %s",
+    (_, { input, classify, maxTokens }) => {
+      const builder = classify ? trajectoryLlmClassify : trajectoryLlmJudge;
+      expect(
+        builder.build(input, maxTokens ?? MAX_PROMPT_TOKENS).prompt,
+      ).toMatchSnapshot();
+    },
+  );
 });

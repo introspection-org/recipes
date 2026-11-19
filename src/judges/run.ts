@@ -1,12 +1,16 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { findRecipeModel } from "../model-binding.js";
 import { findClassifierModel } from "./classifier.js";
-import { fitBudget } from "../prompts/budget.js";
+import { CHARS_PER_TOKEN, promptBudget } from "../prompts/budget.js";
+import { VERDICT_INSTRUCTIONS } from "./verdict.js";
 import {
-  CLASSIFIER_BUDGET_UNITS,
-  renderTrajectoryInput,
-  TRANSCRIPT_BUDGET_UNITS,
+  CLASSIFIER_BUDGET_TOKENS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
 } from "../prompts/builders/trajectory.js";
+import { builderId } from "../prompts/builder.js";
+import { promptBuilder } from "../prompts/registry.js";
+import { parsePreprocess } from "../prompts/spec.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -353,21 +357,48 @@ export async function runJudges(
   };
 
   const budgets = new Map<string, number>();
-  const budgetFor = (judge: JudgeDefinition, fallbackUnits: number): number => {
-    let units = budgets.get(judge.name);
-    if (units === undefined) {
+  const budgetFor = (judge: JudgeDefinition): number => {
+    let tokens = budgets.get(judge.name);
+    if (tokens === undefined) {
       const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
-      units = fitBudget(
-        specs.map((spec) =>
-          judge.kind === "classifier"
-            ? findClassifierModel(spec)
-            : findRecipeModel(spec, options.modelRegistry),
-        ),
-        fallbackUnits,
-      ).maxUnits;
-      budgets.set(judge.name, units);
+      tokens =
+        judge.kind === "classifier"
+          ? // Jev's slim was measured cut to 25k tokens (the slimming study); a
+            // classifier's window may lower that, never raise it.
+            promptBudget(
+              specs.map((spec) => findClassifierModel(spec)),
+              CLASSIFIER_BUDGET_TOKENS,
+            )
+          : // The judge's system prompt shares the window with its transcript.
+            Math.max(
+              0,
+              promptBudget(
+                specs.map((spec) =>
+                  findRecipeModel(spec, options.modelRegistry),
+                ),
+              ) -
+                Math.ceil(
+                  (judge.instructions.trim().length +
+                    2 +
+                    VERDICT_INSTRUCTIONS.length) /
+                    CHARS_PER_TOKEN,
+                ),
+            );
+      budgets.set(judge.name, tokens);
     }
-    return units;
+    return tokens;
+  };
+  const builderFor = (judge: JudgeDefinition) => {
+    const spec = judge.preprocess
+      ? parsePreprocess(judge.preprocess)
+      : {
+          builder: builderId(
+            judge.kind === "classifier"
+              ? trajectoryLlmClassify
+              : trajectoryLlmJudge,
+          ),
+        };
+    return { builder: promptBuilder(spec.builder), options: spec.options };
   };
   for (const judge of options.judges) {
     const operational = options.operational?.[judge.name] ?? {};
@@ -402,20 +433,11 @@ export async function runJudges(
         pairs.set(pairId(judge, line), {
           judge,
           line,
-          transcript:
-            judge.kind === "classifier"
-              ? renderTrajectoryInput(input, {
-                  // Jev's slim was measured cut to 75k (the slimming study); a
-                  // classifier's window may lower that, never raise it.
-                  maxUnits: Math.min(
-                    budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
-                    CLASSIFIER_BUDGET_UNITS,
-                  ),
-                  slim: true,
-                })
-              : renderTrajectoryInput(input, {
-                  maxUnits: budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
-                }),
+          transcript: (() => {
+            const { builder, options: builderOptions } = builderFor(judge);
+            return builder.build(input, budgetFor(judge), builderOptions)
+              .prompt;
+          })(),
           evidence: evidenceHash(input),
         });
       } catch (error) {

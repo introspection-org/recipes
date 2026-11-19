@@ -5,11 +5,9 @@ import { CONVERSATION_ID_BAGGAGE } from "../otel-baggage.js";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "./files.js";
 import {
-  inputFingerprint,
-  parseInputLines,
-  validateInputLines,
   type BatchInputLine,
   type BatchResultLine,
+  type BuildLinePrompt,
 } from "./lines.js";
 import { parseBatchParams, type BatchParams } from "./params.js";
 import {
@@ -21,6 +19,12 @@ import {
   type LineScope,
 } from "./runner.js";
 import { jsonlResults, memoryResults } from "./shards.js";
+import { promptBuilder } from "../prompts/registry.js";
+import { parsePreprocess, type PreprocessSpec } from "../prompts/spec.js";
+import { promptBudget } from "../prompts/budget.js";
+import { findRecipeModel } from "../model-binding.js";
+import type { RecipeAgentModelConfig } from "../recipe/model.js";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export { AdaptiveLimiter } from "./limiter.js";
 export {
@@ -29,7 +33,9 @@ export {
   parseInputLines,
   validateInputLines,
   type BatchInputLine,
+  type BatchLineBuild,
   type BatchRecordInfo,
+  type BuildLinePrompt,
   type BatchResult,
   type BatchResultLine,
   type BatchResultType,
@@ -43,7 +49,9 @@ export {
   type BatchParams,
 } from "./params.js";
 export {
+  batchMemory,
   runBatchWith,
+  type BatchMemory,
   type BatchProgress,
   type BatchRecord,
   type BatchRunController,
@@ -70,8 +78,8 @@ export {
 export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   /** The Recipe agent that answers each line. */
   agent: string;
-  /** The lines to run, or the path (or `file:` URL) of a JSONL file holding them. */
-  input: string | URL | readonly BatchInputLine[];
+  /** The lines to run, as they arrive, or the path (or `file:` URL) of a JSONL file holding them. */
+  input: string | URL | Iterable<unknown> | AsyncIterable<unknown>;
   /** Runs each line: `createInProcessRunController`, or your own `AgentRunController`. */
   controller: BatchRunController;
   /**
@@ -94,6 +102,16 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   /** Replaces the local file system. */
   files?: BatchFiles;
   /**
+   * How a line that carries an `input` becomes its prompt: the agent's
+   * `preprocess:` spec, and the budget of its models (`agentPromptBudget`). A line
+   * with a `prompt` runs as written.
+   */
+  preprocess?: { spec: PreprocessSpec; maxTokens: number };
+  /** What the lines in flight may hold, in bytes; default half the heap free at start. */
+  memoryBudget?: number;
+  /** Where the batch reports how it sized itself; default one line on stderr. */
+  log?: (message: string) => void;
+  /**
    * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
    * Defaults to an id derived from the results file, so a resumed batch keeps
    * its conversation ids, or a random one without a `directory`.
@@ -108,13 +126,50 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
     | ((line: BatchInputLine, record: BatchRecord) => Record<string, string>);
 }
 
-/** A prompt's conversation: `<batch_id>:<index>`, padded so ids sort in input order. */
+/**
+ * What a prompt for this agent may hold: the smallest window among its `ai:`
+ * model and fallbacks, so it fits whichever answers, within the 300k-token
+ * ceiling a model the catalog does not know also takes.
+ */
+export function agentPromptBudget(
+  model: RecipeAgentModelConfig | undefined,
+  modelRegistry?: ModelRegistry,
+): number {
+  const specs = [model?.name, ...(model?.fallbacks ?? [])].filter(
+    (spec): spec is string => typeof spec === "string",
+  );
+  return promptBudget(
+    specs.map((spec) => findRecipeModel(spec, modelRegistry)),
+  );
+}
+
+/** Builds each `input` line through the builder `spec` names, within `maxTokens`. */
+export function linePromptBuilder(
+  spec: PreprocessSpec,
+  maxTokens: number,
+): BuildLinePrompt {
+  const { builder: id, options } = parsePreprocess(spec);
+  const builder = promptBuilder(id);
+  return (input) => {
+    const built = builder.build(input, maxTokens, options);
+    return {
+      prompt: built.prompt,
+      build: {
+        builder: id,
+        applied: built.applied,
+        ...(built.digest !== undefined ? { digest: built.digest } : {}),
+        ...(built.state !== undefined ? { state: built.state } : {}),
+      },
+    };
+  };
+}
+
+/** A prompt's conversation: `<batch_id>:<custom_id>`, the same on every run of the line. */
 export function batchConversationId(
   batchId: string,
-  record: BatchRecord,
+  line: Pick<BatchInputLine, "custom_id">,
 ): string {
-  const width = String(Math.max(0, record.count - 1)).length;
-  return `${batchId}:${String(record.index).padStart(width, "0")}`;
+  return `${batchId}:${line.custom_id}`;
 }
 
 /**
@@ -127,7 +182,7 @@ export function baggageLineScope(
   baggage: RunBatchOptions["baggage"] = {},
 ): (line: BatchInputLine, record: BatchRecord) => LineScope {
   return (line, record) => {
-    const conversationId = batchConversationId(batchId, record);
+    const conversationId = batchConversationId(batchId, line);
     const entries = {
       ...(typeof baggage === "function" ? baggage(line, record) : baggage),
       [CONVERSATION_ID_BAGGAGE]: conversationId,
@@ -170,23 +225,23 @@ export async function runBatch(
     files = nodeBatchFiles,
     batch_id,
     baggage,
+    preprocess,
+    memoryBudget,
+    log,
     ...settings
   } = options;
   const params = parseBatchParams(settings);
-  let lines: BatchInputLine[];
-  if (typeof input === "string" || input instanceof URL) {
-    const path =
-      input instanceof URL
+  const build = preprocess
+    ? linePromptBuilder(preprocess.spec, preprocess.maxTokens)
+    : undefined;
+  const source =
+    typeof input === "string" || input instanceof URL
+      ? input instanceof URL
         ? fileURLToPath(input)
         : directory && !isAbsolute(input)
           ? join(directory, input)
-          : input;
-    const text = await files.read(path);
-    if (text === null) throw new Error(`batch input ${path} does not exist`);
-    lines = parseInputLines(text);
-  } else {
-    lines = validateInputLines(input);
-  }
+          : input
+      : input;
   const resultsPath = directory ? resolve(directory, params.output_name) : null;
   const results = resultsPath
     ? jsonlResults(files, resultsPath)
@@ -196,11 +251,19 @@ export async function runBatch(
     (resultsPath
       ? createHash("sha256").update(resultsPath).digest("hex").slice(0, 16)
       : randomUUID());
+  let reached: ReadonlyMap<string, { fingerprint: string; index: number }> =
+    new Map();
   const summary = await runBatchWith(params, {
     controller,
     files,
-    input: lines,
+    input: source,
     results,
+    ...(build ? { buildPrompt: build } : {}),
+    ...(memoryBudget !== undefined ? { memoryBudget } : {}),
+    ...(log ? { log } : {}),
+    onLines: (lines) => {
+      reached = lines;
+    },
     lineScope: baggageLineScope(batchId, baggage),
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
@@ -213,14 +276,15 @@ export async function runBatch(
     const line = JSON.parse(raw) as BatchResultLine;
     latest.set(line.custom_id, line);
   }
-  // The current input decides what is returned and in what order: a stored
-  // result counts only if it answered this agent and this prompt text.
-  const current = lines.flatMap((line) => {
-    const result = latest.get(line.custom_id);
-    return result &&
-      result.batch.input_sha256 === inputFingerprint(params.agent, line)
-      ? [result]
-      : [];
-  });
+  // The current input decides what is returned, in input order: a stored
+  // result counts only if it answered this agent and this prompt.
+  const current = [...reached]
+    .sort(([, a], [, b]) => a.index - b.index)
+    .flatMap(([id, { fingerprint }]) => {
+      const result = latest.get(id);
+      return result && result.batch.input_sha256 === fingerprint
+        ? [result]
+        : [];
+    });
   return { ...summary, results: current };
 }

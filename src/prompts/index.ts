@@ -1,35 +1,35 @@
 export {
-  buildPrompt,
-  type BuildOptions,
-  type Built,
+  builderId,
+  numberOption,
+  withinBudget,
+  type BuilderOptions,
   type BuiltPrompt,
   type PromptBuilder,
 } from "./builder.js";
+export { middleCut, PromptError } from "./fit.js";
 export {
-  FitError,
-  fitStepName,
-  middleCut,
-  type FitBudget,
-  type FitStep,
-  type FitSteps,
-} from "./fit.js";
-export {
-  renderTemplate,
-  templatePlaceholders,
-  TemplateError,
-} from "./template.js";
-export {
-  CLASSIFIER_BUDGET_UNITS,
-  CLASSIFIER_FIT,
-  LLM_JUDGE_FIT,
-  renderTrajectoryInput,
-  TRAJECTORY_TEMPLATE,
-  TRANSCRIPT_BUDGET_UNITS,
-  trajectoryBuilder,
+  CLASSIFIER_BUDGET_TOKENS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
 } from "./builders/trajectory.js";
 export {
-  fitBudget,
-  modelBudgetUnits,
+  conversationSynthesis,
+  type ConversationMessage,
+  type ConversationModelCall,
+  type ConversationPart,
+  type ConversationSynthesisInput,
+  type ConversationSynthesisState,
+  type PriorObservation,
+  type ResumeState,
+  type SegmentPlan,
+  type SegmentSkip,
+} from "./builders/conversation-synthesis.js";
+export {
+  MAX_PROMPT_TOKENS,
+  modelBudgetTokens,
   OUTPUT_RESERVE_TOKENS,
-  UNITS_PER_TOKEN,
+  promptBudget,
+  CHARS_PER_TOKEN,
 } from "./budget.js";
+export { PROMPT_BUILDERS, promptBuilder } from "./registry.js";
+export { parsePreprocess, type PreprocessSpec } from "./spec.js";

@@ -25,6 +25,7 @@ import {
   type RecipeMcpToolSelection,
 } from "./package.js";
 import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
+import { parsePreprocess, type PreprocessSpec } from "../prompts/spec.js";
 import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
@@ -208,6 +209,10 @@ export interface RecipeAgentDefinition {
   phases?: string[];
   subagents: string[];
   systemInstructions?: RecipeSystemInstructions;
+  /** The builder a batch turns a line's raw `input` into this agent's prompt with. */
+  preprocess?: PreprocessSpec;
+  /** What this agent's sandbox may use; absent, the platform's defaults apply. */
+  resources?: RecipeAgentResources;
   /** Fields authored on this definition rather than inherited through `from`. */
   declaredFields?: readonly RecipeAgentConfigField[];
 }
@@ -222,7 +227,9 @@ export type RecipeAgentConfigField =
   | "skills"
   | "phases"
   | "subagents"
-  | "system_instructions";
+  | "system_instructions"
+  | "preprocess"
+  | "resources";
 
 type ParsedRecipeAgentDefinition = Omit<
   RecipeAgentDefinition,
@@ -257,7 +264,18 @@ const AGENT_YAML_KEYS = new Set([
   "phases",
   "subagents",
   "system_instructions",
+  "preprocess",
+  "resources",
 ]);
+
+/** A Kubernetes memory quantity in binary or decimal units: `512Mi`, `1Gi`, `500M`. */
+const MEMORY_QUANTITY = /^[1-9][0-9]*(Ki|Mi|Gi|K|M|G)$/;
+
+/** What an agent's sandbox may use. Today only memory; a batch sizes itself to it. */
+interface RecipeAgentResources {
+  /** A memory quantity such as `512Mi`. */
+  memory?: string;
+}
 
 const PORTABLE_AGENT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_INHERITANCE_DEPTH = 128;
@@ -286,6 +304,34 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 function invalidAgentField(data: Record<string, unknown>): string | undefined {
   if (!Object.hasOwn(data, "name")) {
     return "name is required";
+  }
+  if (Object.hasOwn(data, "resources")) {
+    const resources = data.resources;
+    if (
+      !resources ||
+      typeof resources !== "object" ||
+      Array.isArray(resources)
+    ) {
+      return "resources must be a map";
+    }
+    const unknown = Object.keys(resources).filter((key) => key !== "memory");
+    if (unknown.length > 0) {
+      return `resources has unsupported key(s): ${unknown.join(", ")}`;
+    }
+    const memory = (resources as Record<string, unknown>).memory;
+    if (
+      memory !== undefined &&
+      (typeof memory !== "string" || !MEMORY_QUANTITY.test(memory))
+    ) {
+      return "resources.memory must be a quantity such as 512Mi or 1Gi";
+    }
+  }
+  if (Object.hasOwn(data, "preprocess")) {
+    try {
+      parsePreprocess(data.preprocess as PreprocessSpec);
+    } catch (error) {
+      return (error as Error).message;
+    }
   }
   for (const key of ["name", "from"] as const) {
     if (
@@ -758,6 +804,12 @@ function readRecipeAgentSources(
           ? stringArray(data.subagents)
           : undefined,
         systemInstructions: parseSystemInstructions(data),
+        ...(Object.hasOwn(data, "resources")
+          ? { resources: data.resources as RecipeAgentResources }
+          : {}),
+        ...(Object.hasOwn(data, "preprocess")
+          ? { preprocess: data.preprocess as PreprocessSpec }
+          : {}),
         declaredFields: [
           "description",
           "model",
@@ -769,6 +821,8 @@ function readRecipeAgentSources(
           "phases",
           "subagents",
           "system_instructions",
+          "preprocess",
+          "resources",
         ].filter((key): key is RecipeAgentConfigField =>
           Object.hasOwn(data, key),
         ),
@@ -834,6 +888,12 @@ function definitionsFromSources(
         base?.systemInstructions,
         raw.systemInstructions,
       ),
+      ...((raw.resources ?? base?.resources)
+        ? { resources: raw.resources ?? base?.resources }
+        : {}),
+      ...((raw.preprocess ?? base?.preprocess)
+        ? { preprocess: raw.preprocess ?? base?.preprocess }
+        : {}),
       declaredFields: [...(raw.declaredFields ?? [])],
     };
     resolvedDefinitions.set(name, definition);
