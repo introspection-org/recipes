@@ -1,7 +1,8 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { findRecipeModel } from "../model-binding.js";
 import { findClassifierModel } from "./classifier.js";
-import { promptBudget } from "../prompts/budget.js";
+import { CHARS_PER_TOKEN, promptBudget } from "../prompts/budget.js";
+import { VERDICT_INSTRUCTIONS } from "./verdict.js";
 import {
   CLASSIFIER_BUDGET_TOKENS,
   trajectoryLlmClassify,
@@ -368,8 +369,20 @@ export async function runJudges(
               specs.map((spec) => findClassifierModel(spec)),
               CLASSIFIER_BUDGET_TOKENS,
             )
-          : promptBudget(
-              specs.map((spec) => findRecipeModel(spec, options.modelRegistry)),
+          : // The judge's system prompt shares the window with its transcript.
+            Math.max(
+              0,
+              promptBudget(
+                specs.map((spec) =>
+                  findRecipeModel(spec, options.modelRegistry),
+                ),
+              ) -
+                Math.ceil(
+                  (judge.instructions.trim().length +
+                    2 +
+                    VERDICT_INSTRUCTIONS.length) /
+                    CHARS_PER_TOKEN,
+                ),
             );
       budgets.set(judge.name, tokens);
     }

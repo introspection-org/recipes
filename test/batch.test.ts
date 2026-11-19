@@ -586,6 +586,55 @@ describe("runBatch", () => {
     });
   });
 
+  it("records each line at its input position, whatever failed before it", async () => {
+    const files = memoryFiles({
+      [INPUT]: "not json\n" + jsonl({ custom_id: "a", prompt: "first" }),
+    });
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 1,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    const a = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((line) => line.custom_id === "a");
+    expect(a.batch.record_index).toBe(1);
+  });
+
+  it("charges values from an iterable by their size, so the budget applies to streams", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "small", prompt: "p" },
+        { custom_id: "large", prompt: "x".repeat(10_000) },
+      ],
+      controller: new EchoRuns(),
+      memoryBudget: 3 * 1_000,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 1 });
+    expect(
+      outcome.results.find((line) => line.custom_id === "large")?.result.error
+        ?.message,
+    ).toMatch(/more than this batch can hold in memory/);
+  });
+
   it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
     const [asNumber, asString] = parseInputLines(
       jsonl({ custom_id: "a", prompt: "p" }) +

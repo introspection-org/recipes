@@ -40,4 +40,10 @@ describe("a prompt's budget", () => {
       ),
     ).toBe(266_000);
   });
+
+  it("keeps input room for a small model whose maxTokens equals its window", () => {
+    expect(modelBudgetTokens({ contextWindow: 8_192, maxTokens: 8_192 })).toBe(
+      8_192 - 2_048,
+    );
+  });
 });

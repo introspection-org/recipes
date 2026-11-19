@@ -13,11 +13,16 @@ export const MAX_PROMPT_TOKENS = 300_000;
 
 type Window = Pick<Model<Api>, "contextWindow" | "maxTokens">;
 
-/** What one model can read, in tokens, after its reply's reserve and within the ceiling. */
+/**
+ * What one model can read, in tokens, after its reply's reserve and within the
+ * ceiling. The reserve never takes more than a quarter of the window, so a
+ * small model whose `maxTokens` equals its window still reads its input.
+ */
 export function modelBudgetTokens(model: Window): number {
   const reserve = Math.min(
     model.maxTokens > 0 ? model.maxTokens : OUTPUT_RESERVE_TOKENS,
     OUTPUT_RESERVE_TOKENS,
+    Math.floor(model.contextWindow / 4),
   );
   return Math.min(
     Math.max(0, model.contextWindow - reserve),

@@ -138,7 +138,12 @@ async function* inputValues(deps: BatchRunDeps): AsyncGenerator<InputItem> {
     let index = 0;
     for await (const value of deps.input) {
       index += 1;
-      yield { value, label: `input ${index}`, size: 0 };
+      // A value is charged as its JSON, the size it would be as a line.
+      yield {
+        value,
+        label: `input ${index}`,
+        size: JSON.stringify(value)?.length ?? 0,
+      };
     }
     return;
   }
@@ -219,8 +224,13 @@ interface InputItem {
  */
 const LINE_MEMORY_FACTOR = 3;
 
-/** The `custom_id` near the start of a line's text, without parsing all of it. */
-function customIdOf(raw: string | undefined): string | undefined {
+/** A line's `custom_id`: from its value, or near the start of its text without parsing all of it. */
+function customIdOf(
+  raw: string | undefined,
+  value?: unknown,
+): string | undefined {
+  const id = (value as { custom_id?: unknown } | null | undefined)?.custom_id;
+  if (typeof id === "string") return id;
   const match = /"custom_id"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(
     raw?.slice(0, 1_000) ?? "",
   );
@@ -450,9 +460,12 @@ export async function runBatchWith(
   // Every line that is recorded claims its custom_id first: a later line
   // with the same id, valid or not, is counted but never recorded, since a
   // result under the same id would replace the first line's answer.
+  // A line's record index is its position in the input, whatever happened
+  // to the lines before it.
+  let position = -1;
   const claim = (customId: string): boolean => {
     if (recordIndex.has(customId)) return false;
-    recordIndex.set(customId, recordIndex.size);
+    recordIndex.set(customId, position);
     return true;
   };
   const fail = async (
@@ -536,11 +549,12 @@ export async function runBatchWith(
       return "end";
     }
     summary.total += 1;
+    position = summary.total - 1;
     const { raw, label, size } = next.value;
     const charge = size * LINE_MEMORY_FACTOR;
     if (charge > budget) {
       await fail(
-        customIdOf(raw) ?? label,
+        customIdOf(raw, next.value.value) ?? label,
         `${label} is ${Math.ceil(size / 1e6)} MB, more than this batch can hold in memory (${Math.floor(budget / LINE_MEMORY_FACTOR / 1e6)} MB a line)`,
       );
       return "failed";

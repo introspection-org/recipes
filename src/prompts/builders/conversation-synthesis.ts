@@ -355,7 +355,14 @@ const estimateChars = (value: unknown) => JSON.stringify(value).length;
 const estimateTokens = (value: unknown) =>
   Math.max(1, Math.floor(estimateChars(value) / CHARS_PER_TOKEN));
 
-const nanos = (iso: string) => BigInt(Date.parse(iso)) * 1_000_000n;
+/** An ISO-8601 instant in Unix nanoseconds, its fraction kept to the nanosecond. */
+function nanos(iso: string): bigint {
+  const fraction = /\.(\d+)/.exec(iso)?.[1] ?? "";
+  const seconds = Date.parse(iso.replace(/\.\d+/, ""));
+  return (
+    BigInt(seconds) * 1_000_000n + BigInt(fraction.padEnd(9, "0").slice(0, 9))
+  );
+}
 
 interface Turn {
   call: ConversationModelCall;

@@ -154,3 +154,51 @@ describe("conversation_synthesis@1 resuming", () => {
     expect(built.prompt).not.toContain("already read");
   });
 });
+
+describe("conversation_synthesis@1 timestamps", () => {
+  it("keeps sub-millisecond precision from an ISO timestamp, for the cursor and for resuming", () => {
+    const call = (span: string, timestamp: string, text: string) => ({
+      span_id: span,
+      timestamp,
+      input_message_count: 1,
+      input_new_messages: [
+        { role: "user", parts: [{ type: "text", content: text }] },
+      ],
+      output_messages: [],
+    });
+    const first = conversationSynthesis.build(
+      {
+        conversation_id: "c",
+        completed_at: "2026-11-19T00:00:00Z",
+        model_calls: [call("s1", "2026-11-19T00:00:00.123400Z", "earlier")],
+      },
+      300_000,
+    );
+    const plan = (
+      first.state as unknown as { plan: { watermark_next: { cursor: string } } }
+    ).plan;
+    const cursor = JSON.parse(
+      Buffer.from(plan.watermark_next.cursor, "base64url").toString(),
+    );
+    expect(cursor.v).toBe("1795046400123400000");
+
+    const resumed = conversationSynthesis.build(
+      {
+        conversation_id: "c",
+        completed_at: "2026-11-19T00:00:00Z",
+        model_calls: [
+          call("s1", "2026-11-19T00:00:00.123400Z", "earlier"),
+          call("s2", "2026-11-19T00:00:00.123456Z", "a little later"),
+        ],
+        watermark: {
+          watermark: "2026-11-19T00:00:00.123400Z",
+          cursor: plan.watermark_next.cursor,
+          segment: 1,
+        },
+      },
+      300_000,
+    );
+    expect(resumed.prompt).toContain("a little later");
+    expect(resumed.prompt).not.toContain("earlier");
+  });
+});
