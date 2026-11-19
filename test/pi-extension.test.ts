@@ -2202,3 +2202,108 @@ describe("Recipes extension for Pi", () => {
     }
   });
 });
+
+describe("agent tool progress", () => {
+  it("renders a waited-on child's latest tool call, elapsed time and count while it runs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-progress-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const longCommand = `python3 tests/sow_checks.py ${"--verbose ".repeat(20)}\n  --and-more`;
+      const createChildAgentRunner = vi.fn((opts: any = {}) => ({
+        async start() {},
+        async prompt() {
+          opts.onToolEvent?.({
+            type: "start",
+            id: "bash-1",
+            name: "bash",
+            args: { command: longCommand },
+          });
+          opts.onToolEvent?.({
+            type: "start",
+            id: "write-1",
+            name: "write",
+            args: { path: "tests/test.sh", content: "#!/bin/sh" },
+          });
+          return "checks written";
+        },
+        async steer() {},
+        async cancel() {},
+        async shutdown() {},
+      }));
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      const ctx = extensionContext(projectDir);
+
+      createRecipesExtension({ createChildAgentRunner })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
+
+      const tool = pi.tools.get("agent")!;
+      const updates: AgentToolResult<any>[] = [];
+      const final = await tool.execute(
+        "tool-call-1",
+        { name: "explorer", prompt: "write the checks", wait: true },
+        undefined,
+        (update) => updates.push(update),
+        ctx,
+      );
+
+      const running = updates.filter(
+        (update) => update.details?.agent?.status === "running",
+      );
+      const bash = running.find(
+        (update) => update.details.agent.tool_call_count === 1,
+      )!;
+      expect(bash.details.agent.latest_tool_call).toMatch(
+        /^bash python3 tests\/sow_checks\.py --verbose .*…$/,
+      );
+      expect(bash.details.agent.latest_tool_call).not.toContain("\n");
+      const latest = running.at(-1)!;
+      // Plain-text hosts read the same line from the partial result.
+      expect(latest.content[0]).toEqual(
+        expect.objectContaining({
+          text: expect.stringMatching(
+            /^explorer: write tests\/test\.sh · \d+s · 2 tool calls$/,
+          ),
+        }),
+      );
+
+      const theme = { fg: (_name: string, text: string) => text } as any;
+      const invalidate = vi.fn();
+      const context = {
+        lastComponent: undefined,
+        state: {},
+        invalidate,
+      } as any;
+      const progress = tool.renderResult!(
+        latest as any,
+        { expanded: false, isPartial: true },
+        theme,
+        context,
+      );
+      expect(progress.render(120).join("\n").trim()).toMatch(
+        /^explorer: write tests\/test\.sh · \d+s · 2 tool calls$/,
+      );
+      expect(context.state.ticker).toBeDefined();
+
+      const done = tool.renderResult!(
+        final as any,
+        { expanded: false, isPartial: false },
+        theme,
+        { ...context, lastComponent: progress },
+      );
+      expect(context.state.ticker).toBeUndefined();
+      expect(done.render(120).join("\n")).toContain("checks written");
+      expect(done.render(120).join("\n")).toMatch(
+        /\(explorer: .*\) \[completed\]/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

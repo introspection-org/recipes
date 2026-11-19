@@ -1859,6 +1859,8 @@ describe("in-process run controller", () => {
     const completed = await controller.wait(run.agent_run_id);
     expect(completed.output).toBeTruthy();
     expect(completed.current_tool).toBeUndefined();
+    expect(completed.latest_tool_call).toBe("search");
+    expect(completed.tool_call_count).toBe(1);
 
     const resumed = await controller.message(run.agent_run_id, "second");
     expect(resumed.status).toBe("running");

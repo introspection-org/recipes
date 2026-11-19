@@ -32,6 +32,10 @@ export interface AgentRunSummary {
   completed_at?: number;
   last_activity_at: number;
   current_tool?: string;
+  /** The run's latest tool call in short form, e.g. `bash npm test`. */
+  latest_tool_call?: string;
+  /** Tool calls the run has started so far. */
+  tool_call_count?: number;
   nested_tools?: AgentNestedToolSummary[];
   output_preview?: string;
   output?: string;
@@ -129,6 +133,64 @@ function terminal(run: AgentRunSummary): boolean {
 /** The run id leads; the agent and label only describe it. */
 function runLine(run: AgentRunSummary): string {
   return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}]`;
+}
+
+/** Longest tool call shown in a progress line. */
+const TOOL_CALL_CHARS = 80;
+
+/** The argument that says what a tool call does, in order of preference. */
+const TOOL_CALL_SUBJECT_KEYS = [
+  "command",
+  "path",
+  "file_path",
+  "pattern",
+  "query",
+  "url",
+  "name",
+] as const;
+
+/**
+ * A tool call in short form for progress output: the tool name and the
+ * argument that says what it does, on one line, e.g. `bash npm test` or
+ * `write tests/test.sh`.
+ */
+export function describeToolCall(toolName: string, args: unknown): string {
+  const record =
+    args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const subject = TOOL_CALL_SUBJECT_KEYS.map((key) => record[key]).find(
+    (value): value is string =>
+      typeof value === "string" && value.trim() !== "",
+  );
+  const text = (subject ? `${toolName} ${subject}` : toolName)
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > TOOL_CALL_CHARS
+    ? `${text.slice(0, TOOL_CALL_CHARS - 1)}…`
+    : text;
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
+
+/**
+ * One line of progress for a running child: its latest tool call, the time
+ * since it started, and how many tool calls it has made, e.g.
+ * `eval-author: bash python3 checks.py · 1m 5s · 7 tool calls`.
+ */
+export function formatAgentProgress(
+  run: AgentRunSummary,
+  now: number = Date.now(),
+): string {
+  const count = run.tool_call_count ?? 0;
+  return [
+    `${run.agent_name}: ${run.latest_tool_call ?? "starting"}`,
+    formatElapsed(now - run.started_at),
+    `${count} tool call${count === 1 ? "" : "s"}`,
+  ].join(" · ");
 }
 
 function statusBlock(run: AgentRunSummary): string {
@@ -234,8 +296,13 @@ export function createAgentTool(
             label: params.label,
             onUpdate(update) {
               return onUpdate?.({
-                content: [{ type: "text" as const, text: "" }],
-                details: { subtasks: [subtask(update)] },
+                content: [
+                  {
+                    type: "text" as const,
+                    text: terminal(update) ? "" : formatAgentProgress(update),
+                  },
+                ],
+                details: { agent: update, subtasks: [subtask(update)] },
               });
             },
           });

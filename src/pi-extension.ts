@@ -16,6 +16,7 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type ExtensionFactory,
+  keyHint,
   type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -107,6 +108,8 @@ import {
 } from "./recipe/skills-prompt.js";
 import {
   createAgentTool,
+  describeToolCall,
+  formatAgentProgress,
   type AgentRunController,
   type AgentRunSummary,
 } from "./agents.js";
@@ -415,6 +418,74 @@ function formatAgentCall(
   return `${themeFg(theme, "toolTitle", themeBold(theme, `agent ${action}`))} ${themeFg(theme, "accent", agent)}${label}`;
 }
 
+/** Lines of a collapsed `agent` result, as Pi shows any tool's text output. */
+const AGENT_RESULT_PREVIEW_LINES = 10;
+/** How often a running child's progress line redraws, so its elapsed time moves. */
+const AGENT_PROGRESS_TICK_MS = 1000;
+
+interface AgentResultRenderState {
+  ticker?: ReturnType<typeof setInterval>;
+}
+
+/**
+ * Render an `agent` result. While a waited-on child runs, one live line names
+ * its latest tool call, elapsed time and tool-call count, redrawn every
+ * second. A final result renders as Pi renders any tool's text output.
+ */
+function renderAgentResult(
+  result: {
+    content: Array<{ type: string; text?: string }>;
+    details?: unknown;
+  },
+  options: { expanded: boolean; isPartial: boolean },
+  theme: { fg?: (name: ThemeColor, text: string) => string } | undefined,
+  context: {
+    lastComponent: unknown;
+    state: unknown;
+    invalidate: () => void;
+  },
+): Text {
+  const text =
+    (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+  const state = (context.state ?? {}) as AgentResultRenderState;
+  const run = (result.details as { agent?: AgentRunSummary } | undefined)
+    ?.agent;
+  if (options.isPartial && run?.status === "running") {
+    if (!state.ticker) {
+      state.ticker = setInterval(context.invalidate, AGENT_PROGRESS_TICK_MS);
+      state.ticker.unref?.();
+    }
+    text.setText(themeFg(theme, "muted", formatAgentProgress(run)));
+    return text;
+  }
+  if (state.ticker) {
+    clearInterval(state.ticker);
+    state.ticker = undefined;
+  }
+  const output = result.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text ?? "")
+    .join("\n")
+    .trim();
+  if (!output) {
+    text.setText("");
+    return text;
+  }
+  const lines = output.split("\n");
+  const shown = options.expanded
+    ? lines
+    : lines.slice(0, AGENT_RESULT_PREVIEW_LINES);
+  const remaining = lines.length - shown.length;
+  let rendered = shown
+    .map((line) => themeFg(theme, "toolOutput", line))
+    .join("\n");
+  if (remaining > 0) {
+    rendered += `${themeFg(theme, "muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${themeFg(theme, "muted", ")")}`;
+  }
+  text.setText(rendered);
+  return text;
+}
+
 // Stable wire value used by persisted transcripts and the renderer.
 const AGENT_COMPLETIONS_TYPE = "recipe-agent-completions";
 
@@ -496,6 +567,7 @@ function controllerSummary(
   const currentTool = [...run.toolCalls]
     .reverse()
     .find((call) => call.status === "running")?.name;
+  const latestCall = run.toolCalls.at(-1);
   return {
     agent_run_id: run.id,
     invocation_name: run.agent,
@@ -514,6 +586,10 @@ function controllerSummary(
           ? startedAt
           : Date.now(),
     ...(currentTool ? { current_tool: currentTool } : {}),
+    ...(latestCall
+      ? { latest_tool_call: describeToolCall(latestCall.name, latestCall.args) }
+      : {}),
+    tool_call_count: run.toolCalls.length,
     nested_tools: run.toolCalls.map((call) => ({
       toolName: call.name,
       verb: call.name,
@@ -1876,6 +1952,8 @@ export function createRecipesExtension(
       text.setText(formatAgentCall(params as AgentCallParams, theme));
       return text;
     };
+    agentTool.renderResult = (result, options, theme, context) =>
+      renderAgentResult(result, options, theme, context);
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);
