@@ -222,7 +222,7 @@ describe("registering the issues tool", () => {
             type: "module",
             main: "index.js",
           }),
-          "node_modules/@acme/issues/index.js": `export default { kind: "issues", apiVersion: 1, id: "acme",
+          "node_modules/@acme/issues/index.js": `export default { kind: "issues", apiVersion: 2, id: "acme",
   capabilities: { commands: { search: {} }, fields: [], hosts: ["acme.test"], options: { queue: "string" } },
   createSession: () => ({ search: async () => ({ issues: [] }) }) };\n`,
         },
@@ -268,7 +268,7 @@ function fakeModule(
   ];
   return {
     kind: "issues",
-    apiVersion: 1,
+    apiVersion: 2,
     id,
     capabilities: {
       commands: Object.fromEntries(commands.map((command) => [command, {}])),
@@ -560,5 +560,280 @@ describe("choosing a provider", () => {
     expect(text).toContain("assignee member-1");
     expect(text).toContain("- member-2: By a member");
     expect(text).toContain("- unknown: By no one");
+  });
+});
+
+describe("attachments", () => {
+  const TRACE = "0af7651916cd43dd8448eb211c80319c";
+  const SPAN = "b7ad6b7169203331";
+
+  /** A provider taking `attachments`, recording what each write receives. */
+  function attaching(
+    id: string,
+    attachments: RecipeIssuesProviderModule["capabilities"]["attachments"],
+    received: unknown[],
+  ): IssuesToolProvider {
+    const base = fakeModule(id, { available: true });
+    return {
+      module: {
+        ...base,
+        capabilities: {
+          ...base.capabilities,
+          ...(attachments ? { attachments } : {}),
+        },
+        createSession: () => ({
+          create: async (args) => {
+            received.push(args);
+            return issue("2", args.title);
+          },
+          update: async (args) => {
+            received.push(args);
+            return issue(args.ref);
+          },
+        }),
+      },
+      config: { provider: id, options: {} },
+      fallback: false,
+    };
+  }
+
+  it("passes checked attachments to create and update, reduced to each kind's fields", async () => {
+    const received: unknown[] = [];
+    const tool = createIssuesTool({
+      providers: [
+        attaching(
+          "introspection",
+          { kinds: ["link", "file", "event", "span"], remove: true },
+          received,
+        ),
+      ],
+    });
+    await tool({
+      command: "create",
+      title: "T",
+      attachments: [
+        { kind: "link", url: " https://github.com/acme/app/pull/7 " },
+        { kind: "span", trace_id: TRACE, span_id: SPAN },
+      ],
+    });
+    await tool({
+      command: "update",
+      handle: "introspection:I-3",
+      add_attachments: [
+        { kind: "file", file_id: "f1", name: "report.pdf" },
+        { kind: "event", event_id: "e1" },
+      ],
+      remove_attachments: ["a1"],
+    });
+    expect(received).toEqual([
+      {
+        title: "T",
+        attachments: [
+          { kind: "link", url: "https://github.com/acme/app/pull/7" },
+          { kind: "span", trace_id: TRACE, span_id: SPAN },
+        ],
+      },
+      {
+        ref: "I-3",
+        add_attachments: [
+          { kind: "file", file_id: "f1", name: "report.pdf" },
+          { kind: "event", event_id: "e1" },
+        ],
+        remove_attachments: ["a1"],
+      },
+    ]);
+  });
+
+  it("refuses an attachment that is not well formed", async () => {
+    const tool = createIssuesTool({
+      providers: [
+        attaching(
+          "introspection",
+          { kinds: ["link", "file", "event", "span"], remove: true },
+          [],
+        ),
+      ],
+    });
+    const refused = (attachments: unknown[], message: string): Promise<void> =>
+      expect(
+        tool({
+          command: "update",
+          handle: "introspection:1",
+          add_attachments: attachments as never,
+        }),
+      ).rejects.toMatchObject({
+        issues: { code: "invalid_request", message },
+      });
+    await refused(
+      [{ kind: "pdf" }],
+      "add_attachments[0] needs a kind: link, file, event, span.",
+    );
+    await refused(
+      [{ kind: "link", title: "PR" }],
+      "add_attachments[0]: a link attachment needs url.",
+    );
+    await refused(
+      [{ kind: "link", url: "https://x.test", file_id: "f1" }],
+      "add_attachments[0]: a link attachment takes url and title, not file_id.",
+    );
+    await refused(
+      [{ kind: "link", url: "https://user:pw@x.test/" }],
+      "add_attachments[0]: url is an http or https URL without credentials, at most 2048 characters.",
+    );
+    await refused(
+      [{ kind: "link", url: "file:///etc/passwd" }],
+      "add_attachments[0]: url is an http or https URL without credentials, at most 2048 characters.",
+    );
+    await refused(
+      [
+        { kind: "event", event_id: "e1" },
+        { kind: "span", trace_id: "xyz", span_id: SPAN },
+      ],
+      "add_attachments[1]: trace_id is 32 hex characters and span_id 16.",
+    );
+    await expect(
+      tool({
+        command: "update",
+        handle: "introspection:1",
+        remove_attachments: [""],
+      }),
+    ).rejects.toMatchObject({ issues: { code: "invalid_request" } });
+    // An empty list is no change, so an update with nothing else is refused.
+    await expect(
+      tool({
+        command: "update",
+        handle: "introspection:1",
+        add_attachments: [],
+      }),
+    ).rejects.toMatchObject({ issues: { code: "invalid_request" } });
+  });
+
+  it("refuses a kind or a removal the provider does not declare, naming what it can do", async () => {
+    const received: unknown[] = [];
+    const tool = createIssuesTool({
+      providers: [
+        attaching("linear", { kinds: ["link"], remove: false }, received),
+        attaching("acme", undefined, received),
+      ],
+    });
+    await expect(
+      tool({
+        command: "create",
+        provider: "linear",
+        title: "T",
+        attachments: [{ kind: "event", event_id: "e1" }],
+      }),
+    ).rejects.toMatchObject({
+      issues: {
+        code: "not_supported",
+        message:
+          "linear takes only link attachments, not event; leave that kind out.",
+      },
+    });
+    await expect(
+      tool({
+        command: "update",
+        handle: "linear:ENG-1",
+        remove_attachments: ["a1"],
+      }),
+    ).rejects.toMatchObject({
+      issues: {
+        code: "not_supported",
+        message:
+          "linear cannot remove attachments; it only adds link attachments.",
+      },
+    });
+    await expect(
+      tool({
+        command: "update",
+        handle: "acme:A-1",
+        add_attachments: [{ kind: "link", url: "https://x.test" }],
+      }),
+    ).rejects.toMatchObject({
+      issues: {
+        code: "not_supported",
+        message: "acme issues take no attachments; leave them out.",
+      },
+    });
+    expect(received).toEqual([]);
+  });
+
+  it("says in the description what each provider's attachments are", () => {
+    const pi = createMockExtensionAPI();
+    registerIssuesTool(pi, {
+      providers: [
+        attaching("linear", { kinds: ["link"], remove: false }, []),
+        attaching(
+          "introspection",
+          { kinds: ["link", "file", "event", "span"], remove: true },
+          [],
+        ),
+        attaching("acme", undefined, []),
+      ],
+    });
+    const description = pi.tools.get("issues")!.description;
+    expect(description).toContain(
+      "linear: attachments: link only; attachments cannot be removed.",
+    );
+    expect(description).not.toMatch(/^introspection:/m);
+    expect(description).toContain("acme: no attachments.");
+  });
+
+  it("lists an issue's attachments with their ids", () => {
+    const text = formatIssuesResult({
+      command: "get",
+      provider: "introspection",
+      issue: {
+        handle: "introspection:12",
+        provider: "introspection",
+        ref: "12",
+        title: "T",
+        status: { name: "open", category: "open" },
+        attachments: [
+          {
+            id: "a1",
+            kind: "link",
+            url: "https://x.test/pr/1",
+            title: "Pull request",
+          },
+          { id: "a2", kind: "file", file_id: "f1", name: "report.pdf" },
+          { id: "a3", kind: "event", event_id: "e1" },
+          { kind: "span", trace_id: TRACE, span_id: SPAN },
+        ],
+      },
+    });
+    expect(text).toContain(
+      [
+        "Attachments:",
+        "- link: Pull request https://x.test/pr/1 (id a1)",
+        "- file: report.pdf f1 (id a2)",
+        "- event: e1 (id a3)",
+        `- span: ${TRACE}/${SPAN}`,
+      ].join("\n"),
+    );
+  });
+
+  it("refuses a provider whose attachments capability is malformed", async () => {
+    const recipeDir = recipe(
+      { issues: [{ provider: "acme", package: "@acme/issues" }] },
+      {
+        "node_modules/@acme/issues/package.json": JSON.stringify({
+          name: "@acme/issues",
+          version: "1.0.0",
+          type: "module",
+          main: "index.js",
+        }),
+        "node_modules/@acme/issues/index.js": `export default { kind: "issues", apiVersion: 2, id: "acme",
+  capabilities: { commands: { search: {} }, fields: [], hosts: [], attachments: { kinds: ["pdf"], remove: false } },
+  createSession: () => ({}) };\n`,
+      },
+    );
+    await expect(
+      loadRecipeIssues(readPiPackageManifest(recipeDir).issues, ["issues"], {
+        recipeDir,
+      }),
+    ).rejects.toThrow(
+      "Recipe issues provider 'acme' declares capabilities.attachments that are not { kinds: (link | file | event | span)[], remove: boolean }",
+    );
   });
 });
