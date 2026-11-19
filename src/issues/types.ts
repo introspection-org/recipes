@@ -16,7 +16,7 @@
  * `RecipeIssuesProviderModule` or the types it uses. Separate from the search
  * and productivity versions.
  */
-export const ISSUES_MODULE_API_VERSION = 1 as const;
+export const ISSUES_MODULE_API_VERSION = 2 as const;
 
 /** The one tool the family serves. */
 export const ISSUES_TOOL_NAME = "issues";
@@ -96,6 +96,15 @@ export const ISSUE_FIELDS = [
 ] as const;
 export type IssueField = (typeof ISSUE_FIELDS)[number];
 
+/** The kinds of evidence an issue may carry. */
+export const ISSUE_ATTACHMENT_KINDS = [
+  "link",
+  "file",
+  "event",
+  "span",
+] as const;
+export type IssueAttachmentKind = (typeof ISSUE_ATTACHMENT_KINDS)[number];
+
 // ---------------------------------------------------------------------------
 // The shape
 
@@ -128,6 +137,28 @@ export interface IssueComment {
   readonly created_at?: string;
 }
 
+/**
+ * One piece of an issue's evidence, discriminated on `kind`: a link (`url`,
+ * `title`), a data plane file (`file_id`, `name`), a recorded event
+ * (`event_id`) or a conversation span (`trace_id`, `span_id`). A provider
+ * leaves out an attachment of a kind it does not model.
+ */
+export interface IssueAttachment {
+  /** The provider's id for the attachment, which `remove_attachments` takes. */
+  readonly id?: string;
+  readonly kind: IssueAttachmentKind;
+  readonly url?: string;
+  readonly title?: string;
+  readonly file_id?: string;
+  readonly name?: string;
+  readonly event_id?: string;
+  readonly trace_id?: string;
+  readonly span_id?: string;
+}
+
+/** An attachment to add: one without an `id`, which the provider assigns. */
+export type IssueAttachmentCreate = Omit<IssueAttachment, "id">;
+
 /** One issue, as a provider returns it: its own `ref`, which the host turns into a handle. */
 export interface ProviderIssue {
   /** The provider's reference: `ENG-123`, `PROJ-45`, a display index. */
@@ -145,6 +176,8 @@ export interface ProviderIssue {
   readonly updated_at?: string;
   /** Present on `get`. */
   readonly comments?: readonly IssueComment[];
+  /** Present on `get` from a provider that declares `capabilities.attachments`. */
+  readonly attachments?: readonly IssueAttachment[];
 }
 
 /** One issue as the tool returns it. */
@@ -188,6 +221,8 @@ export interface IssuesCreateArgs {
   readonly container?: string;
   /** Jira's issue type; defaults to the declaration's. */
   readonly issue_type?: string;
+  /** Only kinds `capabilities.attachments` lists. */
+  readonly attachments?: readonly IssueAttachmentCreate[];
 }
 
 export interface IssuesUpdateArgs {
@@ -199,6 +234,10 @@ export interface IssuesUpdateArgs {
   readonly labels?: readonly string[];
   /** A person's name or email, `me`, or `none` to unassign. */
   readonly assignee?: string;
+  /** Appended; only kinds `capabilities.attachments` lists. */
+  readonly add_attachments?: readonly IssueAttachmentCreate[];
+  /** Attachment ids, as `get` returns them; only when `capabilities.attachments.remove`. */
+  readonly remove_attachments?: readonly string[];
 }
 
 export interface IssuesCommentArgs {
@@ -221,6 +260,13 @@ export interface IssuesCommandCapability {
   readonly note?: string;
 }
 
+/** The attachments a provider takes on `create` and `update`, and reads on `get`. */
+export interface IssuesAttachmentCapability {
+  readonly kinds: readonly IssueAttachmentKind[];
+  /** Whether `update` takes `remove_attachments`. */
+  readonly remove: boolean;
+}
+
 /** What a provider supports, as static data the host reads before any session exists. */
 export interface IssuesCapabilities {
   /** Per command it serves; an absent command is not offered. */
@@ -229,6 +275,8 @@ export interface IssuesCapabilities {
   >;
   /** The fields of the shape it fills; `update` and `create` take only these. */
   readonly fields: readonly IssueField[];
+  /** The attachments it serves. Absent: none. */
+  readonly attachments?: IssuesAttachmentCapability;
   /**
    * Every host the provider sends to, REST and MCP, so the egress can attach
    * a credential for each and a provider the platform does not know is

@@ -7,6 +7,7 @@ import {
 } from "../src/channels/index.js";
 import {
   commandSignature,
+  type JsonSchema,
   type ObjectSchema,
 } from "../src/command-parameters.js";
 import {
@@ -241,7 +242,7 @@ function registered() {
   });
   const module = (id: string) => ({
     kind: "issues",
-    apiVersion: 1,
+    apiVersion: 2,
     id,
     capabilities: {
       commands: Object.fromEntries(
@@ -335,9 +336,19 @@ describe("the generated schemas, as each tool's --help reads them", () => {
     ];
     for (const [name, command, generated] of cases) {
       const text = await help(tool(name), [name, command, "--help"]);
+      const properties = Object.entries(generated[command]!.properties);
+      // A list of objects has no flag; it is passed through --json.
+      const jsonOnly = ([, property]: [string, JsonSchema]) =>
+        (property.items as JsonSchema | undefined)?.type === "object";
       expect(flagsOf(text), `${name} ${command}`).toEqual(
-        Object.keys(generated[command]!.properties).map(kebab),
+        properties
+          .filter((entry) => !jsonOnly(entry))
+          .map(([key]) => kebab(key)),
       );
+      for (const [key] of properties.filter(jsonOnly))
+        expect(text, `${name} ${command}`).toMatch(
+          new RegExp(`Only through --json:[\\s\\S]*^ {2}${key} `, "m"),
+        );
     }
     const search = await help(tool("mail"), ["mail", "search", "--help"]);
     expect(search).toMatch(

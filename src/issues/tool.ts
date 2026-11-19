@@ -25,11 +25,15 @@ import { ISSUES_ARGUMENTS } from "./arguments.generated.js";
 import { isPiMcpServerTool, mcpToolName } from "../mcp/pi-client.js";
 import type { PiToolContext, PiToolInfo } from "../search/mcp.js";
 import {
+  ISSUE_ATTACHMENT_KINDS,
   ISSUE_PRIORITIES,
   ISSUE_STATUS_CATEGORIES,
   ISSUES_COMMANDS,
   ISSUES_TOOL_NAME,
   type Issue,
+  type IssueAttachment,
+  type IssueAttachmentCreate,
+  type IssueAttachmentKind,
   type IssueComment,
   type IssueField,
   type IssuesCallContext,
@@ -140,9 +144,10 @@ export function issuesMcpToolNames(
 /** What each command does, for its line in `issues --help` and its variant. */
 const COMMAND_DESCRIPTIONS: Record<IssuesCommand, string> = {
   search: "Search issues; every filter is optional.",
-  get: "Read one issue.",
+  get: "Read one issue with its comments and attachments.",
   create: "Open an issue.",
-  update: "Change an issue's fields; transition changes its status.",
+  update:
+    "Change an issue's fields, or add or remove attachments; transition changes its status.",
   comment: "Comment on an issue.",
   transition: "Move an issue to a status.",
 };
@@ -200,9 +205,18 @@ function issuesDescription(providers: readonly IssuesToolProvider[]): string {
     const notes = ISSUES_COMMANDS.flatMap((command) =>
       commands[command]?.note ? [`${command}: ${commands[command]!.note}`] : [],
     );
+    const { attachments } = provider.module.capabilities;
     const parts = [
       ...(missing.length ? [`no ${missing.join(", ")}`] : []),
       ...(!fields.includes("assignee") ? ["no assignee"] : []),
+      ...(!attachments
+        ? ["no attachments"]
+        : [
+            ...(attachments.kinds.length < ISSUE_ATTACHMENT_KINDS.length
+              ? [`attachments: ${attachments.kinds.join(", ")} only`]
+              : []),
+            ...(!attachments.remove ? ["attachments cannot be removed"] : []),
+          ]),
       ...notes,
     ];
     if (parts.length)
@@ -314,6 +328,123 @@ export type IssuesTool = (
   args: IssuesToolArgs,
   call?: IssuesCall,
 ) => Promise<IssuesToolResult>;
+
+/** The fields each attachment kind takes, required ones first. */
+const ATTACHMENT_FIELDS: Record<
+  IssueAttachmentKind,
+  { required: readonly string[]; optional: readonly string[] }
+> = {
+  link: { required: ["url"], optional: ["title"] },
+  file: { required: ["file_id"], optional: ["name"] },
+  event: { required: ["event_id"], optional: [] },
+  span: { required: ["trace_id", "span_id"], optional: [] },
+};
+const TRACE_ID = /^[0-9a-f]{32}$/i;
+const SPAN_ID = /^[0-9a-f]{16}$/i;
+
+/** One attachment argument, checked and reduced to its kind's fields. */
+function attachmentOf(value: unknown, at: string): IssueAttachmentCreate {
+  const item =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const kind = item?.kind;
+  if (
+    !item ||
+    typeof kind !== "string" ||
+    !(ISSUE_ATTACHMENT_KINDS as readonly string[]).includes(kind)
+  )
+    throw new IssuesToolError(
+      "invalid_request",
+      `${at} needs a kind: ${ISSUE_ATTACHMENT_KINDS.join(", ")}.`,
+    );
+  const { required, optional } = ATTACHMENT_FIELDS[kind as IssueAttachmentKind];
+  const takes = [...required, ...optional];
+  const extra = Object.keys(item).filter(
+    (key) => key !== "kind" && !takes.includes(key),
+  );
+  if (extra.length)
+    throw new IssuesToolError(
+      "invalid_request",
+      `${at}: a ${kind} attachment takes ${takes.join(" and ")}, not ${extra.join(", ")}.`,
+    );
+  const fields: Record<string, string> = {};
+  for (const key of takes) {
+    const field = item[key];
+    if (field === undefined || field === null) continue;
+    if (typeof field !== "string" || !field.trim())
+      throw new IssuesToolError(
+        "invalid_request",
+        `${at}: ${key} is a non-empty string.`,
+      );
+    fields[key] = field.trim();
+  }
+  const missing = required.filter((key) => fields[key] === undefined);
+  if (missing.length)
+    throw new IssuesToolError(
+      "invalid_request",
+      `${at}: a ${kind} attachment needs ${missing.join(" and ")}.`,
+    );
+  if (kind === "link") {
+    let url: URL | undefined;
+    try {
+      url = new URL(fields.url!);
+    } catch {
+      url = undefined;
+    }
+    if (
+      !url ||
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      fields.url!.length > 2048
+    )
+      throw new IssuesToolError(
+        "invalid_request",
+        `${at}: url is an http or https URL without credentials, at most 2048 characters.`,
+      );
+    if ((fields.title?.length ?? 0) > 500)
+      throw new IssuesToolError(
+        "invalid_request",
+        `${at}: title is at most 500 characters.`,
+      );
+  }
+  if (
+    kind === "span" &&
+    (!TRACE_ID.test(fields.trace_id!) || !SPAN_ID.test(fields.span_id!))
+  )
+    throw new IssuesToolError(
+      "invalid_request",
+      `${at}: trace_id is 32 hex characters and span_id 16.`,
+    );
+  return { kind: kind as IssueAttachmentKind, ...fields };
+}
+
+/** An attachments argument, checked; an empty list is no list. */
+function attachmentsOf(
+  value: unknown,
+  name: string,
+): IssueAttachmentCreate[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value))
+    throw new IssuesToolError("invalid_request", `${name} is a list.`);
+  if (value.length === 0) return undefined;
+  return value.map((item, index) => attachmentOf(item, `${name}[${index}]`));
+}
+
+/** The attachment ids to remove, checked; an empty list is no list. */
+function attachmentIdsOf(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.some((id) => typeof id !== "string" || !id.trim())
+  )
+    throw new IssuesToolError(
+      "invalid_request",
+      "remove_attachments is a list of attachment ids, as get returns them.",
+    );
+  return value.length ? value.map((id: string) => id.trim()) : undefined;
+}
 
 const FIELD_ARGS: ReadonlyArray<[keyof IssuesToolArgs, IssueField]> = [
   ["description", "description"],
@@ -470,6 +601,41 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
         "invalid_request",
         `priority is one of ${ISSUE_PRIORITIES.join(", ")}.`,
       );
+    const adding =
+      args.command === "create"
+        ? attachmentsOf(args.attachments, "attachments")
+        : args.command === "update"
+          ? attachmentsOf(args.add_attachments, "add_attachments")
+          : undefined;
+    const removing =
+      args.command === "update"
+        ? attachmentIdsOf(args.remove_attachments)
+        : undefined;
+    if (adding || removing) {
+      const { attachments } = provider.module.capabilities;
+      if (!attachments)
+        throw new IssuesToolError(
+          "not_supported",
+          `${id} issues take no attachments; leave them out.`,
+        );
+      const refused = [
+        ...new Set(
+          (adding ?? [])
+            .map((item) => item.kind)
+            .filter((kind) => !attachments.kinds.includes(kind)),
+        ),
+      ];
+      if (refused.length)
+        throw new IssuesToolError(
+          "not_supported",
+          `${id} takes only ${attachments.kinds.join(", ")} attachments, not ${refused.join(", ")}; leave ${refused.length > 1 ? "those" : "that kind"} out.`,
+        );
+      if (removing && !attachments.remove)
+        throw new IssuesToolError(
+          "not_supported",
+          `${id} cannot remove attachments; it only adds ${attachments.kinds.join(", ")} attachments.`,
+        );
+    }
     const opened = await session(provider);
     const method = opened[args.command];
     if (typeof method !== "function")
@@ -534,6 +700,7 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
             ...(args.issue_type !== undefined
               ? { issue_type: args.issue_type }
               : {}),
+            ...(adding ? { attachments: adding } : {}),
           },
           context,
         );
@@ -548,11 +715,13 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
           ...(args.priority !== undefined ? { priority: args.priority } : {}),
           ...(args.labels !== undefined ? { labels: args.labels } : {}),
           ...(args.assignee !== undefined ? { assignee: args.assignee } : {}),
+          ...(adding ? { add_attachments: adding } : {}),
+          ...(removing ? { remove_attachments: removing } : {}),
         };
         if (Object.keys(changes).length === 0)
           throw new IssuesToolError(
             "invalid_request",
-            "update takes at least one of title, description, priority, labels or assignee; use transition to change the status.",
+            "update takes at least one of title, description, priority, labels, assignee, add_attachments or remove_attachments; use transition to change the status.",
           );
         const issue = await opened.update!({ ref: ref!, ...changes }, context);
         return { command: "update", provider: id, issue: toIssue(id, issue) };
@@ -617,6 +786,18 @@ export function createIssuesTool(options: IssuesToolOptions): IssuesTool {
     });
 }
 
+function attachmentLine(attachment: IssueAttachment): string {
+  const what =
+    attachment.kind === "link"
+      ? `${attachment.title ? `${attachment.title} ` : ""}${attachment.url ?? ""}`
+      : attachment.kind === "file"
+        ? `${attachment.name ? `${attachment.name} ` : ""}${attachment.file_id ?? ""}`
+        : attachment.kind === "event"
+          ? (attachment.event_id ?? "")
+          : `${attachment.trace_id ?? ""}/${attachment.span_id ?? ""}`;
+  return `- ${attachment.kind}: ${what.trim()}${attachment.id ? ` (id ${attachment.id})` : ""}`;
+}
+
 function issueLines(issue: Issue, full: boolean): string[] {
   const meta = [
     `${issue.status.name} (${issue.status.category})`,
@@ -640,6 +821,8 @@ function issueLines(issue: Issue, full: boolean): string[] {
   if (issue.url) lines.push(`  ${issue.url}`);
   if (full) {
     if (issue.description) lines.push("", issue.description);
+    if (issue.attachments?.length)
+      lines.push("", "Attachments:", ...issue.attachments.map(attachmentLine));
     if (issue.comments?.length) {
       lines.push("", "Comments:");
       for (const comment of issue.comments) {

@@ -594,6 +594,7 @@ describe("jira", () => {
   it("gets an issue and its comments, rendering ADF", async () => {
     const { caller } = fakeServer(list, {
       getAccessibleAtlassianResources: () => RESOURCES,
+      listJiraIssueRemoteIssueLinks: () => [],
       getJiraIssue: () => JIRA_ISSUE,
       listJiraIssueComments: () => ({
         comments: [
@@ -875,8 +876,11 @@ function fakeIntrospection(
           ? { ...found, comments: options.comments ?? [] }
           : found;
       },
-      create: async (params) => {
-        calls.push({ method: "issues.create", args: [params] });
+      create: async (params, options) => {
+        calls.push({
+          method: "issues.create",
+          args: options ? [params, options] : [params],
+        });
         refuseAssignee(params);
         return row({
           title: params.title,
@@ -888,12 +892,39 @@ function fakeIntrospection(
           ...(params.assignee_member_id
             ? { assignee_member_id: params.assignee_member_id }
             : {}),
+          ...(params.attachments
+            ? {
+                attachments: params.attachments.map((attachment, index) => ({
+                  id: `att-${index}`,
+                  ...attachment,
+                })),
+              }
+            : {}),
         });
       },
-      update: async (id, patch) => {
-        calls.push({ method: "issues.update", args: [id, patch] });
+      update: async (id, patch, options) => {
+        calls.push({
+          method: "issues.update",
+          args: options ? [id, patch, options] : [id, patch],
+        });
         refuseAssignee(patch);
-        return { ...row(), ...patch };
+        const {
+          add_attachments: added,
+          remove_attachments: _removed,
+          ...rest
+        } = patch;
+        return {
+          ...row(),
+          ...rest,
+          ...(added
+            ? {
+                attachments: added.map((attachment, index) => ({
+                  id: `att-${index}`,
+                  ...attachment,
+                })),
+              }
+            : {}),
+        };
       },
       ...(options.sdk === "old"
         ? {}
@@ -1094,7 +1125,10 @@ describe("introspection", () => {
     const id = "0190c0de-0000-7000-8000-000000000001";
     const issue = await opened.get!({ ref: id }, {});
     expect(fake.calls).toEqual([
-      { method: "issues.get", args: [id, { include: ["comments"] }] },
+      {
+        method: "issues.get",
+        args: [id, { include: ["comments", "attachments"] }],
+      },
     ]);
     expect(issue.comments).toEqual([
       {
@@ -1108,7 +1142,10 @@ describe("introspection", () => {
     await opened.get!({ ref: "12" }, {});
     expect(fake.calls.slice(1)).toEqual([
       { method: "issues.list", args: [{ display_index: 12, limit: 1 }] },
-      { method: "issues.get", args: [id, { include: ["comments"] }] },
+      {
+        method: "issues.get",
+        args: [id, { include: ["comments", "attachments"] }],
+      },
     ]);
   });
 
@@ -1433,6 +1470,7 @@ describe("pages and status categories", () => {
     });
     const { caller } = fakeServer(toolList("jira"), {
       getAccessibleAtlassianResources: () => RESOURCES,
+      listJiraIssueRemoteIssueLinks: () => [],
       getJiraIssue: () => ({
         ...JIRA_ISSUE,
         fields: {
@@ -1463,6 +1501,7 @@ describe("pages and status categories", () => {
     });
     const { caller, calls } = fakeServer(toolList("jira"), {
       getAccessibleAtlassianResources: () => RESOURCES,
+      listJiraIssueRemoteIssueLinks: () => [],
       getJiraIssue: () => ({
         ...JIRA_ISSUE,
         fields: {
@@ -1494,5 +1533,307 @@ describe("pages and status categories", () => {
         .filter((call) => call.tool === "listJiraIssueComments")
         .map((call) => call.args.startAt),
     ).toEqual([0, 1]);
+  });
+});
+
+describe("attachments", () => {
+  const TRACE = "0af7651916cd43dd8448eb211c80319c";
+  const SPAN = "b7ad6b7169203331";
+
+  it("are declared per provider: every kind on Introspection, links append-only on Linear and Jira", () => {
+    expect(
+      createIntrospectionIssuesProvider().capabilities.attachments,
+    ).toEqual({ kinds: ["link", "file", "event", "span"], remove: true });
+    expect(linearIssuesProvider.capabilities.attachments).toEqual({
+      kinds: ["link"],
+      remove: false,
+    });
+    expect(jiraIssuesProvider.capabilities.attachments).toEqual({
+      kinds: ["link"],
+      remove: false,
+    });
+  });
+
+  describe("introspection", () => {
+    const env = {
+      INTROSPECTION_BASE_API_URL: "http://dp.internal",
+      INTROSPECTION_TOKEN: "locator",
+      INTROSPECTION_TASK_ID: "task-1",
+    };
+    const open = async (fake: ReturnType<typeof fakeIntrospection>) =>
+      createIntrospectionIssuesProvider({
+        client: () => fake.client,
+      }).createSession({
+        config: { provider: "introspection", options: {} },
+        env,
+      });
+
+    it("reads every kind it models with its id, and leaves out one it does not", async () => {
+      const fake = fakeIntrospection({
+        issues: [
+          introspectionIssue({
+            assignee_member_id: null,
+            attachments: [
+              {
+                id: "a1",
+                kind: "link",
+                url: "https://x.test/pr/1",
+                title: "PR",
+              },
+              { id: "a2", kind: "file", file_id: "f1", name: null },
+              { id: "a3", kind: "event", event_id: "e1" },
+              { id: "a4", kind: "span", trace_id: TRACE, span_id: SPAN },
+              { id: "a5", kind: "dataset", dataset_id: "d1" } as never,
+            ],
+          }),
+        ],
+      });
+      const issue = await (
+        await open(fake)
+      ).get!({ ref: "0190c0de-0000-7000-8000-000000000001" }, {});
+      expect(issue.attachments).toEqual([
+        { id: "a1", kind: "link", url: "https://x.test/pr/1", title: "PR" },
+        { id: "a2", kind: "file", file_id: "f1" },
+        { id: "a3", kind: "event", event_id: "e1" },
+        { id: "a4", kind: "span", trace_id: TRACE, span_id: SPAN },
+      ]);
+    });
+
+    it("reads no attachments from a data plane that predates them", async () => {
+      const issue = await (
+        await open(fakeIntrospection({ plane: "old" }))
+      ).get!({ ref: "0190c0de-0000-7000-8000-000000000001" }, {});
+      expect(issue.attachments).toEqual([]);
+    });
+
+    it("creates with attachments and adds and removes them on update, returning them", async () => {
+      const fake = fakeIntrospection();
+      const opened = await open(fake);
+      const created = await opened.create!(
+        {
+          title: "T",
+          attachments: [
+            { kind: "link", url: "https://x.test/pr/1" },
+            { kind: "span", trace_id: TRACE, span_id: SPAN },
+          ],
+        },
+        {},
+      );
+      const updated = await opened.update!(
+        {
+          ref: "I-12",
+          add_attachments: [
+            { kind: "file", file_id: "f1", name: "report.pdf" },
+            { kind: "event", event_id: "e1" },
+          ],
+          remove_attachments: ["a1"],
+        },
+        {},
+      );
+      await opened.update!({ ref: "I-12", title: "Renamed" }, {});
+      const writes = fake.calls.filter((call) => call.method !== "issues.list");
+      expect(writes).toEqual([
+        {
+          method: "issues.create",
+          args: [
+            {
+              task_id: "task-1",
+              title: "T",
+              description: "T",
+              attachments: [
+                { kind: "link", url: "https://x.test/pr/1" },
+                { kind: "span", trace_id: TRACE, span_id: SPAN },
+              ],
+            },
+            { include: ["attachments"] },
+          ],
+        },
+        {
+          method: "issues.update",
+          args: [
+            "0190c0de-0000-7000-8000-000000000001",
+            {
+              add_attachments: [
+                { kind: "file", file_id: "f1", name: "report.pdf" },
+                { kind: "event", event_id: "e1" },
+              ],
+              remove_attachments: ["a1"],
+            },
+            { include: ["attachments"] },
+          ],
+        },
+        {
+          method: "issues.update",
+          args: ["0190c0de-0000-7000-8000-000000000001", { title: "Renamed" }],
+        },
+      ]);
+      expect(created.attachments?.map((attachment) => attachment.id)).toEqual([
+        "att-0",
+        "att-1",
+      ]);
+      expect(updated.attachments).toEqual([
+        { id: "att-0", kind: "file", file_id: "f1", name: "report.pdf" },
+        { id: "att-1", kind: "event", event_id: "e1" },
+      ]);
+    });
+  });
+
+  describe("linear", () => {
+    const list = toolList("linear");
+
+    it("adds links through save_issue, titled by the url when untitled", async () => {
+      const { caller, calls } = fakeServer(list, {
+        save_issue: () => LINEAR_ISSUE,
+      });
+      const opened = await session(linearIssuesProvider, { team: "ENG" });
+      await opened.create!(
+        {
+          title: "New",
+          attachments: [
+            { kind: "link", url: "https://x.test/pr/1", title: "PR" },
+          ],
+        },
+        { mcp: caller },
+      );
+      await opened.update!(
+        {
+          ref: "ENG-123",
+          add_attachments: [{ kind: "link", url: "https://x.test/run/2" }],
+        },
+        { mcp: caller },
+      );
+      expect(calls).toEqual([
+        {
+          tool: "save_issue",
+          args: {
+            team: "ENG",
+            title: "New",
+            links: [{ url: "https://x.test/pr/1", title: "PR" }],
+          },
+        },
+        {
+          tool: "save_issue",
+          args: {
+            id: "ENG-123",
+            links: [
+              { url: "https://x.test/run/2", title: "https://x.test/run/2" },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it("reads get_issue's attachments as links", async () => {
+      const { caller } = fakeServer(list, {
+        get_issue: () => ({
+          ...LINEAR_ISSUE,
+          attachments: [
+            { id: "la1", title: "PR", url: "https://x.test/pr/1" },
+            { title: "No url" },
+          ],
+        }),
+        list_comments: () => ({ comments: [] }),
+      });
+      const issue = await (
+        await session(linearIssuesProvider)
+      ).get!({ ref: "ENG-123" }, { mcp: caller });
+      expect(issue.attachments).toEqual([
+        { id: "la1", kind: "link", url: "https://x.test/pr/1", title: "PR" },
+      ]);
+    });
+  });
+
+  describe("jira", () => {
+    const list = toolList("jira");
+
+    it("adds each link as a remote link, after the create and without an empty edit", async () => {
+      const { caller, calls } = fakeServer(list, {
+        getAccessibleAtlassianResources: () => RESOURCES,
+        createJiraIssue: () => ({ id: "10046", key: "PROJ-46" }),
+        createJiraIssueRemoteIssueLink: () => ({ id: 10000 }),
+        getJiraIssue: () => JIRA_ISSUE,
+      });
+      const opened = await session(jiraIssuesProvider, {
+        project: "PROJ",
+        issueType: "Task",
+      });
+      await opened.create!(
+        {
+          title: "New",
+          attachments: [
+            { kind: "link", url: "https://x.test/pr/1", title: "PR" },
+          ],
+        },
+        { mcp: caller },
+      );
+      await opened.update!(
+        {
+          ref: "PROJ-45",
+          add_attachments: [{ kind: "link", url: "https://x.test/run/2" }],
+        },
+        { mcp: caller },
+      );
+      expect(
+        calls
+          .filter((call) =>
+            [
+              "createJiraIssue",
+              "editJiraIssue",
+              "createJiraIssueRemoteIssueLink",
+            ].includes(call.tool),
+          )
+          .map(({ tool, args }) => ({ tool, args })),
+      ).toEqual([
+        {
+          tool: "createJiraIssue",
+          args: {
+            cloudId: "cloud-1",
+            projectKey: "PROJ",
+            issueTypeName: "Task",
+            summary: "New",
+          },
+        },
+        {
+          tool: "createJiraIssueRemoteIssueLink",
+          args: {
+            cloudId: "cloud-1",
+            issueIdOrKey: "PROJ-46",
+            object: { url: "https://x.test/pr/1", title: "PR" },
+          },
+        },
+        {
+          tool: "createJiraIssueRemoteIssueLink",
+          args: {
+            cloudId: "cloud-1",
+            issueIdOrKey: "PROJ-45",
+            object: {
+              url: "https://x.test/run/2",
+              title: "https://x.test/run/2",
+            },
+          },
+        },
+      ]);
+    });
+
+    it("reads the issue's remote links as links", async () => {
+      const { caller } = fakeServer(list, {
+        getAccessibleAtlassianResources: () => RESOURCES,
+        getJiraIssue: () => JIRA_ISSUE,
+        listJiraIssueComments: () => ({ comments: [] }),
+        listJiraIssueRemoteIssueLinks: () => [
+          {
+            id: 10000,
+            object: { url: "https://x.test/pr/1", title: "PR" },
+          },
+          { id: 10001, object: {} },
+        ],
+      });
+      const issue = await (
+        await session(jiraIssuesProvider)
+      ).get!({ ref: "PROJ-45" }, { mcp: caller });
+      expect(issue.attachments).toEqual([
+        { id: "10000", kind: "link", url: "https://x.test/pr/1", title: "PR" },
+      ]);
+    });
   });
 });

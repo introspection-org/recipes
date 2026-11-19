@@ -9,6 +9,7 @@ import {
 } from "../recipe/providers.js";
 import { registerIssuesTool, type IssuesToolProvider } from "./tool.js";
 import {
+  ISSUE_ATTACHMENT_KINDS,
   ISSUES_COMMANDS,
   ISSUES_FALLBACK_PROVIDER,
   ISSUES_MODULE_API_VERSION,
@@ -81,6 +82,18 @@ function contractProblem(
       ))
   )
     return "declares capabilities.options that are not a map of option name to string or boolean";
+  const { attachments } =
+    capabilities as RecipeIssuesProviderModule["capabilities"];
+  if (
+    attachments !== undefined &&
+    (!attachments ||
+      !Array.isArray(attachments.kinds) ||
+      attachments.kinds.some(
+        (kind) => !(ISSUE_ATTACHMENT_KINDS as readonly string[]).includes(kind),
+      ) ||
+      typeof attachments.remove !== "boolean")
+  )
+    return `declares capabilities.attachments that are not { kinds: (${ISSUE_ATTACHMENT_KINDS.join(" | ")})[], remove: boolean }`;
   if (module.mcp !== undefined) {
     const { url, server, tools } = module.mcp;
     if (typeof url !== "string" || typeof server !== "string" || !server)

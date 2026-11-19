@@ -7,7 +7,7 @@
  * out when there is one.
  */
 
-import type { IssuePriority } from "./types.js";
+import type { IssueAttachmentKind, IssuePriority } from "./types.js";
 
 /** Which tracker, when several are on offer */
 type Provider = string;
@@ -42,6 +42,45 @@ type Priority = IssuePriority;
 /** Replaces the labels */
 type Labels = string[];
 
+/** Evidence to attach: a link, a data plane file, a recorded event or a conversation span */
+interface Attachment {
+  /** What it is; each kind takes its own fields */
+  kind: IssueAttachmentKind;
+  /**
+   * A link's http(s) URL
+   * @maxLength 2048
+   */
+  url?: string;
+  /**
+   * A link's title
+   * @maxLength 500
+   */
+  title?: string;
+  /** A file's data plane file id */
+  file_id?: string;
+  /** A file's name */
+  name?: string;
+  /** An event's id */
+  event_id?: string;
+  /**
+   * A span's trace id, 32 hex characters
+   * @pattern ^[0-9a-fA-F]{32}$
+   */
+  trace_id?: string;
+  /**
+   * A span's id, 16 hex characters
+   * @pattern ^[0-9a-fA-F]{16}$
+   */
+  span_id?: string;
+}
+
+/**
+ * Evidence to attach, in order
+ * @minItems 1
+ * @maxItems 50
+ */
+type Attachments = Attachment[];
+
 export interface IssuesSearchArguments {
   provider?: Provider;
   /** Free text */
@@ -74,6 +113,7 @@ export interface IssuesCreateArguments {
   labels?: Labels;
   /** Jira's issue type */
   issue_type?: string;
+  attachments?: Attachments;
 }
 
 export interface IssuesUpdateArguments {
@@ -84,6 +124,18 @@ export interface IssuesUpdateArguments {
   assignee?: string;
   priority?: Priority;
   labels?: Labels;
+  /**
+   * Evidence to append; one the issue already holds is skipped where the tracker dedups
+   * @minItems 1
+   * @maxItems 50
+   */
+  add_attachments?: Attachment[];
+  /**
+   * Attachment ids, as get returns them, to remove
+   * @minItems 1
+   * @maxItems 50
+   */
+  remove_attachments?: string[];
 }
 
 export interface IssuesCommentArguments {
