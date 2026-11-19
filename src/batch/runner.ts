@@ -102,6 +102,11 @@ export interface BatchSummary {
   not_started: number;
   /** True when a signal or the deadline ended the run before every line ran. */
   stopped: boolean;
+  /**
+   * Whether the whole input was read, so `total` counts every line. A stopped
+   * run over a stream closes it unread, leaving `total` at the lines it took.
+   */
+  input_complete: boolean;
 }
 
 /** What the runner reads of a settled run. */
@@ -255,9 +260,13 @@ export async function runBatchWith(
     failed: 0,
     not_started: 0,
     stopped: false,
+    input_complete: false,
   };
 
+  let inputError: unknown;
+  let inputComplete = false;
   const stopped = (): boolean =>
+    inputError !== undefined ||
     (deps.signal?.aborted ?? false) ||
     (deps.cancel?.aborted ?? false) ||
     (deadline !== null && now() >= deadline);
@@ -438,11 +447,26 @@ export async function runBatchWith(
   // One pass: each line is checked, built and run as a worker takes it, so at
   // most `concurrency` prompts are held at once.
   const lines = inputValues(deps)[Symbol.asyncIterator]();
+  // Every line that is recorded claims its custom_id first: a later line
+  // with the same id, valid or not, is counted but never recorded, since a
+  // result under the same id would replace the first line's answer.
+  const claim = (customId: string): boolean => {
+    if (recordIndex.has(customId)) return false;
+    recordIndex.set(customId, recordIndex.size);
+    return true;
+  };
   const fail = async (
     customId: string,
     message: string,
     extra: Partial<BatchResultLine> = {},
+    claimed = false,
   ) => {
+    if (!claimed && !claim(customId)) {
+      summary.failed += 1;
+      return;
+    }
+    // Reached, so it is returned with the batch's results.
+    fingerprint.set(customId, "");
     const failed: BatchResultLine = {
       custom_id: customId,
       result: { type: "errored", error: { message } },
@@ -497,8 +521,20 @@ export async function runBatchWith(
   const admit = async (): Promise<
     { line: BatchInputLine; charge: number } | "failed" | "end"
   > => {
-    const next = await lines.next();
-    if (next.done) return "end";
+    if (inputError !== undefined) return "end";
+    let next: IteratorResult<InputItem>;
+    try {
+      next = await lines.next();
+    } catch (error) {
+      // The input itself failed: schedule nothing more, let the lines in
+      // flight finish and record, and rethrow once they have.
+      inputError = error;
+      return "end";
+    }
+    if (next.done) {
+      inputComplete = true;
+      return "end";
+    }
     summary.total += 1;
     const { raw, label, size } = next.value;
     const charge = size * LINE_MEMORY_FACTOR;
@@ -538,13 +574,10 @@ export async function runBatchWith(
       await fail(typeof id === "string" ? id : label, (error as Error).message);
       return "failed";
     }
-    if (recordIndex.has(checked.custom_id)) {
-      // Counted, never recorded: a result under the same id would replace
-      // the first line's answer, since the last result per id wins.
+    if (!claim(checked.custom_id)) {
       summary.failed += 1;
       return "failed";
     }
-    recordIndex.set(checked.custom_id, recordIndex.size);
     try {
       return buildInputLine(checked, deps.buildPrompt);
     } catch (error) {
@@ -552,6 +585,7 @@ export async function runBatchWith(
         checked.custom_id,
         `could not build the prompt: ${(error as Error).message}`,
         checked.metadata ? { metadata: checked.metadata } : {},
+        true,
       );
       return "failed";
     }
@@ -602,14 +636,26 @@ export async function runBatchWith(
   };
   await progress("running");
   await Promise.all(Array.from({ length: params.concurrency }, worker));
-  // A stopped run reads on, counting what it left unstarted for the next run.
-  if (stopped()) {
-    for (let next = await lines.next(); !next.done; next = await lines.next()) {
-      summary.total += 1;
+  if (!inputComplete && inputError === undefined) {
+    if (typeof deps.input === "string") {
+      // A file ends: count the lines a stopped run left for the next one,
+      // reading them without parsing.
+      for (
+        let next = await lines.next();
+        !next.done;
+        next = await lines.next()
+      ) {
+        summary.total += 1;
+      }
+      inputComplete = true;
+    } else {
+      // A stream may never end: close it rather than wait for the rest.
+      await lines.return(undefined);
     }
   }
+  summary.input_complete = inputComplete;
   summary.not_started = pending();
-  summary.stopped = summary.not_started > 0 || stopped();
+  summary.stopped = summary.not_started > 0 || !inputComplete || stopped();
   await deps.onProgress?.({
     ...summary,
     state: summary.stopped ? "stopping" : "finished",
@@ -623,5 +669,6 @@ export async function runBatchWith(
       ]),
     ),
   );
+  if (inputError !== undefined) throw inputError;
   return summary;
 }

@@ -111,3 +111,46 @@ describe("the builder registry", () => {
     expect(() => parsePreprocess("nope@1")).toThrow(PromptError);
   });
 });
+
+describe("conversation_synthesis@1 resuming", () => {
+  const call = (span: string, text: string) => ({
+    span_id: span,
+    timestamp: "2026-11-12T09:00:00Z",
+    timestamp_ns: "1794474000000000000",
+    input_message_count: 1,
+    input_new_messages: [
+      { role: "user", parts: [{ type: "text", content: text }] },
+    ],
+    output_messages: [],
+  });
+  const cursor = (span: string) =>
+    Buffer.from(
+      JSON.stringify({
+        i: span,
+        s: "created_at",
+        d: "asc",
+        v: "1794474000000000000",
+      }),
+    ).toString("base64url");
+
+  it("reads a call at the cursor's instant with a later span, and not the cursor's own call", () => {
+    const built = conversationSynthesis.build(
+      {
+        conversation_id: "c",
+        completed_at: "2026-11-12T09:00:00Z",
+        model_calls: [
+          call("span-a", "already read"),
+          call("span-b", "new at the same instant"),
+        ],
+        watermark: {
+          watermark: "2026-11-12T09:00:00Z",
+          cursor: cursor("span-a"),
+          segment: 1,
+        },
+      },
+      300_000,
+    );
+    expect(built.prompt).toContain("new at the same instant");
+    expect(built.prompt).not.toContain("already read");
+  });
+});

@@ -372,22 +372,33 @@ const turnOf = (call: ConversationModelCall): Turn => ({
         : undefined,
 });
 
-/** The instant a resume state stopped at: its cursor's, else its watermark's. */
-function resumeNanos(
+/**
+ * Where a resume state stopped: its cursor's instant and span, the keyset
+ * order the conversations API pages in, else its watermark's instant alone.
+ */
+function resumePoint(
   state: ResumeState | null | undefined,
-): bigint | undefined {
+): { ns: bigint; spanId?: string } | undefined {
   if (!state) return undefined;
   if (state.cursor) {
     const token = JSON.parse(
       Buffer.from(state.cursor, "base64url").toString("utf8"),
-    ) as {
-      v?: string;
-    };
-    if (token.v)
-      return /^\d+$/.test(token.v) ? BigInt(token.v) : nanos(token.v);
+    ) as { i?: string; v?: string };
+    if (token.v) {
+      const ns = /^\d+$/.test(token.v) ? BigInt(token.v) : nanos(token.v);
+      return token.i ? { ns, spanId: token.i } : { ns };
+    }
   }
-  return nanos(state.watermark);
+  return { ns: nanos(state.watermark) };
 }
+
+/** Whether a call comes after the resume point: a later instant, or the same one with a later span. */
+const isAfter = (turn: Turn, point: { ns: bigint; spanId?: string }) =>
+  turn.ns === undefined ||
+  turn.ns > point.ns ||
+  (turn.ns === point.ns &&
+    point.spanId !== undefined &&
+    turn.call.span_id > point.spanId);
 
 /** The keyset cursor the conversations API pages with, at one call. */
 const encodeCursor = (spanId: string, ns: bigint) =>
@@ -407,18 +418,16 @@ interface Read {
 /** The deduplicated messages of the turns past the resume point, with what they carried. */
 function read(input: ConversationSynthesisInput): Read {
   const resume = input.watermark ?? undefined;
-  const after = resumeNanos(resume);
+  const point = resumePoint(resume);
   const all = input.model_calls.map(turnOf);
   const turns =
-    after === undefined
-      ? all
-      : all.filter((turn) => turn.ns === undefined || turn.ns > after);
+    point === undefined ? all : all.filter((turn) => isAfter(turn, point));
   const seen = new Set(resume?.tail_fingerprints ?? []);
   const seenSummaries = new Set<string>();
   const messages: CaseMessage[] = [];
   const events: DiagnosticEvent[] = [];
   let compactions = 0;
-  let previousCount = after !== undefined ? (resume?.last_input_count ?? 0) : 0;
+  let previousCount = point !== undefined ? (resume?.last_input_count ?? 0) : 0;
 
   const append = (
     message: ConversationMessage,
@@ -723,12 +732,12 @@ export const conversationSynthesis: PromptBuilder<
       kept.map((message) => message.source.message_hash).join("\n"),
     );
     const slimmed = slim(kept, conversation.events);
-    const after = resumeNanos(resume);
+    const point = resumePoint(resume);
     const plan: SegmentPlan = {
       conversation_id: input.conversation_id,
       completed_at: input.completed_at,
       digest,
-      segment_start: after === undefined ? "" : after.toString(),
+      segment_start: point === undefined ? "" : point.ns.toString(),
       segment: priorSegment + 1,
       watermark_next: segment(priorSegment + 1),
       ...(input.prior_resolution

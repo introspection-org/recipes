@@ -235,6 +235,7 @@ describe("runBatch", () => {
       failed: 0,
       not_started: 0,
       stopped: false,
+      input_complete: true,
     });
     expect(controller.peak).toBeLessThanOrEqual(4);
     expect(controller.closed.size).toBe(20);
@@ -450,6 +451,95 @@ describe("runBatch", () => {
     expect(configured[0]).toMatch(
       /64 MB for lines in flight \(configured: memoryBudget\)$/,
     );
+  });
+
+  it("never lets an invalid line with a used custom_id overwrite the first line's answer", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "a", prompt: "" },
+      ],
+      controller: new EchoRuns(),
+      concurrency: 1,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 1 });
+    expect(outcome.results.map((line) => line.result.output)).toEqual([
+      "FIRST",
+    ]);
+  });
+
+  it("returns a line whose prompt could not be built, with its error", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "ok", input: { n: 1 } },
+        { custom_id: "bad", input: { n: -1 } },
+      ],
+      controller: new EchoRuns(),
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    }).catch((error: unknown) => error);
+    // The synthesis builder cannot read either input; both are returned errored.
+    const results = (
+      outcome as { results: { custom_id: string; result: { type: string } }[] }
+    ).results;
+    expect(results.map((line) => [line.custom_id, line.result.type])).toEqual([
+      ["ok", "errored"],
+      ["bad", "errored"],
+    ]);
+  });
+
+  it("closes a streamed input on stop instead of reading it to the end", async () => {
+    const stop = new AbortController();
+    let closed = false;
+    async function* endless() {
+      try {
+        for (let n = 0; ; n++) {
+          if (n === 2) stop.abort();
+          yield { custom_id: `c${n}`, prompt: `p${n}` };
+        }
+      } finally {
+        closed = true;
+      }
+    }
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: endless(),
+      controller: new EchoRuns(),
+      concurrency: 1,
+      signal: stop.signal,
+      log: () => {},
+    });
+    expect(closed).toBe(true);
+    expect(outcome).toMatchObject({ stopped: true, input_complete: false });
+  });
+
+  it("lets the lines in flight finish before an input error is thrown", async () => {
+    let finished = 0;
+    async function* failing() {
+      yield { custom_id: "a", prompt: "first" };
+      yield { custom_id: "b", prompt: "second" };
+      throw new Error("the producer broke");
+    }
+    const controller = new EchoRuns();
+    const wait = controller.wait.bind(controller);
+    controller.wait = (async (id: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      finished += 1;
+      return wait(id);
+    }) as never;
+    await expect(
+      runBatch({
+        agent: "summarize",
+        input: failing(),
+        controller,
+        concurrency: 2,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/the producer broke/);
+    expect(finished).toBe(2);
   });
 
   it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
