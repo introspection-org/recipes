@@ -8,6 +8,7 @@ import {
   inputFingerprint,
   parseInputLine,
   type BuildLinePrompt,
+  type CheckedInputLine,
   type BatchInputLine,
   type BatchResultLine,
   type BatchResultType,
@@ -22,7 +23,7 @@ import type { BatchResults } from "./shards.js";
  */
 export type BatchRunController = Pick<
   AgentRunController,
-  "start" | "wait" | "message" | "close"
+  "start" | "wait" | "message" | "close" | "forget"
 >;
 
 /** The run's progress, reported after every line and when the run stops. */
@@ -34,8 +35,8 @@ export interface BatchProgress extends BatchSummary {
 export interface BatchRunDeps {
   controller: BatchRunController;
   files: BatchFiles;
-  /** The lines to run, or the path of a JSONL file holding them. */
-  input: string | readonly unknown[];
+  /** The lines to run, as they arrive, or the path of a JSONL file holding them. */
+  input: string | Iterable<unknown> | AsyncIterable<unknown>;
   /** Builds the prompt of a line that carries an `input` (`linePromptBuilder`). */
   buildPrompt?: BuildLinePrompt;
   /** Called once the run ends with each line it reached: its fingerprint and its place in the input. */
@@ -76,7 +77,6 @@ export interface BatchRunDeps {
 /** Where a line sits in its batch: stable across resumes, so a gap in the results names a skipped record. */
 export interface BatchRecord {
   index: number;
-  count: number;
 }
 
 export interface LineScope {
@@ -124,7 +124,7 @@ async function* inputValues(
 ): AsyncGenerator<{ value: unknown; label: string }> {
   if (typeof deps.input !== "string") {
     let index = 0;
-    for (const value of deps.input) {
+    for await (const value of deps.input) {
       index += 1;
       yield { value, label: `input ${index}` };
     }
@@ -170,24 +170,15 @@ export async function runBatchWith(
     deps.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const canBuild = deps.buildPrompt !== undefined;
-  // A first pass checks every line and keeps only its id and position, so a
-  // malformed input fails before any line runs and nothing is built yet.
-  const recordIndex = new Map<string, number>();
-  for await (const { value, label } of inputValues(deps)) {
-    const line = checkInputLine(value, label, canBuild);
-    if (recordIndex.has(line.custom_id)) {
-      throw new Error(`${label} repeats custom_id ${line.custom_id}`);
-    }
-    recordIndex.set(line.custom_id, recordIndex.size);
-  }
-  const total = recordIndex.size;
   const done = completedIds(await deps.results.read());
+  // Each line's place in the input, assigned as it streams past.
+  const recordIndex = new Map<string, number>();
   const fingerprint = new Map<string, string>();
   const deadline =
     params.deadline_ms === undefined ? null : now() + params.deadline_ms;
   const limiter = new AdaptiveLimiter(params.concurrency);
   const summary: BatchSummary = {
-    total,
+    total: 0,
     already_completed: 0,
     completed: 0,
     failed: 0,
@@ -274,16 +265,16 @@ export async function runBatchWith(
       return settled;
     } finally {
       await deps.controller.close(started.agent_run_id);
+      // A batch never reads a line's run again; keeping it would hold every
+      // prompt for the life of the controller.
+      deps.controller.forget?.(started.agent_run_id);
     }
   };
 
   const runLine = async (
     line: BatchInputLine,
   ): Promise<BatchResultLine | null> => {
-    const record = {
-      index: recordIndex.get(line.custom_id) ?? -1,
-      count: total,
-    };
+    const record = { index: recordIndex.get(line.custom_id) ?? -1 };
     const scope = deps.lineScope?.(line, record);
     const resultLine = (
       settled: Settled,
@@ -366,47 +357,77 @@ export async function runBatchWith(
     return recording;
   };
 
+  // Lines read but not yet answered; the input's total is known when it ends.
   const pending = () =>
-    total - summary.already_completed - summary.completed - summary.failed;
+    summary.total -
+    summary.already_completed -
+    summary.completed -
+    summary.failed;
 
-  // The second pass streams the lines to the workers: each is built when a
-  // worker takes it, so at most `concurrency` prompts are held at once.
+  // One pass: each line is checked, built and run as a worker takes it, so at
+  // most `concurrency` prompts are held at once.
   const lines = inputValues(deps)[Symbol.asyncIterator]();
+  const fail = async (
+    customId: string,
+    message: string,
+    extra: Partial<BatchResultLine> = {},
+  ) => {
+    const failed: BatchResultLine = {
+      custom_id: customId,
+      result: { type: "errored", error: { message } },
+      batch: {
+        record_index: recordIndex.get(customId) ?? -1,
+        input_sha256: "",
+        attempts: 0,
+      },
+      ...extra,
+    };
+    await record(failed);
+    await deps.onResult?.(failed);
+    summary.failed += 1;
+    await progress(stopped() ? "stopping" : "running");
+  };
+  // Read, check and build the next line. Its raw text and parsed input stay
+  // in this call, so they are released once the prompt exists, not held while
+  // the line waits on its model.
+  const takeLine = async (): Promise<BatchInputLine | "failed" | "end"> => {
+    const next = await lines.next();
+    if (next.done) return "end";
+    summary.total += 1;
+    const { value, label } = next.value;
+    // A line that cannot run fails alone: earlier lines keep their answers.
+    let checked: CheckedInputLine;
+    try {
+      checked = checkInputLine(value, label, canBuild);
+    } catch (error) {
+      const id = (value as { custom_id?: unknown } | null)?.custom_id;
+      await fail(typeof id === "string" ? id : label, (error as Error).message);
+      return "failed";
+    }
+    if (recordIndex.has(checked.custom_id)) {
+      // Counted, never recorded: a result under the same id would replace
+      // the first line's answer, since the last result per id wins.
+      summary.failed += 1;
+      return "failed";
+    }
+    recordIndex.set(checked.custom_id, recordIndex.size);
+    try {
+      return buildInputLine(checked, deps.buildPrompt);
+    } catch (error) {
+      await fail(
+        checked.custom_id,
+        `could not build the prompt: ${(error as Error).message}`,
+        checked.metadata ? { metadata: checked.metadata } : {},
+      );
+      return "failed";
+    }
+  };
   const worker = async (): Promise<void> => {
     while (!stopped()) {
-      const next = await lines.next();
-      if (next.done) return;
-      const checked = checkInputLine(
-        next.value.value,
-        next.value.label,
-        canBuild,
-      );
-      let line: BatchInputLine;
-      try {
-        line = buildInputLine(checked, deps.buildPrompt);
-      } catch (error) {
-        // A builder that cannot read one input fails that line, not the batch.
-        const failed: BatchResultLine = {
-          custom_id: checked.custom_id,
-          result: {
-            type: "errored",
-            error: {
-              message: `could not build the prompt: ${(error as Error).message}`,
-            },
-          },
-          batch: {
-            record_index: recordIndex.get(checked.custom_id) ?? -1,
-            input_sha256: "",
-            attempts: 0,
-          },
-          ...(checked.metadata ? { metadata: checked.metadata } : {}),
-        };
-        await record(failed);
-        await deps.onResult?.(failed);
-        summary.failed += 1;
-        await progress(stopped() ? "stopping" : "running");
-        continue;
-      }
+      const taken = await takeLine();
+      if (taken === "end") return;
+      if (taken === "failed") continue;
+      const line = taken;
       const lineFingerprint = inputFingerprint(params.agent, line);
       fingerprint.set(line.custom_id, lineFingerprint);
       if (done.get(line.custom_id) === lineFingerprint) {
@@ -442,9 +463,13 @@ export async function runBatchWith(
     }
   };
   await progress("running");
-  await Promise.all(
-    Array.from({ length: Math.min(params.concurrency, total) }, worker),
-  );
+  await Promise.all(Array.from({ length: params.concurrency }, worker));
+  // A stopped run reads on, counting what it left unstarted for the next run.
+  if (stopped()) {
+    for (let next = await lines.next(); !next.done; next = await lines.next()) {
+      summary.total += 1;
+    }
+  }
   summary.not_started = pending();
   summary.stopped = summary.not_started > 0 || stopped();
   await deps.onProgress?.({

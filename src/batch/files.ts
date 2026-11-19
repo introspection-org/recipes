@@ -1,7 +1,6 @@
 import { createReadStream } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createInterface } from "node:readline";
 
 /** The file operations a batch needs; inject your own to keep a batch's files anywhere. */
 export interface BatchFiles {
@@ -24,6 +23,25 @@ export interface BatchFiles {
 
 let tempCounter = 0;
 
+/**
+ * A text stream's lines, read only as fast as they are taken: the stream's
+ * own iterator waits for each read, where `readline`'s keeps reading ahead
+ * and buffers lines a slow reader has not taken yet.
+ */
+async function* splitLines(
+  chunks: AsyncIterable<string>,
+): AsyncGenerator<string> {
+  let rest = "";
+  for await (const chunk of chunks) {
+    rest += chunk;
+    for (let end = rest.indexOf("\n"); end >= 0; end = rest.indexOf("\n")) {
+      yield rest.slice(0, end);
+      rest = rest.slice(end + 1);
+    }
+  }
+  if (rest) yield rest;
+}
+
 /** `BatchFiles` on the local file system, each append and write synced before it resolves. */
 export const nodeBatchFiles: BatchFiles = {
   async read(path) {
@@ -45,7 +63,7 @@ export const nodeBatchFiles: BatchFiles = {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
-    return createInterface({ input: stream, crlfDelay: Infinity });
+    return splitLines(stream);
   },
   async appendLine(path, line) {
     await mkdir(dirname(path), { recursive: true });

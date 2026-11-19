@@ -139,7 +139,9 @@ export function buildInputLine(
 export function parseInputLine(raw: string, label: string): unknown {
   try {
     return JSON.parse(raw, (key, value, context?: { source?: string }) =>
-      key === "timestamp_ns" && context?.source !== undefined
+      key === "timestamp_ns" &&
+      typeof value === "number" &&
+      context?.source !== undefined
         ? context.source
         : value,
     );

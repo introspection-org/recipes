@@ -76,8 +76,8 @@ export {
 export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   /** The Recipe agent that answers each line. */
   agent: string;
-  /** The lines to run, or the path (or `file:` URL) of a JSONL file holding them. */
-  input: string | URL | readonly BatchInputLine[];
+  /** The lines to run, as they arrive, or the path (or `file:` URL) of a JSONL file holding them. */
+  input: string | URL | Iterable<unknown> | AsyncIterable<unknown>;
   /** Runs each line: `createInProcessRunController`, or your own `AgentRunController`. */
   controller: BatchRunController;
   /**
@@ -158,13 +158,12 @@ export function linePromptBuilder(
   };
 }
 
-/** A prompt's conversation: `<batch_id>:<index>`, padded so ids sort in input order. */
+/** A prompt's conversation: `<batch_id>:<custom_id>`, the same on every run of the line. */
 export function batchConversationId(
   batchId: string,
-  record: BatchRecord,
+  line: Pick<BatchInputLine, "custom_id">,
 ): string {
-  const width = String(Math.max(0, record.count - 1)).length;
-  return `${batchId}:${String(record.index).padStart(width, "0")}`;
+  return `${batchId}:${line.custom_id}`;
 }
 
 /**
@@ -177,7 +176,7 @@ export function baggageLineScope(
   baggage: RunBatchOptions["baggage"] = {},
 ): (line: BatchInputLine, record: BatchRecord) => LineScope {
   return (line, record) => {
-    const conversationId = batchConversationId(batchId, record);
+    const conversationId = batchConversationId(batchId, line);
     const entries = {
       ...(typeof baggage === "function" ? baggage(line, record) : baggage),
       [CONVERSATION_ID_BAGGAGE]: conversationId,

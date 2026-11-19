@@ -363,6 +363,16 @@ describe("runBatch", () => {
     expect(results.written).not.toHaveProperty("built");
   });
 
+  it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
+    const [asNumber, asString] = parseInputLines(
+      jsonl({ custom_id: "a", prompt: "p" }) +
+        '{"custom_id":"b","prompt":"p","metadata":{"timestamp_ns":1794474000000000123}}\n' +
+        '{"custom_id":"c","prompt":"p","metadata":{"timestamp_ns":"1794474000000000123"}}\n',
+    ).slice(1);
+    expect(asNumber!.metadata).toEqual({ timestamp_ns: "1794474000000000123" });
+    expect(asString!.metadata).toEqual({ timestamp_ns: "1794474000000000123" });
+  });
+
   it("streams a file's lines and builds each prompt only when a worker takes it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "batch-stream-"));
     const lines = Array.from({ length: 50 }, (_, index) =>
@@ -867,7 +877,8 @@ describe("runBatch restart and shutdown", () => {
     expect(controller.started).toEqual(["p0", "p1"]);
     expect(summary).toMatchObject({ completed: 2, not_started: 4 });
     expect(snapshots.at(-1)).toBe("stopping:2/4");
-    expect(snapshots[0]).toBe("running:0/6");
+    // Lines are counted as they are read, so the first report has read none yet.
+    expect(snapshots[0]).toBe("running:0/0");
   });
 
   it("records lines still in flight at the cancel as failed, for the next run", async () => {
@@ -1444,18 +1455,21 @@ describe("runBatch", () => {
     expect(lines.map((line) => JSON.parse(line).custom_id)).toEqual(["a", "b"]);
   });
 
-  it("refuses a repeated custom_id and an unknown option before any line runs", async () => {
+  it("fails a repeated custom_id alone, and refuses an unknown option before any line runs", async () => {
     const controller = new EchoRuns();
-    await expect(
-      runBatch({
-        agent: "summarize",
-        input: [
-          { custom_id: "a", prompt: "first" },
-          { custom_id: "a", prompt: "again" },
-        ],
-        controller,
-      }),
-    ).rejects.toThrow(/input 2 repeats custom_id a/);
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "a", prompt: "again" },
+      ],
+      controller,
+      concurrency: 1,
+    });
+    expect(outcome).toMatchObject({ total: 2, completed: 1, failed: 1 });
+    expect(outcome.results.map((line) => line.result.output)).toEqual([
+      "FIRST",
+    ]);
     await expect(
       runBatch({
         agent: "summarize",
@@ -1542,8 +1556,8 @@ describe("runBatch baggage", () => {
         { "gen_ai.conversation.id": ids[0], "acme.custom_id": "a" },
         { "gen_ai.conversation.id": ids[1], "acme.custom_id": "b" },
       ]);
-      expect(ids[0]).toMatch(/:0$/);
-      expect(ids[1]).toMatch(/:1$/);
+      expect(ids[0]).toMatch(/:a$/);
+      expect(ids[1]).toMatch(/:b$/);
 
       // The same directory is the same batch: a resumed prompt keeps its conversation.
       input.push({ custom_id: "c", prompt: "third" });
@@ -1557,7 +1571,7 @@ describe("runBatch baggage", () => {
         (line) => line.result.conversation_id,
       );
       expect(resumedIds.slice(0, 2)).toEqual(ids);
-      expect(resumedIds[2]).toBe(`${ids[0]?.split(":")[0]}:2`);
+      expect(resumedIds[2]).toBe(`${ids[0]?.split(":")[0]}:c`);
     } finally {
       teardown();
     }
