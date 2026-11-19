@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { PromptBuilder } from "../builder.js";
-import { fitStepName, type FitStep, type FitSteps } from "../fit.js";
+import { stepName, type PromptStep } from "../fit.js";
 import {
   cpHead,
   cpLength,
@@ -110,14 +110,12 @@ export type ConversationCaseState =
 export const CONVERSATION_CASE_TEMPLATE = "{{ conversation_case }}";
 
 /** What synthesis has always run: each step at the Python original's limits. */
-export const CONVERSATION_CASE_FIT: FitSteps = {
-  always: [
-    "truncate_messages",
-    "cap_transcript",
-    "head_tail",
-    "drop_repeated_diagnostics",
-  ],
-};
+export const CONVERSATION_CASE_STEPS: readonly PromptStep[] = [
+  "truncate_messages",
+  "cap_transcript",
+  "head_tail",
+  "drop_repeated_diagnostics",
+];
 
 const TAIL_FINGERPRINT_LIMIT = 50;
 const DIAGNOSTIC_EVENT_LIMIT = 120;
@@ -824,10 +822,10 @@ function render(
   return lines.join("\n");
 }
 
-function stepParams(steps: readonly FitStep[]): StepParams {
+function stepParams(steps: readonly PromptStep[]): StepParams {
   const params: StepParams = {};
   for (const step of steps) {
-    const [name, values] = fitStepName(step);
+    const [name, values] = stepName(step);
     params[name] = values;
   }
   return params;
@@ -840,8 +838,8 @@ export const conversationCaseBuilder: PromptBuilder<
   name: "conversation_case",
   version: 1,
   defaultTemplate: CONVERSATION_CASE_TEMPLATE,
-  defaultFit: CONVERSATION_CASE_FIT,
-  steps: new Set([
+  defaultSteps: CONVERSATION_CASE_STEPS,
+  supportedSteps: new Set([
     "truncate_messages",
     "cap_transcript",
     "head_tail",

@@ -4,9 +4,12 @@ import { findClassifierModel } from "./classifier.js";
 import { fitBudget } from "../prompts/budget.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
-  renderTrajectoryInput,
+  CLASSIFIER_STEPS,
+  LLM_JUDGE_STEPS,
   TRANSCRIPT_BUDGET_UNITS,
+  trajectoryBuilder,
 } from "../prompts/builders/trajectory.js";
+import { buildPrompt } from "../prompts/builder.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -402,20 +405,27 @@ export async function runJudges(
         pairs.set(pairId(judge, line), {
           judge,
           line,
-          transcript:
-            judge.kind === "classifier"
-              ? renderTrajectoryInput(input, {
-                  // Jev's slim was measured cut to 75k (the slimming study); a
-                  // classifier's window may lower that, never raise it.
-                  maxUnits: Math.min(
-                    budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
-                    CLASSIFIER_BUDGET_UNITS,
-                  ),
-                  slim: true,
-                })
-              : renderTrajectoryInput(input, {
-                  maxUnits: budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
-                }),
+          transcript: buildPrompt(trajectoryBuilder, input, {
+            budget: {
+              maxUnits:
+                judge.kind === "classifier"
+                  ? // Jev's slim was measured cut to 75k (the slimming study); a
+                    // classifier's window may lower that, never raise it.
+                    Math.min(
+                      budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
+                      CLASSIFIER_BUDGET_UNITS,
+                    )
+                  : budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
+            },
+            steps:
+              judge.input?.steps ??
+              (judge.kind === "classifier"
+                ? CLASSIFIER_STEPS
+                : LLM_JUDGE_STEPS),
+            ...(judge.input?.template !== undefined
+              ? { template: judge.input.template }
+              : {}),
+          }).prompt,
           evidence: evidenceHash(input),
         });
       } catch (error) {

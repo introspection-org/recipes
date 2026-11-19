@@ -3,9 +3,10 @@ import {
   buildPrompt,
   conversationCaseBuilder,
   FitError,
-  fitStepName,
+  stepName,
   middleCut,
   promptBuilder,
+  validatePromptSpec,
   type PromptBuilder,
   renderTemplate,
   TemplateError,
@@ -51,7 +52,7 @@ describe("fitting a prompt", () => {
     expect(() =>
       buildPrompt(trajectoryBuilder, input, {
         budget: { maxUnits: 100 },
-        fit: { always: ["head_tail"] },
+        steps: ["head_tail"],
       }),
     ).toThrow(FitError);
   });
@@ -69,45 +70,42 @@ describe("fitting a prompt", () => {
     };
     const built = buildPrompt(trajectoryBuilder, input, {
       budget: { maxUnits: 200 },
-      fit: { always: ["clip_tool_values"], last_resort: "middle_cut" },
+      steps: ["clip_tool_values"],
     });
     expect(built.builder).toBe("trajectory@1");
     expect(built.applied).toEqual(["clip_tool_values", "middle_cut"]);
     expect(built.prompt.length).toBeLessThanOrEqual(200);
   });
 
-  it("adds until_fit steps in order only until the prompt fits", () => {
-    const calls: string[][] = [];
+  it("runs the spec's steps with the builder's options, and cuts the middle only when over budget", () => {
     const builder: PromptBuilder<string, undefined, { label: string }> = {
       name: "stub",
       version: 1,
       defaultTemplate: "{{ text }}",
-      defaultFit: {},
-      steps: new Set(["half", "quarter", "never"]),
+      defaultSteps: [],
+      supportedSteps: new Set(["half"]),
       build(input, steps, options) {
-        const names = steps.map((step) => fitStepName(step)[0]);
-        calls.push(names);
-        const keep = names.includes("quarter")
-          ? 4
-          : names.includes("half")
-            ? 2
-            : 1;
-        return {
-          slots: {
-            text: `${options?.label}:${input.slice(0, input.length / keep)}`,
-          },
-          applied: names,
-        };
+        const names = steps.map((step) => stepName(step)[0]);
+        const text = names.includes("half")
+          ? input.slice(0, input.length / 2)
+          : input;
+        return { slots: { text: `${options?.label}:${text}` }, applied: names };
       },
     };
-    const built = buildPrompt(builder, "x".repeat(100), {
-      budget: { maxUnits: 40 },
-      fit: { until_fit: ["half", "quarter", "never"] },
+    const fits = buildPrompt(builder, "x".repeat(100), {
+      budget: { maxUnits: 60 },
+      steps: ["half"],
       options: { label: "case" },
     });
-    expect(calls).toEqual([[], ["half"], ["half", "quarter"]]);
-    expect(built.applied).toEqual(["half", "quarter"]);
-    expect(built.prompt).toBe(`case:${"x".repeat(25)}`);
+    expect(fits.applied).toEqual(["half"]);
+    expect(fits.prompt).toBe(`case:${"x".repeat(50)}`);
+
+    const over = buildPrompt(builder, "x".repeat(100), {
+      budget: { maxUnits: 90 },
+      options: { label: "case" },
+    });
+    expect(over.applied).toEqual(["middle_cut"]);
+    expect(over.prompt.length).toBeLessThanOrEqual(90);
   });
 });
 
@@ -116,5 +114,28 @@ describe("the builder registry", () => {
     expect(promptBuilder("conversation_case@1")).toBe(conversationCaseBuilder);
     expect(promptBuilder("trajectory@1")).toBe(trajectoryBuilder);
     expect(() => promptBuilder("conversation_case@2")).toThrow(FitError);
+  });
+});
+
+describe("an input spec", () => {
+  it("accepts the steps its builder runs and refuses anything else, naming each problem", () => {
+    const spec = {
+      builder: "conversation_case@1",
+      steps: ["truncate_messages", { head_tail: { head: 800, tail: 300 } }],
+      template: "{{ conversation_case }}",
+    };
+    expect(validatePromptSpec(spec)).toEqual(spec);
+    expect(() =>
+      validatePromptSpec({
+        builder: "conversation_case@1",
+        steps: ["slim_tool_results"],
+        budget: 1,
+      }),
+    ).toThrow(
+      /unknown key\(s\) budget; conversation_case@1 has no step "slim_tool_results"/,
+    );
+    expect(() =>
+      validatePromptSpec({ builder: "conversation_case@9" }),
+    ).toThrow(FitError);
   });
 });

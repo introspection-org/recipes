@@ -11,8 +11,10 @@ import type {
 import {
   AdaptiveLimiter,
   completedIds,
+  agentPromptBudget,
   inputFingerprint,
   jsonlResults,
+  linePromptBuilder,
   nodeBatchFiles,
   parseBatchParams,
   parseInputLines,
@@ -297,6 +299,77 @@ describe("runBatch", () => {
       watermark: "2026-11-13T00:00:00Z",
     });
     expect(results.b).not.toHaveProperty("metadata");
+  });
+
+  it("builds an input line's prompt through the agent's prompt spec and records what built it", async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-case",
+          "media_parts.json",
+        ),
+        "utf8",
+      ),
+    );
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "conv-parity#1", input: fixture.input },
+        { custom_id: "written", prompt: "as written" },
+      ),
+    });
+    const prompts: string[] = [];
+    const controller = new FakeController((prompt) => {
+      prompts.push(prompt);
+      return { status: "completed", output: "ok" };
+    });
+
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 1,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        buildPrompt: linePromptBuilder(
+          { builder: "conversation_case@1" },
+          agentPromptBudget({ name: "anthropic/claude-sonnet-5-5" }),
+        ),
+      },
+    );
+
+    expect(prompts).toEqual([fixture.expected.prompt, "as written"]);
+    const results = Object.fromEntries(
+      files
+        .text(OUTPUT)
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l))
+        .map((r) => [r.custom_id, r]),
+    );
+    expect(results["conv-parity#1"].built).toEqual({
+      builder: "conversation_case@1",
+      applied: ["truncate_messages", "head_tail", "drop_repeated_diagnostics"],
+      digest: fixture.expected.plan.digest,
+      state: { plan: fixture.expected.plan },
+    });
+    expect(results.written).not.toHaveProperty("built");
+  });
+
+  it("refuses an input line when the agent declares no prompt spec", async () => {
+    expect(() => parseInputLines(jsonl({ custom_id: "a", input: {} }))).toThrow(
+      /no prompt: spec/,
+    );
+    expect(() =>
+      parseInputLines(jsonl({ custom_id: "a", prompt: "p", input: {} })),
+    ).toThrow(/exactly one/);
   });
 
   it("skips lines a previous run completed and retries ones it failed", async () => {

@@ -10,6 +10,7 @@ import {
   validateInputLines,
   type BatchInputLine,
   type BatchResultLine,
+  type BuildLinePrompt,
 } from "./lines.js";
 import { parseBatchParams, type BatchParams } from "./params.js";
 import {
@@ -21,6 +22,15 @@ import {
   type LineScope,
 } from "./runner.js";
 import { jsonlResults, memoryResults } from "./shards.js";
+import { buildPrompt } from "../prompts/builder.js";
+import type { FitBudget } from "../prompts/fit.js";
+import { promptBuilder } from "../prompts/registry.js";
+import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
+import { fitBudget } from "../prompts/budget.js";
+import { TRANSCRIPT_BUDGET_UNITS } from "../prompts/builders/trajectory.js";
+import { findRecipeModel } from "../model-binding.js";
+import type { RecipeAgentModelConfig } from "../recipe/model.js";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export { AdaptiveLimiter } from "./limiter.js";
 export {
@@ -29,7 +39,9 @@ export {
   parseInputLines,
   validateInputLines,
   type BatchInputLine,
+  type BatchLineBuild,
   type BatchRecordInfo,
+  type BuildLinePrompt,
   type BatchResult,
   type BatchResultLine,
   type BatchResultType,
@@ -94,6 +106,12 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   /** Replaces the local file system. */
   files?: BatchFiles;
   /**
+   * How a line that carries an `input` becomes its prompt: the agent's
+   * `prompt:` spec, and the budget of the models that answer it
+   * (`agentPromptBudget`). A line with a `prompt` runs as written.
+   */
+  prompt?: { spec: PromptSpec; budget: FitBudget };
+  /**
    * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
    * Defaults to an id derived from the results file, so a resumed batch keeps
    * its conversation ids, or a random one without a `directory`.
@@ -106,6 +124,50 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   baggage?:
     | Record<string, string>
     | ((line: BatchInputLine, record: BatchRecord) => Record<string, string>);
+}
+
+/**
+ * What a prompt built for this agent may hold: the smallest window among its
+ * `ai:` model and fallbacks, so it fits whichever answers. A model the catalog
+ * does not know keeps the transcript default.
+ */
+export function agentPromptBudget(
+  model: RecipeAgentModelConfig | undefined,
+  modelRegistry?: ModelRegistry,
+): FitBudget {
+  const specs = [model?.name, ...(model?.fallbacks ?? [])].filter(
+    (spec): spec is string => typeof spec === "string",
+  );
+  return fitBudget(
+    specs.map((spec) => findRecipeModel(spec, modelRegistry)),
+    TRANSCRIPT_BUDGET_UNITS,
+  );
+}
+
+/** Builds each `input` line through `spec`, within `budget`. */
+export function linePromptBuilder(
+  spec: PromptSpec,
+  budget: FitBudget,
+): BuildLinePrompt {
+  validatePromptSpec(spec);
+  const builder = promptBuilder(spec.builder);
+  return (input) => {
+    const built = buildPrompt(builder, input, {
+      budget,
+      ...(spec.template !== undefined ? { template: spec.template } : {}),
+      ...(spec.steps !== undefined ? { steps: spec.steps } : {}),
+      ...(spec.options !== undefined ? { options: spec.options } : {}),
+    });
+    return {
+      prompt: built.prompt,
+      build: {
+        builder: built.builder,
+        applied: built.applied,
+        ...(built.digest !== undefined ? { digest: built.digest } : {}),
+        ...(built.state !== undefined ? { state: built.state } : {}),
+      },
+    };
+  };
 }
 
 /** A prompt's conversation: `<batch_id>:<index>`, padded so ids sort in input order. */
@@ -170,9 +232,13 @@ export async function runBatch(
     files = nodeBatchFiles,
     batch_id,
     baggage,
+    prompt,
     ...settings
   } = options;
   const params = parseBatchParams(settings);
+  const build = prompt
+    ? linePromptBuilder(prompt.spec, prompt.budget)
+    : undefined;
   let lines: BatchInputLine[];
   if (typeof input === "string" || input instanceof URL) {
     const path =
@@ -183,9 +249,9 @@ export async function runBatch(
           : input;
     const text = await files.read(path);
     if (text === null) throw new Error(`batch input ${path} does not exist`);
-    lines = parseInputLines(text);
+    lines = parseInputLines(text, build);
   } else {
-    lines = validateInputLines(input);
+    lines = validateInputLines(input, undefined, build);
   }
   const resultsPath = directory ? resolve(directory, params.output_name) : null;
   const results = resultsPath

@@ -5,30 +5,19 @@ export interface FitBudget {
   maxUnits: number;
 }
 
-/** A step that trims a builder's material, by name, with its typed parameters. */
-export type FitStep = string | Record<string, Record<string, unknown>>;
-
-/**
- * How a prompt is trimmed towards its budget: `always` runs on every input,
- * `until_fit` in order until the prompt fits, and `last_resort` once more if
- * it still does not. A builder names the steps it supports.
- */
-export interface FitSteps {
-  always?: FitStep[];
-  until_fit?: FitStep[];
-  last_resort?: FitStep;
-}
+/** A step that shapes a builder's material, by name, with its parameters. */
+export type PromptStep = string | Record<string, Record<string, unknown>>;
 
 export class FitError extends Error {
   override name = "FitError";
 }
 
 /** A step's name and parameters. */
-export function fitStepName(step: FitStep): [string, Record<string, unknown>] {
+export function stepName(step: PromptStep): [string, Record<string, unknown>] {
   if (typeof step === "string") return [step, {}];
   const entries = Object.entries(step);
   if (entries.length !== 1) {
-    throw new FitError("a fit step names exactly one step");
+    throw new FitError("a step names exactly one step");
   }
   return entries[0]!;
 }

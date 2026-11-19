@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
 import {
   parseRecipeAgentAiConfig,
   type RecipeAgentModelConfig,
@@ -23,6 +24,8 @@ interface JudgeBase {
   on: unknown;
   /** The agent `ai:` block: model, fallbacks, thinking level and options. */
   ai: RecipeAgentModelConfig & { name: string };
+  /** How its transcript is built, over the defaults for its kind. */
+  input?: PromptSpec;
   /** The file the judge was read from, relative to the Recipe. */
   path: string;
   /** SHA-256 of the definition file: a changed definition is a different judge. */
@@ -76,6 +79,7 @@ export interface NormalizedJudgeDefinition {
     ai: Record<string, unknown>;
     instructions?: string;
     questions?: Record<string, JudgeQuestion>;
+    input?: unknown;
   };
   warnings?: string[];
 }
@@ -148,6 +152,9 @@ function toDefinition(
     ...(definition.description ? { description: definition.description } : {}),
     on: isRecord(on) && Object.keys(on).length === 0 ? [] : on,
     ai: { ...ai, name: ai.name },
+    ...(definition.input !== undefined
+      ? { input: validatePromptSpec(definition.input, `${path}: input`) }
+      : {}),
     path,
     definitionHash: createHash("sha256").update(content).digest("hex"),
   };

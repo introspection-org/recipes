@@ -1,16 +1,41 @@
 import { createHash } from "node:crypto";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 const InputLine = Type.Object({
   custom_id: Type.String({ minLength: 1 }),
-  prompt: Type.String({ minLength: 1 }),
+  /** The prompt as written; or `input`, built into one through the agent's `prompt:` spec. */
+  prompt: Type.Optional(Type.String({ minLength: 1 })),
+  input: Type.Optional(Type.Unknown()),
   /** The caller's own context for the line, copied onto its result unread. */
   metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  /** Set on a line already built from its `input`, kept when it is validated again. */
+  built: Type.Optional(Type.Unknown()),
 });
 
+/** What built a line's prompt from its `input`: copied onto its result. */
+export interface BatchLineBuild {
+  /** `name@version` */
+  builder: string;
+  applied: string[];
+  digest?: string;
+  /** What the builder hands back, such as where the next pass resumes. */
+  state?: unknown;
+}
+
 /** One input: a prompt, run in its own session, identified by the caller's `custom_id`. */
-export type BatchInputLine = Static<typeof InputLine>;
+export interface BatchInputLine {
+  custom_id: string;
+  prompt: string;
+  metadata?: Record<string, unknown>;
+  built?: BatchLineBuild;
+}
+
+/** Builds a line's prompt from its raw `input`. */
+export type BuildLinePrompt = (input: unknown) => {
+  prompt: string;
+  build: BatchLineBuild;
+};
 
 /** How a line ended, in the Message Batches vocabulary: `canceled` is a line the stop grace cut off. */
 export type BatchResultType = "succeeded" | "errored" | "canceled";
@@ -43,6 +68,8 @@ export interface BatchResultLine {
   batch: BatchRecordInfo;
   /** The caller's own context for the line, copied from its input unread. */
   metadata?: Record<string, unknown>;
+  /** What built the line's prompt from its `input`. */
+  built?: BatchLineBuild;
 }
 
 /**
@@ -53,6 +80,7 @@ export interface BatchResultLine {
 export function validateInputLines(
   values: readonly unknown[],
   label: (index: number) => string = (index) => `input ${index + 1}`,
+  build?: BuildLinePrompt,
 ): BatchInputLine[] {
   const seen = new Set<string>();
   return values.map((value, index) => {
@@ -61,23 +89,52 @@ export function validateInputLines(
         .map((error) => `${error.instancePath || "/"} ${error.message}`)
         .join("; ");
       throw new Error(
-        `${label(index)} needs a custom_id and a prompt: ${problems}`,
+        `${label(index)} needs a custom_id and a prompt or an input: ${problems}`,
       );
     }
     if (seen.has(value.custom_id)) {
       throw new Error(`${label(index)} repeats custom_id ${value.custom_id}`);
     }
     seen.add(value.custom_id);
+    const metadata = value.metadata ? { metadata: value.metadata } : {};
+    if ((value.prompt === undefined) === (value.input === undefined)) {
+      throw new Error(`${label(index)} needs exactly one of prompt and input`);
+    }
+    if (value.prompt !== undefined) {
+      return {
+        custom_id: value.custom_id,
+        prompt: value.prompt,
+        ...metadata,
+        ...(value.built !== undefined
+          ? { built: value.built as BatchLineBuild }
+          : {}),
+      };
+    }
+    if (build === undefined) {
+      throw new Error(
+        `${label(index)} carries an input, but the agent declares no prompt: spec to build it`,
+      );
+    }
+    let built: ReturnType<BuildLinePrompt>;
+    try {
+      built = build(value.input);
+    } catch (error) {
+      throw new Error(`${label(index)}: ${(error as Error).message}`);
+    }
     return {
       custom_id: value.custom_id,
-      prompt: value.prompt,
-      ...(value.metadata ? { metadata: value.metadata } : {}),
+      prompt: built.prompt,
+      ...metadata,
+      built: built.build,
     };
   });
 }
 
 /** Parse the input JSONL, refusing a malformed line or a repeated `custom_id` by line number. */
-export function parseInputLines(text: string): BatchInputLine[] {
+export function parseInputLines(
+  text: string,
+  build?: BuildLinePrompt,
+): BatchInputLine[] {
   const values: unknown[] = [];
   const lineNumbers: number[] = [];
   text.split("\n").forEach((raw, index) => {
@@ -89,7 +146,11 @@ export function parseInputLines(text: string): BatchInputLine[] {
     }
     lineNumbers.push(index + 1);
   });
-  return validateInputLines(values, (i) => `input line ${lineNumbers[i]}`);
+  return validateInputLines(
+    values,
+    (i) => `input line ${lineNumbers[i]}`,
+    build,
+  );
 }
 
 /** The fingerprint of what a line asks: a changed prompt or agent is a different question. */

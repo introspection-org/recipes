@@ -26,6 +26,7 @@ const TOP_LEVEL_FIELDS: &[&str] = &[
     "judge",
     "llm",
     "name",
+    "input",
     "on",
     "questions",
     "type",
@@ -156,10 +157,38 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     validate_kind(map, path, ctx);
     validate_on(map.get("on"), path, ctx);
     validate_model(map, path, ctx);
+    validate_input(map.get("input"), path, ctx);
 
     ValidatedJudge {
         path: path.to_owned(),
         name,
+    }
+}
+
+/// A judge's `input:` is an agent's, built from its trajectory.
+fn validate_input(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = value else {
+        return;
+    };
+    for (message, hint) in crate::input_problems(value) {
+        ctx.error(
+            "judge.input_invalid",
+            path,
+            format!("Judge {message}"),
+            hint,
+        );
+    }
+    if value
+        .get("builder")
+        .and_then(Value::as_str)
+        .is_some_and(|builder| builder != "trajectory@1")
+    {
+        ctx.error(
+            "judge.input_invalid",
+            path,
+            "Judge input is built from its trajectory",
+            Some("use builder: trajectory@1"),
+        );
     }
 }
 

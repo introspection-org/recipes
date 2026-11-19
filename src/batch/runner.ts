@@ -6,6 +6,7 @@ import {
   inputFingerprint,
   parseInputLines,
   validateInputLines,
+  type BuildLinePrompt,
   type BatchInputLine,
   type BatchResultLine,
   type BatchResultType,
@@ -34,6 +35,8 @@ export interface BatchRunDeps {
   files: BatchFiles;
   /** The lines to run, or the path of a JSONL file holding them. */
   input: string | readonly unknown[];
+  /** Builds the prompt of a line that carries an `input` (`linePromptBuilder`). */
+  buildPrompt?: BuildLinePrompt;
   /** Where results are recorded, and read back on a resume. */
   results: BatchResults;
   now?: () => number;
@@ -134,9 +137,9 @@ export async function runBatchWith(
     if (inputText === null) {
       throw new Error(`batch input ${deps.input} does not exist`);
     }
-    lines = parseInputLines(inputText);
+    lines = parseInputLines(inputText, deps.buildPrompt);
   } else {
-    lines = validateInputLines(deps.input);
+    lines = validateInputLines(deps.input, undefined, deps.buildPrompt);
   }
   const done = completedIds(await deps.results.read());
   const recordIndex = new Map(
@@ -282,6 +285,7 @@ export async function runBatchWith(
           attempts,
         },
         ...(line.metadata ? { metadata: line.metadata } : {}),
+        ...(line.built ? { built: line.built } : {}),
       };
     };
     // The last attempt that ran, so a stop before the next one still records it.

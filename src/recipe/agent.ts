@@ -25,6 +25,7 @@ import {
   type RecipeMcpToolSelection,
 } from "./package.js";
 import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
+import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
 import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
@@ -208,6 +209,8 @@ export interface RecipeAgentDefinition {
   phases?: string[];
   subagents: string[];
   systemInstructions?: RecipeSystemInstructions;
+  /** How a batch builds this agent's prompt from a line's raw `input`. */
+  input?: PromptSpec;
   /** Fields authored on this definition rather than inherited through `from`. */
   declaredFields?: readonly RecipeAgentConfigField[];
 }
@@ -222,7 +225,8 @@ export type RecipeAgentConfigField =
   | "skills"
   | "phases"
   | "subagents"
-  | "system_instructions";
+  | "system_instructions"
+  | "input";
 
 type ParsedRecipeAgentDefinition = Omit<
   RecipeAgentDefinition,
@@ -257,6 +261,7 @@ const AGENT_YAML_KEYS = new Set([
   "phases",
   "subagents",
   "system_instructions",
+  "input",
 ]);
 
 const PORTABLE_AGENT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -286,6 +291,13 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 function invalidAgentField(data: Record<string, unknown>): string | undefined {
   if (!Object.hasOwn(data, "name")) {
     return "name is required";
+  }
+  if (Object.hasOwn(data, "input")) {
+    try {
+      validatePromptSpec(data.input, "input");
+    } catch (error) {
+      return (error as Error).message;
+    }
   }
   for (const key of ["name", "from"] as const) {
     if (
@@ -758,6 +770,9 @@ function readRecipeAgentSources(
           ? stringArray(data.subagents)
           : undefined,
         systemInstructions: parseSystemInstructions(data),
+        ...(Object.hasOwn(data, "input")
+          ? { input: data.input as PromptSpec }
+          : {}),
         declaredFields: [
           "description",
           "model",
@@ -769,6 +784,7 @@ function readRecipeAgentSources(
           "phases",
           "subagents",
           "system_instructions",
+          "input",
         ].filter((key): key is RecipeAgentConfigField =>
           Object.hasOwn(data, key),
         ),
@@ -834,6 +850,9 @@ function definitionsFromSources(
         base?.systemInstructions,
         raw.systemInstructions,
       ),
+      ...((raw.input ?? base?.input)
+        ? { input: raw.input ?? base?.input }
+        : {}),
       declaredFields: [...(raw.declaredFields ?? [])],
     };
     resolvedDefinitions.set(name, definition);
