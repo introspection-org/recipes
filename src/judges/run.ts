@@ -1,12 +1,15 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { findRecipeModel } from "../model-binding.js";
 import { findClassifierModel } from "./classifier.js";
-import { fitBudget, MAX_PROMPT_UNITS } from "../prompts/budget.js";
+import { promptBudget } from "../prompts/budget.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
-  trajectoryBuilder,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
 } from "../prompts/builders/trajectory.js";
-import { buildPrompt } from "../prompts/builder.js";
+import { builderId } from "../prompts/builder.js";
+import { promptBuilder } from "../prompts/registry.js";
+import { parseInputSpec } from "../prompts/spec.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -353,21 +356,36 @@ export async function runJudges(
   };
 
   const budgets = new Map<string, number>();
-  const budgetFor = (judge: JudgeDefinition, fallbackUnits: number): number => {
+  const budgetFor = (judge: JudgeDefinition): number => {
     let units = budgets.get(judge.name);
     if (units === undefined) {
       const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
-      units = fitBudget(
-        specs.map((spec) =>
-          judge.kind === "classifier"
-            ? findClassifierModel(spec)
-            : findRecipeModel(spec, options.modelRegistry),
-        ),
-        fallbackUnits,
-      ).maxUnits;
+      units =
+        judge.kind === "classifier"
+          ? // Jev's slim was measured cut to 75k (the slimming study); a
+            // classifier's window may lower that, never raise it.
+            promptBudget(
+              specs.map((spec) => findClassifierModel(spec)),
+              CLASSIFIER_BUDGET_UNITS,
+            )
+          : promptBudget(
+              specs.map((spec) => findRecipeModel(spec, options.modelRegistry)),
+            );
       budgets.set(judge.name, units);
     }
     return units;
+  };
+  const builderFor = (judge: JudgeDefinition) => {
+    const spec = judge.input
+      ? parseInputSpec(judge.input)
+      : {
+          builder: builderId(
+            judge.kind === "classifier"
+              ? trajectoryLlmClassify
+              : trajectoryLlmJudge,
+          ),
+        };
+    return { builder: promptBuilder(spec.builder), options: spec.options };
   };
   for (const judge of options.judges) {
     const operational = options.operational?.[judge.name] ?? {};
@@ -402,28 +420,11 @@ export async function runJudges(
         pairs.set(pairId(judge, line), {
           judge,
           line,
-          transcript: buildPrompt(trajectoryBuilder, input, {
-            budget: {
-              maxUnits:
-                judge.kind === "classifier"
-                  ? // Jev's slim was measured cut to 75k (the slimming study); a
-                    // classifier's window may lower that, never raise it.
-                    Math.min(
-                      budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
-                      CLASSIFIER_BUDGET_UNITS,
-                    )
-                  : budgetFor(judge, MAX_PROMPT_UNITS),
-            },
-            model: {
-              kind: judge.kind === "classifier" ? "classifier" : "chat",
-            },
-            ...(judge.input?.steps !== undefined
-              ? { steps: judge.input.steps }
-              : {}),
-            ...(judge.input?.template !== undefined
-              ? { template: judge.input.template }
-              : {}),
-          }).prompt,
+          transcript: (() => {
+            const { builder, options: builderOptions } = builderFor(judge);
+            return builder.build(input, budgetFor(judge), builderOptions)
+              .prompt;
+          })(),
           evidence: evidenceHash(input),
         });
       } catch (error) {

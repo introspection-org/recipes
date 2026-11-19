@@ -106,8 +106,7 @@ pub struct JudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     pub questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
-    /// How the judge's input is built: `builder: trajectory@1` with optional
-    /// steps, template and options, as an agent's `input:`.
+    /// The builder of the judge's transcript, as an agent's `input:`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
 }
@@ -203,8 +202,7 @@ struct AuthoredJudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
-    /// How the judge's input is built: `builder: trajectory@1` with optional
-    /// steps, template and options, as an agent's `input:`.
+    /// The builder of the judge's transcript, as an agent's `input:`.
     #[serde(default)]
     input: Option<Value>,
 }

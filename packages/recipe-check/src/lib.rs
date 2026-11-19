@@ -4808,125 +4808,40 @@ fn validate_mcp_behind(
     Some(names.into_iter().map(str::to_owned).collect())
 }
 
-/// The prompt builders a Recipes release holds and the fit steps each runs.
-/// Keep in step with `PROMPT_BUILDERS` in `src/prompts/registry.ts`.
-pub const PROMPT_BUILDERS: [(&str, &[&str]); 2] = [
-    ("trajectory@1", &["clip_tool_values", "slim_tool_results"]),
-    (
-        "conversation_case@1",
-        &[
-            "truncate_messages",
-            "cap_transcript",
-            "head_tail",
-            "drop_repeated_diagnostics",
-        ],
-    ),
-];
-
 fn validate_agent_input(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
     let Some(value) = map.get("input") else {
         return;
     };
-    for (message, hint) in input_problems(value) {
+    for message in input_problems(value) {
         ctx.error(
             "agent.input_invalid",
             path,
             format!("Agent {message}"),
-            hint,
+            Some("for example: input: conversation_synthesis@1"),
         );
     }
 }
 
-pub(crate) type Problem = (String, Option<String>);
-
-pub(crate) fn input_problems(value: &JsonValue) -> Vec<Problem> {
-    let mut problems: Vec<Problem> = Vec::new();
-    let Some(prompt) = value.as_object() else {
-        return vec![("input must be an object".into(), None)];
-    };
-    for key in prompt
-        .keys()
-        .filter(|key| !matches!(key.as_str(), "builder" | "steps" | "template" | "options"))
-    {
-        problems.push((
-            format!("input contains unknown field '{key}'"),
-            Some("use only builder, steps, template and options".into()),
-        ));
-    }
-    let known = PROMPT_BUILDERS
-        .iter()
-        .map(|(name, _)| *name)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let supported = match prompt.get("builder") {
-        Some(JsonValue::String(builder)) => {
-            match PROMPT_BUILDERS.iter().find(|(name, _)| name == builder) {
-                Some((_, steps)) => *steps,
-                None => {
-                    problems.push((
-                        format!("input names unknown builder '{builder}'"),
-                        Some(format!("known builders: {known}")),
-                    ));
-                    return problems;
-                }
+/// An `input:` names its builder, alone or with a map of options; which
+/// builders exist and what options they read is the runtime's to check, so a
+/// new builder needs no checker release.
+pub(crate) fn input_problems(value: &JsonValue) -> Vec<String> {
+    match value {
+        JsonValue::String(_) => vec![],
+        JsonValue::Object(map) => {
+            let mut problems = vec![];
+            if !map.get("builder").is_some_and(JsonValue::is_string) {
+                problems.push("input must name its builder".to_owned());
             }
-        }
-        _ => {
-            problems.push((
-                "input must name its builder".into(),
-                Some(format!("known builders: {known}")),
-            ));
-            return problems;
-        }
-    };
-    if prompt
-        .get("template")
-        .is_some_and(|template| !template.is_string())
-    {
-        problems.push(("input.template must be a string".into(), None));
-    }
-    if prompt
-        .get("options")
-        .is_some_and(|options| !options.is_object())
-    {
-        problems.push(("input.options must be an object".into(), None));
-    }
-    match prompt.get("steps") {
-        None => {}
-        Some(JsonValue::Array(steps)) => steps
-            .iter()
-            .for_each(|step| step_problems(step, supported, &mut problems)),
-        Some(_) => problems.push(("input.steps must be a list".into(), None)),
-    }
-    problems
-}
-
-fn step_problems(step: &JsonValue, supported: &[&str], problems: &mut Vec<Problem>) {
-    let name = match step {
-        JsonValue::String(name) => name.as_str(),
-        JsonValue::Object(entry) if entry.len() == 1 => {
-            let (name, params) = entry.iter().next().expect("one entry");
-            if !params.is_object() {
-                problems.push((
-                    format!("input step '{name}' takes an object of parameters"),
-                    None,
-                ));
+            if map
+                .get("options")
+                .is_some_and(|options| !options.is_object())
+            {
+                problems.push("input.options must be a map".to_owned());
             }
-            name.as_str()
+            problems
         }
-        _ => {
-            problems.push((
-                "input step must be a name or a one-key map of its parameters".into(),
-                None,
-            ));
-            return;
-        }
-    };
-    if !supported.contains(&name) {
-        problems.push((
-            format!("input step '{name}' is not one its builder runs"),
-            Some(format!("steps: {}", supported.join(", "))),
-        ));
+        _ => vec!["input must be a builder name, or a map with builder and options".to_owned()],
     }
 }
 
@@ -7634,7 +7549,7 @@ mod tests {
     }
 
     #[test]
-    fn checks_an_agents_input_spec_against_its_builder() {
+    fn checks_an_agents_input_names_a_builder() {
         let package = json!({
             "name": "agent-input",
             "version": "0.1.0",
@@ -7648,21 +7563,24 @@ mod tests {
             ]))
         };
 
-        let report = check(
-            "name: agent\nai:\n  model: openai/gpt-5\ninput:\n  builder: conversation_case@1\n  template: \"{{ conversation_case }}\"\n  steps:\n    - truncate_messages\n    - head_tail: { head: 800, tail: 300 }\n  options: {}\n",
-        );
-        assert!(report.valid, "{:?}", report.diagnostics);
-
         for agent in [
-            "name: agent\ninput:\n  builder: conversation_case@9\n",
-            "name: agent\ninput:\n  builder: conversation_case@1\n  steps: [slim_tool_results]\n",
-            "name: agent\ninput:\n  builder: trajectory@1\n  steps: [middle_cut]\n",
-            "name: agent\ninput:\n  builder: trajectory@1\n  budget: 1000\n",
-            "name: agent\ninput:\n  builder: trajectory@1\n  steps:\n    - clip_tool_values: 2000\n",
+            "name: agent\nai:\n  model: openai/gpt-5\ninput: conversation_synthesis@1\n",
+            "name: agent\nai:\n  model: openai/gpt-5\ninput:\n  builder: trajectory_llm_classify@1\n  options: { head: 200 }\n",
+        ] {
+            let report = check(agent);
+            assert!(report.valid, "{agent}: {:?}", report.diagnostics);
+        }
+        for agent in [
+            "name: agent\ninput: [conversation_synthesis@1]\n",
+            "name: agent\ninput:\n  options: {}\n",
+            "name: agent\ninput:\n  builder: trajectory_llm_judge@1\n  options: 3\n",
         ] {
             let report = check(agent);
             assert!(
-                report.diagnostics.iter().any(|diagnostic| diagnostic.code == "agent.input_invalid"),
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "agent.input_invalid"),
                 "{agent}: {:?}",
                 report.diagnostics
             );

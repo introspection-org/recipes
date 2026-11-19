@@ -307,7 +307,7 @@ describe("runBatch", () => {
         join(
           import.meta.dirname,
           "fixtures",
-          "conversation-case",
+          "conversation-synthesis",
           "media_parts.json",
         ),
         "utf8",
@@ -339,7 +339,7 @@ describe("runBatch", () => {
         results: jsonlResults(files, OUTPUT),
         sleep: noSleep,
         buildPrompt: linePromptBuilder(
-          { builder: "conversation_case@1" },
+          "conversation_synthesis@1",
           agentPromptBudget({ name: "anthropic/claude-sonnet-5-5" }),
         ),
       },
@@ -355,8 +355,8 @@ describe("runBatch", () => {
         .map((r) => [r.custom_id, r]),
     );
     expect(results["conv-parity#1"].built).toEqual({
-      builder: "conversation_case@1",
-      applied: ["truncate_messages", "head_tail", "drop_repeated_diagnostics"],
+      builder: "conversation_synthesis@1",
+      applied: [],
       digest: fixture.expected.plan.digest,
       state: { plan: fixture.expected.plan },
     });

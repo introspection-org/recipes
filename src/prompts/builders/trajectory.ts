@@ -4,35 +4,32 @@ import {
   type JudgeInput,
 } from "../../judges/trajectory.js";
 import {
-  buildPrompt,
+  numberOption,
+  withinBudget,
+  type BuilderOptions,
   type PromptBuilder,
-  type ReaderModel,
 } from "../builder.js";
-import { MAX_PROMPT_UNITS } from "../budget.js";
-import { stepName, type PromptStep } from "../fit.js";
+import { renderTemplate } from "../template.js";
 import { prefix, suffix } from "../text.js";
 
-/** What a classifier judge reads: decision models take far less than a chat model. */
+/** What a classifier judge reads at most: Jev's slim was measured at 75k. */
 export const CLASSIFIER_BUDGET_UNITS = 75_000;
-/** A tool argument or result longer than this is clipped by `clip_tool_values`. */
-const CLIP_VALUE_UNITS = 2_000;
 
-export const TRAJECTORY_TEMPLATE =
+const TRAJECTORY_TEMPLATE =
   "TRAJECTORY\n{{ transcript }}\n\nSYSTEM INSTRUCTIONS\n{{ system_instructions }}";
 
-/**
- * A chat model reads the whole trajectory; what does not fit loses its
- * middle. A classifier reads Jev's slim, the one measured for a yes/no gate:
- * a long tool result keeps its head and tail unless it carries an error
- * signal, so a small budget goes on the conversation without hiding a failure.
- */
-export function trajectoryStrategy(model: ReaderModel): readonly PromptStep[] {
-  return model.kind === "classifier" ? ["slim_tool_results"] : [];
-}
-
-/** A result with one of these is kept whole by `slim_tool_results`. */
+/** A result with one of these is kept whole by Jev's slim. */
 const ERROR_SIGNAL =
   /error|failed|exception|invalid|denied|not found|timed out/i;
+
+function render(input: JudgeInput, trajectory: JudgeInput["trajectory"]) {
+  return renderTemplate(TRAJECTORY_TEMPLATE, {
+    transcript: JSON.stringify(canonical(trajectory), null, 2),
+    system_instructions: input.system_instructions?.trim()
+      ? input.system_instructions
+      : "",
+  });
+}
 
 /**
  * Jev's slim of one tool result (apps/runtime-operator/eval/slimming.py): kept
@@ -56,85 +53,40 @@ function slimResult(
   return `${prefix(text, head)} […] ${suffix(text, tail)}`;
 }
 
-function clipValue(value: unknown, units: number): unknown {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (text === undefined || text.length <= units) return value;
-  return `${prefix(text, units)}… [clipped]`;
-}
-
-/** A judge's evidence as the trajectory JSON and the system instructions it ran under. */
-export const trajectoryBuilder: PromptBuilder<JudgeInput> = {
-  name: "trajectory",
+/** An LLM judge reads the whole trajectory and the system instructions it ran under. */
+export const trajectoryLlmJudge: PromptBuilder<JudgeInput> = {
+  name: "trajectory_llm_judge",
   version: 1,
-  defaultTemplate: TRAJECTORY_TEMPLATE,
-  strategy: trajectoryStrategy,
-  supportedSteps: new Set(["clip_tool_values", "slim_tool_results"]),
-  build(input, steps) {
+  build(input, maxUnits) {
     validateJudgeInput(input);
-    const applied: string[] = [];
-    let trajectory = input.trajectory;
-    for (const step of steps) {
-      const [name, params] = stepName(step);
-      const number = (key: string, fallback: number): number =>
-        typeof params[key] === "number" ? (params[key] as number) : fallback;
-      if (name === "slim_tool_results") {
-        const keepUnder = number("keep_under", 400);
-        const head = number("head", 150);
-        const tail = number("tail", 150);
-        trajectory = trajectory.map((event) =>
-          event.type === "tool_result" && event.content !== undefined
-            ? {
-                ...event,
-                content: slimResult(event.content, keepUnder, head, tail),
-              }
-            : event,
-        );
-        applied.push(name);
-        continue;
-      }
-      if (name !== "clip_tool_values") continue;
-      const units =
-        typeof params.max_units === "number"
-          ? params.max_units
-          : CLIP_VALUE_UNITS;
-      trajectory = trajectory.map((event) =>
-        event.type === "tool_call" && event.arguments
-          ? {
-              ...event,
-              arguments: clipValue(event.arguments, units) as Record<
-                string,
-                unknown
-              >,
-            }
-          : event.type === "tool_result" && event.content !== undefined
-            ? { ...event, content: clipValue(event.content, units) }
-            : event,
-      );
-      applied.push(name);
-    }
-    return {
-      slots: {
-        transcript: JSON.stringify(canonical(trajectory), null, 2),
-        system_instructions: input.system_instructions?.trim()
-          ? input.system_instructions
-          : "",
-      },
-      applied,
-    };
+    return withinBudget(render(input, input.trajectory), maxUnits);
   },
 };
 
 /**
- * The transcript a judge reads. `slim` clips long tool arguments and results
- * first, so a small budget is spent on the conversation rather than on one
- * tool's output; what still does not fit loses its middle.
+ * A classifier judge reads Jev's slim, the one measured for a yes/no gate: a
+ * long tool result keeps its head and tail unless it carries an error
+ * signal, so a small budget goes on the conversation without hiding a
+ * failure. Options: `keep_under` (400), `head` (150), `tail` (150).
  */
-export function renderTrajectoryInput(
-  input: JudgeInput,
-  options: { maxUnits?: number; model?: ReaderModel } = {},
-): string {
-  return buildPrompt(trajectoryBuilder, input, {
-    budget: { maxUnits: options.maxUnits ?? MAX_PROMPT_UNITS },
-    ...(options.model ? { model: options.model } : {}),
-  }).prompt;
-}
+export const trajectoryLlmClassify: PromptBuilder<JudgeInput> = {
+  name: "trajectory_llm_classify",
+  version: 1,
+  build(input, maxUnits, options?: BuilderOptions) {
+    validateJudgeInput(input);
+    const keepUnder = numberOption(options, "keep_under", 400);
+    const head = numberOption(options, "head", 150);
+    const tail = numberOption(options, "tail", 150);
+    const trajectory = input.trajectory.map((event) =>
+      event.type === "tool_result" && event.content !== undefined
+        ? {
+            ...event,
+            content: slimResult(event.content, keepUnder, head, tail),
+          }
+        : event,
+    );
+    return withinBudget(render(input, trajectory), maxUnits, [
+      "slim_tool_results",
+    ]);
+  },
+};

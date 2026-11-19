@@ -1,25 +1,8 @@
 import { prefix, suffix } from "./text.js";
 
-/** How much a prompt may hold, in UTF-16 units. */
-export interface FitBudget {
-  maxUnits: number;
-}
-
-/** A step that shapes a builder's material, by name, with its parameters. */
-export type PromptStep = string | Record<string, Record<string, unknown>>;
-
-export class FitError extends Error {
-  override name = "FitError";
-}
-
-/** A step's name and parameters. */
-export function stepName(step: PromptStep): [string, Record<string, unknown>] {
-  if (typeof step === "string") return [step, {}];
-  const entries = Object.entries(step);
-  if (entries.length !== 1) {
-    throw new FitError("a step names exactly one step");
-  }
-  return entries[0]!;
+/** A builder that does not exist, or an input or options it cannot build from. */
+export class PromptError extends Error {
+  override name = "PromptError";
 }
 
 const MIDDLE_CUT_MARKER =

@@ -26,7 +26,6 @@ import {
   loadJudges,
   normalizeReplayTrajectory,
   parseJudgeDefinition,
-  renderTrajectoryInput,
   runJudges,
   samplesIn,
   toJudgeInput,
@@ -34,6 +33,11 @@ import {
   type JudgeClassifier,
   type JudgeInputLine,
 } from "../src/judges/index.js";
+import {
+  MAX_PROMPT_UNITS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
+} from "../src/prompts/index.js";
 import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli-main.js";
 import { stripCodeFence } from "../src/judges/verdict.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
@@ -331,7 +335,10 @@ describe("judge gate", () => {
 
 describe("judge evidence", () => {
   it("renders the normalized trajectory with sorted keys and labelled system instructions", () => {
-    const transcript = renderTrajectoryInput(toJudgeInput(EXPORT, "Be brief."));
+    const transcript = trajectoryLlmJudge.build(
+      toJudgeInput(EXPORT, "Be brief."),
+      MAX_PROMPT_UNITS,
+    ).prompt;
     expect(transcript.startsWith("TRAJECTORY\n[")).toBe(true);
     expect(transcript).toContain('"arguments": {\n      "message": "hello"');
     expect(transcript).toContain("\n\nSYSTEM INSTRUCTIONS\nBe brief.");
@@ -349,14 +356,12 @@ describe("judge evidence", () => {
         content: `${"y".repeat(9000)} permission denied`,
       },
     ]);
-    const slim = renderTrajectoryInput(input, {
-      model: { kind: "classifier" },
-    });
+    const slim = trajectoryLlmClassify.build(input, MAX_PROMPT_UNITS).prompt;
     // Jev's slim: head and tail of a long result, an error kept whole.
     expect(slim).toContain(`${"x".repeat(150)} […] ${"x".repeat(150)}`);
     expect(slim).not.toContain("x".repeat(151));
     expect(slim).toContain(`${"y".repeat(9000)} permission denied`);
-    const cut = renderTrajectoryInput(input, { maxUnits: 500 });
+    const cut = trajectoryLlmJudge.build(input, 500).prompt;
     expect(cut.length).toBeLessThanOrEqual(500);
     expect(cut).toContain("transcript middle redacted");
   });

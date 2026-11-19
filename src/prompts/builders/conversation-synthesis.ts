@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { PromptBuilder } from "../builder.js";
-import { stepName, type PromptStep } from "../fit.js";
+import { withinBudget } from "../builder.js";
 import {
   cpHead,
   cpLength,
@@ -20,11 +20,11 @@ import {
 } from "../pycompat.js";
 
 /**
- * `conversation_case@1`: one conversation, from the turns past its resume
+ * `conversation_synthesis@1`: one conversation, from the turns past its resume
  * cursor, as the case observation synthesis reads, with the plan its next
  * segment resumes from. A port of the data plane's Python case builder
  * (`observation_synthesis_context.py`, `render_case_prompt`, `build_segment`),
- * held to it byte for byte by `test/conversation-case-parity.test.ts`.
+ * held to it byte for byte by `test/conversation-synthesis-parity.test.ts`.
  */
 
 /** A message part as the conversation API returns it, discriminated by `type`. */
@@ -68,7 +68,7 @@ export interface PriorObservation {
   summary?: string | null;
 }
 
-export interface ConversationCaseInput {
+export interface ConversationSynthesisInput {
   conversation_id: string;
   completed_at: string;
   model_calls: ConversationModelCall[];
@@ -104,27 +104,16 @@ export interface SegmentSkip {
   skipped?: string;
 }
 
-export type ConversationCaseState =
+export type ConversationSynthesisState =
   { plan: SegmentPlan } | { outcome: SegmentSkip };
 
-/**
- * What synthesis has always run, at the Python original's limits, for any
- * chat model: the transcript cap already keeps a case within every synthesis
- * model's window.
- */
-export function conversationCaseStrategy(): readonly PromptStep[] {
-  return CONVERSATION_CASE_STEPS;
-}
-
-export const CONVERSATION_CASE_TEMPLATE = "{{ conversation_case }}";
-
-/** What synthesis has always run: each step at the Python original's limits. */
-export const CONVERSATION_CASE_STEPS: readonly PromptStep[] = [
-  "truncate_messages",
-  "cap_transcript",
-  "head_tail",
-  "drop_repeated_diagnostics",
-];
+// What synthesis has always run, at the Python original's limits.
+const MESSAGE_MAX_CHARS = 6_000;
+const TRANSCRIPT_MAX_TOKENS = 300_000;
+const TRANSCRIPT_HEAD_MESSAGES = 10;
+const SLIM_HEAD_CHARS = 1_500;
+const SLIM_TAIL_CHARS = 500;
+const SLIM_PROTECTED_TAIL = 8;
 
 const TAIL_FINGERPRINT_LIMIT = 50;
 const DIAGNOSTIC_EVENT_LIMIT = 120;
@@ -432,19 +421,6 @@ function encodeCursor(spanId: string, ns: bigint): string {
   return Buffer.from(json, "utf8").toString("base64url");
 }
 
-interface StepParams {
-  [name: string]: Record<string, unknown>;
-}
-
-const numberParam = (
-  params: Record<string, unknown> | undefined,
-  key: string,
-  fallback: number,
-) =>
-  params !== undefined && typeof params[key] === "number"
-    ? (params[key] as number)
-    : fallback;
-
 function truncateContent(content: string, maxChars: number): string {
   const length = cpLength(content);
   if (length <= maxChars) return content;
@@ -523,7 +499,7 @@ interface Read {
 }
 
 /** The deduplicated message stream of the turns past `after`, as the Python builder reads it. */
-function readTurns(input: ConversationCaseInput, steps: StepParams): Read {
+function readTurns(input: ConversationSynthesisInput): Read {
   const resume = input.watermark ?? undefined;
   const after = cursorNanos(resume);
   const all = input.model_calls.map(turnOf);
@@ -539,8 +515,6 @@ function readTurns(input: ConversationCaseInput, steps: StepParams): Read {
   let compactions = 0;
   let previousInputCount =
     after !== undefined ? (resume?.last_input_count ?? 0) : 0;
-  const truncate = steps.truncate_messages;
-  const maxMessageChars = numberParam(truncate, "max_chars", 6_000);
 
   const append = (
     message: ConversationMessage,
@@ -571,10 +545,7 @@ function readTurns(input: ConversationCaseInput, steps: StepParams): Read {
       (kind === "output" ? turn.call.response_id : undefined) ||
       undefined;
     const content = messageContent(message);
-    const shown =
-      truncate === undefined
-        ? content
-        : truncateContent(content, maxMessageChars);
+    const shown = truncateContent(content, MESSAGE_MAX_CHARS);
     const caseMessage: CaseMessage = omitNone({
       ref: `m${messages.length + 1}`,
       role: message.role,
@@ -691,28 +662,23 @@ function consumedWindow(read: Read): {
 function slim(
   messages: CaseMessage[],
   events: DiagnosticEvent[],
-  steps: StepParams,
 ): { messages: CaseMessage[]; events: DiagnosticEvent[] } {
-  const headTail = steps.head_tail;
-  const head = numberParam(headTail, "head", 1_500);
-  const tail = numberParam(headTail, "tail", 500);
-  const protectedTail = numberParam(headTail, "protected_tail", 8);
   const protectedRefs = new Set(
-    messages.slice(-protectedTail).map((message) => message.ref),
+    messages.slice(-SLIM_PROTECTED_TAIL).map((message) => message.ref),
   );
   for (const role of ["user", "assistant"]) {
     const first = messages.find((message) => message.role === role);
     if (first) protectedRefs.add(first.ref);
   }
   const transcript = messages.map((message) => message.content).join("\n");
-  const slimmed =
-    headTail === undefined
-      ? messages
-      : messages.map((message) =>
-          message.role !== "tool" || protectedRefs.has(message.ref)
-            ? message
-            : { ...message, content: squeeze(message.content, head, tail) },
-        );
+  const slimmed = messages.map((message) =>
+    message.role !== "tool" || protectedRefs.has(message.ref)
+      ? message
+      : {
+          ...message,
+          content: squeeze(message.content, SLIM_HEAD_CHARS, SLIM_TAIL_CHARS),
+        },
+  );
   const kept: DiagnosticEvent[] = [];
   for (const event of events) {
     const owned =
@@ -721,13 +687,7 @@ function slim(
       event.detail ||
       event.content ||
       (event.kind === "tool_response" ? event.output : event.input);
-    if (
-      steps.drop_repeated_diagnostics !== undefined &&
-      !owned &&
-      shown &&
-      transcript.includes(shown)
-    )
-      continue;
+    if (!owned && shown && transcript.includes(shown)) continue;
     const {
       ref: _ref,
       span_id: _span,
@@ -737,13 +697,8 @@ function slim(
       ...rest
     } = event;
     const next: DiagnosticEvent = { ...rest };
-    if (
-      headTail !== undefined &&
-      !owned &&
-      event.kind === "tool_response" &&
-      event.output
-    ) {
-      next.output = squeeze(event.output, head, tail);
+    if (!owned && event.kind === "tool_response" && event.output) {
+      next.output = squeeze(event.output, SLIM_HEAD_CHARS, SLIM_TAIL_CHARS);
     }
     kept.push(next);
   }
@@ -754,7 +709,7 @@ function slim(
 }
 
 function render(
-  input: ConversationCaseInput,
+  input: ConversationSynthesisInput,
   read: Read,
   messages: CaseMessage[],
   events: DiagnosticEvent[],
@@ -831,33 +786,22 @@ function render(
   return lines.join("\n");
 }
 
-function stepParams(steps: readonly PromptStep[]): StepParams {
-  const params: StepParams = {};
-  for (const step of steps) {
-    const [name, values] = stepName(step);
-    params[name] = values;
-  }
-  return params;
-}
-
-export const conversationCaseBuilder: PromptBuilder<
-  ConversationCaseInput,
-  ConversationCaseState
+/**
+ * One conversation, from the turns past its resume cursor, as the case
+ * observation synthesis reads, with the plan its next segment resumes from.
+ * Messages are cut at 6,000 characters, the transcript at 300k tokens (the
+ * first 10 messages, then from the tail), and tool output between the ends
+ * keeps its head and tail, as synthesis always has.
+ */
+export const conversationSynthesis: PromptBuilder<
+  ConversationSynthesisInput,
+  ConversationSynthesisState
 > = {
-  name: "conversation_case",
+  name: "conversation_synthesis",
   version: 1,
-  defaultTemplate: CONVERSATION_CASE_TEMPLATE,
-  strategy: conversationCaseStrategy,
-  supportedSteps: new Set([
-    "truncate_messages",
-    "cap_transcript",
-    "head_tail",
-    "drop_repeated_diagnostics",
-  ]),
-  build(input, steps) {
-    const params = stepParams(steps);
+  build(input, maxUnits) {
     const resume = input.watermark ?? undefined;
-    const read = readTurns(input, params);
+    const read = readTurns(input);
     const window = consumedWindow(read);
     const priorTail = resume?.tail_fingerprints ?? [];
     const priorSegment = resume?.segment ?? 0;
@@ -887,22 +831,14 @@ export const conversationCaseBuilder: PromptBuilder<
               segment: priorSegment,
               watermark_next: watermarkNext(priorSegment),
             };
-      return {
-        slots: { conversation_case: "" },
-        applied: [],
-        state: { outcome },
-      };
+      return { prompt: "", applied: [], state: { outcome } };
     }
 
-    const cap = params.cap_transcript;
-    const kept =
-      cap === undefined
-        ? read.messages
-        : capTranscript(
-            read.messages,
-            numberParam(cap, "max_tokens", 300_000),
-            numberParam(cap, "head", 10),
-          );
+    const kept = capTranscript(
+      read.messages,
+      TRANSCRIPT_MAX_TOKENS,
+      TRANSCRIPT_HEAD_MESSAGES,
+    );
     const capped = kept.length < read.messages.length;
     const digest = createHash("sha256")
       .update(
@@ -918,7 +854,7 @@ export const conversationCaseBuilder: PromptBuilder<
       (event) =>
         event.message_ref !== undefined && keptRefs.has(event.message_ref),
     );
-    const slimmed = slim(kept, keptEvents, params);
+    const slimmed = slim(kept, keptEvents);
     const segment = priorSegment + 1;
     const after = cursorNanos(resume);
     const plan: SegmentPlan = omitNone({
@@ -930,20 +866,12 @@ export const conversationCaseBuilder: PromptBuilder<
       watermark_next: watermarkNext(segment),
       prior_resolution: input.prior_resolution ?? undefined,
     });
-    const applied = Object.keys(params).filter(
-      (name) => name !== "cap_transcript" || capped,
-    );
     return {
-      slots: {
-        conversation_case: render(
-          input,
-          read,
-          slimmed.messages,
-          slimmed.events,
-          capped,
-        ),
-      },
-      applied,
+      ...withinBudget(
+        render(input, read, slimmed.messages, slimmed.events, capped),
+        maxUnits,
+        capped ? ["cap_transcript"] : [],
+      ),
       digest,
       state: { plan },
     };

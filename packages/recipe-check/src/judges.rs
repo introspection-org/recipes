@@ -165,29 +165,14 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     }
 }
 
-/// A judge's `input:` is an agent's, built from its trajectory.
+/// A judge's `input:` is an agent's: the builder of its transcript.
 fn validate_input(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
-    let Some(value) = value else {
-        return;
-    };
-    for (message, hint) in crate::input_problems(value) {
+    for message in value.map(crate::input_problems).unwrap_or_default() {
         ctx.error(
             "judge.input_invalid",
             path,
             format!("Judge {message}"),
-            hint,
-        );
-    }
-    if value
-        .get("builder")
-        .and_then(Value::as_str)
-        .is_some_and(|builder| builder != "trajectory@1")
-    {
-        ctx.error(
-            "judge.input_invalid",
-            path,
-            "Judge input is built from its trajectory",
-            Some("use builder: trajectory@1"),
+            Some("for example: input: trajectory_llm_classify@1"),
         );
     }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  fitBudget,
+  promptBudget,
   modelBudgetUnits,
   OUTPUT_RESERVE_TOKENS,
   MAX_PROMPT_UNITS,
@@ -21,27 +21,24 @@ describe("a prompt's budget", () => {
     expect(
       modelBudgetUnits({ contextWindow: 1_000_000, maxTokens: 128_000 }),
     ).toBe(MAX_PROMPT_UNITS);
-    expect(fitBudget([undefined]).maxUnits).toBe(MAX_PROMPT_UNITS);
+    expect(promptBudget([undefined])).toBe(MAX_PROMPT_UNITS);
   });
 
   it("fits the smallest window among the models that may answer", () => {
-    const budget = fitBudget(
-      [
-        { contextWindow: 1_000_000, maxTokens: 32_000 },
-        { contextWindow: 272_000, maxTokens: 16_000 },
-      ],
-      800_000,
-    );
-    expect(budget.maxUnits).toBe((272_000 - 16_000) * UNITS_PER_TOKEN);
+    const budget = promptBudget([
+      { contextWindow: 1_000_000, maxTokens: 32_000 },
+      { contextWindow: 272_000, maxTokens: 16_000 },
+    ]);
+    expect(budget).toBe((272_000 - 16_000) * UNITS_PER_TOKEN);
   });
 
-  it("keeps the fixed budget for a model the catalog does not know", () => {
-    expect(fitBudget([undefined], 800_000).maxUnits).toBe(800_000);
+  it("stops at the ceiling it is given, which an unknown model takes", () => {
+    expect(promptBudget([undefined], 800_000)).toBe(800_000);
     expect(
-      fitBudget(
+      promptBudget(
         [{ contextWindow: 1_000_000, maxTokens: 32_000 }, undefined],
         800_000,
-      ).maxUnits,
+      ),
     ).toBe(800_000);
   });
 });

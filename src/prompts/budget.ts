@@ -1,12 +1,9 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 
-import type { FitBudget } from "./fit.js";
-
 /** UTF-16 units a token is taken to hold: conservative, so a prompt rarely overruns. */
 export const UNITS_PER_TOKEN = 3;
 /** Tokens left for the reply, at most: a model's own `maxTokens` when smaller. */
 export const OUTPUT_RESERVE_TOKENS = 16_384;
-
 /**
  * The most any prompt holds, whatever the window: past it more transcript
  * stops improving what a reader answers and only adds cost. It is also the
@@ -30,17 +27,18 @@ export function modelBudgetUnits(model: Window): number {
 }
 
 /**
- * The budget a prompt must fit to be read by every model that may answer it:
- * the smallest of theirs. A session cannot be rebuilt when Pi falls back
- * mid-session, so the prompt fits the smallest window. A model the catalog
- * does not know takes `fallbackUnits`, so a missing entry never widens it.
+ * What a prompt may hold to be read by every model that may answer it (an
+ * `ai:` model and its fallbacks, from the catalog): the smallest of theirs,
+ * since a session cannot be rebuilt when Pi falls back mid-session. A model
+ * the catalog does not know takes `ceilingUnits`, so a missing entry never
+ * widens it, and no budget passes it.
  */
-export function fitBudget(
+export function promptBudget(
   models: readonly (Window | undefined)[],
-  fallbackUnits: number = MAX_PROMPT_UNITS,
-): FitBudget {
+  ceilingUnits: number = MAX_PROMPT_UNITS,
+): number {
   const units = models.map((model) =>
-    model && model.contextWindow > 0 ? modelBudgetUnits(model) : fallbackUnits,
+    model && model.contextWindow > 0 ? modelBudgetUnits(model) : ceilingUnits,
   );
-  return { maxUnits: units.length ? Math.min(...units) : fallbackUnits };
+  return Math.min(ceilingUnits, ...units);
 }

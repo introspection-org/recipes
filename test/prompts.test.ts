@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildPrompt,
-  conversationCaseBuilder,
-  FitError,
-  stepName,
+  conversationSynthesis,
   middleCut,
+  parseInputSpec,
   promptBuilder,
-  validatePromptSpec,
-  type PromptBuilder,
-  renderTemplate,
-  TemplateError,
-  trajectoryBuilder,
+  PromptError,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
 } from "../src/prompts/index.js";
+import { renderTemplate, TemplateError } from "../src/prompts/template.js";
 
 describe("a prompt template", () => {
   it("fills placeholders, with or without spaces", () => {
@@ -47,17 +44,7 @@ describe("fitting a prompt", () => {
     expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 
-  it("refuses a step the builder does not have", () => {
-    const input = { schema_version: 2, trajectory: [] };
-    expect(() =>
-      buildPrompt(trajectoryBuilder, input, {
-        budget: { maxUnits: 100 },
-        steps: ["head_tail"],
-      }),
-    ).toThrow(FitError);
-  });
-
-  it("reports the steps it applied and names the builder", () => {
+  it("cuts a built prompt over its budget and says so", () => {
     const input = {
       schema_version: 2,
       trajectory: [
@@ -68,74 +55,59 @@ describe("fitting a prompt", () => {
         },
       ],
     };
-    const built = buildPrompt(trajectoryBuilder, input, {
-      budget: { maxUnits: 200 },
-      steps: ["clip_tool_values"],
-    });
-    expect(built.builder).toBe("trajectory@1");
-    expect(built.applied).toEqual(["clip_tool_values", "middle_cut"]);
+    const built = trajectoryLlmJudge.build(input, 200);
+    expect(built.applied).toEqual(["middle_cut"]);
     expect(built.prompt.length).toBeLessThanOrEqual(200);
+    expect(trajectoryLlmJudge.build(input, 10_000).applied).toEqual([]);
   });
 
-  it("runs the spec's steps with the builder's options, and cuts the middle only when over budget", () => {
-    const builder: PromptBuilder<string, undefined, { label: string }> = {
-      name: "stub",
-      version: 1,
-      defaultTemplate: "{{ text }}",
-      strategy: () => [],
-      supportedSteps: new Set(["half"]),
-      build(input, steps, options) {
-        const names = steps.map((step) => stepName(step)[0]);
-        const text = names.includes("half")
-          ? input.slice(0, input.length / 2)
-          : input;
-        return { slots: { text: `${options?.label}:${text}` }, applied: names };
-      },
+  it("passes a builder its options", () => {
+    const input = {
+      schema_version: 2,
+      trajectory: [
+        { type: "tool_call" as const, id: "c", name: "run", arguments: {} },
+        {
+          type: "tool_result" as const,
+          tool_call_id: "c",
+          content: "y".repeat(1_000),
+        },
+      ],
     };
-    const fits = buildPrompt(builder, "x".repeat(100), {
-      budget: { maxUnits: 60 },
-      steps: ["half"],
-      options: { label: "case" },
+    const wide = trajectoryLlmClassify.build(input, 10_000, {
+      head: 300,
+      tail: 10,
     });
-    expect(fits.applied).toEqual(["half"]);
-    expect(fits.prompt).toBe(`case:${"x".repeat(50)}`);
-
-    const over = buildPrompt(builder, "x".repeat(100), {
-      budget: { maxUnits: 90 },
-      options: { label: "case" },
-    });
-    expect(over.applied).toEqual(["middle_cut"]);
-    expect(over.prompt.length).toBeLessThanOrEqual(90);
+    expect(wide.prompt).toContain(`${"y".repeat(300)} […] ${"y".repeat(10)}`);
   });
 });
 
 describe("the builder registry", () => {
   it("finds a builder by name and version, and refuses one it does not hold", () => {
-    expect(promptBuilder("conversation_case@1")).toBe(conversationCaseBuilder);
-    expect(promptBuilder("trajectory@1")).toBe(trajectoryBuilder);
-    expect(() => promptBuilder("conversation_case@2")).toThrow(FitError);
-  });
-});
-
-describe("an input spec", () => {
-  it("accepts the steps its builder runs and refuses anything else, naming each problem", () => {
-    const spec = {
-      builder: "conversation_case@1",
-      steps: ["truncate_messages", { head_tail: { head: 800, tail: 300 } }],
-      template: "{{ conversation_case }}",
-    };
-    expect(validatePromptSpec(spec)).toEqual(spec);
-    expect(() =>
-      validatePromptSpec({
-        builder: "conversation_case@1",
-        steps: ["slim_tool_results"],
-        budget: 1,
-      }),
-    ).toThrow(
-      /unknown key\(s\) budget; conversation_case@1 has no step "slim_tool_results"/,
+    expect(promptBuilder("conversation_synthesis@1")).toBe(
+      conversationSynthesis,
     );
-    expect(() =>
-      validatePromptSpec({ builder: "conversation_case@9" }),
-    ).toThrow(FitError);
+    expect(promptBuilder("trajectory_llm_judge@1")).toBe(trajectoryLlmJudge);
+    expect(promptBuilder("trajectory_llm_classify@1")).toBe(
+      trajectoryLlmClassify,
+    );
+    expect(() => promptBuilder("conversation_synthesis@2")).toThrow(
+      PromptError,
+    );
+  });
+
+  it("reads an input as a bare name or a builder with options", () => {
+    expect(parseInputSpec("conversation_synthesis@1")).toEqual({
+      builder: "conversation_synthesis@1",
+    });
+    expect(
+      parseInputSpec({
+        builder: "trajectory_llm_classify@1",
+        options: { head: 200 },
+      }),
+    ).toEqual({
+      builder: "trajectory_llm_classify@1",
+      options: { head: 200 },
+    });
+    expect(() => parseInputSpec("nope@1")).toThrow(PromptError);
   });
 });

@@ -25,7 +25,7 @@ import {
   type RecipeMcpToolSelection,
 } from "./package.js";
 import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
-import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
+import { parseInputSpec, type InputSpec } from "../prompts/spec.js";
 import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
@@ -209,8 +209,8 @@ export interface RecipeAgentDefinition {
   phases?: string[];
   subagents: string[];
   systemInstructions?: RecipeSystemInstructions;
-  /** How a batch builds this agent's prompt from a line's raw `input`. */
-  input?: PromptSpec;
+  /** The builder a batch turns a line's raw `input` into this agent's prompt with. */
+  input?: InputSpec;
   /** Fields authored on this definition rather than inherited through `from`. */
   declaredFields?: readonly RecipeAgentConfigField[];
 }
@@ -294,7 +294,7 @@ function invalidAgentField(data: Record<string, unknown>): string | undefined {
   }
   if (Object.hasOwn(data, "input")) {
     try {
-      validatePromptSpec(data.input, "input");
+      parseInputSpec(data.input as InputSpec);
     } catch (error) {
       return (error as Error).message;
     }
@@ -771,7 +771,7 @@ function readRecipeAgentSources(
           : undefined,
         systemInstructions: parseSystemInstructions(data),
         ...(Object.hasOwn(data, "input")
-          ? { input: data.input as PromptSpec }
+          ? { input: data.input as InputSpec }
           : {}),
         declaredFields: [
           "description",

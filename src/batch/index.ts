@@ -22,11 +22,9 @@ import {
   type LineScope,
 } from "./runner.js";
 import { jsonlResults, memoryResults } from "./shards.js";
-import { buildPrompt } from "../prompts/builder.js";
-import type { FitBudget } from "../prompts/fit.js";
 import { promptBuilder } from "../prompts/registry.js";
-import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
-import { fitBudget } from "../prompts/budget.js";
+import { parseInputSpec, type InputSpec } from "../prompts/spec.js";
+import { promptBudget } from "../prompts/budget.js";
 import { findRecipeModel } from "../model-binding.js";
 import type { RecipeAgentModelConfig } from "../recipe/model.js";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -106,10 +104,10 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   files?: BatchFiles;
   /**
    * How a line that carries an `input` becomes its prompt: the agent's
-   * `prompt:` spec, and the budget of the models that answer it
-   * (`agentPromptBudget`). A line with a `prompt` runs as written.
+   * `input:` spec, and the budget of its models (`agentPromptBudget`). A line
+   * with a `prompt` runs as written.
    */
-  prompt?: { spec: PromptSpec; budget: FitBudget };
+  prompt?: { spec: InputSpec; maxUnits: number };
   /**
    * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
    * Defaults to an id derived from the results file, so a resumed batch keeps
@@ -126,38 +124,35 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
 }
 
 /**
- * What a prompt built for this agent may hold: the smallest window among its
- * `ai:` model and fallbacks, so it fits whichever answers, within the
- * 300k-token ceiling a model the catalog does not know also takes.
+ * What a prompt for this agent may hold: the smallest window among its `ai:`
+ * model and fallbacks, so it fits whichever answers, within the 300k-token
+ * ceiling a model the catalog does not know also takes.
  */
 export function agentPromptBudget(
   model: RecipeAgentModelConfig | undefined,
   modelRegistry?: ModelRegistry,
-): FitBudget {
+): number {
   const specs = [model?.name, ...(model?.fallbacks ?? [])].filter(
     (spec): spec is string => typeof spec === "string",
   );
-  return fitBudget(specs.map((spec) => findRecipeModel(spec, modelRegistry)));
+  return promptBudget(
+    specs.map((spec) => findRecipeModel(spec, modelRegistry)),
+  );
 }
 
-/** Builds each `input` line through `spec`, within `budget`. */
+/** Builds each `input` line through the builder `spec` names, within `maxUnits`. */
 export function linePromptBuilder(
-  spec: PromptSpec,
-  budget: FitBudget,
+  spec: InputSpec,
+  maxUnits: number,
 ): BuildLinePrompt {
-  validatePromptSpec(spec);
-  const builder = promptBuilder(spec.builder);
+  const { builder: id, options } = parseInputSpec(spec);
+  const builder = promptBuilder(id);
   return (input) => {
-    const built = buildPrompt(builder, input, {
-      budget,
-      ...(spec.template !== undefined ? { template: spec.template } : {}),
-      ...(spec.steps !== undefined ? { steps: spec.steps } : {}),
-      ...(spec.options !== undefined ? { options: spec.options } : {}),
-    });
+    const built = builder.build(input, maxUnits, options);
     return {
       prompt: built.prompt,
       build: {
-        builder: built.builder,
+        builder: id,
         applied: built.applied,
         ...(built.digest !== undefined ? { digest: built.digest } : {}),
         ...(built.state !== undefined ? { state: built.state } : {}),
@@ -233,7 +228,7 @@ export async function runBatch(
   } = options;
   const params = parseBatchParams(settings);
   const build = prompt
-    ? linePromptBuilder(prompt.spec, prompt.budget)
+    ? linePromptBuilder(prompt.spec, prompt.maxUnits)
     : undefined;
   let lines: BatchInputLine[];
   if (typeof input === "string" || input instanceof URL) {
