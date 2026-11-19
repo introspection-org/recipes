@@ -1,6 +1,10 @@
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { findRecipeModel } from "../model-binding.js";
+import { fitBudget } from "../prompts/budget.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
   renderTrajectoryInput,
+  TRANSCRIPT_BUDGET_UNITS,
 } from "../prompts/builders/trajectory.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +131,12 @@ export interface RunJudgesOptions {
   onResult?: (line: JudgementLine) => Promise<void> | void;
   /** Replaces the local file system. */
   files?: BatchFiles;
+  /**
+   * The catalog each judge's prompt budget is read from: the smallest context
+   * window across its `ai.model` and `ai.fallbacks`. Pi's built-in catalog
+   * without it; a model neither knows keeps the fixed budget.
+   */
+  modelRegistry?: ModelRegistry;
 }
 
 export interface JudgesOutcome {
@@ -341,6 +351,19 @@ export async function runJudges(
     };
   };
 
+  const budgets = new Map<string, number>();
+  const budgetFor = (judge: JudgeDefinition, fallbackUnits: number): number => {
+    let units = budgets.get(judge.name);
+    if (units === undefined) {
+      const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
+      units = fitBudget(
+        specs.map((spec) => findRecipeModel(spec, options.modelRegistry)),
+        fallbackUnits,
+      ).maxUnits;
+      budgets.set(judge.name, units);
+    }
+    return units;
+  };
   for (const judge of options.judges) {
     const operational = options.operational?.[judge.name] ?? {};
     for (const line of lines) {
@@ -377,10 +400,15 @@ export async function runJudges(
           transcript:
             judge.kind === "classifier"
               ? renderTrajectoryInput(input, {
-                  maxUnits: CLASSIFIER_BUDGET_UNITS,
+                  maxUnits: Math.min(
+                    budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
+                    CLASSIFIER_BUDGET_UNITS,
+                  ),
                   slim: true,
                 })
-              : renderTrajectoryInput(input),
+              : renderTrajectoryInput(input, {
+                  maxUnits: budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
+                }),
           evidence: evidenceHash(input),
         });
       } catch (error) {

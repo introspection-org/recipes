@@ -1,0 +1,35 @@
+import type { Api, Model } from "@earendil-works/pi-ai";
+
+import type { FitBudget } from "./fit.js";
+
+/** UTF-16 units a token is taken to hold: conservative, so a prompt rarely overruns. */
+export const UNITS_PER_TOKEN = 3;
+/** Tokens left for the reply, at most: a model's own `maxTokens` when smaller. */
+export const OUTPUT_RESERVE_TOKENS = 16_384;
+
+type Window = Pick<Model<Api>, "contextWindow" | "maxTokens">;
+
+/** What one model can read, in UTF-16 units, after its reply's reserve. */
+export function modelBudgetUnits(model: Window): number {
+  const reserve = Math.min(
+    model.maxTokens > 0 ? model.maxTokens : OUTPUT_RESERVE_TOKENS,
+    OUTPUT_RESERVE_TOKENS,
+  );
+  return Math.max(0, model.contextWindow - reserve) * UNITS_PER_TOKEN;
+}
+
+/**
+ * The budget a prompt must fit to be read by every model that may answer it:
+ * the smallest of theirs. A session cannot be rebuilt when Pi falls back
+ * mid-session, so the prompt fits the smallest window. A model the catalog
+ * does not know takes `fallbackUnits`, so a missing entry never widens it.
+ */
+export function fitBudget(
+  models: readonly (Window | undefined)[],
+  fallbackUnits: number,
+): FitBudget {
+  const units = models.map((model) =>
+    model && model.contextWindow > 0 ? modelBudgetUnits(model) : fallbackUnits,
+  );
+  return { maxUnits: units.length ? Math.min(...units) : fallbackUnits };
+}

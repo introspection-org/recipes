@@ -177,6 +177,19 @@ export function assertRecipeModelTransport(
   return identity;
 }
 
+/** A `<provider>/<model>` spec's catalog entry, or undefined when the catalog does not know it. */
+export function findRecipeModel(
+  modelSpec: string,
+  modelRegistry?: ModelRegistry,
+): Model<Api> | undefined {
+  try {
+    return resolveRecipeModel(modelSpec, modelRegistry);
+  } catch (error) {
+    if (error instanceof RecipeModelError) return undefined;
+    throw error;
+  }
+}
+
 function resolveRecipeModel(
   modelSpec: string,
   modelRegistry?: ModelRegistry,

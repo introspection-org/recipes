@@ -27,3 +27,9 @@ export {
   TRANSCRIPT_BUDGET_UNITS,
   trajectoryBuilder,
 } from "./builders/trajectory.js";
+export {
+  fitBudget,
+  modelBudgetUnits,
+  OUTPUT_RESERVE_TOKENS,
+  UNITS_PER_TOKEN,
+} from "./budget.js";
