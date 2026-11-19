@@ -8,7 +8,7 @@ export {
 } from "./builder.js";
 export { middleCut, PromptError } from "./fit.js";
 export {
-  CLASSIFIER_BUDGET_UNITS,
+  CLASSIFIER_BUDGET_TOKENS,
   trajectoryLlmClassify,
   trajectoryLlmJudge,
 } from "./builders/trajectory.js";
@@ -26,11 +26,10 @@ export {
 } from "./builders/conversation-synthesis.js";
 export {
   MAX_PROMPT_TOKENS,
-  MAX_PROMPT_UNITS,
-  modelBudgetUnits,
+  modelBudgetTokens,
   OUTPUT_RESERVE_TOKENS,
   promptBudget,
-  UNITS_PER_TOKEN,
+  CHARS_PER_TOKEN,
 } from "./budget.js";
 export { PROMPT_BUILDERS, promptBuilder } from "./registry.js";
-export { parseInputSpec, type InputSpec } from "./spec.js";
+export { parsePreprocess, type PreprocessSpec } from "./spec.js";

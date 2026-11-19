@@ -1,3 +1,4 @@
+import { CHARS_PER_TOKEN } from "./budget.js";
 import { middleCut } from "./fit.js";
 
 /** Whatever a builder accepts to change how it builds; each builder documents its keys. */
@@ -16,7 +17,7 @@ export interface BuiltPrompt<State = undefined> {
 
 /**
  * A named, versioned function from one raw input to a prompt that fits
- * `maxUnits` (UTF-16 units). Its version is bumped whenever the same input
+ * `maxTokens`. Its version is bumped whenever the same input
  * and options render differently.
  */
 export interface PromptBuilder<Input, State = undefined> {
@@ -24,7 +25,7 @@ export interface PromptBuilder<Input, State = undefined> {
   version: number;
   build(
     input: Input,
-    maxUnits: number,
+    maxTokens: number,
     options?: BuilderOptions,
   ): BuiltPrompt<State>;
 }
@@ -34,15 +35,16 @@ export function builderId(builder: PromptBuilder<unknown, unknown>): string {
   return `${builder.name}@${builder.version}`;
 }
 
-/** A prompt within `maxUnits`: cut in the middle when it is over. */
+/** A prompt within `maxTokens`, at 3 characters a token: cut in the middle when it is over. */
 export function withinBudget(
   prompt: string,
-  maxUnits: number,
+  maxTokens: number,
   applied: string[] = [],
 ): { prompt: string; applied: string[] } {
-  return prompt.length > maxUnits
+  const maxChars = maxTokens * CHARS_PER_TOKEN;
+  return prompt.length > maxChars
     ? {
-        prompt: middleCut(prompt, maxUnits),
+        prompt: middleCut(prompt, maxChars),
         applied: [...applied, "middle_cut"],
       }
     : { prompt, applied };

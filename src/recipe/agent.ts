@@ -25,7 +25,7 @@ import {
   type RecipeMcpToolSelection,
 } from "./package.js";
 import { ISSUES_FALLBACK_PROVIDER } from "../issues/types.js";
-import { parseInputSpec, type InputSpec } from "../prompts/spec.js";
+import { parsePreprocess, type PreprocessSpec } from "../prompts/spec.js";
 import { PRODUCTIVITY_TOOLS } from "../productivity/types.js";
 import { mcpSelectionAllowsTool, normalizeMcpServerId } from "../mcp/policy.js";
 
@@ -210,7 +210,7 @@ export interface RecipeAgentDefinition {
   subagents: string[];
   systemInstructions?: RecipeSystemInstructions;
   /** The builder a batch turns a line's raw `input` into this agent's prompt with. */
-  input?: InputSpec;
+  preprocess?: PreprocessSpec;
   /** Fields authored on this definition rather than inherited through `from`. */
   declaredFields?: readonly RecipeAgentConfigField[];
 }
@@ -226,7 +226,7 @@ export type RecipeAgentConfigField =
   | "phases"
   | "subagents"
   | "system_instructions"
-  | "input";
+  | "preprocess";
 
 type ParsedRecipeAgentDefinition = Omit<
   RecipeAgentDefinition,
@@ -261,7 +261,7 @@ const AGENT_YAML_KEYS = new Set([
   "phases",
   "subagents",
   "system_instructions",
-  "input",
+  "preprocess",
 ]);
 
 const PORTABLE_AGENT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -292,9 +292,9 @@ function invalidAgentField(data: Record<string, unknown>): string | undefined {
   if (!Object.hasOwn(data, "name")) {
     return "name is required";
   }
-  if (Object.hasOwn(data, "input")) {
+  if (Object.hasOwn(data, "preprocess")) {
     try {
-      parseInputSpec(data.input as InputSpec);
+      parsePreprocess(data.preprocess as PreprocessSpec);
     } catch (error) {
       return (error as Error).message;
     }
@@ -770,8 +770,8 @@ function readRecipeAgentSources(
           ? stringArray(data.subagents)
           : undefined,
         systemInstructions: parseSystemInstructions(data),
-        ...(Object.hasOwn(data, "input")
-          ? { input: data.input as InputSpec }
+        ...(Object.hasOwn(data, "preprocess")
+          ? { preprocess: data.preprocess as PreprocessSpec }
           : {}),
         declaredFields: [
           "description",
@@ -784,7 +784,7 @@ function readRecipeAgentSources(
           "phases",
           "subagents",
           "system_instructions",
-          "input",
+          "preprocess",
         ].filter((key): key is RecipeAgentConfigField =>
           Object.hasOwn(data, key),
         ),
@@ -850,8 +850,8 @@ function definitionsFromSources(
         base?.systemInstructions,
         raw.systemInstructions,
       ),
-      ...((raw.input ?? base?.input)
-        ? { input: raw.input ?? base?.input }
+      ...((raw.preprocess ?? base?.preprocess)
+        ? { preprocess: raw.preprocess ?? base?.preprocess }
         : {}),
       declaredFields: [...(raw.declaredFields ?? [])],
     };

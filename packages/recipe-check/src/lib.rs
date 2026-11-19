@@ -3290,7 +3290,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         "phases",
         "subagents",
         "system_instructions",
-        "input",
+        "preprocess",
     ];
     for key in map.keys().filter(|key| !AGENT_KEYS.contains(&key.as_str())) {
         ctx.error(
@@ -3403,7 +3403,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     validate_agent_string_array(map, "phases", path, ctx);
     let subagents = validate_agent_string_array(map, "subagents", path, ctx);
     validate_agent_system_instructions(map, path, ctx);
-    validate_agent_input(map, path, ctx);
+    validate_agent_preprocess(map, path, ctx);
 
     Some(RawAgent {
         name,
@@ -4808,40 +4808,42 @@ fn validate_mcp_behind(
     Some(names.into_iter().map(str::to_owned).collect())
 }
 
-fn validate_agent_input(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
-    let Some(value) = map.get("input") else {
+fn validate_agent_preprocess(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = map.get("preprocess") else {
         return;
     };
-    for message in input_problems(value) {
+    for message in preprocess_problems(value) {
         ctx.error(
-            "agent.input_invalid",
+            "agent.preprocess_invalid",
             path,
             format!("Agent {message}"),
-            Some("for example: input: conversation_synthesis@1"),
+            Some("for example: preprocess: conversation_synthesis@1"),
         );
     }
 }
 
-/// An `input:` names its builder, alone or with a map of options; which
+/// A `preprocess:` names its builder, alone or with a map of options; which
 /// builders exist and what options they read is the runtime's to check, so a
 /// new builder needs no checker release.
-pub(crate) fn input_problems(value: &JsonValue) -> Vec<String> {
+pub(crate) fn preprocess_problems(value: &JsonValue) -> Vec<String> {
     match value {
         JsonValue::String(_) => vec![],
         JsonValue::Object(map) => {
             let mut problems = vec![];
             if !map.get("builder").is_some_and(JsonValue::is_string) {
-                problems.push("input must name its builder".to_owned());
+                problems.push("preprocess must name its builder".to_owned());
             }
             if map
                 .get("options")
                 .is_some_and(|options| !options.is_object())
             {
-                problems.push("input.options must be a map".to_owned());
+                problems.push("preprocess.options must be a map".to_owned());
             }
             problems
         }
-        _ => vec!["input must be a builder name, or a map with builder and options".to_owned()],
+        _ => {
+            vec!["preprocess must be a builder name, or a map with builder and options".to_owned()]
+        }
     }
 }
 
@@ -7549,9 +7551,9 @@ mod tests {
     }
 
     #[test]
-    fn checks_an_agents_input_names_a_builder() {
+    fn checks_an_agents_preprocess_names_a_builder() {
         let package = json!({
-            "name": "agent-input",
+            "name": "agent-preprocess",
             "version": "0.1.0",
             "pi": { "agents": ["agents/*.yaml"] }
         });
@@ -7564,23 +7566,23 @@ mod tests {
         };
 
         for agent in [
-            "name: agent\nai:\n  model: openai/gpt-5\ninput: conversation_synthesis@1\n",
-            "name: agent\nai:\n  model: openai/gpt-5\ninput:\n  builder: trajectory_llm_classify@1\n  options: { head: 200 }\n",
+            "name: agent\nai:\n  model: openai/gpt-5\npreprocess: conversation_synthesis@1\n",
+            "name: agent\nai:\n  model: openai/gpt-5\npreprocess:\n  builder: trajectory_llm_classify@1\n  options: { head: 200 }\n",
         ] {
             let report = check(agent);
             assert!(report.valid, "{agent}: {:?}", report.diagnostics);
         }
         for agent in [
-            "name: agent\ninput: [conversation_synthesis@1]\n",
-            "name: agent\ninput:\n  options: {}\n",
-            "name: agent\ninput:\n  builder: trajectory_llm_judge@1\n  options: 3\n",
+            "name: agent\npreprocess: [conversation_synthesis@1]\n",
+            "name: agent\npreprocess:\n  options: {}\n",
+            "name: agent\npreprocess:\n  builder: trajectory_llm_judge@1\n  options: 3\n",
         ] {
             let report = check(agent);
             assert!(
                 report
                     .diagnostics
                     .iter()
-                    .any(|diagnostic| diagnostic.code == "agent.input_invalid"),
+                    .any(|diagnostic| diagnostic.code == "agent.preprocess_invalid"),
                 "{agent}: {:?}",
                 report.diagnostics
             );

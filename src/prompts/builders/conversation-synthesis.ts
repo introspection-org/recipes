@@ -1,30 +1,16 @@
 import { createHash } from "node:crypto";
 
-import type { PromptBuilder } from "../builder.js";
-import { withinBudget } from "../builder.js";
-import {
-  cpHead,
-  cpLength,
-  cpTail,
-  isoMicros,
-  microsToNanos,
-  pyDumps,
-  pydanticDatetime,
-  pyFloatField,
-  pyRstrip,
-  pyStr,
-  pyStrip,
-  squashSpace,
-  xmlEscape,
-  xmlQuoteAttr,
-} from "../pycompat.js";
+import { withinBudget, type PromptBuilder } from "../builder.js";
+import { CHARS_PER_TOKEN } from "../budget.js";
+import { prefix, suffix } from "../text.js";
 
 /**
  * `conversation_synthesis@1`: one conversation, from the turns past its resume
  * cursor, as the case observation synthesis reads, with the plan its next
- * segment resumes from. A port of the data plane's Python case builder
- * (`observation_synthesis_context.py`, `render_case_prompt`, `build_segment`),
- * held to it byte for byte by `test/conversation-synthesis-parity.test.ts`.
+ * segment resumes from. It reads conversations as the data plane's Python
+ * builder did, held to the same shape by
+ * `test/conversation-synthesis-parity.test.ts`; message fingerprints and the
+ * resume cursor are the same bytes, so a resume crosses the switch.
  */
 
 /** A message part as the conversation API returns it, discriminated by `type`. */
@@ -107,23 +93,19 @@ export interface SegmentSkip {
 export type ConversationSynthesisState =
   { plan: SegmentPlan } | { outcome: SegmentSkip };
 
-// What synthesis has always run, at the Python original's limits.
 const MESSAGE_MAX_CHARS = 6_000;
 const TRANSCRIPT_MAX_TOKENS = 300_000;
 const TRANSCRIPT_HEAD_MESSAGES = 10;
 const SLIM_HEAD_CHARS = 1_500;
 const SLIM_TAIL_CHARS = 500;
 const SLIM_PROTECTED_TAIL = 8;
-
 const TAIL_FINGERPRINT_LIMIT = 50;
 const DIAGNOSTIC_EVENT_LIMIT = 120;
 const DIAGNOSTIC_EVENT_TEXT_LIMIT = 2_000;
-const CHARS_PER_TOKEN = 3;
-const SLIM_MARKER = " […] ";
 
-const SUMMARY_PATTERNS =
-  /(?<![\p{L}\p{N}_])(summary|summarized|previous context|conversation so far|compact|compaction|continue from|continuation|prior context|earlier conversation)(?![\p{L}\p{N}_])/iu;
-const MEDIA_PART_TYPES = new Set([
+const SUMMARY =
+  /\b(summary|summarized|previous context|conversation so far|compact|compaction|continue from|continuation|prior context|earlier conversation)\b/i;
+const MEDIA_PARTS = new Set([
   "image-url",
   "audio-url",
   "video-url",
@@ -132,9 +114,14 @@ const MEDIA_PART_TYPES = new Set([
   "blob",
   "uri",
   "file",
+  "image",
+  "input_image",
+  "image_url",
+  "input_file",
+  "attachment",
 ]);
-const GENERIC_IMAGE_PART_TYPES = new Set(["image", "input_image", "image_url"]);
-const GENERIC_FILE_PART_TYPES = new Set(["file", "input_file", "attachment"]);
+const IMAGE_PARTS = new Set(["image", "input_image", "image_url"]);
+const FILE_PARTS = new Set(["file", "input_file", "attachment"]);
 const GENERIC_CONTENT_KEYS = [
   "content",
   "text",
@@ -148,346 +135,265 @@ const GENERIC_CONTENT_KEYS = [
   "metadata",
 ];
 
-interface MessageSource {
-  kind: string;
+interface Source {
+  kind: "input" | "output";
   span_id: string;
   timestamp?: string;
   message_hash?: string;
   response_id?: string;
-  suspected_compaction_ref?: string;
 }
 
 interface CaseMessage {
   ref: string;
   role: string;
   content: string;
-  content_status: "complete" | "truncated";
-  content_truncated?: true;
+  truncated?: true;
   part_types: string[];
-  source: MessageSource;
-  suspected_compaction_ref?: string;
-  compaction_parts?: ConversationPart[];
-  occurrence_count: number;
-  last_seen_source?: MessageSource;
+  source: Source;
+  compaction_ref?: string;
+  occurrences: number;
 }
 
-/** Field order is the Python model's: an event with no detail renders as its JSON. */
 interface DiagnosticEvent {
   ref?: string;
-  message_ref?: string;
-  message_role?: string;
-  span_id?: string;
-  timestamp?: string;
+  message_ref: string;
   kind: string;
   tool_name?: string;
-  tool_call_id?: string;
   input?: string;
   status?: string;
   output?: string;
   content?: string;
-  detail?: string;
 }
 
-/** Top-level `None` keys dropped, as the API's message and part models serialize. */
-function omitNone<T extends object>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(
-      ([, item]) => item !== null && item !== undefined,
-    ),
-  ) as T;
-}
+const isMap = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
-const jsonForHash = (value: unknown) =>
-  pyDumps(value, { sortKeys: true, compact: true });
+const present = (value: unknown) =>
+  value !== null &&
+  value !== undefined &&
+  value !== "" &&
+  !(Array.isArray(value) && value.length === 0);
 
-function compactMapping(value: unknown): string {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return jsonForHash(value);
-  }
-  return jsonForHash(
-    Object.fromEntries(
-      Object.entries(value).filter(
-        ([, item]) =>
-          item !== null &&
-          item !== undefined &&
-          item !== "" &&
-          !(Array.isArray(item) && item.length === 0),
-      ),
-    ),
+/** JSON with every object's keys sorted: the form a fingerprint hashes. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    isMap(item)
+      ? Object.fromEntries(
+          Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+        )
+      : item,
   );
 }
 
-const textOf = (value: unknown): string =>
-  typeof value === "string" ? value : "";
+/** A value as compact JSON, an object without its empty fields. */
+const compact = (value: unknown) =>
+  canonicalJson(
+    isMap(value)
+      ? Object.fromEntries(
+          Object.entries(value).filter(([, item]) => present(item)),
+        )
+      : value,
+  );
+
+const sha256 = (text: string) =>
+  createHash("sha256").update(text).digest("hex");
+
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** `text` cut to `max` units, with a marker saying how much was cut. */
+const clip = (text: string, max: number, marker: (cut: number) => string) =>
+  text.length <= max
+    ? text
+    : `${prefix(text, max)}${marker(text.length - max)}`;
+
+const squeeze = (text: string) =>
+  text.length <= SLIM_HEAD_CHARS + SLIM_TAIL_CHARS + 200
+    ? text
+    : `${prefix(text, SLIM_HEAD_CHARS)} […] ${suffix(text, SLIM_TAIL_CHARS)}`;
+
+const escapeXml = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const attr = (text: string) => `"${escapeXml(text).replace(/"/g, "&quot;")}"`;
+
+const string = (value: unknown) => (typeof value === "string" ? value : "");
 
 function partText(part: ConversationPart): string {
-  const type = part.type;
-  if (type === "text") return textOf(part.content);
-  if (type === "compaction") return textOf(part.content) || "[compaction]";
-  if (type === "tool_call" || type === "tool_call_response") {
-    const details = [part.name, part.id]
-      .filter((item) => item)
-      .map(String)
-      .join(" ");
-    const prefix = details ? `[${type} ${details}]` : `[${type}]`;
-    const payload = type === "tool_call" ? part.arguments : part.response;
-    return `${prefix} ${compactMapping(payload !== null && payload !== undefined ? payload : part)}`;
+  switch (part.type) {
+    case "text":
+      return string(part.content);
+    case "compaction":
+      return string(part.content) || "[compaction]";
+    case "thinking":
+    case "reasoning":
+      return `[${part.type}] ${string(part.content)}`.trimEnd();
+    case "tool_call":
+    case "tool_call_response": {
+      const label = [part.name, part.id].filter(Boolean).join(" ");
+      const payload =
+        part.type === "tool_call" ? part.arguments : part.response;
+      return `[${label ? `${part.type} ${label}` : part.type}] ${compact(payload ?? part)}`;
+    }
   }
-  if (type === "thinking" || type === "reasoning") {
-    return pyRstrip(`[${type}] ${textOf(part.content)}`);
-  }
-  if (
-    MEDIA_PART_TYPES.has(type) ||
-    GENERIC_IMAGE_PART_TYPES.has(type) ||
-    GENERIC_FILE_PART_TYPES.has(type)
-  ) {
-    return `[${type} provided]`;
-  }
-  const key = GENERIC_CONTENT_KEYS.find(
-    (name) => part[name] !== null && part[name] !== undefined,
-  );
+  if (MEDIA_PARTS.has(part.type)) return `[${part.type} provided]`;
+  const key = GENERIC_CONTENT_KEYS.find((name) => part[name] != null);
   const content = key === undefined ? part : part[key];
-  return typeof content === "string"
-    ? `[${type}] ${content}`
-    : `[${type}] ${compactMapping(content)}`;
+  return `[${part.type}] ${typeof content === "string" ? content : compact(content)}`;
 }
 
-function messageContent(message: ConversationMessage): string {
-  return squashSpace(message.parts.map(partText).join("\n"));
-}
+const excerpt = (value: unknown) =>
+  clip(
+    typeof value === "string" ? value : compact(value),
+    DIAGNOSTIC_EVENT_TEXT_LIMIT,
+    (cut) => `... [truncated ${cut} chars]`,
+  );
 
-function partTypes(message: ConversationMessage): string[] {
-  const types: string[] = [];
-  for (const part of message.parts)
-    if (!types.includes(part.type)) types.push(part.type);
-  return types;
-}
-
-function excerpt(value: unknown): string {
-  const rendered = typeof value === "string" ? value : compactMapping(value);
-  const length = cpLength(rendered);
-  if (length <= DIAGNOSTIC_EVENT_TEXT_LIMIT) return rendered;
-  return `${cpHead(rendered, DIAGNOSTIC_EVENT_TEXT_LIMIT)}... [truncated ${length - DIAGNOSTIC_EVENT_TEXT_LIMIT} chars]`;
-}
-
-function toolResponseStatus(result: unknown): string | undefined {
-  if (result === null || typeof result !== "object" || Array.isArray(result))
-    return undefined;
-  for (const key of [
+function toolStatus(result: unknown): string | undefined {
+  if (!isMap(result)) return undefined;
+  const key = [
     "status",
     "status_code",
     "exit_code",
     "returncode",
     "error",
     "exception",
-  ]) {
-    const value = (result as Record<string, unknown>)[key];
-    if (value !== null && value !== undefined && value !== "")
-      return `${key}=${pyStr(value)}`;
-  }
-  return undefined;
+  ].find((name) => present(result[name]));
+  return key === undefined ? undefined : `${key}=${String(result[key])}`;
 }
 
+/** The tool calls, results, reasoning and attachments a message carries. */
 function diagnosticEvents(
   message: ConversationMessage,
-  caseMessage: CaseMessage,
+  ref: string,
 ): DiagnosticEvent[] {
-  const events: DiagnosticEvent[] = [];
-  for (const part of message.parts) {
-    let event: DiagnosticEvent | undefined;
-    if (part.type === "tool_call") {
-      event = {
-        kind: "tool_call",
-        tool_name: typeof part.name === "string" ? part.name : undefined,
-        tool_call_id: typeof part.id === "string" ? part.id : undefined,
-        input: excerpt(part.arguments ?? {}),
-      };
-    } else if (part.type === "tool_call_response") {
-      event = {
-        kind: "tool_response",
-        tool_name: typeof part.name === "string" ? part.name : undefined,
-        tool_call_id: typeof part.id === "string" ? part.id : undefined,
-        status: toolResponseStatus(part.response),
-        output: excerpt(
-          part.response !== null && part.response !== undefined
-            ? part.response
-            : part,
-        ),
-      };
-    } else if (part.type === "thinking" || part.type === "reasoning") {
-      event = {
-        kind: part.type,
-        content: excerpt(textOf(part.content)) || undefined,
-      };
-    } else if (part.type === "file" || GENERIC_FILE_PART_TYPES.has(part.type)) {
-      event = { kind: "file_provided" };
-    } else if (GENERIC_IMAGE_PART_TYPES.has(part.type)) {
-      event = { kind: "image_provided" };
+  return message.parts.flatMap((part): DiagnosticEvent[] => {
+    const name = typeof part.name === "string" ? { tool_name: part.name } : {};
+    switch (part.type) {
+      case "tool_call":
+        return [
+          {
+            message_ref: ref,
+            kind: "tool_call",
+            ...name,
+            input: excerpt(part.arguments ?? {}),
+          },
+        ];
+      case "tool_call_response": {
+        const status = toolStatus(part.response);
+        return [
+          {
+            message_ref: ref,
+            kind: "tool_response",
+            ...name,
+            ...(status ? { status } : {}),
+            output: excerpt(part.response ?? part),
+          },
+        ];
+      }
+      case "thinking":
+      case "reasoning": {
+        const content = excerpt(string(part.content));
+        return [
+          {
+            message_ref: ref,
+            kind: part.type,
+            ...(content ? { content } : {}),
+          },
+        ];
+      }
     }
-    if (event === undefined) continue;
-    events.push(
-      omitNone({
-        ref: undefined,
-        message_ref: caseMessage.ref,
-        message_role: caseMessage.role,
-        span_id: caseMessage.source.span_id || undefined,
-        timestamp: caseMessage.source.timestamp,
-        ...event,
-      }),
-    );
-  }
-  return events;
+    if (FILE_PARTS.has(part.type))
+      return [{ message_ref: ref, kind: "file_provided" }];
+    if (IMAGE_PARTS.has(part.type))
+      return [{ message_ref: ref, kind: "image_provided" }];
+    return [];
+  });
 }
 
-function fingerprint(message: ConversationMessage): string {
-  const payload = { role: message.role, parts: message.parts.map(omitNone) };
-  return createHash("sha256")
-    .update(jsonForHash(payload))
-    .digest("hex")
-    .slice(0, 24);
-}
+/** What dedupes a message: its role and parts, the empty fields of each part left out. */
+const fingerprint = (message: ConversationMessage) =>
+  sha256(
+    canonicalJson({
+      role: message.role,
+      parts: message.parts.map((part) =>
+        Object.fromEntries(
+          Object.entries(part).filter(([, item]) => item != null),
+        ),
+      ),
+    }),
+  ).slice(0, 24);
 
-const compactionParts = (message: ConversationMessage) =>
-  message.parts.filter((part) => part.type === "compaction");
+const messageContent = (message: ConversationMessage) =>
+  squash(message.parts.map(partText).join("\n"));
 
-function isCompactionMessage(message: ConversationMessage): boolean {
-  if (compactionParts(message).length > 0) return true;
-  const content = messageContent(message);
-  return Boolean(content) && SUMMARY_PATTERNS.test(content);
-}
+const isSummary = (message: ConversationMessage) =>
+  message.parts.some((part) => part.type === "compaction") ||
+  SUMMARY.test(messageContent(message));
 
-function isCompactionBoundary(
+/**
+ * Whether a call follows a compaction: an explicit compaction part, or a sharp
+ * drop in its input size with a summary-like message (or almost nothing) left.
+ */
+function followsCompaction(
   previous: number,
   current: number,
   window: ConversationMessage[],
-): boolean {
-  if (window.some((message) => compactionParts(message).length > 0))
+) {
+  if (
+    window.some((message) =>
+      message.parts.some((part) => part.type === "compaction"),
+    )
+  ) {
     return true;
+  }
   if (previous < 3 || current === 0 || window.length === 0) return false;
   const sharpDrop =
     current === 1 || current <= Math.max(2, Math.floor(previous / 4));
-  return sharpDrop && (current <= 5 || window.some(isCompactionMessage));
+  return sharpDrop && (current <= 5 || window.some(isSummary));
 }
 
-/** `len(json.dumps(...))` of what Python estimates: the dumped case messages. */
-const estimateChars = (value: unknown) => cpLength(pyDumps(value));
+const estimateChars = (value: unknown) => JSON.stringify(value).length;
 const estimateTokens = (value: unknown) =>
   Math.max(1, Math.floor(estimateChars(value) / CHARS_PER_TOKEN));
+
+const nanos = (iso: string) => BigInt(Date.parse(iso)) * 1_000_000n;
 
 interface Turn {
   call: ConversationModelCall;
   ns?: bigint;
-  micros?: number;
 }
 
-function turnOf(call: ConversationModelCall): Turn {
-  const micros = call.timestamp ? isoMicros(call.timestamp) : undefined;
-  const ns =
-    call.timestamp_ns !== null && call.timestamp_ns !== undefined
+const turnOf = (call: ConversationModelCall): Turn => ({
+  call,
+  ns:
+    call.timestamp_ns != null
       ? BigInt(call.timestamp_ns)
-      : micros !== undefined
-        ? microsToNanos(micros)
-        : undefined;
-  return { call, ns, micros };
-}
+      : call.timestamp
+        ? nanos(call.timestamp)
+        : undefined,
+});
 
-function cursorNanos(
+/** The instant a resume state stopped at: its cursor's, else its watermark's. */
+function resumeNanos(
   state: ResumeState | null | undefined,
-): { ns: bigint; spanId: string } | undefined {
+): bigint | undefined {
   if (!state) return undefined;
   if (state.cursor) {
-    try {
-      const token = JSON.parse(
-        Buffer.from(state.cursor, "base64url").toString("utf8"),
-      ) as { i?: string; v?: string };
-      if (token.v !== undefined) {
-        const ns = /^-?\d+$/.test(token.v)
-          ? BigInt(token.v)
-          : microsToNanos(isoMicros(token.v));
-        return { ns, spanId: token.i ?? "" };
-      }
-    } catch {
-      // An unreadable cursor falls back to the watermark, as the Python decoder does.
-    }
+    const token = JSON.parse(
+      Buffer.from(state.cursor, "base64url").toString("utf8"),
+    ) as {
+      v?: string;
+    };
+    if (token.v)
+      return /^\d+$/.test(token.v) ? BigInt(token.v) : nanos(token.v);
   }
-  return { ns: microsToNanos(isoMicros(state.watermark)), spanId: "" };
+  return nanos(state.watermark);
 }
 
-function encodeCursor(spanId: string, ns: bigint): string {
-  const json = pyDumps(
-    { i: spanId, s: "created_at", d: "asc", v: ns.toString() },
-    { compact: true, ensureAscii: true },
-  );
-  return Buffer.from(json, "utf8").toString("base64url");
-}
-
-function truncateContent(content: string, maxChars: number): string {
-  const length = cpLength(content);
-  if (length <= maxChars) return content;
-  return `${cpHead(content, maxChars)}... [message truncated ${length - maxChars} chars]`;
-}
-
-function truncateToBudget(
-  message: CaseMessage,
-  maxChars: number,
-): CaseMessage | undefined {
-  if (maxChars < 500) return undefined;
-  const content = message.content;
-  const length = cpLength(content);
-  const overhead = estimateChars({ ...message, content: "" }) + 200;
-  let budget = maxChars - overhead;
-  if (budget <= 100) return undefined;
-  const cut = (units: number) =>
-    `${cpHead(content, units)}... [truncated ${Math.max(0, length - units)} chars]`;
-  const capped: CaseMessage = {
-    ...message,
-    content: cut(budget),
-    content_truncated: true,
-  };
-  while (estimateChars(capped) > maxChars && budget > 100) {
-    budget = Math.floor(budget / 2);
-    capped.content = cut(budget);
-  }
-  return estimateChars(capped) > maxChars ? undefined : capped;
-}
-
-/** Keep the opening messages, then fill from the tail backwards, within `maxTokens`. */
-function capTranscript(
-  messages: CaseMessage[],
-  maxTokens: number,
-  headProtected: number,
-): CaseMessage[] {
-  if (estimateTokens(messages) <= maxTokens) return messages;
-  const maxChars = maxTokens * CHARS_PER_TOKEN;
-  const selected = new Map<string, CaseMessage>();
-  let used = 2;
-  const add = (message: CaseMessage, force: boolean) => {
-    if (selected.has(message.ref) || used >= maxChars) return;
-    const chars = estimateChars(message);
-    if (used + chars <= maxChars) {
-      selected.set(message.ref, message);
-      used += chars;
-      return;
-    }
-    if (!force && selected.size > 0) return;
-    const capped = truncateToBudget(message, maxChars - used);
-    if (capped === undefined) return;
-    selected.set(message.ref, capped);
-    used += estimateChars(capped);
-  };
-  for (const message of messages.slice(0, headProtected)) add(message, true);
-  for (const message of [...messages].reverse()) {
-    if (!selected.has(message.ref)) add(message, selected.size === 0);
-  }
-  return messages
-    .filter((message) => selected.has(message.ref))
-    .map((message) => selected.get(message.ref)!);
-}
-
-function squeeze(text: string, head: number, tail: number): string {
-  if (cpLength(text) <= head + tail + 200) return text;
-  return `${cpHead(text, head)}${SLIM_MARKER}${cpTail(text, tail)}`;
-}
+/** The keyset cursor the conversations API pages with, at one call. */
+const encodeCursor = (spanId: string, ns: bigint) =>
+  Buffer.from(
+    JSON.stringify({ i: spanId, s: "created_at", d: "asc", v: ns.toString() }),
+  ).toString("base64url");
 
 interface Read {
   messages: CaseMessage[];
@@ -498,121 +404,103 @@ interface Read {
   finalInputCount: number;
 }
 
-/** The deduplicated message stream of the turns past `after`, as the Python builder reads it. */
-function readTurns(input: ConversationSynthesisInput): Read {
+/** The deduplicated messages of the turns past the resume point, with what they carried. */
+function read(input: ConversationSynthesisInput): Read {
   const resume = input.watermark ?? undefined;
-  const after = cursorNanos(resume);
+  const after = resumeNanos(resume);
   const all = input.model_calls.map(turnOf);
-  // The Python builder filters on the instant alone, after the reader's (instant, span) keyset.
   const turns =
     after === undefined
       ? all
-      : all.filter((turn) => turn.ns === undefined || turn.ns > after.ns);
+      : all.filter((turn) => turn.ns === undefined || turn.ns > after);
   const seen = new Set(resume?.tail_fingerprints ?? []);
-  const seenCompactions = new Set<string>();
+  const seenSummaries = new Set<string>();
   const messages: CaseMessage[] = [];
   const events: DiagnosticEvent[] = [];
   let compactions = 0;
-  let previousInputCount =
-    after !== undefined ? (resume?.last_input_count ?? 0) : 0;
+  let previousCount = after !== undefined ? (resume?.last_input_count ?? 0) : 0;
 
   const append = (
     message: ConversationMessage,
-    kind: "input" | "output",
+    kind: Source["kind"],
     turn: Turn,
-    suspectedCompactionRef?: string,
+    compactionRef?: string,
   ) => {
     const hash = fingerprint(message);
-    const timestamp =
-      turn.micros !== undefined ? pydanticDatetime(turn.micros) : undefined;
     if (seen.has(hash)) {
-      const existing = messages.find(
+      const earlier = messages.find(
         (item) => item.source.message_hash === hash,
       );
-      if (existing) {
-        existing.occurrence_count += 1;
-        existing.last_seen_source = omitNone({
-          kind,
-          span_id: turn.call.span_id,
-          timestamp,
-        });
-      }
+      if (earlier) earlier.occurrences += 1;
       return;
     }
     seen.add(hash);
-    const responseId =
-      (kind === "output" ? message.response_id : undefined) ||
-      (kind === "output" ? turn.call.response_id : undefined) ||
-      undefined;
     const content = messageContent(message);
-    const shown = truncateContent(content, MESSAGE_MAX_CHARS);
-    const caseMessage: CaseMessage = omitNone({
-      ref: `m${messages.length + 1}`,
+    const shown = clip(
+      content,
+      MESSAGE_MAX_CHARS,
+      (cut) => `... [message truncated ${cut} chars]`,
+    );
+    const responseId =
+      kind === "output"
+        ? message.response_id || turn.call.response_id
+        : undefined;
+    const ref = `m${messages.length + 1}`;
+    messages.push({
+      ref,
       role: message.role,
       content: shown,
-      content_status: shown !== content ? "truncated" : "complete",
-      content_truncated: shown !== content ? (true as const) : undefined,
-      part_types: partTypes(message),
-      source: omitNone({
+      ...(shown !== content ? { truncated: true as const } : {}),
+      part_types: [...new Set(message.parts.map((part) => part.type))],
+      source: {
         kind,
         span_id: turn.call.span_id,
-        timestamp,
+        ...(turn.call.timestamp ? { timestamp: turn.call.timestamp } : {}),
         message_hash: hash,
-        response_id: responseId ?? undefined,
-        suspected_compaction_ref: suspectedCompactionRef,
-      }),
-      suspected_compaction_ref: suspectedCompactionRef,
-      compaction_parts:
-        compactionParts(message).length > 0
-          ? compactionParts(message)
-          : undefined,
-      occurrence_count: 1,
+        ...(responseId ? { response_id: responseId } : {}),
+      },
+      ...(compactionRef ? { compaction_ref: compactionRef } : {}),
+      occurrences: 1,
     });
-    messages.push(caseMessage);
-    if (events.length < DIAGNOSTIC_EVENT_LIMIT) {
-      events.push(
-        ...diagnosticEvents(message, caseMessage).slice(
-          0,
-          DIAGNOSTIC_EVENT_LIMIT - events.length,
-        ),
-      );
-    }
+    events.push(
+      ...diagnosticEvents(message, ref).slice(
+        0,
+        Math.max(0, DIAGNOSTIC_EVENT_LIMIT - events.length),
+      ),
+    );
   };
 
   for (const turn of turns) {
     const window = turn.call.input_new_messages;
-    const current = turn.call.input_message_count ?? 0;
-    let compactionMessages: ConversationMessage[] = [];
+    const count = turn.call.input_message_count ?? 0;
+    let summaries = new Set<ConversationMessage>();
     let compactionRef: string | undefined;
-    if (isCompactionBoundary(previousInputCount, current, window)) {
-      compactionMessages = window.filter(isCompactionMessage);
-      if (compactionMessages.length === 0 && window.length === 1)
-        compactionMessages = [...window];
-      const hashes = compactionMessages.map(fingerprint);
-      const known =
-        hashes.length > 0 && hashes.every((hash) => seenCompactions.has(hash));
-      if (known) {
-        compactionMessages = [];
-      } else {
-        hashes.forEach((hash) => seenCompactions.add(hash));
+    if (followsCompaction(previousCount, count, window)) {
+      let found = window.filter(isSummary);
+      if (found.length === 0 && window.length === 1) found = [...window];
+      const hashes = found.map(fingerprint);
+      // A summary already recorded is the same compaction seen again.
+      if (
+        hashes.length === 0 ||
+        !hashes.every((hash) => seenSummaries.has(hash))
+      ) {
+        hashes.forEach((hash) => seenSummaries.add(hash));
         compactions += 1;
         compactionRef = `c${compactions}`;
+        summaries = new Set(found);
       }
     }
-    const summaries = new Set(
-      compactionMessages.map((message) => jsonForHash(message)),
-    );
     for (const message of window) {
       append(
         message,
         "input",
         turn,
-        summaries.has(jsonForHash(message)) ? compactionRef : undefined,
+        summaries.has(message) ? compactionRef : undefined,
       );
     }
     for (const message of turn.call.output_messages)
       append(message, "output", turn);
-    if (current) previousInputCount = current;
+    if (count) previousCount = count;
   }
   return {
     messages,
@@ -620,160 +508,148 @@ function readTurns(input: ConversationSynthesisInput): Read {
     compactions,
     turnsSkipped: all.length - turns.length,
     turns,
-    finalInputCount: previousInputCount,
+    finalInputCount: previousCount,
   };
 }
 
-function consumedWindow(read: Read): {
-  micros?: number;
-  cursor?: string;
-  tail: string[];
-} {
-  let micros: number | undefined;
-  let ns: bigint | undefined;
-  let spanId = "";
-  for (const turn of read.turns) {
-    if (
-      turn.micros !== undefined &&
-      (micros === undefined || turn.micros > micros)
-    )
-      micros = turn.micros;
-    if (turn.ns === undefined) continue;
-    if (
-      ns === undefined ||
-      turn.ns > ns ||
-      (turn.ns === ns && turn.call.span_id > spanId)
-    ) {
-      ns = turn.ns;
-      spanId = turn.call.span_id;
+/** Keep the opening messages, then fill from the tail backwards, within `maxTokens`. */
+function capTranscript(messages: CaseMessage[]): CaseMessage[] {
+  if (estimateTokens(messages) <= TRANSCRIPT_MAX_TOKENS) return messages;
+  const maxChars = TRANSCRIPT_MAX_TOKENS * CHARS_PER_TOKEN;
+  const kept = new Map<string, CaseMessage>();
+  let used = 2;
+  const add = (message: CaseMessage, force: boolean) => {
+    if (kept.has(message.ref) || used >= maxChars) return;
+    const size = estimateChars(message);
+    if (used + size <= maxChars) {
+      kept.set(message.ref, message);
+      used += size;
+      return;
     }
-  }
-  const tail = read.messages
-    .slice(-TAIL_FINGERPRINT_LIMIT)
-    .map((message) => message.source.message_hash)
-    .filter((hash): hash is string => hash !== undefined);
-  return {
-    micros,
-    cursor: ns === undefined ? undefined : encodeCursor(spanId, ns),
-    tail,
+    if (!force && kept.size > 0) return;
+    const room =
+      maxChars - used - estimateChars({ ...message, content: "" }) - 200;
+    if (room <= 100) return;
+    const cut = {
+      ...message,
+      content: clip(message.content, room, (n) => `... [truncated ${n} chars]`),
+      truncated: true as const,
+    };
+    kept.set(message.ref, cut);
+    used += estimateChars(cut);
   };
+  messages
+    .slice(0, TRANSCRIPT_HEAD_MESSAGES)
+    .forEach((message) => add(message, true));
+  [...messages].reverse().forEach((message) => add(message, kept.size === 0));
+  return messages.flatMap((message) => kept.get(message.ref) ?? []);
 }
 
-function slim(
-  messages: CaseMessage[],
-  events: DiagnosticEvent[],
-): { messages: CaseMessage[]; events: DiagnosticEvent[] } {
-  const protectedRefs = new Set(
+/**
+ * Head-and-tail: the first user and assistant messages and the last few stay
+ * whole; tool output between them keeps its head and tail, and an event whose
+ * content the transcript already shows is dropped.
+ */
+function slim(messages: CaseMessage[], events: DiagnosticEvent[]) {
+  const kept = new Set(messages.map((message) => message.ref));
+  const whole = new Set(
     messages.slice(-SLIM_PROTECTED_TAIL).map((message) => message.ref),
   );
   for (const role of ["user", "assistant"]) {
     const first = messages.find((message) => message.role === role);
-    if (first) protectedRefs.add(first.ref);
+    if (first) whole.add(first.ref);
   }
   const transcript = messages.map((message) => message.content).join("\n");
-  const slimmed = messages.map((message) =>
-    message.role !== "tool" || protectedRefs.has(message.ref)
-      ? message
-      : {
-          ...message,
-          content: squeeze(message.content, SLIM_HEAD_CHARS, SLIM_TAIL_CHARS),
-        },
-  );
-  const kept: DiagnosticEvent[] = [];
-  for (const event of events) {
-    const owned =
-      event.message_ref !== undefined && protectedRefs.has(event.message_ref);
-    const shown =
-      event.detail ||
-      event.content ||
-      (event.kind === "tool_response" ? event.output : event.input);
-    if (!owned && shown && transcript.includes(shown)) continue;
-    const {
-      ref: _ref,
-      span_id: _span,
-      timestamp: _time,
-      tool_call_id: _call,
-      message_role: _role,
-      ...rest
-    } = event;
-    const next: DiagnosticEvent = { ...rest };
-    if (!owned && event.kind === "tool_response" && event.output) {
-      next.output = squeeze(event.output, SLIM_HEAD_CHARS, SLIM_TAIL_CHARS);
-    }
-    kept.push(next);
-  }
   return {
-    messages: slimmed,
-    events: kept.map((event, index) => ({ ref: `d${index + 1}`, ...event })),
+    messages: messages.map((message) =>
+      message.role === "tool" && !whole.has(message.ref)
+        ? { ...message, content: squeeze(message.content) }
+        : message,
+    ),
+    events: events
+      .filter((event) => kept.has(event.message_ref))
+      .filter((event) => {
+        const shown =
+          event.content ||
+          (event.kind === "tool_response" ? event.output : event.input);
+        return (
+          whole.has(event.message_ref) || !shown || !transcript.includes(shown)
+        );
+      })
+      .map((event, index) => ({
+        ref: `d${index + 1}`,
+        ...event,
+        ...(event.kind === "tool_response" &&
+        event.output &&
+        !whole.has(event.message_ref)
+          ? { output: squeeze(event.output) }
+          : {}),
+      })),
   };
 }
 
 function render(
   input: ConversationSynthesisInput,
-  read: Read,
+  conversation: Read,
   messages: CaseMessage[],
   events: DiagnosticEvent[],
   capped: boolean,
 ): string {
   const lines = ["<conversation_case>"];
   lines.push(
-    `  <conversation_id>${xmlEscape(input.conversation_id ?? "")}</conversation_id>`,
+    `  <conversation_id>${escapeXml(input.conversation_id)}</conversation_id>`,
   );
-  const stats: Array<[string, string | undefined]> = [
-    ["service_name", input.service_name || undefined],
-    ["agent_name", input.agent_name || undefined],
-    ["model", input.model || undefined],
-    ["span_count", String(input.span_count ?? 0)],
-    ["error_count", String(input.error_count ?? 0)],
-    ["duration_ms", pyFloatField(input.duration_ms ?? 0)],
+  const metadata: Array<[string, unknown]> = [
+    ["service_name", input.service_name],
+    ["agent_name", input.agent_name],
+    ["model", input.model],
+    ["span_count", input.span_count ?? 0],
+    ["error_count", input.error_count ?? 0],
+    ["duration_ms", input.duration_ms ?? 0],
   ];
-  const present = stats.filter(
-    (entry): entry is [string, string] => entry[1] !== undefined,
-  );
-  if (present.length > 0 || input.last_error_message) {
-    lines.push("  <metadata>");
-    for (const [key, value] of present)
-      lines.push(`    <${key}>${xmlEscape(value)}</${key}>`);
-    if (input.last_error_message)
-      lines.push(
-        `    <last_error>${xmlEscape(input.last_error_message)}</last_error>`,
-      );
-    lines.push("  </metadata>");
+  lines.push("  <metadata>");
+  for (const [key, value] of metadata) {
+    if (value != null && value !== "")
+      lines.push(`    <${key}>${escapeXml(String(value))}</${key}>`);
   }
+  if (input.last_error_message) {
+    lines.push(
+      `    <last_error>${escapeXml(input.last_error_message)}</last_error>`,
+    );
+  }
+  lines.push("  </metadata>");
   const prior = input.prior_observations ?? [];
   if (prior.length > 0) {
     lines.push("  <previous_observations>");
     for (const row of prior) {
       lines.push(
-        `    <observation lens=${xmlQuoteAttr(row.lens)} label=${xmlQuoteAttr(row.label || "observation")}>${xmlEscape(pyStrip(row.summary ?? ""))}</observation>`,
+        `    <observation lens=${attr(row.lens)} label=${attr(row.label || "observation")}>${escapeXml((row.summary ?? "").trim())}</observation>`,
       );
     }
     lines.push("  </previous_observations>");
   }
-  if (cursorNanos(input.watermark) !== undefined) {
+  if (input.watermark) {
     lines.push(
-      `  <continuation turns_skipped=${xmlQuoteAttr(String(read.turnsSkipped))}>Only new turns are included.</continuation>`,
+      `  <continuation turns_skipped=${attr(String(conversation.turnsSkipped))}>Only new turns are included.</continuation>`,
     );
   }
-  if (read.compactions > 0) {
+  if (conversation.compactions > 0) {
     lines.push(
-      `  <context_compactions count=${xmlQuoteAttr(String(read.compactions))}>Earlier turns were summarized.</context_compactions>`,
+      `  <context_compactions count=${attr(String(conversation.compactions))}>Earlier turns were summarized.</context_compactions>`,
     );
   }
   lines.push("  <transcript>");
   for (const message of messages) {
     lines.push(
-      `    <message ref=${xmlQuoteAttr(message.ref)} role=${xmlQuoteAttr(message.role || "unknown")}>${xmlEscape(pyStrip(message.content))}</message>`,
+      `    <message ref=${attr(message.ref)} role=${attr(message.role || "unknown")}>${escapeXml(message.content.trim())}</message>`,
     );
   }
   lines.push("  </transcript>");
   if (events.length > 0) {
     lines.push("  <diagnostic_events>");
     for (const event of events) {
-      const detail =
-        event.detail || event.content || pyDumps(event, { ensureAscii: true });
       lines.push(
-        `    <event ref=${xmlQuoteAttr(event.ref || "?")} kind=${xmlQuoteAttr(event.kind)}>${xmlEscape(detail)}</event>`,
+        `    <event ref=${attr(event.ref ?? "?")} kind=${attr(event.kind)}>${escapeXml(event.content || JSON.stringify(event))}</event>`,
       );
     }
     lines.push("  </diagnostic_events>");
@@ -799,77 +675,70 @@ export const conversationSynthesis: PromptBuilder<
 > = {
   name: "conversation_synthesis",
   version: 1,
-  build(input, maxUnits) {
+  build(input, maxTokens) {
     const resume = input.watermark ?? undefined;
-    const read = readTurns(input);
-    const window = consumedWindow(read);
-    const priorTail = resume?.tail_fingerprints ?? [];
+    const conversation = read(input);
+    const last = conversation.turns
+      .filter((turn) => turn.ns !== undefined)
+      .reduce<Turn | undefined>(
+        (latest, turn) =>
+          latest === undefined ||
+          turn.ns! > latest.ns! ||
+          (turn.ns === latest.ns && turn.call.span_id > latest.call.span_id)
+            ? turn
+            : latest,
+        undefined,
+      );
+    const tail = conversation.messages
+      .slice(-TAIL_FINGERPRINT_LIMIT)
+      .map((message) => message.source.message_hash!);
+    const segment = (number: number): ResumeState => ({
+      watermark: last?.call.timestamp ?? input.completed_at,
+      ...(last ? { cursor: encodeCursor(last.call.span_id, last.ns!) } : {}),
+      segment: number,
+      tail_fingerprints: [...(resume?.tail_fingerprints ?? []), ...tail].slice(
+        -TAIL_FINGERPRINT_LIMIT,
+      ),
+      last_input_count: conversation.finalInputCount,
+      completed_at: input.completed_at,
+    });
     const priorSegment = resume?.segment ?? 0;
-    const completedAt = pydanticDatetime(isoMicros(input.completed_at));
-    const watermarkNext = (segment: number): ResumeState =>
-      omitNone({
-        watermark:
-          window.micros !== undefined
-            ? pydanticDatetime(window.micros)
-            : completedAt,
-        cursor: window.cursor,
-        segment,
-        tail_fingerprints: [...priorTail, ...window.tail].slice(
-          -TAIL_FINGERPRINT_LIMIT,
-        ),
-        last_input_count: read.finalInputCount,
-        completed_at: completedAt,
-      });
     const skip = { drafts: [], model: "", hashes: {} } as const;
 
-    if (read.messages.length === 0) {
+    if (conversation.messages.length === 0) {
       const outcome: SegmentSkip =
-        window.micros === undefined
+        last === undefined
           ? { ...skip, segment: 0, skipped: "no_new_content" }
           : {
               ...skip,
               segment: priorSegment,
-              watermark_next: watermarkNext(priorSegment),
+              watermark_next: segment(priorSegment),
             };
       return { prompt: "", applied: [], state: { outcome } };
     }
 
-    const kept = capTranscript(
-      read.messages,
-      TRANSCRIPT_MAX_TOKENS,
-      TRANSCRIPT_HEAD_MESSAGES,
+    const kept = capTranscript(conversation.messages);
+    const capped = kept.length < conversation.messages.length;
+    const digest = sha256(
+      kept.map((message) => message.source.message_hash).join("\n"),
     );
-    const capped = kept.length < read.messages.length;
-    const digest = createHash("sha256")
-      .update(
-        kept
-          .map(
-            (message) => message.source.message_hash || message.content || "",
-          )
-          .join("\n"),
-      )
-      .digest("hex");
-    const keptRefs = new Set(kept.map((message) => message.ref));
-    const keptEvents = read.events.filter(
-      (event) =>
-        event.message_ref !== undefined && keptRefs.has(event.message_ref),
-    );
-    const slimmed = slim(kept, keptEvents);
-    const segment = priorSegment + 1;
-    const after = cursorNanos(resume);
-    const plan: SegmentPlan = omitNone({
+    const slimmed = slim(kept, conversation.events);
+    const after = resumeNanos(resume);
+    const plan: SegmentPlan = {
       conversation_id: input.conversation_id,
-      completed_at: completedAt,
+      completed_at: input.completed_at,
       digest,
-      segment_start: after === undefined ? "" : after.ns.toString(),
-      segment,
-      watermark_next: watermarkNext(segment),
-      prior_resolution: input.prior_resolution ?? undefined,
-    });
+      segment_start: after === undefined ? "" : after.toString(),
+      segment: priorSegment + 1,
+      watermark_next: segment(priorSegment + 1),
+      ...(input.prior_resolution
+        ? { prior_resolution: input.prior_resolution }
+        : {}),
+    };
     return {
       ...withinBudget(
-        render(input, read, slimmed.messages, slimmed.events, capped),
-        maxUnits,
+        render(input, conversation, slimmed.messages, slimmed.events, capped),
+        maxTokens,
         capped ? ["cap_transcript"] : [],
       ),
       digest,

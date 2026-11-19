@@ -5,7 +5,7 @@ import { Check, Errors } from "typebox/value";
 const InputLine = Type.Object({
   custom_id: Type.String({ minLength: 1 }),
   /** The prompt as written; or `input`, built into one through the agent's `prompt:` spec. */
-  prompt: Type.Optional(Type.String({ minLength: 1 })),
+  prompt: Type.Optional(Type.String()),
   input: Type.Optional(Type.Unknown()),
   /** The caller's own context for the line, copied onto its result unread. */
   metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
@@ -37,8 +37,11 @@ export type BuildLinePrompt = (input: unknown) => {
   build: BatchLineBuild;
 };
 
-/** How a line ended, in the Message Batches vocabulary: `canceled` is a line the stop grace cut off. */
-export type BatchResultType = "succeeded" | "errored" | "canceled";
+/**
+ * How a line ended, in the Message Batches vocabulary: `canceled` is a line
+ * the stop grace cut off, `skipped` one whose builder found nothing to ask.
+ */
+export type BatchResultType = "succeeded" | "errored" | "canceled" | "skipped";
 
 /** What the line's session produced. */
 export interface BatchResult {
@@ -100,6 +103,9 @@ export function validateInputLines(
     if ((value.prompt === undefined) === (value.input === undefined)) {
       throw new Error(`${label(index)} needs exactly one of prompt and input`);
     }
+    if (value.prompt === "" && value.built === undefined) {
+      throw new Error(`${label(index)} has an empty prompt`);
+    }
     if (value.prompt !== undefined) {
       return {
         custom_id: value.custom_id,
@@ -112,7 +118,7 @@ export function validateInputLines(
     }
     if (build === undefined) {
       throw new Error(
-        `${label(index)} carries an input, but the agent declares no prompt: spec to build it`,
+        `${label(index)} carries an input, but the agent declares no preprocess: builder to build it`,
       );
     }
     let built: ReturnType<BuildLinePrompt>;
@@ -140,7 +146,15 @@ export function parseInputLines(
   text.split("\n").forEach((raw, index) => {
     if (!raw.trim()) return;
     try {
-      values.push(JSON.parse(raw));
+      // `timestamp_ns` keeps its digits: a nanosecond instant is past what a
+      // JSON number holds exactly.
+      values.push(
+        JSON.parse(raw, (key, value, context?: { source?: string }) =>
+          key === "timestamp_ns" && context?.source !== undefined
+            ? context.source
+            : value,
+        ),
+      );
     } catch (error) {
       throw new Error(`input line ${index + 1} is not JSON: ${String(error)}`);
     }
@@ -155,11 +169,14 @@ export function parseInputLines(
 
 /** The fingerprint of what a line asks: a changed prompt or agent is a different question. */
 export function inputFingerprint(agent: string, line: BatchInputLine): string {
-  return createHash("sha256")
+  const hash = createHash("sha256")
     .update(agent)
     .update("\0")
-    .update(line.prompt)
-    .digest("hex");
+    .update(line.prompt);
+  // What built the prompt is part of the question: the same prompt with a newer
+  // resume state answers again, so its result carries the state to record.
+  if (line.built) hash.update("\0").update(JSON.stringify(line.built));
+  return hash.digest("hex");
 }
 
 /**
@@ -176,7 +193,10 @@ export function completedIds(resultsText: string | null): Map<string, string> {
   }
   return new Map(
     [...latest]
-      .filter(([, line]) => line.result?.type === "succeeded")
+      .filter(
+        ([, line]) =>
+          line.result?.type === "succeeded" || line.result?.type === "skipped",
+      )
       .map(([id, line]) => [id, line.batch?.input_sha256]),
   );
 }

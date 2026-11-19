@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   conversationSynthesis,
   middleCut,
-  parseInputSpec,
+  parsePreprocess,
   promptBuilder,
   PromptError,
   trajectoryLlmClassify,
@@ -55,9 +55,9 @@ describe("fitting a prompt", () => {
         },
       ],
     };
-    const built = trajectoryLlmJudge.build(input, 200);
+    const built = trajectoryLlmJudge.build(input, 66);
     expect(built.applied).toEqual(["middle_cut"]);
-    expect(built.prompt.length).toBeLessThanOrEqual(200);
+    expect(built.prompt.length).toBeLessThanOrEqual(66 * 3);
     expect(trajectoryLlmJudge.build(input, 10_000).applied).toEqual([]);
   });
 
@@ -96,11 +96,11 @@ describe("the builder registry", () => {
   });
 
   it("reads an input as a bare name or a builder with options", () => {
-    expect(parseInputSpec("conversation_synthesis@1")).toEqual({
+    expect(parsePreprocess("conversation_synthesis@1")).toEqual({
       builder: "conversation_synthesis@1",
     });
     expect(
-      parseInputSpec({
+      parsePreprocess({
         builder: "trajectory_llm_classify@1",
         options: { head: 200 },
       }),
@@ -108,6 +108,6 @@ describe("the builder registry", () => {
       builder: "trajectory_llm_classify@1",
       options: { head: 200 },
     });
-    expect(() => parseInputSpec("nope@1")).toThrow(PromptError);
+    expect(() => parsePreprocess("nope@1")).toThrow(PromptError);
   });
 });

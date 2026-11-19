@@ -342,13 +342,31 @@ export async function runBatchWith(
       if (stopped()) return;
       const line = queue[next];
       next += 1;
-      const result = await runLine(line);
+      // A builder that found nothing to ask records its state without a session.
+      const result =
+        line.prompt === ""
+          ? {
+              custom_id: line.custom_id,
+              result: { type: "skipped" as const },
+              batch: {
+                record_index: recordIndex.get(line.custom_id) ?? -1,
+                input_sha256: fingerprint.get(line.custom_id) ?? "",
+                attempts: 0,
+              },
+              ...(line.metadata ? { metadata: line.metadata } : {}),
+              ...(line.built ? { built: line.built } : {}),
+            }
+          : await runLine(line);
       // Null: the run stopped before this line started; it counts as not started.
       if (result === null) return;
       await record(result);
       await deps.onResult?.(result);
-      if (result.result.type === "succeeded") summary.completed += 1;
-      else summary.failed += 1;
+      if (
+        result.result.type === "succeeded" ||
+        result.result.type === "skipped"
+      ) {
+        summary.completed += 1;
+      } else summary.failed += 1;
       await progress(stopped() ? "stopping" : "running");
     }
   };

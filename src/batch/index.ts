@@ -23,7 +23,7 @@ import {
 } from "./runner.js";
 import { jsonlResults, memoryResults } from "./shards.js";
 import { promptBuilder } from "../prompts/registry.js";
-import { parseInputSpec, type InputSpec } from "../prompts/spec.js";
+import { parsePreprocess, type PreprocessSpec } from "../prompts/spec.js";
 import { promptBudget } from "../prompts/budget.js";
 import { findRecipeModel } from "../model-binding.js";
 import type { RecipeAgentModelConfig } from "../recipe/model.js";
@@ -104,10 +104,10 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
   files?: BatchFiles;
   /**
    * How a line that carries an `input` becomes its prompt: the agent's
-   * `input:` spec, and the budget of its models (`agentPromptBudget`). A line
+   * `preprocess:` spec, and the budget of its models (`agentPromptBudget`). A line
    * with a `prompt` runs as written.
    */
-  prompt?: { spec: InputSpec; maxUnits: number };
+  preprocess?: { spec: PreprocessSpec; maxTokens: number };
   /**
    * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
    * Defaults to an id derived from the results file, so a resumed batch keeps
@@ -140,15 +140,15 @@ export function agentPromptBudget(
   );
 }
 
-/** Builds each `input` line through the builder `spec` names, within `maxUnits`. */
+/** Builds each `input` line through the builder `spec` names, within `maxTokens`. */
 export function linePromptBuilder(
-  spec: InputSpec,
-  maxUnits: number,
+  spec: PreprocessSpec,
+  maxTokens: number,
 ): BuildLinePrompt {
-  const { builder: id, options } = parseInputSpec(spec);
+  const { builder: id, options } = parsePreprocess(spec);
   const builder = promptBuilder(id);
   return (input) => {
-    const built = builder.build(input, maxUnits, options);
+    const built = builder.build(input, maxTokens, options);
     return {
       prompt: built.prompt,
       build: {
@@ -223,12 +223,12 @@ export async function runBatch(
     files = nodeBatchFiles,
     batch_id,
     baggage,
-    prompt,
+    preprocess,
     ...settings
   } = options;
   const params = parseBatchParams(settings);
-  const build = prompt
-    ? linePromptBuilder(prompt.spec, prompt.maxUnits)
+  const build = preprocess
+    ? linePromptBuilder(preprocess.spec, preprocess.maxTokens)
     : undefined;
   let lines: BatchInputLine[];
   if (typeof input === "string" || input instanceof URL) {

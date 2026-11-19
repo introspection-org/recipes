@@ -3,13 +3,13 @@ import { findRecipeModel } from "../model-binding.js";
 import { findClassifierModel } from "./classifier.js";
 import { promptBudget } from "../prompts/budget.js";
 import {
-  CLASSIFIER_BUDGET_UNITS,
+  CLASSIFIER_BUDGET_TOKENS,
   trajectoryLlmClassify,
   trajectoryLlmJudge,
 } from "../prompts/builders/trajectory.js";
 import { builderId } from "../prompts/builder.js";
 import { promptBuilder } from "../prompts/registry.js";
-import { parseInputSpec } from "../prompts/spec.js";
+import { parsePreprocess } from "../prompts/spec.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -357,27 +357,27 @@ export async function runJudges(
 
   const budgets = new Map<string, number>();
   const budgetFor = (judge: JudgeDefinition): number => {
-    let units = budgets.get(judge.name);
-    if (units === undefined) {
+    let tokens = budgets.get(judge.name);
+    if (tokens === undefined) {
       const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
-      units =
+      tokens =
         judge.kind === "classifier"
-          ? // Jev's slim was measured cut to 75k (the slimming study); a
+          ? // Jev's slim was measured cut to 25k tokens (the slimming study); a
             // classifier's window may lower that, never raise it.
             promptBudget(
               specs.map((spec) => findClassifierModel(spec)),
-              CLASSIFIER_BUDGET_UNITS,
+              CLASSIFIER_BUDGET_TOKENS,
             )
           : promptBudget(
               specs.map((spec) => findRecipeModel(spec, options.modelRegistry)),
             );
-      budgets.set(judge.name, units);
+      budgets.set(judge.name, tokens);
     }
-    return units;
+    return tokens;
   };
   const builderFor = (judge: JudgeDefinition) => {
-    const spec = judge.input
-      ? parseInputSpec(judge.input)
+    const spec = judge.preprocess
+      ? parsePreprocess(judge.preprocess)
       : {
           builder: builderId(
             judge.kind === "classifier"

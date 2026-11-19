@@ -26,8 +26,8 @@ const TOP_LEVEL_FIELDS: &[&str] = &[
     "judge",
     "llm",
     "name",
-    "input",
     "on",
+    "preprocess",
     "questions",
     "type",
 ];
@@ -157,7 +157,7 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     validate_kind(map, path, ctx);
     validate_on(map.get("on"), path, ctx);
     validate_model(map, path, ctx);
-    validate_input(map.get("input"), path, ctx);
+    validate_preprocess(map.get("preprocess"), path, ctx);
 
     ValidatedJudge {
         path: path.to_owned(),
@@ -165,14 +165,14 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     }
 }
 
-/// A judge's `input:` is an agent's: the builder of its transcript.
-fn validate_input(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
-    for message in value.map(crate::input_problems).unwrap_or_default() {
+/// A judge's `preprocess:` is an agent's: the builder of its transcript.
+fn validate_preprocess(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    for message in value.map(crate::preprocess_problems).unwrap_or_default() {
         ctx.error(
-            "judge.input_invalid",
+            "judge.preprocess_invalid",
             path,
             format!("Judge {message}"),
-            Some("for example: input: trajectory_llm_classify@1"),
+            Some("for example: preprocess: trajectory_llm_classify@1"),
         );
     }
 }

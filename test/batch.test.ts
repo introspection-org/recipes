@@ -363,9 +363,9 @@ describe("runBatch", () => {
     expect(results.written).not.toHaveProperty("built");
   });
 
-  it("refuses an input line when the agent declares no prompt spec", async () => {
+  it("refuses an input line when the agent declares no preprocess builder", async () => {
     expect(() => parseInputLines(jsonl({ custom_id: "a", input: {} }))).toThrow(
-      /no prompt: spec/,
+      /no preprocess: builder/,
     );
     expect(() =>
       parseInputLines(jsonl({ custom_id: "a", prompt: "p", input: {} })),

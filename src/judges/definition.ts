@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseInputSpec, type InputSpec } from "../prompts/spec.js";
+import { parsePreprocess, type PreprocessSpec } from "../prompts/spec.js";
 import {
   parseRecipeAgentAiConfig,
   type RecipeAgentModelConfig,
@@ -25,7 +25,7 @@ interface JudgeBase {
   /** The agent `ai:` block: model, fallbacks, thinking level and options. */
   ai: RecipeAgentModelConfig & { name: string };
   /** The builder of its transcript, over the default for its kind. */
-  input?: InputSpec;
+  preprocess?: PreprocessSpec;
   /** The file the judge was read from, relative to the Recipe. */
   path: string;
   /** SHA-256 of the definition file: a changed definition is a different judge. */
@@ -79,7 +79,7 @@ export interface NormalizedJudgeDefinition {
     ai: Record<string, unknown>;
     instructions?: string;
     questions?: Record<string, JudgeQuestion>;
-    input?: unknown;
+    preprocess?: unknown;
   };
   warnings?: string[];
 }
@@ -152,8 +152,8 @@ function toDefinition(
     ...(definition.description ? { description: definition.description } : {}),
     on: isRecord(on) && Object.keys(on).length === 0 ? [] : on,
     ai: { ...ai, name: ai.name },
-    ...(definition.input !== undefined
-      ? { input: parseInputSpec(definition.input as InputSpec) }
+    ...(definition.preprocess !== undefined
+      ? { preprocess: parsePreprocess(definition.preprocess as PreprocessSpec) }
       : {}),
     path,
     definitionHash: createHash("sha256").update(content).digest("hex"),
