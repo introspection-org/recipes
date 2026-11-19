@@ -33,3 +33,18 @@ export {
   OUTPUT_RESERVE_TOKENS,
   UNITS_PER_TOKEN,
 } from "./budget.js";
+export {
+  CONVERSATION_CASE_FIT,
+  CONVERSATION_CASE_TEMPLATE,
+  conversationCaseBuilder,
+  type ConversationCaseInput,
+  type ConversationCaseState,
+  type ConversationMessage,
+  type ConversationModelCall,
+  type ConversationPart,
+  type PriorObservation,
+  type ResumeState,
+  type SegmentPlan,
+  type SegmentSkip,
+} from "./builders/conversation-case.js";
+export { PROMPT_BUILDERS, promptBuilder } from "./registry.js";

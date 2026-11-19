@@ -1,0 +1,69 @@
+{
+  "name": "media_parts",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:01:00Z",
+    "span_count": 2,
+    "error_count": 0,
+    "duration_ms": 61250.5,
+    "model_calls": [
+      {
+        "span_id": "span-01",
+        "response_id": "resp-01",
+        "timestamp": "2026-11-12T09:01:00Z",
+        "timestamp_ns": 1794474060000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "What does this chart show?"
+              },
+              {
+                "type": "binary",
+                "media_type": "image/png",
+                "content": "iVBORw0KGgo="
+              }
+            ]
+          }
+        ],
+        "input_message_count": 1,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Monthly revenue, rising since March."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "prior_observations": []
+  },
+  "expected": {
+    "prompt": "<conversation_case>\n  <conversation_id>conv-parity</conversation_id>\n  <metadata>\n    <span_count>2</span_count>\n    <error_count>0</error_count>\n    <duration_ms>61250.5</duration_ms>\n  </metadata>\n  <transcript>\n    <message ref=\"m1\" role=\"user\">What does this chart show? [binary provided]</message>\n    <message ref=\"m2\" role=\"assistant\">Monthly revenue, rising since March.</message>\n  </transcript>\n</conversation_case>",
+    "plan": {
+      "conversation_id": "conv-parity",
+      "completed_at": "2026-11-12T09:01:00Z",
+      "digest": "c393715bae535dfd620ef905c539a98769265938981b07e5e4f6c42ce1b428cd",
+      "segment_start": "",
+      "segment": 1,
+      "watermark_next": {
+        "watermark": "2026-11-12T09:01:00Z",
+        "cursor": "eyJpIjoic3Bhbi0wMSIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MDYwMDAwMDAwMDAwIn0",
+        "segment": 1,
+        "tail_fingerprints": [
+          "5c95676b2415a2455b43d106",
+          "11c09ba1fa37b7999803a581"
+        ],
+        "last_input_count": 1,
+        "completed_at": "2026-11-12T09:01:00Z"
+      }
+    }
+  }
+}

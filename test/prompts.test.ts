@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPrompt,
+  conversationCaseBuilder,
   FitError,
+  fitStepName,
   middleCut,
+  promptBuilder,
+  type PromptBuilder,
   renderTemplate,
   TemplateError,
   trajectoryBuilder,
@@ -70,5 +74,47 @@ describe("fitting a prompt", () => {
     expect(built.builder).toBe("trajectory@1");
     expect(built.applied).toEqual(["clip_tool_values", "middle_cut"]);
     expect(built.prompt.length).toBeLessThanOrEqual(200);
+  });
+
+  it("adds until_fit steps in order only until the prompt fits", () => {
+    const calls: string[][] = [];
+    const builder: PromptBuilder<string, undefined, { label: string }> = {
+      name: "stub",
+      version: 1,
+      defaultTemplate: "{{ text }}",
+      defaultFit: {},
+      steps: new Set(["half", "quarter", "never"]),
+      build(input, steps, options) {
+        const names = steps.map((step) => fitStepName(step)[0]);
+        calls.push(names);
+        const keep = names.includes("quarter")
+          ? 4
+          : names.includes("half")
+            ? 2
+            : 1;
+        return {
+          slots: {
+            text: `${options?.label}:${input.slice(0, input.length / keep)}`,
+          },
+          applied: names,
+        };
+      },
+    };
+    const built = buildPrompt(builder, "x".repeat(100), {
+      budget: { maxUnits: 40 },
+      fit: { until_fit: ["half", "quarter", "never"] },
+      options: { label: "case" },
+    });
+    expect(calls).toEqual([[], ["half"], ["half", "quarter"]]);
+    expect(built.applied).toEqual(["half", "quarter"]);
+    expect(built.prompt).toBe(`case:${"x".repeat(25)}`);
+  });
+});
+
+describe("the builder registry", () => {
+  it("finds a builder by name and version, and refuses one it does not hold", () => {
+    expect(promptBuilder("conversation_case@1")).toBe(conversationCaseBuilder);
+    expect(promptBuilder("trajectory@1")).toBe(trajectoryBuilder);
+    expect(() => promptBuilder("conversation_case@2")).toThrow(FitError);
   });
 });

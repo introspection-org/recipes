@@ -1,0 +1,117 @@
+{
+  "name": "resumed_resent_history",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:03:00Z",
+    "span_count": 6,
+    "error_count": 0,
+    "duration_ms": 181250.5,
+    "model_calls": [
+      {
+        "span_id": "span-03",
+        "response_id": "resp-03",
+        "timestamp": "2026-11-12T09:03:00Z",
+        "timestamp_ns": 1794474180000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Plan a three-day trip to Kyoto."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Day 1: Fushimi Inari…"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Swap day 2 for Nara."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Day 2: Nara…"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Add a budget."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 5,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Budget: about ¥60,000."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "watermark": {
+      "watermark": "2026-11-12T09:02:00Z",
+      "cursor": "eyJpIjoic3Bhbi0wMiIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTIwMDAwMDAwMDAwIn0",
+      "segment": 1,
+      "tail_fingerprints": [
+        "9348f74f16e160e12af8a927",
+        "4191492f739c74adf43189c6",
+        "1f0b10bf0f35404323e77cfd",
+        "f776548775470a50c0cd32db"
+      ],
+      "last_input_count": 3,
+      "completed_at": "2026-11-12T09:02:00Z"
+    },
+    "prior_observations": []
+  },
+  "expected": {
+    "prompt": "<conversation_case>\n  <conversation_id>conv-parity</conversation_id>\n  <metadata>\n    <span_count>6</span_count>\n    <error_count>0</error_count>\n    <duration_ms>181250.5</duration_ms>\n  </metadata>\n  <continuation turns_skipped=\"0\">Only new turns are included.</continuation>\n  <transcript>\n    <message ref=\"m1\" role=\"user\">Add a budget.</message>\n    <message ref=\"m2\" role=\"assistant\">Budget: about ¥60,000.</message>\n  </transcript>\n</conversation_case>",
+    "plan": {
+      "conversation_id": "conv-parity",
+      "completed_at": "2026-11-12T09:03:00Z",
+      "digest": "f3e51aeb9ee69f163d546e3b14b16c95037ddf0b282f1f9a96945c58b76a45bd",
+      "segment_start": "1794474120000000000",
+      "segment": 2,
+      "watermark_next": {
+        "watermark": "2026-11-12T09:03:00Z",
+        "cursor": "eyJpIjoic3Bhbi0wMyIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTgwMDAwMDAwMDAwIn0",
+        "segment": 2,
+        "tail_fingerprints": [
+          "9348f74f16e160e12af8a927",
+          "4191492f739c74adf43189c6",
+          "1f0b10bf0f35404323e77cfd",
+          "f776548775470a50c0cd32db",
+          "48caee0a24c089a0f899eac6",
+          "ac983fa4ff0ca46f322c6795"
+        ],
+        "last_input_count": 5,
+        "completed_at": "2026-11-12T09:03:00Z"
+      }
+    }
+  }
+}

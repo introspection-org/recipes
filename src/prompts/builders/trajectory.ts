@@ -68,11 +68,11 @@ export const trajectoryBuilder: PromptBuilder<JudgeInput> = {
   defaultTemplate: TRAJECTORY_TEMPLATE,
   defaultFit: LLM_JUDGE_FIT,
   steps: new Set(["clip_tool_values", "slim_tool_results"]),
-  build(input, fit) {
+  build(input, steps) {
     validateJudgeInput(input);
     const applied: string[] = [];
     let trajectory = input.trajectory;
-    for (const step of fit.always ?? []) {
+    for (const step of steps) {
       const [name, params] = fitStepName(step);
       const number = (key: string, fallback: number): number =>
         typeof params[key] === "number" ? (params[key] as number) : fallback;
