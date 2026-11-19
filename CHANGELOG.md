@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.58.0](https://github.com/introspection-org/recipes/compare/v0.57.0...v0.58.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **judges:** the spec module drops JudgeLlmConfig, JudgeLlmRequest, JudgeLlmTransport, JudgeLlmLocal and their default constants; JudgeDefinition has ai and questions in place of llm.
+
+### Features
+
+* **judges:** run judges on Pi as a batch, with LLM and classifier judges; a judge declares ai: ([#544](https://github.com/introspection-org/recipes/issues/544)) ([583dc6b](https://github.com/introspection-org/recipes/commit/583dc6b154fa3c3233190885d1c033b30e870cd3))
+
 ## [0.57.0](https://github.com/introspection-org/recipes/compare/v0.56.0...v0.57.0) (2026-11-17)
 
 
