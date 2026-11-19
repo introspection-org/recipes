@@ -32,6 +32,7 @@ at run time.
 | Send a reviewed document for e-signature                       | [Signature tool](signature/README.md)        |
 | Bring a provider for search, productivity, issues or signature | [Provider modules](providers.md)             |
 | Define portable evaluation judges                              | [Recipe judges](recipe-judges.md)            |
+| Run a Recipe's judges over conversations                       | [Running judges](judges.md)                  |
 
 ## Boundary
 

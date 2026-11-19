@@ -116,7 +116,7 @@ import {
 } from "./tool-search.js";
 import {
   assertRecipeModelTransport,
-  routeRecipeFallbacks,
+  createRecipeFallbackRouter,
   RecipeCredentialError,
   RecipeModelError,
   RecipeModelTransportError,
@@ -228,6 +228,12 @@ export interface CreateAgentSessionOptions {
    * Pi retries it, each with its credential in `credentials`.
    */
   modelFallbacks?: readonly Model<Api>[];
+  /**
+   * Retries a failing model gets before the session moves to the next of
+   * `modelFallbacks`. Default 0: the first retry moves on. Pi's own
+   * `retry.maxRetries` must exceed it for a fallback to be reached.
+   */
+  modelFallbackAfterRetries?: number;
   /** Explicit local MCP binding file. Default: `<cwd|recipe.recipeDir>/.pi/mcp.local.json`. */
   mcpBindingsPath?: string;
   /** Inline MCP bindings, for hosts that synthesize them instead of reading a file. */
@@ -1155,7 +1161,9 @@ async function createSessionForAgent(
         contextWindow: Math.min(...routed.map((c) => c.contextWindow)),
         maxTokens: Math.min(...routed.map((c) => c.maxTokens)),
         input: model.input,
-        route: (request) => routeRecipeFallbacks(routed, request),
+        route: createRecipeFallbackRouter(routed, {
+          afterRetries: opts.modelFallbackAfterRetries,
+        }),
       });
       sessionModel =
         services.modelRuntime.getModel(FALLBACK_PROVIDER, recipe.name) ?? model;

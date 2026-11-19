@@ -309,7 +309,7 @@ See [Productivity tools](productivity/README.md).
 
 ## Judges
 
-A Recipe MAY include portable LLM grading definitions as direct `.yaml` or
+A Recipe MAY include portable grading definitions as direct `.yaml` or
 `.yml` children of `judges/`. Nested files are not judge sources. Every judge
 YAML MUST declare a package-unique lowercase kebab-case `name`. As with agent
 definitions, this is the stable authored identity and the filename has no
@@ -320,8 +320,8 @@ alias and normalize it to `name`. A definition cannot declare both fields.
 
 The authored schema, defaults, applicability gates, and model configuration are
 defined in [Recipe judges](recipe-judges.md). The Recipe Format owns this
-declarative evaluation contract; hosts own transcript assembly, execution,
-credentials, retries, persistence, and result processing.
+declarative evaluation contract; [Running judges](judges.md) covers execution,
+and hosts own credentials, persistence, and result processing.
 
 ## Instructions, skills, prompts, and extensions
 
@@ -521,13 +521,13 @@ Besides Pi's own tools (`read`, `bash`, `edit`, `write`, `grep`, `find`,
 `ls`), Recipes provides these built-in tools, available only to an agent that
 lists them in `tools`:
 
-| Tool                 | What it does                                                                                                                                                                                                                                                                                                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ask_user_question`  | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool).                                                                                                                                                            |
-| `show_artifact`      | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel).                                                                                                                                                                 |
-| `review_artifacts`   | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files).                                                                                                                      |
+| Tool                 | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ask_user_question`  | Asks the user one to four multiple-choice questions and waits for the answers; the user can always type their own answer. Works in Pi's terminal, on pause/resume hosts and headless. See [Interactions](interactions.md#the-built-in-ask_user_question-tool).                                                                                                                                                                                 |
+| `show_artifact`      | Shows a markdown file the agent wrote (a brief, test cases, a report) in a panel on the right of Pi's terminal, and adds `/recipe view`; Esc closes it. Elsewhere it returns the file's path as text. See [Pi extension](pi-extension.md#artifact-panel).                                                                                                                                                                                      |
+| `review_artifacts`   | Asks the user to review several markdown files the agent wrote, one decision per file (approve, or request changes saying what to change). In Pi's terminal each file shows in the artifact panel; other hosts render their own review. See [Pi extension](pi-extension.md#reviewing-several-files).                                                                                                                                           |
 | `introspection_open` | Asks the person to open an Introspection page (install GitHub or Slack, add a connector, connect their own account, set up sign-in, connect a Runtime's MCP server, look at a Runtime, task or Introspection issue) and, with `wait: true`, pauses until they are done. In Pi's terminal it runs the Introspection CLI's loopback; pause/resume hosts render a card. See [Interactions](interactions.md#the-built-in-introspection_open-tool). |
-| `today` | Returns the current date, weekday and time, with the time zone and its UTC offset: the person's, or, with `time_zone`, another zone's. It reads the session's clock (see [Current date](#current-date)). |
+| `today`              | Returns the current date, weekday and time, with the time zone and its UTC offset: the person's, or, with `time_zone`, another zone's. It reads the session's clock (see [Current date](#current-date)).                                                                                                                                                                                                                                       |
 
 ```yaml
 tools: [read, bash, ask_user_question, show_artifact]

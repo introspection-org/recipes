@@ -1,6 +1,6 @@
 # Recipe judge definitions
 
-Recipe judges are optional, recipe-owned LLM grading definitions. Author them
+Recipe judges are optional, recipe-owned grading definitions. Author them
 as direct children of `judges/` using a lowercase `.yaml` or `.yml` extension:
 
 ```text
@@ -18,19 +18,20 @@ sources have no judge diagnostics.
 The validator behind `introspection check` owns the portable authored YAML
 specification and its static, file-oriented diagnostics.
 
-Evaluation systems own execution: applicability checks, conversation assembly,
-transcript protection, model requests, retries, verdict normalization, and
-evaluation identity. Implementations should consume or remain explicitly
-compatible with the authored specification defined here. New authored fields
-must land in this checker and its contract tests rather than appearing in only
-one evaluator.
+`@introspection-ai/recipes/judges` owns execution: applicability checks,
+transcript assembly and protection, model requests, verdict normalization and
+evaluation identity. See [Running judges](judges.md). New authored fields must
+land in the checker and its contract tests as well as in the runner.
 
 Validation reports do not contain normalized judge definitions or
 host-specific registry data.
 
 ## Definition shape
 
-The minimal definition is:
+A judge is answered either by a chat model reading `instructions`, or by a
+classifier answering yes-or-no `questions`. It declares exactly one of the two.
+
+The minimal LLM judge is:
 
 ```yaml
 name: helpful
@@ -38,19 +39,18 @@ name: helpful
 instructions: |
   Determine whether the assistant answered the user correctly.
 
-llm:
-  model: gpt-5
+ai:
+  model: anthropic/claude-sonnet-5-5
 ```
 
-`name`, `instructions`, and `llm.model` are required and non-empty. Names use
-lowercase kebab-case and must be unique across all judge files in one Recipe.
-As with `agents/*.yaml`, the filename has no semantic meaning. Evaluators default
-`llm.provider` to `openai`.
+`name`, `ai.model` and one of `instructions` and `questions` are required.
+Names use lowercase kebab-case and must be unique across all judge files in one
+Recipe. As with `agents/*.yaml`, the filename has no semantic meaning.
 
 Legacy definitions using `judge:` remain accepted as a deprecated input alias.
 Parsers normalize that field to `name`; a definition cannot declare both.
 
-The canonical expanded definition is:
+The expanded definition is:
 
 ```yaml
 name: helpful
@@ -64,24 +64,95 @@ on:
 instructions: |
   Determine whether the assistant answered the user correctly.
 
-llm:
-  provider: openai
-  model: gpt-5
-  request:
+ai:
+  model: anthropic/claude-sonnet-5-5
+  fallbacks:
+    - openai/gpt-6-luna
+  thinking_level: low
+  options:
     temperature: 0
-    max_tokens: 1024
-    reasoning_effort: medium
-  transport:
-    timeout_ms: 60000
-    max_retries: 2
-    max_retry_delay_ms: 5000
-  local:
-    base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
 ```
 
-Unknown fields are errors at every level. The obsolete top-level `model:`
-block is rejected.
+Unknown fields are errors at every level.
+
+### The older `llm:` block
+
+A judge declares its model under `ai:`. The `llm:` block that earlier versions
+read is still accepted in its place, but never beside it: a judge with both, or
+with neither, reports `judge.kind_invalid`. Every reader of the judge
+(the checker, the runner and the hosted platform) sees the `ai:` block it maps
+to:
+
+| `llm:`                     | `ai:`                                                        |
+| -------------------------- | ------------------------------------------------------------ |
+| `provider` and `model`     | `model: <provider>/<model>`; `provider` defaults to `openai` |
+| `request.max_tokens`       | `options.max_tokens`                                         |
+| `request.temperature`      | `options.temperature`, unless it is 0 (the model's default)  |
+| `request.reasoning_effort` | `thinking_level`; `none` is `off`                            |
+| `transport`                | dropped: the host owns timeouts and retries                  |
+| `local`                    | dropped with the warning `judge.llm.local_ignored`           |
+
+`ai:` cannot name a local endpoint, so a judge that declared `llm.local` runs on
+its provider's hosted model. A `reasoning_effort` that names no thinking level
+is an error.
+
+```yaml
+# Read as ai: { model: anthropic/claude-sonnet-5-5, thinking_level: low }
+llm:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  request:
+    reasoning_effort: low
+```
+
+### Model settings
+
+`ai:` is the block an agent declares, with the same keys and the same rules:
+`model`, `fallbacks`, `thinking_level`, `options` and `providers`. See
+[Agents](recipe-format.md#agents). A judge has no `session:` block; the host's
+retry settings apply.
+
+An LLM judge returns `pass`, `fail` or `not_applicable` with a short reason.
+That contract is the runner's and cannot be authored.
+
+### Classifier judges
+
+A classifier judge asks a decision model yes-or-no questions and reads a
+probability for each:
+
+```yaml
+name: polite
+
+ai:
+  model: typesafe/jev-latest
+  fallbacks:
+    - openai/gpt-6-luna
+
+questions:
+  greeted:
+    instructions: Did the assistant greet the user?
+    criteria:
+      "true": The first reply opens with a greeting.
+      "false": It does not.
+    threshold: 0.8
+  apologised:
+    instructions: Did the assistant apologise for the delay?
+    criteria:
+      "true": It says sorry for the wait.
+      "false": It does not mention the wait.
+```
+
+- `questions` maps between one and eight lowercase snake_case names to
+  questions.
+- `instructions` is non-empty text, and `criteria` describes both `true` and
+  `false`.
+- `threshold` is the probability of yes, above 0 and at most 1, that the
+  question must reach. It defaults to 0.5.
+- The judge is `pass` when every question reaches its own threshold, and `fail`
+  otherwise. A classifier cannot abstain: `not_applicable` comes only from
+  `on`.
+- `ai.model` names a classifier model. `thinking_level` and `options` do not
+  apply to one.
 
 ## Judge types
 
@@ -123,33 +194,8 @@ questions:
   describes both `true` and `false` in non-empty text.
 - `attributes` lists the request attributes the judge sees, and is empty to show
   them all.
-- `on` and `llm` belong to `online` judges and are rejected on a mission
-  judge; `questions` and `attributes` are rejected on online judges.
-
-### LLM settings
-
-- `provider` is a 1-64 byte lowercase slug containing ASCII letters, digits,
-  and hyphens. The portable checker does not restrict it to managed platform
-  providers because custom slugs can be used with an explicit local endpoint.
-- `model` is a trimmed, non-empty string of at most 255 bytes.
-- `request.temperature` is a finite number from 0 through 2 and defaults to 0.
-- `request.max_tokens` is an integer from 1 through 131072 when present;
-  explicit `null` is treated as omitted.
-- `request.reasoning_effort` is a 1-64 byte lowercase slug containing ASCII
-  letters and hyphens; explicit `null` is treated as omitted.
-- `transport.timeout_ms` is an integer from 1 through 600000 and defaults to
-  60000.
-- `transport.max_retries` is an integer from 0 through 10 and defaults to 0.
-- `transport.max_retry_delay_ms` is an integer from 0 through 60000 and
-  defaults to 5000.
-- `local` requires both `base_url` and `api_key_env`. The URL must be HTTP(S),
-  have a host, contain no embedded credentials, query, or fragment, and use
-  HTTPS unless it targets `localhost`, `127.0.0.1`, or `::1`. `api_key_env` is
-  an environment-variable name, not a credential value.
-
-Transport and local settings affect execution but not authored grading
-identity. The evaluator remains responsible for applying defaults, building
-requests, and routing execution.
+- `on` and `ai` belong to `online` judges and are rejected on a mission
+  judge; `attributes` is rejected on online judges.
 
 ## Applicability
 
@@ -173,10 +219,24 @@ on:
       sentiment: negative
 ```
 
-Match keys are non-empty field paths. Regex literals use Rust regex syntax and
-support unique `i`, `m`, `s`, and `u` flags. `environment`, `runtime_group`, and
+Match keys are non-empty field paths. Regex literals support unique `i`, `m`,
+`s`, and `u` flags. A pattern must compile both as a Rust regex, which the
+hosted platform evaluates, and as a JavaScript `RegExp`, which the runner
+evaluates. The runner compiles a pattern with the `v` flag and, when that
+refuses it, with the `u` flag, so `[\w-]+` (which only `u` compiles) and
+`[\w--\d]+` (which only `v` compiles) are both valid. The checker reports
+`judge.on.regex_invalid` for a pattern either engine refuses, such as a
+lookahead (`(?=…)`, which Rust refuses) or a Rust named group (`(?P<name>…)`,
+which JavaScript refuses under both flags). `environment`, `runtime_group`, and
 paths ending in `pattern_id` are platform-owned and cannot appear as authored
-match fields. The evaluator owns dotted-path traversal and gate evaluation.
+match fields. The runner owns dotted-path traversal and gate evaluation.
+
+The checker compiles the JavaScript side with a Rust implementation of the
+`RegExp` grammar, not with the runner's own engine, and the two differ at the
+edges: the checker accepts `\Afoo\z`, `\-` and `\#`, which the runner refuses,
+and `[[:alpha:]]` is a POSIX class to Rust and a nested class to JavaScript. A
+pattern the checker accepts can therefore still be refused by the runner at
+run time, where it records an error for that judgement.
 
 ## Diagnostics
 

@@ -89,6 +89,8 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
    * stream into your own store or UI while the batch runs.
    */
   onResult?: (result: BatchResultLine) => Promise<void> | void;
+  /** Why a settled line's output cannot be used, or null; a refused one is recorded errored. */
+  checkOutput?: (line: BatchInputLine, output: string) => string | null;
   /** Replaces the local file system. */
   files?: BatchFiles;
   /**
@@ -164,6 +166,7 @@ export async function runBatch(
     signal,
     onProgress,
     onResult,
+    checkOutput,
     files = nodeBatchFiles,
     batch_id,
     baggage,
@@ -202,6 +205,7 @@ export async function runBatch(
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
     ...(onResult ? { onResult } : {}),
+    ...(checkOutput ? { checkOutput } : {}),
   });
   const latest = new Map<string, BatchResultLine>();
   for (const raw of (await results.read()).split("\n")) {

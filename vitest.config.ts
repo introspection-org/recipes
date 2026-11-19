@@ -6,6 +6,13 @@ export default defineConfig({
   test: {
     // examples/ runs its own tests on the vitest its eval packages support.
     exclude: [...configDefaults.exclude, "examples/**"],
+    env: {
+      // The judges read their definitions through recipe-check's native
+      // validator, which `pnpm test` builds.
+      INTROSPECTION_RECIPE_CHECK: fileURLToPath(
+        new URL("./target/debug/introspection-recipe-check", import.meta.url),
+      ),
+    },
   },
   resolve: {
     alias: {

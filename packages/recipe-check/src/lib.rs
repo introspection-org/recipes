@@ -3722,7 +3722,13 @@ fn validate_agent_model(
             );
         }
     }
-    validate_model_providers(model.get("providers"), path, ctx, false);
+    validate_model_providers(
+        model.get("providers"),
+        path,
+        ctx,
+        false,
+        &AiOwner::agent(name),
+    );
 }
 
 fn snake_case_key(value: &str) -> bool {
@@ -3746,6 +3752,47 @@ fn snake_case_key(value: &str) -> bool {
     !previous_underscore
 }
 
+/// Who declares an `ai:` block: the prefix of its diagnostic codes and the
+/// wording of its messages.
+pub(crate) struct AiOwner {
+    code: &'static str,
+    label: &'static str,
+    subject: String,
+    providers: &'static str,
+}
+
+impl AiOwner {
+    fn agent(name: &str) -> Self {
+        Self {
+            code: "agent",
+            label: "Agent",
+            subject: format!("Recipe agent '{name}'"),
+            providers: "model.providers",
+        }
+    }
+
+    pub(crate) fn judge() -> Self {
+        Self {
+            code: "judge",
+            label: "Judge",
+            subject: "Judge".to_owned(),
+            providers: "ai.providers",
+        }
+    }
+
+    fn code(&self, suffix: &str) -> String {
+        format!("{}.{suffix}", self.code)
+    }
+
+    fn providers_code(&self, suffix: &str) -> String {
+        format!("{}.{}{suffix}", self.code, self.providers)
+    }
+
+    fn providers_label(&self) -> String {
+        format!("{} {}", self.label, self.providers)
+    }
+}
+
 fn validate_agent_ai(
     map: &JsonMap,
     path: &str,
@@ -3754,14 +3801,39 @@ fn validate_agent_ai(
     ctx: &mut CheckContext,
 ) {
     let Some(value) = map.get("ai") else { return };
+    if validate_ai_block(value, path, &AiOwner::agent(name), ctx) {
+        fields.insert(AgentField::ModelName);
+    }
+}
+
+/// The messages of the errors a judge's `ai:` block draws, for the strict
+/// judge parser.
+pub(crate) fn judge_ai_errors(ai: &JsonValue) -> Vec<String> {
+    let mut ctx = CheckContext::new(&RecipeFiles::default());
+    validate_ai_block(ai, "", &AiOwner::judge(), &mut ctx);
+    ctx.diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.message)
+        .collect()
+}
+
+/// Validate an `ai:` block, as an agent and a judge declare it. Returns
+/// whether it names a model.
+pub(crate) fn validate_ai_block(
+    value: &JsonValue,
+    path: &str,
+    owner: &AiOwner,
+    ctx: &mut CheckContext,
+) -> bool {
+    let label = owner.label;
     let Some(ai) = value.as_object() else {
         ctx.error(
-            "agent.ai_invalid",
+            owner.code("ai_invalid"),
             path,
-            "Agent ai must be an object",
+            format!("{label} ai must be an object"),
             None::<String>,
         );
-        return;
+        return false;
     };
     const AI_KEYS: &[&str] = &[
         "model",
@@ -3772,58 +3844,35 @@ fn validate_agent_ai(
     ];
     for key in ai.keys().filter(|key| !AI_KEYS.contains(&key.as_str())) {
         ctx.error(
-            "agent.ai_key_unknown",
+            owner.code("ai_key_unknown"),
             path,
-            format!("Agent ai contains unknown field '{key}'"),
+            format!("{label} ai contains unknown field '{key}'"),
             Some(format!("supported fields: {}", AI_KEYS.join(", "))),
         );
     }
-    if let Some(model_name) = obj_string(ai, "model") {
-        fields.insert(AgentField::ModelName);
-        if !valid_model_spec(&model_name) {
+    let model_name = obj_string(ai, "model");
+    if let Some(model_name) = &model_name {
+        if !valid_model_spec(model_name) {
             ctx.error(
-                "agent.ai.model_invalid",
+                owner.code("ai.model_invalid"),
                 path,
-                format!("Recipe agent '{name}' has invalid ai.model '{model_name}' - expected '<provider>/<model_id>'"),
+                format!(
+                    "{} has invalid ai.model '{model_name}' - expected '<provider>/<model_id>'",
+                    owner.subject
+                ),
                 Some("use an available provider and model identifier"),
             );
         }
     } else if ai.contains_key("model") {
         ctx.error(
-            "agent.ai.model_invalid",
+            owner.code("ai.model_invalid"),
             path,
-            "Agent ai.model must be a non-empty string",
+            format!("{label} ai.model must be a non-empty string"),
             None::<String>,
         );
     }
     if let Some(value) = ai.get("fallbacks") {
-        match value.as_array() {
-            Some(fallbacks) => {
-                for fallback in fallbacks {
-                    match fallback.as_str() {
-                        Some(spec) if valid_model_spec(spec.trim()) => {}
-                        Some(spec) => ctx.error(
-                            "agent.ai.fallback_invalid",
-                            path,
-                            format!("Recipe agent '{name}' has invalid ai.fallbacks entry '{spec}' - expected '<provider>/<model_id>'"),
-                            Some("use an available provider and model identifier"),
-                        ),
-                        None => ctx.error(
-                            "agent.ai.fallbacks_invalid",
-                            path,
-                            "Agent ai.fallbacks must be a list of '<provider>/<model_id>' strings",
-                            None::<String>,
-                        ),
-                    }
-                }
-            }
-            None => ctx.error(
-                "agent.ai.fallbacks_invalid",
-                path,
-                "Agent ai.fallbacks must be a list of '<provider>/<model_id>' strings",
-                None::<String>,
-            ),
-        }
+        validate_ai_fallbacks(value, path, owner, ctx);
     }
     if let Some(value) = ai.get("thinking_level") {
         if !value.as_str().is_some_and(|level| {
@@ -3833,9 +3882,9 @@ fn validate_agent_ai(
             )
         }) {
             ctx.error(
-                "agent.ai.thinking_level_invalid",
+                owner.code("ai.thinking_level_invalid"),
                 path,
-                "Agent ai.thinking_level is unsupported",
+                format!("{label} ai.thinking_level is unsupported"),
                 Some("use off, minimal, low, medium, high, xhigh, or max"),
             );
         }
@@ -3843,12 +3892,12 @@ fn validate_agent_ai(
     if let Some(value) = ai.get("options") {
         let Some(options) = value.as_object() else {
             ctx.error(
-                "agent.ai.options_invalid",
+                owner.code("ai.options_invalid"),
                 path,
-                "Agent ai.options must be an object",
+                format!("{label} ai.options must be an object"),
                 None::<String>,
             );
-            return;
+            return model_name.is_some();
         };
         const BLOCKED: &[&str] = &[
             "api_key",
@@ -3876,22 +3925,59 @@ fn validate_agent_ai(
         for key in options.keys() {
             if !snake_case_key(key) {
                 ctx.error(
-                    "agent.ai.options_key_invalid",
+                    owner.code("ai.options_key_invalid"),
                     path,
-                    format!("Agent ai.options key '{key}' must use snake_case"),
+                    format!("{label} ai.options key '{key}' must use snake_case"),
                     None::<String>,
                 );
             } else if BLOCKED.contains(&key.as_str()) {
                 ctx.error(
-                    "agent.ai.options_key_blocked",
+                    owner.code("ai.options_key_blocked"),
                     path,
-                    format!("Agent ai.options cannot configure host-owned option '{key}'"),
+                    format!("{label} ai.options cannot configure host-owned option '{key}'"),
                     None::<String>,
                 );
             }
         }
     }
-    validate_model_providers(ai.get("providers"), path, ctx, true);
+    validate_model_providers(ai.get("providers"), path, ctx, true, owner);
+    model_name.is_some()
+}
+
+fn validate_ai_fallbacks(value: &JsonValue, path: &str, owner: &AiOwner, ctx: &mut CheckContext) {
+    let not_a_list = format!(
+        "{} ai.fallbacks must be a list of '<provider>/<model_id>' strings",
+        owner.label
+    );
+    let Some(fallbacks) = value.as_array() else {
+        ctx.error(
+            owner.code("ai.fallbacks_invalid"),
+            path,
+            not_a_list,
+            None::<String>,
+        );
+        return;
+    };
+    for fallback in fallbacks {
+        match fallback.as_str() {
+            Some(spec) if valid_model_spec(spec.trim()) => {}
+            Some(spec) => ctx.error(
+                owner.code("ai.fallback_invalid"),
+                path,
+                format!(
+                    "{} has invalid ai.fallbacks entry '{spec}' - expected '<provider>/<model_id>'",
+                    owner.subject
+                ),
+                Some("use an available provider and model identifier"),
+            ),
+            None => ctx.error(
+                owner.code("ai.fallbacks_invalid"),
+                path,
+                not_a_list.clone(),
+                None::<String>,
+            ),
+        }
+    }
 }
 
 fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
@@ -4130,15 +4216,16 @@ fn validate_model_providers(
     path: &str,
     ctx: &mut CheckContext,
     transparent_provider_payloads: bool,
+    owner: &AiOwner,
 ) {
     let Some(value) = value else {
         return;
     };
     let Some(providers) = value.as_object() else {
         ctx.error(
-            "agent.model.providers_invalid",
+            owner.providers_code("_invalid"),
             path,
-            "Agent model.providers must be an object",
+            format!("{} must be an object", owner.providers_label()),
             None::<String>,
         );
         return;
@@ -4152,9 +4239,9 @@ fn validate_model_providers(
         !known
     }) {
         ctx.error(
-            "agent.model.providers_key_unknown",
+            owner.providers_code("_key_unknown"),
             path,
-            format!("Agent model.providers contains unknown field '{key}'"),
+            format!("{} contains unknown field '{key}'", owner.providers_label()),
             Some(if transparent_provider_payloads {
                 "use only openrouter, anthropic, and vercel_ai_gateway"
             } else {
@@ -4165,31 +4252,34 @@ fn validate_model_providers(
     if let Some(value) = providers.get("openrouter") {
         let Some(openrouter) = value.as_object() else {
             ctx.error(
-                "agent.model.providers.openrouter_invalid",
+                owner.providers_code(".openrouter_invalid"),
                 path,
-                "Agent model.providers.openrouter must be an object",
+                format!("{}.openrouter must be an object", owner.providers_label()),
                 None::<String>,
             );
             return;
         };
         for key in openrouter.keys().filter(|key| key.as_str() != "routing") {
             ctx.error(
-                "agent.model.providers.openrouter_key_unknown",
+                owner.providers_code(".openrouter_key_unknown"),
                 path,
-                format!("Agent model.providers.openrouter contains unknown field '{key}'"),
+                format!(
+                    "{}.openrouter contains unknown field '{key}'",
+                    owner.providers_label()
+                ),
                 Some("use only routing"),
             );
         }
         if let Some(value) = openrouter.get("routing") {
-            validate_openrouter_routing(value, path, ctx, transparent_provider_payloads);
+            validate_openrouter_routing(value, path, ctx, transparent_provider_payloads, owner);
         }
     }
     if let Some(value) = providers.get("anthropic") {
         let Some(anthropic) = value.as_object() else {
             ctx.error(
-                "agent.model.providers.anthropic_invalid",
+                owner.providers_code(".anthropic_invalid"),
                 path,
-                "Agent model.providers.anthropic must be an object",
+                format!("{}.anthropic must be an object", owner.providers_label()),
                 None::<String>,
             );
             return;
@@ -4199,18 +4289,24 @@ fn validate_model_providers(
             .filter(|key| !matches!(key.as_str(), "betas" | "context_management"))
         {
             ctx.error(
-                "agent.model.providers.anthropic_key_unknown",
+                owner.providers_code(".anthropic_key_unknown"),
                 path,
-                format!("Agent model.providers.anthropic contains unknown field '{key}'"),
+                format!(
+                    "{}.anthropic contains unknown field '{key}'",
+                    owner.providers_label()
+                ),
                 Some("use only betas and context_management"),
             );
         }
         if let Some(value) = anthropic.get("betas") {
             if string_array(value).is_err() {
                 ctx.error(
-                    "agent.model.providers.anthropic_betas_invalid",
+                    owner.providers_code(".anthropic_betas_invalid"),
                     path,
-                    "Agent model.providers.anthropic.betas must be an array of non-empty strings",
+                    format!(
+                        "{}.anthropic.betas must be an array of non-empty strings",
+                        owner.providers_label()
+                    ),
                     None::<String>,
                 );
             }
@@ -4220,9 +4316,12 @@ fn validate_model_providers(
             .is_some_and(|value| !value.is_object())
         {
             ctx.error(
-                "agent.model.providers.anthropic_context_management_invalid",
+                owner.providers_code(".anthropic_context_management_invalid"),
                 path,
-                "Agent model.providers.anthropic.context_management must be an object",
+                format!(
+                    "{}.anthropic.context_management must be an object",
+                    owner.providers_label()
+                ),
                 None::<String>,
             );
         }
@@ -4231,36 +4330,45 @@ fn validate_model_providers(
         if let Some(value) = providers.get("vercel_ai_gateway") {
             let Some(vercel) = value.as_object() else {
                 ctx.error(
-                    "agent.ai.providers.vercel_ai_gateway_invalid",
+                    owner.code("ai.providers.vercel_ai_gateway_invalid"),
                     path,
-                    "Agent ai.providers.vercel_ai_gateway must be an object",
+                    format!(
+                        "{} ai.providers.vercel_ai_gateway must be an object",
+                        owner.label
+                    ),
                     None::<String>,
                 );
                 return;
             };
             for key in vercel.keys().filter(|key| key.as_str() != "routing") {
                 ctx.error(
-                    "agent.ai.providers.vercel_ai_gateway_key_unknown",
+                    owner.code("ai.providers.vercel_ai_gateway_key_unknown"),
                     path,
-                    format!("Agent ai.providers.vercel_ai_gateway contains unknown field '{key}'"),
+                    format!(
+                        "{} ai.providers.vercel_ai_gateway contains unknown field '{key}'",
+                        owner.label
+                    ),
                     Some("use only routing"),
                 );
             }
             if let Some(value) = vercel.get("routing") {
                 let Some(routing) = value.as_object() else {
                     ctx.error(
-                        "agent.ai.providers.vercel_ai_gateway.routing_invalid",
+                        owner.code("ai.providers.vercel_ai_gateway.routing_invalid"),
                         path,
-                        "Agent ai.providers.vercel_ai_gateway.routing must be an object",
+                        format!(
+                            "{} ai.providers.vercel_ai_gateway.routing must be an object",
+                            owner.label
+                        ),
                         None::<String>,
                     );
                     return;
                 };
                 if routing.contains_key("byok") {
                     ctx.error(
-                        "agent.ai.providers.vercel_ai_gateway.routing_key_blocked",
+                        owner.code("ai.providers.vercel_ai_gateway.routing_key_blocked"),
                         path,
-                        "Agent ai.providers.vercel_ai_gateway.routing cannot configure host-owned field 'byok'",
+                        format!("{} ai.providers.vercel_ai_gateway.routing cannot configure host-owned field 'byok'", owner.label),
                         None::<String>,
                     );
                 }
@@ -4274,6 +4382,7 @@ fn validate_openrouter_routing(
     path: &str,
     ctx: &mut CheckContext,
     transparent: bool,
+    owner: &AiOwner,
 ) {
     const ROUTING_KEYS: &[&str] = &[
         "allow_fallbacks",
@@ -4292,9 +4401,12 @@ fn validate_openrouter_routing(
     ];
     let Some(routing) = value.as_object() else {
         ctx.error(
-            "agent.model.providers.openrouter.routing_invalid",
+            owner.providers_code(".openrouter.routing_invalid"),
             path,
-            "Agent model.providers.openrouter.routing must be an object",
+            format!(
+                "{}.openrouter.routing must be an object",
+                owner.providers_label()
+            ),
             None::<String>,
         );
         return;
@@ -4307,9 +4419,12 @@ fn validate_openrouter_routing(
         .filter(|key| !ROUTING_KEYS.contains(&key.as_str()))
     {
         ctx.error(
-            "agent.model.providers.openrouter.routing_key_unknown",
+            owner.providers_code(".openrouter.routing_key_unknown"),
             path,
-            format!("Agent OpenRouter routing contains unknown field '{key}'"),
+            format!(
+                "{} OpenRouter routing contains unknown field '{key}'",
+                owner.label
+            ),
             Some(format!("supported fields: {}", ROUTING_KEYS.join(", "))),
         );
     }
@@ -9516,7 +9631,7 @@ mod tests {
     }
 
     const ONLINE_JUDGE: &str =
-        "name: helpful\ninstructions: Did the assistant answer correctly?\nllm:\n  model: gpt-5\n";
+        "name: helpful\ninstructions: Did the assistant answer correctly?\nai:\n  model: openai/gpt-5\n";
     const MISSION_JUDGE: &str = "name: booking\ntype: mission\nquestions:\n  requested:\n    instructions: Did the traveller ask for this?\n";
 
     fn judge_diagnostics(report: &Report) -> Vec<(String, Option<Span>, String)> {
