@@ -363,6 +363,95 @@ describe("runBatch", () => {
     expect(results.written).not.toHaveProperty("built");
   });
 
+  it("admits lines by size, never holding more than its memory budget, and fails only a line larger than all of it", async () => {
+    const big = (id: string) => ({
+      custom_id: id,
+      prompt: id + "x".repeat(10_000),
+    });
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        big("b1"),
+        { custom_id: "s1", prompt: "small" },
+        big("b2"),
+        { custom_id: "huge", prompt: "x".repeat(200_000) },
+        big("b3"),
+      ),
+    });
+    let running = 0;
+    let peak = 0;
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const wait = controller.wait.bind(controller);
+    controller.start = (async (input: { name: string; prompt: string }) => {
+      running += input.prompt.length;
+      peak = Math.max(peak, running);
+      return { agent_run_id: input.prompt };
+    }) as never;
+    controller.wait = (async (id: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running -= id.length;
+      return { agent_run_id: id, status: "completed", output: "ok" };
+    }) as never;
+    void wait;
+
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 8,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        // Room for two of the large lines at once, at three times their text.
+        memoryBudget: 2 * 10_100 * 3,
+      },
+    );
+
+    expect(summary).toMatchObject({ total: 5, completed: 4, failed: 1 });
+    expect(peak).toBeLessThanOrEqual(2 * 10_100);
+    const huge = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((line) => line.custom_id === "huge");
+    expect(huge.result.error.message).toMatch(
+      /more than this batch can hold in memory/,
+    );
+  });
+
+  it("reports how it sized its memory, and where each number came from", async () => {
+    const lines: string[] = [];
+    await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "a", prompt: "p" }],
+      controller: new EchoRuns(),
+      log: (message) => lines.push(message),
+    });
+    expect(lines[0]).toMatch(
+      /^batch memory: heap limit \d+ MB \((configured: --max-old-space-size=\d+|detected: Node's default for this machine)\), \d+ MB in use at start, \d+ MB for lines in flight \(derived: half the heap free at start\)$/,
+    );
+
+    const configured: string[] = [];
+    await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "a", prompt: "p" }],
+      controller: new EchoRuns(),
+      memoryBudget: 64_000_000,
+      log: (message) => configured.push(message),
+    });
+    expect(configured[0]).toMatch(
+      /64 MB for lines in flight \(configured: memoryBudget\)$/,
+    );
+  });
+
   it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
     const [asNumber, asString] = parseInputLines(
       jsonl({ custom_id: "a", prompt: "p" }) +

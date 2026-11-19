@@ -49,7 +49,9 @@ export {
   type BatchParams,
 } from "./params.js";
 export {
+  batchMemory,
   runBatchWith,
+  type BatchMemory,
   type BatchProgress,
   type BatchRecord,
   type BatchRunController,
@@ -105,6 +107,10 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
    * with a `prompt` runs as written.
    */
   preprocess?: { spec: PreprocessSpec; maxTokens: number };
+  /** What the lines in flight may hold, in bytes; default half the heap free at start. */
+  memoryBudget?: number;
+  /** Where the batch reports how it sized itself; default one line on stderr. */
+  log?: (message: string) => void;
   /**
    * Names the batch in each prompt's conversation id, `<batch_id>:<index>`.
    * Defaults to an id derived from the results file, so a resumed batch keeps
@@ -220,6 +226,8 @@ export async function runBatch(
     batch_id,
     baggage,
     preprocess,
+    memoryBudget,
+    log,
     ...settings
   } = options;
   const params = parseBatchParams(settings);
@@ -251,6 +259,8 @@ export async function runBatch(
     input: source,
     results,
     ...(build ? { buildPrompt: build } : {}),
+    ...(memoryBudget !== undefined ? { memoryBudget } : {}),
+    ...(log ? { log } : {}),
     onLines: (lines) => {
       reached = lines;
     },

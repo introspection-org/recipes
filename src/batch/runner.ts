@@ -1,3 +1,5 @@
+import { getHeapStatistics } from "node:v8";
+
 import type { AgentRunController } from "../agents.js";
 import type { BatchFiles } from "./files.js";
 import { AdaptiveLimiter } from "./limiter.js";
@@ -37,6 +39,13 @@ export interface BatchRunDeps {
   files: BatchFiles;
   /** The lines to run, as they arrive, or the path of a JSONL file holding them. */
   input: string | Iterable<unknown> | AsyncIterable<unknown>;
+  /**
+   * What the lines in flight may hold, in bytes. Default: half the heap free
+   * when the batch starts, so a heap sized to its container bounds the batch.
+   */
+  memoryBudget?: number;
+  /** Where the batch reports how it sized itself. Default: one line on stderr. */
+  log?: (message: string) => void;
   /** Builds the prompt of a line that carries an `input` (`linePromptBuilder`). */
   buildPrompt?: BuildLinePrompt;
   /** Called once the run ends with each line it reached: its fingerprint and its place in the input. */
@@ -119,14 +128,12 @@ const RATE_LIMITED = /\b429\b|rate[ _-]?limit/i;
 const RETRY_BASE_DELAY_MS = 2_000;
 
 /** The input's lines as values, one at a time, each with the label its errors use. */
-async function* inputValues(
-  deps: BatchRunDeps,
-): AsyncGenerator<{ value: unknown; label: string }> {
+async function* inputValues(deps: BatchRunDeps): AsyncGenerator<InputItem> {
   if (typeof deps.input !== "string") {
     let index = 0;
     for await (const value of deps.input) {
       index += 1;
-      yield { value, label: `input ${index}` };
+      yield { value, label: `input ${index}`, size: 0 };
     }
     return;
   }
@@ -146,9 +153,73 @@ async function* inputValues(
   for await (const raw of raws) {
     number += 1;
     if (!raw.trim()) continue;
-    const label = `input line ${number}`;
-    yield { value: parseInputLine(raw, label), label };
+    yield { raw, label: `input line ${number}`, size: raw.length };
   }
+}
+
+const mb = (bytes: number) => Math.round(bytes / 1e6);
+
+/** How a batch sized itself, and where each number came from. */
+export interface BatchMemory {
+  heap_limit_bytes: number;
+  /** `--max-old-space-size=N`, when the process was started with it, or Node's own default. */
+  heap_limit_source: string;
+  heap_used_bytes: number;
+  budget_bytes: number;
+  budget_source: string;
+}
+
+/**
+ * The heap this process has, whether it was configured, and what the lines
+ * in flight may hold of it. A configured `--max-old-space-size` is the space
+ * that runs out, so the budget comes from it; V8's own `heap_size_limit` also
+ * counts its young generation, about 200 MB more than can actually be held.
+ */
+export function batchMemory(configuredBudget?: number): BatchMemory {
+  const heap = getHeapStatistics();
+  const flag = [
+    ...process.execArgv,
+    ...(process.env.NODE_OPTIONS ?? "").split(/\s+/),
+  ]
+    .map((arg) => /^--max[-_]old[-_]space[-_]size=(\d+)$/.exec(arg))
+    .find((match) => match !== null);
+  const limit = flag ? Number(flag[1]) * 1024 * 1024 : heap.heap_size_limit;
+  return {
+    heap_limit_bytes: limit,
+    heap_limit_source: flag
+      ? `configured: --max-old-space-size=${flag[1]}`
+      : "detected: Node's default for this machine",
+    heap_used_bytes: heap.used_heap_size,
+    budget_bytes:
+      configuredBudget ??
+      Math.max(0, Math.floor((limit - heap.used_heap_size) / 2)),
+    budget_source:
+      configuredBudget !== undefined
+        ? "configured: memoryBudget"
+        : "derived: half the heap free at start",
+  };
+}
+
+/** One input line: already a value, or its text to parse once admitted, and the text's size. */
+interface InputItem {
+  value?: unknown;
+  raw?: string;
+  label: string;
+  size: number;
+}
+
+/**
+ * What a line in flight is taken to hold, as a multiple of its text: the
+ * text, its parsed input and the build from it.
+ */
+const LINE_MEMORY_FACTOR = 3;
+
+/** The `custom_id` near the start of a line's text, without parsing all of it. */
+function customIdOf(raw: string | undefined): string | undefined {
+  const match = /"custom_id"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(
+    raw?.slice(0, 1_000) ?? "",
+  );
+  return match?.[1];
 }
 
 /**
@@ -390,11 +461,74 @@ export async function runBatchWith(
   // Read, check and build the next line. Its raw text and parsed input stay
   // in this call, so they are released once the prompt exists, not held while
   // the line waits on its model.
-  const takeLine = async (): Promise<BatchInputLine | "failed" | "end"> => {
+  // Lines are admitted by size, not count: a worker takes the next line only
+  // when what is in flight leaves room for it, so long conversations run with
+  // fewer neighbours and only a line larger than the whole budget fails.
+  const memory = batchMemory(deps.memoryBudget);
+  const budget = memory.budget_bytes;
+  (deps.log ?? ((message) => process.stderr.write(`${message}\n`)))(
+    `batch memory: heap limit ${mb(memory.heap_limit_bytes)} MB (${memory.heap_limit_source}), ` +
+      `${mb(memory.heap_used_bytes)} MB in use at start, ` +
+      `${mb(budget)} MB for lines in flight (${memory.budget_source})`,
+  );
+  let inFlight = 0;
+  let waiting: Array<() => void> = [];
+  const releaseCharge = (charge: number) => {
+    inFlight -= charge;
+    const woken = waiting;
+    waiting = [];
+    woken.forEach((wake) => wake());
+  };
+  // One worker reads and waits for room at a time, so waiting holds one line.
+  let admitting: Promise<void> = Promise.resolve();
+  const takeLine = async (): Promise<
+    { line: BatchInputLine; charge: number } | "failed" | "end"
+  > => {
+    const turn = admitting;
+    let done!: () => void;
+    admitting = new Promise((resolve) => (done = resolve));
+    await turn;
+    try {
+      return await admit();
+    } finally {
+      done();
+    }
+  };
+  const admit = async (): Promise<
+    { line: BatchInputLine; charge: number } | "failed" | "end"
+  > => {
     const next = await lines.next();
     if (next.done) return "end";
     summary.total += 1;
-    const { value, label } = next.value;
+    const { raw, label, size } = next.value;
+    const charge = size * LINE_MEMORY_FACTOR;
+    if (charge > budget) {
+      await fail(
+        customIdOf(raw) ?? label,
+        `${label} is ${Math.ceil(size / 1e6)} MB, more than this batch can hold in memory (${Math.floor(budget / LINE_MEMORY_FACTOR / 1e6)} MB a line)`,
+      );
+      return "failed";
+    }
+    while (inFlight > 0 && inFlight + charge > budget) {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    inFlight += charge;
+    const taken = await buildTaken(raw, next.value.value, label);
+    if (taken === "failed") releaseCharge(charge);
+    return taken === "failed" ? taken : { line: taken, charge };
+  };
+  const buildTaken = async (
+    raw: string | undefined,
+    given: unknown,
+    label: string,
+  ): Promise<BatchInputLine | "failed"> => {
+    let value: unknown;
+    try {
+      value = raw === undefined ? given : parseInputLine(raw, label);
+    } catch (error) {
+      await fail(customIdOf(raw) ?? label, (error as Error).message);
+      return "failed";
+    }
     // A line that cannot run fails alone: earlier lines keep their answers.
     let checked: CheckedInputLine;
     try {
@@ -427,39 +561,43 @@ export async function runBatchWith(
       const taken = await takeLine();
       if (taken === "end") return;
       if (taken === "failed") continue;
-      const line = taken;
-      const lineFingerprint = inputFingerprint(params.agent, line);
-      fingerprint.set(line.custom_id, lineFingerprint);
-      if (done.get(line.custom_id) === lineFingerprint) {
-        summary.already_completed += 1;
-        continue;
+      const { line, charge } = taken;
+      try {
+        const lineFingerprint = inputFingerprint(params.agent, line);
+        fingerprint.set(line.custom_id, lineFingerprint);
+        if (done.get(line.custom_id) === lineFingerprint) {
+          summary.already_completed += 1;
+          continue;
+        }
+        // A builder that found nothing to ask records its state without a session.
+        const result =
+          line.prompt === ""
+            ? {
+                custom_id: line.custom_id,
+                result: { type: "skipped" as const },
+                batch: {
+                  record_index: recordIndex.get(line.custom_id) ?? -1,
+                  input_sha256: lineFingerprint,
+                  attempts: 0,
+                },
+                ...(line.metadata ? { metadata: line.metadata } : {}),
+                ...(line.built ? { built: line.built } : {}),
+              }
+            : await runLine(line);
+        // Null: the run stopped before this line started; it counts as not started.
+        if (result === null) return;
+        await record(result);
+        await deps.onResult?.(result);
+        if (
+          result.result.type === "succeeded" ||
+          result.result.type === "skipped"
+        ) {
+          summary.completed += 1;
+        } else summary.failed += 1;
+        await progress(stopped() ? "stopping" : "running");
+      } finally {
+        releaseCharge(charge);
       }
-      // A builder that found nothing to ask records its state without a session.
-      const result =
-        line.prompt === ""
-          ? {
-              custom_id: line.custom_id,
-              result: { type: "skipped" as const },
-              batch: {
-                record_index: recordIndex.get(line.custom_id) ?? -1,
-                input_sha256: lineFingerprint,
-                attempts: 0,
-              },
-              ...(line.metadata ? { metadata: line.metadata } : {}),
-              ...(line.built ? { built: line.built } : {}),
-            }
-          : await runLine(line);
-      // Null: the run stopped before this line started; it counts as not started.
-      if (result === null) return;
-      await record(result);
-      await deps.onResult?.(result);
-      if (
-        result.result.type === "succeeded" ||
-        result.result.type === "skipped"
-      ) {
-        summary.completed += 1;
-      } else summary.failed += 1;
-      await progress(stopped() ? "stopping" : "running");
     }
   };
   await progress("running");
