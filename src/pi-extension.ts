@@ -110,6 +110,7 @@ import {
   createAgentTool,
   describeToolCall,
   formatAgentProgress,
+  formatAgentsProgress,
   type AgentRunController,
   type AgentRunSummary,
 } from "./agents.js";
@@ -428,9 +429,9 @@ interface AgentResultRenderState {
 }
 
 /**
- * Render an `agent` result. While a waited-on child runs, one live line names
- * its latest tool call, elapsed time and tool-call count, redrawn every
- * second. A final result renders as Pi renders any tool's text output.
+ * Render an `agent` result. While waited-on children run, one live line per
+ * child names its latest tool call, elapsed time and tool-call count, redrawn
+ * every second. A final result renders as Pi renders any tool's text output.
  */
 function renderAgentResult(
   result: {
@@ -448,14 +449,15 @@ function renderAgentResult(
   const text =
     (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
   const state = (context.state ?? {}) as AgentResultRenderState;
-  const run = (result.details as { agent?: AgentRunSummary } | undefined)
-    ?.agent;
-  if (options.isPartial && run?.status === "running") {
+  const details = result.details as
+    { agent?: AgentRunSummary; agents?: AgentRunSummary[] } | undefined;
+  const runs = details?.agents ?? (details?.agent ? [details.agent] : []);
+  if (options.isPartial && runs.some((run) => run.status === "running")) {
     if (!state.ticker) {
       state.ticker = setInterval(context.invalidate, AGENT_PROGRESS_TICK_MS);
       state.ticker.unref?.();
     }
-    text.setText(themeFg(theme, "muted", formatAgentProgress(run)));
+    text.setText(themeFg(theme, "muted", formatAgentsProgress(runs)));
     return text;
   }
   if (state.ticker) {
@@ -484,6 +486,83 @@ function renderAgentResult(
   }
   text.setText(rendered);
   return text;
+}
+
+/** Pi widget key for the runs working in the background. */
+const BACKGROUND_RUNS_WIDGET = "recipe-agent-runs";
+
+/**
+ * Pi's terminal status for runs started without `wait`: a widget above the
+ * editor with one line per running run, redrawn every second, and a line
+ * removed once its run settles. Runs the `agent` tool is waiting on show in
+ * that tool's result instead. Only the terminal UI shows it: RPC hosts read
+ * the same summaries from the tool's updates, and print and JSON modes stay
+ * quiet.
+ */
+function createBackgroundRunsStatus(
+  get: (id: string) => AgentRunSummary | null,
+  context: () => ExtensionContext | null,
+) {
+  const running = new Set<string>();
+  const awaited = new Map<string, number>();
+  let ticker: ReturnType<typeof setInterval> | undefined;
+  let shown = false;
+  const tui = () => {
+    const ctx = context();
+    return ctx?.mode === "tui" ? ctx : null;
+  };
+  const refresh = () => {
+    for (const id of running) {
+      if (get(id)?.status !== "running") running.delete(id);
+    }
+    if (running.size === 0 && ticker) {
+      clearInterval(ticker);
+      ticker = undefined;
+    }
+    const ctx = tui();
+    if (!ctx) return;
+    const runs = [...running]
+      .filter((id) => !awaited.has(id))
+      .map((id) => get(id))
+      .filter((run): run is AgentRunSummary => run !== null);
+    if (runs.length === 0) {
+      if (shown) ctx.ui.setWidget(BACKGROUND_RUNS_WIDGET, undefined);
+      shown = false;
+      return;
+    }
+    const theme = ctx.ui.theme as
+      { fg?: (name: ThemeColor, text: string) => string } | undefined;
+    ctx.ui.setWidget(
+      BACKGROUND_RUNS_WIDGET,
+      runs.map((run) => themeFg(theme, "muted", formatAgentProgress(run))),
+    );
+    shown = true;
+  };
+  return {
+    refresh,
+    add(run: AgentRunSummary) {
+      if (run.status !== "running" || !tui()) return;
+      running.add(run.agent_run_id);
+      if (!ticker) {
+        ticker = setInterval(refresh, AGENT_PROGRESS_TICK_MS);
+        ticker.unref?.();
+      }
+      refresh();
+    },
+    wait(ids: readonly string[], waiting: boolean) {
+      for (const id of ids) {
+        const count = (awaited.get(id) ?? 0) + (waiting ? 1 : -1);
+        if (count > 0) awaited.set(id, count);
+        else awaited.delete(id);
+      }
+      refresh();
+    },
+    clear() {
+      running.clear();
+      awaited.clear();
+      refresh();
+    },
+  };
 }
 
 // Stable wire value used by persisted transcripts and the renderer.
@@ -878,6 +957,11 @@ export function createRecipesExtension(
       await closeAllChildRuns();
     },
   };
+
+  const backgroundRuns = createBackgroundRunsStatus(
+    (id) => localRunController.get(id),
+    () => localAgentContext,
+  );
 
   async function closeAllChildRuns(): Promise<void> {
     await Promise.all(
@@ -1752,6 +1836,7 @@ export function createRecipesExtension(
         const envelope = envelopeFromRun(run);
         if (envelope) completions.enqueue(envelope);
         run.notifyUpdate();
+        backgroundRuns.refresh();
         await persistRun(cwd, run);
       }
       return run;
@@ -1943,6 +2028,8 @@ export function createRecipesExtension(
       visibleAgentDefinitions,
       {
         acknowledgeCompletions: (ids) => completions.acknowledge(ids),
+        onBackgroundRun: (run) => backgroundRuns.add(run),
+        onWait: (ids, waiting) => backgroundRuns.wait(ids, waiting),
       },
     );
     agentTool.label = "Agent";
@@ -2059,6 +2146,7 @@ export function createRecipesExtension(
 
     pi.on("session_shutdown", async () => {
       suggestionPicker.cancel();
+      backgroundRuns.clear();
       await closeAllChildRuns();
       await closeRootMcpRuntime();
       clearMcpCatalogPreload(env);

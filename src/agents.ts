@@ -116,6 +116,12 @@ const AgentToolParams = Type.Object({
   id: Type.Optional(
     Type.String({ description: "The run id `start` returned." }),
   ),
+  ids: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "With wait: several run ids `start` returned; returns when all of them have settled.",
+    }),
+  ),
   message: Type.Optional(Type.String()),
   wait: Type.Optional(
     Type.Boolean({
@@ -176,21 +182,47 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+/** Longest label shown in a progress line. */
+const PROGRESS_LABEL_CHARS = 40;
+
+/** The run's agent, with its label when the label tells concurrent runs apart. */
+function progressName(run: AgentRunSummary): string {
+  const label = run.label?.replace(/\s+/g, " ").trim();
+  if (!label || label === run.agent_name) return run.agent_name;
+  const short =
+    label.length > PROGRESS_LABEL_CHARS
+      ? `${label.slice(0, PROGRESS_LABEL_CHARS - 1)}…`
+      : label;
+  return `${run.agent_name} (${short})`;
+}
+
 /**
- * One line of progress for a running child: its latest tool call, the time
- * since it started, and how many tool calls it has made, e.g.
- * `eval-author: bash python3 checks.py · 1m 5s · 7 tool calls`.
+ * One line of progress for a child: its latest tool call, the time since it
+ * started, and how many tool calls it has made, e.g.
+ * `eval-author: bash python3 checks.py · 1m 5s · 7 tool calls`. A settled
+ * child shows its status in place of the tool call, and its run time.
  */
 export function formatAgentProgress(
   run: AgentRunSummary,
   now: number = Date.now(),
 ): string {
   const count = run.tool_call_count ?? 0;
+  const settled = terminal(run);
+  const activity = settled ? run.status : (run.latest_tool_call ?? "starting");
+  const end = settled ? (run.completed_at ?? run.last_activity_at) : now;
   return [
-    `${run.agent_name}: ${run.latest_tool_call ?? "starting"}`,
-    formatElapsed(now - run.started_at),
+    `${progressName(run)}: ${activity}`,
+    formatElapsed(end - run.started_at),
     `${count} tool call${count === 1 ? "" : "s"}`,
   ].join(" · ");
+}
+
+/** One progress line per run, in the order given. */
+export function formatAgentsProgress(
+  runs: readonly AgentRunSummary[],
+  now: number = Date.now(),
+): string {
+  return runs.map((run) => formatAgentProgress(run, now)).join("\n");
 }
 
 function statusBlock(run: AgentRunSummary): string {
@@ -253,10 +285,24 @@ function unknownRun(id: string, controller: AgentRunController) {
 
 const UNKNOWN_RUN = /unknown agent run|agent run not found/i;
 
+/** How often a wait over run ids re-reads them for progress updates. */
+const WAIT_PROGRESS_POLL_MS = 1000;
+
+export interface AgentToolOptions {
+  acknowledgeCompletions?(ids: readonly string[]): void;
+  /** A run started without `wait`: it works in the background. */
+  onBackgroundRun?(run: AgentRunSummary): void;
+  /**
+   * The tool starts (`true`) or stops (`false`) waiting on these runs, whose
+   * progress its own partial results then show.
+   */
+  onWait?(ids: readonly string[], waiting: boolean): void;
+}
+
 export function createAgentTool(
   controller: AgentRunController,
   agents: ReadonlyMap<string, unknown>,
-  opts: { acknowledgeCompletions?(ids: readonly string[]): void } = {},
+  opts: AgentToolOptions = {},
 ): ToolDefinition {
   const closedRunIds = new Set<string>();
   const acknowledge = (run: AgentRunSummary) => {
@@ -268,7 +314,7 @@ export function createAgentTool(
     description: [
       "Start or manage child agents.",
       "Omit action to start one child with name and prompt; it returns a run id at once. Its result reaches you when it finishes: carry on or end your turn.",
-      "For a short check whose answer you need now, pass wait: true to get the result in the same call, or use wait with the run id.",
+      "For a short check whose answer you need now, pass wait: true to get the result in the same call, or use wait with the run id, or with ids to wait for several runs at once.",
       `Available agent roles: ${[...agents.keys()].join(", ")}. Pass a role as name; use label to distinguish concurrent runs.`,
       "Use status, message, interrupt, or close with the run id `start` returned.",
       "Message steers a running child at the next message boundary; on a settled child it resumes the same session.",
@@ -299,7 +345,12 @@ export function createAgentTool(
                 content: [
                   {
                     type: "text" as const,
-                    text: terminal(update) ? "" : formatAgentProgress(update),
+                    // A background run's updates reach hosts as details only:
+                    // its tool call has already returned.
+                    text:
+                      params.wait && !terminal(update)
+                        ? formatAgentProgress(update)
+                        : "",
                   },
                 ],
                 details: { agent: update, subtasks: [subtask(update)] },
@@ -307,6 +358,11 @@ export function createAgentTool(
             },
           });
           if (params.wait) return await waitFor(run, signal);
+          try {
+            opts.onBackgroundRun?.(run);
+          } catch {
+            // Showing background progress is cosmetic.
+          }
           return result(run, `Started ${runLine(run)}`);
         }
 
@@ -325,6 +381,13 @@ export function createAgentTool(
             details: { agents: runs, subtasks: runs.map(subtask) },
           };
         }
+        if (params.action === "wait" && params.ids?.length) {
+          return await waitForMany(
+            [...new Set([...(params.id ? [params.id] : []), ...params.ids])],
+            signal,
+            onUpdate,
+          );
+        }
         if (!params.id)
           return errorResult(`${params.action} requires id`, controller);
         if (closedRunIds.has(params.id)) {
@@ -341,7 +404,7 @@ export function createAgentTool(
           return result(run, statusBlock(run));
         }
         if (params.action === "wait") {
-          return await waitFor(params.id, signal);
+          return await waitForMany([params.id], signal, onUpdate);
         }
         if (params.action === "message") {
           if (!params.message)
@@ -379,6 +442,96 @@ export function createAgentTool(
       }
     },
   });
+
+  /**
+   * Block until every run settles, sending a partial result with one progress
+   * line per run whenever one of them moves: plain-text hosts read the lines,
+   * RPC hosts the summaries in `details.agents`. One id keeps the single-run
+   * result shape. An abort stops the wait, never the runs.
+   */
+  async function waitForMany(
+    ids: string[],
+    signal: AbortSignal | undefined,
+    onUpdate:
+      | ((update: {
+          content: Array<{ type: "text"; text: string }>;
+          details: unknown;
+        }) => unknown)
+      | undefined,
+  ) {
+    for (const id of ids) {
+      if (closedRunIds.has(id)) {
+        return errorResult(`Agent run already closed: ${id}`, controller);
+      }
+    }
+    let lastProgress = "";
+    const report = () => {
+      const runs = ids
+        .map((id) => controller.get(id))
+        .filter((run): run is AgentRunSummary => run !== null);
+      if (!runs.some((run) => !terminal(run))) return;
+      // Elapsed time moves on its own; a host redraws it between changes.
+      const progress = JSON.stringify(
+        runs.map((run) => [
+          run.status,
+          run.latest_tool_call,
+          run.tool_call_count,
+        ]),
+      );
+      if (progress === lastProgress) return;
+      lastProgress = progress;
+      try {
+        void Promise.resolve(
+          onUpdate?.({
+            content: [
+              { type: "text" as const, text: formatAgentsProgress(runs) },
+            ],
+            details: {
+              ...(ids.length === 1 ? { agent: runs[0] } : { agents: runs }),
+              subtasks: runs.map(subtask),
+            },
+          }),
+        ).catch(() => {});
+      } catch {
+        // A progress update must not fail the wait.
+      }
+    };
+    report();
+    const poll = onUpdate
+      ? setInterval(report, WAIT_PROGRESS_POLL_MS)
+      : undefined;
+    poll?.unref?.();
+    opts.onWait?.(ids, true);
+    try {
+      if (ids.length === 1) return await waitFor(ids[0]!, signal);
+      const runs = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            return await controller.wait(id, signal);
+          } catch (error) {
+            const fallback = controller.get(id);
+            if (!signal?.aborted || !fallback) throw error;
+            return fallback;
+          }
+        }),
+      );
+      runs.forEach(acknowledge);
+      const text = runs
+        .map((run) =>
+          terminal(run)
+            ? statusBlock(run)
+            : `Stopped waiting: ${runLine(run)} keeps working; its result reaches you when it finishes.`,
+        )
+        .join("\n\n");
+      return {
+        content: [{ type: "text" as const, text }],
+        details: { agents: runs, subtasks: runs.map(subtask) },
+      };
+    } finally {
+      if (poll) clearInterval(poll);
+      opts.onWait?.(ids, false);
+    }
+  }
 
   /**
    * Block until the run settles. An abort stops the wait, never the run: it
