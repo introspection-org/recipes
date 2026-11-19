@@ -99,7 +99,7 @@ describe("conversation_synthesis@1 reads a conversation as the Python builder di
         expect(ours).toEqual(theirs);
       }
       const { digest: ourDigest, ...ourPlan } = (
-        built.state as { plan: Record<string, unknown> }
+        built.state as unknown as { plan: Record<string, unknown> }
       ).plan;
       const { digest: theirDigest, ...theirPlan } = fixture.expected.plan!;
       expect(instants(ourPlan)).toEqual(instants(theirPlan));
