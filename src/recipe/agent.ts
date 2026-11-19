@@ -272,7 +272,7 @@ const AGENT_YAML_KEYS = new Set([
 const MEMORY_QUANTITY = /^[1-9][0-9]*(Ki|Mi|Gi|K|M|G)$/;
 
 /** What an agent's sandbox may use. Today only memory; a batch sizes itself to it. */
-export interface RecipeAgentResources {
+interface RecipeAgentResources {
   /** A memory quantity such as `512Mi`. */
   memory?: string;
 }

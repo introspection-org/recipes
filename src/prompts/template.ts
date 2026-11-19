@@ -5,7 +5,7 @@ export class TemplateError extends Error {
 }
 
 /** The placeholders a template names, in order of first use. */
-export function templatePlaceholders(template: string): string[] {
+function templatePlaceholders(template: string): string[] {
   return [...new Set([...template.matchAll(PLACEHOLDER)].map((m) => m[1]!))];
 }
 
