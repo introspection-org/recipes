@@ -138,9 +138,9 @@ One `issues` tool with these commands:
 | Command | Does |
 | --- | --- |
 | `search` | find issues by text, status, assignee, project or label |
-| `get` | one issue with its comments |
-| `create` | a new issue |
-| `update` | title, description, assignee, labels, priority |
+| `get` | one issue with its comments and attachments |
+| `create` | a new issue, with attachments |
+| `update` | title, description, assignee, labels, priority; add or remove attachments |
 | `comment` | add a comment |
 | `transition` | move to another status |
 
@@ -166,6 +166,7 @@ later command takes:
 | `labels` | labels | labels | tags |
 | `container` | team | project and issue type | the Recipe's project |
 | `url`, `created_at`, `updated_at` | ✓ | ✓ | ✓ |
+| `attachments` (`link`, `file`, `event`, `span`, each with its `id`) | links: the issue's attachments | links: the issue's remote links | every kind |
 
 The providers differ, so each declares the commands and fields it supports in
 `capabilities`, as productivity providers do:
@@ -184,6 +185,14 @@ The providers differ, so each declares the commands and fields it supports in
   name the caller's. A name or email is refused with `invalid_request`. A data
   plane whose issues have no assignee answers an assignee search with
   `not_supported` rather than list every issue.
+- **Attachments:** a provider declares the kinds it takes and whether it
+  removes in `capabilities.attachments`, and the tool answers anything else
+  with `not_supported`, naming what the provider can do. Introspection takes
+  all four kinds, appends with dedup by identity and removes by id
+  (`add_attachments`, `remove_attachments` on `PATCH /v1/issues/{id}`).
+  Linear (`save_issue` `links`) and Jira (a remote link per item) take links
+  alone, append-only; Jira's file upload needs a local path the tool does not
+  have.
 - **Moving an issue:** `transition` takes a status name or category. Linear
   sets the state, Jira applies the workflow transition that reaches it, and
   Introspection sets `status`.

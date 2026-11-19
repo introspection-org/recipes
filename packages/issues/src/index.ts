@@ -16,7 +16,7 @@ import {
 /** The issues providers the `issues` tool loads from this package. */
 export const issuesProviders: RecipeIssuesModule = {
   kind: "issues",
-  apiVersion: 1,
+  apiVersion: 2,
   providers: {
     linear: linearIssuesProvider,
     jira: jiraIssuesProvider,
@@ -40,6 +40,8 @@ export {
 };
 export type {
   IntrospectionIssue,
+  IntrospectionIssueAttachment,
+  IntrospectionIssueAttachmentCreate,
   IntrospectionIssueComment,
   IntrospectionIssuesClient,
   IntrospectionProviderOptions,

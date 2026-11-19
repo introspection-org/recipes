@@ -1,4 +1,6 @@
 import type {
+  IssueAttachment,
+  IssueAttachmentCreate,
   IssueComment,
   IssuePerson,
   IssuePriority,
@@ -56,6 +58,12 @@ export const JIRA_MCP_TOOLS: readonly IssuesMcpToolMapping[] = [
     verified: false,
   },
   { tool: "transitionJiraIssue", serves: ["transition"], verified: false },
+  { tool: "listJiraIssueRemoteIssueLinks", serves: ["get"], verified: false },
+  {
+    tool: "createJiraIssueRemoteIssueLink",
+    serves: ["create", "update"],
+    verified: false,
+  },
 ];
 
 const JIRA_FIELDS = [
@@ -195,6 +203,26 @@ export function jiraIssue(value: unknown, site?: string): ProviderIssue {
   };
 }
 
+/** An issue's remote links, as the REST API's `GET .../remotelink` lists them. */
+function jiraRemoteLinks(value: unknown): IssueAttachment[] {
+  return listOf(value, ["remoteLinks", "links", "values"]).flatMap((entry) => {
+    const link = record(entry);
+    const object = record(link.object);
+    const url = text(object.url);
+    if (!url) return [];
+    const id = typeof link.id === "number" ? String(link.id) : text(link.id);
+    const title = text(object.title);
+    return [
+      {
+        ...(id ? { id } : {}),
+        kind: "link" as const,
+        url,
+        ...(title ? { title } : {}),
+      },
+    ];
+  });
+}
+
 /** A JQL string literal. */
 function jqlString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -202,7 +230,7 @@ function jqlString(value: string): string {
 
 export const jiraIssuesProvider: RecipeIssuesProviderModule = {
   kind: "issues",
-  apiVersion: 1,
+  apiVersion: 2,
   id: "jira",
   capabilities: {
     commands: {
@@ -228,6 +256,7 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
       "comments",
       "url",
     ],
+    attachments: { kinds: ["link"], remove: false },
     hosts: ["mcp.atlassian.com"],
     options: { project: "string", issueType: "string", server: "string" },
   },
@@ -314,6 +343,28 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
         url,
       );
     };
+    /** One remote link per attachment, in order: the REST API's `POST .../remotelink` body. */
+    const addLinks = async (
+      ref: string,
+      attachments: readonly IssueAttachmentCreate[],
+      ctx: IssuesCallContext,
+    ) => {
+      const { cloudId } = await resource(ctx);
+      for (const attachment of attachments)
+        await call(
+          "update",
+          {
+            cloudId,
+            issueIdOrKey: ref,
+            object: {
+              url: attachment.url!,
+              title: attachment.title ?? attachment.url!,
+            },
+          },
+          ctx,
+          ["createJiraIssueRemoteIssueLink"],
+        );
+    };
     return {
       async search(args, ctx) {
         const { cloudId, url } = await resource(ctx);
@@ -395,7 +446,17 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
           ctx,
           ["getJiraIssue"],
         );
-        const issue = jiraIssue(raw, url);
+        const parsed = jiraIssue(raw, url);
+        const issue = ctx.mcp?.hasTool("listJiraIssueRemoteIssueLinks")
+          ? {
+              ...parsed,
+              attachments: jiraRemoteLinks(
+                await call("get", { cloudId, issueIdOrKey: ref }, ctx, [
+                  "listJiraIssueRemoteIssueLinks",
+                ]),
+              ),
+            }
+          : parsed;
         // The issue embeds one page of comments and says how many there are.
         const total = record(record(record(raw).fields).comment).total;
         const embedded = issue.comments ?? [];
@@ -439,7 +500,7 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
         }
         return { ...issue, comments };
       },
-      async create(args, ctx) {
+      async create({ attachments, ...args }, ctx) {
         const projectKey = args.container ?? text(config.options.project);
         const issueTypeName = args.issue_type ?? text(config.options.issueType);
         if (!projectKey || !issueTypeName)
@@ -480,13 +541,22 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
                 : {}),
             },
             ctx,
+            ["createJiraIssue"],
           ),
         );
         const key = text(answer.key);
+        if (attachments?.length) {
+          if (!key)
+            throw new IssuesError(
+              "provider_error",
+              "Jira created the issue without returning its key, so its links were not added",
+            );
+          await addLinks(key, attachments, ctx);
+        }
         if (!key) return jiraIssue(answer, url);
         return getIssue(key, ctx);
       },
-      async update({ ref, ...changes }, ctx) {
+      async update({ ref, add_attachments, ...changes }, ctx) {
         if (changes.priority === "none")
           throw new IssuesError(
             "invalid_request",
@@ -499,30 +569,24 @@ export const jiraIssuesProvider: RecipeIssuesProviderModule = {
             : changes.assignee === "none"
               ? null
               : { accountId: await accountId(changes.assignee, cloudId, ctx) };
-        await call(
-          "update",
-          {
-            cloudId,
-            issueIdOrKey: ref,
-            fields: {
-              ...(changes.title !== undefined
-                ? { summary: changes.title }
-                : {}),
-              ...(changes.description !== undefined
-                ? { description: changes.description }
-                : {}),
-              ...(changes.priority !== undefined
-                ? { priority: { name: PRIORITY_TO_JIRA[changes.priority] } }
-                : {}),
-              ...(changes.labels !== undefined
-                ? { labels: [...changes.labels] }
-                : {}),
-              ...(assignee !== undefined ? { assignee } : {}),
-            },
-          },
-          ctx,
-          ["editJiraIssue"],
-        );
+        const fields = {
+          ...(changes.title !== undefined ? { summary: changes.title } : {}),
+          ...(changes.description !== undefined
+            ? { description: changes.description }
+            : {}),
+          ...(changes.priority !== undefined
+            ? { priority: { name: PRIORITY_TO_JIRA[changes.priority] } }
+            : {}),
+          ...(changes.labels !== undefined
+            ? { labels: [...changes.labels] }
+            : {}),
+          ...(assignee !== undefined ? { assignee } : {}),
+        };
+        if (Object.keys(fields).length)
+          await call("update", { cloudId, issueIdOrKey: ref, fields }, ctx, [
+            "editJiraIssue",
+          ]);
+        if (add_attachments?.length) await addLinks(ref, add_attachments, ctx);
         return getIssue(ref, ctx);
       },
       async comment({ ref, body }, ctx) {

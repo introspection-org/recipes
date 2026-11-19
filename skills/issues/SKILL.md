@@ -27,14 +27,14 @@ leave it out.
 
 ## The commands
 
-| Command      | Takes                                                                                          |
-| ------------ | ---------------------------------------------------------------------------------------------- |
-| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit` (1-50, default 20)                |
-| `get`        | `handle`; returns the issue with its comments                                                  |
-| `create`     | `title` (required), `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` |
-| `update`     | `handle`, and at least one of `title`, `description`, `priority`, `labels`, `assignee`         |
-| `comment`    | `handle`, `body` (markdown)                                                                    |
-| `transition` | `handle`, `status`                                                                             |
+| Command      | Takes                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit` (1-50, default 20)                                                 |
+| `get`        | `handle`; returns the issue with its comments and attachments                                                                   |
+| `create`     | `title` (required), `description`, `priority`, `labels`, `assignee`, `container`, `issue_type`, `attachments`                   |
+| `update`     | `handle`, and at least one of `title`, `description`, `priority`, `labels`, `assignee`, `add_attachments`, `remove_attachments` |
+| `comment`    | `handle`, `body` (markdown)                                                                                                     |
+| `transition` | `handle`, `status`                                                                                                              |
 
 - `description` and `body` are markdown.
 - `labels` on `update` replaces the whole set: `get` the issue first and pass the labels
@@ -44,6 +44,24 @@ leave it out.
 - `container` is the team (Linear) or project (Jira); leave it out to use the Recipe's
   default. `issue_type` is Jira's alone.
 - `update` never changes the status. Use `transition` for that.
+
+## Attachments
+
+An attachment is evidence on an issue, one object per item, by `kind`:
+
+- `link`: `url` (http or https), optional `title`
+- `file`: `file_id` (a data plane file), optional `name`
+- `event`: `event_id`
+- `span`: `trace_id` (32 hex) and `span_id` (16 hex)
+
+`create` takes them as `attachments`; `update` appends `add_attachments` and removes
+`remove_attachments`, a list of attachment ids. Ids come from `get`, which lists each
+attachment with its id. Adding never replaces what is there, so send only the new item;
+Introspection skips one the issue already holds (the same url, file, event or span).
+
+Introspection takes every kind and removes. Linear and Jira take `link` alone and cannot
+remove one. A file, event or span is `not_supported` there: mention it in a comment
+instead.
 
 ## Statuses and priorities
 
@@ -98,8 +116,8 @@ The error names a code:
 - `not_connected`: the tracker is not connected for this person, or the runtime has no
   credential for it. Ask the person to connect it (with `introspection_open` where it is
   offered); don't retry.
-- `not_supported`: this provider does not serve that command or field. Leave the field
-  out, or tell the person.
+- `not_supported`: this provider does not serve that command, field or attachment kind.
+  Leave it out, or tell the person.
 - `not_found`: the handle no longer names an issue. Search again.
 - `invalid_request`: fix the arguments the message names (a missing title, a bad
   priority, a status the tracker does not have, several providers on offer).
