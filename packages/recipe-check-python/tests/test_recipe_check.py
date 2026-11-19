@@ -122,17 +122,68 @@ def test_judge_parser_reads_a_classifier_judge() -> None:
     assert "instructions" not in definition
 
 
-def test_judge_parser_rejects_the_removed_llm_block() -> None:
-    with pytest.raises(
-        ValueError, match=re.escape("ai: { model: <provider>/<model> }")
-    ):
+def test_judge_parser_maps_the_older_llm_block_to_ai() -> None:
+    parsed = introspection_recipe_check.parse_judge_definitions(
+        [
+            {
+                "path": "judges/legacy.yaml",
+                "content": (
+                    "name: legacy\n"
+                    "instructions: Grade the answer.\n"
+                    "llm:\n"
+                    "  provider: anthropic\n"
+                    "  model: claude-sonnet-5-5\n"
+                    "  request:\n"
+                    "    max_tokens: 512\n"
+                    "    reasoning_effort: low\n"
+                    "  transport:\n"
+                    "    timeout_ms: 30000\n"
+                ),
+            },
+            {
+                "path": "judges/local.yaml",
+                "content": (
+                    "name: local\n"
+                    "instructions: Grade the answer.\n"
+                    "llm:\n"
+                    "  model: gpt-5\n"
+                    "  local:\n"
+                    "    base_url: http://localhost:8080\n"
+                    "    api_key_env: LOCAL_KEY\n"
+                ),
+            },
+        ]
+    )
+
+    assert parsed[0].definition.to_dict() == {
+        "name": "legacy",
+        "on": {},
+        "ai": {
+            "model": "anthropic/claude-sonnet-5-5",
+            "thinking_level": "low",
+            "options": {"max_tokens": 512},
+        },
+        "instructions": "Grade the answer.",
+    }
+    assert parsed[0].warnings == ()
+    assert parsed[1].definition.to_dict()["ai"] == {"model": "openai/gpt-5"}
+    # A parsed definition carries only `ai`: the `llm:` block is gone.
+    assert all("llm" not in judge.definition.to_dict() for judge in parsed)
+    assert len(parsed[1].warnings) == 1
+    assert "llm.local" in parsed[1].warnings[0]
+
+
+def test_judge_parser_rejects_both_ai_and_llm() -> None:
+    with pytest.raises(ValueError, match=re.escape("declares both `ai` and `llm`")):
         introspection_recipe_check.parse_judge_definitions(
             [
                 {
-                    "path": "judges/legacy.yaml",
+                    "path": "judges/both.yaml",
                     "content": (
-                        "name: legacy\n"
+                        "name: both\n"
                         "instructions: Grade the answer.\n"
+                        "ai:\n"
+                        "  model: openai/gpt-5\n"
                         "llm:\n"
                         "  model: gpt-5\n"
                     ),
@@ -141,11 +192,57 @@ def test_judge_parser_rejects_the_removed_llm_block() -> None:
         )
 
 
+def test_judge_parser_rejects_a_gate_regex_javascript_cannot_compile() -> None:
+    with pytest.raises(ValueError, match=re.escape("JavaScript regex")):
+        introspection_recipe_check.parse_judge_definitions(
+            [
+                {
+                    "path": "judges/gate.yaml",
+                    "content": (
+                        "name: gate\n"
+                        "instructions: Grade the answer.\n"
+                        "on:\n"
+                        "  - event: message\n"
+                        "    match:\n"
+                        "      text: '/(?P<word>a)/'\n"
+                        "ai:\n"
+                        "  model: openai/gpt-5\n"
+                    ),
+                }
+            ]
+        )
+
+
+def test_judge_parser_accepts_a_gate_regex_only_one_javascript_flag_compiles() -> None:
+    # The first compiles under the u flag only, the second under the v flag only.
+    for pattern in (r"/[\w-]+@acme/", r"/[\w--\d]+/"):
+        introspection_recipe_check.parse_judge_definitions(
+            [
+                {
+                    "path": "judges/gate.yaml",
+                    "content": (
+                        "name: gate\n"
+                        "instructions: Grade the answer.\n"
+                        "on:\n"
+                        "  - event: message\n"
+                        "    match:\n"
+                        f"      text: '{pattern}'\n"
+                        "ai:\n"
+                        "  model: openai/gpt-5\n"
+                    ),
+                }
+            ]
+        )
+
+
 def test_judge_schema_describes_ai_and_both_judge_kinds() -> None:
     schema = introspection_recipe_check.judge_definition_schema()
-    properties = cast(dict[str, object], schema["properties"])
+    properties = cast(dict[str, dict[str, object]], schema["properties"])
 
-    assert "llm" not in properties
+    # `llm:` is still authored, so the schema describes it, as a deprecated
+    # block of its own rather than a field of the parsed definition.
+    assert properties["llm"]["deprecated"] is True
+    assert properties["llm"]["$ref"] == "#/$defs/LlmBlock"
     assert {"ai", "instructions", "questions"} <= properties.keys()
     assert schema["oneOf"] == [
         {"required": ["instructions"]},

@@ -1,7 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse } from "yaml";
 import {
   parseRecipeAgentAiConfig,
   type RecipeAgentModelConfig,
@@ -43,6 +43,10 @@ export interface ClassifierJudgeDefinition extends JudgeBase {
 
 export type JudgeDefinition = LlmJudgeDefinition | ClassifierJudgeDefinition;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export class JudgeDefinitionError extends Error {
   constructor(message: string) {
     super(message);
@@ -50,129 +54,129 @@ export class JudgeDefinitionError extends Error {
   }
 }
 
-const TOP_LEVEL_FIELDS = new Set([
-  "ai",
-  "description",
-  "instructions",
-  "judge",
-  "name",
-  "on",
-  "questions",
-  "type",
-]);
-const QUESTION_FIELDS = new Set(["criteria", "instructions", "threshold"]);
-const JUDGE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const QUESTION_NAME = /^[a-z][a-z0-9_]*$/;
-const GATE_EVENTS = new Set(["message", "tool", "feedback"]);
-const MAX_QUESTIONS = 8;
-const DEFAULT_THRESHOLD = 0.5;
+/** The environment variable naming the `introspection-recipe-check` binary. */
+export const RECIPE_CHECK_BIN_ENV = "INTROSPECTION_RECIPE_CHECK";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+/** One judge file to normalize: its path in the Recipe and its YAML. */
+export interface JudgeSource {
+  path: string;
+  content: string;
 }
 
-function parseGate(path: string, on: unknown): unknown {
-  if (on === undefined || on === null) return [];
-  if (isRecord(on) && Object.keys(on).length === 0) return [];
-  if (!Array.isArray(on)) {
-    throw new JudgeDefinitionError(
-      `${path}: \`on\` must be a list of event matchers`,
-    );
-  }
-  for (const matcher of on) {
-    if (
-      !isRecord(matcher) ||
-      typeof matcher.event !== "string" ||
-      !GATE_EVENTS.has(matcher.event)
-    ) {
-      throw new JudgeDefinitionError(
-        `${path}: each \`on\` entry must be \`{ event: message | tool | feedback, match? }\``,
-      );
-    }
-    if (matcher.match !== undefined && !isRecord(matcher.match)) {
-      throw new JudgeDefinitionError(
-        `${path}: an \`on\` entry's \`match\` must be a mapping of field to value`,
-      );
-    }
-    for (const field of Object.keys(matcher.match ?? {})) {
-      // Where a judge runs is the platform's setting, not the judge's.
-      if (
-        field === "environment" ||
-        field === "runtime_group" ||
-        field.endsWith("pattern_id")
-      ) {
-        throw new JudgeDefinitionError(
-          `${path}: \`on\` cannot match on "${field}"`,
-        );
-      }
-    }
-  }
-  return on;
+/**
+ * What `introspection-recipe-check judges` prints for each online judge, and
+ * what a host that links the crate passes in its place (`definitions`).
+ */
+export interface NormalizedJudgeDefinition {
+  source_path: string;
+  definition: {
+    name: string;
+    description?: string;
+    on: unknown;
+    ai: Record<string, unknown>;
+    instructions?: string;
+    questions?: Record<string, JudgeQuestion>;
+  };
+  warnings?: string[];
 }
 
-function parseQuestions(
-  path: string,
-  value: unknown,
-): Record<string, JudgeQuestion> {
-  if (!isRecord(value)) {
+export interface JudgeDefinitionOptions {
+  /**
+   * The judges already normalized, as `introspection-recipe-check judges`
+   * prints them: a host that links recipe-check passes them, and nothing is
+   * spawned.
+   */
+  definitions?: readonly NormalizedJudgeDefinition[];
+  /** The `introspection-recipe-check` binary. Default: `$INTROSPECTION_RECIPE_CHECK`, else the one on PATH. */
+  recipeCheck?: string;
+  /** Called with each warning the normalization raised. Default: write it to stderr. */
+  onWarning?: (warning: string) => void;
+}
+
+function recipeCheckBinary(options: JudgeDefinitionOptions): string {
+  return (
+    options.recipeCheck ??
+    process.env[RECIPE_CHECK_BIN_ENV] ??
+    "introspection-recipe-check"
+  );
+}
+
+/**
+ * The normalized definitions of `sources`, from recipe-check's native
+ * validator: the one reader every runtime shares, so an older `llm:` block, a
+ * gate's regular expressions and every default mean here what they mean on
+ * the platform. Mission judges are left out; any invalid source fails all.
+ */
+function normalizeJudges(
+  sources: readonly JudgeSource[],
+  options: JudgeDefinitionOptions,
+): NormalizedJudgeDefinition[] {
+  const binary = recipeCheckBinary(options);
+  const result = spawnSync(binary, ["judges"], {
+    input: JSON.stringify(sources),
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) {
     throw new JudgeDefinitionError(
-      `${path}: \`questions\` must be a mapping of question name to question`,
+      `could not run ${binary} to read the judges (set ${RECIPE_CHECK_BIN_ENV} to the introspection-recipe-check binary): ${result.error.message}`,
     );
   }
-  const names = Object.keys(value);
-  if (names.length < 1 || names.length > MAX_QUESTIONS) {
+  if (result.status !== 0) {
     throw new JudgeDefinitionError(
-      `${path}: \`questions\` needs 1 to ${MAX_QUESTIONS} questions`,
+      result.stderr.trim() || `${binary} judges exited with ${result.status}`,
     );
   }
-  const questions: Record<string, JudgeQuestion> = {};
-  for (const name of names) {
-    const question = value[name];
-    if (!QUESTION_NAME.test(name) || !isRecord(question)) {
-      throw new JudgeDefinitionError(
-        `${path}: question "${name}" must be a snake_case name mapped to \`{ instructions, criteria?, threshold? }\``,
-      );
-    }
-    for (const field of Object.keys(question)) {
-      if (!QUESTION_FIELDS.has(field)) {
-        throw new JudgeDefinitionError(
-          `${path}: question "${name}" has unknown field "${field}"`,
-        );
-      }
-    }
-    if (
-      typeof question.instructions !== "string" ||
-      !question.instructions.trim()
-    ) {
-      throw new JudgeDefinitionError(
-        `${path}: question "${name}" needs \`instructions\``,
-      );
-    }
-    const criteria = question.criteria;
-    if (
-      !isRecord(criteria) ||
-      typeof criteria.true !== "string" ||
-      typeof criteria.false !== "string" ||
-      !criteria.true.trim() ||
-      !criteria.false.trim()
-    ) {
-      throw new JudgeDefinitionError(
-        `${path}: question "${name}" needs \`criteria\` with a \`true\` and a \`false\` description`,
-      );
-    }
-    const threshold = question.threshold ?? DEFAULT_THRESHOLD;
-    if (typeof threshold !== "number" || !(threshold > 0 && threshold <= 1)) {
-      throw new JudgeDefinitionError(
-        `${path}: question "${name}" \`threshold\` must be a number above 0 and at most 1`,
-      );
-    }
-    questions[name] = {
-      instructions: question.instructions,
-      criteria: { true: criteria.true, false: criteria.false },
-      threshold,
-    };
+  return JSON.parse(result.stdout) as NormalizedJudgeDefinition[];
+}
+
+function toDefinition(
+  normalized: NormalizedJudgeDefinition,
+  content: string,
+): JudgeDefinition {
+  const { definition, source_path: path } = normalized;
+  const ai = parseRecipeAgentAiConfig(
+    `judge "${definition.name}"`,
+    definition.ai,
+  );
+  if (!ai?.name) {
+    throw new JudgeDefinitionError(`${path}: a judge must declare ai.model`);
   }
-  return questions;
+  const on = definition.on;
+  const base: JudgeBase = {
+    name: definition.name,
+    ...(definition.description ? { description: definition.description } : {}),
+    on: isRecord(on) && Object.keys(on).length === 0 ? [] : on,
+    ai: { ...ai, name: ai.name },
+    path,
+    definitionHash: createHash("sha256").update(content).digest("hex"),
+  };
+  if (definition.questions) {
+    return { ...base, kind: "classifier", questions: definition.questions };
+  }
+  return { ...base, kind: "llm", instructions: definition.instructions ?? "" };
+}
+
+/** Normalize judge sources into definitions, in path order; mission judges are left out. */
+export function parseJudgeDefinitions(
+  sources: readonly JudgeSource[],
+  options: JudgeDefinitionOptions = {},
+): JudgeDefinition[] {
+  const contents = new Map(sources.map((source) => [source.path, source]));
+  const warn =
+    options.onWarning ??
+    ((warning: string) => process.stderr.write(`warning: ${warning}\n`));
+  const normalized = options.definitions ?? normalizeJudges(sources, options);
+  return normalized.map((judge) => {
+    const source = contents.get(judge.source_path);
+    if (!source) {
+      throw new JudgeDefinitionError(
+        `the judge definitions name ${judge.source_path}, which is not among the Recipe's judge files`,
+      );
+    }
+    for (const warning of judge.warnings ?? []) warn(warning);
+    return toDefinition(judge, source.content);
+  });
 }
 
 /**
@@ -182,103 +186,24 @@ function parseQuestions(
 export function parseJudgeDefinition(
   path: string,
   source: string,
+  options: JudgeDefinitionOptions = {},
 ): JudgeDefinition | null {
-  let value: unknown;
-  try {
-    value = parse(source);
-  } catch (error) {
-    throw new JudgeDefinitionError(
-      `${path}: not valid YAML: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (!isRecord(value)) {
-    throw new JudgeDefinitionError(`${path}: a judge must be a YAML mapping`);
-  }
-  const type = value.type ?? "online";
-  if (type === "mission") return null;
-  if (type !== "online") {
-    throw new JudgeDefinitionError(
-      `${path}: \`type\` must be online or mission`,
-    );
-  }
-  if ("llm" in value) {
-    throw new JudgeDefinitionError(
-      `${path}: \`llm\` is no longer read; declare the judge's model as \`ai: { model: <provider>/<model> }\`, as an agent does`,
-    );
-  }
-  for (const field of Object.keys(value)) {
-    if (!TOP_LEVEL_FIELDS.has(field)) {
-      throw new JudgeDefinitionError(`${path}: unknown field "${field}"`);
-    }
-  }
-  const name = value.name ?? value.judge;
-  if (typeof name !== "string" || !JUDGE_NAME.test(name) || name.length > 255) {
-    throw new JudgeDefinitionError(
-      `${path}: \`name\` must be lowercase kebab-case`,
-    );
-  }
-  const ai = parseRecipeAgentAiConfig(`judge "${name}"`, value.ai);
-  if (!ai?.name) {
-    throw new JudgeDefinitionError(
-      `${path}: a judge must declare \`ai.model\` as <provider>/<model>`,
-    );
-  }
-  if (
-    value.description !== undefined &&
-    typeof value.description !== "string"
-  ) {
-    throw new JudgeDefinitionError(`${path}: \`description\` must be text`);
-  }
-  const base: JudgeBase = {
-    name,
-    ...(value.description ? { description: value.description } : {}),
-    on: parseGate(path, value.on),
-    ai: { ...ai, name: ai.name },
-    path,
-    definitionHash: createHash("sha256").update(source).digest("hex"),
-  };
-  const hasInstructions = value.instructions !== undefined;
-  const hasQuestions = value.questions !== undefined;
-  if (hasInstructions === hasQuestions) {
-    throw new JudgeDefinitionError(
-      `${path}: a judge declares either \`instructions\`, answered by a chat model, or \`questions\`, answered by a classifier`,
-    );
-  }
-  if (hasQuestions) {
-    return {
-      ...base,
-      kind: "classifier",
-      questions: parseQuestions(path, value.questions),
-    };
-  }
-  if (typeof value.instructions !== "string" || !value.instructions.trim()) {
-    throw new JudgeDefinitionError(`${path}: \`instructions\` must be text`);
-  }
-  return { ...base, kind: "llm", instructions: value.instructions };
+  return parseJudgeDefinitions([{ path, content: source }], options)[0] ?? null;
 }
 
 /** Every online judge in a Recipe's `judges/`, in file order; names are unique. */
-export function loadJudges(recipeDir: string): JudgeDefinition[] {
+export function loadJudges(
+  recipeDir: string,
+  options: JudgeDefinitionOptions = {},
+): JudgeDefinition[] {
   const directory = join(recipeDir, "judges");
   if (!existsSync(directory)) return [];
-  const judges: JudgeDefinition[] = [];
-  const seen = new Map<string, string>();
-  for (const file of readdirSync(directory).sort()) {
-    if (!/\.ya?ml$/.test(file)) continue;
-    const path = `judges/${file}`;
-    const judge = parseJudgeDefinition(
-      path,
-      readFileSync(join(directory, file), "utf8"),
-    );
-    if (!judge) continue;
-    const earlier = seen.get(judge.name);
-    if (earlier) {
-      throw new JudgeDefinitionError(
-        `${path}: judge name "${judge.name}" is already declared in ${earlier}`,
-      );
-    }
-    seen.set(judge.name, path);
-    judges.push(judge);
-  }
-  return judges;
+  const sources = readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .sort()
+    .map((file) => ({
+      path: `judges/${file}`,
+      content: readFileSync(join(directory, file), "utf8"),
+    }));
+  return sources.length > 0 ? parseJudgeDefinitions(sources, options) : [];
 }

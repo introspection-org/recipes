@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { ClassifierResult, CredentialStore } from "@earendil-works/pi-ai";
+import type {
+  ClassifierResult,
+  CredentialStore,
+  Usage,
+} from "@earendil-works/pi-ai";
 import type {
   ModelRegistry,
   SettingsManager,
@@ -43,8 +47,39 @@ export type JudgeClassifier = (request: {
   >;
   signal?: AbortSignal;
 }) => Promise<
-  Pick<ClassifierResult, "answers" | "stopReason" | "errorMessage">
+  Pick<ClassifierResult, "answers" | "stopReason" | "errorMessage"> &
+    Partial<Pick<ClassifierResult, "usage">>
 >;
+
+/** The tokens a judgement took, when the model reported them. */
+export interface JudgeUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+/** Who answered a judge's run, and what it cost, as far as Pi reported it. */
+export interface JudgeRunDetails {
+  /** The `<provider>/<model>` that answered, after any `ai.fallbacks`. */
+  model?: string;
+  usage?: JudgeUsage;
+}
+
+function addUsage(
+  total: JudgeUsage | undefined,
+  usage: Usage | undefined,
+): JudgeUsage | undefined {
+  if (!usage) return total;
+  // Cached prompt tokens are input too.
+  const input = usage.input + usage.cacheRead + usage.cacheWrite;
+  const output = usage.output;
+  if (input + output === 0) return total;
+  return {
+    input_tokens: (total?.input_tokens ?? 0) + input,
+    output_tokens: (total?.output_tokens ?? 0) + output,
+    total_tokens: (total?.total_tokens ?? 0) + input + output,
+  };
+}
 
 export interface JudgeRunControllerOptions {
   /** The Recipe the judges belong to. */
@@ -80,6 +115,8 @@ export interface JudgeRunControllerOptions {
 /** What a batch drives to run judges, plus the release of its sessions. */
 export type JudgeRunController = BatchRunController & {
   shutdown(): Promise<void>;
+  /** The model that answered a run and its token usage, once it has finished. */
+  runDetails(runId: string): JudgeRunDetails;
 };
 
 function judgeAgent(
@@ -168,6 +205,7 @@ export function createJudgeRunController(
   const byName = new Map(options.judges.map((judge) => [judge.name, judge]));
   const base = options.sessionFactory ?? createAgentSessionInternal;
   const registry = options.modelRegistry;
+  const details = new Map<string, JudgeRunDetails>();
   const sessions = createInProcessRunController({
     recipe: judgeRecipe(options.recipe, options.judges),
     cwd: options.cwd,
@@ -177,6 +215,20 @@ export function createJudgeRunController(
     ...(options.settingsManager
       ? { settingsManager: options.settingsManager }
       : {}),
+    // An LLM judge's answer is its last assistant message: the model that
+    // wrote it answered, and every message of the run used tokens.
+    onAgentRunEvent: ({ agent_run_id, event }) => {
+      if (event.type !== "message_end" || event.message.role !== "assistant") {
+        return;
+      }
+      const message = event.message;
+      const earlier = details.get(agent_run_id);
+      const usage = addUsage(earlier?.usage, message.usage);
+      details.set(agent_run_id, {
+        model: `${message.provider}/${message.model}`,
+        ...(usage ? { usage } : {}),
+      });
+    },
     sessionFactory:
       registry && !options.credentials
         ? async (session) => {
@@ -245,6 +297,15 @@ export function createJudgeRunController(
           state: { conversation: summary.prompt },
           questions,
         });
+        // Every model tried used tokens, the ones that failed included.
+        const usage = addUsage(
+          details.get(summary.agent_run_id)?.usage,
+          reply.usage,
+        );
+        details.set(summary.agent_run_id, {
+          model,
+          ...(usage ? { usage } : {}),
+        });
         if (reply.stopReason === "stop") {
           return {
             ...summary,
@@ -301,8 +362,12 @@ export function createJudgeRunController(
       classified.delete(id);
       return { ...(await run), status: "closed" };
     },
+    runDetails(id) {
+      return details.get(id) ?? {};
+    },
     async shutdown() {
       classified.clear();
+      details.clear();
       await sessions.shutdown();
     },
   };

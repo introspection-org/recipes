@@ -7,6 +7,13 @@ import { createHash } from "node:crypto";
  */
 export const CONTRACT_VERSION = "3";
 
+/**
+ * The version of the judge runner's report, and of the input it reads: the
+ * runner prints it for `--schema`, so a caller can check it speaks the same
+ * protocol before running.
+ */
+export const JUDGE_REPORT_SCHEMA_VERSION = 2;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuidV5(namespace: string, name: string): string {

@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRunSummary } from "../src/agents.js";
 import type { BatchRunController } from "../src/batch/index.js";
@@ -12,6 +14,7 @@ import {
   completeLlmVerdict,
   createJudgeRunController,
   evaluateGate,
+  evidenceHash,
   gateView,
   judgementId,
   loadJudges,
@@ -25,6 +28,7 @@ import {
   type JudgeInputLine,
 } from "../src/judges/index.js";
 import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli-main.js";
+import { stripCodeFence } from "../src/judges/verdict.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createAgentSessionInternal } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
@@ -158,13 +162,48 @@ describe("judge definitions", () => {
     });
   });
 
-  it("refuses the removed llm block, naming ai", () => {
+  it("reads the older llm block as the ai block recipe-check maps it to", () => {
+    const warnings: string[] = [];
+    const judge = parseJudgeDefinition(
+      "judges/old.yaml",
+      "name: old\nllm:\n  provider: anthropic\n  model: claude-sonnet-5-5\n  request:\n    max_tokens: 512\n    reasoning_effort: low\n  local:\n    base_url: http://localhost:8080\n    api_key_env: LOCAL_KEY\ninstructions: x\n",
+      { onWarning: (warning) => warnings.push(warning) },
+    );
+    expect(judge).toMatchObject({
+      kind: "llm",
+      ai: {
+        name: "anthropic/claude-sonnet-5-5",
+        thinkingLevel: "low",
+      },
+    });
+    expect(warnings).toEqual([expect.stringContaining("llm.local")]);
+  });
+
+  it("refuses a gate regex JavaScript cannot compile", () => {
     expect(() =>
       parseJudgeDefinition(
-        "judges/old.yaml",
-        "name: old\nllm:\n  provider: openai\n  model: gpt-5\ninstructions: x\n",
+        "judges/gate.yaml",
+        "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/(?P<word>a)/'\n",
       ),
-    ).toThrow(/`llm` is no longer read.*`ai:/);
+    ).toThrow(/JavaScript regex/);
+  });
+
+  it("reads a gate regex only the u flag compiles", () => {
+    const judge = parseJudgeDefinition(
+      "judges/gate.yaml",
+      "name: gate\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      text: '/[\\w-]+@acme/'\n",
+    );
+    expect(judge?.on).toEqual([
+      { event: "message", match: { text: "/[\\w-]+@acme/" } },
+    ]);
+  });
+
+  it("names the binary when recipe-check cannot be run", () => {
+    expect(() =>
+      parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE, {
+        recipeCheck: "/nonexistent/introspection-recipe-check",
+      }),
+    ).toThrow(/INTROSPECTION_RECIPE_CHECK/);
   });
 
   it("refuses a judge with both instructions and questions, or neither", () => {
@@ -182,7 +221,7 @@ describe("judge definitions", () => {
         "judges/env.yaml",
         "name: env\nai:\n  model: faux/faux-1\ninstructions: x\non:\n  - event: message\n    match:\n      environment: production\n",
       ),
-    ).toThrow(/cannot match on "environment"/);
+    ).toThrow(/automatic platform context/);
   });
 
   it("skips a mission judge and loads the rest of judges/ by file order", () => {
@@ -237,6 +276,15 @@ describe("judge gate", () => {
     ).toBe(false);
     expect(applies([{ event: "tool", match: { result: "/^Echo/" } }])).toBe(
       true,
+    );
+  });
+
+  it("falls back to the u flag for a pattern the v flag refuses", () => {
+    expect(
+      applies([{ event: "tool", match: { name: "/^[\\w-]+_echo$/" } }]),
+    ).toBe(true);
+    expect(applies([{ event: "tool", match: { name: "/^[a-z-]+$/" } }])).toBe(
+      false,
     );
   });
 
@@ -315,13 +363,26 @@ describe("judge evidence", () => {
 });
 
 describe("judge verdicts", () => {
-  it("reads an LLM verdict, fenced or not", () => {
-    expect(
-      completeLlmVerdict(
-        "transcript",
-        '```json\n{"reasoning":"ok","verdict":"PASS"}\n```',
-      ),
-    ).toEqual({ verdict: "pass", reasoning: "ok" });
+  it.each([
+    ["a json fence", '```json\n{"reasoning":"ok","verdict":"PASS"}\n```'],
+    [
+      "an upper-case JSON fence",
+      '  ```JSON\n{"reasoning":"ok","verdict":"pass"}\n```\n',
+    ],
+    ["a bare fence", '```\n{"reasoning":"ok","verdict":"pass"}\n```'],
+    ["no fence", '\n{"reasoning":"ok","verdict":"pass"}\n'],
+  ])("reads an LLM verdict in %s", (_, reply) => {
+    expect(completeLlmVerdict("transcript", reply)).toEqual({
+      verdict: "pass",
+      reasoning: "ok",
+    });
+  });
+
+  it("strips one surrounding fence and nothing else", () => {
+    expect(stripCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+    expect(stripCodeFence('```{"a":1}```')).toBe('{"a":1}');
+    expect(stripCodeFence('{"a":"```"}')).toBe('{"a":"```"}');
+    expect(stripCodeFence('prose ```json\n{"a":1}\n```')).not.toBe('{"a":1}');
   });
 
   it("refuses a verdict outside the vocabulary and output that echoes the transcript", () => {
@@ -349,7 +410,7 @@ describe("judge verdicts", () => {
       completeClassifierVerdict(judge.questions, answer(0.9, 0.5)),
     ).toEqual({
       verdict: "pass",
-      reasoning: "greeted 0.90 >= 0.80; apologised 0.50 >= 0.50",
+      reasoning: "apologised 0.50 >= 0.50; greeted 0.90 >= 0.80",
       scores: { greeted: 0.9, apologised: 0.5 },
     });
     expect(
@@ -425,7 +486,7 @@ describe("runJudges", () => {
     );
     expect(outcome.results[2]).toMatchObject({
       scores: { greeted: 0.95, apologised: 0.1 },
-      reasoning: "greeted 0.95 >= 0.80; apologised 0.10 < 0.50",
+      reasoning: "apologised 0.10 < 0.50; greeted 0.95 >= 0.80",
     });
     expect(outcome.results[2]!.judgement_id).toBeUndefined();
     const written = readFileSync(join(directory, "results.jsonl"), "utf8")
@@ -464,6 +525,28 @@ describe("runJudges", () => {
         controller,
       }),
     ).rejects.toThrow(/custom_id or a conversation_id/);
+  });
+
+  it.each([
+    ["a json fence", '```json\n{"reasoning":"ok","verdict":"fail"}\n```'],
+    ["a bare fence", '```\n{"reasoning":"ok","verdict":"fail"}\n```'],
+    ["no fence", '{"reasoning":"ok","verdict":"fail"}'],
+  ])("grades a reply in %s without asking for a repair", async (_, text) => {
+    const { controller } = scripted(() => text);
+    const repairs: string[] = [];
+    const { results } = await runJudges({
+      judges: [judges[0]!],
+      input: [line("fence-1", EXPORT)],
+      controller: {
+        ...controller,
+        message: async (id, prompt) => {
+          repairs.push(prompt);
+          return controller.message(id, prompt);
+        },
+      },
+    });
+    expect(repairs).toEqual([]);
+    expect(results).toMatchObject([{ result: "fail", reasoning: "ok" }]);
   });
 
   it("records a reply outside the contract as an error, never a fail", async () => {
@@ -573,6 +656,100 @@ describe("one conversation under many judges", () => {
   });
 });
 
+describe("runJudges reports who answered", () => {
+  it("names the model and its usage, and leaves out usage Pi counted as zero", async () => {
+    const judge = parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!;
+    const { controller } = scripted(
+      () => '{"reasoning":"echoed","verdict":"pass"}',
+    );
+    const usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    const { results } = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT), line("echo-2", EXPORT)],
+      controller: {
+        ...controller,
+        runDetails: (id) =>
+          id === "run-1"
+            ? { model: "faux/faux-1", usage }
+            : {
+                model: "faux-b/faux-b-1",
+                usage: { input_tokens: 9, output_tokens: 1, total_tokens: 10 },
+              },
+      },
+    });
+    expect(results[0]).toMatchObject({ model: "faux/faux-1" });
+    expect(results[0]).not.toHaveProperty("usage");
+    expect(results[1]).toMatchObject({
+      model: "faux-b/faux-b-1",
+      usage: { input_tokens: 9, output_tokens: 1, total_tokens: 10 },
+    });
+  });
+
+  it("keeps the model and usage of judgements a resumed run already had", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const directory = fixture.workspaceDir;
+    const judge = parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!;
+    const answer = () => '{"reasoning":"echoed","verdict":"pass"}';
+    const usage = { input_tokens: 9, output_tokens: 1, total_tokens: 10 };
+    const first = scripted(answer);
+    const before = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT)],
+      controller: {
+        ...first.controller,
+        runDetails: () => ({ model: "faux/faux-1", usage }),
+      },
+      directory,
+    });
+    expect(before.results[0]).toMatchObject({ model: "faux/faux-1", usage });
+
+    // A fresh controller, as a restarted process has, knows no earlier run.
+    const second = scripted(answer);
+    const after = await runJudges({
+      judges: [judge],
+      input: [line("echo-1", EXPORT)],
+      controller: { ...second.controller, runDetails: () => ({}) },
+      directory,
+    });
+    expect(second.started).toEqual([]);
+    expect(after.results[0]).toMatchObject({ model: "faux/faux-1", usage });
+    const written = readFileSync(join(directory, "results.jsonl"), "utf8");
+    expect(JSON.parse(written.trim())).toMatchObject({
+      model: "faux/faux-1",
+      usage,
+    });
+
+    // A crash mid-append leaves a torn last line; the next run trims it, so
+    // the details appended after it still read back.
+    const details = join(directory, "run-details.jsonl");
+    writeFileSync(details, `${readFileSync(details, "utf8")}{"run_id":"run-`);
+    const third = scripted(answer);
+    await runJudges({
+      judges: [judge],
+      input: [line("echo-2", EXPORT)],
+      controller: {
+        ...third.controller,
+        runDetails: () => ({ model: "faux/faux-2", usage }),
+      },
+      directory,
+    });
+    const resumed = await runJudges({
+      judges: [judge],
+      input: [line("echo-2", EXPORT)],
+      controller: { ...scripted(answer).controller, runDetails: () => ({}) },
+      directory,
+    });
+    expect(resumed.results[0]).toMatchObject({ model: "faux/faux-2", usage });
+    expect(
+      readFileSync(details, "utf8")
+        .trim()
+        .split("\n")
+        .map((raw) => JSON.parse(raw).model),
+    ).toEqual(["faux/faux-1", "faux/faux-2"]);
+  });
+});
+
 describe("createJudgeRunController", () => {
   it("runs an LLM judge as a tool-less session that falls back once its model has been retried twice", async () => {
     const fixture = writeFixtureRecipe();
@@ -639,8 +816,18 @@ describe("createJudgeRunController", () => {
     });
 
     expect(results).toMatchObject([
-      { judge: "greeting", result: "pass", reasoning: "echoed" },
+      {
+        judge: "greeting",
+        result: "pass",
+        reasoning: "echoed",
+        // The fallback answered, and the hash is of the evidence it read.
+        model: "faux-b/faux-b-1",
+        sequence_hash: evidenceHash(toJudgeInput(EXPORT)),
+      },
     ]);
+    // Usage is reported only when Pi counted tokens, and never as zero.
+    const usage = results[0]!.usage;
+    if (usage) expect(usage.total_tokens).toBeGreaterThan(0);
     expect(primary.state.callCount).toBe(3);
     expect(seen).toHaveLength(1);
     expect(seen[0]!.system).toContain("Did the assistant echo the message?");
@@ -675,6 +862,20 @@ describe("createJudgeRunController", () => {
                 apologised: { type: "bool", probability: 0.7 },
               },
               stopReason: "stop" as const,
+              usage: {
+                input: 120,
+                output: 4,
+                cacheRead: 30,
+                cacheWrite: 0,
+                totalTokens: 154,
+                cost: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  total: 0,
+                },
+              },
             };
       },
     });
@@ -686,7 +887,15 @@ describe("createJudgeRunController", () => {
       controller,
     });
 
-    expect(results).toMatchObject([{ judge: "polite", result: "pass" }]);
+    expect(results).toMatchObject([
+      {
+        judge: "polite",
+        result: "pass",
+        model: "openai/gpt-6-luna",
+        usage: { input_tokens: 150, output_tokens: 4, total_tokens: 154 },
+        sequence_hash: evidenceHash(toJudgeInput(SMALL_TALK)),
+      },
+    ]);
     expect(asked.map((request) => request.model)).toEqual([
       "typesafe/jev-latest",
       "openai/gpt-6-luna",
@@ -707,6 +916,70 @@ describe("createJudgeRunController", () => {
       },
     });
     expect(String(asked[0]!.state.conversation)).toContain("hi there");
+  });
+
+  it("adds up a classifier judge's usage across its fallbacks, and leaves it out when none was reported", async () => {
+    const tokens = (input: number, output: number) => ({
+      input,
+      output,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: input + output,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    });
+    const judge = async (
+      failed: Awaited<ReturnType<JudgeClassifier>>["usage"],
+      answered: Awaited<ReturnType<JudgeClassifier>>["usage"],
+    ) => {
+      const fixture = writeFixtureRecipe();
+      cleanups.push(fixture.cleanup);
+      const judges = [
+        parseJudgeDefinition("judges/polite.yaml", CLASSIFIER_JUDGE)!,
+      ];
+      const controller = createJudgeRunController({
+        recipe: resolveRecipe({ recipeDir: fixture.recipeDir }),
+        judges,
+        cwd: fixture.workspaceDir,
+        classify: async (request): ReturnType<JudgeClassifier> =>
+          request.model === "typesafe/jev-latest"
+            ? {
+                answers: {},
+                stopReason: "error",
+                errorMessage: "503 unavailable",
+                ...(failed ? { usage: failed } : {}),
+              }
+            : {
+                answers: {
+                  greeted: { type: "bool", probability: 0.99 },
+                  apologised: { type: "bool", probability: 0.7 },
+                },
+                stopReason: "stop" as const,
+                ...(answered ? { usage: answered } : {}),
+              },
+      });
+      cleanups.push(() => controller.shutdown());
+      const { results } = await runJudges({
+        judges,
+        input: [line("talk-1", SMALL_TALK)],
+        controller,
+      });
+      return results[0]!;
+    };
+
+    expect((await judge(tokens(100, 1), tokens(50, 2))).usage).toEqual({
+      input_tokens: 150,
+      output_tokens: 3,
+      total_tokens: 153,
+    });
+    // A last reply without usage keeps what the failed call reported.
+    expect((await judge(tokens(100, 1), undefined)).usage).toEqual({
+      input_tokens: 100,
+      output_tokens: 1,
+      total_tokens: 101,
+    });
+    const unreported = await judge(undefined, undefined);
+    expect(unreported).toMatchObject({ model: "openai/gpt-6-luna" });
+    expect(unreported).not.toHaveProperty("usage");
   });
 
   it("fails a classifier judge's line when the run was given no classifier", async () => {
@@ -804,7 +1077,7 @@ describe("the judges command-line entry", () => {
       },
     );
     expect(seen).toEqual([["greeting"]]);
-    expect(report.schema_version).toBe(1);
+    expect(report.schema_version).toBe(2);
     expect(report.counts).toEqual({
       pass: 2,
       fail: 0,
@@ -822,6 +1095,111 @@ describe("the judges command-line entry", () => {
         .split("\n"),
     ).toHaveLength(2);
   });
+
+  it("reads --definitions in place of recipe-check, spawning nothing", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    mkdirSync(join(fixture.recipeDir, "judges"));
+    writeFileSync(
+      join(fixture.recipeDir, "judges", "greeting.yaml"),
+      LLM_JUDGE,
+    );
+    // What a host that links recipe-check passes: the binary's own output.
+    const printed = spawnSync(
+      process.env.INTROSPECTION_RECIPE_CHECK!,
+      ["judges"],
+      {
+        input: JSON.stringify([
+          { path: "judges/greeting.yaml", content: LLM_JUDGE },
+        ]),
+        encoding: "utf8",
+      },
+    );
+    expect(printed.status).toBe(0);
+    const definitions = join(fixture.workspaceDir, "definitions.json");
+    writeFileSync(definitions, printed.stdout);
+    // A recipe-check that cannot run: reaching for it would fail the run.
+    vi.stubEnv("INTROSPECTION_RECIPE_CHECK", "/nonexistent/recipe-check");
+    cleanups.push(() => {
+      vi.unstubAllEnvs();
+    });
+    expect(() => loadJudges(fixture.recipeDir)).toThrow(
+      /INTROSPECTION_RECIPE_CHECK/,
+    );
+
+    const args = parseJudgeCliArgs([
+      "--recipe",
+      fixture.recipeDir,
+      "--input",
+      "-",
+      "--definitions",
+      definitions,
+    ]);
+    expect(args.definitions).toBe(definitions);
+    const report = await judgeCli(args, {
+      readStdin: async () => `${JSON.stringify(line("echo-1", EXPORT))}\n`,
+      controller: async () =>
+        scripted(() => '{"reasoning":"echoed","verdict":"pass"}').controller,
+    });
+    expect(report.results).toMatchObject([
+      { judge: "greeting", result: "pass" },
+    ]);
+  });
+
+  it("prints its protocol for --schema, and runs on PI_PACKAGE_DIR with no pi binary", () => {
+    const cli = fileURLToPath(
+      new URL("../dist/judges/cli.js", import.meta.url),
+    );
+    const bare = { PATH: "", HOME: process.env.HOME ?? "" };
+    const schema = spawnSync(process.execPath, [cli, "--schema"], {
+      env: bare,
+      encoding: "utf8",
+    });
+    expect(schema.status).toBe(0);
+    expect(schema.stdout).toBe('{"schema_version":2}\n');
+
+    // The runtime image: Pi's packages under PI_PACKAGE_DIR, no `pi` on PATH.
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const input = join(fixture.workspaceDir, "in.jsonl");
+    writeFileSync(input, "");
+    const definitions = join(fixture.workspaceDir, "definitions.json");
+    writeFileSync(definitions, "[]");
+    const run = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--recipe",
+        fixture.recipeDir,
+        "--input",
+        input,
+        "--definitions",
+        definitions,
+      ],
+      {
+        cwd: fixture.workspaceDir,
+        env: {
+          ...bare,
+          HOME: fixture.workspaceDir,
+          PI_PACKAGE_DIR: realpathSync(
+            fileURLToPath(
+              new URL(
+                "../node_modules/@earendil-works/pi-coding-agent",
+                import.meta.url,
+              ),
+            ),
+          ),
+        },
+        encoding: "utf8",
+      },
+    );
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      schema_version: 2,
+      results: [],
+    });
+  }, 60_000);
 
   it("names the Recipe's judges when asked for one it does not have", async () => {
     const fixture = writeFixtureRecipe();

@@ -27,6 +27,15 @@ function piPackageDir(): string | undefined {
   return undefined;
 }
 
+// The protocol a caller checks before running, answered without Pi.
+if (process.argv.slice(2).includes("--schema")) {
+  const { JUDGE_REPORT_SCHEMA_VERSION } = await import("./identity.js");
+  process.stdout.write(
+    `${JSON.stringify({ schema_version: JUDGE_REPORT_SCHEMA_VERSION })}\n`,
+  );
+  process.exit(0);
+}
+
 // Before anything imports Pi: this script is started by Node, not loaded by
 // Pi, so Pi's packages are found in the installed Pi rather than supplied.
 const pi = piPackageDir();

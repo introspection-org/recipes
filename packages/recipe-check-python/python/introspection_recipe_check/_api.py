@@ -380,11 +380,14 @@ class JudgeDefinition:
 class ParsedJudgeDefinition:
     source_path: str
     definition: JudgeDefinition
+    # What normalization ignored, such as an `llm.local` endpoint.
+    warnings: tuple[str, ...] = ()
 
 
 def parse_judge_definitions(
     sources: list[JudgeSource],
 ) -> tuple[ParsedJudgeDefinition, ...]:
+    """Online judges, normalized: an older `llm:` block reads as its `ai:` block."""
     raw = cast(
         list[dict[str, object]],
         json.loads(
@@ -397,6 +400,7 @@ def parse_judge_definitions(
         ParsedJudgeDefinition(
             source_path=cast(str, item["source_path"]),
             definition=JudgeDefinition(cast(dict[str, object], item["definition"])),
+            warnings=tuple(cast(list[str], item.get("warnings", []))),
         )
         for item in raw
     )

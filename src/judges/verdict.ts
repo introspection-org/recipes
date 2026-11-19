@@ -25,7 +25,13 @@ export const VERDICT_INSTRUCTIONS = [
   "Output safety requirement: Explain the verdict in fewer than 20 words and entirely in your own words. Paraphrase all evidence. Do not quote or copy transcript language, and do not include file paths, commands, repository names, or other transcript identifiers.",
 ].join(" ");
 
-function stripCodeFence(content: string): string {
+/**
+ * A judge reply without one surrounding code fence: the reply is trimmed, then
+ * a "```json" opening (any case) or a bare "```" opening is dropped with its
+ * closing "```". Models fence JSON despite being told not to, and the CLI's
+ * earlier judge engine accepted such a reply, so the runner does too.
+ */
+export function stripCodeFence(content: string): string {
   let text = content.trim();
   if (text.slice(0, 7).toLowerCase() === "```json") text = text.slice(7);
   else if (text.startsWith("```")) text = text.slice(3);

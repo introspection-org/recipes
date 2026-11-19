@@ -9,22 +9,22 @@
 
 use std::collections::BTreeMap;
 
-use regex::RegexBuilder;
 use serde_json::{Map, Value};
 
 use crate::spec::{
-    is_classifier_question_name, validate_mission_judge as validate_mission_judge_spec,
-    MissionJudgeDefinition, MAX_JUDGE_QUESTIONS, MISSION_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
+    gate_regex_error, is_classifier_question_name, llm_local_warning, thinking_level_for_effort,
+    validate_mission_judge as validate_mission_judge_spec, MissionJudgeDefinition,
+    LLM_MAX_OUTPUT_TOKENS, MAX_JUDGE_QUESTIONS, MISSION_JUDGE_TYPE, ONLINE_JUDGE_TYPE,
 };
 use crate::{span_from_message, validate_ai_block, AiOwner, CheckContext};
 
 const JUDGES_DIR: &str = "judges";
-const REMOVED_LLM_FIELD: &str = "llm";
 const TOP_LEVEL_FIELDS: &[&str] = &[
     "ai",
     "description",
     "instructions",
     "judge",
+    "llm",
     "name",
     "on",
     "questions",
@@ -33,6 +33,16 @@ const TOP_LEVEL_FIELDS: &[&str] = &[
 const QUESTION_FIELDS: &[&str] = &["criteria", "instructions", "threshold"];
 const CRITERIA_FIELDS: &[&str] = &["false", "true"];
 const MATCHER_FIELDS: &[&str] = &["event", "match"];
+const LLM_FIELDS: &[&str] = &["local", "model", "provider", "request", "transport"];
+const REQUEST_FIELDS: &[&str] = &["max_tokens", "reasoning_effort", "temperature"];
+const TRANSPORT_FIELDS: &[&str] = &["max_retries", "max_retry_delay_ms", "timeout_ms"];
+const LOCAL_FIELDS: &[&str] = &["api_key_env", "base_url"];
+
+const MAX_PROVIDER_BYTES: usize = 64;
+const MAX_MODEL_BYTES: usize = 255;
+const MAX_TIMEOUT_MS: u64 = 600_000;
+const MAX_RETRIES: u64 = 10;
+const MAX_RETRY_DELAY_MS: u64 = 60_000;
 
 const MAX_JUDGE_NAME_CHARS: usize = 255;
 const MAX_DESCRIPTION_CHARS: usize = 2_000;
@@ -133,11 +143,8 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
         }
     }
 
-    // `llm` draws its own error in `validate_ai`.
-    let mut authored = map.clone();
-    authored.remove(REMOVED_LLM_FIELD);
     reject_unknown_fields(
-        &authored,
+        map,
         TOP_LEVEL_FIELDS,
         "judge.unknown_field",
         "judge definition",
@@ -148,7 +155,7 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     validate_description(map, path, ctx);
     validate_kind(map, path, ctx);
     validate_on(map.get("on"), path, ctx);
-    validate_ai(map, path, ctx);
+    validate_model(map, path, ctx);
 
     ValidatedJudge {
         path: path.to_owned(),
@@ -415,37 +422,236 @@ fn is_non_empty_string(value: &Value) -> bool {
     value.as_str().is_some_and(|text| !text.trim().is_empty())
 }
 
-fn validate_ai(map: &Map<String, Value>, path: &str, ctx: &mut CheckContext) {
-    if map.contains_key(REMOVED_LLM_FIELD) {
-        ctx.error(
-            "judge.llm_removed",
+/// A judge declares its model once: as `ai:`, or as the older `llm:`, which
+/// the strict parser maps to `ai:`.
+/// Declaring both keys is refused even when one is null, as the strict parser
+/// refuses it.
+fn validate_model(map: &Map<String, Value>, path: &str, ctx: &mut CheckContext) {
+    let both = map.contains_key("ai") && map.contains_key("llm");
+    let ai = map.get("ai").filter(|value| !value.is_null());
+    let llm = map.get("llm").filter(|value| !value.is_null());
+    match (ai, llm) {
+        _ if both => ctx.error(
+            "judge.kind_invalid",
             path,
-            "Judge llm was removed",
-            Some("declare the model as `ai: { model: <provider>/<model> }`, as an agent does"),
-        );
-        if !map.contains_key("ai") {
-            return;
-        }
-    }
-    match map.get("ai") {
-        None | Some(Value::Null) => ctx.error(
-            "judge.ai_missing",
+            "Judge declares its model as either `ai:` or the older `llm:`, not both",
+            Some("keep `ai: { model: <provider>/<model> }` and remove `llm:`"),
+        ),
+        (Some(ai), None) => validate_ai(ai, path, ctx),
+        (None, Some(llm)) => validate_llm(llm, path, ctx),
+        (Some(_), Some(_)) | (None, None) => ctx.error(
+            "judge.kind_invalid",
             path,
-            "Judge definition must declare ai.model",
+            "Judge declares its model as either `ai:` or the older `llm:`",
             Some("add `ai: { model: <provider>/<model> }`, as an agent does"),
         ),
-        Some(ai) => {
-            validate_ai_block(ai, path, &AiOwner::judge(), ctx);
-            if ai.as_object().is_some_and(|ai| !ai.contains_key("model")) {
-                ctx.error(
-                    "judge.ai.model_missing",
-                    path,
-                    "Judge ai.model is required",
-                    Some("set ai.model to `<provider>/<model_id>`"),
-                );
-            }
+    }
+}
+
+fn validate_ai(ai: &Value, path: &str, ctx: &mut CheckContext) {
+    validate_ai_block(ai, path, &AiOwner::judge(), ctx);
+    if ai.as_object().is_some_and(|ai| !ai.contains_key("model")) {
+        ctx.error(
+            "judge.ai.model_missing",
+            path,
+            "Judge ai.model is required",
+            Some("set ai.model to `<provider>/<model_id>`"),
+        );
+    }
+}
+
+fn validate_llm(value: &Value, path: &str, ctx: &mut CheckContext) {
+    let Some(llm) = value.as_object() else {
+        ctx.error(
+            "judge.llm_invalid",
+            path,
+            "Judge llm must be a mapping",
+            Some("declare the model as `ai: { model: <provider>/<model> }`, as an agent does"),
+        );
+        return;
+    };
+    reject_unknown_fields(
+        llm,
+        LLM_FIELDS,
+        "judge.llm.unknown_field",
+        "judge llm",
+        path,
+        ctx,
+    );
+    validate_llm_provider(llm.get("provider"), path, ctx);
+    validate_llm_model(llm.get("model"), path, ctx);
+    validate_request(llm.get("request"), path, ctx);
+    validate_transport(llm.get("transport"), path, ctx);
+    validate_local(llm.get("local"), path, ctx);
+}
+
+fn validate_llm_provider(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    // Omission defaults to openai.
+    let Some(value) = value else { return };
+    let valid = value.as_str().is_some_and(|provider| {
+        !provider.is_empty()
+            && provider.len() <= MAX_PROVIDER_BYTES
+            && provider
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+    });
+    if !valid {
+        ctx.error(
+            "judge.llm.provider_invalid",
+            path,
+            "Judge llm.provider must be a lowercase provider slug",
+            Some("use 1-64 lowercase ASCII letters, digits, or hyphens, or omit it for openai"),
+        );
+    }
+}
+
+fn validate_llm_model(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    match value {
+        None | Some(Value::Null) => ctx.error(
+            "judge.llm.model_missing",
+            path,
+            "Judge llm.model is required",
+            Some("set llm.model to the provider's model identifier"),
+        ),
+        Some(Value::String(model))
+            if !model.trim().is_empty()
+                && model.len() <= MAX_MODEL_BYTES
+                && model == model.trim() => {}
+        Some(_) => ctx.error(
+            "judge.llm.model_invalid",
+            path,
+            "Judge llm.model must be a non-empty string without surrounding whitespace",
+            Some("set llm.model to a model identifier containing at most 255 bytes"),
+        ),
+    }
+}
+
+fn validate_request(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = value else { return };
+    let Some(request) = value.as_object() else {
+        ctx.error(
+            "judge.llm.request_invalid",
+            path,
+            "Judge llm.request must be a mapping",
+            Some("declare only temperature, max_tokens, and reasoning_effort overrides"),
+        );
+        return;
+    };
+    reject_unknown_fields(
+        request,
+        REQUEST_FIELDS,
+        "judge.llm.request.unknown_field",
+        "judge llm.request",
+        path,
+        ctx,
+    );
+    if let Some(value) = request.get("temperature") {
+        let valid = value.as_f64().is_some_and(|temperature| {
+            temperature.is_finite() && (0.0..=2.0).contains(&temperature)
+        });
+        if !valid {
+            ctx.error(
+                "judge.llm.request.temperature_invalid",
+                path,
+                "Judge llm.request.temperature must be a number between 0 and 2",
+                Some("remove the override, or use a value from 0 through 2"),
+            );
         }
     }
+    if let Some(value) = request.get("max_tokens").filter(|value| !value.is_null()) {
+        let valid = value
+            .as_u64()
+            .is_some_and(|tokens| (1..=LLM_MAX_OUTPUT_TOKENS).contains(&tokens));
+        if !valid {
+            ctx.error(
+                "judge.llm.request.max_tokens_invalid",
+                path,
+                format!("Judge llm.request.max_tokens must be an integer between 1 and {LLM_MAX_OUTPUT_TOKENS}"),
+                Some("choose a bounded maximum output token count"),
+            );
+        }
+    }
+    if let Some(value) = request
+        .get("reasoning_effort")
+        .filter(|value| !value.is_null())
+    {
+        if value.as_str().and_then(thinking_level_for_effort).is_none() {
+            ctx.error(
+                "judge.llm.request.reasoning_effort_invalid",
+                path,
+                "Judge llm.request.reasoning_effort must name a thinking level",
+                Some("use none, minimal, low, medium, high, xhigh, or max; it is read as ai.thinking_level"),
+            );
+        }
+    }
+}
+
+fn validate_transport(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = value else { return };
+    let Some(transport) = value.as_object() else {
+        ctx.error(
+            "judge.llm.transport_invalid",
+            path,
+            "Judge llm.transport must be a mapping",
+            Some("remove llm.transport: the host owns timeouts and retries"),
+        );
+        return;
+    };
+    reject_unknown_fields(
+        transport,
+        TRANSPORT_FIELDS,
+        "judge.llm.transport.unknown_field",
+        "judge llm.transport",
+        path,
+        ctx,
+    );
+    for (field, min, max) in [
+        ("timeout_ms", 1, MAX_TIMEOUT_MS),
+        ("max_retries", 0, MAX_RETRIES),
+        ("max_retry_delay_ms", 0, MAX_RETRY_DELAY_MS),
+    ] {
+        let Some(value) = transport.get(field) else {
+            continue;
+        };
+        if !value
+            .as_u64()
+            .is_some_and(|value| (min..=max).contains(&value))
+        {
+            ctx.error(
+                format!("judge.llm.transport.{field}_invalid"),
+                path,
+                format!("Judge llm.transport.{field} must be an integer between {min} and {max}"),
+                Some("remove llm.transport: the host owns timeouts and retries"),
+            );
+        }
+    }
+}
+
+fn validate_local(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return;
+    };
+    let valid = value.as_object().is_some_and(|local| {
+        local.keys().all(|key| LOCAL_FIELDS.contains(&key.as_str()))
+            && LOCAL_FIELDS
+                .iter()
+                .all(|field| local.get(*field).is_some_and(Value::is_string))
+    });
+    if !valid {
+        ctx.error(
+            "judge.llm.local_invalid",
+            path,
+            "Judge llm.local must be a mapping of base_url and api_key_env",
+            Some("remove llm.local: `ai:` cannot express a local endpoint"),
+        );
+        return;
+    }
+    ctx.warning(
+        "judge.llm.local_ignored",
+        path,
+        llm_local_warning("Judge"),
+        Some("remove llm.local, and name a hosted model in `ai: { model: <provider>/<model> }`"),
+    );
 }
 
 fn validate_on(value: Option<&Value>, path: &str, ctx: &mut CheckContext) {
@@ -553,16 +759,12 @@ fn validate_match_target(
         }
         Value::String(value) => match regex_literal(value) {
             Ok(Some((pattern, flags))) => {
-                let mut builder = RegexBuilder::new(pattern);
-                builder.case_insensitive(flags.contains('i'));
-                builder.multi_line(flags.contains('m'));
-                builder.dot_matches_new_line(flags.contains('s'));
-                if let Err(err) = builder.build() {
+                if let Some(err) = gate_regex_error(pattern, flags) {
                     ctx.error(
                         "judge.on.regex_invalid",
                         path,
                         format!("Judge on[{index}].match.{field} contains invalid regex '{value}': {err}"),
-                        Some("fix the Rust-compatible regex syntax"),
+                        Some("write a pattern that both Rust's regex and JavaScript's RegExp (with the v flag, or failing that the u flag) compile"),
                     );
                 }
             }
@@ -843,28 +1045,28 @@ ai:
             .collect()
     }
 
-    #[test]
-    fn rejects_the_removed_llm_block_once() {
-        let diagnostics = judge_diagnostics(&[(
-            "judges/legacy.yaml",
-            Some(
-                "name: legacy\ninstructions: Grade it.\nllm:\n  provider: openai\n  model: gpt-5\n",
-            ),
-        )]);
-        assert_eq!(
-            diagnostics
-                .iter()
-                .map(|item| item.code.as_str())
-                .collect::<Vec<_>>(),
-            ["judge.llm_removed"]
-        );
-        let hint = diagnostics[0].help.as_deref().unwrap_or_default();
-        assert!(hint.contains("ai: { model: <provider>/<model> }"), "{hint}");
+    const LLM: &str = "name: legacy\ninstructions: Grade it.\nllm:\n  provider: anthropic\n  model: claude-sonnet-5-5\n  request:\n    temperature: 0.2\n    max_tokens: 512\n    reasoning_effort: none\n  transport:\n    timeout_ms: 30000\n    max_retries: 2\n";
 
-        assert_eq!(
-            codes(&format!("{MINIMAL}llm:\n  model: gpt-5\n")),
-            ["judge.llm_removed"]
-        );
+    #[test]
+    fn accepts_the_older_llm_block() {
+        let report = check_recipe_files(&snapshot(&[
+            ("judges/legacy.yaml", Some(LLM)),
+            (
+                "judges/bare.yaml",
+                Some("name: bare\ninstructions: Grade it.\nllm:\n  model: gpt-5\n"),
+            ),
+        ]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn a_judge_declares_ai_or_llm_never_both_or_neither() {
+        let both = format!("{MINIMAL}llm:\n  model: gpt-5\n");
+        let neither = "name: probe\ninstructions: Grade it.\n";
+        for judge in [both.as_str(), neither] {
+            assert_eq!(codes(judge), ["judge.kind_invalid"], "{judge}");
+        }
         assert_eq!(
             codes(&MINIMAL.replace(
                 "instructions:",
@@ -875,10 +1077,125 @@ ai:
     }
 
     #[test]
+    fn validates_the_llm_block() {
+        for (llm, code) in [
+            ("llm: gpt-5", "judge.llm_invalid"),
+            ("llm:\n  provider: openai", "judge.llm.model_missing"),
+            ("llm:\n  model: ' gpt-5'", "judge.llm.model_invalid"),
+            (
+                "llm:\n  provider: OpenAI\n  model: gpt-5",
+                "judge.llm.provider_invalid",
+            ),
+            ("llm:\n  model: gpt-5\n  seed: 1", "judge.llm.unknown_field"),
+            (
+                "llm:\n  model: gpt-5\n  request:\n    temperature: 3",
+                "judge.llm.request.temperature_invalid",
+            ),
+            (
+                "llm:\n  model: gpt-5\n  request:\n    max_tokens: 0",
+                "judge.llm.request.max_tokens_invalid",
+            ),
+            (
+                "llm:\n  model: gpt-5\n  request:\n    reasoning_effort: extreme",
+                "judge.llm.request.reasoning_effort_invalid",
+            ),
+            (
+                "llm:\n  model: gpt-5\n  transport:\n    timeout_ms: 0",
+                "judge.llm.transport.timeout_ms_invalid",
+            ),
+            (
+                "llm:\n  model: gpt-5\n  local:\n    base_url: http://localhost:8080",
+                "judge.llm.local_invalid",
+            ),
+        ] {
+            assert_eq!(
+                codes(&format!("name: probe\ninstructions: Grade it.\n{llm}\n")),
+                [code],
+                "{llm}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_llm_local_endpoint_is_a_warning() {
+        let report = check_recipe_files(&snapshot(&[(
+            "judges/local.yaml",
+            Some("name: local\ninstructions: Grade it.\nllm:\n  model: gpt-5\n  local:\n    base_url: http://localhost:8080\n    api_key_env: LOCAL_KEY\n"),
+        )]));
+        assert!(report.valid, "{:?}", report.diagnostics);
+        let warning = &report.diagnostics[0];
+        assert_eq!(warning.code, "judge.llm.local_ignored");
+        assert_eq!(warning.severity, crate::Severity::Warning);
+    }
+
+    #[test]
+    fn a_gate_regex_must_compile_in_rust_and_javascript() {
+        let gate = |pattern: &str| {
+            MINIMAL.replace(
+                "instructions:",
+                &format!(
+                    "on:\n  - event: message\n    match:\n      text: '{pattern}'\ninstructions:"
+                ),
+            )
+        };
+        assert_eq!(codes(&gate(r"/[\w&&[^_]]+/i")), [] as [&str; 0]);
+        // Lookahead: JavaScript compiles it, Rust's regex refuses it.
+        let rust = judge_diagnostics(&[("judges/probe.yaml", Some(&gate("/foo(?=bar)/")))]);
+        assert_eq!(rust.len(), 1);
+        assert_eq!(rust[0].code, "judge.on.regex_invalid");
+        assert!(
+            rust[0].message.contains("Rust regex"),
+            "{}",
+            rust[0].message
+        );
+        // A Rust named group: JavaScript refuses it under both flags.
+        let js = judge_diagnostics(&[("judges/probe.yaml", Some(&gate("/(?P<word>a)/")))]);
+        assert_eq!(js.len(), 1);
+        assert_eq!(js[0].code, "judge.on.regex_invalid");
+        assert!(
+            js[0].message.contains("JavaScript regex"),
+            "{}",
+            js[0].message
+        );
+        assert_eq!(codes(&gate("/(abc/i")), ["judge.on.regex_invalid"]);
+    }
+
+    #[test]
+    fn a_gate_regex_compiles_under_the_v_flag_or_failing_that_the_u_flag() {
+        let gate = |pattern: &str| {
+            MINIMAL.replace(
+                "instructions:",
+                &format!(
+                    "on:\n  - event: message\n    match:\n      text: '{pattern}'\ninstructions:"
+                ),
+            )
+        };
+        for pattern in [
+            r"/[\w-]+@acme/",
+            "/[a-z-]/",
+            "/[^/]+/",
+            "/[|]/",
+            "/[(]/",
+            r"/[\w-]+@acme/imsu",
+            r"/[\w--\d]+/",
+            "/[[a-z_]&&[^0-9]]/",
+            r"/[\w--\d]+/iu",
+        ] {
+            assert_eq!(codes(&gate(pattern)), [] as [&str; 0], "{pattern}");
+        }
+    }
+
+    #[test]
     fn requires_an_ai_block_naming_a_model() {
         for (ai, code) in [
-            ("", "judge.ai_missing"),
-            ("ai: null\n", "judge.ai_missing"),
+            ("", "judge.kind_invalid"),
+            ("ai: null\n", "judge.kind_invalid"),
+            (
+                "ai:\n  model: openai/gpt-5\nllm: null\n",
+                "judge.kind_invalid",
+            ),
+            ("llm:\n  model: gpt-5\nai: null\n", "judge.kind_invalid"),
+            ("llm: null\n", "judge.kind_invalid"),
             ("ai: openai/gpt-5\n", "judge.ai_invalid"),
             ("ai: {}\n", "judge.ai.model_missing"),
             ("ai:\n  thinking_level: low\n", "judge.ai.model_missing"),
@@ -1195,9 +1512,12 @@ ai:
                     &"judges/a.yaml".to_owned(),
                     &"judge.kind_invalid".to_owned()
                 ),
-                (&"judges/a.yaml".to_owned(), &"judge.ai_missing".to_owned()),
+                (
+                    &"judges/a.yaml".to_owned(),
+                    &"judge.kind_invalid".to_owned()
+                ),
                 (&"judges/z.yml".to_owned(), &"judge.kind_invalid".to_owned()),
-                (&"judges/z.yml".to_owned(), &"judge.ai_missing".to_owned()),
+                (&"judges/z.yml".to_owned(), &"judge.kind_invalid".to_owned()),
             ]
         );
     }
@@ -1213,7 +1533,7 @@ ai:
             [
                 "judge.name_missing",
                 "judge.kind_invalid",
-                "judge.ai_missing"
+                "judge.kind_invalid"
             ]
         );
     }

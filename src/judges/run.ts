@@ -2,8 +2,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
 import { runBatch } from "../batch/index.js";
+import { jsonlResults } from "../batch/shards.js";
 import type { BatchResultLine } from "../batch/lines.js";
 import type { BatchRunController } from "../batch/runner.js";
+import type {
+  JudgeRunController,
+  JudgeRunDetails,
+  JudgeUsage,
+} from "./controller.js";
 import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
@@ -17,6 +23,7 @@ import {
 import {
   completeClassifierVerdict,
   completeLlmVerdict,
+  stripCodeFence,
   type JudgeVerdict,
   type Verdict,
 } from "./verdict.js";
@@ -73,6 +80,12 @@ export interface JudgementLine {
   reasoning?: string;
   /** A classifier judge's probability of yes for each question. */
   scores?: Record<string, number>;
+  /** The hash of the evidence the judge read: `evidenceHash` of its input. */
+  sequence_hash?: string;
+  /** The `<provider>/<model>` that answered, after any `ai.fallbacks`. */
+  model?: string;
+  /** The tokens the judgement took; absent when the model reported none. */
+  usage?: JudgeUsage;
   error?: string;
   /** The batch run that produced it, and how many attempts it took. */
   run_id?: string;
@@ -93,8 +106,12 @@ export interface RunJudgesOptions {
    * files of them, in any mix. Everything runs as one batch.
    */
   input: readonly (string | URL | JudgeInputLine)[];
-  /** Runs each judgement: `createJudgeRunController`, or your own. */
-  controller: BatchRunController;
+  /**
+   * Runs each judgement: `createJudgeRunController`, or your own. With
+   * `runDetails`, each judgement names the model that answered and its usage.
+   */
+  controller: BatchRunController &
+    Partial<Pick<JudgeRunController, "runDetails">>;
   /**
    * Where the run keeps its state and writes `results.jsonl`. Running again
    * with the same directory skips every judgement that already succeeded for
@@ -131,6 +148,38 @@ interface Pair {
 
 /** The batch's agent name; each line's own judge is resolved from its id. */
 const BATCH_AGENT = "judges";
+
+/**
+ * The run details recorded under `path`, by run id. A last line a crash cut
+ * short is trimmed from the file, as the batch trims its own results, so the
+ * next append starts a line of its own; its run has no recorded line in the
+ * batch either, and runs again.
+ */
+async function readRunDetails(
+  files: BatchFiles,
+  path: string,
+): Promise<Map<string, JudgeRunDetails>> {
+  const details = new Map<string, JudgeRunDetails>();
+  for (const raw of (await jsonlResults(files, path).read()).split("\n")) {
+    if (!raw.trim()) continue;
+    try {
+      const { run_id: runId, ...rest } = JSON.parse(raw) as {
+        run_id?: unknown;
+      } & JudgeRunDetails;
+      if (typeof runId === "string") details.set(runId, rest);
+    } catch {
+      // Not a details line; nothing reads it.
+    }
+  }
+  return details;
+}
+
+/** A run whose output has had one surrounding code fence removed. */
+function unfenced<T extends { output?: string | undefined }>(run: T): T {
+  return typeof run.output === "string"
+    ? { ...run, output: stripCodeFence(run.output) }
+    : run;
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -229,6 +278,28 @@ export async function runJudges(
   const pairId = (judge: JudgeDefinition, line: JudgeInputLine) =>
     `${judge.name}@${judge.definitionHash.slice(0, 12)}/${line.custom_id}`;
 
+  // Who answered each run and its usage, kept beside the batch's state: a
+  // resumed run's controller never saw the runs that already completed.
+  const detailsPath = options.directory
+    ? join(options.directory, "run-details.jsonl")
+    : undefined;
+  const recorded = detailsPath
+    ? await readRunDetails(files, detailsPath)
+    : new Map<string, JudgeRunDetails>();
+  const runDetails = (runId: string | undefined) => {
+    if (!runId) return {};
+    // The controller knows the runs it made; a resumed run's earlier ones are
+    // only on disk.
+    const live = options.controller.runDetails?.(runId);
+    const details = live?.model || live?.usage ? live : recorded.get(runId);
+    return {
+      ...(details?.model ? { model: details.model } : {}),
+      ...(details?.usage && details.usage.total_tokens > 0
+        ? { usage: details.usage }
+        : {}),
+    };
+  };
+
   const judgement = (
     judge: JudgeDefinition,
     line: JudgeInputLine,
@@ -264,6 +335,8 @@ export async function runJudges(
               : {}),
             ...(outcome.scores ? { scores: outcome.scores } : {}),
           }),
+      ...(evidence ? { sequence_hash: evidence } : {}),
+      ...runDetails(batch?.result.run_id),
       ...(batch?.result.run_id ? { run_id: batch.result.run_id } : {}),
       ...(batch ? { attempts: batch.batch.attempts } : {}),
     };
@@ -361,9 +434,24 @@ export async function runJudges(
           : input,
       );
     },
-    wait: (id, signal) => options.controller.wait(id, signal),
-    message: (id, text) => options.controller.message(id, text),
-    close: (id) => options.controller.close(id),
+    // A fenced JSON reply is still an answer: unfence it before the batch's
+    // JSON check, which would otherwise ask the judge to repair it.
+    wait: async (id, signal) =>
+      unfenced(await options.controller.wait(id, signal)),
+    message: async (id, text) =>
+      unfenced(await options.controller.message(id, text)),
+    // The batch closes a session before it records the line, so the line's
+    // details are on disk before the line is.
+    close: async (id) => {
+      const details = options.controller.runDetails?.(id);
+      if (detailsPath && (details?.model || details?.usage)) {
+        await files.appendLine(
+          detailsPath,
+          JSON.stringify({ run_id: id, ...details }),
+        );
+      }
+      return options.controller.close(id);
+    },
   };
   const completed = new Map<string, JudgementLine>();
   let stopped = false;
