@@ -1,5 +1,6 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { findRecipeModel } from "../model-binding.js";
+import { findClassifierModel } from "./classifier.js";
 import { fitBudget } from "../prompts/budget.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
@@ -357,7 +358,11 @@ export async function runJudges(
     if (units === undefined) {
       const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
       units = fitBudget(
-        specs.map((spec) => findRecipeModel(spec, options.modelRegistry)),
+        specs.map((spec) =>
+          judge.kind === "classifier"
+            ? findClassifierModel(spec)
+            : findRecipeModel(spec, options.modelRegistry),
+        ),
         fallbackUnits,
       ).maxUnits;
       budgets.set(judge.name, units);
@@ -400,8 +405,10 @@ export async function runJudges(
           transcript:
             judge.kind === "classifier"
               ? renderTrajectoryInput(input, {
+                  // Jev's slim was measured cut to 75k (the slimming study); a
+                  // classifier's window may lower that, never raise it.
                   maxUnits: Math.min(
-                    budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
+                    budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
                     CLASSIFIER_BUDGET_UNITS,
                   ),
                   slim: true,

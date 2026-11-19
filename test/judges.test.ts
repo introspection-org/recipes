@@ -338,12 +338,22 @@ describe("judge evidence", () => {
     expect(transcript).not.toContain("meta");
   });
 
-  it("clips long tool output for a classifier and cuts the middle to fit a budget", () => {
+  it("slims long tool output for a classifier and cuts the middle to fit a budget", () => {
     const input = toJudgeInput([
       { type: "tool_call", id: "c1", name: "read", arguments: {} },
       { type: "tool_result", tool_call_id: "c1", content: "x".repeat(9000) },
+      { type: "tool_call", id: "c2", name: "read", arguments: {} },
+      {
+        type: "tool_result",
+        tool_call_id: "c2",
+        content: `${"y".repeat(9000)} permission denied`,
+      },
     ]);
-    expect(renderTrajectoryInput(input, { slim: true })).toContain("[clipped]");
+    const slim = renderTrajectoryInput(input, { slim: true });
+    // Jev's slim: head and tail of a long result, an error kept whole.
+    expect(slim).toContain(`${"x".repeat(150)} […] ${"x".repeat(150)}`);
+    expect(slim).not.toContain("x".repeat(151));
+    expect(slim).toContain(`${"y".repeat(9000)} permission denied`);
     const cut = renderTrajectoryInput(input, { maxUnits: 500 });
     expect(cut.length).toBeLessThanOrEqual(500);
     expect(cut).toContain("transcript middle redacted");
