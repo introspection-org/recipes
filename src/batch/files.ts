@@ -31,15 +31,24 @@ let tempCounter = 0;
 async function* splitLines(
   chunks: AsyncIterable<string>,
 ): AsyncGenerator<string> {
-  let rest = "";
+  // Each chunk is searched once; a line spanning chunks is kept as pieces and
+  // joined when its newline arrives, so a long line costs its own length.
+  let pieces: string[] = [];
   for await (const chunk of chunks) {
-    rest += chunk;
-    for (let end = rest.indexOf("\n"); end >= 0; end = rest.indexOf("\n")) {
-      yield rest.slice(0, end);
-      rest = rest.slice(end + 1);
+    let start = 0;
+    for (
+      let end = chunk.indexOf("\n");
+      end >= 0;
+      end = chunk.indexOf("\n", start)
+    ) {
+      pieces.push(chunk.slice(start, end));
+      yield pieces.join("");
+      pieces = [];
+      start = end + 1;
     }
+    if (start < chunk.length) pieces.push(chunk.slice(start));
   }
-  if (rest) yield rest;
+  if (pieces.length > 0) yield pieces.join("");
 }
 
 /** `BatchFiles` on the local file system, each append and write synced before it resolves. */

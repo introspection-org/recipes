@@ -542,6 +542,50 @@ describe("runBatch", () => {
     expect(finished).toBe(2);
   });
 
+  it("reads lines that span many chunks intact, in order", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-lines-"));
+    const long = "z".repeat(300_000);
+    await writeFile(join(dir, "input.jsonl"), `a\n${long}\n\nb${long}c\nlast`);
+    const lines: string[] = [];
+    for await (const line of (await nodeBatchFiles.lines!(
+      join(dir, "input.jsonl"),
+    ))!) {
+      lines.push(line);
+    }
+    expect(lines).toEqual(["a", long, "", `b${long}c`, "last"]);
+  });
+
+  it("records a builder's skip without a session, and runs the other lines", async () => {
+    const nothingNew = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-synthesis",
+          "nothing_new_past_the_cursor.json",
+        ),
+        "utf8",
+      ),
+    );
+    const controller = new EchoRuns();
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "quiet", input: nothingNew.input },
+        { custom_id: "written", prompt: "as written" },
+      ],
+      controller,
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 2, failed: 0 });
+    const quiet = outcome.results.find((line) => line.custom_id === "quiet")!;
+    expect(quiet.result.type).toBe("skipped");
+    expect(quiet.built?.state).toEqual({
+      outcome: nothingNew.expected.outcome,
+    });
+  });
+
   it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
     const [asNumber, asString] = parseInputLines(
       jsonl({ custom_id: "a", prompt: "p" }) +
