@@ -307,7 +307,11 @@ function invalidAgentField(data: Record<string, unknown>): string | undefined {
   }
   if (Object.hasOwn(data, "resources")) {
     const resources = data.resources;
-    if (!resources || typeof resources !== "object" || Array.isArray(resources)) {
+    if (
+      !resources ||
+      typeof resources !== "object" ||
+      Array.isArray(resources)
+    ) {
       return "resources must be a map";
     }
     const unknown = Object.keys(resources).filter((key) => key !== "memory");
@@ -315,7 +319,10 @@ function invalidAgentField(data: Record<string, unknown>): string | undefined {
       return `resources has unsupported key(s): ${unknown.join(", ")}`;
     }
     const memory = (resources as Record<string, unknown>).memory;
-    if (memory !== undefined && (typeof memory !== "string" || !MEMORY_QUANTITY.test(memory))) {
+    if (
+      memory !== undefined &&
+      (typeof memory !== "string" || !MEMORY_QUANTITY.test(memory))
+    ) {
       return "resources.memory must be a quantity such as 512Mi or 1Gi";
     }
   }
