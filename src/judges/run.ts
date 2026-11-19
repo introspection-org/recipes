@@ -392,8 +392,19 @@ export async function runJudges(
     }
   }
 
+  // Throws when an output is outside the judge's contract.
+  const verdictOf = (id: string, output: string): JudgeVerdict => {
+    const { judge, transcript } = pairs.get(id)!;
+    return judge.kind === "classifier"
+      ? completeClassifierVerdict(
+          judge.questions,
+          (JSON.parse(output) as { answers: Record<string, unknown> }).answers,
+        )
+      : completeLlmVerdict(transcript, output);
+  };
+
   const complete = (batch: BatchResultLine): JudgementLine => {
-    const { judge, line, transcript, evidence } = pairs.get(batch.custom_id)!;
+    const { judge, line, evidence } = pairs.get(batch.custom_id)!;
     if (batch.result.type !== "succeeded") {
       return judgement(
         judge,
@@ -404,17 +415,10 @@ export async function runJudges(
       );
     }
     try {
-      const output = batch.result.output ?? "";
       return judgement(
         judge,
         line,
-        judge.kind === "classifier"
-          ? completeClassifierVerdict(
-              judge.questions,
-              (JSON.parse(output) as { answers: Record<string, unknown> })
-                .answers,
-            )
-          : completeLlmVerdict(transcript, output),
+        verdictOf(batch.custom_id, batch.result.output ?? ""),
         evidence,
         batch,
       );
@@ -465,6 +469,16 @@ export async function runJudges(
       controller,
       // A classifier's answers are JSON too, so one format serves every line.
       output_format: "json",
+      // A reply outside the judge's contract is an errored line, not a
+      // succeeded one, so a resumed run asks again.
+      checkOutput: (input, output) => {
+        try {
+          verdictOf(input.custom_id, output);
+          return null;
+        } catch (error) {
+          return message(error);
+        }
+      },
       ...(options.directory
         ? { directory: join(options.directory, "batch") }
         : {}),

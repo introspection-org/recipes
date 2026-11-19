@@ -53,6 +53,11 @@ export interface BatchRunDeps {
   /** Called with each line's result once it is recorded, in the order lines finish. */
   onResult?: (result: BatchResultLine) => Promise<void> | void;
   /**
+   * Why a settled line's output cannot be used, or null when it can. A
+   * refused output records the line as errored, so a resumed run retries it.
+   */
+  checkOutput?: (line: BatchInputLine, output: string) => string | null;
+  /**
    * Each line's own conversation, when the host keeps one per line: the id
    * its session records under, and a wrapper the line's session starts
    * inside, so the line's whole exchange can be read back by that id.
@@ -226,6 +231,12 @@ export async function runBatchWith(
           canceled: true,
           error: "the run stopped before this session settled",
         };
+      }
+      if (settled.status === "completed" && deps.checkOutput) {
+        const problem = deps.checkOutput(line, settled.output ?? "");
+        if (problem !== null) {
+          return { ...settled, status: "failed", error: problem };
+        }
       }
       return settled;
     } finally {

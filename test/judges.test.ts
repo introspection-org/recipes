@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,6 +24,7 @@ import {
   gateView,
   judgementId,
   loadJudges,
+  normalizeReplayTrajectory,
   parseJudgeDefinition,
   renderTrajectoryInput,
   runJudges,
@@ -685,6 +692,40 @@ describe("runJudges reports who answered", () => {
     });
   });
 
+  it("asks again on resume when a reply was outside the judge's contract", async () => {
+    const fixture = writeFixtureRecipe();
+    cleanups.push(fixture.cleanup);
+    const directory = fixture.workspaceDir;
+    const judge = parseJudgeDefinition("judges/greeting.yaml", LLM_JUDGE)!;
+    for (const reply of ["{}", '{"verdict":"maybe"}']) {
+      const refused = scripted(() => reply);
+      const before = await runJudges({
+        judges: [judge],
+        input: [line("echo-1", EXPORT)],
+        controller: refused.controller,
+        directory,
+      });
+      expect(before.results[0]).toMatchObject({ status: "error" });
+      const recorded = readFileSync(
+        join(directory, "batch", "results.jsonl"),
+        "utf8",
+      );
+      expect(recorded).not.toContain('"succeeded"');
+
+      const retried = scripted(() => '{"reasoning":"echoed","verdict":"pass"}');
+      const after = await runJudges({
+        judges: [judge],
+        input: [line("echo-1", EXPORT)],
+        controller: retried.controller,
+        directory,
+      });
+      expect(retried.started).toHaveLength(1);
+      expect(after.results[0]).toMatchObject({ result: "pass", status: "ok" });
+      rmSync(join(directory, "batch"), { recursive: true, force: true });
+      rmSync(join(directory, "results.jsonl"), { force: true });
+    }
+  });
+
   it("keeps the model and usage of judgements a resumed run already had", async () => {
     const fixture = writeFixtureRecipe();
     cleanups.push(fixture.cleanup);
@@ -1304,6 +1345,33 @@ describe("a Pi session as evidence", () => {
       { type: "message", role: "assistant", content: "Done." },
     ]);
     expect(() => trajectoryFromPiSession("{}")).toThrow(/not a Pi session/);
+  });
+
+  it("reads a JSON tool result as the export does, so a gate on its fields matches either", () => {
+    const shipped = SESSION.replace(
+      '"text":"Echo: hello"',
+      '"text":"{\\"status\\":\\"shipped\\"}"',
+    );
+    const result = trajectoryFromPiSession(shipped).find(
+      (event) => event.type === "tool_result",
+    );
+    const exported = normalizeReplayTrajectory([
+      {
+        role: "assistant",
+        timestamp: "t",
+        tool_calls: [{ id: "c1", name: "mcp_hello_echo", args: "{}" }],
+      },
+      {
+        role: "tool",
+        tool_call_id: "c1",
+        content: '{"status":"shipped"}',
+        timestamp: "t",
+      },
+    ]).find((event) => event.type === "tool_result");
+    expect(result).toMatchObject({ content: { status: "shipped" } });
+    expect(exported).toMatchObject({
+      content: (result as { content: unknown }).content,
+    });
   });
 
   it("judges a line that names a session file", async () => {

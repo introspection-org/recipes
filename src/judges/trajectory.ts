@@ -72,7 +72,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function parseMaybeJson(raw: string): unknown {
+/** A tool result's text as the JSON it holds, or the text itself. */
+export function parseMaybeJson(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {

@@ -1,4 +1,4 @@
-import type { TrajectoryEvent } from "./trajectory.js";
+import { parseMaybeJson, type TrajectoryEvent } from "./trajectory.js";
 
 interface SessionEntry {
   type?: unknown;
@@ -109,7 +109,7 @@ export function trajectoryFromPiSession(
           : {}),
         ...(message.isError === true
           ? { error: { type: "ToolError", message: output } }
-          : { content: output }),
+          : { content: parseMaybeJson(output) }),
         ...timestamp,
       });
     }
