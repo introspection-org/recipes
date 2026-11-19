@@ -189,8 +189,8 @@ The providers differ, so each declares the commands and fields it supports in
   Introspection sets `status`.
 - **Where to create:** Linear needs a team and Jira a project and issue type,
   from the declaration's options (`{ "provider": "jira", "options": {
-  "project": "OPS", "issueType": "Task" } }`) or the call. Introspection creates in the Recipe's project, on the
-  calling task.
+  "project": "OPS", "issueType": "Task" } }`) or the call. Introspection creates in the Recipe's project and links
+  the calling conversation.
 
 Introspection issues have no `url` yet, and `/v1/issues` has no text filter, so
 the `introspection` provider's `search` matches text against the most recent

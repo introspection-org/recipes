@@ -66,7 +66,10 @@ export interface IntrospectionIssuesClient {
       params?: { include?: "comments"[] },
     ): Promise<IntrospectionIssue>;
     create(params: {
-      task_id: string;
+      /** The calling task as the issue's worker: only for a data plane that requires one. */
+      task_id?: string;
+      /** The conversations the issue is about. */
+      conversations?: { conversation_id: string }[];
       title: string;
       description: string;
       priority?: IntrospectionPriority;
@@ -269,7 +272,7 @@ export function createIntrospectionIssuesProvider(
         },
         get: {},
         create: {
-          note: "Files the issue in the Recipe's project, on the calling task; the assignee is a member id, since a write cannot resolve me.",
+          note: "Files the issue in the Recipe's project, linked to the calling conversation; the assignee is a member id, since a write cannot resolve me.",
         },
         update: {
           note: "The assignee is a member id or none, since a write cannot resolve me.",
@@ -359,26 +362,35 @@ export function createIntrospectionIssuesProvider(
           };
         },
         async create(args) {
-          const taskId = text(env.INTROSPECTION_TASK_ID);
-          if (!taskId)
-            throw new IssuesError(
-              "not_connected",
-              "An Introspection issue is created on the calling task, and this runtime names none (INTROSPECTION_TASK_ID)",
-            );
+          const taskId = text(env.INTROSPECTION_TASK_ID)?.trim();
+          const conversationId =
+            text(env.INTROSPECTION_TASK_CONVERSATION_ID)?.trim() || taskId;
+          const brief = {
+            title: args.title,
+            description: args.description?.trim()
+              ? args.description
+              : args.title,
+            ...(args.priority !== undefined
+              ? { priority: priorityOf(args.priority) }
+              : {}),
+            ...(args.labels !== undefined ? { tags: [...args.labels] } : {}),
+            ...(args.assignee !== undefined
+              ? { assignee_member_id: assigneeId(args.assignee) }
+              : {}),
+          };
+          // The issue belongs to no task, so one run files as many as it finds; it links the calling conversation.
           const created = await client.issues
             .create({
-              task_id: taskId.trim(),
-              title: args.title,
-              description: args.description?.trim()
-                ? args.description
-                : args.title,
-              ...(args.priority !== undefined
-                ? { priority: priorityOf(args.priority) }
+              ...brief,
+              ...(conversationId
+                ? { conversations: [{ conversation_id: conversationId }] }
                 : {}),
-              ...(args.labels !== undefined ? { tags: [...args.labels] } : {}),
-              ...(args.assignee !== undefined
-                ? { assignee_member_id: assigneeId(args.assignee) }
-                : {}),
+            })
+            .catch((error: unknown) => {
+              // A data plane that predates task-less issues refuses the body and takes one issue per task.
+              if ((error as { status?: unknown })?.status !== 422 || !taskId)
+                throw error;
+              return client.issues.create({ task_id: taskId, ...brief });
             })
             .catch((error: unknown) => sdkError(error, "the issues"));
           return toIssue(created);

@@ -833,7 +833,8 @@ function fakeIntrospection(
   options: {
     issues?: IntrospectionIssue[];
     comments?: IntrospectionIssueComment[];
-    plane?: "old";
+    /** `old` has no assignees or comments; `requires-task` files an issue only on a task. */
+    plane?: "old" | "requires-task";
     /** An SDK release without `issues.comments`. */
     sdk?: "old";
   } = {},
@@ -878,6 +879,11 @@ function fakeIntrospection(
       create: async (params) => {
         calls.push({ method: "issues.create", args: [params] });
         refuseAssignee(params);
+        if (
+          options.plane === "requires-task" &&
+          (params.task_id === undefined || params.conversations !== undefined)
+        )
+          throw Object.assign(new Error("invalid body"), { status: 422 });
         return row({
           title: params.title,
           description: params.description,
@@ -921,7 +927,7 @@ function fakeIntrospection(
 }
 
 describe("introspection", () => {
-  const env = {
+  const env: Record<string, string> = {
     INTROSPECTION_BASE_API_URL: "http://dp.internal",
     INTROSPECTION_TOKEN: "locator",
     INTROSPECTION_TASK_ID: "task-1",
@@ -1153,10 +1159,10 @@ describe("introspection", () => {
         .map((call) => call.args.at(-1)),
     ).toEqual([
       {
-        task_id: "task-1",
         title: "New",
         description: "New",
         assignee_member_id: MEMBER,
+        conversations: [{ conversation_id: "task-1" }],
       },
       { assignee_member_id: MEMBER },
       { assignee_member_id: null },
@@ -1258,7 +1264,7 @@ describe("introspection", () => {
     ]);
   });
 
-  it("creates on the calling task, updates the row and transitions by status", async () => {
+  it("creates without a task, updates the row and transitions by status", async () => {
     const fake = fakeIntrospection();
     const opened = await open(fake);
     const created = await opened.create!(
@@ -1275,11 +1281,11 @@ describe("introspection", () => {
         method: "issues.create",
         args: [
           {
-            task_id: "task-1",
             title: "New",
             description: "New",
             priority: "urgent",
             tags: ["x"],
+            conversations: [{ conversation_id: "task-1" }],
           },
         ],
       },
@@ -1312,12 +1318,47 @@ describe("introspection", () => {
     });
   });
 
-  it("needs the calling task to create, and reports a missing issue", async () => {
+  it("links the task's conversation, and creates with no task at all", async () => {
     const fake = fakeIntrospection();
-    const opened = await open(fake, { ...env, INTROSPECTION_TASK_ID: "" });
-    await expect(opened.create!({ title: "New" }, {})).rejects.toMatchObject({
-      issues: { code: "not_connected" },
+    const inTask = await open(fake, {
+      ...env,
+      INTROSPECTION_TASK_CONVERSATION_ID: "conversation-9",
     });
+    await inTask.create!({ title: "New" }, {});
+    const outside = await open(fake, { ...env, INTROSPECTION_TASK_ID: "" });
+    await outside.create!({ title: "New" }, {});
+    expect(fake.calls.map((call) => call.args[0])).toEqual([
+      {
+        title: "New",
+        description: "New",
+        conversations: [{ conversation_id: "conversation-9" }],
+      },
+      { title: "New", description: "New" },
+    ]);
+  });
+
+  it("files on the calling task where the data plane requires one", async () => {
+    const fake = fakeIntrospection({ plane: "requires-task" });
+    const opened = await open(fake);
+    const created = await opened.create!({ title: "New" }, {});
+    expect(created.ref).toBe("I-13");
+    expect(fake.calls.map((call) => call.args[0])).toEqual([
+      {
+        title: "New",
+        description: "New",
+        conversations: [{ conversation_id: "task-1" }],
+      },
+      { task_id: "task-1", title: "New", description: "New" },
+    ]);
+    const outside = await open(fake, { ...env, INTROSPECTION_TASK_ID: "" });
+    await expect(outside.create!({ title: "New" }, {})).rejects.toMatchObject({
+      status: 422,
+    });
+  });
+
+  it("reports a missing issue", async () => {
+    const fake = fakeIntrospection();
+    const opened = await open(fake);
     await expect(opened.get!({ ref: "99" }, {})).rejects.toMatchObject({
       issues: { code: "not_found" },
     });
