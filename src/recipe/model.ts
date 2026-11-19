@@ -7,8 +7,10 @@ import type {
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import Type, { type Static, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 
-const THINKING_LEVELS = new Set([
+const THINKING_LEVELS = [
   "off",
   "minimal",
   "low",
@@ -16,87 +18,163 @@ const THINKING_LEVELS = new Set([
   "high",
   "xhigh",
   "max",
-]);
+] as const;
 
-const CACHE_RETENTIONS = new Set(["none", "short", "long"]);
+/** Pi request options a Recipe may not set: the host owns them. */
+const HOST_OWNED_OPTIONS = [
+  "api_key",
+  "azure_api_version",
+  "azure_base_url",
+  "azure_deployment_name",
+  "azure_resource_name",
+  "bearer_token",
+  "client",
+  "env",
+  "fetch",
+  "headers",
+  "location",
+  "on_payload",
+  "on_response",
+  "profile",
+  "project",
+  "reasoning",
+  "region",
+  "session_id",
+  "signal",
+  "telemetry_context",
+  "transform_headers",
+];
 
-const MODEL_KEYS = new Set([
-  "name",
-  "thinking_level",
+const SNAKE_CASE_KEY = "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$";
+
+/** `<provider>/<model_id>`, surrounding space allowed. */
+const MODEL_SPEC = "^\\s*[^\\s/][^/]*/.*\\S\\s*$";
+
+const strict = { additionalProperties: false } as const;
+const openMap = Type.Record(Type.String(), Type.Unknown());
+
+const AnthropicSchema = Type.Object(
+  {
+    betas: Type.Optional(Type.Array(Type.String({ pattern: "\\S" }))),
+    context_management: Type.Optional(openMap),
+  },
+  strict,
+);
+
+/**
+ * An agent's or a judge's `ai:` block. Provider-owned payloads (`options`,
+ * the routing maps) are open, so a provider's new field needs no release.
+ */
+const AiConfigSchema = Type.Object(
+  {
+    /** `<provider>/<model_id>`. */
+    model: Type.Optional(Type.String()),
+    /** Models tried in order when `model` fails, each `<provider>/<model_id>`. */
+    fallbacks: Type.Optional(Type.Array(Type.String({ pattern: MODEL_SPEC }))),
+    thinking_level: Type.Optional(Type.Enum([...THINKING_LEVELS])),
+    /** Pi request options, in snake_case; host-owned ones are refused. */
+    options: Type.Optional(
+      Type.Record(Type.String(), Type.Unknown(), {
+        propertyNames: {
+          pattern: SNAKE_CASE_KEY,
+          not: { enum: HOST_OWNED_OPTIONS },
+        },
+      }),
+    ),
+    providers: Type.Optional(
+      Type.Object(
+        {
+          openrouter: Type.Optional(
+            Type.Object({ routing: Type.Optional(openMap) }, strict),
+          ),
+          anthropic: Type.Optional(AnthropicSchema),
+          vercel_ai_gateway: Type.Optional(
+            Type.Object(
+              {
+                routing: Type.Optional(
+                  Type.Record(Type.String(), Type.Unknown(), {
+                    propertyNames: { not: { enum: ["byok"] } },
+                  }),
+                ),
+              },
+              strict,
+            ),
+          ),
+        },
+        strict,
+      ),
+    ),
+  },
+  strict,
+);
+
+/** An `ai:` block as authored. */
+type AiConfig = Static<typeof AiConfigSchema>;
+
+/**
+ * The older agent `model:` block. It is read as an `ai:` block
+ * ({@link legacyModelAsAi}) and stays strict, OpenRouter routing included, so
+ * a typo in a published Recipe still fails.
+ */
+const LegacyModelSchema = Type.Object(
+  {
+    name: Type.Optional(Type.String()),
+    thinking_level: Type.Optional(Type.Enum([...THINKING_LEVELS])),
+    temperature: Type.Optional(Type.Number({ minimum: 0 })),
+    max_tokens: Type.Optional(Type.Integer({ minimum: 1 })),
+    cache_retention: Type.Optional(Type.Enum(["none", "short", "long"])),
+    timeout_ms: Type.Optional(Type.Integer({ minimum: 1 })),
+    max_retries: Type.Optional(Type.Integer({ minimum: 0 })),
+    max_retry_delay_ms: Type.Optional(Type.Integer({ minimum: 0 })),
+    providers: Type.Optional(
+      Type.Object(
+        {
+          openrouter: Type.Optional(
+            Type.Object(
+              {
+                routing: Type.Optional(
+                  Type.Object(
+                    {
+                      allow_fallbacks: Type.Optional(Type.Unknown()),
+                      require_parameters: Type.Optional(Type.Unknown()),
+                      data_collection: Type.Optional(Type.Unknown()),
+                      zdr: Type.Optional(Type.Unknown()),
+                      enforce_distillable_text: Type.Optional(Type.Unknown()),
+                      order: Type.Optional(Type.Unknown()),
+                      only: Type.Optional(Type.Unknown()),
+                      ignore: Type.Optional(Type.Unknown()),
+                      quantizations: Type.Optional(Type.Unknown()),
+                      sort: Type.Optional(Type.Unknown()),
+                      max_price: Type.Optional(Type.Unknown()),
+                      preferred_min_throughput: Type.Optional(Type.Unknown()),
+                      preferred_max_latency: Type.Optional(Type.Unknown()),
+                    },
+                    strict,
+                  ),
+                ),
+              },
+              strict,
+            ),
+          ),
+          anthropic: Type.Optional(AnthropicSchema),
+        },
+        strict,
+      ),
+    ),
+  },
+  strict,
+);
+
+type LegacyModel = Static<typeof LegacyModelSchema>;
+
+const LEGACY_OPTION_KEYS = [
   "temperature",
   "max_tokens",
   "cache_retention",
   "timeout_ms",
   "max_retries",
   "max_retry_delay_ms",
-  "providers",
-]);
-
-const AI_KEYS = new Set([
-  "model",
-  "fallbacks",
-  "thinking_level",
-  "options",
-  "providers",
-]);
-
-const BLOCKED_AI_OPTION_KEYS = new Set([
-  "apiKey",
-  "azureApiVersion",
-  "azureBaseUrl",
-  "azureDeploymentName",
-  "azureResourceName",
-  "bearerToken",
-  "client",
-  "env",
-  "fetch",
-  "headers",
-  "location",
-  "onPayload",
-  "onResponse",
-  "profile",
-  "project",
-  "reasoning",
-  "region",
-  "sessionId",
-  "signal",
-  "telemetryContext",
-  "transformHeaders",
-]);
-
-const SNAKE_CASE_KEY = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
-
-const LEGACY_PROVIDER_KEYS = new Set(["openrouter", "anthropic"]);
-
-const AI_PROVIDER_KEYS = new Set([
-  "openrouter",
-  "anthropic",
-  "vercel_ai_gateway",
-]);
-
-const OPENROUTER_PROVIDER_KEYS = new Set(["routing"]);
-
-const LEGACY_OPENROUTER_KEYS = new Set([
-  "allow_fallbacks",
-  "require_parameters",
-  "data_collection",
-  "zdr",
-  "enforce_distillable_text",
-  "order",
-  "only",
-  "ignore",
-  "quantizations",
-  "sort",
-  "max_price",
-  "preferred_min_throughput",
-  "preferred_max_latency",
-]);
-
-const ANTHROPIC_KEYS = new Set(["betas", "context_management"]);
-
-const VERCEL_AI_GATEWAY_KEYS = new Set(["routing"]);
-
-const BLOCKED_VERCEL_AI_GATEWAY_ROUTING_KEYS = new Set(["byok"]);
+] as const;
 
 interface RecipeAgentModelStreamOptions extends Record<string, unknown> {
   temperature?: number;
@@ -146,409 +224,175 @@ function snakeToCamel(key: string): string {
   );
 }
 
-function normalizeSnakeCaseObject(
-  context: string,
-  value: unknown,
-): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(`${context}: expected object`);
-  }
-  const normalized: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (!SNAKE_CASE_KEY.test(key)) {
-      throw new RecipeModelConfigError(
-        `${context} has non-snake_case key "${key}"`,
-      );
-    }
-    const normalizedKey = snakeToCamel(key);
-    if (BLOCKED_AI_OPTION_KEYS.has(normalizedKey)) {
-      throw new RecipeModelConfigError(
-        `${context} cannot configure host-owned option "${key}"`,
-      );
-    }
-    normalized[normalizedKey] = child;
-  }
-  return normalized;
-}
-
-function optionalString(
-  context: string,
-  key: string,
-  value: unknown,
-): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected string`,
-    );
-  }
-  return value.trim() || undefined;
-}
-
-function optionalNumber(
-  context: string,
-  key: string,
-  value: unknown,
-  min: number,
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected number >= ${min}`,
-    );
-  }
-  return value;
-}
-
-function optionalInteger(
-  context: string,
-  key: string,
-  value: unknown,
-  min: number,
-): number | undefined {
-  const parsed = optionalNumber(context, key, value, min);
-  if (parsed === undefined) return undefined;
-  if (!Number.isInteger(parsed)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected integer`,
-    );
-  }
-  return parsed;
-}
-
-function optionalStringArray(
-  context: string,
-  key: string,
-  value: unknown,
-): string[] | undefined {
-  if (value === undefined) return undefined;
-  if (
-    !Array.isArray(value) ||
-    !value.every((item) => typeof item === "string" && item.trim())
-  ) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${key}: expected string array`,
-    );
-  }
-  return value.map((item) => item.trim());
-}
-
-function parseThinkingLevel(
-  context: string,
-  key: string,
-  value: unknown,
-): ThinkingLevel | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || !THINKING_LEVELS.has(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has unsupported ${key} "${value}"`,
-    );
-  }
-  return value as ThinkingLevel;
-}
-
-function assertKnownKeys(
-  context: string,
-  keyPrefix: string,
-  data: Record<string, unknown>,
-  allowed: Set<string>,
-): void {
-  const unknown = Object.keys(data).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    throw new RecipeModelConfigError(
-      `${context} has unsupported ${keyPrefix} key(s): ${unknown.join(", ")}`,
-    );
-  }
-}
-
-function parseOpenRouterRouting(
-  context: string,
-  value: unknown,
-  prefix: "ai" | "model",
-): OpenRouterRouting | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.openrouter.routing: expected object`,
-    );
-  }
-  // `ai:` is the forward-compatible Pi boundary. OpenRouter owns this payload
-  // and can add routing fields without requiring a Recipes release. Keep the
-  // legacy `model:` block strict so its existing typo detection does not
-  // change underneath published Recipes.
-  if (prefix === "model") {
-    assertKnownKeys(
-      context,
-      `${prefix}.providers.openrouter.routing`,
+function at(value: unknown, pointer: string): unknown {
+  return pointer
+    .split("/")
+    .slice(1)
+    .reduce<unknown>(
+      (node, key) =>
+        isRecord(node) || Array.isArray(node)
+          ? (node as Record<string, unknown>)[key]
+          : undefined,
       value,
-      LEGACY_OPENROUTER_KEYS,
     );
-  }
-  return { ...value } as OpenRouterRouting;
 }
 
-function parseOpenRouterProvider(
-  context: string,
-  value: unknown,
-  prefix: "ai" | "model",
-): OpenRouterRouting | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.openrouter: expected object`,
+/** `/providers/anthropic/betas/0` under `ai` → `ai.providers.anthropic.betas[0]`. */
+function dotted(prefix: string, pointer: string): string {
+  return pointer
+    .split("/")
+    .slice(1)
+    .reduce(
+      (path, key) => (/^\d+$/.test(key) ? `${path}[${key}]` : `${path}.${key}`),
+      prefix,
     );
-  }
-  assertKnownKeys(
-    context,
-    `${prefix}.providers.openrouter`,
-    value,
-    OPENROUTER_PROVIDER_KEYS,
-  );
-  return parseOpenRouterRouting(context, value.routing, prefix);
-}
-
-function parseAnthropic(
-  context: string,
-  value: unknown,
-  prefix: "ai" | "model",
-): RecipeAgentModelAnthropicOptions | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.anthropic: expected object`,
-    );
-  }
-  assertKnownKeys(
-    context,
-    `${prefix}.providers.anthropic`,
-    value,
-    ANTHROPIC_KEYS,
-  );
-  const betas = optionalStringArray(
-    context,
-    `${prefix}.providers.anthropic.betas`,
-    value.betas,
-  );
-  const contextManagement = value.context_management;
-  if (contextManagement !== undefined && !isRecord(contextManagement)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers.anthropic.context_management: expected object`,
-    );
-  }
-  return {
-    ...(betas ? { betas } : {}),
-    ...(contextManagement !== undefined ? { contextManagement } : {}),
-  };
-}
-
-function parseVercelAiGatewayRouting(
-  context: string,
-  value: unknown,
-): RecipeAgentVercelAiGatewayRouting | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ai.providers.vercel_ai_gateway.routing: expected object`,
-    );
-  }
-  const blocked = Object.keys(value).filter((key) =>
-    BLOCKED_VERCEL_AI_GATEWAY_ROUTING_KEYS.has(key),
-  );
-  if (blocked.length > 0) {
-    throw new RecipeModelConfigError(
-      `${context} cannot configure host-owned ai.providers.vercel_ai_gateway.routing field(s): ${blocked.join(", ")}`,
-    );
-  }
-  return { ...value };
-}
-
-function parseVercelAiGateway(
-  context: string,
-  value: unknown,
-): RecipeAgentVercelAiGatewayRouting | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ai.providers.vercel_ai_gateway: expected object`,
-    );
-  }
-  assertKnownKeys(
-    context,
-    "ai.providers.vercel_ai_gateway",
-    value,
-    VERCEL_AI_GATEWAY_KEYS,
-  );
-  return parseVercelAiGatewayRouting(context, value.routing);
-}
-
-function parseProviders(
-  context: string,
-  value: unknown,
-  prefix: "ai" | "model",
-):
-  | Pick<RecipeAgentModelConfig, "openrouter" | "anthropic" | "vercelAiGateway">
-  | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ${prefix}.providers: expected object`,
-    );
-  }
-  assertKnownKeys(
-    context,
-    `${prefix}.providers`,
-    value,
-    prefix === "ai" ? AI_PROVIDER_KEYS : LEGACY_PROVIDER_KEYS,
-  );
-  const openrouter = parseOpenRouterProvider(context, value.openrouter, prefix);
-  const anthropic = parseAnthropic(context, value.anthropic, prefix);
-  const vercelAiGateway =
-    prefix === "ai"
-      ? parseVercelAiGateway(context, value.vercel_ai_gateway)
-      : undefined;
-  return {
-    ...(openrouter ? { openrouter } : {}),
-    ...(anthropic ? { anthropic } : {}),
-    ...(vercelAiGateway ? { vercelAiGateway } : {}),
-  };
 }
 
 /**
- * Parse an agent YAML `model:` block into a validated config.
- *
- * Accepts the documented keys only; unknown keys, malformed values, and
- * invalid or unknown fields throw
- * {@link RecipeModelConfigError} so typos fail loudly instead of silently
- * changing model behavior.
+ * Check `value` against `schema`, refusing it with one message that names the
+ * field: the schema decides what is valid, this only words the first problem.
  */
-export function parseRecipeAgentModelConfig(
+function check<T extends TSchema>(
+  schema: T,
   context: string,
+  prefix: string,
   value: unknown,
-): RecipeAgentModelConfig | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid model: expected object`,
-    );
+): Static<T> {
+  if (Value.Check(schema, value)) return value as Static<T>;
+  // A refused key also fails its own subschema; the key-level error says more.
+  const errors = [...Value.Errors(schema, value)].filter(
+    (error) => error.keyword !== "boolean" && error.keyword !== "not",
+  );
+  const error =
+    errors.find(
+      (candidate) =>
+        candidate.keyword === "additionalProperties" ||
+        candidate.keyword === "propertyNames",
+    ) ?? errors[0];
+  if (!error) {
+    throw new RecipeModelConfigError(`${context} has invalid ${prefix}`);
   }
-  assertKnownKeys(context, "model", value, MODEL_KEYS);
-
-  const thinkingLevel = parseThinkingLevel(
-    context,
-    "model.thinking_level",
-    value.thinking_level,
-  );
-
-  const cacheRetention = optionalString(
-    context,
-    "model.cache_retention",
-    value.cache_retention,
-  );
-  if (cacheRetention !== undefined && !CACHE_RETENTIONS.has(cacheRetention)) {
-    throw new RecipeModelConfigError(
-      `${context} has unsupported model.cache_retention "${cacheRetention}"`,
-    );
+  const path = dotted(prefix, error.instancePath);
+  const params = error.params as Record<string, unknown>;
+  switch (error.keyword) {
+    case "additionalProperties":
+      throw new RecipeModelConfigError(
+        `${context} has unsupported ${path} key(s): ${(params.additionalProperties as string[]).join(", ")}`,
+      );
+    case "propertyNames": {
+      const names = params.propertyNames as string[];
+      const malformed = names.find(
+        (name) => !new RegExp(SNAKE_CASE_KEY).test(name),
+      );
+      throw new RecipeModelConfigError(
+        malformed !== undefined && path.endsWith(".options")
+          ? `${context} ${path} has non-snake_case key "${malformed}"`
+          : `${context} cannot configure host-owned ${path} field(s): ${names.join(", ")}`,
+      );
+    }
+    case "enum":
+      throw new RecipeModelConfigError(
+        `${context} has unsupported ${path} ${JSON.stringify(String(at(value, error.instancePath)))}`,
+      );
+    case "pattern":
+      throw new RecipeModelConfigError(
+        params.pattern === MODEL_SPEC
+          ? `${context} has invalid ${path.replace(/\[\d+\]$/, " entry")} ${JSON.stringify(at(value, error.instancePath))}: expected "<provider>/<model_id>"`
+          : `${context} has invalid ${path}: expected a non-blank string`,
+      );
+    case "type":
+      throw new RecipeModelConfigError(
+        `${context} has invalid ${path}: expected ${String(params.type)}`,
+      );
+    case "minimum":
+      throw new RecipeModelConfigError(
+        `${context} has invalid ${path}: expected number >= ${String(params.limit)}`,
+      );
+    default:
+      throw new RecipeModelConfigError(
+        `${context} has invalid ${path}: ${error.message}`,
+      );
   }
+}
 
-  const temperature = optionalNumber(
-    context,
-    "model.temperature",
-    value.temperature,
-    0,
-  );
-  const maxTokens = optionalInteger(
-    context,
-    "model.max_tokens",
-    value.max_tokens,
-    1,
-  );
-  const timeoutMs = optionalInteger(
-    context,
-    "model.timeout_ms",
-    value.timeout_ms,
-    1,
-  );
-  const maxRetries = optionalInteger(
-    context,
-    "model.max_retries",
-    value.max_retries,
-    0,
-  );
-  const maxRetryDelayMs = optionalInteger(
-    context,
-    "model.max_retry_delay_ms",
-    value.max_retry_delay_ms,
-    0,
-  );
-  const streamOptions: RecipeAgentModelStreamOptions = {
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(maxTokens !== undefined ? { maxTokens } : {}),
-    ...(cacheRetention
-      ? { cacheRetention: cacheRetention as CacheRetention }
-      : {}),
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    ...(maxRetries !== undefined ? { maxRetries } : {}),
-    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
-  };
-
-  const name = optionalString(context, "model.name", value.name);
-  const providers = parseProviders(context, value.providers, "model");
+/** A checked `ai:` block as the settings Pi applies. */
+function toModelConfig(ai: AiConfig): RecipeAgentModelConfig {
+  const name = ai.model?.trim();
+  const fallbacks = ai.fallbacks?.map((spec) => spec.trim());
+  const streamOptions = ai.options
+    ? Object.fromEntries(
+        Object.entries(ai.options).map(([key, value]) => [
+          snakeToCamel(key),
+          value,
+        ]),
+      )
+    : undefined;
+  const openrouter = ai.providers?.openrouter?.routing;
+  const anthropic = ai.providers?.anthropic;
+  const vercelAiGateway = ai.providers?.vercel_ai_gateway?.routing;
   return {
     ...(name ? { name } : {}),
-    ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
-    ...(hasKeys(streamOptions) ? { streamOptions } : {}),
-    ...(providers ?? {}),
+    ...(fallbacks?.length ? { fallbacks } : {}),
+    ...(ai.thinking_level
+      ? { thinkingLevel: ai.thinking_level as ThinkingLevel }
+      : {}),
+    ...(streamOptions && hasKeys(streamOptions) ? { streamOptions } : {}),
+    ...(openrouter
+      ? { openrouter: { ...openrouter } as OpenRouterRouting }
+      : {}),
+    ...(anthropic
+      ? {
+          anthropic: {
+            ...(anthropic.betas
+              ? { betas: anthropic.betas.map((beta) => beta.trim()) }
+              : {}),
+            ...(anthropic.context_management !== undefined
+              ? { contextManagement: anthropic.context_management }
+              : {}),
+          },
+        }
+      : {}),
+    ...(vercelAiGateway ? { vercelAiGateway: { ...vercelAiGateway } } : {}),
+  };
+}
+
+/** An older `model:` block as the `ai:` block it means. */
+function legacyModelAsAi(model: LegacyModel): AiConfig {
+  const options = Object.fromEntries(
+    LEGACY_OPTION_KEYS.flatMap((key) =>
+      model[key] === undefined ? [] : [[key, model[key]]],
+    ),
+  );
+  return {
+    ...(model.name !== undefined ? { model: model.name } : {}),
+    ...(model.thinking_level ? { thinking_level: model.thinking_level } : {}),
+    ...(hasKeys(options) ? { options } : {}),
+    ...(model.providers ? { providers: model.providers } : {}),
   };
 }
 
 /**
- * Parse the preferred agent YAML `ai:` block. `options` keys are normalized
- * from Recipe snake_case to Pi camelCase without enumerating Pi's evolving
- * request-option surface. Nested values are deliberately left opaque.
+ * Parse an agent's or a judge's `ai:` block against {@link AiConfigSchema}.
+ * A block outside the schema throws {@link RecipeModelConfigError} naming the
+ * field, so a typo fails loudly instead of silently changing the model.
  */
 export function parseRecipeAgentAiConfig(
   context: string,
   value: unknown,
 ): RecipeAgentModelConfig | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value)) {
-    throw new RecipeModelConfigError(
-      `${context} has invalid ai: expected object`,
-    );
-  }
-  assertKnownKeys(context, "ai", value, AI_KEYS);
+  return toModelConfig(check(AiConfigSchema, context, "ai", value));
+}
 
-  const name = optionalString(context, "ai.model", value.model);
-  const fallbacks = optionalStringArray(
-    context,
-    "ai.fallbacks",
-    value.fallbacks,
-  )?.map((spec) => spec.trim());
-  for (const spec of fallbacks ?? []) {
-    const slash = spec.indexOf("/");
-    if (slash <= 0 || slash === spec.length - 1) {
-      throw new RecipeModelConfigError(
-        `${context} has invalid ai.fallbacks entry "${spec}": expected "<provider>/<model_id>"`,
-      );
-    }
-  }
-  const thinkingLevel = parseThinkingLevel(
-    context,
-    "ai.thinking_level",
-    value.thinking_level,
+/** Parse the older agent `model:` block, read as the `ai:` block it means. */
+export function parseRecipeAgentModelConfig(
+  context: string,
+  value: unknown,
+): RecipeAgentModelConfig | undefined {
+  if (value === undefined) return undefined;
+  return toModelConfig(
+    legacyModelAsAi(check(LegacyModelSchema, context, "model", value)),
   );
-  const streamOptions =
-    value.options === undefined
-      ? undefined
-      : normalizeSnakeCaseObject(`${context} ai.options`, value.options);
-  const providers = parseProviders(context, value.providers, "ai");
-  return {
-    ...(name ? { name } : {}),
-    ...(fallbacks?.length ? { fallbacks } : {}),
-    ...(thinkingLevel ? { thinkingLevel } : {}),
-    ...(streamOptions && hasKeys(streamOptions) ? { streamOptions } : {}),
-    ...(providers ?? {}),
-  };
 }
 
 /**

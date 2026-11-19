@@ -82,7 +82,7 @@ exports[`an agent's ai: block > parses trimmed_model 1`] = `
 
 exports[`an agent's ai: block > refuses an_array 1`] = `"Agent has invalid ai: expected object"`;
 
-exports[`an agent's ai: block > refuses anthropic_betas_not_strings 1`] = `"Agent has invalid ai.providers.anthropic.betas: expected string array"`;
+exports[`an agent's ai: block > refuses anthropic_betas_not_strings 1`] = `"Agent has invalid ai.providers.anthropic.betas[0]: expected string"`;
 
 exports[`an agent's ai: block > refuses anthropic_context_management_not_an_object 1`] = `"Agent has invalid ai.providers.anthropic.context_management: expected object"`;
 
@@ -90,17 +90,17 @@ exports[`an agent's ai: block > refuses anthropic_not_an_object 1`] = `"Agent ha
 
 exports[`an agent's ai: block > refuses anthropic_unknown_key 1`] = `"Agent has unsupported ai.providers.anthropic key(s): beta"`;
 
-exports[`an agent's ai: block > refuses fallback_blank 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+exports[`an agent's ai: block > refuses fallback_blank 1`] = `"Agent has invalid ai.fallbacks entry "  ": expected "<provider>/<model_id>""`;
 
 exports[`an agent's ai: block > refuses fallback_leading_slash 1`] = `"Agent has invalid ai.fallbacks entry "/model": expected "<provider>/<model_id>""`;
 
-exports[`an agent's ai: block > refuses fallback_not_a_string 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+exports[`an agent's ai: block > refuses fallback_not_a_string 1`] = `"Agent has invalid ai.fallbacks[0]: expected string"`;
 
 exports[`an agent's ai: block > refuses fallback_trailing_slash 1`] = `"Agent has invalid ai.fallbacks entry "provider/": expected "<provider>/<model_id>""`;
 
 exports[`an agent's ai: block > refuses fallback_without_provider 1`] = `"Agent has invalid ai.fallbacks entry "claude-sonnet-5-5": expected "<provider>/<model_id>""`;
 
-exports[`an agent's ai: block > refuses fallbacks_not_an_array 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+exports[`an agent's ai: block > refuses fallbacks_not_an_array 1`] = `"Agent has invalid ai.fallbacks: expected array"`;
 
 exports[`an agent's ai: block > refuses model_not_a_string 1`] = `"Agent has invalid ai.model: expected string"`;
 
@@ -116,15 +116,15 @@ exports[`an agent's ai: block > refuses openrouter_unknown_key 1`] = `"Agent has
 
 exports[`an agent's ai: block > refuses options_camel_case_key 1`] = `"Agent ai.options has non-snake_case key "maxTokens""`;
 
-exports[`an agent's ai: block > refuses options_host_owned_api_key 1`] = `"Agent ai.options cannot configure host-owned option "api_key""`;
+exports[`an agent's ai: block > refuses options_host_owned_api_key 1`] = `"Agent cannot configure host-owned ai.options field(s): api_key"`;
 
-exports[`an agent's ai: block > refuses options_host_owned_headers 1`] = `"Agent ai.options cannot configure host-owned option "headers""`;
+exports[`an agent's ai: block > refuses options_host_owned_headers 1`] = `"Agent cannot configure host-owned ai.options field(s): headers"`;
 
-exports[`an agent's ai: block > refuses options_host_owned_reasoning 1`] = `"Agent ai.options cannot configure host-owned option "reasoning""`;
+exports[`an agent's ai: block > refuses options_host_owned_reasoning 1`] = `"Agent cannot configure host-owned ai.options field(s): reasoning"`;
 
-exports[`an agent's ai: block > refuses options_host_owned_session_id 1`] = `"Agent ai.options cannot configure host-owned option "session_id""`;
+exports[`an agent's ai: block > refuses options_host_owned_session_id 1`] = `"Agent cannot configure host-owned ai.options field(s): session_id"`;
 
-exports[`an agent's ai: block > refuses options_not_an_object 1`] = `"Agent ai.options: expected object"`;
+exports[`an agent's ai: block > refuses options_not_an_object 1`] = `"Agent has invalid ai.options: expected object"`;
 
 exports[`an agent's ai: block > refuses providers_not_an_object 1`] = `"Agent has invalid ai.providers: expected object"`;
 
@@ -203,7 +203,7 @@ exports[`an agent's older model: block > refuses null 1`] = `"Agent has invalid 
 
 exports[`an agent's older model: block > refuses openrouter_routing_unknown_key 1`] = `"Agent has unsupported model.providers.openrouter.routing key(s): a_future_field"`;
 
-exports[`an agent's older model: block > refuses temperature_not_a_number 1`] = `"Agent has invalid model.temperature: expected number >= 0"`;
+exports[`an agent's older model: block > refuses temperature_not_a_number 1`] = `"Agent has invalid model.temperature: expected number"`;
 
 exports[`an agent's older model: block > refuses unknown_cache_retention 1`] = `"Agent has unsupported model.cache_retention "forever""`;
 
