@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.29.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.28.0...introspection-recipe-check-python-v0.29.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **judges:** the spec module drops JudgeLlmConfig, JudgeLlmRequest, JudgeLlmTransport, JudgeLlmLocal and their default constants; JudgeDefinition has ai and questions in place of llm.
+
+### Features
+
+* **judges:** run judges on Pi as a batch, with LLM and classifier judges; a judge declares ai: ([#544](https://github.com/introspection-org/recipes/issues/544)) ([583dc6b](https://github.com/introspection-org/recipes/commit/583dc6b154fa3c3233190885d1c033b30e870cd3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.28.0 to 0.29.0
+
 ## [0.28.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.27.1...introspection-recipe-check-python-v0.28.0) (2026-11-17)
 
 
