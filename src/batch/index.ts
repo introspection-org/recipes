@@ -5,9 +5,6 @@ import { CONVERSATION_ID_BAGGAGE } from "../otel-baggage.js";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "./files.js";
 import {
-  inputFingerprint,
-  parseInputLines,
-  validateInputLines,
   type BatchInputLine,
   type BatchResultLine,
   type BuildLinePrompt,
@@ -230,20 +227,14 @@ export async function runBatch(
   const build = preprocess
     ? linePromptBuilder(preprocess.spec, preprocess.maxTokens)
     : undefined;
-  let lines: BatchInputLine[];
-  if (typeof input === "string" || input instanceof URL) {
-    const path =
-      input instanceof URL
+  const source =
+    typeof input === "string" || input instanceof URL
+      ? input instanceof URL
         ? fileURLToPath(input)
         : directory && !isAbsolute(input)
           ? join(directory, input)
-          : input;
-    const text = await files.read(path);
-    if (text === null) throw new Error(`batch input ${path} does not exist`);
-    lines = parseInputLines(text, build);
-  } else {
-    lines = validateInputLines(input, undefined, build);
-  }
+          : input
+      : input;
   const resultsPath = directory ? resolve(directory, params.output_name) : null;
   const results = resultsPath
     ? jsonlResults(files, resultsPath)
@@ -253,11 +244,17 @@ export async function runBatch(
     (resultsPath
       ? createHash("sha256").update(resultsPath).digest("hex").slice(0, 16)
       : randomUUID());
+  let reached: ReadonlyMap<string, { fingerprint: string; index: number }> =
+    new Map();
   const summary = await runBatchWith(params, {
     controller,
     files,
-    input: lines,
+    input: source,
     results,
+    ...(build ? { buildPrompt: build } : {}),
+    onLines: (lines) => {
+      reached = lines;
+    },
     lineScope: baggageLineScope(batchId, baggage),
     ...(signal ? { signal } : {}),
     ...(onProgress ? { onProgress } : {}),
@@ -270,14 +267,15 @@ export async function runBatch(
     const line = JSON.parse(raw) as BatchResultLine;
     latest.set(line.custom_id, line);
   }
-  // The current input decides what is returned and in what order: a stored
-  // result counts only if it answered this agent and this prompt text.
-  const current = lines.flatMap((line) => {
-    const result = latest.get(line.custom_id);
-    return result &&
-      result.batch.input_sha256 === inputFingerprint(params.agent, line)
-      ? [result]
-      : [];
-  });
+  // The current input decides what is returned, in input order: a stored
+  // result counts only if it answered this agent and this prompt.
+  const current = [...reached]
+    .sort(([, a], [, b]) => a.index - b.index)
+    .flatMap(([id, { fingerprint }]) => {
+      const result = latest.get(id);
+      return result && result.batch.input_sha256 === fingerprint
+        ? [result]
+        : [];
+    });
   return { ...summary, results: current };
 }

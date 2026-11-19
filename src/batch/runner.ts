@@ -2,10 +2,11 @@ import type { AgentRunController } from "../agents.js";
 import type { BatchFiles } from "./files.js";
 import { AdaptiveLimiter } from "./limiter.js";
 import {
+  buildInputLine,
+  checkInputLine,
   completedIds,
   inputFingerprint,
-  parseInputLines,
-  validateInputLines,
+  parseInputLine,
   type BuildLinePrompt,
   type BatchInputLine,
   type BatchResultLine,
@@ -37,6 +38,10 @@ export interface BatchRunDeps {
   input: string | readonly unknown[];
   /** Builds the prompt of a line that carries an `input` (`linePromptBuilder`). */
   buildPrompt?: BuildLinePrompt;
+  /** Called once the run ends with each line it reached: its fingerprint and its place in the input. */
+  onLines?: (
+    lines: ReadonlyMap<string, { fingerprint: string; index: number }>,
+  ) => void;
   /** Where results are recorded, and read back on a resume. */
   results: BatchResults;
   now?: () => number;
@@ -113,6 +118,39 @@ function jsonProblem(output: string | undefined): string | null {
 const RATE_LIMITED = /\b429\b|rate[ _-]?limit/i;
 const RETRY_BASE_DELAY_MS = 2_000;
 
+/** The input's lines as values, one at a time, each with the label its errors use. */
+async function* inputValues(
+  deps: BatchRunDeps,
+): AsyncGenerator<{ value: unknown; label: string }> {
+  if (typeof deps.input !== "string") {
+    let index = 0;
+    for (const value of deps.input) {
+      index += 1;
+      yield { value, label: `input ${index}` };
+    }
+    return;
+  }
+  let raws: AsyncIterable<string> | Iterable<string>;
+  if (deps.files.lines) {
+    const lines = await deps.files.lines(deps.input);
+    if (lines === null)
+      throw new Error(`batch input ${deps.input} does not exist`);
+    raws = lines;
+  } else {
+    const text = await deps.files.read(deps.input);
+    if (text === null)
+      throw new Error(`batch input ${deps.input} does not exist`);
+    raws = text.split("\n");
+  }
+  let number = 0;
+  for await (const raw of raws) {
+    number += 1;
+    if (!raw.trim()) continue;
+    const label = `input line ${number}`;
+    yield { value: parseInputLine(raw, label), label };
+  }
+}
+
 /**
  * Run every input line not already completed as a fresh session of
  * `params.agent`, at most `params.concurrency` at once, appending one result
@@ -131,34 +169,26 @@ export async function runBatchWith(
   const sleep =
     deps.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  let lines: BatchInputLine[];
-  if (typeof deps.input === "string") {
-    const inputText = await deps.files.read(deps.input);
-    if (inputText === null) {
-      throw new Error(`batch input ${deps.input} does not exist`);
+  const canBuild = deps.buildPrompt !== undefined;
+  // A first pass checks every line and keeps only its id and position, so a
+  // malformed input fails before any line runs and nothing is built yet.
+  const recordIndex = new Map<string, number>();
+  for await (const { value, label } of inputValues(deps)) {
+    const line = checkInputLine(value, label, canBuild);
+    if (recordIndex.has(line.custom_id)) {
+      throw new Error(`${label} repeats custom_id ${line.custom_id}`);
     }
-    lines = parseInputLines(inputText, deps.buildPrompt);
-  } else {
-    lines = validateInputLines(deps.input, undefined, deps.buildPrompt);
+    recordIndex.set(line.custom_id, recordIndex.size);
   }
+  const total = recordIndex.size;
   const done = completedIds(await deps.results.read());
-  const recordIndex = new Map(
-    lines.map((line, index) => [line.custom_id, index]),
-  );
-  const fingerprint = new Map(
-    lines.map((line) => [line.custom_id, inputFingerprint(params.agent, line)]),
-  );
-  const queue = lines.filter(
-    (line) =>
-      !done.has(line.custom_id) ||
-      done.get(line.custom_id) !== fingerprint.get(line.custom_id),
-  );
+  const fingerprint = new Map<string, string>();
   const deadline =
     params.deadline_ms === undefined ? null : now() + params.deadline_ms;
   const limiter = new AdaptiveLimiter(params.concurrency);
   const summary: BatchSummary = {
-    total: lines.length,
-    already_completed: lines.length - queue.length,
+    total,
+    already_completed: 0,
     completed: 0,
     failed: 0,
     not_started: 0,
@@ -252,7 +282,7 @@ export async function runBatchWith(
   ): Promise<BatchResultLine | null> => {
     const record = {
       index: recordIndex.get(line.custom_id) ?? -1,
-      count: lines.length,
+      count: total,
     };
     const scope = deps.lineScope?.(line, record);
     const resultLine = (
@@ -324,7 +354,7 @@ export async function runBatchWith(
   };
 
   const progress = async (state: BatchProgress["state"]): Promise<void> => {
-    const remaining = queue.length - summary.completed - summary.failed;
+    const remaining = pending();
     await deps.onProgress?.({ ...summary, not_started: 0, state, remaining });
   };
   // One writer: the workers' results are appended in turn, never concurrently.
@@ -336,12 +366,53 @@ export async function runBatchWith(
     return recording;
   };
 
-  let next = 0;
+  const pending = () =>
+    total - summary.already_completed - summary.completed - summary.failed;
+
+  // The second pass streams the lines to the workers: each is built when a
+  // worker takes it, so at most `concurrency` prompts are held at once.
+  const lines = inputValues(deps)[Symbol.asyncIterator]();
   const worker = async (): Promise<void> => {
-    while (next < queue.length) {
-      if (stopped()) return;
-      const line = queue[next];
-      next += 1;
+    while (!stopped()) {
+      const next = await lines.next();
+      if (next.done) return;
+      const checked = checkInputLine(
+        next.value.value,
+        next.value.label,
+        canBuild,
+      );
+      let line: BatchInputLine;
+      try {
+        line = buildInputLine(checked, deps.buildPrompt);
+      } catch (error) {
+        // A builder that cannot read one input fails that line, not the batch.
+        const failed: BatchResultLine = {
+          custom_id: checked.custom_id,
+          result: {
+            type: "errored",
+            error: {
+              message: `could not build the prompt: ${(error as Error).message}`,
+            },
+          },
+          batch: {
+            record_index: recordIndex.get(checked.custom_id) ?? -1,
+            input_sha256: "",
+            attempts: 0,
+          },
+          ...(checked.metadata ? { metadata: checked.metadata } : {}),
+        };
+        await record(failed);
+        await deps.onResult?.(failed);
+        summary.failed += 1;
+        await progress(stopped() ? "stopping" : "running");
+        continue;
+      }
+      const lineFingerprint = inputFingerprint(params.agent, line);
+      fingerprint.set(line.custom_id, lineFingerprint);
+      if (done.get(line.custom_id) === lineFingerprint) {
+        summary.already_completed += 1;
+        continue;
+      }
       // A builder that found nothing to ask records its state without a session.
       const result =
         line.prompt === ""
@@ -350,7 +421,7 @@ export async function runBatchWith(
               result: { type: "skipped" as const },
               batch: {
                 record_index: recordIndex.get(line.custom_id) ?? -1,
-                input_sha256: fingerprint.get(line.custom_id) ?? "",
+                input_sha256: lineFingerprint,
                 attempts: 0,
               },
               ...(line.metadata ? { metadata: line.metadata } : {}),
@@ -372,14 +443,22 @@ export async function runBatchWith(
   };
   await progress("running");
   await Promise.all(
-    Array.from({ length: Math.min(params.concurrency, queue.length) }, worker),
+    Array.from({ length: Math.min(params.concurrency, total) }, worker),
   );
-  summary.not_started = queue.length - summary.completed - summary.failed;
+  summary.not_started = pending();
   summary.stopped = summary.not_started > 0 || stopped();
   await deps.onProgress?.({
     ...summary,
     state: summary.stopped ? "stopping" : "finished",
     remaining: summary.not_started,
   });
+  deps.onLines?.(
+    new Map(
+      [...fingerprint].map(([id, value]) => [
+        id,
+        { fingerprint: value, index: recordIndex.get(id) ?? -1 },
+      ]),
+    ),
+  );
   return summary;
 }

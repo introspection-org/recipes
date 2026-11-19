@@ -363,6 +363,55 @@ describe("runBatch", () => {
     expect(results.written).not.toHaveProperty("built");
   });
 
+  it("streams a file's lines and builds each prompt only when a worker takes it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-stream-"));
+    const lines = Array.from({ length: 50 }, (_, index) =>
+      JSON.stringify({ custom_id: `c${index}`, input: { n: index } }),
+    );
+    await writeFile(join(dir, "input.jsonl"), `${lines.join("\n")}\n`);
+    let built = 0;
+    const builtAtStart: number[] = [];
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      builtAtStart.push(built);
+      return start(input);
+    };
+
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files: nodeBatchFiles,
+        input: join(dir, "input.jsonl"),
+        results: jsonlResults(nodeBatchFiles, join(dir, "results.jsonl")),
+        sleep: noSleep,
+        buildPrompt: (input) => {
+          built += 1;
+          return {
+            prompt: `prompt ${(input as { n: number }).n}`,
+            build: { builder: "test@1", applied: [] },
+          };
+        },
+      },
+    );
+
+    // Nothing is built while the input is checked; each worker builds the line it takes.
+    expect(builtAtStart[0]).toBeLessThanOrEqual(2);
+    expect(
+      Math.max(...builtAtStart.map((count, index) => count - index)),
+    ).toBeLessThanOrEqual(2);
+    expect(built).toBe(50);
+  });
+
   it("refuses an input line when the agent declares no preprocess builder", async () => {
     expect(() => parseInputLines(jsonl({ custom_id: "a", input: {} }))).toThrow(
       /no preprocess: builder/,
@@ -840,6 +889,10 @@ describe("runBatch restart and shutdown", () => {
       },
       async wait(id: string, signal?: AbortSignal) {
         if (id === "pq") {
+          // Both lines are in flight when the run stops.
+          while (!this.started.includes("ps")) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
           stop.abort();
           setTimeout(() => cancel.abort(), 1);
           return { agent_run_id: id, status: "completed", output: "ok" };

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { Check, Errors } from "typebox/value";
 
 const InputLine = Type.Object({
@@ -75,10 +75,83 @@ export interface BatchResultLine {
   built?: BatchLineBuild;
 }
 
+/** An input line as written, checked but not yet built. */
+export type CheckedInputLine = Static<typeof InputLine> & { custom_id: string };
+
 /**
- * Check input lines given as values, refusing a malformed line or a repeated
- * `custom_id`. `label(i)` names the i-th value in an error, so a file's
- * errors name its line numbers.
+ * Check one input line: a `custom_id` and exactly one of `prompt` and
+ * `input`, an `input` only when there is a builder for it. `label` names the
+ * line in an error.
+ */
+export function checkInputLine(
+  value: unknown,
+  label: string,
+  canBuild: boolean,
+): CheckedInputLine {
+  if (!Check(InputLine, value)) {
+    const problems = [...Errors(InputLine, value)]
+      .map((error) => `${error.instancePath || "/"} ${error.message}`)
+      .join("; ");
+    throw new Error(
+      `${label} needs a custom_id and a prompt or an input: ${problems}`,
+    );
+  }
+  if ((value.prompt === undefined) === (value.input === undefined)) {
+    throw new Error(`${label} needs exactly one of prompt and input`);
+  }
+  if (value.prompt === "" && value.built === undefined) {
+    throw new Error(`${label} has an empty prompt`);
+  }
+  if (value.input !== undefined && !canBuild) {
+    throw new Error(
+      `${label} carries an input, but the agent declares no preprocess: builder to build it`,
+    );
+  }
+  return value;
+}
+
+/** A checked line's prompt: as written, or built from its `input`. */
+export function buildInputLine(
+  line: CheckedInputLine,
+  build?: BuildLinePrompt,
+): BatchInputLine {
+  const metadata = line.metadata ? { metadata: line.metadata } : {};
+  if (line.prompt !== undefined) {
+    return {
+      custom_id: line.custom_id,
+      prompt: line.prompt,
+      ...metadata,
+      ...(line.built !== undefined
+        ? { built: line.built as BatchLineBuild }
+        : {}),
+    };
+  }
+  const built = build!(line.input);
+  return {
+    custom_id: line.custom_id,
+    prompt: built.prompt,
+    ...metadata,
+    built: built.build,
+  };
+}
+
+/** One JSONL input line as a value; `timestamp_ns` keeps its digits, past what a JSON number holds. */
+export function parseInputLine(raw: string, label: string): unknown {
+  try {
+    return JSON.parse(raw, (key, value, context?: { source?: string }) =>
+      key === "timestamp_ns" && context?.source !== undefined
+        ? context.source
+        : value,
+    );
+  } catch (error) {
+    throw new Error(`${label} is not JSON: ${String(error)}`);
+  }
+}
+
+/**
+ * Check and build input lines given as values, refusing a malformed line or
+ * a repeated `custom_id`. `label(i)` names the i-th value in an error. This
+ * holds every prompt at once; a batch streams its lines instead.
  */
 export function validateInputLines(
   values: readonly unknown[],
@@ -87,52 +160,16 @@ export function validateInputLines(
 ): BatchInputLine[] {
   const seen = new Set<string>();
   return values.map((value, index) => {
-    if (!Check(InputLine, value)) {
-      const problems = [...Errors(InputLine, value)]
-        .map((error) => `${error.instancePath || "/"} ${error.message}`)
-        .join("; ");
-      throw new Error(
-        `${label(index)} needs a custom_id and a prompt or an input: ${problems}`,
-      );
+    const line = checkInputLine(value, label(index), build !== undefined);
+    if (seen.has(line.custom_id)) {
+      throw new Error(`${label(index)} repeats custom_id ${line.custom_id}`);
     }
-    if (seen.has(value.custom_id)) {
-      throw new Error(`${label(index)} repeats custom_id ${value.custom_id}`);
-    }
-    seen.add(value.custom_id);
-    const metadata = value.metadata ? { metadata: value.metadata } : {};
-    if ((value.prompt === undefined) === (value.input === undefined)) {
-      throw new Error(`${label(index)} needs exactly one of prompt and input`);
-    }
-    if (value.prompt === "" && value.built === undefined) {
-      throw new Error(`${label(index)} has an empty prompt`);
-    }
-    if (value.prompt !== undefined) {
-      return {
-        custom_id: value.custom_id,
-        prompt: value.prompt,
-        ...metadata,
-        ...(value.built !== undefined
-          ? { built: value.built as BatchLineBuild }
-          : {}),
-      };
-    }
-    if (build === undefined) {
-      throw new Error(
-        `${label(index)} carries an input, but the agent declares no preprocess: builder to build it`,
-      );
-    }
-    let built: ReturnType<BuildLinePrompt>;
+    seen.add(line.custom_id);
     try {
-      built = build(value.input);
+      return buildInputLine(line, build);
     } catch (error) {
       throw new Error(`${label(index)}: ${(error as Error).message}`);
     }
-    return {
-      custom_id: value.custom_id,
-      prompt: built.prompt,
-      ...metadata,
-      built: built.build,
-    };
   });
 }
 
@@ -145,19 +182,7 @@ export function parseInputLines(
   const lineNumbers: number[] = [];
   text.split("\n").forEach((raw, index) => {
     if (!raw.trim()) return;
-    try {
-      // `timestamp_ns` keeps its digits: a nanosecond instant is past what a
-      // JSON number holds exactly.
-      values.push(
-        JSON.parse(raw, (key, value, context?: { source?: string }) =>
-          key === "timestamp_ns" && context?.source !== undefined
-            ? context.source
-            : value,
-        ),
-      );
-    } catch (error) {
-      throw new Error(`input line ${index + 1} is not JSON: ${String(error)}`);
-    }
+    values.push(parseInputLine(raw, `input line ${index + 1}`));
     lineNumbers.push(index + 1);
   });
   return validateInputLines(

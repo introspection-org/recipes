@@ -1,10 +1,17 @@
+import { createReadStream } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
+import { createInterface } from "node:readline";
 
 /** The file operations a batch needs; inject your own to keep a batch's files anywhere. */
 export interface BatchFiles {
   /** The file's text, or null when it does not exist yet. */
   read(path: string): Promise<string | null>;
+  /**
+   * The file's lines, one at a time, so a large input never sits in memory
+   * whole; null when it does not exist. Without it a batch reads the text.
+   */
+  lines?(path: string): Promise<AsyncIterable<string> | null>;
   /** Append one line and make it durable before resolving. */
   appendLine(path: string, line: string): Promise<void>;
   /** Replace the file's content in one step, so a reader never sees a partial file. */
@@ -26,6 +33,19 @@ export const nodeBatchFiles: BatchFiles = {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  },
+  async lines(path) {
+    const stream = createReadStream(path, { encoding: "utf8" });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        stream.once("open", () => resolve());
+        stream.once("error", reject);
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    return createInterface({ input: stream, crlfDelay: Infinity });
   },
   async appendLine(path, line) {
     await mkdir(dirname(path), { recursive: true });
