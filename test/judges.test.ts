@@ -349,7 +349,9 @@ describe("judge evidence", () => {
         content: `${"y".repeat(9000)} permission denied`,
       },
     ]);
-    const slim = renderTrajectoryInput(input, { slim: true });
+    const slim = renderTrajectoryInput(input, {
+      model: { kind: "classifier" },
+    });
     // Jev's slim: head and tail of a long result, an error kept whole.
     expect(slim).toContain(`${"x".repeat(150)} […] ${"x".repeat(150)}`);
     expect(slim).not.toContain("x".repeat(151));

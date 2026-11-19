@@ -3,12 +3,15 @@ import {
   validateJudgeInput,
   type JudgeInput,
 } from "../../judges/trajectory.js";
-import { buildPrompt, type PromptBuilder } from "../builder.js";
+import {
+  buildPrompt,
+  type PromptBuilder,
+  type ReaderModel,
+} from "../builder.js";
+import { MAX_PROMPT_UNITS } from "../budget.js";
 import { stepName, type PromptStep } from "../fit.js";
 import { prefix, suffix } from "../text.js";
 
-/** What an LLM judge reads: about 200k tokens, as UTF-16 units. */
-export const TRANSCRIPT_BUDGET_UNITS = 800_000;
 /** What a classifier judge reads: decision models take far less than a chat model. */
 export const CLASSIFIER_BUDGET_UNITS = 75_000;
 /** A tool argument or result longer than this is clipped by `clip_tool_values`. */
@@ -17,14 +20,15 @@ const CLIP_VALUE_UNITS = 2_000;
 export const TRAJECTORY_TEMPLATE =
   "TRAJECTORY\n{{ transcript }}\n\nSYSTEM INSTRUCTIONS\n{{ system_instructions }}";
 
-/** An LLM judge reads the whole trajectory; what does not fit loses its middle. */
-export const LLM_JUDGE_STEPS: readonly PromptStep[] = [];
 /**
- * A classifier reads Jev's slim first, the one measured for a yes/no gate: a
- * long tool result keeps its head and tail unless it carries an error signal,
- * so a small budget goes on the conversation without hiding a failure.
+ * A chat model reads the whole trajectory; what does not fit loses its
+ * middle. A classifier reads Jev's slim, the one measured for a yes/no gate:
+ * a long tool result keeps its head and tail unless it carries an error
+ * signal, so a small budget goes on the conversation without hiding a failure.
  */
-export const CLASSIFIER_STEPS: readonly PromptStep[] = ["slim_tool_results"];
+export function trajectoryStrategy(model: ReaderModel): readonly PromptStep[] {
+  return model.kind === "classifier" ? ["slim_tool_results"] : [];
+}
 
 /** A result with one of these is kept whole by `slim_tool_results`. */
 const ERROR_SIGNAL =
@@ -63,7 +67,7 @@ export const trajectoryBuilder: PromptBuilder<JudgeInput> = {
   name: "trajectory",
   version: 1,
   defaultTemplate: TRAJECTORY_TEMPLATE,
-  defaultSteps: LLM_JUDGE_STEPS,
+  strategy: trajectoryStrategy,
   supportedSteps: new Set(["clip_tool_values", "slim_tool_results"]),
   build(input, steps) {
     validateJudgeInput(input);
@@ -127,10 +131,10 @@ export const trajectoryBuilder: PromptBuilder<JudgeInput> = {
  */
 export function renderTrajectoryInput(
   input: JudgeInput,
-  options: { maxUnits?: number; slim?: boolean } = {},
+  options: { maxUnits?: number; model?: ReaderModel } = {},
 ): string {
   return buildPrompt(trajectoryBuilder, input, {
-    budget: { maxUnits: options.maxUnits ?? TRANSCRIPT_BUDGET_UNITS },
-    steps: options.slim ? CLASSIFIER_STEPS : LLM_JUDGE_STEPS,
+    budget: { maxUnits: options.maxUnits ?? MAX_PROMPT_UNITS },
+    ...(options.model ? { model: options.model } : {}),
   }).prompt;
 }

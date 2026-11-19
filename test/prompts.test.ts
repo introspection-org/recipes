@@ -82,7 +82,7 @@ describe("fitting a prompt", () => {
       name: "stub",
       version: 1,
       defaultTemplate: "{{ text }}",
-      defaultSteps: [],
+      strategy: () => [],
       supportedSteps: new Set(["half"]),
       build(input, steps, options) {
         const names = steps.map((step) => stepName(step)[0]);

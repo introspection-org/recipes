@@ -27,7 +27,6 @@ import type { FitBudget } from "../prompts/fit.js";
 import { promptBuilder } from "../prompts/registry.js";
 import { validatePromptSpec, type PromptSpec } from "../prompts/spec.js";
 import { fitBudget } from "../prompts/budget.js";
-import { TRANSCRIPT_BUDGET_UNITS } from "../prompts/builders/trajectory.js";
 import { findRecipeModel } from "../model-binding.js";
 import type { RecipeAgentModelConfig } from "../recipe/model.js";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
@@ -128,8 +127,8 @@ export interface RunBatchOptions extends Partial<Omit<BatchParams, "agent">> {
 
 /**
  * What a prompt built for this agent may hold: the smallest window among its
- * `ai:` model and fallbacks, so it fits whichever answers. A model the catalog
- * does not know keeps the transcript default.
+ * `ai:` model and fallbacks, so it fits whichever answers, within the
+ * 300k-token ceiling a model the catalog does not know also takes.
  */
 export function agentPromptBudget(
   model: RecipeAgentModelConfig | undefined,
@@ -138,10 +137,7 @@ export function agentPromptBudget(
   const specs = [model?.name, ...(model?.fallbacks ?? [])].filter(
     (spec): spec is string => typeof spec === "string",
   );
-  return fitBudget(
-    specs.map((spec) => findRecipeModel(spec, modelRegistry)),
-    TRANSCRIPT_BUDGET_UNITS,
-  );
+  return fitBudget(specs.map((spec) => findRecipeModel(spec, modelRegistry)));
 }
 
 /** Builds each `input` line through `spec`, within `budget`. */

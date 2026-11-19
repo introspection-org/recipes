@@ -3,6 +3,7 @@ import {
   fitBudget,
   modelBudgetUnits,
   OUTPUT_RESERVE_TOKENS,
+  MAX_PROMPT_UNITS,
   UNITS_PER_TOKEN,
 } from "../src/prompts/index.js";
 
@@ -12,8 +13,15 @@ describe("a prompt's budget", () => {
       (200_000 - 8_000) * UNITS_PER_TOKEN,
     );
     expect(
+      modelBudgetUnits({ contextWindow: 280_000, maxTokens: 128_000 }),
+    ).toBe((280_000 - OUTPUT_RESERVE_TOKENS) * UNITS_PER_TOKEN);
+  });
+
+  it("never passes the 300k-token ceiling, which an unknown model takes too", () => {
+    expect(
       modelBudgetUnits({ contextWindow: 1_000_000, maxTokens: 128_000 }),
-    ).toBe((1_000_000 - OUTPUT_RESERVE_TOKENS) * UNITS_PER_TOKEN);
+    ).toBe(MAX_PROMPT_UNITS);
+    expect(fitBudget([undefined]).maxUnits).toBe(MAX_PROMPT_UNITS);
   });
 
   it("fits the smallest window among the models that may answer", () => {

@@ -107,6 +107,15 @@ export interface SegmentSkip {
 export type ConversationCaseState =
   { plan: SegmentPlan } | { outcome: SegmentSkip };
 
+/**
+ * What synthesis has always run, at the Python original's limits, for any
+ * chat model: the transcript cap already keeps a case within every synthesis
+ * model's window.
+ */
+export function conversationCaseStrategy(): readonly PromptStep[] {
+  return CONVERSATION_CASE_STEPS;
+}
+
 export const CONVERSATION_CASE_TEMPLATE = "{{ conversation_case }}";
 
 /** What synthesis has always run: each step at the Python original's limits. */
@@ -838,7 +847,7 @@ export const conversationCaseBuilder: PromptBuilder<
   name: "conversation_case",
   version: 1,
   defaultTemplate: CONVERSATION_CASE_TEMPLATE,
-  defaultSteps: CONVERSATION_CASE_STEPS,
+  strategy: conversationCaseStrategy,
   supportedSteps: new Set([
     "truncate_messages",
     "cap_transcript",

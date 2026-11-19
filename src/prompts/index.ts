@@ -4,6 +4,8 @@ export {
   type Built,
   type BuiltPrompt,
   type PromptBuilder,
+  type ReaderModel,
+  type Strategy,
 } from "./builder.js";
 export {
   FitError,
@@ -19,21 +21,22 @@ export {
 } from "./template.js";
 export {
   CLASSIFIER_BUDGET_UNITS,
-  CLASSIFIER_STEPS,
-  LLM_JUDGE_STEPS,
   renderTrajectoryInput,
   TRAJECTORY_TEMPLATE,
-  TRANSCRIPT_BUDGET_UNITS,
+  trajectoryStrategy,
   trajectoryBuilder,
 } from "./builders/trajectory.js";
 export {
   fitBudget,
+  MAX_PROMPT_TOKENS,
+  MAX_PROMPT_UNITS,
   modelBudgetUnits,
   OUTPUT_RESERVE_TOKENS,
   UNITS_PER_TOKEN,
 } from "./budget.js";
 export {
   CONVERSATION_CASE_STEPS,
+  conversationCaseStrategy,
   CONVERSATION_CASE_TEMPLATE,
   conversationCaseBuilder,
   type ConversationCaseInput,

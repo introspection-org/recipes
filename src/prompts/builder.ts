@@ -27,8 +27,8 @@ export interface PromptBuilder<Input, State = undefined, Options = undefined> {
   name: string;
   version: number;
   defaultTemplate: string;
-  /** The steps it runs when a spec names none. */
-  defaultSteps: readonly PromptStep[];
+  /** Its steps for the model that reads the prompt, when a spec names none. */
+  strategy: Strategy;
   /** Every step it can run, by name. */
   supportedSteps: ReadonlySet<string>;
   /** Fill the slots from `input`, running `steps` in order. */
@@ -39,9 +39,22 @@ export interface PromptBuilder<Input, State = undefined, Options = undefined> {
   ): Built<State>;
 }
 
-/** How one prompt is built: its budget, and any override of the builder's steps, template and options. */
+/** The model that reads a prompt, as far as a strategy needs to know it. */
+export interface ReaderModel {
+  /** A classifier decides from far less than a chat model reads. */
+  kind: "chat" | "classifier";
+  /** Tokens, when the catalog knows it. */
+  contextWindow?: number;
+}
+
+/** A builder's default steps for the model that reads its prompt. */
+export type Strategy = (model: ReaderModel) => readonly PromptStep[];
+
+/** How one prompt is built: its budget and reader, and any override of the builder's steps, template and options. */
 export interface BuildOptions<Options = undefined> {
   budget: FitBudget;
+  /** The model that reads it, which picks the builder's steps. Default: a chat model. */
+  model?: ReaderModel;
   steps?: readonly PromptStep[];
   template?: string;
   options?: Options;
@@ -65,7 +78,8 @@ export function buildPrompt<Input, State = undefined, Options = undefined>(
   input: Input,
   options: BuildOptions<Options>,
 ): BuiltPrompt<State> {
-  const steps = options.steps ?? builder.defaultSteps;
+  const steps =
+    options.steps ?? builder.strategy(options.model ?? { kind: "chat" });
   for (const step of steps) {
     const [name] = stepName(step);
     if (!builder.supportedSteps.has(name)) {

@@ -38,14 +38,20 @@ const CASES: Record<
   },
   classifier: {
     input: { ...base, system_instructions: "S" },
-    options: { maxUnits: CLASSIFIER_BUDGET_UNITS, slim: true },
+    options: {
+      maxUnits: CLASSIFIER_BUDGET_UNITS,
+      model: { kind: "classifier" },
+    },
   },
   cut: {
     input: { ...base, system_instructions: "S" },
     options: { maxUnits: 900 },
   },
   cut_on_surrogate: { input: base, options: { maxUnits: 6_001 } },
-  slim_and_cut: { input: base, options: { maxUnits: 700, slim: true } },
+  slim_and_cut: {
+    input: base,
+    options: { maxUnits: 700, model: { kind: "classifier" } },
+  },
 };
 
 describe("a judge's prompt", () => {

@@ -1,12 +1,9 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { findRecipeModel } from "../model-binding.js";
 import { findClassifierModel } from "./classifier.js";
-import { fitBudget } from "../prompts/budget.js";
+import { fitBudget, MAX_PROMPT_UNITS } from "../prompts/budget.js";
 import {
   CLASSIFIER_BUDGET_UNITS,
-  CLASSIFIER_STEPS,
-  LLM_JUDGE_STEPS,
-  TRANSCRIPT_BUDGET_UNITS,
   trajectoryBuilder,
 } from "../prompts/builders/trajectory.js";
 import { buildPrompt } from "../prompts/builder.js";
@@ -415,13 +412,14 @@ export async function runJudges(
                       budgetFor(judge, CLASSIFIER_BUDGET_UNITS),
                       CLASSIFIER_BUDGET_UNITS,
                     )
-                  : budgetFor(judge, TRANSCRIPT_BUDGET_UNITS),
+                  : budgetFor(judge, MAX_PROMPT_UNITS),
             },
-            steps:
-              judge.input?.steps ??
-              (judge.kind === "classifier"
-                ? CLASSIFIER_STEPS
-                : LLM_JUDGE_STEPS),
+            model: {
+              kind: judge.kind === "classifier" ? "classifier" : "chat",
+            },
+            ...(judge.input?.steps !== undefined
+              ? { steps: judge.input.steps }
+              : {}),
             ...(judge.input?.template !== undefined
               ? { template: judge.input.template }
               : {}),
