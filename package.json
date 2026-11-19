@@ -66,6 +66,10 @@
       "types": "./dist/batch/index.d.ts",
       "import": "./dist/batch/index.js"
     },
+    "./prompts": {
+      "types": "./dist/prompts/index.d.ts",
+      "import": "./dist/prompts/index.js"
+    },
     "./judges": {
       "types": "./dist/judges/index.d.ts",
       "import": "./dist/judges/index.js"

@@ -1,3 +1,7 @@
+import {
+  CLASSIFIER_BUDGET_UNITS,
+  renderTrajectoryInput,
+} from "../prompts/builders/trajectory.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -14,12 +18,7 @@ import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
 import { trajectoryFromPiSession } from "./session.js";
-import {
-  CLASSIFIER_BUDGET_UNITS,
-  evidenceHash,
-  renderTrajectoryInput,
-  toJudgeInput,
-} from "./trajectory.js";
+import { evidenceHash, toJudgeInput } from "./trajectory.js";
 import {
   completeClassifierVerdict,
   completeLlmVerdict,

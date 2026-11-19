@@ -38,11 +38,11 @@ export {
   type RunJudgesOptions,
   type SkippedJudgement,
 } from "./run.js";
+export { renderTrajectoryInput } from "../prompts/builders/trajectory.js";
 export { trajectoryFromPiSession } from "./session.js";
 export {
   evidenceHash,
   normalizeReplayTrajectory,
-  renderTrajectoryInput,
   toJudgeInput,
   type JudgeInput,
   type ReplayTrajectoryRecord,
