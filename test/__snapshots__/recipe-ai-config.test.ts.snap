@@ -1,0 +1,218 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`an agent's ai: block > parses blank_model 1`] = `{}`;
+
+exports[`an agent's ai: block > parses each_thinking_level 1`] = `
+{
+  "thinkingLevel": "max",
+}
+`;
+
+exports[`an agent's ai: block > parses empty 1`] = `{}`;
+
+exports[`an agent's ai: block > parses empty_anthropic 1`] = `
+{
+  "anthropic": {},
+}
+`;
+
+exports[`an agent's ai: block > parses empty_fallbacks 1`] = `{}`;
+
+exports[`an agent's ai: block > parses empty_options 1`] = `{}`;
+
+exports[`an agent's ai: block > parses empty_providers 1`] = `{}`;
+
+exports[`an agent's ai: block > parses everything 1`] = `
+{
+  "anthropic": {
+    "betas": [
+      "b1",
+    ],
+    "contextManagement": {
+      "edits": [],
+    },
+  },
+  "fallbacks": [
+    "openai/gpt-6-luna",
+    "google/gemini-3",
+  ],
+  "name": "anthropic/claude-sonnet-5-5",
+  "openrouter": {
+    "a_future_field": 1,
+    "order": [
+      "a",
+    ],
+  },
+  "streamOptions": {
+    "cacheRetention": "long",
+    "maxTokens": 10,
+    "temperature": 0.2,
+  },
+  "thinkingLevel": "low",
+  "vercelAiGateway": {
+    "only": [
+      "x",
+    ],
+  },
+}
+`;
+
+exports[`an agent's ai: block > parses nested_option_values_are_opaque 1`] = `
+{
+  "streamOptions": {
+    "metadata": {
+      "anyKey": [
+        1,
+        {
+          "deep": true,
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`an agent's ai: block > parses openrouter_without_routing 1`] = `{}`;
+
+exports[`an agent's ai: block > parses trimmed_model 1`] = `
+{
+  "name": "openai/gpt-6-luna",
+}
+`;
+
+exports[`an agent's ai: block > refuses an_array 1`] = `"Agent has invalid ai: expected object"`;
+
+exports[`an agent's ai: block > refuses anthropic_betas_not_strings 1`] = `"Agent has invalid ai.providers.anthropic.betas: expected string array"`;
+
+exports[`an agent's ai: block > refuses anthropic_context_management_not_an_object 1`] = `"Agent has invalid ai.providers.anthropic.context_management: expected object"`;
+
+exports[`an agent's ai: block > refuses anthropic_not_an_object 1`] = `"Agent has invalid ai.providers.anthropic: expected object"`;
+
+exports[`an agent's ai: block > refuses anthropic_unknown_key 1`] = `"Agent has unsupported ai.providers.anthropic key(s): beta"`;
+
+exports[`an agent's ai: block > refuses fallback_blank 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+
+exports[`an agent's ai: block > refuses fallback_leading_slash 1`] = `"Agent has invalid ai.fallbacks entry "/model": expected "<provider>/<model_id>""`;
+
+exports[`an agent's ai: block > refuses fallback_not_a_string 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+
+exports[`an agent's ai: block > refuses fallback_trailing_slash 1`] = `"Agent has invalid ai.fallbacks entry "provider/": expected "<provider>/<model_id>""`;
+
+exports[`an agent's ai: block > refuses fallback_without_provider 1`] = `"Agent has invalid ai.fallbacks entry "claude-sonnet-5-5": expected "<provider>/<model_id>""`;
+
+exports[`an agent's ai: block > refuses fallbacks_not_an_array 1`] = `"Agent has invalid ai.fallbacks: expected string array"`;
+
+exports[`an agent's ai: block > refuses model_not_a_string 1`] = `"Agent has invalid ai.model: expected string"`;
+
+exports[`an agent's ai: block > refuses not_an_object 1`] = `"Agent has invalid ai: expected object"`;
+
+exports[`an agent's ai: block > refuses null 1`] = `"Agent has invalid ai: expected object"`;
+
+exports[`an agent's ai: block > refuses openrouter_not_an_object 1`] = `"Agent has invalid ai.providers.openrouter: expected object"`;
+
+exports[`an agent's ai: block > refuses openrouter_routing_not_an_object 1`] = `"Agent has invalid ai.providers.openrouter.routing: expected object"`;
+
+exports[`an agent's ai: block > refuses openrouter_unknown_key 1`] = `"Agent has unsupported ai.providers.openrouter key(s): order"`;
+
+exports[`an agent's ai: block > refuses options_camel_case_key 1`] = `"Agent ai.options has non-snake_case key "maxTokens""`;
+
+exports[`an agent's ai: block > refuses options_host_owned_api_key 1`] = `"Agent ai.options cannot configure host-owned option "api_key""`;
+
+exports[`an agent's ai: block > refuses options_host_owned_headers 1`] = `"Agent ai.options cannot configure host-owned option "headers""`;
+
+exports[`an agent's ai: block > refuses options_host_owned_reasoning 1`] = `"Agent ai.options cannot configure host-owned option "reasoning""`;
+
+exports[`an agent's ai: block > refuses options_host_owned_session_id 1`] = `"Agent ai.options cannot configure host-owned option "session_id""`;
+
+exports[`an agent's ai: block > refuses options_not_an_object 1`] = `"Agent ai.options: expected object"`;
+
+exports[`an agent's ai: block > refuses providers_not_an_object 1`] = `"Agent has invalid ai.providers: expected object"`;
+
+exports[`an agent's ai: block > refuses providers_unknown 1`] = `"Agent has unsupported ai.providers key(s): bedrock"`;
+
+exports[`an agent's ai: block > refuses thinking_level_not_a_string 1`] = `"Agent has unsupported ai.thinking_level "1""`;
+
+exports[`an agent's ai: block > refuses thinking_level_unknown 1`] = `"Agent has unsupported ai.thinking_level "extreme""`;
+
+exports[`an agent's ai: block > refuses unknown_key 1`] = `"Agent has unsupported ai key(s): name"`;
+
+exports[`an agent's ai: block > refuses vercel_not_an_object 1`] = `"Agent has invalid ai.providers.vercel_ai_gateway: expected object"`;
+
+exports[`an agent's ai: block > refuses vercel_routing_host_owned_byok 1`] = `"Agent cannot configure host-owned ai.providers.vercel_ai_gateway.routing field(s): byok"`;
+
+exports[`an agent's ai: block > refuses vercel_routing_not_an_object 1`] = `"Agent has invalid ai.providers.vercel_ai_gateway.routing: expected object"`;
+
+exports[`an agent's ai: block > refuses vercel_unknown_key 1`] = `"Agent has unsupported ai.providers.vercel_ai_gateway key(s): only"`;
+
+exports[`an agent's older model: block > parses blank_name 1`] = `{}`;
+
+exports[`an agent's older model: block > parses empty 1`] = `{}`;
+
+exports[`an agent's older model: block > parses everything 1`] = `
+{
+  "anthropic": {
+    "betas": [
+      "b",
+    ],
+    "contextManagement": {},
+  },
+  "name": "anthropic/claude-sonnet-5-5",
+  "openrouter": {
+    "order": [
+      "a",
+    ],
+    "sort": "price",
+  },
+  "streamOptions": {
+    "cacheRetention": "short",
+    "maxRetries": 0,
+    "maxRetryDelayMs": 0,
+    "maxTokens": 5,
+    "temperature": 0,
+    "timeoutMs": 10,
+  },
+  "thinkingLevel": "high",
+}
+`;
+
+exports[`an agent's older model: block > parses fractional_temperature 1`] = `
+{
+  "streamOptions": {
+    "temperature": 1.5,
+  },
+}
+`;
+
+exports[`an agent's older model: block > refuses ai_key_fallbacks 1`] = `"Agent has unsupported model key(s): fallbacks"`;
+
+exports[`an agent's older model: block > refuses anthropic_unknown_key 1`] = `"Agent has unsupported model.providers.anthropic key(s): beta"`;
+
+exports[`an agent's older model: block > refuses fractional_max_tokens 1`] = `"Agent has invalid model.max_tokens: expected integer"`;
+
+exports[`an agent's older model: block > refuses name_not_a_string 1`] = `"Agent has invalid model.name: expected string"`;
+
+exports[`an agent's older model: block > refuses negative_retries 1`] = `"Agent has invalid model.max_retries: expected number >= 0"`;
+
+exports[`an agent's older model: block > refuses negative_retry_delay 1`] = `"Agent has invalid model.max_retry_delay_ms: expected number >= 0"`;
+
+exports[`an agent's older model: block > refuses negative_temperature 1`] = `"Agent has invalid model.temperature: expected number >= 0"`;
+
+exports[`an agent's older model: block > refuses not_an_object 1`] = `"Agent has invalid model: expected object"`;
+
+exports[`an agent's older model: block > refuses null 1`] = `"Agent has invalid model: expected object"`;
+
+exports[`an agent's older model: block > refuses openrouter_routing_unknown_key 1`] = `"Agent has unsupported model.providers.openrouter.routing key(s): a_future_field"`;
+
+exports[`an agent's older model: block > refuses temperature_not_a_number 1`] = `"Agent has invalid model.temperature: expected number >= 0"`;
+
+exports[`an agent's older model: block > refuses unknown_cache_retention 1`] = `"Agent has unsupported model.cache_retention "forever""`;
+
+exports[`an agent's older model: block > refuses unknown_key 1`] = `"Agent has unsupported model key(s): model"`;
+
+exports[`an agent's older model: block > refuses unknown_thinking_level 1`] = `"Agent has unsupported model.thinking_level "extreme""`;
+
+exports[`an agent's older model: block > refuses vercel_is_ai_only 1`] = `"Agent has unsupported model.providers key(s): vercel_ai_gateway"`;
+
+exports[`an agent's older model: block > refuses zero_max_tokens 1`] = `"Agent has invalid model.max_tokens: expected number >= 1"`;
+
+exports[`an agent's older model: block > refuses zero_timeout 1`] = `"Agent has invalid model.timeout_ms: expected number >= 1"`;
