@@ -28,7 +28,7 @@ export interface ChildToolActivity {
 }
 
 /** Tokens and cost of a run's model calls, its own children's included. */
-export interface ChildRunUsage {
+interface ChildRunUsage {
   input: number;
   output: number;
   cacheRead: number;
