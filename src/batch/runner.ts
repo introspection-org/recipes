@@ -190,12 +190,12 @@ export interface BatchMemory {
  */
 export function batchMemory(configuredBudget?: number): BatchMemory {
   const heap = getHeapStatistics();
+  // Node applies the last flag given, and NODE_OPTIONS before the command line.
   const flag = [
-    ...process.execArgv,
-    ...(process.env.NODE_OPTIONS ?? "").split(/\s+/),
-  ]
-    .map((arg) => /^--max[-_]old[-_]space[-_]size=(\d+)$/.exec(arg))
-    .find((match) => match !== null);
+    ...[process.env.NODE_OPTIONS ?? "", process.execArgv.join(" ")]
+      .join(" ")
+      .matchAll(/--max[-_]old[-_]space[-_]size[=\s]+(\d+)/g),
+  ].at(-1);
   const limit = flag ? Number(flag[1]) * 1024 * 1024 : heap.heap_size_limit;
   return {
     heap_limit_bytes: limit,
@@ -227,6 +227,8 @@ interface InputItem {
  */
 const LINE_MEMORY_FACTOR = 3;
 
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 /** A line's `custom_id`: from its value, or near the start of its text without parsing all of it. */
 function customIdOf(
   raw: string | undefined,
@@ -255,6 +257,8 @@ export async function runBatchWith(
   deps: BatchRunDeps,
 ): Promise<BatchSummary> {
   const now = deps.now ?? Date.now;
+  const log =
+    deps.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   const sleep =
     deps.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -277,9 +281,12 @@ export async function runBatchWith(
   };
 
   let inputError: unknown;
+  // Results could not be written: nothing more is taken, and it is rethrown.
+  let recordError: unknown;
   let inputComplete = false;
   const stopped = (): boolean =>
     inputError !== undefined ||
+    recordError !== undefined ||
     (deps.signal?.aborted ?? false) ||
     (deps.cancel?.aborted ?? false) ||
     (deadline !== null && now() >= deadline);
@@ -301,11 +308,17 @@ export async function runBatchWith(
     if (signal.aborted) stopFired = true;
     else signal.addEventListener("abort", fireStop, { once: true });
   }
-  const stopTimer =
-    deadline === null
-      ? undefined
-      : setTimeout(fireStop, Math.max(0, deadline - now()));
-  stopTimer?.unref?.();
+  // setTimeout fires at once past 2^31-1 ms, so a longer deadline re-arms.
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
+  const armDeadline = (until: number) => {
+    const delay = Math.max(0, until - now());
+    stopTimer = setTimeout(
+      delay > MAX_TIMER_MS ? () => armDeadline(until) : fireStop,
+      Math.min(delay, MAX_TIMER_MS),
+    );
+    stopTimer.unref?.();
+  };
+  if (deadline !== null) armDeadline(deadline);
   const detachStop = () => {
     clearTimeout(stopTimer);
     for (const signal of stopSignals) {
@@ -408,7 +421,15 @@ export async function runBatchWith(
       }
       return settled;
     } finally {
-      await deps.controller.close(started.agent_run_id);
+      try {
+        await deps.controller.close(started.agent_run_id);
+      } catch (error) {
+        // The line has its answer; a session that will not close is the
+        // controller's to report, and is noted rather than costing the line.
+        log(
+          `batch: session ${started.agent_run_id} did not close: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       // A batch never reads a line's run again; keeping it would hold every
       // prompt for the life of the controller.
       deps.controller.forget?.(started.agent_run_id);
@@ -557,7 +578,7 @@ export async function runBatchWith(
   // fewer neighbours and only a line larger than the whole budget fails.
   const memory = batchMemory(deps.memoryBudget);
   const budget = memory.budget_bytes;
-  (deps.log ?? ((message) => process.stderr.write(`${message}\n`)))(
+  log(
     `batch memory: heap limit ${mb(memory.heap_limit_bytes)} MB (${memory.heap_limit_source}), ` +
       `${mb(memory.heap_used_bytes)} MB in use at start, ` +
       `${mb(budget)} MB for lines in flight (${memory.budget_source})`,
@@ -588,7 +609,7 @@ export async function runBatchWith(
   const admit = async (): Promise<
     { line: BatchInputLine; charge: number } | "failed" | "end"
   > => {
-    if (inputError !== undefined) return "end";
+    if (stopped()) return "end";
     let next: IteratorResult<InputItem>;
     try {
       pendingRead = lines.next();
@@ -664,6 +685,13 @@ export async function runBatchWith(
     }
   };
   const worker = async (): Promise<void> => {
+    try {
+      await work();
+    } catch (error) {
+      recordError ??= error;
+    }
+  };
+  const work = async (): Promise<void> => {
     while (!stopped()) {
       const taken = await takeLine();
       if (taken === "end") return;
@@ -690,7 +718,22 @@ export async function runBatchWith(
                 ...(line.metadata ? { metadata: line.metadata } : {}),
                 ...(line.built ? { built: line.built } : {}),
               }
-            : await runLine(line);
+            : await runLine(line).catch((error: unknown): BatchResultLine => ({
+                custom_id: line.custom_id,
+                result: {
+                  type: "errored",
+                  error: {
+                    message: `the line's run failed: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                },
+                batch: {
+                  record_index: recordIndex.get(line.custom_id) ?? -1,
+                  input_sha256: lineFingerprint,
+                  attempts: 1,
+                },
+                ...(line.metadata ? { metadata: line.metadata } : {}),
+                ...(line.built ? { built: line.built } : {}),
+              }));
         // Null: the run stopped before this line started; it counts as not started.
         if (result === null) return;
         await record(result);
@@ -708,20 +751,29 @@ export async function runBatchWith(
     }
   };
   try {
+    if (budget <= 0) {
+      throw new Error(
+        `this batch has no memory for lines: ${mb(memory.heap_used_bytes)} MB of a ${mb(memory.heap_limit_bytes)} MB heap is in use at start`,
+      );
+    }
     await progress("running");
     await Promise.all(Array.from({ length: params.concurrency }, worker));
     if (!inputComplete && inputError === undefined) {
-      if (typeof deps.input === "string") {
+      if (typeof deps.input === "string" && recordError === undefined) {
         // A file ends: count the lines a stopped run left for the next one,
         // reading them without parsing, the one a stop overtook first.
-        for (
-          let next = pendingRead ? await pendingRead : await lines.next();
-          !next.done;
-          next = await lines.next()
-        ) {
-          summary.total += 1;
+        try {
+          for (
+            let next = pendingRead ? await pendingRead : await lines.next();
+            !next.done;
+            next = await lines.next()
+          ) {
+            summary.total += 1;
+          }
+          inputComplete = true;
+        } catch (error) {
+          inputError = error;
         }
-        inputComplete = true;
       } else if (pendingRead) {
         // A read is still waiting on the stream; closing queues behind it, so
         // it is asked for without waiting.
@@ -737,11 +789,13 @@ export async function runBatchWith(
   summary.input_complete = inputComplete;
   summary.not_started = pending();
   summary.stopped = summary.not_started > 0 || !inputComplete || stopped();
-  await deps.onProgress?.({
-    ...summary,
-    state: summary.stopped ? "stopping" : "finished",
-    remaining: summary.not_started,
-  });
+  if (recordError === undefined) {
+    await deps.onProgress?.({
+      ...summary,
+      state: summary.stopped ? "stopping" : "finished",
+      remaining: summary.not_started,
+    });
+  }
   deps.onLines?.(
     new Map(
       [...fingerprint].map(([id, value]) => [
@@ -751,5 +805,6 @@ export async function runBatchWith(
     ),
   );
   if (inputError !== undefined) throw inputError;
+  if (recordError !== undefined) throw recordError;
   return summary;
 }

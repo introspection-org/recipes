@@ -680,6 +680,189 @@ describe("runBatch", () => {
     expect([...live.values()]).toEqual([0, 0]);
   });
 
+  it("counts every file line when a stop lands while several workers wait to read", async () => {
+    const stop = new AbortController();
+    const files = memoryFiles({});
+    files.lines = async () =>
+      (async function* () {
+        for (let i = 0; i < 10; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          yield JSON.stringify({ custom_id: `c${i}`, prompt: `p${i}` });
+        }
+      })();
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      stop.abort();
+      return start(input);
+    };
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 3,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal: stop.signal,
+        log: () => {},
+      },
+    );
+    expect(summary.total).toBe(10);
+    expect(summary.completed + summary.failed + summary.not_started).toBe(10);
+    expect(summary.input_complete).toBe(true);
+  });
+
+  it("runs under a deadline longer than a timer can hold", async () => {
+    const files = memoryFiles({});
+    // Each read outlasts the 1 ms an overflowed timer would allow.
+    files.lines = async () =>
+      (async function* () {
+        for (const id of ["a", "b"]) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          yield JSON.stringify({ custom_id: id, prompt: id });
+        }
+      })();
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        deadline_ms: 30 * 24 * 60 * 60 * 1000,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    expect(summary).toMatchObject({ total: 2, completed: 2, stopped: false });
+  });
+
+  it("fails only the line whose session the controller cannot steer or close", async () => {
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "a", prompt: "prose" },
+        { custom_id: "b", prompt: "json" },
+      ),
+    });
+    // "prose" needs a JSON repair, which this controller cannot send.
+    const controller = new FakeController((prompt) => ({
+      status: "completed",
+      output: prompt === "prose" ? "not json" : "{}",
+    }));
+    controller.close = async () => {
+      throw new Error("close refused");
+    };
+    const logged: string[] = [];
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        output_format: "json",
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: (message) => logged.push(message),
+      },
+    );
+    expect(summary).toMatchObject({ total: 2, completed: 1, failed: 1 });
+    const results = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(results.find((line) => line.custom_id === "a").result).toMatchObject(
+      {
+        type: "errored",
+        error: { message: expect.stringContaining("takes no follow-ups") },
+      },
+    );
+    expect(results.find((line) => line.custom_id === "b").result).toMatchObject(
+      {
+        type: "succeeded",
+        output: "{}",
+      },
+    );
+    expect(
+      logged.filter((message) => message.includes("did not close")),
+    ).toHaveLength(2);
+  });
+
+  it("stops taking lines when results cannot be written, and rethrows once the lines running finish", async () => {
+    let closed = false;
+    let started = 0;
+    const input = {
+      [Symbol.asyncIterator]() {
+        let i = 0;
+        return {
+          next: async () => ({
+            done: i >= 20,
+            value: { custom_id: `c${i++}`, prompt: "p" },
+          }),
+          return: async () => {
+            closed = true;
+            return { done: true as const, value: undefined };
+          },
+        };
+      },
+    };
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (line) => {
+      started += 1;
+      return start(line);
+    };
+    const run = runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 3,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files: memoryFiles({}),
+        input,
+        results: {
+          read: async () => "",
+          append: async () => {
+            throw new Error("disk full");
+          },
+        },
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    await expect(run).rejects.toThrow("disk full");
+    expect(started).toBe(3);
+    expect(controller.active).toBe(0);
+    expect(closed).toBe(true);
+  });
+
   it("lets the lines in flight finish before an input error is thrown", async () => {
     let finished = 0;
     async function* failing() {
