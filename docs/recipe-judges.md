@@ -158,7 +158,8 @@ questions:
 
 `type` says when a judge runs:
 
-- `online`, the default: at the end of every runtime conversation.
+- `online`, the default: at the end of every runtime conversation `on`
+  selects, or of a sample of them (see [Sampling](#sampling)).
 - `mission`: on a request leaving the sandbox, which a route in the Recipe's
   `policies/routes.yaml` names. Its answers reach the Recipe's Cedar policy
   before the request is allowed.
@@ -194,8 +195,8 @@ questions:
   describes both `true` and `false` in non-empty text.
 - `attributes` lists the request attributes the judge sees, and is empty to show
   them all.
-- `on` and `ai` belong to `online` judges and are rejected on a mission
-  judge; `attributes` is rejected on online judges.
+- `on`, `ai` and `sample` belong to `online` judges and are rejected on a
+  mission judge; `attributes` is rejected on online judges.
 
 ## Applicability
 
@@ -238,6 +239,29 @@ and `[[:alpha:]]` is a POSIX class to Rust and a nested class to JavaScript. A
 pattern the checker accepts can therefore still be refused by the runner at
 run time, where it records an error for that judgement.
 
+## Sampling
+
+`sample` is optional on an online judge: the fraction of the conversations
+`on` selects that the judge runs on, a number above 0 and at most 1. It
+defaults to 1, every selected conversation.
+
+```yaml
+name: helpful
+sample: 0.1
+```
+
+Sampling is deterministic per conversation, so a rerun, and every host that
+judges the same conversation, makes the same choice. A conversation is sampled
+when `h / 2^64 < sample`, where `h` is the first eight bytes, read as a
+big-endian unsigned integer, of the SHA-256 of
+`<judge name>:<conversation id>`. The judge's name is part of the key, so two judges that each sample a
+tenth of conversations do not pick the same tenth; renaming a judge draws a
+new sample.
+
+A conversation the sample leaves out records no verdict; it is not
+`not_applicable`, which only `on` produces. An eval run judges every trial it
+asks a judge for, whatever its `sample`.
+
 ## Diagnostics
 
 Invalid Recipe content is reported through the normal diagnostics model. Judge
@@ -245,4 +269,6 @@ diagnostics use stable `judge.*` codes, Recipe-relative source paths, useful
 help text, and deterministic ordering. YAML syntax failures use
 `judge.yaml_malformed` and include a 1-based source span when the parser
 provides one. An invalid mission judge reports `judge.mission_invalid`, and a
-`type` other than `online` and `mission` reports `judge.type_invalid`.
+`type` other than `online` and `mission` reports `judge.type_invalid`. A
+`sample` that is not a number above 0 and at most 1 reports
+`judge.sample_invalid`; on a mission judge it reports `judge.mission_invalid`.

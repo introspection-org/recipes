@@ -3378,6 +3378,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     validate_agent_model(map, path, &name, &mut fields, ctx);
     validate_agent_ai(map, path, &name, &mut fields, ctx);
     validate_agent_session(map, path, ctx);
+    validate_agent_cache_retention(map, path, ctx);
     let tools = validate_agent_tools(map, path, ctx);
     let reserved_tools = tools
         .iter()
@@ -3998,6 +3999,7 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
         "follow_up_mode",
         "tool_execution",
         "retry",
+        "cache",
         "compaction",
         "images",
     ];
@@ -4043,6 +4045,9 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
     if let Some(value) = session.get("retry") {
         validate_session_retry(value, path, ctx);
     }
+    if let Some(value) = session.get("cache") {
+        validate_session_cache(value, path, ctx);
+    }
     if let Some(value) = session.get("compaction") {
         validate_session_compaction(value, path, ctx);
     }
@@ -4059,6 +4064,140 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
     }
 }
 
+/// The deprecated spellings of `session.cache.retention`, as (code, label).
+fn deprecated_cache_retention(map: &JsonMap) -> Option<(&'static str, &'static str)> {
+    if map
+        .get("ai")
+        .and_then(|ai| ai.get("options"))
+        .and_then(|options| options.get("cache_retention"))
+        .is_some()
+    {
+        return Some((
+            "agent.ai.options.cache_retention_deprecated",
+            "ai.options.cache_retention",
+        ));
+    }
+    map.get("model")
+        .and_then(|model| model.get("cache_retention"))
+        .map(|_| {
+            (
+                "agent.model.cache_retention_deprecated",
+                "model.cache_retention",
+            )
+        })
+}
+
+fn validate_agent_cache_retention(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
+    let Some((code, label)) = deprecated_cache_retention(map) else {
+        return;
+    };
+    let declared = map
+        .get("session")
+        .and_then(|session| session.get("cache"))
+        .and_then(|cache| cache.get("retention"))
+        .is_some();
+    if declared {
+        ctx.error(
+            "agent.session.cache.retention_conflict",
+            path,
+            format!("Agent must not declare both session.cache.retention and {label}"),
+            Some(format!("keep session.cache.retention and remove {label}")),
+        );
+    } else {
+        ctx.warning(
+            code,
+            path,
+            format!("Agent {label} is deprecated"),
+            Some("move it to session.cache.retention"),
+        );
+    }
+}
+
+fn validate_session_cache(value: &JsonValue, path: &str, ctx: &mut CheckContext) {
+    let Some(cache) = validate_session_settings_object(
+        value,
+        path,
+        "cache",
+        &["retention", "warming"],
+        &[],
+        &[],
+        ctx,
+    ) else {
+        return;
+    };
+    if cache.get("retention").is_some_and(|retention| {
+        !retention
+            .as_str()
+            .is_some_and(|retention| matches!(retention, "none" | "short" | "long"))
+    }) {
+        ctx.error(
+            "agent.session.cache.retention_invalid",
+            path,
+            "Agent session.cache.retention must be none, short, or long",
+            None::<String>,
+        );
+    }
+    if cache.get("warming").is_some_and(|warming| {
+        !warming
+            .as_str()
+            .is_some_and(|warming| matches!(warming, "off" | "streaming" | "idle"))
+    }) {
+        ctx.error(
+            "agent.session.cache.warming_invalid",
+            path,
+            "Agent session.cache.warming must be off, streaming, or idle",
+            None::<String>,
+        );
+    }
+}
+
+fn validate_session_compaction_on_idle(
+    compaction: &JsonMap,
+    value: &JsonValue,
+    path: &str,
+    ctx: &mut CheckContext,
+) {
+    let Some(on_idle) = validate_session_settings_object(
+        value,
+        path,
+        "compaction.on_idle",
+        &["min_context_tokens", "keep_recent_tokens", "instructions"],
+        &[],
+        &[("min_context_tokens", true), ("keep_recent_tokens", false)],
+        ctx,
+    ) else {
+        return;
+    };
+    if on_idle
+        .get("instructions")
+        .is_some_and(|value| !value.as_str().is_some_and(|text| !text.trim().is_empty()))
+    {
+        ctx.error(
+            "agent.session.compaction.on_idle.instructions_invalid",
+            path,
+            "Agent session.compaction.on_idle.instructions must be a non-empty string",
+            None::<String>,
+        );
+    }
+    let keep = on_idle
+        .get("keep_recent_tokens")
+        .or_else(|| compaction.get("keep_recent_tokens"))
+        .and_then(JsonValue::as_f64);
+    let min = on_idle
+        .get("min_context_tokens")
+        .and_then(JsonValue::as_f64);
+    if let (Some(keep), Some(min)) = (keep, min) {
+        if keep >= min {
+            ctx.warning(
+                "agent.session.compaction.on_idle_ineffective",
+                path,
+                "Agent session.compaction.on_idle keeps at least min_context_tokens of recent context, so a prepared compaction summarizes nothing",
+                Some("set keep_recent_tokens below min_context_tokens"),
+            );
+        }
+    }
+}
+
 fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckContext) {
     let Some(compaction) = validate_session_settings_object(
         value,
@@ -4070,6 +4209,7 @@ fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckCon
             "keep_recent_tokens",
             "model_overrides",
             "instructions",
+            "on_idle",
         ],
         &["enabled"],
         &[("reserve_tokens", false), ("keep_recent_tokens", false)],
@@ -4087,6 +4227,9 @@ fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckCon
             "Agent session.compaction.instructions must be a non-empty string",
             None::<String>,
         );
+    }
+    if let Some(on_idle) = compaction.get("on_idle") {
+        validate_session_compaction_on_idle(compaction, on_idle, path, ctx);
     }
     let Some(value) = compaction.get("model_overrides") else {
         return;
@@ -7662,6 +7805,103 @@ mod tests {
                 report.diagnostics
             );
         }
+    }
+
+    fn session_codes(agent_tail: &str) -> Vec<(String, Severity)> {
+        let agent = format!("name: agent\n{agent_tail}");
+        check_recipe_files(&recipe_files(&[
+            ("package.json", r#"{"name":"cache","pi":{}}"#),
+            ("agents/agent.yaml", &agent),
+        ]))
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.severity))
+        .collect()
+    }
+
+    #[test]
+    fn checks_session_cache_and_compaction_on_idle() {
+        let ai = "ai:\n  model: openai/gpt-5\n";
+        for retention in ["none", "short", "long"] {
+            let tail = format!(
+                "{ai}session:\n  cache:\n    retention: {retention}\n    warming: idle\n  compaction:\n    keep_recent_tokens: 20000\n    on_idle:\n      min_context_tokens: 150000\n      keep_recent_tokens: 20000\n      instructions: Keep what is unfinished.\n"
+            );
+            assert_eq!(session_codes(&tail), [], "{retention}");
+        }
+        for (session, code) in [
+            ("  cache: long\n", "agent.session.cache_invalid"),
+            ("  cache:\n    ttl: 60\n", "agent.session.cache_key_unknown"),
+            (
+                "  cache:\n    retention: forever\n",
+                "agent.session.cache.retention_invalid",
+            ),
+            (
+                "  cache:\n    warming: always\n",
+                "agent.session.cache.warming_invalid",
+            ),
+            (
+                "  compaction:\n    on_idle: true\n",
+                "agent.session.compaction.on_idle_invalid",
+            ),
+            (
+                "  compaction:\n    on_idle:\n      after: 1h\n",
+                "agent.session.compaction.on_idle_key_unknown",
+            ),
+            (
+                "  compaction:\n    on_idle:\n      min_context_tokens: 0\n",
+                "agent.session.compaction.on_idle.min_context_tokens_invalid",
+            ),
+            (
+                "  compaction:\n    on_idle:\n      keep_recent_tokens: 1.5\n",
+                "agent.session.compaction.on_idle.keep_recent_tokens_invalid",
+            ),
+            (
+                "  compaction:\n    on_idle:\n      instructions: \" \"\n",
+                "agent.session.compaction.on_idle.instructions_invalid",
+            ),
+        ] {
+            let tail = format!("{ai}session:\n{session}");
+            assert_eq!(
+                session_codes(&tail),
+                [(code.to_owned(), Severity::Error)],
+                "{session}"
+            );
+        }
+        assert_eq!(
+            session_codes(&format!("{ai}session:\n  compaction:\n    keep_recent_tokens: 50000\n    on_idle:\n      min_context_tokens: 40000\n")),
+            [("agent.session.compaction.on_idle_ineffective".to_owned(), Severity::Warning)]
+        );
+    }
+
+    #[test]
+    fn model_cache_retention_is_deprecated_for_session_cache() {
+        let options = "ai:\n  model: openai/gpt-5\n  options:\n    cache_retention: long\n";
+        assert_eq!(
+            session_codes(options),
+            [(
+                "agent.ai.options.cache_retention_deprecated".to_owned(),
+                Severity::Warning
+            )]
+        );
+        assert_eq!(
+            session_codes("model:\n  name: openai/gpt-5\n  cache_retention: long\n")
+                .into_iter()
+                .filter(|(code, _)| code.contains("cache_retention"))
+                .collect::<Vec<_>>(),
+            [(
+                "agent.model.cache_retention_deprecated".to_owned(),
+                Severity::Warning
+            )]
+        );
+        assert_eq!(
+            session_codes(&format!(
+                "{options}session:\n  cache:\n    retention: short\n"
+            )),
+            [(
+                "agent.session.cache.retention_conflict".to_owned(),
+                Severity::Error
+            )]
+        );
     }
 
     #[test]

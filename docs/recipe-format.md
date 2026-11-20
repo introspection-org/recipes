@@ -209,6 +209,9 @@ branch summaries, UI, shell, resource loading, persistence, networking,
 analytics, telemetry, and model-default settings are
 not portable session policy and remain host-owned or belong under `ai`.
 
+`session.cache` and `session.compaction.on_idle` are described in
+[Prompt cache and idle compaction](#prompt-cache-and-idle-compaction).
+
 `tools` MUST NOT contain `agent`. The host materializes that session-generated
 tool for a session whose effective `subagents` list is non-empty and whose
 delegation depth allows it (see below).
@@ -216,6 +219,91 @@ delegation depth allows it (see below).
 The default agent is named `agent`. If no `agent` exists, a host MAY select the
 only declared agent. When multiple agents exist without `agent`, the caller
 MUST select one explicitly.
+
+### Prompt cache and idle compaction
+
+```yaml
+session:
+  cache:
+    retention: long
+    warming: idle
+  compaction:
+    keep_recent_tokens: 25000
+    on_idle:
+      min_context_tokens: 150000
+      keep_recent_tokens: 20000
+      instructions: Keep what the person asked for last and what is unfinished.
+```
+
+`cache.retention` is Pi's `cacheRetention` request option: `none` sends no
+cache markers, `short` asks for the provider's default cache of about five
+minutes, and `long` for about an hour where the model supports it, otherwise
+the default. Omitted, Pi's default applies. A cache serves only a prefix that
+has not changed, so content that changes every turn belongs after the history,
+not in the system prompt; the [Current date](#current-date) rule keeps the
+prompt the same all day for this reason.
+
+`ai.options.cache_retention`, and `model.cache_retention` in the older
+`model:` block, are deprecated spellings of `cache.retention`. Each still
+applies and draws a warning. It is read as `session.cache.retention` before
+inheritance, so a parent and a child may use either, and one agent MUST NOT
+declare both.
+
+`cache.warming` is Pi's `cacheWarming`: `off`, `streaming` or `idle`. Pi holds
+it as one setting for the process, not per session, so the host applies the
+top-level agent's value, and a subagent's is ignored.
+
+`compaction.on_idle` lets the host prepare a compaction when it ends an idle
+session. A host ends a session that has been idle long enough and restores it
+when the person returns. By then the provider has usually dropped its cache,
+and the first request after a restore rewrites the whole history at the
+cache-write price. A prepared compaction lets a late restore resend only the
+system prompt, a summary and the recent tail.
+
+- **Preparing.** When the host ends an idle session whose context holds at
+  least `min_context_tokens`, it MAY prepare a compaction: one request to the
+  same model carrying the conversation's exact prompt, so its cached prefix is
+  read rather than written, followed by a compaction instruction with
+  `on_idle.instructions`. It is a fork: it writes nothing to the session. The
+  host stores the result beside the session: the summary, the first entry
+  kept, the token count before compaction, and the compaction's details.
+  `keep_recent_tokens` sets the tail it keeps.
+- **Restoring within the cache retention.** The host restores the full
+  history, so the cached prefix is reused, and discards the prepared
+  compaction.
+- **Restoring after it.** The host restores from the prepared compaction: the
+  summary and the kept recent entries. It becomes a compaction entry of the
+  session at that point, as if Pi had compacted there. A Pi host can apply it
+  from a `session_before_compact` handler, which may return a compaction an
+  extension supplies.
+- **Never restored.** The prepared compaction expires with the task.
+
+Pi's compaction requests do not write to the prompt cache, so preparing one
+does not disturb the cache a full restore would read.
+`on_idle.instructions` falls back to `compaction.instructions`, and
+`on_idle.keep_recent_tokens` to `compaction.keep_recent_tokens`. `enabled`
+governs only Pi's compaction of the live session; `on_idle` is independent of
+it.
+
+The Recipe declares the policy. The host decides when a session is idle and
+ends it, keeps the retention clock, stores the prepared compaction, and
+chooses how to restore; a host that never ends sessions never prepares one.
+Recipes parses `cache.warming` and `on_idle` and exposes them on the resolved
+agent's session configuration; it applies neither.
+
+| Code                                                          | Severity | Rule                                                                                                            |
+| ------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `agent.session.cache_invalid`                                 | error    | `cache` is not an object; `agent.session.cache_key_unknown` reports a key other than `retention` and `warming`. |
+| `agent.session.cache.retention_invalid`                       | error    | `retention` is not `none`, `short` or `long`.                                                                   |
+| `agent.session.cache.warming_invalid`                         | error    | `warming` is not `off`, `streaming` or `idle`.                                                                  |
+| `agent.session.cache.retention_conflict`                      | error    | The agent declares `session.cache.retention` and `ai.options.cache_retention` (or `model.cache_retention`).     |
+| `agent.ai.options.cache_retention_deprecated`                 | warning  | The agent declares `ai.options.cache_retention`; move it to `session.cache.retention`.                          |
+| `agent.model.cache_retention_deprecated`                      | warning  | The agent declares `model.cache_retention`; move it to `session.cache.retention`.                               |
+| `agent.session.compaction.on_idle_invalid`                    | error    | `on_idle` is not an object; `agent.session.compaction.on_idle_key_unknown` reports an unknown key.              |
+| `agent.session.compaction.on_idle.min_context_tokens_invalid` | error    | `min_context_tokens` is not an integer >= 1.                                                                    |
+| `agent.session.compaction.on_idle.keep_recent_tokens_invalid` | error    | `keep_recent_tokens` is not an integer >= 0.                                                                    |
+| `agent.session.compaction.on_idle.instructions_invalid`       | error    | `instructions` is not a non-empty string.                                                                       |
+| `agent.session.compaction.on_idle_ineffective`                | warning  | The tail `on_idle` keeps is at least `min_context_tokens`, so a prepared compaction summarizes nothing.         |
 
 ## First-party packages
 
@@ -657,8 +745,9 @@ The host owns:
 
 - credentials and secret resolution;
 - workspaces and filesystem isolation;
-- task and process lifecycle;
-- persistence and recovery;
+- task and process lifecycle, including when an idle session ends;
+- persistence and recovery, including the cache retention clock, where a
+  prepared compaction is stored, and how a session is restored;
 - scheduling and concurrency enforcement;
 - network protocols and user authentication;
 - telemetry export policy;

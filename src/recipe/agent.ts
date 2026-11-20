@@ -725,6 +725,11 @@ function readRecipeAgentSources(
         `Agent YAML at ${path}`,
         data.session,
       );
+      ({ modelConfig, sessionConfig } = cacheRetentionInSession(
+        `Agent YAML at ${path}`,
+        modelConfig,
+        sessionConfig,
+      ));
     } catch (err) {
       if (
         !(err instanceof RecipeModelConfigError) &&
@@ -778,6 +783,49 @@ function readRecipeAgentSources(
   return sources;
 }
 
+/**
+ * Read the deprecated `ai.options.cache_retention` (or `model.cache_retention`)
+ * as `session.cache.retention`, so it inherits as `session` does.
+ */
+function cacheRetentionInSession(
+  context: string,
+  modelConfig: RecipeAgentModelConfig | undefined,
+  sessionConfig: RecipeAgentSessionConfig | undefined,
+): {
+  modelConfig: RecipeAgentModelConfig | undefined;
+  sessionConfig: RecipeAgentSessionConfig | undefined;
+} {
+  const deprecated = modelConfig?.streamOptions?.cacheRetention;
+  if (deprecated === undefined) return { modelConfig, sessionConfig };
+  if (sessionConfig?.cacheRetention !== undefined) {
+    throw new RecipeSessionConfigError(
+      `${context} cannot declare both session.cache.retention and ai.options.cache_retention (or model.cache_retention)`,
+    );
+  }
+  const { cacheRetention: _moved, ...streamOptions } =
+    modelConfig!.streamOptions!;
+  const { streamOptions: _old, ...rest } = modelConfig!;
+  return {
+    modelConfig: {
+      ...rest,
+      ...(Object.keys(streamOptions).length > 0 ? { streamOptions } : {}),
+    },
+    sessionConfig: { ...sessionConfig, cacheRetention: deprecated },
+  };
+}
+
+/** Apply `session.cache.retention` as the `cacheRetention` request option. */
+function withCacheRetention(
+  modelConfig: RecipeAgentModelConfig | undefined,
+  cacheRetention: RecipeAgentSessionConfig["cacheRetention"],
+): RecipeAgentModelConfig | undefined {
+  if (cacheRetention === undefined) return modelConfig;
+  return {
+    ...modelConfig,
+    streamOptions: { ...modelConfig?.streamOptions, cacheRetention },
+  };
+}
+
 function definitionsFromSources(
   sources: RecipeAgentSource[],
 ): Map<string, RecipeAgentDefinition> {
@@ -804,13 +852,13 @@ function definitionsFromSources(
       : undefined;
     if (raw.from && !base) return undefined;
 
-    const modelConfig = mergeRecipeAgentModelConfig(
-      base?.modelConfig,
-      raw.modelConfig,
-    );
     const sessionConfig = mergeRecipeAgentSessionConfig(
       base?.sessionConfig,
       raw.sessionConfig,
+    );
+    const modelConfig = withCacheRetention(
+      mergeRecipeAgentModelConfig(base?.modelConfig, raw.modelConfig),
+      sessionConfig?.cacheRetention,
     );
     const definition: RecipeAgentDefinition = {
       name: raw.name,

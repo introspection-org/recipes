@@ -306,5 +306,21 @@
       "package.json": "{\"name\":\"runtime-system\",\"pi\":{\"runtime\":{\"system\":{\"packages\":[{\"id\":\"document.pdf-tools\",\"version\":\"1\"}]}}}}",
       "agents/agent.yaml": "name: agent\nmodel:\n  name: anthropic/claude-sonnet-4-6\n"
     }
+  },
+  {
+    "name": "session cache and compaction on idle",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"session-cache\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: anthropic/claude-sonnet-4-6\nsession:\n  cache:\n    retention: long\n    warming: idle\n  compaction:\n    keep_recent_tokens: 25000\n    on_idle:\n      min_context_tokens: 150000\n      keep_recent_tokens: 20000\n"
+    }
+  },
+  {
+    "name": "session cache retention declared twice",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"session-cache-conflict\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: anthropic/claude-sonnet-4-6\n  options:\n    cache_retention: long\nsession:\n  cache:\n    retention: short\n"
+    }
   }
 ]

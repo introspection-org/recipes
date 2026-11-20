@@ -106,6 +106,14 @@ pub struct JudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     pub questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
+    /// The fraction of the conversations `on` selects that the judge runs
+    /// on: greater than 0 and at most 1. Absent means 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(range(max = 1.0), extend("exclusiveMinimum" = 0.0))
+    )]
+    pub sample: Option<f64>,
 }
 
 /// A judge's `ai:` block, with the keys of an agent's.
@@ -199,6 +207,14 @@ struct AuthoredJudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
+    /// The fraction of the conversations `on` selects that the judge runs
+    /// on: greater than 0 and at most 1. Absent means 1.
+    #[serde(default, deserialize_with = "present_number")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "f64", range(max = 1.0), extend("exclusiveMinimum" = 0.0))
+    )]
+    sample: Option<f64>,
 }
 
 /// The older model block of a judge, mapped to [`JudgeAiConfig`] when a
@@ -455,6 +471,13 @@ where
             "expected a string, found {other}"
         ))),
     }
+}
+
+fn present_number<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    strict_number(deserializer).map(Some)
 }
 
 fn strict_number<'de, D>(deserializer: D) -> Result<f64, D::Error>
@@ -786,6 +809,7 @@ fn authored_judge(
         ai,
         instructions: authored.instructions,
         questions: authored.questions,
+        sample: authored.sample,
     })
 }
 
@@ -835,6 +859,12 @@ pub fn normalize_judge_definition(
         _ => spec_bail!(
             "{context} declares either `instructions`, answered by a chat model, or `questions`, answered by a classifier"
         ),
+    }
+    if definition
+        .sample
+        .is_some_and(|sample| !(sample > 0.0 && sample <= 1.0))
+    {
+        spec_bail!("{context} sample must be greater than 0 and at most 1");
     }
     validate_gate(&definition.on)?;
     Ok(definition)
@@ -1580,10 +1610,32 @@ ai:
             ai: serde_json::from_value(json!({ "model": " openai/gpt-5 " })).unwrap(),
             instructions: Some("Grade.".to_owned()),
             questions: None,
+            sample: None,
         };
         let normalized = normalize_judge_definition(definition, "coded").unwrap();
         assert_eq!(normalized.ai.model, "openai/gpt-5");
         assert_eq!(normalized.on, json!({}));
+    }
+
+    #[test]
+    fn sample_is_carried_when_declared_and_bounded() {
+        let yaml = "name: g\ninstructions: Grade.\nai:\n  model: openai/gpt-5\n";
+        let parsed = parse_judge_definitions(&[source("judges/g.yaml", yaml)]).unwrap();
+        assert_eq!(parsed[0].definition.sample, None);
+        let normalized = serde_json::to_value(&parsed[0].definition).unwrap();
+        assert!(normalized.get("sample").is_none());
+
+        let sampled = format!("{yaml}sample: 0.1\n");
+        let parsed = parse_judge_definitions(&[source("judges/g.yaml", &sampled)]).unwrap();
+        assert_eq!(parsed[0].definition.sample, Some(0.1));
+
+        for sample in ["0", "1.5", "\"0.5\"", "null"] {
+            let invalid = format!("{yaml}sample: {sample}\n");
+            assert!(
+                parse_judge_definitions(&[source("judges/g.yaml", &invalid)]).is_err(),
+                "{sample}"
+            );
+        }
     }
 
     fn gate_regex_result(pattern: &str) -> Result<(), String> {
