@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/introspection-org/recipes/compare/recipe-issues-v0.3.0...recipe-issues-v0.4.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **issues:** the issues module API is version 2. A provider module or bundle declaring version 1 no longer loads, and providers receive the new attachment fields.
+
+### Features
+
+* **issues:** attachments on the issues tool for Introspection, Linear and Jira ([#553](https://github.com/introspection-org/recipes/issues/553)) ([38828b1](https://github.com/introspection-org/recipes/commit/38828b1c2538b93f53a3680736d69a6f2d4cbe24))
+
 ## [0.3.0](https://github.com/introspection-org/recipes/compare/recipe-issues-v0.2.0...recipe-issues-v0.3.0) (2026-11-11)
 
 
