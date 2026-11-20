@@ -33,7 +33,7 @@ describe("runProgress", () => {
       }),
       40_000,
     );
-    expect(line).toBe("↓ 2.3k tokens · $0.09 · edit · 00:40");
+    expect(line).toBe("↓ 2.3k tokens · $0.09 · 00:40 · edit");
   });
 
   it("shows only the time before the first model call ends", () => {
@@ -103,7 +103,7 @@ describe("waiting on a run", () => {
       await vi.advanceTimersByTimeAsync(2_100);
       expect(updates.length).toBeGreaterThanOrEqual(3);
       expect(updates.at(-1)).toBe(
-        "Waiting for run agent-run-6 (proposer: preview-attempt-1) [running · ↓ 2.1k tokens · $0.31 · bash · 00:02]",
+        "Waiting for run agent-run-6 (proposer: preview-attempt-1) [running · ↓ 2.1k tokens · $0.31 · 00:02 · bash]",
       );
       running = false;
       finish();

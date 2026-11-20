@@ -65,9 +65,9 @@ export function runProgress(run: AgentRunSummary, now = Date.now()): string {
     parts.push(`↓ ${compactTokens(run.usage.output_tokens)} tokens`);
     parts.push(`$${run.usage.cost_usd.toFixed(2)}`);
   }
+  parts.push(elapsed((run.completed_at ?? now) - run.started_at));
   if (run.status === "running" && run.current_tool)
     parts.push(run.current_tool);
-  parts.push(elapsed((run.completed_at ?? now) - run.started_at));
   return parts.join(" · ");
 }
 
