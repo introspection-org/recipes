@@ -689,6 +689,8 @@ export async function runBatchWith(
       await work();
     } catch (error) {
       recordError ??= error;
+      // Wake any worker waiting on a paused stream, so the run can end.
+      fireStop();
     }
   };
   const work = async (): Promise<void> => {

@@ -863,6 +863,38 @@ describe("runBatch", () => {
     expect(closed).toBe(true);
   });
 
+  it("rejects on a failed results write while another worker waits on a paused stream", async () => {
+    async function* paused() {
+      yield { custom_id: "a", prompt: "first" };
+      // Never released: the run must end without it.
+      await new Promise<void>(() => {});
+    }
+    const run = runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files: memoryFiles({}),
+        input: paused(),
+        results: {
+          read: async () => "",
+          append: async () => {
+            throw new Error("disk full");
+          },
+        },
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    await expect(run).rejects.toThrow("disk full");
+  });
+
   it("lets the lines in flight finish before an input error is thrown", async () => {
     let finished = 0;
     async function* failing() {
