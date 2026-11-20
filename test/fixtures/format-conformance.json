@@ -12,7 +12,7 @@
     "valid": true,
     "files": {
       "package.json": "{\"name\":\"ai-session\",\"pi\":{}}",
-      "agents/agent.yaml": "name: agent\nai:\n  model: openrouter/anthropic/claude-sonnet-4\n  thinking_level: max\n  options:\n    max_tokens: 4096\n    future_request_policy:\n      mode: strict\n  providers:\n    openrouter:\n      routing:\n        future_router_policy:\n          mode: strict\n    anthropic:\n      context_management:\n        edits: []\n    vercel_ai_gateway:\n      routing:\n        future_gateway_policy:\n          mode: strict\nsession:\n  steering_mode: one-at-a-time\n  follow_up_mode: all\n  tool_execution: parallel\n  retry:\n    enabled: true\n    max_retries: 3\n    base_delay_ms: 2000\n    max_agent_delay_ms: 60000\n    provider:\n      timeout_ms: 30000\n      max_retries: 2\n      max_retry_delay_ms: 60000\n  compaction:\n    enabled: true\n    reserve_tokens: 16384\n    keep_recent_tokens: 20000\n  images:\n    auto_resize: true\n    block_images: false\n"
+      "agents/agent.yaml": "name: agent\nai:\n  model: openrouter/anthropic/claude-sonnet-4\n  thinking_level: max\n  options:\n    max_tokens: 4096\n    future_request_policy:\n      mode: strict\n  providers:\n    openrouter:\n      routing:\n        future_router_policy:\n          mode: strict\n    anthropic:\n      context_management:\n        edits: []\n    vercel_ai_gateway:\n      routing:\n        future_gateway_policy:\n          mode: strict\nsession:\n  steering_mode: one-at-a-time\n  follow_up_mode: all\n  tool_execution: parallel\n  retry:\n    enabled: true\n    max_retries: 3\n    base_delay_ms: 2000\n    max_agent_delay_ms: 60000\n    provider:\n      timeout_ms: 30000\n      max_retries: 2\n      max_retry_delay_ms: 60000\n  compaction:\n    enabled: true\n    reserve_tokens: 16384\n    keep_recent_tokens: 20000\n    model_overrides:\n      anthropic/claude-sonnet-4:\n        reserve_tokens: 65536\n      openrouter/anthropic/claude-sonnet-4:\n        keep_recent_tokens: 30000\n    instructions: Keep every open decision and the files it touches.\n  images:\n    auto_resize: true\n    block_images: false\n"
     }
   },
   {
@@ -45,6 +45,46 @@
     "files": {
       "package.json": "{\"name\":\"bad-session-type\",\"pi\":{}}",
       "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  images:\n    auto_resize: \"yes\"\n"
+    }
+  },
+  {
+    "name": "unknown compaction model override key",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"bad-session-key\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n    model_overrides:\n      openai/gpt-5:\n        enabled: false\n"
+    }
+  },
+  {
+    "name": "compaction model override not keyed by model",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"bad-session-key\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n    model_overrides:\n      gpt-5:\n        reserve_tokens: 1\n"
+    }
+  },
+  {
+    "name": "negative compaction model override",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"bad-session-key\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n    model_overrides:\n      openai/gpt-5:\n        reserve_tokens: -1\n"
+    }
+  },
+  {
+    "name": "non-integer compaction model override",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"bad-session-key\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n    model_overrides:\n      openai/gpt-5:\n        keep_recent_tokens: 1.5\n"
+    }
+  },
+  {
+    "name": "empty compaction instructions",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"bad-session-key\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n    instructions: \"  \"\n"
     }
   },
   {

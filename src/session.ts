@@ -37,6 +37,7 @@ import {
   type AgentRunController,
   type AgentRunEventObserver,
 } from "./agents.js";
+import { compactionExtensions } from "./compaction.js";
 import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
@@ -1053,6 +1054,9 @@ async function createSessionForAgent(
       );
     }
     inlineExtensions.push(...recipeStepExtensions(recipe, opts.onRecipeStep));
+    inlineExtensions.push(
+      ...compactionExtensions(recipe.sessionConfig, () => session),
+    );
     inlineExtensions.push(...(opts.extensionFactories ?? []));
 
     const baseSettingsManager =

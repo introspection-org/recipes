@@ -4044,15 +4044,7 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
         validate_session_retry(value, path, ctx);
     }
     if let Some(value) = session.get("compaction") {
-        validate_session_settings_object(
-            value,
-            path,
-            "compaction",
-            &["enabled", "reserve_tokens", "keep_recent_tokens"],
-            &["enabled"],
-            &[("reserve_tokens", false), ("keep_recent_tokens", false)],
-            ctx,
-        );
+        validate_session_compaction(value, path, ctx);
     }
     if let Some(value) = session.get("images") {
         validate_session_settings_object(
@@ -4064,6 +4056,81 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
             &[],
             ctx,
         );
+    }
+}
+
+fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckContext) {
+    let Some(compaction) = validate_session_settings_object(
+        value,
+        path,
+        "compaction",
+        &[
+            "enabled",
+            "reserve_tokens",
+            "keep_recent_tokens",
+            "model_overrides",
+            "instructions",
+        ],
+        &["enabled"],
+        &[("reserve_tokens", false), ("keep_recent_tokens", false)],
+        ctx,
+    ) else {
+        return;
+    };
+    if compaction
+        .get("instructions")
+        .is_some_and(|value| !value.as_str().is_some_and(|text| !text.trim().is_empty()))
+    {
+        ctx.error(
+            "agent.session.compaction.instructions_invalid",
+            path,
+            "Agent session.compaction.instructions must be a non-empty string",
+            None::<String>,
+        );
+    }
+    let Some(value) = compaction.get("model_overrides") else {
+        return;
+    };
+    let Some(overrides) = value.as_object() else {
+        ctx.error(
+            "agent.session.compaction.model_overrides_invalid",
+            path,
+            "Agent session.compaction.model_overrides must be an object keyed by '<provider>/<model_id>'",
+            None::<String>,
+        );
+        return;
+    };
+    for (model, settings) in overrides {
+        if !valid_model_spec(model) {
+            ctx.error(
+                "agent.session.compaction.model_overrides_invalid",
+                path,
+                format!(
+                    "Agent session.compaction.model_overrides key '{model}' must be '<provider>/<model_id>'"
+                ),
+                None::<String>,
+            );
+        }
+        let valid = settings.as_object().is_some_and(|settings| {
+            !settings.is_empty()
+                && settings.iter().all(|(key, value)| {
+                    matches!(key.as_str(), "reserve_tokens" | "keep_recent_tokens")
+                        && value.as_f64().is_some_and(|number| {
+                            (0.0..=9_007_199_254_740_991.0).contains(&number)
+                                && number.fract() == 0.0
+                        })
+                })
+        });
+        if !valid {
+            ctx.error(
+                "agent.session.compaction.model_overrides_invalid",
+                path,
+                format!(
+                    "Agent session.compaction.model_overrides['{model}'] must set reserve_tokens or keep_recent_tokens to integers >= 0"
+                ),
+                None::<String>,
+            );
+        }
     }
 }
 
@@ -7592,6 +7659,76 @@ mod tests {
                     .iter()
                     .any(|diagnostic| diagnostic.code == code),
                 "{fallbacks}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn checks_session_compaction_model_overrides_and_instructions() {
+        let package = json!({ "name": "compaction", "pi": {} });
+        let manifest = serde_json::to_string_pretty(&package).expect("serialize package");
+        let agent = |compaction: &str| {
+            recipe_files(&[
+                ("package.json", &manifest),
+                (
+                    "agents/agent.yaml",
+                    &format!(
+                        "name: agent\nai:\n  model: openai/gpt-5\nsession:\n  compaction:\n{compaction}"
+                    ),
+                ),
+            ])
+        };
+        let report = check_recipe_files(&agent(
+            "    reserve_tokens: 16384\n    model_overrides:\n      openai/gpt-5:\n        reserve_tokens: 65536\n      openrouter/anthropic/Claude-Sonnet-4:\n        keep_recent_tokens: 0\n    instructions: Keep every open decision.\n",
+        ));
+        assert!(report.valid, "{:?}", report.diagnostics);
+
+        for (compaction, code) in [
+            (
+                "    model_overrides: []\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    model_overrides:\n      gpt-5:\n        reserve_tokens: 1\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    model_overrides:\n      openai/gpt-5:\n        enabled: false\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    model_overrides:\n      openai/gpt-5: {}\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    model_overrides:\n      openai/gpt-5:\n        reserve_tokens: -1\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    model_overrides:\n      openai/gpt-5:\n        keep_recent_tokens: 1.5\n",
+                "agent.session.compaction.model_overrides_invalid",
+            ),
+            (
+                "    instructions: \"  \"\n",
+                "agent.session.compaction.instructions_invalid",
+            ),
+            (
+                "    instructions: 3\n",
+                "agent.session.compaction.instructions_invalid",
+            ),
+            (
+                "    summary_model: openai/gpt-5\n",
+                "agent.session.compaction_key_unknown",
+            ),
+        ] {
+            let report = check_recipe_files(&agent(compaction));
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == code),
+                "{compaction}: {:?}",
                 report.diagnostics
             );
         }

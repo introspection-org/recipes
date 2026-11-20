@@ -17,6 +17,8 @@ export interface RecipeAgentSessionConfig {
   followUpMode?: RecipeQueueMode;
   toolExecution?: RecipeToolExecutionMode;
   settings?: Record<string, unknown>;
+  /** `session.compaction.instructions`, for every compaction of the session. */
+  compactionInstructions?: string;
 }
 
 export class RecipeSessionConfigError extends Error {
@@ -157,14 +159,25 @@ function parseRetry(
 function parseCompaction(
   context: string,
   value: unknown,
-): Record<string, unknown> | undefined {
+): { settings?: Record<string, unknown>; instructions?: string } {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
     "enabled",
     "reserve_tokens",
     "keep_recent_tokens",
+    "model_overrides",
+    "instructions",
   ]);
-  return definedObject({
+  const instructions = data.instructions;
+  if (
+    instructions !== undefined &&
+    (typeof instructions !== "string" || instructions.trim() === "")
+  ) {
+    throw new RecipeSessionConfigError(
+      `${context}.instructions: expected non-empty string`,
+    );
+  }
+  const settings = definedObject({
     enabled: optionalBoolean(context, "enabled", data.enabled),
     reserveTokens: optionalInteger(
       context,
@@ -178,7 +191,70 @@ function parseCompaction(
       data.keep_recent_tokens,
       0,
     ),
+    modelOverrides:
+      data.model_overrides === undefined
+        ? undefined
+        : parseCompactionModelOverrides(
+            `${context}.model_overrides`,
+            data.model_overrides,
+          ),
   });
+  return {
+    ...(settings ? { settings } : {}),
+    ...(instructions !== undefined ? { instructions } : {}),
+  };
+}
+
+/** Keys are Pi's `<provider>/<model_id>`, matched case-sensitively. */
+function parseCompactionModelOverrides(
+  context: string,
+  value: unknown,
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new RecipeSessionConfigError(`${context}: expected object`);
+  }
+  const overrides: Record<string, unknown> = {};
+  for (const [model, entry] of Object.entries(value)) {
+    const slash = model.indexOf("/");
+    if (
+      slash <= 0 ||
+      slash === model.length - 1 ||
+      /[\s:]/.test(model.slice(0, slash))
+    ) {
+      throw new RecipeSessionConfigError(
+        `${context} has invalid key "${model}": expected <provider>/<model_id>`,
+      );
+    }
+    const entryContext = `${context}["${model}"]`;
+    if (!isRecord(entry)) {
+      throw new RecipeSessionConfigError(`${entryContext}: expected object`);
+    }
+    assertKnownKeys(entryContext, entry, [
+      "reserve_tokens",
+      "keep_recent_tokens",
+    ]);
+    const parsed = definedObject({
+      reserveTokens: optionalInteger(
+        entryContext,
+        "reserve_tokens",
+        entry.reserve_tokens,
+        0,
+      ),
+      keepRecentTokens: optionalInteger(
+        entryContext,
+        "keep_recent_tokens",
+        entry.keep_recent_tokens,
+        0,
+      ),
+    });
+    if (!parsed) {
+      throw new RecipeSessionConfigError(
+        `${entryContext}: expected reserve_tokens or keep_recent_tokens`,
+      );
+    }
+    overrides[model] = parsed;
+  }
+  return overrides;
 }
 
 function parseImages(
@@ -251,15 +327,16 @@ export function parseRecipeAgentSessionConfig(
     ...(steeringMode ? { steeringMode } : {}),
     ...(followUpMode ? { followUpMode } : {}),
   };
+  const compaction =
+    value.compaction === undefined
+      ? undefined
+      : parseCompaction(`${context} session.compaction`, value.compaction);
   const nestedSettings = {
     retry:
       value.retry === undefined
         ? undefined
         : parseRetry(`${context} session.retry`, value.retry),
-    compaction:
-      value.compaction === undefined
-        ? undefined
-        : parseCompaction(`${context} session.compaction`, value.compaction),
+    compaction: compaction?.settings,
     images:
       value.images === undefined
         ? undefined
@@ -272,6 +349,9 @@ export function parseRecipeAgentSessionConfig(
     ...(followUpMode ? { followUpMode } : {}),
     ...(parsedToolExecution ? { toolExecution: parsedToolExecution } : {}),
     ...(Object.keys(settings).length > 0 ? { settings } : {}),
+    ...(compaction?.instructions
+      ? { compactionInstructions: compaction.instructions }
+      : {}),
   };
   return Object.keys(parsed).length > 0 ? parsed : undefined;
 }
