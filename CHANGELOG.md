@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.59.0](https://github.com/introspection-org/recipes/compare/v0.58.0...v0.59.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **issues:** the issues module API is version 2. A provider module or bundle declaring version 1 no longer loads, and providers receive the new attachment fields.
+
+### Features
+
+* **format:** compaction model_overrides and instructions on session.compaction ([#557](https://github.com/introspection-org/recipes/issues/557)) ([d0e387f](https://github.com/introspection-org/recipes/commit/d0e387ff534aaf5f2235d3460b9224225b60d9e1))
+* **format:** session.cache retention and warming, and judge sampling ([#556](https://github.com/introspection-org/recipes/issues/556)) ([8e4ab36](https://github.com/introspection-org/recipes/commit/8e4ab36a729e840f7a8fe44332a624501efc7628))
+* **issues:** attachments on the issues tool for Introspection, Linear and Jira ([#553](https://github.com/introspection-org/recipes/issues/553)) ([38828b1](https://github.com/introspection-org/recipes/commit/38828b1c2538b93f53a3680736d69a6f2d4cbe24))
+* **prompts:** prompt builders for judges and synthesis, built inside a streaming batch ([#552](https://github.com/introspection-org/recipes/issues/552)) ([2ff9e10](https://github.com/introspection-org/recipes/commit/2ff9e1060f4c2e0808638f2c17a53ca2635e8b6b))
+
 ## [0.58.0](https://github.com/introspection-org/recipes/compare/v0.57.0...v0.58.0) (2026-11-19)
 
 
