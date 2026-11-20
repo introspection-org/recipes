@@ -177,7 +177,26 @@ value; endpoint compatibility must be verified against the provider.
 `session` owns portable Pi session behavior. Queue modes accept `all` or
 `one-at-a-time`; `tool_execution` accepts `parallel` or `sequential`. The
 `retry`, `compaction`, and `images` use the managed runtime's corresponding Pi
-settings with snake_case keys. Each session gets a session-local copy of the
+settings with snake_case keys. `compaction` accepts `enabled`,
+`reserve_tokens`, `keep_recent_tokens`, `model_overrides` and `instructions`:
+
+```yaml
+session:
+  compaction:
+    reserve_tokens: 16384
+    model_overrides:
+      anthropic/claude-sonnet-4-5:
+        reserve_tokens: 65536
+    instructions: Keep every open decision and the files it touches.
+```
+
+`model_overrides` is keyed by Pi's exact, case-sensitive
+`<provider>/<model_id>` and sets `reserve_tokens` or `keep_recent_tokens` for
+that model. Each value falls back on its own: the model's override, then the
+block's value, then Pi's default; `enabled` applies to every model.
+`instructions` is a non-empty string passed as the custom instructions of every
+compaction of the session, automatic or manual; a manual compaction's own
+instructions follow it. Each session gets a session-local copy of the
 host's effective settings, including overrides the host applied to the
 settings manager it passes (Pi >=0.99; older Pi exposes only the file-backed
 settings and drops those overrides when it reloads the manager), with the

@@ -183,6 +183,37 @@ describe("parseRecipeAgentSessionConfig", () => {
     });
   });
 
+  it("maps compaction model overrides and instructions", () => {
+    expect(
+      parseRecipeAgentSessionConfig("test", {
+        compaction: {
+          reserve_tokens: 16384,
+          model_overrides: {
+            "anthropic/claude-sonnet-4-5": { reserve_tokens: 65536 },
+            "openrouter/anthropic/Claude-Sonnet-4": { keep_recent_tokens: 0 },
+          },
+          instructions: "Keep every open decision.",
+        },
+      }),
+    ).toEqual({
+      settings: {
+        compaction: {
+          reserveTokens: 16384,
+          modelOverrides: {
+            "anthropic/claude-sonnet-4-5": { reserveTokens: 65536 },
+            "openrouter/anthropic/Claude-Sonnet-4": { keepRecentTokens: 0 },
+          },
+        },
+      },
+      compactionInstructions: "Keep every open decision.",
+    });
+    expect(
+      parseRecipeAgentSessionConfig("test", {
+        compaction: { instructions: "Keep the plan." },
+      }),
+    ).toEqual({ compactionInstructions: "Keep the plan." });
+  });
+
   it("merges inherited session policy", () => {
     expect(
       mergeRecipeAgentSessionConfig(
@@ -219,6 +250,39 @@ describe("parseRecipeAgentSessionConfig", () => {
     [{ retry: { max_retries: 1.5 } }, /expected integer/],
     [{ retry: { provider: { timeout_ms: 0 } } }, /integer >= 1/],
     [{ compaction: { reserve_tokens: -1 } }, /integer >= 0/],
+    [{ compaction: { instructions: "  " } }, /non-empty string/],
+    [{ compaction: { instructions: 3 } }, /non-empty string/],
+    [{ compaction: { model_overrides: [] } }, /expected object/],
+    [
+      { compaction: { model_overrides: { "gpt-5": { reserve_tokens: 1 } } } },
+      /<provider>\/<model_id>/,
+    ],
+    [
+      {
+        compaction: { model_overrides: { "openai/gpt-5": { enabled: false } } },
+      },
+      /enabled/,
+    ],
+    [
+      { compaction: { model_overrides: { "openai/gpt-5": {} } } },
+      /expected reserve_tokens or keep_recent_tokens/,
+    ],
+    [
+      {
+        compaction: {
+          model_overrides: { "openai/gpt-5": { reserve_tokens: -1 } },
+        },
+      },
+      /integer >= 0/,
+    ],
+    [
+      {
+        compaction: {
+          model_overrides: { "openai/gpt-5": { keep_recent_tokens: 1.5 } },
+        },
+      },
+      /integer >= 0/,
+    ],
     [{ branch_summary: {} }, /unsupported session key/],
     [{ images: { block_images: null } }, /expected boolean/],
   ] as const)(

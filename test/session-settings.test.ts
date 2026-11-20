@@ -45,6 +45,11 @@ const RECIPE_SESSION: Record<string, string> = {
   "images.blockImages": "images.block_images",
 };
 
+/** Pi settings keyed by model, authored as a map at this `session` path. */
+const RECIPE_SESSION_MAPS: Record<string, string> = {
+  "compaction.modelOverrides": "compaction.model_overrides",
+};
+
 /** Pi settings a Recipe controls through another part of its format. */
 const RECIPE_ELSEWHERE: Record<string, string> = {
   defaultProvider: "ai.model",
@@ -52,9 +57,6 @@ const RECIPE_ELSEWHERE: Record<string, string> = {
   defaultThinkingLevel: "ai.thinking_level",
   modelThinkingLevels: "ai.thinking_level",
   thinkingBudgets: "ai.options.thinking_budgets",
-  // An agent binds one model, so per-agent `session.compaction` already is
-  // the per-model value.
-  "compaction.modelOverrides": "session.compaction",
   defaultTools: "agent tools",
   extensions: "package.json pi.extensions",
   skills: "package.json pi.skills and agent skills",
@@ -271,6 +273,7 @@ describe("Pi settings coverage", () => {
   it("classifies every Pi setting exactly once", () => {
     const classified = [
       ...Object.keys(RECIPE_SESSION),
+      ...Object.keys(RECIPE_SESSION_MAPS),
       ...Object.keys(RECIPE_ELSEWHERE),
       ...HOST_OWNED,
     ];
