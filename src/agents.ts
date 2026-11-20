@@ -55,9 +55,9 @@ export function compactTokens(count: number): string {
 }
 
 /**
- * A run's progress in one line, ending on its clock as the footer does:
- * `↓ 2.3k tokens · $0.09 · edit · 00:40`, its output tokens, cost, the tool it
- * is in while it runs, and its time.
+ * A run's progress in one line: `↓ 2.3k tokens · $0.09 · 00:40 · edit`, its
+ * output tokens, cost, its time on the footer's clock and, while it runs, the
+ * tool it is in.
  */
 export function runProgress(run: AgentRunSummary, now = Date.now()): string {
   const parts: string[] = [];
