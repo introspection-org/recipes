@@ -131,6 +131,26 @@ export function skillFolders(
   return folders;
 }
 
+/**
+ * The step a tool call reads in full: its `path`, or each command of a shell
+ * line judged on its own, so `cat a/SKILL.md; cat b/SKILL.md | head` reads `a`.
+ * With several, the last, which is where the agent goes next.
+ */
+export function wholeSkillRead(
+  input: Record<string, unknown>,
+  skills: RecipeSkills,
+): string | undefined {
+  if (typeof input.path === "string")
+    return readsWhole(input) ? skillRead(input.path, skills) : undefined;
+  if (typeof input.command !== "string") return undefined;
+  return input.command
+    .split(/\s*(?:;|&&|\|\||\n)\s*/)
+    .filter((command) => readsWhole({ command }))
+    .map((command) => skillRead(command, skills))
+    .filter((read): read is string => read !== undefined)
+    .at(-1);
+}
+
 /** The agent's step whose `SKILL.md` a tool call's path or command reads, if any. */
 export function skillRead(
   text: unknown,
@@ -337,13 +357,10 @@ function skillReads(
       if (
         block.type !== "toolCall" ||
         !SKILL_READ_TOOLS.has(block.name ?? "") ||
-        failed.has(block.id) ||
-        !readsWhole(block.arguments ?? {})
+        failed.has(block.id)
       )
         continue;
-      const read =
-        skillRead(block.arguments?.path, skills) ??
-        skillRead(block.arguments?.command, skills);
+      const read = wholeSkillRead(block.arguments ?? {}, skills);
       if (read) reads.push(read);
     }
   }
@@ -452,13 +469,8 @@ export function registerSkillProgress(
     if (!skills?.names.length) return;
     if (PERSON_IN_THE_LOOP.has(event.toolName)) run();
     const input = (event.input ?? {}) as Record<string, unknown>;
-    if (
-      !event.isError &&
-      SKILL_READ_TOOLS.has(event.toolName) &&
-      readsWhole(input)
-    ) {
-      const read =
-        skillRead(input.path, skills) ?? skillRead(input.command, skills);
+    if (!event.isError && SKILL_READ_TOOLS.has(event.toolName)) {
+      const read = wholeSkillRead(input, skills);
       if (read) moveTo(ctx, advance(current?.at ?? {}, read, skills), skills);
     }
     show(ctx);

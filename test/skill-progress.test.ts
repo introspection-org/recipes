@@ -12,6 +12,7 @@ import {
   stepSkills,
   stepLine,
   stepState,
+  wholeSkillRead,
   type RecipeSkills,
   type RecipeStep,
 } from "../src/skill-progress.js";
@@ -129,6 +130,37 @@ describe("where the agent is", () => {
       "build-draft",
     );
     expect(stepSkills(["research", "write"])).toEqual(["research", "write"]);
+  });
+
+  it("judges each command of a shell line on its own", () => {
+    const steps = {
+      names: ["improve-select", "improve-classify"],
+      phases: ["improve"],
+    };
+    expect(
+      wholeSkillRead(
+        {
+          command:
+            "cat s/improve-select/SKILL.md; echo =====; cat s/improve-classify/SKILL.md | head -80",
+        },
+        steps,
+      ),
+    ).toBe("improve-select");
+    expect(
+      wholeSkillRead(
+        {
+          command:
+            "cat s/improve-select/SKILL.md && cat s/improve-classify/SKILL.md",
+        },
+        steps,
+      ),
+    ).toBe("improve-classify");
+    expect(
+      wholeSkillRead({ command: "head -40 s/improve-select/SKILL.md" }, steps),
+    ).toBeUndefined();
+    expect(
+      wholeSkillRead({ path: "s/improve-select/SKILL.md", limit: 20 }, steps),
+    ).toBeUndefined();
   });
 
   it("counts reading a skill, not glancing at its top", () => {
