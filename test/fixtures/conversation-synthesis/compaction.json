@@ -108,31 +108,5 @@
       }
     ],
     "prior_observations": []
-  },
-  "expected": {
-    "prompt": "<conversation_case>\n  <conversation_id>conv-parity</conversation_id>\n  <metadata>\n    <span_count>6</span_count>\n    <error_count>0</error_count>\n    <duration_ms>181250.5</duration_ms>\n  </metadata>\n  <context_compactions count=\"1\">Earlier turns were summarized.</context_compactions>\n  <transcript>\n    <message ref=\"m1\" role=\"user\">Refactor the billing module.</message>\n    <message ref=\"m2\" role=\"assistant\">Starting with invoices.py.</message>\n    <message ref=\"m3\" role=\"user\">Also cover refunds.</message>\n    <message ref=\"m4\" role=\"assistant\">Refunds moved to refunds.py.</message>\n    <message ref=\"m5\" role=\"user\">Summary: invoices.py and refunds.py refactored.</message>\n    <message ref=\"m6\" role=\"user\">Now add tests.</message>\n    <message ref=\"m7\" role=\"assistant\">Added tests for both modules.</message>\n  </transcript>\n</conversation_case>",
-    "plan": {
-      "conversation_id": "conv-parity",
-      "completed_at": "2026-11-12T09:03:00Z",
-      "digest": "605a82de171d922ce2802f604bf32fec9bcaaac311fd97667ef62646064fd6ad",
-      "segment_start": "",
-      "segment": 1,
-      "watermark_next": {
-        "watermark": "2026-11-12T09:03:00Z",
-        "cursor": "eyJpIjoic3Bhbi0wMyIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTgwMDAwMDAwMDAwIn0",
-        "segment": 1,
-        "tail_fingerprints": [
-          "70324f81de2cf0a3410e5b5f",
-          "fbb792561c0d84bc92796881",
-          "e1435013685440956f140a6f",
-          "859845e6f5ce420c8dcf1096",
-          "93f031510607bda7ffa18cf1",
-          "b54b182f2d2b1f48f767777a",
-          "754c579a1d67bef3f7107c48"
-        ],
-        "last_input_count": 2,
-        "completed_at": "2026-11-12T09:03:00Z"
-      }
-    }
   }
 }

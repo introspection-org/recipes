@@ -94,10 +94,10 @@ exports[`conversation_synthesis@1 renders each fixture as pinned > encodings 1`]
 
 exports[`conversation_synthesis@1 renders each fixture as pinned > long_conversation_capped 1`] = `
 {
-  "digest": "0493a3a245df03f99d991ae3dcc8abef4c07aeffcf4bae07566efca64c159b74",
+  "digest": "7886991b182aacf21a860db4b96d10a391fa2307c27ad1aba0cc9ede566dda93",
   "shape": {
     "events": [],
-    "length": 855655,
+    "length": 855573,
     "messages": [
       "m1:user",
       "m2:assistant",
@@ -109,6 +109,7 @@ exports[`conversation_synthesis@1 renders each fixture as pinned > long_conversa
       "m8:assistant",
       "m9:user",
       "m10:assistant",
+      "m53:user",
       "m54:assistant",
       "m55:user",
       "m56:assistant",
@@ -386,21 +387,21 @@ exports[`conversation_synthesis@1 renders each fixture as pinned > long_conversa
   },
   "state": {
     "plan": {
-      "completed_at": "2026-11-12T11:40:00Z",
-      "conversation_id": "conv-parity",
-      "digest": "0493a3a245df03f99d991ae3dcc8abef4c07aeffcf4bae07566efca64c159b74",
+      "completed_at": "2026-11-12T12:00:00Z",
+      "conversation_id": "conv-long",
+      "digest": "7886991b182aacf21a860db4b96d10a391fa2307c27ad1aba0cc9ede566dda93",
       "segment": 1,
       "segment_start": "",
       "watermark_next": {
-        "completed_at": "2026-11-12T11:40:00Z",
-        "cursor": "eyJpIjoic3Bhbi0xNjAiLCJzIjoiY3JlYXRlZF9hdCIsImQiOiJhc2MiLCJ2IjoiMTc5NDQ4MzYwMDAwMDAwMDAwMCJ9",
+        "completed_at": "2026-11-12T12:00:00Z",
+        "cursor": "eyJpIjoic3Bhbi0xNTkiLCJzIjoiY3JlYXRlZF9hdCIsImQiOiJhc2MiLCJ2IjoiMTc5NDQ4MzU0MDAwMDAwMDAwMCJ9",
         "lanes": [
           "root",
         ],
         "last_input_count": 319,
         "root_lane": "root",
         "segment": 1,
-        "watermark": "2026-11-12T11:40:00Z",
+        "watermark": "2026-11-12T11:39:00Z",
       },
     },
   },
@@ -467,7 +468,7 @@ exports[`conversation_synthesis@1 renders each fixture as pinned > nothing_new_p
 }
 `;
 
-exports[`conversation_synthesis@1 renders each fixture as pinned > resent_history_dedupes 1`] = `
+exports[`conversation_synthesis@1 renders each fixture as pinned > resent_history 1`] = `
 {
   "digest": "c2ca4445c9b908ec1d87028ea1fadfcf68a8a6dcb07f4d567de8a3ae5bcbd620",
   "shape": {

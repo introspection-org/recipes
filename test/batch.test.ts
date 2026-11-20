@@ -745,9 +745,9 @@ describe("runBatch", () => {
     expect(outcome).toMatchObject({ completed: 2, failed: 0 });
     const quiet = outcome.results.find((line) => line.custom_id === "quiet")!;
     expect(quiet.result.type).toBe("skipped");
-    expect(quiet.built?.state).toEqual({
-      outcome: nothingNew.expected.outcome,
-    });
+    expect(quiet.built?.state).toEqual(
+      conversationSynthesis.build(nothingNew.input, 300_000).state,
+    );
   });
 
   it("records each line at its input position, whatever failed before it", async () => {

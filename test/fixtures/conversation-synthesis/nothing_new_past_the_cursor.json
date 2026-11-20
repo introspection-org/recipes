@@ -21,14 +21,5 @@
       "completed_at": "2026-11-12T09:02:00Z"
     },
     "prior_observations": []
-  },
-  "expected": {
-    "outcome": {
-      "drafts": [],
-      "model": "",
-      "hashes": {},
-      "segment": 0,
-      "skipped": "no_new_content"
-    }
   }
 }

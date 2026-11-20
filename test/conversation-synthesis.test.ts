@@ -10,9 +10,7 @@ import {
   type ConversationSynthesisInput,
 } from "../src/prompts/index.js";
 
-// Real-shaped and edge-case conversations, once rendered by the data plane's
-// Python builder; @1 reads the processor's windows as recorded instead of
-// matching content, so its output is pinned here as its own.
+// Real-shaped and edge-case conversations, with @1's output pinned in the snapshot.
 const FIXTURES = join(
   dirname(fileURLToPath(import.meta.url)),
   "fixtures",
@@ -51,6 +49,38 @@ function shape(prompt: string) {
   };
 }
 
+/** 160 calls past the transcript cap: the opening messages and the tail survive. */
+function longConversation(): ConversationSynthesisInput {
+  const t0 = Date.parse("2026-11-12T09:00:00Z");
+  return {
+    conversation_id: "conv-long",
+    completed_at: "2026-11-12T12:00:00Z",
+    span_count: 320,
+    model_calls: Array.from({ length: 160 }, (_, i) => ({
+      span_id: `span-${String(i).padStart(2, "0")}`,
+      response_id: `resp-${String(i).padStart(2, "0")}`,
+      timestamp: new Date(t0 + i * 60_000).toISOString().replace(".000", ""),
+      timestamp_ns: `${BigInt(t0 + i * 60_000) * 1_000_000n}`,
+      input_message_count: 2 * i + 1,
+      input_new_messages: [
+        {
+          role: "user",
+          parts: [{ type: "text", content: `Continue with step ${i}.` }],
+        },
+      ],
+      output_messages: [
+        {
+          role: "assistant",
+          parts: [
+            { type: "text", content: `Step ${i}: ${"details ".repeat(760)}` },
+          ],
+        },
+      ],
+    })),
+    prior_observations: [],
+  };
+}
+
 describe("conversation_synthesis@1 renders each fixture as pinned", () => {
   for (const file of readdirSync(FIXTURES).filter((name) =>
     name.endsWith(".json"),
@@ -65,6 +95,16 @@ describe("conversation_synthesis@1 renders each fixture as pinned", () => {
       }).toMatchSnapshot();
     });
   }
+
+  it("long_conversation_capped", () => {
+    const built = conversationSynthesis.build(longConversation(), 1_000_000);
+    expect(built.prompt).toContain("truncated");
+    expect({
+      shape: shape(built.prompt),
+      digest: built.digest ?? null,
+      state: built.state,
+    }).toMatchSnapshot();
+  });
 });
 
 const T0 = Date.parse("2026-11-19T09:00:00Z");

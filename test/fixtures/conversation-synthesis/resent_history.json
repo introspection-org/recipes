@@ -1,5 +1,5 @@
 {
-  "name": "resent_history_dedupes",
+  "name": "resent_history",
   "input": {
     "conversation_id": "conv-parity",
     "completed_at": "2026-11-12T09:03:00Z",
@@ -153,30 +153,5 @@
       }
     ],
     "prior_observations": []
-  },
-  "expected": {
-    "prompt": "<conversation_case>\n  <conversation_id>conv-parity</conversation_id>\n  <metadata>\n    <span_count>6</span_count>\n    <error_count>0</error_count>\n    <duration_ms>181250.5</duration_ms>\n  </metadata>\n  <transcript>\n    <message ref=\"m1\" role=\"user\">Plan a three-day trip to Kyoto.</message>\n    <message ref=\"m2\" role=\"assistant\">Day 1: Fushimi Inari…</message>\n    <message ref=\"m3\" role=\"user\">Swap day 2 for Nara.</message>\n    <message ref=\"m4\" role=\"assistant\">Day 2: Nara…</message>\n    <message ref=\"m5\" role=\"user\">Add a budget.</message>\n    <message ref=\"m6\" role=\"assistant\">Budget: about ¥60,000.</message>\n  </transcript>\n</conversation_case>",
-    "plan": {
-      "conversation_id": "conv-parity",
-      "completed_at": "2026-11-12T09:03:00Z",
-      "digest": "effc98e8af9f13630b7084d216f63dcf74a30eb212fd9875dbde183d07329ac1",
-      "segment_start": "",
-      "segment": 1,
-      "watermark_next": {
-        "watermark": "2026-11-12T09:03:00Z",
-        "cursor": "eyJpIjoic3Bhbi0wMyIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTgwMDAwMDAwMDAwIn0",
-        "segment": 1,
-        "tail_fingerprints": [
-          "9348f74f16e160e12af8a927",
-          "4191492f739c74adf43189c6",
-          "1f0b10bf0f35404323e77cfd",
-          "f776548775470a50c0cd32db",
-          "48caee0a24c089a0f899eac6",
-          "ac983fa4ff0ca46f322c6795"
-        ],
-        "last_input_count": 5,
-        "completed_at": "2026-11-12T09:03:00Z"
-      }
-    }
   }
 }

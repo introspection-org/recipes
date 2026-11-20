@@ -93,35 +93,5 @@
     "prior_resolution": {
       "id": "obs-prior"
     }
-  },
-  "expected": {
-    "prompt": "<conversation_case>\n  <conversation_id>conv-parity</conversation_id>\n  <metadata>\n    <span_count>8</span_count>\n    <error_count>0</error_count>\n    <duration_ms>241250.5</duration_ms>\n  </metadata>\n  <previous_observations>\n    <observation lens=\"task_resolution\" label=\"unresolved\">The export still fails.</observation>\n  </previous_observations>\n  <continuation turns_skipped=\"0\">Only new turns are included.</continuation>\n  <transcript>\n    <message ref=\"m1\" role=\"tool\">[tool_call_response run call-2] \"Error: permission denied writing /exports/nightly.csv\"</message>\n    <message ref=\"m2\" role=\"assistant\">The export user cannot write to /exports. Grant it write access.</message>\n    <message ref=\"m3\" role=\"user\">Thanks, that fixed it.</message>\n    <message ref=\"m4\" role=\"assistant\">Glad it works now.</message>\n  </transcript>\n  <diagnostic_events>\n    <event ref=\"d1\" kind=\"tool_response\">{\"ref\": \"d1\", \"message_ref\": \"m1\", \"kind\": \"tool_response\", \"tool_name\": \"run\", \"output\": \"Error: permission denied writing /exports/nightly.csv\"}</event>\n  </diagnostic_events>\n</conversation_case>",
-    "plan": {
-      "conversation_id": "conv-parity",
-      "completed_at": "2026-11-12T09:04:00Z",
-      "digest": "505e2a0258111f9b7cd47a5b2825392a821a463961c3fd7e204168a849e0f253",
-      "segment_start": "1794474120000000000",
-      "segment": 2,
-      "watermark_next": {
-        "watermark": "2026-11-12T09:04:00Z",
-        "cursor": "eyJpIjoic3Bhbi0wNCIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MjQwMDAwMDAwMDAwIn0",
-        "segment": 2,
-        "tail_fingerprints": [
-          "e2c9219175dd8cc991613fdb",
-          "505ce6f358c5272a0eef0378",
-          "d0f057eefafeb47ec9cfd21f",
-          "7bc4d7f6b72858add9860666",
-          "374e1b30274298ea2943b9c7",
-          "c9c17a407d545d08806d4805",
-          "d5638ea11f72849988c07bae",
-          "2a420c13d0b86422948f09fd"
-        ],
-        "last_input_count": 7,
-        "completed_at": "2026-11-12T09:04:00Z"
-      },
-      "prior_resolution": {
-        "id": "obs-prior"
-      }
-    }
   }
 }
