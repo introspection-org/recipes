@@ -30,6 +30,8 @@ interface JudgeBase {
   path: string;
   /** SHA-256 of the definition file: a changed definition is a different judge. */
   definitionHash: string;
+  /** The fraction of production conversations it runs on; absent means all. */
+  sample?: number;
 }
 
 /** A judge a chat model answers by reading `instructions`. */
@@ -80,6 +82,7 @@ export interface NormalizedJudgeDefinition {
     instructions?: string;
     questions?: Record<string, JudgeQuestion>;
     preprocess?: unknown;
+    sample?: number;
   };
   warnings?: string[];
 }
@@ -157,6 +160,7 @@ function toDefinition(
       : {}),
     path,
     definitionHash: createHash("sha256").update(content).digest("hex"),
+    ...(definition.sample !== undefined ? { sample: definition.sample } : {}),
   };
   if (definition.questions) {
     return { ...base, kind: "classifier", questions: definition.questions };

@@ -29,6 +29,7 @@ const TOP_LEVEL_FIELDS: &[&str] = &[
     "on",
     "preprocess",
     "questions",
+    "sample",
     "type",
 ];
 const QUESTION_FIELDS: &[&str] = &["criteria", "instructions", "threshold"];
@@ -156,6 +157,7 @@ fn validate_judge(path: &str, ctx: &mut CheckContext) -> ValidatedJudge {
     validate_description(map, path, ctx);
     validate_kind(map, path, ctx);
     validate_on(map.get("on"), path, ctx);
+    validate_sample(map, path, ctx);
     validate_model(map, path, ctx);
     validate_preprocess(map.get("preprocess"), path, ctx);
 
@@ -293,6 +295,23 @@ fn validate_description(map: &Map<String, Value>, path: &str, ctx: &mut CheckCon
             "Judge description must be a string",
             Some("remove description or provide a string"),
         ),
+    }
+}
+
+fn validate_sample(map: &Map<String, Value>, path: &str, ctx: &mut CheckContext) {
+    let Some(sample) = map.get("sample") else {
+        return;
+    };
+    if !sample
+        .as_f64()
+        .is_some_and(|sample| sample > 0.0 && sample <= 1.0)
+    {
+        ctx.error(
+            "judge.sample_invalid",
+            path,
+            "Judge sample must be a number greater than 0 and at most 1",
+            Some("remove sample to judge every conversation `on` selects"),
+        );
     }
 }
 
@@ -1579,6 +1598,18 @@ questions:
 "#;
 
     #[test]
+    fn sample_is_a_fraction_above_zero_and_at_most_one() {
+        for sample in ["1", "1.0", "0.25", "0.001"] {
+            let judge = format!("{MINIMAL}sample: {sample}\n");
+            assert_eq!(codes(&judge), [] as [&str; 0], "{sample}");
+        }
+        for sample in ["0", "-0.5", "1.5", "\"0.5\"", "null", "half"] {
+            let judge = format!("{MINIMAL}sample: {sample}\n");
+            assert_eq!(codes(&judge), ["judge.sample_invalid"], "{sample}");
+        }
+    }
+
+    #[test]
     fn accepts_a_mission_judge_beside_an_online_one() {
         let report = check_recipe_files(&snapshot(&[
             ("judges/minimal.yaml", Some(MINIMAL)),
@@ -1612,6 +1643,7 @@ questions:
                 "  personal:\n    threshold: 0.5\n    instructions: Did",
             ),
             MISSION.replace("  personal:", "  Personal:"),
+            MISSION.replace("description:", "sample: 0.5\ndescription:"),
         ] {
             let diagnostics = judge_diagnostics(&[("judges/booking.yaml", Some(&broken))]);
             assert_eq!(

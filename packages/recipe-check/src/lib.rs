@@ -3380,6 +3380,7 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     validate_agent_model(map, path, &name, &mut fields, ctx);
     validate_agent_ai(map, path, &name, &mut fields, ctx);
     validate_agent_session(map, path, ctx);
+    validate_agent_cache_retention(map, path, ctx);
     let tools = validate_agent_tools(map, path, ctx);
     let reserved_tools = tools
         .iter()
@@ -4002,6 +4003,7 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
         "follow_up_mode",
         "tool_execution",
         "retry",
+        "cache",
         "compaction",
         "images",
     ];
@@ -4047,6 +4049,9 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
     if let Some(value) = session.get("retry") {
         validate_session_retry(value, path, ctx);
     }
+    if let Some(value) = session.get("cache") {
+        validate_session_cache(value, path, ctx);
+    }
     if let Some(value) = session.get("compaction") {
         validate_session_compaction(value, path, ctx);
     }
@@ -4059,6 +4064,93 @@ fn validate_agent_session(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
             &["auto_resize", "block_images"],
             &[],
             ctx,
+        );
+    }
+}
+
+/// The deprecated spellings of `session.cache.retention`, as (code, label).
+fn deprecated_cache_retention(map: &JsonMap) -> Option<(&'static str, &'static str)> {
+    if map
+        .get("ai")
+        .and_then(|ai| ai.get("options"))
+        .and_then(|options| options.get("cache_retention"))
+        .is_some()
+    {
+        return Some((
+            "agent.ai.options.cache_retention_deprecated",
+            "ai.options.cache_retention",
+        ));
+    }
+    map.get("model")
+        .and_then(|model| model.get("cache_retention"))
+        .map(|_| {
+            (
+                "agent.model.cache_retention_deprecated",
+                "model.cache_retention",
+            )
+        })
+}
+
+fn validate_agent_cache_retention(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
+    let Some((code, label)) = deprecated_cache_retention(map) else {
+        return;
+    };
+    let declared = map
+        .get("session")
+        .and_then(|session| session.get("cache"))
+        .and_then(|cache| cache.get("retention"))
+        .is_some();
+    if declared {
+        ctx.error(
+            "agent.session.cache.retention_conflict",
+            path,
+            format!("Agent must not declare both session.cache.retention and {label}"),
+            Some(format!("keep session.cache.retention and remove {label}")),
+        );
+    } else {
+        ctx.warning(
+            code,
+            path,
+            format!("Agent {label} is deprecated"),
+            Some("move it to session.cache.retention"),
+        );
+    }
+}
+
+fn validate_session_cache(value: &JsonValue, path: &str, ctx: &mut CheckContext) {
+    let Some(cache) = validate_session_settings_object(
+        value,
+        path,
+        "cache",
+        &["retention", "warming"],
+        &[],
+        &[],
+        ctx,
+    ) else {
+        return;
+    };
+    if cache.get("retention").is_some_and(|retention| {
+        !retention
+            .as_str()
+            .is_some_and(|retention| matches!(retention, "none" | "short" | "long"))
+    }) {
+        ctx.error(
+            "agent.session.cache.retention_invalid",
+            path,
+            "Agent session.cache.retention must be none, short, or long",
+            None::<String>,
+        );
+    }
+    if cache.get("warming").is_some_and(|warming| {
+        !warming
+            .as_str()
+            .is_some_and(|warming| matches!(warming, "off" | "streaming" | "idle"))
+    }) {
+        ctx.error(
+            "agent.session.cache.warming_invalid",
+            path,
+            "Agent session.cache.warming must be off, streaming, or idle",
+            None::<String>,
         );
     }
 }
@@ -7825,6 +7917,87 @@ mod tests {
                 report.diagnostics
             );
         }
+    }
+
+    fn session_codes(agent_tail: &str) -> Vec<(String, Severity)> {
+        let agent = format!("name: agent\n{agent_tail}");
+        check_recipe_files(&recipe_files(&[
+            ("package.json", r#"{"name":"cache","pi":{}}"#),
+            ("agents/agent.yaml", &agent),
+        ]))
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.severity))
+        .collect()
+    }
+
+    #[test]
+    fn checks_session_cache() {
+        let ai = "ai:\n  model: openai/gpt-5\n";
+        for retention in ["none", "short", "long"] {
+            let tail =
+                format!("{ai}session:\n  cache:\n    retention: {retention}\n    warming: idle\n");
+            assert_eq!(session_codes(&tail), [], "{retention}");
+        }
+        for (session, code) in [
+            ("  cache: long\n", "agent.session.cache_invalid"),
+            ("  cache:\n    ttl: 60\n", "agent.session.cache_key_unknown"),
+            (
+                "  cache:\n    retention: forever\n",
+                "agent.session.cache.retention_invalid",
+            ),
+            (
+                "  cache:\n    warming: always\n",
+                "agent.session.cache.warming_invalid",
+            ),
+        ] {
+            let tail = format!("{ai}session:\n{session}");
+            assert_eq!(
+                session_codes(&tail),
+                [(code.to_owned(), Severity::Error)],
+                "{session}"
+            );
+        }
+        assert_eq!(
+            session_codes(&format!(
+                "{ai}session:\n  compaction:\n    on_idle:\n      min_context_tokens: 1\n"
+            )),
+            [(
+                "agent.session.compaction_key_unknown".to_owned(),
+                Severity::Error
+            )]
+        );
+    }
+
+    #[test]
+    fn model_cache_retention_is_deprecated_for_session_cache() {
+        let options = "ai:\n  model: openai/gpt-5\n  options:\n    cache_retention: long\n";
+        assert_eq!(
+            session_codes(options),
+            [(
+                "agent.ai.options.cache_retention_deprecated".to_owned(),
+                Severity::Warning
+            )]
+        );
+        assert_eq!(
+            session_codes("model:\n  name: openai/gpt-5\n  cache_retention: long\n")
+                .into_iter()
+                .filter(|(code, _)| code.contains("cache_retention"))
+                .collect::<Vec<_>>(),
+            [(
+                "agent.model.cache_retention_deprecated".to_owned(),
+                Severity::Warning
+            )]
+        );
+        assert_eq!(
+            session_codes(&format!(
+                "{options}session:\n  cache:\n    retention: short\n"
+            )),
+            [(
+                "agent.session.cache.retention_conflict".to_owned(),
+                Severity::Error
+            )]
+        );
     }
 
     #[test]

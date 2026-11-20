@@ -3,6 +3,7 @@ const SESSION_KEYS = new Set([
   "follow_up_mode",
   "tool_execution",
   "retry",
+  "cache",
   "compaction",
   "images",
 ]);
@@ -10,6 +11,9 @@ const SESSION_KEYS = new Set([
 const SNAKE_CASE_KEY = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
 type RecipeQueueMode = "all" | "one-at-a-time";
+type RecipeCacheRetention = "none" | "short" | "long";
+type RecipeCacheWarming = "off" | "streaming" | "idle";
+
 type RecipeToolExecutionMode = "parallel" | "sequential";
 
 export interface RecipeAgentSessionConfig {
@@ -19,6 +23,8 @@ export interface RecipeAgentSessionConfig {
   settings?: Record<string, unknown>;
   /** `session.compaction.instructions`, for every compaction of the session. */
   compactionInstructions?: string;
+  /** `session.cache.retention`, applied as the `cacheRetention` request option. */
+  cacheRetention?: RecipeCacheRetention;
 }
 
 export class RecipeSessionConfigError extends Error {
@@ -159,7 +165,10 @@ function parseRetry(
 function parseCompaction(
   context: string,
   value: unknown,
-): { settings?: Record<string, unknown>; instructions?: string } {
+): {
+  settings?: Record<string, unknown>;
+  instructions?: string;
+} {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
     "enabled",
@@ -202,6 +211,39 @@ function parseCompaction(
   return {
     ...(settings ? { settings } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
+  };
+}
+
+function parseCache(
+  context: string,
+  value: unknown,
+): { retention?: RecipeCacheRetention; warming?: RecipeCacheWarming } {
+  const data = sessionObject(context, value);
+  assertKnownKeys(context, data, ["retention", "warming"]);
+  const { retention, warming } = data;
+  if (
+    retention !== undefined &&
+    retention !== "none" &&
+    retention !== "short" &&
+    retention !== "long"
+  ) {
+    throw new RecipeSessionConfigError(
+      `${context}.retention: expected none, short or long`,
+    );
+  }
+  if (
+    warming !== undefined &&
+    warming !== "off" &&
+    warming !== "streaming" &&
+    warming !== "idle"
+  ) {
+    throw new RecipeSessionConfigError(
+      `${context}.warming: expected off, streaming or idle`,
+    );
+  }
+  return {
+    ...(retention !== undefined ? { retention } : {}),
+    ...(warming !== undefined ? { warming } : {}),
   };
 }
 
@@ -327,6 +369,10 @@ export function parseRecipeAgentSessionConfig(
     ...(steeringMode ? { steeringMode } : {}),
     ...(followUpMode ? { followUpMode } : {}),
   };
+  const cache =
+    value.cache === undefined
+      ? undefined
+      : parseCache(`${context} session.cache`, value.cache);
   const compaction =
     value.compaction === undefined
       ? undefined
@@ -343,6 +389,7 @@ export function parseRecipeAgentSessionConfig(
         : parseImages(`${context} session.images`, value.images),
   };
   Object.assign(settings, definedObject(nestedSettings));
+  if (cache?.warming) settings.cacheWarming = cache.warming;
 
   const parsed = {
     ...(steeringMode ? { steeringMode } : {}),
@@ -352,6 +399,7 @@ export function parseRecipeAgentSessionConfig(
     ...(compaction?.instructions
       ? { compactionInstructions: compaction.instructions }
       : {}),
+    ...(cache?.retention ? { cacheRetention: cache.retention } : {}),
   };
   return Object.keys(parsed).length > 0 ? parsed : undefined;
 }

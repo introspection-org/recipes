@@ -414,7 +414,7 @@ export async function runJudges(
         !samplesIn(
           operational.judge_id ?? judge.name,
           line.conversation_id ?? line.custom_id,
-          operational.sample_rate ?? 1,
+          operational.sample_rate ?? judge.sample ?? 1,
         )
       ) {
         skip("sampled_out");
