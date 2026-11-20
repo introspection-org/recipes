@@ -284,20 +284,54 @@ export async function runBatchWith(
     (deps.cancel?.aborted ?? false) ||
     (deadline !== null && now() >= deadline);
 
-  // Settles when the run is told to stop, so a read from a stream that has
-  // paused before its next line does not hold the batch.
-  let stopTimer: ReturnType<typeof setTimeout> | undefined;
-  const stopping = new Promise<"stop">((resolve) => {
-    const stop = () => resolve("stop");
-    for (const signal of [deps.signal, deps.cancel]) {
-      if (signal?.aborted) stop();
-      else signal?.addEventListener("abort", stop, { once: true });
+  // A read from a stream that has paused before its next line must not hold a
+  // stopped batch. Each read waits on the stop only while it is pending, so
+  // nothing keeps a finished read's line alive.
+  let stopFired = false;
+  const stopWaiters = new Set<() => void>();
+  const fireStop = () => {
+    stopFired = true;
+    for (const wake of stopWaiters) wake();
+    stopWaiters.clear();
+  };
+  const stopSignals = [deps.signal, deps.cancel].filter(
+    (signal): signal is AbortSignal => signal !== undefined,
+  );
+  for (const signal of stopSignals) {
+    if (signal.aborted) stopFired = true;
+    else signal.addEventListener("abort", fireStop, { once: true });
+  }
+  const stopTimer =
+    deadline === null
+      ? undefined
+      : setTimeout(fireStop, Math.max(0, deadline - now()));
+  stopTimer?.unref?.();
+  const detachStop = () => {
+    clearTimeout(stopTimer);
+    for (const signal of stopSignals) {
+      signal.removeEventListener("abort", fireStop);
     }
-    if (deadline !== null) {
-      stopTimer = setTimeout(stop, Math.max(0, deadline - now()));
-      stopTimer.unref?.();
-    }
-  });
+    stopWaiters.clear();
+  };
+  const readUnlessStopped = (
+    read: Promise<IteratorResult<InputItem>>,
+  ): Promise<IteratorResult<InputItem> | "stop"> =>
+    stopFired
+      ? Promise.resolve("stop")
+      : new Promise((resolve, reject) => {
+          const wake = () => resolve("stop");
+          stopWaiters.add(wake);
+          read.then(
+            (result) => {
+              stopWaiters.delete(wake);
+              resolve(result);
+            },
+            (error: unknown) => {
+              stopWaiters.delete(wake);
+              reject(error);
+            },
+          );
+        });
   // A read a stop overtook: it still takes its line, so cleanup counts it.
   let pendingRead: Promise<IteratorResult<InputItem>> | undefined;
 
@@ -558,7 +592,7 @@ export async function runBatchWith(
     let next: IteratorResult<InputItem>;
     try {
       pendingRead = lines.next();
-      const read = await Promise.race([pendingRead, stopping]);
+      const read = await readUnlessStopped(pendingRead);
       if (read === "stop") return "end";
       pendingRead = undefined;
       next = read;
@@ -673,30 +707,33 @@ export async function runBatchWith(
       }
     }
   };
-  await progress("running");
-  await Promise.all(Array.from({ length: params.concurrency }, worker));
-  if (!inputComplete && inputError === undefined) {
-    if (typeof deps.input === "string") {
-      // A file ends: count the lines a stopped run left for the next one,
-      // reading them without parsing, the one a stop overtook first.
-      for (
-        let next = pendingRead ? await pendingRead : await lines.next();
-        !next.done;
-        next = await lines.next()
-      ) {
-        summary.total += 1;
+  try {
+    await progress("running");
+    await Promise.all(Array.from({ length: params.concurrency }, worker));
+    if (!inputComplete && inputError === undefined) {
+      if (typeof deps.input === "string") {
+        // A file ends: count the lines a stopped run left for the next one,
+        // reading them without parsing, the one a stop overtook first.
+        for (
+          let next = pendingRead ? await pendingRead : await lines.next();
+          !next.done;
+          next = await lines.next()
+        ) {
+          summary.total += 1;
+        }
+        inputComplete = true;
+      } else if (pendingRead) {
+        // A read is still waiting on the stream; closing queues behind it, so
+        // it is asked for without waiting.
+        void lines.return(undefined).catch(() => {});
+      } else {
+        // A stream may never end: close it rather than wait for the rest.
+        await lines.return(undefined);
       }
-      inputComplete = true;
-    } else if (pendingRead) {
-      // A read is still waiting on the stream; closing queues behind it, so
-      // it is asked for without waiting.
-      void lines.return(undefined).catch(() => {});
-    } else {
-      // A stream may never end: close it rather than wait for the rest.
-      await lines.return(undefined);
     }
+  } finally {
+    detachStop();
   }
-  clearTimeout(stopTimer);
   summary.input_complete = inputComplete;
   summary.not_started = pending();
   summary.stopped = summary.not_started > 0 || !inputComplete || stopped();

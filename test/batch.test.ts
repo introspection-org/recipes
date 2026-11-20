@@ -630,6 +630,56 @@ describe("runBatch", () => {
     });
   });
 
+  it("removes its stop listeners when it finishes", async () => {
+    const signal = new AbortController().signal;
+    const cancel = new AbortController().signal;
+    const live = new Map<AbortSignal, number>([
+      [signal, 0],
+      [cancel, 0],
+    ]);
+    for (const target of [signal, cancel]) {
+      const add = target.addEventListener.bind(target);
+      const remove = target.removeEventListener.bind(target);
+      target.addEventListener = ((...args: Parameters<typeof add>) => {
+        live.set(target, live.get(target)! + 1);
+        add(...args);
+      }) as typeof add;
+      target.removeEventListener = ((...args: Parameters<typeof remove>) => {
+        live.set(target, live.get(target)! - 1);
+        remove(...args);
+      }) as typeof remove;
+    }
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "a", prompt: "one" },
+        { custom_id: "b", prompt: "two" },
+      ),
+    });
+    const outcome = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        deadline_ms: 60_000,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal,
+        cancel,
+        log: () => {},
+      },
+    );
+    expect(outcome).toMatchObject({ completed: 2 });
+    expect([...live.values()]).toEqual([0, 0]);
+  });
+
   it("lets the lines in flight finish before an input error is thrown", async () => {
     let finished = 0;
     async function* failing() {
