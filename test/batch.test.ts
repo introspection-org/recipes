@@ -25,6 +25,7 @@ import {
   type BatchProgress,
   type BatchRunController,
 } from "../src/batch/index.js";
+import { conversationSynthesis } from "../src/prompts/index.js";
 import { activeBaggage, useAsyncContext } from "./helpers/otel-context.js";
 
 /** What resume compares: the line's fingerprint under the "summarize" agent these tests run. */
@@ -346,7 +347,10 @@ describe("runBatch", () => {
       },
     );
 
-    expect(prompts).toEqual([fixture.expected.prompt, "as written"]);
+    expect(prompts).toEqual([
+      conversationSynthesis.build(fixture.input, 300_000).prompt,
+      "as written",
+    ]);
     const results = Object.fromEntries(
       files
         .text(OUTPUT)
@@ -355,11 +359,12 @@ describe("runBatch", () => {
         .map((l) => JSON.parse(l))
         .map((r) => [r.custom_id, r]),
     );
+    const direct = conversationSynthesis.build(fixture.input, 300_000);
     expect(results["conv-parity#1"].built).toEqual({
       builder: "conversation_synthesis@1",
       applied: [],
-      digest: fixture.expected.plan.digest,
-      state: { plan: fixture.expected.plan },
+      digest: direct.digest,
+      state: direct.state,
     });
     expect(results.written).not.toHaveProperty("built");
   });

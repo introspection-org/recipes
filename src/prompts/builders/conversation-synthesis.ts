@@ -7,10 +7,13 @@ import { prefix, suffix } from "../text.js";
 /**
  * `conversation_synthesis@1`: one conversation, from the turns past its resume
  * cursor, as the case observation synthesis reads, with the plan its next
- * segment resumes from. It reads conversations as the data plane's Python
- * builder did, held to the same shape by
- * `test/conversation-synthesis-parity.test.ts`; message fingerprints and the
- * resume cursor are the same bytes, so a resume crosses the switch.
+ * segment resumes from. Each call's window is the processor's, read as
+ * recorded: a message is shown once per window it appears in, never matched
+ * against earlier content, so a message that repeats earlier text is kept.
+ * Calls are read per agent lane (agent id, else agent name, else root), as the
+ * processor scopes them: a lane's first window records the history it
+ * inherited, so a subagent or branch lane contributes only the task its first
+ * window ends with, then its own turns.
  */
 
 /** A message part as the conversation API returns it, discriminated by `type`. */
@@ -36,6 +39,9 @@ export interface ConversationModelCall {
   input_new_messages: ConversationMessage[];
   input_message_count?: number;
   output_messages: ConversationMessage[];
+  /** The agent the call belongs to, which decides its lane. */
+  agent_id?: string | null;
+  agent_name?: string | null;
 }
 
 /** Where the previous segment stopped. */
@@ -43,7 +49,11 @@ export interface ResumeState {
   watermark: string;
   cursor?: string | null;
   segment: number;
-  tail_fingerprints?: string[];
+  /** The conversation's own lane, the one its first call ran in. */
+  root_lane?: string;
+  /** Lanes that have begun, whose next window is their own turns rather than inherited history. */
+  lanes?: string[];
+  /** The root lane's last input size, which a compaction is measured against. */
   last_input_count?: number;
   completed_at?: string | null;
 }
@@ -99,7 +109,6 @@ const TRANSCRIPT_HEAD_MESSAGES = 10;
 const SLIM_HEAD_CHARS = 1_500;
 const SLIM_TAIL_CHARS = 500;
 const SLIM_PROTECTED_TAIL = 8;
-const TAIL_FINGERPRINT_LIMIT = 50;
 const DIAGNOSTIC_EVENT_LIMIT = 120;
 const DIAGNOSTIC_EVENT_TEXT_LIMIT = 2_000;
 
@@ -151,7 +160,8 @@ interface CaseMessage {
   part_types: string[];
   source: Source;
   compaction_ref?: string;
-  occurrences: number;
+  /** The agent lane, when it is not the conversation's own. */
+  lane?: string;
 }
 
 interface DiagnosticEvent {
@@ -419,8 +429,18 @@ interface Read {
   compactions: number;
   turnsSkipped: number;
   turns: Turn[];
-  finalInputCount: number;
+  rootLane?: string;
+  lanes: string[];
+  rootInputCount: number;
 }
+
+/** A call's lane, as the processor scopes it: agent id, else agent name, else root. */
+const laneOf = (call: ConversationModelCall) =>
+  call.agent_id
+    ? `id:${call.agent_id}`
+    : call.agent_name
+      ? `name:${call.agent_name}`
+      : "root";
 
 /** The deduplicated messages of the turns past the resume point, with what they carried. */
 function read(input: ConversationSynthesisInput): Read {
@@ -429,28 +449,26 @@ function read(input: ConversationSynthesisInput): Read {
   const all = input.model_calls.map(turnOf);
   const turns =
     point === undefined ? all : all.filter((turn) => isAfter(turn, point));
-  const seen = new Set(resume?.tail_fingerprints ?? []);
+  const rootLane =
+    resume?.root_lane ?? (all[0] ? laneOf(all[0].call) : undefined);
+  const lanes = new Set(resume?.lanes ?? []);
   const seenSummaries = new Set<string>();
   const messages: CaseMessage[] = [];
   const events: DiagnosticEvent[] = [];
   let compactions = 0;
-  let previousCount = point !== undefined ? (resume?.last_input_count ?? 0) : 0;
+  // Each lane's input grows on its own, so a compaction is measured within it.
+  const previousCounts = new Map<string, number>();
+  if (point !== undefined && rootLane !== undefined) {
+    previousCounts.set(rootLane, resume?.last_input_count ?? 0);
+  }
 
   const append = (
     message: ConversationMessage,
     kind: Source["kind"],
     turn: Turn,
+    lane: string,
     compactionRef?: string,
   ) => {
-    const hash = fingerprint(message);
-    if (seen.has(hash)) {
-      const earlier = messages.find(
-        (item) => item.source.message_hash === hash,
-      );
-      if (earlier) earlier.occurrences += 1;
-      return;
-    }
-    seen.add(hash);
     const content = messageContent(message);
     const shown = clip(
       content,
@@ -472,11 +490,11 @@ function read(input: ConversationSynthesisInput): Read {
         kind,
         span_id: turn.call.span_id,
         ...(turn.call.timestamp ? { timestamp: turn.call.timestamp } : {}),
-        message_hash: hash,
+        message_hash: fingerprint(message),
         ...(responseId ? { response_id: responseId } : {}),
       },
       ...(compactionRef ? { compaction_ref: compactionRef } : {}),
-      occurrences: 1,
+      ...(lane !== rootLane ? { lane: lane.replace(/^(id|name):/, "") } : {}),
     });
     events.push(
       ...diagnosticEvents(message, ref).slice(
@@ -487,11 +505,18 @@ function read(input: ConversationSynthesisInput): Read {
   };
 
   for (const turn of turns) {
-    const window = turn.call.input_new_messages;
+    const lane = laneOf(turn.call);
+    let window = turn.call.input_new_messages;
+    // A lane's first window records the history it inherited; a subagent or
+    // branch lane brings only the task that window ends with.
+    if (!lanes.has(lane)) {
+      if (lane !== rootLane) window = window.slice(-1);
+      lanes.add(lane);
+    }
     const count = turn.call.input_message_count ?? 0;
     let summaries = new Set<ConversationMessage>();
     let compactionRef: string | undefined;
-    if (followsCompaction(previousCount, count, window)) {
+    if (followsCompaction(previousCounts.get(lane) ?? 0, count, window)) {
       let found = window.filter(isSummary);
       if (found.length === 0 && window.length === 1) found = [...window];
       const hashes = found.map(fingerprint);
@@ -511,12 +536,14 @@ function read(input: ConversationSynthesisInput): Read {
         message,
         "input",
         turn,
+        lane,
         summaries.has(message) ? compactionRef : undefined,
       );
     }
-    for (const message of turn.call.output_messages)
-      append(message, "output", turn);
-    if (count) previousCount = count;
+    for (const message of turn.call.output_messages) {
+      append(message, "output", turn, lane);
+    }
+    if (count) previousCounts.set(lane, count);
   }
   return {
     messages,
@@ -524,7 +551,10 @@ function read(input: ConversationSynthesisInput): Read {
     compactions,
     turnsSkipped: all.length - turns.length,
     turns,
-    finalInputCount: previousCount,
+    ...(rootLane !== undefined ? { rootLane } : {}),
+    lanes: [...lanes],
+    rootInputCount:
+      (rootLane !== undefined ? previousCounts.get(rootLane) : undefined) ?? 0,
   };
 }
 
@@ -657,7 +687,7 @@ function render(
   lines.push("  <transcript>");
   for (const message of messages) {
     lines.push(
-      `    <message ref=${attr(message.ref)} role=${attr(message.role || "unknown")}>${escapeXml(message.content.trim())}</message>`,
+      `    <message ref=${attr(message.ref)} role=${attr(message.role || "unknown")}${message.lane ? ` lane=${attr(message.lane)}` : ""}>${escapeXml(message.content.trim())}</message>`,
     );
   }
   lines.push("  </transcript>");
@@ -705,17 +735,15 @@ export const conversationSynthesis: PromptBuilder<
             : latest,
         undefined,
       );
-    const tail = conversation.messages
-      .slice(-TAIL_FINGERPRINT_LIMIT)
-      .map((message) => message.source.message_hash!);
     const segment = (number: number): ResumeState => ({
       watermark: last?.call.timestamp ?? input.completed_at,
       ...(last ? { cursor: encodeCursor(last.call.span_id, last.ns!) } : {}),
       segment: number,
-      tail_fingerprints: [...(resume?.tail_fingerprints ?? []), ...tail].slice(
-        -TAIL_FINGERPRINT_LIMIT,
-      ),
-      last_input_count: conversation.finalInputCount,
+      ...(conversation.rootLane !== undefined
+        ? { root_lane: conversation.rootLane }
+        : {}),
+      lanes: conversation.lanes,
+      last_input_count: conversation.rootInputCount,
       completed_at: input.completed_at,
     });
     const priorSegment = resume?.segment ?? 0;
