@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.29.0...introspection-recipe-check-v0.30.0) (2026-11-20)
+
+
+### Features
+
+* **format:** compaction model_overrides and instructions on session.compaction ([#557](https://github.com/introspection-org/recipes/issues/557)) ([d0e387f](https://github.com/introspection-org/recipes/commit/d0e387ff534aaf5f2235d3460b9224225b60d9e1))
+* **prompts:** prompt builders for judges and synthesis, built inside a streaming batch ([#552](https://github.com/introspection-org/recipes/issues/552)) ([2ff9e10](https://github.com/introspection-org/recipes/commit/2ff9e1060f4c2e0808638f2c17a53ca2635e8b6b))
+
 ## [0.29.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.28.0...introspection-recipe-check-v0.29.0) (2026-11-19)
 
 
