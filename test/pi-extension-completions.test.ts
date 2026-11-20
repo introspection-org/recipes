@@ -501,7 +501,10 @@ describe("subagent usage", () => {
         cache_write_tokens: 100,
         cost_usd: 0.09,
       });
-      expect(status?.content?.[0]?.text).toContain("↓ 2.3k tokens · $0.09");
+      const statusText = status?.content
+        ?.map((part) => (part.type === "text" ? part.text : ""))
+        .join("");
+      expect(statusText).toContain("↓ 2.3k tokens · $0.09");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
