@@ -252,11 +252,13 @@ sample: 0.1
 
 Sampling is deterministic per conversation, so a rerun, and every host that
 judges the same conversation, makes the same choice. A conversation is sampled
-when `h / 2^64 < sample`, where `h` is the first eight bytes, read as a
+when `h / 2^48 < sample`, where `h` is the first six bytes, read as a
 big-endian unsigned integer, of the SHA-256 of
-`<judge name>:<conversation id>`. The judge's name is part of the key, so two judges that each sample a
-tenth of conversations do not pick the same tenth; renaming a judge draws a
-new sample.
+`<judge id>:<conversation id>`. The judge id is the platform's id for the
+judge, or its name where the host has none. It is part of the key, so two
+judges that each sample a tenth of conversations do not pick the same tenth;
+renaming a judge draws a new sample. A sampling rate the platform sets for a
+judge replaces `sample`. Only production conversations are sampled.
 
 A conversation the sample leaves out records no verdict; it is not
 `not_applicable`, which only `on` produces. An eval run judges every trial it
