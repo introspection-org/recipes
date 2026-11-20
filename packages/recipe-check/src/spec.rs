@@ -106,6 +106,9 @@ pub struct JudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     pub questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
+    /// The builder of the judge's transcript, as an agent's `preprocess:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preprocess: Option<Value>,
     /// The fraction of the conversations `on` selects that the judge runs
     /// on: greater than 0 and at most 1. Absent means 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,6 +210,9 @@ struct AuthoredJudgeDefinition {
         schemars(schema_with = "classifier_questions_schema")
     )]
     questions: Option<BTreeMap<String, JudgeClassifierQuestion>>,
+    /// The builder of the judge's transcript, as an agent's `preprocess:`.
+    #[serde(default)]
+    preprocess: Option<Value>,
     /// The fraction of the conversations `on` selects that the judge runs
     /// on: greater than 0 and at most 1. Absent means 1.
     #[serde(default, deserialize_with = "present_number")]
@@ -809,6 +815,7 @@ fn authored_judge(
         ai,
         instructions: authored.instructions,
         questions: authored.questions,
+        preprocess: authored.preprocess,
         sample: authored.sample,
     })
 }
@@ -1610,6 +1617,7 @@ ai:
             ai: serde_json::from_value(json!({ "model": " openai/gpt-5 " })).unwrap(),
             instructions: Some("Grade.".to_owned()),
             questions: None,
+            preprocess: None,
             sample: None,
         };
         let normalized = normalize_judge_definition(definition, "coded").unwrap();

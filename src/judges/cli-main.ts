@@ -199,6 +199,7 @@ export async function judgeCli(
   const input: (string | JudgeInputLine)[] = [...files, ...stdin];
 
   const concurrency = args.concurrency ?? 8;
+  const modelRegistry = new ModelRegistry(await ModelRuntime.create());
   const controller = deps.controller
     ? await deps.controller(judges)
     : createJudgeRunController({
@@ -206,7 +207,7 @@ export async function judgeCli(
         judges,
         cwd: process.cwd(),
         concurrency,
-        modelRegistry: new ModelRegistry(await ModelRuntime.create()),
+        modelRegistry,
         // Above `fallbackAfterRetries`, so a fallback is reached.
         settingsManager: SettingsManager.inMemory({
           retry: {
@@ -225,6 +226,7 @@ export async function judgeCli(
       input,
       controller,
       concurrency,
+      modelRegistry,
       ...(args.out ? { directory: resolve(args.out) } : {}),
       ...(args.maxAttempts ? { max_attempts: args.maxAttempts } : {}),
       ...(operational ? { operational } : {}),

@@ -6,12 +6,6 @@ const TRAJECTORY_SCHEMA_VERSION = 2;
 const MAX_JUDGE_INPUT_RECORDS = 20_000;
 /** A tool result larger than this was captured truncated: a gate cannot inspect it. */
 export const TOOL_RESULT_TRUNCATE_BYTES = 4096;
-/** What an LLM judge reads: about 200k tokens, as UTF-16 units. */
-const TRANSCRIPT_BUDGET_UNITS = 800_000;
-/** What a classifier judge reads: decision models take far less than a chat model. */
-export const CLASSIFIER_BUDGET_UNITS = 75_000;
-/** A tool argument or result longer than this is clipped in a classifier's transcript. */
-const SLIM_VALUE_UNITS = 2_000;
 
 interface TrajectoryError {
   type: string;
@@ -176,7 +170,7 @@ const TIMESTAMP =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
 
 /** Refuse evidence a judge could not read consistently; the error says what is wrong. */
-function validateJudgeInput(input: JudgeInput): void {
+export function validateJudgeInput(input: JudgeInput): void {
   if (input.trajectory.length > MAX_JUDGE_INPUT_RECORDS) {
     throw new Error(
       `judge input trajectory exceeds the ${MAX_JUDGE_INPUT_RECORDS}-record limit`,
@@ -259,65 +253,4 @@ export function evidenceHash(input: JudgeInput): string {
       ),
     )
     .digest("hex");
-}
-
-/** Cut at a UTF-16 unit without splitting a surrogate pair. */
-function prefix(value: string, units: number): string {
-  const end =
-    units > 0 && /[\uD800-\uDBFF]/.test(value[units - 1] ?? "")
-      ? units - 1
-      : units;
-  return value.slice(0, end);
-}
-
-function suffix(value: string, units: number): string {
-  const start = value.length - units;
-  return value.slice(
-    /[\uDC00-\uDFFF]/.test(value[start] ?? "") ? start + 1 : start,
-  );
-}
-
-function enforceBudget(transcript: string, maxUnits: number): string {
-  if (transcript.length <= maxUnits) return transcript;
-  const marker = "\n… transcript middle redacted to fit the judge's budget …\n";
-  const available = Math.max(0, maxUnits - marker.length);
-  const head = Math.floor(available / 2);
-  return `${prefix(transcript, head)}${marker}${suffix(transcript, available - head)}`;
-}
-
-function clipValue(value: unknown): unknown {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (text === undefined || text.length <= SLIM_VALUE_UNITS) return value;
-  return `${prefix(text, SLIM_VALUE_UNITS)}… [clipped]`;
-}
-
-/**
- * The transcript a judge reads. `slim` clips long tool arguments and results
- * first, so a small budget is spent on the conversation rather than on one
- * tool's output; what still does not fit loses its middle.
- */
-export function renderTrajectoryInput(
-  input: JudgeInput,
-  options: { maxUnits?: number; slim?: boolean } = {},
-): string {
-  validateJudgeInput(input);
-  const trajectory = options.slim
-    ? input.trajectory.map((event) =>
-        event.type === "tool_call" && event.arguments
-          ? { ...event, arguments: clipValue(event.arguments) }
-          : event.type === "tool_result" && event.content !== undefined
-            ? { ...event, content: clipValue(event.content) }
-            : event,
-      )
-    : input.trajectory;
-  const sections = [
-    `TRAJECTORY\n${JSON.stringify(canonical(trajectory), null, 2)}`,
-  ];
-  if (input.system_instructions?.trim()) {
-    sections.push(`SYSTEM INSTRUCTIONS\n${input.system_instructions}`);
-  }
-  return enforceBudget(
-    sections.join("\n\n"),
-    options.maxUnits ?? TRANSCRIPT_BUDGET_UNITS,
-  );
 }

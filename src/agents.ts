@@ -91,6 +91,12 @@ export interface AgentRunController {
   message(id: string, message: string): Promise<AgentRunSummary>;
   interrupt(id: string): Promise<AgentRunSummary>;
   close(id: string): Promise<AgentRunSummary>;
+  /**
+   * Drop a closed run, its prompt and output with it, for a caller that will
+   * not read it again: a batch running thousands of lines through one
+   * controller. A run still open is kept.
+   */
+  forget?(id: string): void;
   /** Release every run and resource owned by this session's controller. */
   shutdown(): Promise<void>;
 }

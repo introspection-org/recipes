@@ -3290,6 +3290,8 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
         "phases",
         "subagents",
         "system_instructions",
+        "preprocess",
+        "resources",
     ];
     for key in map.keys().filter(|key| !AGENT_KEYS.contains(&key.as_str())) {
         ctx.error(
@@ -3403,6 +3405,8 @@ fn read_agent(path: &str, ctx: &mut CheckContext) -> Option<RawAgent> {
     validate_agent_string_array(map, "phases", path, ctx);
     let subagents = validate_agent_string_array(map, "subagents", path, ctx);
     validate_agent_system_instructions(map, path, ctx);
+    validate_agent_preprocess(map, path, ctx);
+    validate_agent_resources(map, path, ctx);
 
     Some(RawAgent {
         name,
@@ -4963,6 +4967,92 @@ fn validate_mcp_behind(
         );
     }
     Some(names.into_iter().map(str::to_owned).collect())
+}
+
+/// `resources:` says what the agent's sandbox may use; only `memory` today,
+/// as a Kubernetes quantity.
+fn validate_agent_resources(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = map.get("resources") else {
+        return;
+    };
+    let hint = Some("for example: resources: { memory: 512Mi }");
+    let Some(resources) = value.as_object() else {
+        ctx.error(
+            "agent.resources_invalid",
+            path,
+            "Agent resources must be a map",
+            hint,
+        );
+        return;
+    };
+    for key in resources.keys().filter(|key| key.as_str() != "memory") {
+        ctx.error(
+            "agent.resources_invalid",
+            path,
+            format!("Agent resources contains unknown field '{key}'"),
+            hint,
+        );
+    }
+    if let Some(memory) = resources.get("memory") {
+        if !memory.as_str().is_some_and(is_memory_quantity) {
+            ctx.error(
+                "agent.resources_invalid",
+                path,
+                "Agent resources.memory must be a quantity such as 512Mi or 1Gi",
+                hint,
+            );
+        }
+    }
+}
+
+/// A Kubernetes memory quantity in whole units: `512Mi`, `1Gi`, `500M`.
+fn is_memory_quantity(text: &str) -> bool {
+    ["Ki", "Mi", "Gi", "K", "M", "G"].iter().any(|unit| {
+        text.strip_suffix(unit).is_some_and(|digits| {
+            !digits.is_empty()
+                && !digits.starts_with('0')
+                && digits.bytes().all(|b| b.is_ascii_digit())
+        })
+    })
+}
+
+fn validate_agent_preprocess(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
+    let Some(value) = map.get("preprocess") else {
+        return;
+    };
+    for message in preprocess_problems(value) {
+        ctx.error(
+            "agent.preprocess_invalid",
+            path,
+            format!("Agent {message}"),
+            Some("for example: preprocess: conversation_synthesis@1"),
+        );
+    }
+}
+
+/// A `preprocess:` names its builder, alone or with a map of options; which
+/// builders exist and what options they read is the runtime's to check, so a
+/// new builder needs no checker release.
+pub(crate) fn preprocess_problems(value: &JsonValue) -> Vec<String> {
+    match value {
+        JsonValue::String(_) => vec![],
+        JsonValue::Object(map) => {
+            let mut problems = vec![];
+            if !map.get("builder").is_some_and(JsonValue::is_string) {
+                problems.push("preprocess must name its builder".to_owned());
+            }
+            if map
+                .get("options")
+                .is_some_and(|options| !options.is_object())
+            {
+                problems.push("preprocess.options must be a map".to_owned());
+            }
+            problems
+        }
+        _ => {
+            vec!["preprocess must be a builder name, or a map with builder and options".to_owned()]
+        }
+    }
 }
 
 fn validate_agent_system_instructions(map: &JsonMap, path: &str, ctx: &mut CheckContext) {
@@ -7666,6 +7756,79 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    #[test]
+    fn checks_an_agents_resources_memory() {
+        let package = json!({
+            "name": "agent-resources",
+            "version": "0.1.0",
+            "pi": { "agents": ["agents/*.yaml"] }
+        });
+        let manifest = serde_json::to_string_pretty(&package).expect("serialize package");
+        let check = |agent: &str| {
+            check_recipe_files(&recipe_files(&[
+                ("package.json", &manifest),
+                ("agents/agent.yaml", agent),
+            ]))
+        };
+        let report =
+            check("name: agent\nai:\n  model: openai/gpt-5\nresources:\n  memory: 512Mi\n");
+        assert!(report.valid, "{:?}", report.diagnostics);
+        for agent in [
+            "name: agent\nresources: 512Mi\n",
+            "name: agent\nresources:\n  memory: 512\n",
+            "name: agent\nresources:\n  cpu: 2\n",
+        ] {
+            let report = check(agent);
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "agent.resources_invalid"),
+                "{agent}: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn checks_an_agents_preprocess_names_a_builder() {
+        let package = json!({
+            "name": "agent-preprocess",
+            "version": "0.1.0",
+            "pi": { "agents": ["agents/*.yaml"] }
+        });
+        let manifest = serde_json::to_string_pretty(&package).expect("serialize package");
+        let check = |agent: &str| {
+            check_recipe_files(&recipe_files(&[
+                ("package.json", &manifest),
+                ("agents/agent.yaml", agent),
+            ]))
+        };
+
+        for agent in [
+            "name: agent\nai:\n  model: openai/gpt-5\npreprocess: conversation_synthesis@1\n",
+            "name: agent\nai:\n  model: openai/gpt-5\npreprocess:\n  builder: trajectory_llm_classify@1\n  options: { head: 200 }\n",
+        ] {
+            let report = check(agent);
+            assert!(report.valid, "{agent}: {:?}", report.diagnostics);
+        }
+        for agent in [
+            "name: agent\npreprocess: [conversation_synthesis@1]\n",
+            "name: agent\npreprocess:\n  options: {}\n",
+            "name: agent\npreprocess:\n  builder: trajectory_llm_judge@1\n  options: 3\n",
+        ] {
+            let report = check(agent);
+            assert!(
+                report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "agent.preprocess_invalid"),
+                "{agent}: {:?}",
+                report.diagnostics
+            );
+        }
     }
 
     #[test]

@@ -11,8 +11,10 @@ import type {
 import {
   AdaptiveLimiter,
   completedIds,
+  agentPromptBudget,
   inputFingerprint,
   jsonlResults,
+  linePromptBuilder,
   nodeBatchFiles,
   parseBatchParams,
   parseInputLines,
@@ -23,6 +25,7 @@ import {
   type BatchProgress,
   type BatchRunController,
 } from "../src/batch/index.js";
+import { conversationSynthesis } from "../src/prompts/index.js";
 import { activeBaggage, useAsyncContext } from "./helpers/otel-context.js";
 
 /** What resume compares: the line's fingerprint under the "summarize" agent these tests run. */
@@ -233,6 +236,7 @@ describe("runBatch", () => {
       failed: 0,
       not_started: 0,
       stopped: false,
+      input_complete: true,
     });
     expect(controller.peak).toBeLessThanOrEqual(4);
     expect(controller.closed.size).toBe(20);
@@ -297,6 +301,785 @@ describe("runBatch", () => {
       watermark: "2026-11-13T00:00:00Z",
     });
     expect(results.b).not.toHaveProperty("metadata");
+  });
+
+  it("builds an input line's prompt through the agent's prompt spec and records what built it", async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-synthesis",
+          "media_parts.json",
+        ),
+        "utf8",
+      ),
+    );
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "conv-parity#1", input: fixture.input },
+        { custom_id: "written", prompt: "as written" },
+      ),
+    });
+    const prompts: string[] = [];
+    const controller = new FakeController((prompt) => {
+      prompts.push(prompt);
+      return { status: "completed", output: "ok" };
+    });
+
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 1,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        buildPrompt: linePromptBuilder(
+          "conversation_synthesis@1",
+          agentPromptBudget({ name: "anthropic/claude-sonnet-5-5" }),
+        ),
+      },
+    );
+
+    expect(prompts).toEqual([
+      conversationSynthesis.build(fixture.input, 300_000).prompt,
+      "as written",
+    ]);
+    const results = Object.fromEntries(
+      files
+        .text(OUTPUT)
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l))
+        .map((r) => [r.custom_id, r]),
+    );
+    const direct = conversationSynthesis.build(fixture.input, 300_000);
+    expect(results["conv-parity#1"].built).toEqual({
+      builder: "conversation_synthesis@1",
+      applied: [],
+      digest: direct.digest,
+      state: direct.state,
+    });
+    expect(results.written).not.toHaveProperty("built");
+  });
+
+  it("admits lines by size, never holding more than its memory budget, and fails only a line larger than all of it", async () => {
+    const big = (id: string) => ({
+      custom_id: id,
+      prompt: id + "x".repeat(10_000),
+    });
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        big("b1"),
+        { custom_id: "s1", prompt: "small" },
+        big("b2"),
+        { custom_id: "huge", prompt: "x".repeat(200_000) },
+        big("b3"),
+      ),
+    });
+    let running = 0;
+    let peak = 0;
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const wait = controller.wait.bind(controller);
+    controller.start = (async (input: { name: string; prompt: string }) => {
+      running += input.prompt.length;
+      peak = Math.max(peak, running);
+      return { agent_run_id: input.prompt };
+    }) as never;
+    controller.wait = (async (id: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running -= id.length;
+      return { agent_run_id: id, status: "completed", output: "ok" };
+    }) as never;
+    void wait;
+
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 8,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        // Room for two of the large lines at once, at three times their text.
+        memoryBudget: 2 * 10_100 * 3,
+      },
+    );
+
+    expect(summary).toMatchObject({ total: 5, completed: 4, failed: 1 });
+    expect(peak).toBeLessThanOrEqual(2 * 10_100);
+    const huge = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((line) => line.custom_id === "huge");
+    expect(huge.result.error.message).toMatch(
+      /more than this batch can hold in memory/,
+    );
+  });
+
+  it("reports how it sized its memory, and where each number came from", async () => {
+    const lines: string[] = [];
+    await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "a", prompt: "p" }],
+      controller: new EchoRuns(),
+      log: (message) => lines.push(message),
+    });
+    expect(lines[0]).toMatch(
+      /^batch memory: heap limit \d+ MB \((configured: --max-old-space-size=\d+|detected: Node's default for this machine)\), \d+ MB in use at start, \d+ MB for lines in flight \(derived: half the heap free at start\)$/,
+    );
+
+    const configured: string[] = [];
+    await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "a", prompt: "p" }],
+      controller: new EchoRuns(),
+      memoryBudget: 64_000_000,
+      log: (message) => configured.push(message),
+    });
+    expect(configured[0]).toMatch(
+      /64 MB for lines in flight \(configured: memoryBudget\)$/,
+    );
+  });
+
+  it("never lets an invalid line with a used custom_id overwrite the first line's answer", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "a", prompt: "" },
+      ],
+      controller: new EchoRuns(),
+      concurrency: 1,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 1 });
+    expect(outcome.results.map((line) => line.result.output)).toEqual([
+      "FIRST",
+    ]);
+  });
+
+  it("returns a line whose prompt could not be built, with its error", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "ok", input: { n: 1 } },
+        { custom_id: "bad", input: { n: -1 } },
+      ],
+      controller: new EchoRuns(),
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    }).catch((error: unknown) => error);
+    // The synthesis builder cannot read either input; both are returned errored.
+    const results = (
+      outcome as { results: { custom_id: string; result: { type: string } }[] }
+    ).results;
+    expect(results.map((line) => [line.custom_id, line.result.type])).toEqual([
+      ["ok", "errored"],
+      ["bad", "errored"],
+    ]);
+  });
+
+  it("closes a streamed input on stop instead of reading it to the end", async () => {
+    const stop = new AbortController();
+    let closed = false;
+    async function* endless() {
+      try {
+        for (let n = 0; ; n++) {
+          if (n === 2) stop.abort();
+          yield { custom_id: `c${n}`, prompt: `p${n}` };
+        }
+      } finally {
+        closed = true;
+      }
+    }
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: endless(),
+      controller: new EchoRuns(),
+      concurrency: 1,
+      signal: stop.signal,
+      log: () => {},
+    });
+    expect(closed).toBe(true);
+    expect(outcome).toMatchObject({ stopped: true, input_complete: false });
+  });
+
+  it("stops while a streamed input has paused before its next line", async () => {
+    const stop = new AbortController();
+    let release!: () => void;
+    async function* paused() {
+      yield { custom_id: "a", prompt: "first" };
+      // Pauses until released; the run must not wait for it.
+      await new Promise<void>((resolve) => (release = resolve));
+      yield { custom_id: "b", prompt: "second" };
+    }
+    const controller = new EchoRuns();
+    const wait = controller.wait.bind(controller);
+    controller.wait = (async (id: string) => {
+      const settled = await wait(id);
+      setTimeout(() => stop.abort(), 5);
+      return settled;
+    }) as never;
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: paused(),
+      controller,
+      concurrency: 2,
+      signal: stop.signal,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({
+      completed: 1,
+      stopped: true,
+      input_complete: false,
+    });
+    release();
+  });
+
+  it("sizes an in-memory synthesis input whose timestamp_ns is a bigint", async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-synthesis",
+          "media_parts.json",
+        ),
+        "utf8",
+      ),
+    );
+    const input = {
+      ...fixture.input,
+      model_calls: fixture.input.model_calls.map(
+        (call: { timestamp_ns: number }) => ({
+          ...call,
+          timestamp_ns: BigInt(call.timestamp_ns),
+        }),
+      ),
+    };
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "c#1", input }],
+      controller: new EchoRuns(),
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 0 });
+  });
+
+  it("counts a file line whose read a stop overtook", async () => {
+    const stop = new AbortController();
+    let release!: () => void;
+    const files = memoryFiles({});
+    files.lines = async () =>
+      (async function* () {
+        yield JSON.stringify({ custom_id: "a", prompt: "first" });
+        await new Promise<void>((resolve) => (release = resolve));
+        yield JSON.stringify({ custom_id: "b", prompt: "second" });
+      })();
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      const started = await start(input);
+      stop.abort();
+      setTimeout(() => release(), 5);
+      return started;
+    };
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal: stop.signal,
+        log: () => {},
+      },
+    );
+    expect(summary).toMatchObject({
+      total: 2,
+      completed: 1,
+      not_started: 1,
+      input_complete: true,
+    });
+  });
+
+  it("removes its stop listeners when it finishes", async () => {
+    const signal = new AbortController().signal;
+    const cancel = new AbortController().signal;
+    const live = new Map<AbortSignal, number>([
+      [signal, 0],
+      [cancel, 0],
+    ]);
+    for (const target of [signal, cancel]) {
+      const add = target.addEventListener.bind(target);
+      const remove = target.removeEventListener.bind(target);
+      target.addEventListener = ((...args: Parameters<typeof add>) => {
+        live.set(target, live.get(target)! + 1);
+        add(...args);
+      }) as typeof add;
+      target.removeEventListener = ((...args: Parameters<typeof remove>) => {
+        live.set(target, live.get(target)! - 1);
+        remove(...args);
+      }) as typeof remove;
+    }
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "a", prompt: "one" },
+        { custom_id: "b", prompt: "two" },
+      ),
+    });
+    const outcome = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        deadline_ms: 60_000,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal,
+        cancel,
+        log: () => {},
+      },
+    );
+    expect(outcome).toMatchObject({ completed: 2 });
+    expect([...live.values()]).toEqual([0, 0]);
+  });
+
+  it("counts every file line when a stop lands while several workers wait to read", async () => {
+    const stop = new AbortController();
+    const files = memoryFiles({});
+    files.lines = async () =>
+      (async function* () {
+        for (let i = 0; i < 10; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          yield JSON.stringify({ custom_id: `c${i}`, prompt: `p${i}` });
+        }
+      })();
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      stop.abort();
+      return start(input);
+    };
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 3,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal: stop.signal,
+        log: () => {},
+      },
+    );
+    expect(summary.total).toBe(10);
+    expect(summary.completed + summary.failed + summary.not_started).toBe(10);
+    expect(summary.input_complete).toBe(true);
+  });
+
+  it("runs under a deadline longer than a timer can hold", async () => {
+    const files = memoryFiles({});
+    // Each read outlasts the 1 ms an overflowed timer would allow.
+    files.lines = async () =>
+      (async function* () {
+        for (const id of ["a", "b"]) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          yield JSON.stringify({ custom_id: id, prompt: id });
+        }
+      })();
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        deadline_ms: 30 * 24 * 60 * 60 * 1000,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    expect(summary).toMatchObject({ total: 2, completed: 2, stopped: false });
+  });
+
+  it("fails only the line whose session the controller cannot steer or close", async () => {
+    const files = memoryFiles({
+      [INPUT]: jsonl(
+        { custom_id: "a", prompt: "prose" },
+        { custom_id: "b", prompt: "json" },
+      ),
+    });
+    // "prose" needs a JSON repair, which this controller cannot send.
+    const controller = new FakeController((prompt) => ({
+      status: "completed",
+      output: prompt === "prose" ? "not json" : "{}",
+    }));
+    controller.close = async () => {
+      throw new Error("close refused");
+    };
+    const logged: string[] = [];
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+        output_format: "json",
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: (message) => logged.push(message),
+      },
+    );
+    expect(summary).toMatchObject({ total: 2, completed: 1, failed: 1 });
+    const results = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(results.find((line) => line.custom_id === "a").result).toMatchObject(
+      {
+        type: "errored",
+        error: { message: expect.stringContaining("takes no follow-ups") },
+      },
+    );
+    expect(results.find((line) => line.custom_id === "b").result).toMatchObject(
+      {
+        type: "succeeded",
+        output: "{}",
+      },
+    );
+    expect(
+      logged.filter((message) => message.includes("did not close")),
+    ).toHaveLength(2);
+  });
+
+  it("stops taking lines when results cannot be written, and rethrows once the lines running finish", async () => {
+    let closed = false;
+    let started = 0;
+    const input = {
+      [Symbol.asyncIterator]() {
+        let i = 0;
+        return {
+          next: async () => ({
+            done: i >= 20,
+            value: { custom_id: `c${i++}`, prompt: "p" },
+          }),
+          return: async () => {
+            closed = true;
+            return { done: true as const, value: undefined };
+          },
+        };
+      },
+    };
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (line) => {
+      started += 1;
+      return start(line);
+    };
+    const run = runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 3,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files: memoryFiles({}),
+        input,
+        results: {
+          read: async () => "",
+          append: async () => {
+            throw new Error("disk full");
+          },
+        },
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    await expect(run).rejects.toThrow("disk full");
+    expect(started).toBe(3);
+    expect(controller.active).toBe(0);
+    expect(closed).toBe(true);
+  });
+
+  it("rejects on a failed results write while another worker waits on a paused stream", async () => {
+    async function* paused() {
+      yield { custom_id: "a", prompt: "first" };
+      // Never released: the run must end without it.
+      await new Promise<void>(() => {});
+    }
+    const run = runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files: memoryFiles({}),
+        input: paused(),
+        results: {
+          read: async () => "",
+          append: async () => {
+            throw new Error("disk full");
+          },
+        },
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    await expect(run).rejects.toThrow("disk full");
+  });
+
+  it("lets the lines in flight finish before an input error is thrown", async () => {
+    let finished = 0;
+    async function* failing() {
+      yield { custom_id: "a", prompt: "first" };
+      yield { custom_id: "b", prompt: "second" };
+      throw new Error("the producer broke");
+    }
+    const controller = new EchoRuns();
+    const wait = controller.wait.bind(controller);
+    controller.wait = (async (id: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      finished += 1;
+      return wait(id);
+    }) as never;
+    await expect(
+      runBatch({
+        agent: "summarize",
+        input: failing(),
+        controller,
+        concurrency: 2,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/the producer broke/);
+    expect(finished).toBe(2);
+  });
+
+  it("reads lines that span many chunks intact, in order", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-lines-"));
+    const long = "z".repeat(300_000);
+    await writeFile(join(dir, "input.jsonl"), `a\n${long}\n\nb${long}c\nlast`);
+    const lines: string[] = [];
+    for await (const line of (await nodeBatchFiles.lines!(
+      join(dir, "input.jsonl"),
+    ))!) {
+      lines.push(line);
+    }
+    expect(lines).toEqual(["a", long, "", `b${long}c`, "last"]);
+  });
+
+  it("records a builder's skip without a session, and runs the other lines", async () => {
+    const nothingNew = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-synthesis",
+          "nothing_new_past_the_cursor.json",
+        ),
+        "utf8",
+      ),
+    );
+    const controller = new EchoRuns();
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "quiet", input: nothingNew.input },
+        { custom_id: "written", prompt: "as written" },
+      ],
+      controller,
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 2, failed: 0 });
+    const quiet = outcome.results.find((line) => line.custom_id === "quiet")!;
+    expect(quiet.result.type).toBe("skipped");
+    expect(quiet.built?.state).toEqual(
+      conversationSynthesis.build(nothingNew.input, 300_000).state,
+    );
+  });
+
+  it("records each line at its input position, whatever failed before it", async () => {
+    const files = memoryFiles({
+      [INPUT]: "not json\n" + jsonl({ custom_id: "a", prompt: "first" }),
+    });
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 1,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(
+          new FakeController(() => ({ status: "completed", output: "ok" })),
+        ),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        log: () => {},
+      },
+    );
+    const a = files
+      .text(OUTPUT)
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((line) => line.custom_id === "a");
+    expect(a.batch.record_index).toBe(1);
+  });
+
+  it("charges values from an iterable by their size, so the budget applies to streams", async () => {
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "small", prompt: "p" },
+        { custom_id: "large", prompt: "x".repeat(10_000) },
+      ],
+      controller: new EchoRuns(),
+      memoryBudget: 3 * 1_000,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 1 });
+    expect(
+      outcome.results.find((line) => line.custom_id === "large")?.result.error
+        ?.message,
+    ).toMatch(/more than this batch can hold in memory/);
+  });
+
+  it("keeps timestamp_ns exact whether it arrives as a number or a string", () => {
+    const [asNumber, asString] = parseInputLines(
+      jsonl({ custom_id: "a", prompt: "p" }) +
+        '{"custom_id":"b","prompt":"p","metadata":{"timestamp_ns":1794474000000000123}}\n' +
+        '{"custom_id":"c","prompt":"p","metadata":{"timestamp_ns":"1794474000000000123"}}\n',
+    ).slice(1);
+    expect(asNumber!.metadata).toEqual({ timestamp_ns: "1794474000000000123" });
+    expect(asString!.metadata).toEqual({ timestamp_ns: "1794474000000000123" });
+  });
+
+  it("streams a file's lines and builds each prompt only when a worker takes it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "batch-stream-"));
+    const lines = Array.from({ length: 50 }, (_, index) =>
+      JSON.stringify({ custom_id: `c${index}`, input: { n: index } }),
+    );
+    await writeFile(join(dir, "input.jsonl"), `${lines.join("\n")}\n`);
+    let built = 0;
+    const builtAtStart: number[] = [];
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      builtAtStart.push(built);
+      return start(input);
+    };
+
+    await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files: nodeBatchFiles,
+        input: join(dir, "input.jsonl"),
+        results: jsonlResults(nodeBatchFiles, join(dir, "results.jsonl")),
+        sleep: noSleep,
+        buildPrompt: (input) => {
+          built += 1;
+          return {
+            prompt: `prompt ${(input as { n: number }).n}`,
+            build: { builder: "test@1", applied: [] },
+          };
+        },
+      },
+    );
+
+    // Nothing is built while the input is checked; each worker builds the line it takes.
+    expect(builtAtStart[0]).toBeLessThanOrEqual(2);
+    expect(
+      Math.max(...builtAtStart.map((count, index) => count - index)),
+    ).toBeLessThanOrEqual(2);
+    expect(built).toBe(50);
+  });
+
+  it("refuses an input line when the agent declares no preprocess builder", async () => {
+    expect(() => parseInputLines(jsonl({ custom_id: "a", input: {} }))).toThrow(
+      /no preprocess: builder/,
+    );
+    expect(() =>
+      parseInputLines(jsonl({ custom_id: "a", prompt: "p", input: {} })),
+    ).toThrow(/exactly one/);
   });
 
   it("skips lines a previous run completed and retries ones it failed", async () => {
@@ -745,7 +1528,8 @@ describe("runBatch restart and shutdown", () => {
     expect(controller.started).toEqual(["p0", "p1"]);
     expect(summary).toMatchObject({ completed: 2, not_started: 4 });
     expect(snapshots.at(-1)).toBe("stopping:2/4");
-    expect(snapshots[0]).toBe("running:0/6");
+    // Lines are counted as they are read, so the first report has read none yet.
+    expect(snapshots[0]).toBe("running:0/0");
   });
 
   it("records lines still in flight at the cancel as failed, for the next run", async () => {
@@ -767,6 +1551,10 @@ describe("runBatch restart and shutdown", () => {
       },
       async wait(id: string, signal?: AbortSignal) {
         if (id === "pq") {
+          // Both lines are in flight when the run stops.
+          while (!this.started.includes("ps")) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
           stop.abort();
           setTimeout(() => cancel.abort(), 1);
           return { agent_run_id: id, status: "completed", output: "ok" };
@@ -1318,18 +2106,21 @@ describe("runBatch", () => {
     expect(lines.map((line) => JSON.parse(line).custom_id)).toEqual(["a", "b"]);
   });
 
-  it("refuses a repeated custom_id and an unknown option before any line runs", async () => {
+  it("fails a repeated custom_id alone, and refuses an unknown option before any line runs", async () => {
     const controller = new EchoRuns();
-    await expect(
-      runBatch({
-        agent: "summarize",
-        input: [
-          { custom_id: "a", prompt: "first" },
-          { custom_id: "a", prompt: "again" },
-        ],
-        controller,
-      }),
-    ).rejects.toThrow(/input 2 repeats custom_id a/);
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [
+        { custom_id: "a", prompt: "first" },
+        { custom_id: "a", prompt: "again" },
+      ],
+      controller,
+      concurrency: 1,
+    });
+    expect(outcome).toMatchObject({ total: 2, completed: 1, failed: 1 });
+    expect(outcome.results.map((line) => line.result.output)).toEqual([
+      "FIRST",
+    ]);
     await expect(
       runBatch({
         agent: "summarize",
@@ -1416,8 +2207,8 @@ describe("runBatch baggage", () => {
         { "gen_ai.conversation.id": ids[0], "acme.custom_id": "a" },
         { "gen_ai.conversation.id": ids[1], "acme.custom_id": "b" },
       ]);
-      expect(ids[0]).toMatch(/:0$/);
-      expect(ids[1]).toMatch(/:1$/);
+      expect(ids[0]).toMatch(/:a$/);
+      expect(ids[1]).toMatch(/:b$/);
 
       // The same directory is the same batch: a resumed prompt keeps its conversation.
       input.push({ custom_id: "c", prompt: "third" });
@@ -1431,7 +2222,7 @@ describe("runBatch baggage", () => {
         (line) => line.result.conversation_id,
       );
       expect(resumedIds.slice(0, 2)).toEqual(ids);
-      expect(resumedIds[2]).toBe(`${ids[0]?.split(":")[0]}:2`);
+      expect(resumedIds[2]).toBe(`${ids[0]?.split(":")[0]}:c`);
     } finally {
       teardown();
     }
