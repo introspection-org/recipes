@@ -1,4 +1,6 @@
 import type {
+  IssueAttachment,
+  IssueAttachmentCreate,
   IssueComment,
   IssuePriority,
   IssueStatusCategory,
@@ -29,6 +31,8 @@ export interface IntrospectionIssue {
   assignee_member_id?: string | null;
   /** The comments, oldest first, when the read included them. */
   comments?: IntrospectionIssueComment[] | null;
+  /** The evidence, in the order it was added, when the read included it. */
+  attachments?: IntrospectionIssueAttachment[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +44,30 @@ export interface IntrospectionIssueComment {
   member_id?: string | null;
   created_at: string;
 }
+
+/**
+ * An issue's attachment as read (`@introspection-sdk/types` `IssueAttachment`):
+ * one of the kinds below, or one a newer data plane added.
+ */
+export interface IntrospectionIssueAttachment {
+  id: string;
+  kind: string;
+  url?: string;
+  title?: string | null;
+  file_id?: string;
+  name?: string | null;
+  event_id?: string;
+  trace_id?: string;
+  span_id?: string;
+}
+
+/** An attachment to add (`@introspection-sdk/types` `IssueAttachmentCreate`). */
+export type IntrospectionIssueAttachmentCreate =
+  | { kind: "link"; url: string; title?: string | null }
+  | { kind: "file"; file_id: string; name?: string | null }
+  | { kind: "event"; event_id: string }
+  | { kind: "span"; trace_id: string; span_id: string }
+  | { kind: "conversation"; conversation_id: string };
 
 interface Page<T> {
   records: T[];
@@ -63,19 +91,21 @@ export interface IntrospectionIssuesClient {
     }): PromiseLike<Page<IntrospectionIssue>>;
     get(
       issueId: string,
-      params?: { include?: "comments"[] },
+      params?: { include?: ("comments" | "attachments")[] },
     ): Promise<IntrospectionIssue>;
-    create(params: {
-      /** The calling task as the issue's worker: only for a data plane that requires one. */
-      task_id?: string;
-      /** The conversations the issue is about. */
-      conversations?: { conversation_id: string }[];
-      title: string;
-      description: string;
-      priority?: IntrospectionPriority;
-      tags?: string[];
-      assignee_member_id?: string;
-    }): Promise<IntrospectionIssue>;
+    create(
+      params: {
+        /** The calling task as the issue's worker: only for a data plane that requires one. */
+        task_id?: string;
+        title: string;
+        description: string;
+        priority?: IntrospectionPriority;
+        tags?: string[];
+        assignee_member_id?: string;
+        attachments?: IntrospectionIssueAttachmentCreate[];
+      },
+      options?: { include?: "attachments"[] },
+    ): Promise<IntrospectionIssue>;
     update(
       issueId: string,
       patch: {
@@ -85,7 +115,10 @@ export interface IntrospectionIssuesClient {
         status?: IntrospectionStatus;
         tags?: string[];
         assignee_member_id?: string | null;
+        add_attachments?: IntrospectionIssueAttachmentCreate[];
+        remove_attachments?: string[];
       },
+      options?: { include?: "attachments"[] },
     ): Promise<IntrospectionIssue>;
     comments?: {
       create(
@@ -212,6 +245,82 @@ function toIssue(issue: IntrospectionIssue): ProviderIssue {
   };
 }
 
+/** An attachment as read, in the shared shape; undefined for a kind this provider does not model. */
+function toAttachment(
+  attachment: IntrospectionIssueAttachment,
+): IssueAttachment | undefined {
+  const { id } = attachment;
+  switch (attachment.kind) {
+    case "link":
+      return attachment.url
+        ? {
+            id,
+            kind: "link",
+            url: attachment.url,
+            ...(attachment.title ? { title: attachment.title } : {}),
+          }
+        : undefined;
+    case "file":
+      return attachment.file_id
+        ? {
+            id,
+            kind: "file",
+            file_id: attachment.file_id,
+            ...(attachment.name ? { name: attachment.name } : {}),
+          }
+        : undefined;
+    case "event":
+      return attachment.event_id
+        ? { id, kind: "event", event_id: attachment.event_id }
+        : undefined;
+    case "span":
+      return attachment.trace_id && attachment.span_id
+        ? {
+            id,
+            kind: "span",
+            trace_id: attachment.trace_id,
+            span_id: attachment.span_id,
+          }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function attachmentsOf(issue: IntrospectionIssue): IssueAttachment[] {
+  return (issue.attachments ?? [])
+    .map(toAttachment)
+    .filter((attachment) => attachment !== undefined);
+}
+
+/** An attachment to add, as the API takes it; the tool has checked each kind's fields. */
+function toAttachmentCreate(
+  attachment: IssueAttachmentCreate,
+): IntrospectionIssueAttachmentCreate {
+  switch (attachment.kind) {
+    case "link":
+      return {
+        kind: "link",
+        url: attachment.url!,
+        ...(attachment.title ? { title: attachment.title } : {}),
+      };
+    case "file":
+      return {
+        kind: "file",
+        file_id: attachment.file_id!,
+        ...(attachment.name ? { name: attachment.name } : {}),
+      };
+    case "event":
+      return { kind: "event", event_id: attachment.event_id! };
+    case "span":
+      return {
+        kind: "span",
+        trace_id: attachment.trace_id!,
+        span_id: attachment.span_id!,
+      };
+  }
+}
+
 function toComment(comment: IntrospectionIssueComment): IssueComment {
   return {
     id: comment.id,
@@ -263,7 +372,7 @@ export function createIntrospectionIssuesProvider(
   const clientFor = options.client ?? sdkClient;
   return {
     kind: "issues",
-    apiVersion: 1,
+    apiVersion: 2,
     id: "introspection",
     capabilities: {
       commands: {
@@ -272,7 +381,7 @@ export function createIntrospectionIssuesProvider(
         },
         get: {},
         create: {
-          note: "Files the issue in the Recipe's project, linked to the calling conversation; the assignee is a member id, since a write cannot resolve me.",
+          note: "Files the issue in the Recipe's project, citing the calling conversation; the assignee is a member id, since a write cannot resolve me.",
         },
         update: {
           note: "The assignee is a member id or none, since a write cannot resolve me.",
@@ -288,6 +397,7 @@ export function createIntrospectionIssuesProvider(
         "container",
         "comments",
       ],
+      attachments: { kinds: ["link", "file", "event", "span"], remove: true },
       hosts: [],
     },
     available: (env) => introspectionEnvironment(env) !== undefined,
@@ -354,17 +464,19 @@ export function createIntrospectionIssuesProvider(
         async get({ ref }) {
           const id = UUID.test(ref) ? ref : (await find(ref)).id;
           const issue = await client.issues
-            .get(id, { include: ["comments"] })
+            .get(id, { include: ["comments", "attachments"] })
             .catch((error: unknown) => sdkError(error, "the issue"));
           return {
             ...toIssue(issue),
             comments: (issue.comments ?? []).map(toComment),
+            attachments: attachmentsOf(issue),
           };
         },
         async create(args) {
           const taskId = text(env.INTROSPECTION_TASK_ID)?.trim();
           const conversationId =
             text(env.INTROSPECTION_TASK_CONVERSATION_ID)?.trim() || taskId;
+          const attachments = args.attachments?.map(toAttachmentCreate);
           const brief = {
             title: args.title,
             description: args.description?.trim()
@@ -378,46 +490,82 @@ export function createIntrospectionIssuesProvider(
               ? { assignee_member_id: assigneeId(args.assignee) }
               : {}),
           };
-          // The issue belongs to no task, so one run files as many as it finds; it links the calling conversation.
+          const options = attachments
+            ? [{ include: ["attachments" as const] }]
+            : [];
+          // The issue belongs to no task, so one run files as many as it finds; it cites the calling conversation.
+          const cited: IntrospectionIssueAttachmentCreate[] = [
+            ...(attachments ?? []),
+            ...(conversationId
+              ? [
+                  {
+                    kind: "conversation" as const,
+                    conversation_id: conversationId,
+                  },
+                ]
+              : []),
+          ];
           const created = await client.issues
-            .create({
-              ...brief,
-              ...(conversationId
-                ? { conversations: [{ conversation_id: conversationId }] }
-                : {}),
-            })
+            .create(
+              { ...brief, ...(cited.length ? { attachments: cited } : {}) },
+              ...options,
+            )
             .catch((error: unknown) => {
               // A data plane that predates task-less issues refuses the body and takes one issue per task.
               if ((error as { status?: unknown })?.status !== 422 || !taskId)
                 throw error;
-              return client.issues.create({ task_id: taskId, ...brief });
+              return client.issues.create(
+                {
+                  task_id: taskId,
+                  ...brief,
+                  ...(attachments ? { attachments } : {}),
+                },
+                ...options,
+              );
             })
             .catch((error: unknown) => sdkError(error, "the issues"));
-          return toIssue(created);
+          return attachments
+            ? { ...toIssue(created), attachments: attachmentsOf(created) }
+            : toIssue(created);
         },
         async update(args) {
           const issue = await find(args.ref);
+          const add = args.add_attachments?.map(toAttachmentCreate);
+          const remove = args.remove_attachments
+            ? [...args.remove_attachments]
+            : undefined;
+          const touched = add !== undefined || remove !== undefined;
           const updated = await client.issues
-            .update(issue.id, {
-              ...(args.title !== undefined ? { title: args.title } : {}),
-              ...(args.description !== undefined
-                ? { description: args.description }
-                : {}),
-              ...(args.priority !== undefined
-                ? { priority: priorityOf(args.priority) }
-                : {}),
-              ...(args.labels !== undefined ? { tags: [...args.labels] } : {}),
-              ...(args.assignee !== undefined
-                ? {
-                    assignee_member_id:
-                      args.assignee.trim().toLowerCase() === "none"
-                        ? null
-                        : assigneeId(args.assignee),
-                  }
-                : {}),
-            })
+            .update(
+              issue.id,
+              {
+                ...(args.title !== undefined ? { title: args.title } : {}),
+                ...(args.description !== undefined
+                  ? { description: args.description }
+                  : {}),
+                ...(args.priority !== undefined
+                  ? { priority: priorityOf(args.priority) }
+                  : {}),
+                ...(args.labels !== undefined
+                  ? { tags: [...args.labels] }
+                  : {}),
+                ...(args.assignee !== undefined
+                  ? {
+                      assignee_member_id:
+                        args.assignee.trim().toLowerCase() === "none"
+                          ? null
+                          : assigneeId(args.assignee),
+                    }
+                  : {}),
+                ...(add ? { add_attachments: add } : {}),
+                ...(remove ? { remove_attachments: remove } : {}),
+              },
+              ...(touched ? [{ include: ["attachments" as const] }] : []),
+            )
             .catch((error: unknown) => sdkError(error, "the issue"));
-          return toIssue(updated);
+          return touched
+            ? { ...toIssue(updated), attachments: attachmentsOf(updated) }
+            : toIssue(updated);
         },
         async comment({ ref, body }) {
           const issue = await find(ref);

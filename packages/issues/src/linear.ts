@@ -1,4 +1,6 @@
 import type {
+  IssueAttachment,
+  IssueAttachmentCreate,
   IssueComment,
   IssuePerson,
   IssuePriority,
@@ -186,6 +188,33 @@ function linearComment(value: unknown): IssueComment | undefined {
   };
 }
 
+/** An issue's link attachments, as `get_issue` returns them. */
+function linearAttachments(value: unknown): IssueAttachment[] {
+  return listOf(record(value).attachments, ["nodes"]).flatMap((entry) => {
+    const attachment = record(entry);
+    const url = text(attachment.url);
+    if (!url) return [];
+    const id = text(attachment.id);
+    const title = text(attachment.title);
+    return [
+      {
+        ...(id ? { id } : {}),
+        kind: "link" as const,
+        url,
+        ...(title ? { title } : {}),
+      },
+    ];
+  });
+}
+
+/** Links to add, as `save_issue` takes them: its title is required, so the url stands in. */
+function linearLinks(attachments: readonly IssueAttachmentCreate[]) {
+  return attachments.map((attachment) => ({
+    url: attachment.url!,
+    title: attachment.title ?? attachment.url!,
+  }));
+}
+
 /** The issue a write tool answered with: the issue itself, or under `issue`. */
 function writtenIssue(value: unknown): unknown {
   const object = record(value);
@@ -194,7 +223,7 @@ function writtenIssue(value: unknown): unknown {
 
 export const linearIssuesProvider: RecipeIssuesProviderModule = {
   kind: "issues",
-  apiVersion: 1,
+  apiVersion: 2,
   id: "linear",
   capabilities: {
     commands: {
@@ -214,6 +243,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
       "comments",
       "url",
     ],
+    attachments: { kinds: ["link"], remove: false },
     hosts: ["mcp.linear.app"],
     options: { team: "string", server: "string" },
   },
@@ -238,10 +268,10 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
         args,
         ctx.signal,
       );
+    const readIssue = async (ref: string, ctx: IssuesCallContext) =>
+      writtenIssue(await call("get", { id: ref }, ctx, ["get_issue"]));
     const getIssue = async (ref: string, ctx: IssuesCallContext) =>
-      linearIssue(
-        writtenIssue(await call("get", { id: ref }, ctx, ["get_issue"])),
-      );
+      linearIssue(await readIssue(ref, ctx));
     const save = async (
       use: "create" | "update" | "transition",
       args: Record<string, unknown>,
@@ -253,6 +283,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
       priority?: IssuePriority;
       labels?: readonly string[];
       assignee?: string;
+      links?: readonly IssueAttachmentCreate[];
     }) => ({
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.description !== undefined
@@ -265,6 +296,7 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
       ...(args.assignee !== undefined
         ? { assignee: args.assignee === "none" ? null : args.assignee }
         : {}),
+      ...(args.links !== undefined ? { links: linearLinks(args.links) } : {}),
     });
     return {
       async search(args, ctx) {
@@ -311,7 +343,8 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
         return { issues: issues.slice(0, limit) };
       },
       async get({ ref }, ctx) {
-        const issue = await getIssue(ref, ctx);
+        const raw = await readIssue(ref, ctx);
+        const issue = linearIssue(raw);
         const comments: IssueComment[] = [];
         let cursor: string | undefined;
         for (let page = 0; page < MAX_PAGES; page += 1) {
@@ -331,19 +364,39 @@ export const linearIssuesProvider: RecipeIssuesProviderModule = {
           cursor = nextCursor(answer);
           if (!cursor) break;
         }
-        return { ...issue, comments };
+        return { ...issue, comments, attachments: linearAttachments(raw) };
       },
-      async create(args, ctx) {
+      async create({ attachments, ...args }, ctx) {
         const team = args.container ?? text(config.options.team);
         if (!team)
           throw new IssuesError(
             "invalid_request",
             "A Linear issue needs a team: name one as container, or set team on the Recipe's pi.issues declaration",
           );
-        return save("create", { team, ...fields(args) }, ctx);
+        return save(
+          "create",
+          {
+            team,
+            ...fields({
+              ...args,
+              ...(attachments ? { links: attachments } : {}),
+            }),
+          },
+          ctx,
+        );
       },
-      async update({ ref, ...changes }, ctx) {
-        return save("update", { id: ref, ...fields(changes) }, ctx);
+      async update({ ref, add_attachments, ...changes }, ctx) {
+        return save(
+          "update",
+          {
+            id: ref,
+            ...fields({
+              ...changes,
+              ...(add_attachments ? { links: add_attachments } : {}),
+            }),
+          },
+          ctx,
+        );
       },
       async comment({ ref, body }, ctx) {
         const answer = record(

@@ -109,14 +109,14 @@ issue on the calling task, where one task holds one issue.
 
 ## Commands
 
-| Command      | Takes                                                                               | Does                        |
-| ------------ | ----------------------------------------------------------------------------------- | --------------------------- |
-| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit`                        | find issues                 |
-| `get`        | `handle`                                                                            | one issue with its comments |
-| `create`     | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type` | a new issue                 |
-| `update`     | `handle`, `title`, `description`, `priority`, `labels`, `assignee`                  | change fields               |
-| `comment`    | `handle`, `body`                                                                    | add a comment               |
-| `transition` | `handle`, `status` (a name or a category)                                           | move to another status      |
+| Command      | Takes                                                                                                       | Does                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `search`     | `query`, `status`, `assignee`, `container`, `label`, `limit`                                                | find issues                                 |
+| `get`        | `handle`                                                                                                    | one issue with its comments and attachments |
+| `create`     | `title`, `description`, `priority`, `labels`, `assignee`, `container`, `issue_type`, `attachments`          | a new issue                                 |
+| `update`     | `handle`, `title`, `description`, `priority`, `labels`, `assignee`, `add_attachments`, `remove_attachments` | change fields, add or remove attachments    |
+| `comment`    | `handle`, `body`                                                                                            | add a comment                               |
+| `transition` | `handle`, `status` (a name or a category)                                                                   | move to another status                      |
 
 ## The shape
 
@@ -135,6 +135,7 @@ Every issue comes back in one shape, with a handle every later command takes:
 | `container`              | team                                                                                             | project, with the issue type                                                                                               | the project                                                              |
 | `url`                    | ✓                                                                                                | the site's `/browse/<key>`                                                                                                 | not yet                                                                  |
 | `comments` (on `get`)    | ✓                                                                                                | ✓                                                                                                                          | read with the issue                                                      |
+| `attachments` (on `get`) | the issue's link attachments                                                                     | the issue's remote links                                                                                                   | every kind, read with the issue; an unknown kind is left out             |
 
 ## What each provider supports
 
@@ -146,6 +147,7 @@ Every issue comes back in one shape, with a handle every later command takes:
 | `update`     | ✓                                                              | ✓                                                       | ✓; assignee: a member id, or `none`                                       |
 | `comment`    | ✓                                                              | ✓                                                       | ✓                                                                         |
 | `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                             |
+| attachments  | `link`, append-only                                            | `link`, append-only                                     | `link`, `file`, `event`, `span`; add (deduplicated) and remove            |
 
 An Introspection comment is an event attached to the issue. The provider
 writes one with `POST /v1/issues/{id}/comments` and reads them with the issue
@@ -154,6 +156,23 @@ writes one with `POST /v1/issues/{id}/comments` and reads them with the issue
 `me`, since the runtime does not name the caller's. On a data plane without
 these, `comment` and an assignee search answer `not_supported`, and `get`
 returns no comments.
+
+## Attachments
+
+An attachment is `{ id?, kind, ... }`: a `link` (`url`, `title`), a `file`
+(`file_id`, `name`), an `event` (`event_id`) or a `span` (`trace_id`,
+`span_id`). `create` takes `attachments`; `update` takes `add_attachments`
+and `remove_attachments` (ids from `get`). The tool checks each item's
+fields, then refuses with `not_supported` a kind outside the provider's
+`capabilities.attachments.kinds`, or a removal when its `remove` is false.
+
+Introspection writes them with the issue (`attachments` on create,
+`add_attachments` and `remove_attachments` on update), and the server skips
+one the issue already holds. Linear sends links as `save_issue`'s `links`,
+whose title is required, so an untitled link takes its url as title. Jira
+creates one remote link per item. Neither tracker can remove an attachment
+through its tools here, and files, events and spans are not offered on them
+yet.
 
 ## Tool maps
 
@@ -169,7 +188,7 @@ documentation; replace them with captured lists, fix the maps, and set
 | -------- | -------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `linear` | search                     | `list_issues`                                                                         | `query`, `state`, `assignee`, `team`, `label`, `limit`                                                         |
 | `linear` | get                        | `get_issue`, `list_comments`                                                          | `id`; `issueId`                                                                                                |
-| `linear` | create, update, transition | `save_issue` (else `create_issue`, `update_issue`)                                    | `id`, `team`, `title`, `description`, `priority` (0–4), `labels`, `assignee`, `state`                          |
+| `linear` | create, update, transition | `save_issue` (else `create_issue`, `update_issue`)                                    | `id`, `team`, `title`, `description`, `priority` (0–4), `labels`, `assignee`, `state`, `links`                 |
 | `linear` | comment                    | `create_comment`                                                                      | `issueId`, `body`                                                                                              |
 | `linear` | transition by category     | `list_issue_statuses`                                                                 | `team`                                                                                                         |
 | `jira`   | every call                 | `getAccessibleAtlassianResources`                                                     | none; the first site with Jira scopes gives `cloudId`                                                          |
@@ -180,14 +199,17 @@ documentation; replace them with captured lists, fix the maps, and set
 | `jira`   | update                     | `editJiraIssue`                                                                       | `cloudId`, `issueIdOrKey`, `fields`                                                                            |
 | `jira`   | comment                    | `addOrEditJiraIssueComment` (else `addCommentToJiraIssue`)                            | `cloudId`, `issueIdOrKey`, `commentBody`                                                                       |
 | `jira`   | transition                 | `listJiraIssueTransitions` (else `getTransitionsForJiraIssue`), `transitionJiraIssue` | `cloudId`, `issueIdOrKey`, `transition: { id }`                                                                |
+| `jira`   | get, attachments           | `listJiraIssueRemoteIssueLinks`                                                       | `cloudId`, `issueIdOrKey`                                                                                      |
+| `jira`   | create, update, links      | `createJiraIssueRemoteIssueLink`                                                      | `cloudId`, `issueIdOrKey`, `object: { url, title }`                                                            |
 
 ## A provider of your own
 
-A provider module is `{ kind: "issues", apiVersion: 1, id, capabilities,
+A provider module is `{ kind: "issues", apiVersion: 2, id, capabilities,
 mcp?, available?, createSession }` (`RecipeIssuesProviderModule`), importing
 only types from `@introspection-ai/recipes/issues`. `capabilities` lists the
-commands it serves, the fields it fills, every host it calls, and the options
-it takes. Its session receives the declaration's options as `config.options`.
+commands it serves, the fields it fills, the attachments it takes
+(`attachments: { kinds, remove }`), every host it calls, and the options it
+takes. Its session receives the declaration's options as `config.options`.
 `createSession` returns one method per command; each receives the provider's
 own reference (the handle without its prefix) and, for an MCP provider, a
 caller bound to its server. A failure the model should read throws an

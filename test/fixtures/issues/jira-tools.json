@@ -1,7 +1,7 @@
 {
   "server": "https://mcp.atlassian.com/v2/mcp",
   "captured": false,
-  "source": "Authored from Atlassian's supported-tools page (support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools), which names the tools but not their arguments; arguments follow the Jira REST API. Replace with `introspection bindings mcp capture` output.",
+  "source": "Authored from Atlassian's supported-tools page (support.atlassian.com/atlassian-rovo-mcp-server/docs/supported-tools), which names the tools but not their arguments; arguments follow the Jira REST API (remote links: GET and POST /rest/api/3/issue/{key}/remotelink, whose body is { object: { url, title } }). Replace with `introspection bindings mcp capture` output.",
   "tools": [
     {
       "name": "getAccessibleAtlassianResources",
@@ -203,6 +203,39 @@
           }
         },
         "required": ["cloudId", "issueIdOrKey", "transition"]
+      }
+    },
+    {
+      "name": "listJiraIssueRemoteIssueLinks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey"]
+      }
+    },
+    {
+      "name": "createJiraIssueRemoteIssueLink",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cloudId": {
+            "type": "string"
+          },
+          "issueIdOrKey": {
+            "type": "string"
+          },
+          "object": {
+            "type": "object"
+          }
+        },
+        "required": ["cloudId", "issueIdOrKey", "object"]
       }
     }
   ]

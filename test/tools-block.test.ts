@@ -44,7 +44,7 @@ function declared(context: Context): string[] {
     .map((tool) => tool.name);
 }
 
-const FAKE_ISSUES = `export default { kind: "issues", apiVersion: 1, id: "acme",
+const FAKE_ISSUES = `export default { kind: "issues", apiVersion: 2, id: "acme",
   capabilities: { commands: { search: {} }, fields: [], hosts: ["acme.test"] },
   createSession: () => ({
     search: async () => ({ issues: [{ ref: "A-1", title: "Found it", status: { name: "Todo", category: "open" } }] }),
