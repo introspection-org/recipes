@@ -142,7 +142,10 @@ async function* inputValues(deps: BatchRunDeps): AsyncGenerator<InputItem> {
       yield {
         value,
         label: `input ${index}`,
-        size: JSON.stringify(value)?.length ?? 0,
+        size:
+          JSON.stringify(value, (_key, item: unknown) =>
+            typeof item === "bigint" ? item.toString() : item,
+          )?.length ?? 0,
       };
     }
     return;
@@ -295,7 +298,8 @@ export async function runBatchWith(
       stopTimer.unref?.();
     }
   });
-  let readPending = false;
+  // A read a stop overtook: it still takes its line, so cleanup counts it.
+  let pendingRead: Promise<IteratorResult<InputItem>> | undefined;
 
   // A controller may answer a cancelled wait by rejecting (Recipes'
   // in-process one does) rather than returning the run still running; both
@@ -553,13 +557,13 @@ export async function runBatchWith(
     if (inputError !== undefined) return "end";
     let next: IteratorResult<InputItem>;
     try {
-      readPending = true;
-      const read = await Promise.race([lines.next(), stopping]);
+      pendingRead = lines.next();
+      const read = await Promise.race([pendingRead, stopping]);
       if (read === "stop") return "end";
-      readPending = false;
+      pendingRead = undefined;
       next = read;
     } catch (error) {
-      readPending = false;
+      pendingRead = undefined;
       // The input itself failed: schedule nothing more, let the lines in
       // flight finish and record, and rethrow once they have.
       inputError = error;
@@ -674,16 +678,16 @@ export async function runBatchWith(
   if (!inputComplete && inputError === undefined) {
     if (typeof deps.input === "string") {
       // A file ends: count the lines a stopped run left for the next one,
-      // reading them without parsing.
+      // reading them without parsing, the one a stop overtook first.
       for (
-        let next = await lines.next();
+        let next = pendingRead ? await pendingRead : await lines.next();
         !next.done;
         next = await lines.next()
       ) {
         summary.total += 1;
       }
       inputComplete = true;
-    } else if (readPending) {
+    } else if (pendingRead) {
       // A read is still waiting on the stream; closing queues behind it, so
       // it is asked for without waiting.
       void lines.return(undefined).catch(() => {});

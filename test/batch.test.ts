@@ -553,6 +553,83 @@ describe("runBatch", () => {
     release();
   });
 
+  it("sizes an in-memory synthesis input whose timestamp_ns is a bigint", async () => {
+    const fixture = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "fixtures",
+          "conversation-synthesis",
+          "media_parts.json",
+        ),
+        "utf8",
+      ),
+    );
+    const input = {
+      ...fixture.input,
+      model_calls: fixture.input.model_calls.map(
+        (call: { timestamp_ns: number }) => ({
+          ...call,
+          timestamp_ns: BigInt(call.timestamp_ns),
+        }),
+      ),
+    };
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: [{ custom_id: "c#1", input }],
+      controller: new EchoRuns(),
+      preprocess: { spec: "conversation_synthesis@1", maxTokens: 300_000 },
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({ completed: 1, failed: 0 });
+  });
+
+  it("counts a file line whose read a stop overtook", async () => {
+    const stop = new AbortController();
+    let release!: () => void;
+    const files = memoryFiles({});
+    files.lines = async () =>
+      (async function* () {
+        yield JSON.stringify({ custom_id: "a", prompt: "first" });
+        await new Promise<void>((resolve) => (release = resolve));
+        yield JSON.stringify({ custom_id: "b", prompt: "second" });
+      })();
+    const controller = new FakeController(() => ({
+      status: "completed",
+      output: "ok",
+    }));
+    const start = controller.start.bind(controller);
+    controller.start = async (input) => {
+      const started = await start(input);
+      stop.abort();
+      setTimeout(() => release(), 5);
+      return started;
+    };
+    const summary = await runBatchWith(
+      {
+        agent: "summarize",
+        output_name: "results.jsonl",
+        concurrency: 2,
+        max_attempts: 1,
+      },
+      {
+        controller: controllerOf(controller),
+        files,
+        input: INPUT,
+        results: jsonlResults(files, OUTPUT),
+        sleep: noSleep,
+        signal: stop.signal,
+        log: () => {},
+      },
+    );
+    expect(summary).toMatchObject({
+      total: 2,
+      completed: 1,
+      not_started: 1,
+      input_complete: true,
+    });
+  });
+
   it("lets the lines in flight finish before an input error is thrown", async () => {
     let finished = 0;
     async function* failing() {
