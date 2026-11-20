@@ -214,6 +214,29 @@ describe("parseRecipeAgentSessionConfig", () => {
     ).toEqual({ compactionInstructions: "Keep the plan." });
   });
 
+  it("maps session.cache.warming to Pi's cacheWarming setting", () => {
+    expect(
+      parseRecipeAgentSessionConfig("test", {
+        cache: { retention: "none", warming: "idle" },
+        compaction: { keep_recent_tokens: 25000 },
+      }),
+    ).toEqual({
+      settings: {
+        compaction: { keepRecentTokens: 25000 },
+        cacheWarming: "idle",
+      },
+      cacheRetention: "none",
+    });
+    for (const session of [
+      { cache: { retention: "forever" } },
+      { cache: { warming: "always" } },
+      { cache: { ttl: 60 } },
+      { compaction: { on_idle: { min_context_tokens: 1 } } },
+    ]) {
+      expect(() => parseRecipeAgentSessionConfig("test", session)).toThrow();
+    }
+  });
+
   it("merges inherited session policy", () => {
     expect(
       mergeRecipeAgentSessionConfig(
@@ -581,6 +604,48 @@ describe("recipe agent model config loading", () => {
       name: "anthropic/claude-fable-5",
       thinkingLevel: "high",
     });
+  });
+
+  it("applies session.cache.retention as the request option and reads the deprecated spelling as it", () => {
+    writeFileSync(
+      join(recipeDir, "agents", "agent.yaml"),
+      "name: agent\nai:\n  model: openai/gpt-5.5\n  options:\n    cache_retention: long\n    max_tokens: 10\n",
+    );
+    writeFileSync(
+      join(recipeDir, "agents", "child.yaml"),
+      "name: child\nfrom: agent\nai:\n  model: anthropic/claude-fable-5\n",
+    );
+    writeFileSync(
+      join(recipeDir, "agents", "short.yaml"),
+      "name: short\nfrom: agent\nsession:\n  cache:\n    retention: short\n",
+    );
+    const { definitions, findings } =
+      loadValidatedRecipeAgentDefinitions(recipeDir);
+    expect(findings).toEqual([]);
+    expect(definitions.get("agent")?.sessionConfig?.cacheRetention).toBe(
+      "long",
+    );
+    expect(definitions.get("agent")?.modelConfig?.streamOptions).toEqual({
+      maxTokens: 10,
+      cacheRetention: "long",
+    });
+    // A child that names its own model keeps the inherited session policy.
+    expect(definitions.get("child")?.modelConfig?.streamOptions).toEqual({
+      cacheRetention: "long",
+    });
+    expect(
+      definitions.get("short")?.modelConfig?.streamOptions?.cacheRetention,
+    ).toBe("short");
+
+    writeFileSync(
+      join(recipeDir, "agents", "short.yaml"),
+      "name: short\nai:\n  model: openai/gpt-5.5\n  options:\n    cache_retention: long\nsession:\n  cache:\n    retention: short\n",
+    );
+    expect(validateRecipeAgentDefinitions(recipeDir)).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("cannot declare both"),
+      }),
+    ]);
   });
 
   it("reads phases, inherits them through from, and rejects a malformed list", () => {

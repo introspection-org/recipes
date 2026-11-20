@@ -162,6 +162,14 @@ describe("judge definitions", () => {
     expect(judge?.definitionHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("carries an authored sample into the definition", () => {
+    const judge = parseJudgeDefinition(
+      "judges/polite.yaml",
+      `${CLASSIFIER_JUDGE}sample: 0.25\n`,
+    );
+    expect(judge?.sample).toBe(0.25);
+  });
+
   it("reads a classifier judge with a threshold per question, 0.5 by default", () => {
     const judge = parseJudgeDefinition("judges/polite.yaml", CLASSIFIER_JUDGE);
     expect(judge).toMatchObject({
@@ -623,6 +631,33 @@ describe("runJudges", () => {
       { custom_id: "prod", judge: "polite", reason: "sampled_out" },
     ]);
     expect(started).toEqual(["polite:dev"]);
+  });
+
+  it("samples by the judge's own sample unless the platform sets a rate", async () => {
+    const sampled = { ...judges[1]!, sample: 1e-9 };
+    const { controller, started } = scripted(reply);
+    const { skipped } = await runJudges({
+      judges: [sampled],
+      input: [
+        { ...line("prod", SMALL_TALK), environment: "production" },
+        line("dev", SMALL_TALK),
+      ],
+      controller,
+    });
+    expect(skipped).toEqual([
+      { custom_id: "prod", judge: "polite", reason: "sampled_out" },
+    ]);
+    expect(started).toEqual(["polite:dev"]);
+
+    const overridden = scripted(reply);
+    const run = await runJudges({
+      judges: [sampled],
+      input: [{ ...line("prod", SMALL_TALK), environment: "production" }],
+      controller: overridden.controller,
+      operational: { polite: { sample_rate: 1 } },
+    });
+    expect(run.skipped).toEqual([]);
+    expect(overridden.started).toEqual(["polite:prod"]);
   });
 });
 

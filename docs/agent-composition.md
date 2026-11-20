@@ -134,7 +134,6 @@ ai:
   options:
     temperature: 0.2
     max_tokens: 4096
-    cache_retention: short
     timeout_ms: 60000
   providers:
     anthropic:
@@ -150,6 +149,8 @@ ai:
         order: [anthropic, bedrock]
         only: [anthropic, bedrock]
 session:
+  cache:
+    retention: short
   steering_mode: one-at-a-time
   follow_up_mode: one-at-a-time
   tool_execution: parallel
@@ -171,7 +172,7 @@ should use `ai:`; mixing both blocks in one agent is a validation error.
 
 `session` covers the managed runtime's portable model-independent policy:
 steering and follow-up queues, tool execution, retry (including provider
-retry), compaction, and image handling. Pi settings for UI presentation, shell
+retry), prompt-cache retention, compaction, and image handling. Pi settings for UI presentation, shell
 and filesystem authority, package loading, persistence, networking, analytics,
 telemetry, and model defaults remain host-owned or belong under `ai`.
 Unlike transparent AI payloads, every nested `session` key, type, enum, and

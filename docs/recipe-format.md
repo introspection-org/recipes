@@ -209,6 +209,8 @@ branch summaries, UI, shell, resource loading, persistence, networking,
 analytics, telemetry, and model-default settings are
 not portable session policy and remain host-owned or belong under `ai`.
 
+`session.cache` is described in [Prompt cache](#prompt-cache).
+
 `tools` MUST NOT contain `agent`. The host materializes that session-generated
 tool for a session whose effective `subagents` list is non-empty and whose
 delegation depth allows it (see below).
@@ -216,6 +218,52 @@ delegation depth allows it (see below).
 The default agent is named `agent`. If no `agent` exists, a host MAY select the
 only declared agent. When multiple agents exist without `agent`, the caller
 MUST select one explicitly.
+
+### Prompt cache
+
+```yaml
+session:
+  cache:
+    retention: long
+    warming: off
+  compaction:
+    reserve_tokens: 750000
+```
+
+`cache.retention` is Pi's `cacheRetention` request option: `none` sends no
+cache markers, `short` asks for the provider's default cache of about five
+minutes, and `long` for about an hour where the model supports it, otherwise
+the default. Omitted, Pi's default applies. A cache serves only a prefix that
+has not changed, so content that changes every turn belongs after the history,
+not in the system prompt; the [Current date](#current-date) rule keeps the
+prompt the same all day for this reason.
+
+`ai.options.cache_retention`, and `model.cache_retention` in the older
+`model:` block, are deprecated spellings of `cache.retention`. Each still
+applies and draws a warning. It is read as `session.cache.retention` before
+inheritance, so a parent and a child may use either, and one agent MUST NOT
+declare both.
+
+`cache.warming` is Pi's `cacheWarming` setting: `off`, `streaming` or `idle`.
+Pi refreshes the cache before it expires while a run streams (`streaming`) or
+also between runs (`idle`), when a refresh is expected to cost less than the
+rewrite it avoids; idle warming stops 30 minutes after the run's first request,
+so it refreshes a `short` cache and never a `long` one. Each refresh is billed.
+
+A large context is bounded by Pi's compaction, which runs at the end of a turn
+or before a request once the context exceeds the model's window less
+`compaction.reserve_tokens`. A Recipe that wants smaller cache rewrites after a
+long pause sets `reserve_tokens` so that compaction starts at the context size
+it is willing to rewrite.
+
+| Code                                          | Severity | Rule                                                                                                            |
+| --------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `agent.session.cache_invalid`                 | error    | `cache` is not an object; `agent.session.cache_key_unknown` reports a key other than `retention` and `warming`. |
+| `agent.session.cache.retention_invalid`       | error    | `retention` is not `none`, `short` or `long`.                                                                   |
+| `agent.session.cache.warming_invalid`         | error    | `warming` is not `off`, `streaming` or `idle`.                                                                  |
+| `agent.session.cache.retention_conflict`      | error    | The agent declares `session.cache.retention` and `ai.options.cache_retention` (or `model.cache_retention`).     |
+| `agent.ai.options.cache_retention_deprecated` | warning  | The agent declares `ai.options.cache_retention`; move it to `session.cache.retention`.                          |
+| `agent.model.cache_retention_deprecated`      | warning  | The agent declares `model.cache_retention`; move it to `session.cache.retention`.                               |
 
 ## First-party packages
 
@@ -657,8 +705,9 @@ The host owns:
 
 - credentials and secret resolution;
 - workspaces and filesystem isolation;
-- task and process lifecycle;
-- persistence and recovery;
+- task and process lifecycle, including when an idle session ends;
+- persistence and recovery, including the cache retention clock, where a
+  prepared compaction is stored, and how a session is restored;
 - scheduling and concurrency enforcement;
 - network protocols and user authentication;
 - telemetry export policy;
