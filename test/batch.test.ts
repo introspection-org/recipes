@@ -516,6 +516,38 @@ describe("runBatch", () => {
     expect(outcome).toMatchObject({ stopped: true, input_complete: false });
   });
 
+  it("stops while a streamed input has paused before its next line", async () => {
+    const stop = new AbortController();
+    let release!: () => void;
+    async function* paused() {
+      yield { custom_id: "a", prompt: "first" };
+      // Pauses until released; the run must not wait for it.
+      await new Promise<void>((resolve) => (release = resolve));
+      yield { custom_id: "b", prompt: "second" };
+    }
+    const controller = new EchoRuns();
+    const wait = controller.wait.bind(controller);
+    controller.wait = (async (id: string) => {
+      const settled = await wait(id);
+      setTimeout(() => stop.abort(), 5);
+      return settled;
+    }) as never;
+    const outcome = await runBatch({
+      agent: "summarize",
+      input: paused(),
+      controller,
+      concurrency: 2,
+      signal: stop.signal,
+      log: () => {},
+    });
+    expect(outcome).toMatchObject({
+      completed: 1,
+      stopped: true,
+      input_complete: false,
+    });
+    release();
+  });
+
   it("lets the lines in flight finish before an input error is thrown", async () => {
     let finished = 0;
     async function* failing() {

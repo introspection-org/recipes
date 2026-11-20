@@ -281,6 +281,22 @@ export async function runBatchWith(
     (deps.cancel?.aborted ?? false) ||
     (deadline !== null && now() >= deadline);
 
+  // Settles when the run is told to stop, so a read from a stream that has
+  // paused before its next line does not hold the batch.
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
+  const stopping = new Promise<"stop">((resolve) => {
+    const stop = () => resolve("stop");
+    for (const signal of [deps.signal, deps.cancel]) {
+      if (signal?.aborted) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+    }
+    if (deadline !== null) {
+      stopTimer = setTimeout(stop, Math.max(0, deadline - now()));
+      stopTimer.unref?.();
+    }
+  });
+  let readPending = false;
+
   // A controller may answer a cancelled wait by rejecting (Recipes'
   // in-process one does) rather than returning the run still running; both
   // mean the session did not settle, so the line is recorded as canceled.
@@ -537,8 +553,13 @@ export async function runBatchWith(
     if (inputError !== undefined) return "end";
     let next: IteratorResult<InputItem>;
     try {
-      next = await lines.next();
+      readPending = true;
+      const read = await Promise.race([lines.next(), stopping]);
+      if (read === "stop") return "end";
+      readPending = false;
+      next = read;
     } catch (error) {
+      readPending = false;
       // The input itself failed: schedule nothing more, let the lines in
       // flight finish and record, and rethrow once they have.
       inputError = error;
@@ -662,11 +683,16 @@ export async function runBatchWith(
         summary.total += 1;
       }
       inputComplete = true;
+    } else if (readPending) {
+      // A read is still waiting on the stream; closing queues behind it, so
+      // it is asked for without waiting.
+      void lines.return(undefined).catch(() => {});
     } else {
       // A stream may never end: close it rather than wait for the rest.
       await lines.return(undefined);
     }
   }
+  clearTimeout(stopTimer);
   summary.input_complete = inputComplete;
   summary.not_started = pending();
   summary.stopped = summary.not_started > 0 || !inputComplete || stopped();
