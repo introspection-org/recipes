@@ -884,11 +884,7 @@ function fakeIntrospection(
           args: options ? [params, options] : [params],
         });
         refuseAssignee(params);
-        if (
-          requiresTask &&
-          (params.task_id === undefined ||
-            params.attachments?.some((item) => item.kind === "conversation"))
-        )
+        if (requiresTask && params.task_id === undefined)
           throw Object.assign(new Error("invalid body"), { status: 422 });
         return row({
           title: params.title,
@@ -1201,7 +1197,6 @@ describe("introspection", () => {
         title: "New",
         description: "New",
         assignee_member_id: MEMBER,
-        attachments: [{ kind: "conversation", conversation_id: "task-1" }],
       },
       { assignee_member_id: MEMBER },
       { assignee_member_id: null },
@@ -1324,7 +1319,6 @@ describe("introspection", () => {
             description: "New",
             priority: "urgent",
             tags: ["x"],
-            attachments: [{ kind: "conversation", conversation_id: "task-1" }],
           },
         ],
       },
@@ -1357,23 +1351,11 @@ describe("introspection", () => {
     });
   });
 
-  it("links the task's conversation, and creates with no task at all", async () => {
+  it("creates with no task at all", async () => {
     const fake = fakeIntrospection();
-    const inTask = await open(fake, {
-      ...env,
-      INTROSPECTION_TASK_CONVERSATION_ID: "conversation-9",
-    });
-    await inTask.create!({ title: "New" }, {});
     const outside = await open(fake, { ...env, INTROSPECTION_TASK_ID: "" });
     await outside.create!({ title: "New" }, {});
     expect(fake.calls.map((call) => call.args[0])).toEqual([
-      {
-        title: "New",
-        description: "New",
-        attachments: [
-          { kind: "conversation", conversation_id: "conversation-9" },
-        ],
-      },
       { title: "New", description: "New" },
     ]);
   });
@@ -1387,7 +1369,6 @@ describe("introspection", () => {
       {
         title: "New",
         description: "New",
-        attachments: [{ kind: "conversation", conversation_id: "task-1" }],
       },
       { task_id: "task-1", title: "New", description: "New" },
     ]);
@@ -1687,7 +1668,6 @@ describe("attachments", () => {
               attachments: [
                 { kind: "link", url: "https://x.test/pr/1" },
                 { kind: "span", trace_id: TRACE, span_id: SPAN },
-                { kind: "conversation", conversation_id: "task-1" },
               ],
             },
             { include: ["attachments"] },

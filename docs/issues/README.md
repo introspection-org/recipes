@@ -101,11 +101,10 @@ answers `not_connected`, and the agent asks the member to connect one with
 `INTROSPECTION_DP_URL` (else `INTROSPECTION_BASE_API_URL`) with
 `INTROSPECTION_TOKEN`, all of which the runtime injects into the task's
 sandbox. `create` files the issue in the Recipe's project. The issue belongs
-to no task, so one run files as many as it finds, and it links the calling
-conversation (`INTROSPECTION_TASK_CONVERSATION_ID`, else
-`INTROSPECTION_TASK_ID`) as an attachment. A data plane that predates
+to no task, so one run files as many as it finds. A data plane that predates
 task-less issues answers that body with 422; the provider then files the
-issue on the calling task, where one task holds one issue.
+issue on the calling task (`INTROSPECTION_TASK_ID`), where one task holds
+one issue.
 
 ## Commands
 
@@ -143,7 +142,7 @@ Every issue comes back in one shape, with a handle every later command takes:
 | ------------ | -------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `search`     | ✓                                                              | ✓ (JQL)                                                 | ✓; text matches the 200 most recent issues; assignee: `me` or a member id |
 | `get`        | ✓                                                              | ✓                                                       | ✓                                                                         |
-| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, linked to the calling conversation                                     |
+| `create`     | ✓, needs a team                                                | ✓, needs a project and issue type                       | ✓, on no task                                                             |
 | `update`     | ✓                                                              | ✓                                                       | ✓; assignee: a member id, or `none`                                       |
 | `comment`    | ✓                                                              | ✓                                                       | ✓                                                                         |
 | `transition` | sets the state; a category picks the team's state of that type | applies the workflow transition that reaches the status | sets `status`                                                             |

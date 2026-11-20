@@ -66,8 +66,7 @@ export type IntrospectionIssueAttachmentCreate =
   | { kind: "link"; url: string; title?: string | null }
   | { kind: "file"; file_id: string; name?: string | null }
   | { kind: "event"; event_id: string }
-  | { kind: "span"; trace_id: string; span_id: string }
-  | { kind: "conversation"; conversation_id: string };
+  | { kind: "span"; trace_id: string; span_id: string };
 
 interface Page<T> {
   records: T[];
@@ -381,7 +380,7 @@ export function createIntrospectionIssuesProvider(
         },
         get: {},
         create: {
-          note: "Files the issue in the Recipe's project, citing the calling conversation; the assignee is a member id, since a write cannot resolve me.",
+          note: "Files the issue in the Recipe's project, on no task; the assignee is a member id, since a write cannot resolve me.",
         },
         update: {
           note: "The assignee is a member id or none, since a write cannot resolve me.",
@@ -474,8 +473,6 @@ export function createIntrospectionIssuesProvider(
         },
         async create(args) {
           const taskId = text(env.INTROSPECTION_TASK_ID)?.trim();
-          const conversationId =
-            text(env.INTROSPECTION_TASK_CONVERSATION_ID)?.trim() || taskId;
           const attachments = args.attachments?.map(toAttachmentCreate);
           const brief = {
             title: args.title,
@@ -493,21 +490,10 @@ export function createIntrospectionIssuesProvider(
           const options = attachments
             ? [{ include: ["attachments" as const] }]
             : [];
-          // The issue belongs to no task, so one run files as many as it finds; it cites the calling conversation.
-          const cited: IntrospectionIssueAttachmentCreate[] = [
-            ...(attachments ?? []),
-            ...(conversationId
-              ? [
-                  {
-                    kind: "conversation" as const,
-                    conversation_id: conversationId,
-                  },
-                ]
-              : []),
-          ];
+          // The issue belongs to no task, so one run files as many as it finds.
           const created = await client.issues
             .create(
-              { ...brief, ...(cited.length ? { attachments: cited } : {}) },
+              { ...brief, ...(attachments ? { attachments } : {}) },
               ...options,
             )
             .catch((error: unknown) => {
