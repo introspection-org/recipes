@@ -43,6 +43,7 @@ import {
   ChildCompletionQueue,
   envelopeFromRun,
   renderCompletionNotice,
+  usageText,
   type ChildCompletionEnvelope,
 } from "./child/agent-completions.js";
 import {
@@ -50,6 +51,7 @@ import {
   type AgentRunEvent,
   type AgentRunEventObserver,
   notifyAgentRunEvent,
+  runProgress,
 } from "./agents.js";
 import {
   clearMcpSession,
@@ -453,7 +455,10 @@ function formatCompletionMessage(
       envelope.duration_ms !== undefined
         ? ` ${themeFg(theme, "muted", `· ${formatDurationMs(envelope.duration_ms)}`)}`
         : "";
-    let text = `${icon} ${themeBold(theme, envelope.agent)} ${themeFg(theme, "muted", envelope.id)}${label} ${themeFg(theme, "muted", envelope.status)}${duration}`;
+    const usage = envelope.usage
+      ? ` ${themeFg(theme, "muted", `· ${usageText(envelope.usage)}`)}`
+      : "";
+    let text = `${icon} ${themeBold(theme, envelope.agent)} ${themeFg(theme, "muted", envelope.id)}${label} ${themeFg(theme, "muted", envelope.status)}${duration}${usage}`;
     const preview =
       (envelope.status === "failed"
         ? (envelope.error ?? envelope.output_preview)
@@ -484,7 +489,34 @@ function snapshotOf(run: ChildRunSnapshot): ChildRunSnapshot {
     output: run.output,
     error: run.error,
     toolCalls: run.toolCalls.map((call) => ({ ...call })),
+    ...(run.usage ? { usage: { ...run.usage } } : {}),
   };
+}
+
+/** Adds an assistant message's usage, from a child's `message_end` event, to its run's. */
+function addMessageUsage(run: ChildRunSnapshot, event: unknown): boolean {
+  const record = asRecord(event);
+  if (record?.type !== "message_end") return false;
+  const message = asRecord(record.message);
+  const usage = asRecord(message?.usage);
+  if (message?.role !== "assistant" || !usage) return false;
+  const number = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const total = run.usage ?? {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+  };
+  run.usage = {
+    input: total.input + number(usage.input),
+    output: total.output + number(usage.output),
+    cacheRead: total.cacheRead + number(usage.cacheRead),
+    cacheWrite: total.cacheWrite + number(usage.cacheWrite),
+    cost: total.cost + number(asRecord(usage.cost)?.total),
+  };
+  return true;
 }
 
 function controllerSummary(
@@ -523,6 +555,17 @@ function controllerSummary(
     output_preview: run.output,
     output: run.output,
     error: run.error,
+    ...(run.usage
+      ? {
+          usage: {
+            input_tokens: run.usage.input,
+            output_tokens: run.usage.output,
+            cache_read_tokens: run.usage.cacheRead,
+            cache_write_tokens: run.usage.cacheWrite,
+            cost_usd: run.usage.cost,
+          },
+        }
+      : {}),
   };
 }
 
@@ -1596,10 +1639,14 @@ export function createRecipesExtension(
       agentName,
       modelRegistry: ctx.modelRegistry,
       agentRunId: id,
-      // Runs the child starts in turn arrive already attributed to it.
-      onAgentRunEvent: recordRunEvent,
+      // Runs the child starts in turn arrive already attributed to it, and their usage counts as its own.
+      onAgentRunEvent(envelope) {
+        if (run && addMessageUsage(run, envelope.event)) notifyUpdate();
+        recordRunEvent(envelope);
+      },
       onEvent(event) {
         if (!run) return;
+        if (addMessageUsage(run, event)) notifyUpdate();
         recordRunEvent({
           type: "agent_run_event",
           agent_run_id: run.id,
@@ -1874,6 +1921,59 @@ export function createRecipesExtension(
       const text =
         (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(formatAgentCall(params as AgentCallParams, theme));
+      return text;
+    };
+    // A run's line redraws once a second while it runs, with its time, tokens, cost and tool.
+    const liveRows = new Map<string, Map<string, () => void>>();
+    let liveTicker: NodeJS.Timeout | undefined;
+    const tickLiveRows = () => {
+      for (const [id, rows] of liveRows) {
+        for (const invalidate of rows.values()) invalidate();
+        if (childRuns.get(id)?.status !== "running") liveRows.delete(id);
+      }
+      if (liveRows.size === 0 && liveTicker) {
+        clearInterval(liveTicker);
+        liveTicker = undefined;
+      }
+    };
+    agentTool.renderResult = (result, _options, _theme, context) => {
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const content = result.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n");
+      const summary = asRecord(result.details)?.agent as
+        AgentRunSummary | undefined;
+      const live = summary ? childRuns.get(summary.agent_run_id) : undefined;
+      if (!summary || !live) {
+        text.setText(content);
+        return text;
+      }
+      const current = controllerSummary(live);
+      const progress =
+        current.status === "running"
+          ? runProgress(current)
+          : `${current.status} · ${runProgress(current)}`;
+      const lead = `run ${summary.agent_run_id} (`;
+      text.setText(
+        content
+          .split("\n")
+          .map((line) =>
+            line.includes(lead)
+              ? line.replace(/\[[^\]]*\]$/, `[${progress}]`)
+              : line,
+          )
+          .join("\n"),
+      );
+      if (current.status === "running") {
+        const rows = liveRows.get(summary.agent_run_id) ?? new Map();
+        rows.set(context.toolCallId, context.invalidate);
+        liveRows.set(summary.agent_run_id, rows);
+        if (!liveTicker) {
+          liveTicker = setInterval(tickLiveRows, 1000);
+          liveTicker.unref?.();
+        }
+      }
       return text;
     };
     pi.registerTool(agentTool);

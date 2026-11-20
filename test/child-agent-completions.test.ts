@@ -225,3 +225,34 @@ describe("renderCompletionNotice", () => {
     expect(notice).toContain('action "status"');
   });
 });
+
+describe("run usage", () => {
+  it("carries a run's output tokens and cost to the parent's notice", () => {
+    const run: ChildRunSnapshot = {
+      id: "agent-run-6",
+      agent: "proposer",
+      label: "preview-attempt-1",
+      prompt: "fix it",
+      status: "completed",
+      startedAt: "2026-11-20T22:00:00.000Z",
+      completedAt: "2026-11-20T22:00:40.000Z",
+      output: "committed abc123",
+      toolCalls: [],
+      usage: {
+        input: 10,
+        output: 2300,
+        cacheRead: 5000,
+        cacheWrite: 100,
+        cost: 0.0912,
+      },
+    };
+    const notice = renderCompletionNotice([envelopeFromRun(run)!]);
+    expect(notice).toContain(
+      "run agent-run-6 (proposer: preview-attempt-1) [completed · ↓ 2.3k tokens · $0.09]",
+    );
+  });
+
+  it("leaves a run without usage as before", () => {
+    expect(renderCompletionNotice([envelope()])).not.toContain("tokens");
+  });
+});

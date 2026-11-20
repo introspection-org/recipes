@@ -21,6 +21,15 @@ export interface AgentNestedToolSummary {
   toolInput?: Record<string, unknown>;
 }
 
+/** A run's model usage so far: output tokens and cost in USD. */
+export interface AgentRunUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
+}
+
 export interface AgentRunSummary {
   agent_run_id: string;
   invocation_name: string;
@@ -36,6 +45,31 @@ export interface AgentRunSummary {
   output_preview?: string;
   output?: string;
   error?: string;
+  usage?: AgentRunUsage;
+}
+
+function compactTokens(count: number): string {
+  return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
+}
+
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * A run's progress in one line: `0m 40s · ↓ 2.3k tokens · $0.09 · edit`, its
+ * time, output tokens, cost and, while it runs, the tool it is in.
+ */
+export function runProgress(run: AgentRunSummary, now = Date.now()): string {
+  const parts = [elapsed((run.completed_at ?? now) - run.started_at)];
+  if (run.usage) {
+    parts.push(`↓ ${compactTokens(run.usage.output_tokens)} tokens`);
+    parts.push(`$${run.usage.cost_usd.toFixed(2)}`);
+  }
+  if (run.status === "running" && run.current_tool)
+    parts.push(run.current_tool);
+  return parts.join(" · ");
 }
 
 /**
@@ -134,7 +168,8 @@ function terminal(run: AgentRunSummary): boolean {
 
 /** The run id leads; the agent and label only describe it. */
 function runLine(run: AgentRunSummary): string {
-  return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}]`;
+  const progress = run.usage ? ` · ${runProgress(run)}` : "";
+  return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}${progress}]`;
 }
 
 function statusBlock(run: AgentRunSummary): string {

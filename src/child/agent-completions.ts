@@ -33,6 +33,20 @@ export interface ChildCompletionEnvelope {
   output_preview?: string;
   error?: string;
   duration_ms?: number;
+  /** Output tokens and cost in USD across the run's model calls. */
+  usage?: { output_tokens: number; cost_usd: number };
+}
+
+/** `↓ 15.2k tokens · $0.60`: a run's output tokens and cost. */
+export function usageText(usage: {
+  output_tokens: number;
+  cost_usd: number;
+}): string {
+  const tokens =
+    usage.output_tokens < 1000
+      ? String(usage.output_tokens)
+      : `${(usage.output_tokens / 1000).toFixed(1)}k`;
+  return `↓ ${tokens} tokens · $${usage.cost_usd.toFixed(2)}`;
 }
 
 export function envelopeFromRun(
@@ -55,6 +69,14 @@ export function envelopeFromRun(
     output_preview: run.output?.slice(0, OUTPUT_PREVIEW_CHARS),
     error: run.error,
     duration_ms: duration,
+    ...(run.usage
+      ? {
+          usage: {
+            output_tokens: run.usage.output,
+            cost_usd: run.usage.cost,
+          },
+        }
+      : {}),
   };
 }
 
@@ -67,7 +89,8 @@ export function renderCompletionNotice(
 ): string {
   const blocks = batch.map((envelope) => {
     const label = envelope.label ? `: ${envelope.label}` : "";
-    const header = `run ${envelope.id} (${envelope.agent}${label}) [${envelope.status}]`;
+    const usage = envelope.usage ? ` · ${usageText(envelope.usage)}` : "";
+    const header = `run ${envelope.id} (${envelope.agent}${label}) [${envelope.status}${usage}]`;
     const body =
       envelope.status === "failed"
         ? `Agent failed: ${envelope.error ?? "unknown error"}`
