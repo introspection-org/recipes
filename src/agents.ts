@@ -9,6 +9,7 @@ import {
   renderCompletionNotice,
   type ChildCompletionEnvelope,
 } from "./child/agent-completions.js";
+import { elapsed } from "./skill-progress.js";
 
 /** Portable lifecycle contract for Recipe agent runs. */
 export type AgentRunStatus =
@@ -48,27 +49,25 @@ export interface AgentRunSummary {
   usage?: AgentRunUsage;
 }
 
-function compactTokens(count: number): string {
+/** `2.3k` for 2300 tokens, the count as it is under a thousand. */
+export function compactTokens(count: number): string {
   return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
 }
 
-function elapsed(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
-}
-
 /**
- * A run's progress in one line: `0m 40s · ↓ 2.3k tokens · $0.09 · edit`, its
- * time, output tokens, cost and, while it runs, the tool it is in.
+ * A run's progress in one line, ending on its clock as the footer does:
+ * `↓ 2.3k tokens · $0.09 · edit · 00:40`, its output tokens, cost, the tool it
+ * is in while it runs, and its time.
  */
 export function runProgress(run: AgentRunSummary, now = Date.now()): string {
-  const parts = [elapsed((run.completed_at ?? now) - run.started_at)];
+  const parts: string[] = [];
   if (run.usage) {
     parts.push(`↓ ${compactTokens(run.usage.output_tokens)} tokens`);
     parts.push(`$${run.usage.cost_usd.toFixed(2)}`);
   }
   if (run.status === "running" && run.current_tool)
     parts.push(run.current_tool);
+  parts.push(elapsed((run.completed_at ?? now) - run.started_at));
   return parts.join(" · ");
 }
 
@@ -315,7 +314,7 @@ export function createAgentTool(
           return result(run, statusBlock(run));
         }
         if (params.action === "wait") {
-          return await waitFor(params.id, signal);
+          return await waitFor(params.id, signal, onUpdate);
         }
         if (params.action === "message") {
           if (!params.message)
@@ -361,8 +360,18 @@ export function createAgentTool(
   async function waitFor(
     target: string | AgentRunSummary,
     signal: AbortSignal | undefined,
+    onUpdate?: (update: ReturnType<typeof result>) => void,
   ) {
     const id = typeof target === "string" ? target : target.agent_run_id;
+    // The wait is the row on screen while it lasts, so it shows the run's progress.
+    const showProgress = () => {
+      const current = controller.get(id);
+      if (current && !terminal(current))
+        onUpdate?.(result(current, `Waiting for ${runLine(current)}`));
+    };
+    const progress = onUpdate ? setInterval(showProgress, 1000) : undefined;
+    progress?.unref?.();
+    showProgress();
     let run: AgentRunSummary;
     try {
       run = await controller.wait(id, signal);
@@ -371,6 +380,8 @@ export function createAgentTool(
         controller.get(id) ?? (typeof target === "string" ? null : target);
       if (!signal?.aborted || !fallback) throw error;
       run = fallback;
+    } finally {
+      clearInterval(progress);
     }
     if (!terminal(run)) {
       return result(

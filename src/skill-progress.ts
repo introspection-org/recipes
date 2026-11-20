@@ -370,6 +370,8 @@ export function registerSkillProgress(
     return () => clearInterval(timer);
   },
   report?: (step: RecipeStep) => void,
+  /** Running subagents and their usage, shown before the clock: `4 agents · ↓ 4.1k · $0.45`. */
+  agents?: () => string | undefined,
 ): { resume(ctx: ExtensionContext): void } {
   let current: { at: Position; skills: RecipeSkills } | undefined;
   // The agent's working time this session, across every step: what's banked, plus the run in
@@ -410,7 +412,7 @@ export function registerSkillProgress(
     shown = ctx;
     ctx.ui.setStatus(
       STEP_STATUS_KEY,
-      `${BRAND} ${positionLine(current.at, current.skills, elapsed(worked()), runningSince === undefined)}`,
+      `${BRAND} ${positionLine(current.at, current.skills, [agents?.(), elapsed(worked())].filter(Boolean).join(" · "), runningSince === undefined)}`,
     );
     stop ??= every(() => {
       if (shown) show(shown);

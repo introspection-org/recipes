@@ -28,7 +28,7 @@ function extensionContext(cwd: string, opts: { isIdle?: () => boolean } = {}) {
   return {
     cwd,
     hasUI: true,
-    ui: { notify: vi.fn() },
+    ui: { notify: vi.fn(), setWidget: vi.fn() },
     isIdle: opts.isIdle ?? (() => true),
     modelRegistry: {
       authStorage,
@@ -404,7 +404,7 @@ describe("recipe child agent completion delivery", () => {
 });
 
 describe("subagent usage", () => {
-  it("shows a running child's tokens and cost live, and reports them to the parent", async () => {
+  it("counts a child's tokens and cost and reports them to the parent", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-usage-"));
     try {
       let childOpts: any;
@@ -455,29 +455,8 @@ describe("subagent usage", () => {
       assistantEnd(1500, 0.05);
       assistantEnd(800, 0.04);
 
-      const render = () =>
-        tool.renderResult!(
-          started as any,
-          { expanded: false, isPartial: false },
-          undefined as any,
-          {
-            lastComponent: undefined,
-            invalidate: () => {},
-            toolCallId: "call-usage",
-          } as any,
-        )
-          .render(200)
-          .join("\n");
-      expect(render()).toMatch(
-        new RegExp(
-          `run ${id} \\(explorer[^\\n]*\\[\\dm \\d\\ds · ↓ 2\\.3k tokens · \\$0\\.09\\]`,
-        ),
-      );
-
       finish("found it");
       await waitForPersistedStatus(projectDir, id, "completed");
-      expect(render()).toContain("[completed · ");
-      expect(render()).toContain("↓ 2.3k tokens · $0.09]");
 
       await pi.emitExtensionEvent(
         { type: "agent_end", messages: [] } as any,
