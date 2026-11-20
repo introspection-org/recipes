@@ -1976,6 +1976,59 @@ export function createRecipesExtension(
       text.setText(formatAgentCall(params as AgentCallParams, theme));
       return text;
     };
+    // A run's line redraws once a second while it runs, with its time, tokens, cost and tool.
+    const liveRows = new Map<string, Map<string, () => void>>();
+    let liveTicker: NodeJS.Timeout | undefined;
+    const tickLiveRows = () => {
+      for (const [id, rows] of liveRows) {
+        for (const invalidate of rows.values()) invalidate();
+        if (childRuns.get(id)?.status !== "running") liveRows.delete(id);
+      }
+      if (liveRows.size === 0 && liveTicker) {
+        clearInterval(liveTicker);
+        liveTicker = undefined;
+      }
+    };
+    agentTool.renderResult = (result, _options, _theme, context) => {
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const content = result.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n");
+      const summary = asRecord(result.details)?.agent as
+        AgentRunSummary | undefined;
+      const live = summary ? childRuns.get(summary.agent_run_id) : undefined;
+      if (!summary || !live) {
+        text.setText(content);
+        return text;
+      }
+      const current = controllerSummary(live);
+      const progress =
+        current.status === "running"
+          ? runProgress(current)
+          : `${current.status} · ${runProgress(current)}`;
+      const lead = `run ${summary.agent_run_id} (`;
+      text.setText(
+        content
+          .split("\n")
+          .map((line) =>
+            line.includes(lead)
+              ? line.replace(/\[[^\]]*\]$/, `[${progress}]`)
+              : line,
+          )
+          .join("\n"),
+      );
+      if (current.status === "running") {
+        const rows = liveRows.get(summary.agent_run_id) ?? new Map();
+        rows.set(context.toolCallId, context.invalidate);
+        liveRows.set(summary.agent_run_id, rows);
+        if (!liveTicker) {
+          liveTicker = setInterval(tickLiveRows, 1000);
+          liveTicker.unref?.();
+        }
+      }
+      return text;
+    };
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);

@@ -455,8 +455,28 @@ describe("subagent usage", () => {
       assistantEnd(1500, 0.05);
       assistantEnd(800, 0.04);
 
+      const render = () =>
+        tool.renderResult!(
+          started as any,
+          { expanded: false, isPartial: false },
+          undefined as any,
+          {
+            lastComponent: undefined,
+            invalidate: () => {},
+            toolCallId: "call-usage",
+          } as any,
+        )
+          .render(200)
+          .join("\n");
+      expect(render()).toMatch(
+        new RegExp(
+          `run ${id} \\(explorer[^\\n]*\\[↓ 2\\.3k tokens · \\$0\\.09 · \\d\\d:\\d\\d\\]`,
+        ),
+      );
+
       finish("found it");
       await waitForPersistedStatus(projectDir, id, "completed");
+      expect(render()).toContain("[completed · ↓ 2.3k tokens · $0.09 · ");
 
       await pi.emitExtensionEvent(
         { type: "agent_end", messages: [] } as any,
