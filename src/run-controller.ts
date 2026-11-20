@@ -7,7 +7,7 @@ import type {
   AgentRunStatus,
   AgentRunSummary,
 } from "./agents.js";
-import { notifyAgentRunEvent } from "./agents.js";
+import { describeToolCall, notifyAgentRunEvent } from "./agents.js";
 import { promptResultError, promptResultText } from "./child/agent.js";
 import {
   createIsolatedChildSession,
@@ -195,9 +195,18 @@ export function createInProcessRunController(
               depth,
               event,
             });
-            const record = event as { type?: string; toolName?: unknown };
+            const record = event as {
+              type?: string;
+              toolName?: unknown;
+              args?: unknown;
+            };
             if (record.type === "tool_execution_start") {
-              touch(run, { current_tool: String(record.toolName ?? "") });
+              const toolName = String(record.toolName ?? "");
+              touch(run, {
+                current_tool: toolName,
+                latest_tool_call: describeToolCall(toolName, record.args),
+                tool_call_count: (run.summary.tool_call_count ?? 0) + 1,
+              });
             }
             if (record.type === "tool_execution_end") {
               touch(run, { current_tool: undefined });

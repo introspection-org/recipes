@@ -206,7 +206,15 @@ delegation depth bound described below.
 its parent as an `<agent_run_completions>` notice, so the parent carries on or
 ends its turn. For a short check whose answer it needs now, `start` with
 `wait: true` returns the result in the same call, and `wait` blocks on a
-run by id; an abort stops the wait, not the run.
+run by id, or on several with `ids`; an abort stops the wait, not the runs.
+
+While the tool waits, its partial results carry one progress line per awaited
+run (the agent and label, its latest tool call, the time since it started and
+its tool-call count) as text, and the runs' summaries as `details.agent` for
+one run or `details.agents` for several, so RPC hosts can draw the same. In
+Pi's terminal, runs started without `wait` show in a status widget above the
+editor, one line per running run, removed when the run settles; print and
+JSON modes show nothing extra.
 
 Skill and subagent selection controls prompt exposure and active capability,
 not filesystem isolation. All agents run in the same Recipe package and current
