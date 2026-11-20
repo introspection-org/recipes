@@ -31,6 +31,7 @@ import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
 const RECIPE_SESSION: Record<string, string> = {
   steeringMode: "steering_mode",
   followUpMode: "follow_up_mode",
+  cacheWarming: "cache.warming",
   "compaction.enabled": "compaction.enabled",
   "compaction.reserveTokens": "compaction.reserve_tokens",
   "compaction.keepRecentTokens": "compaction.keep_recent_tokens",
@@ -70,8 +71,6 @@ const HOST_OWNED = new Set([
   "enabledModels",
   "hideThinkingBlock",
   "showCacheMissNotices",
-  // Prompt-cache spend is a host cost policy, and global-only in Pi.
-  "cacheWarming",
   // Interactive navigation and branch summaries.
   "externalEditor",
   "doubleEscapeAction",
@@ -127,6 +126,7 @@ const HOST_OWNED = new Set([
 const RECIPE_VALUES: Record<string, unknown> = {
   steeringMode: "all",
   followUpMode: "all",
+  cacheWarming: "off",
   "compaction.enabled": false,
   "compaction.reserveTokens": 7001,
   "compaction.keepRecentTokens": 7002,
@@ -145,6 +145,7 @@ const RECIPE_VALUES: Record<string, unknown> = {
 const HOST_VALUES: Record<string, unknown> = {
   steeringMode: "one-at-a-time",
   followUpMode: "one-at-a-time",
+  cacheWarming: "streaming",
   "compaction.enabled": true,
   "compaction.reserveTokens": 9001,
   "compaction.keepRecentTokens": 9002,

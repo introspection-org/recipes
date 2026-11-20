@@ -214,47 +214,27 @@ describe("parseRecipeAgentSessionConfig", () => {
     ).toEqual({ compactionInstructions: "Keep the plan." });
   });
 
-  it("reads session.cache and compaction.on_idle for the host", () => {
+  it("maps session.cache.warming to Pi's cacheWarming setting", () => {
     expect(
       parseRecipeAgentSessionConfig("test", {
         cache: { retention: "none", warming: "idle" },
-        compaction: {
-          keep_recent_tokens: 25000,
-          on_idle: {
-            min_context_tokens: 150000,
-            keep_recent_tokens: 20000,
-            instructions: "Keep what is unfinished.",
-          },
-        },
+        compaction: { keep_recent_tokens: 25000 },
       }),
     ).toEqual({
-      settings: { compaction: { keepRecentTokens: 25000 } },
-      cacheRetention: "none",
-      cacheWarming: "idle",
-      compactionOnIdle: {
-        minContextTokens: 150000,
-        keepRecentTokens: 20000,
-        instructions: "Keep what is unfinished.",
+      settings: {
+        compaction: { keepRecentTokens: 25000 },
+        cacheWarming: "idle",
       },
+      cacheRetention: "none",
     });
     for (const session of [
       { cache: { retention: "forever" } },
       { cache: { warming: "always" } },
       { cache: { ttl: 60 } },
-      { compaction: { on_idle: { min_context_tokens: 0 } } },
-      { compaction: { on_idle: { after: "1h" } } },
-      { compaction: { on_idle: { instructions: " " } } },
+      { compaction: { on_idle: { min_context_tokens: 1 } } },
     ]) {
       expect(() => parseRecipeAgentSessionConfig("test", session)).toThrow();
     }
-    expect(
-      mergeRecipeAgentSessionConfig(
-        { compactionOnIdle: { minContextTokens: 1000, keepRecentTokens: 10 } },
-        { compactionOnIdle: { keepRecentTokens: 20 } },
-      ),
-    ).toEqual({
-      compactionOnIdle: { minContextTokens: 1000, keepRecentTokens: 20 },
-    });
   });
 
   it("merges inherited session policy", () => {

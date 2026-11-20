@@ -14,12 +14,6 @@ type RecipeQueueMode = "all" | "one-at-a-time";
 type RecipeCacheRetention = "none" | "short" | "long";
 type RecipeCacheWarming = "off" | "streaming" | "idle";
 
-/** `session.compaction.on_idle`: a compaction the host prepares when it ends an idle session. */
-interface RecipeCompactionOnIdle {
-  minContextTokens?: number;
-  keepRecentTokens?: number;
-  instructions?: string;
-}
 type RecipeToolExecutionMode = "parallel" | "sequential";
 
 export interface RecipeAgentSessionConfig {
@@ -31,10 +25,6 @@ export interface RecipeAgentSessionConfig {
   compactionInstructions?: string;
   /** `session.cache.retention`, applied as the `cacheRetention` request option. */
   cacheRetention?: RecipeCacheRetention;
-  /** `session.cache.warming`; process-wide in Pi, so the host applies the top-level agent's. */
-  cacheWarming?: RecipeCacheWarming;
-  /** `session.compaction.on_idle`, for the host; Recipes applies none of it. */
-  compactionOnIdle?: RecipeCompactionOnIdle;
 }
 
 export class RecipeSessionConfigError extends Error {
@@ -178,7 +168,6 @@ function parseCompaction(
 ): {
   settings?: Record<string, unknown>;
   instructions?: string;
-  onIdle?: RecipeCompactionOnIdle;
 } {
   const data = sessionObject(context, value);
   assertKnownKeys(context, data, [
@@ -187,7 +176,6 @@ function parseCompaction(
     "keep_recent_tokens",
     "model_overrides",
     "instructions",
-    "on_idle",
   ]);
   const instructions = data.instructions;
   if (
@@ -220,51 +208,10 @@ function parseCompaction(
             data.model_overrides,
           ),
   });
-  const onIdle =
-    data.on_idle === undefined
-      ? undefined
-      : parseCompactionOnIdle(`${context}.on_idle`, data.on_idle);
   return {
     ...(settings ? { settings } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
-    ...(onIdle ? { onIdle } : {}),
   };
-}
-
-function parseCompactionOnIdle(
-  context: string,
-  value: unknown,
-): RecipeCompactionOnIdle | undefined {
-  const data = sessionObject(context, value);
-  assertKnownKeys(context, data, [
-    "min_context_tokens",
-    "keep_recent_tokens",
-    "instructions",
-  ]);
-  const instructions = data.instructions;
-  if (
-    instructions !== undefined &&
-    (typeof instructions !== "string" || instructions.trim() === "")
-  ) {
-    throw new RecipeSessionConfigError(
-      `${context}.instructions: expected non-empty string`,
-    );
-  }
-  return definedObject({
-    minContextTokens: optionalInteger(
-      context,
-      "min_context_tokens",
-      data.min_context_tokens,
-      1,
-    ),
-    keepRecentTokens: optionalInteger(
-      context,
-      "keep_recent_tokens",
-      data.keep_recent_tokens,
-      0,
-    ),
-    instructions,
-  }) as RecipeCompactionOnIdle | undefined;
 }
 
 function parseCache(
@@ -442,6 +389,7 @@ export function parseRecipeAgentSessionConfig(
         : parseImages(`${context} session.images`, value.images),
   };
   Object.assign(settings, definedObject(nestedSettings));
+  if (cache?.warming) settings.cacheWarming = cache.warming;
 
   const parsed = {
     ...(steeringMode ? { steeringMode } : {}),
@@ -451,9 +399,7 @@ export function parseRecipeAgentSessionConfig(
     ...(compaction?.instructions
       ? { compactionInstructions: compaction.instructions }
       : {}),
-    ...(compaction?.onIdle ? { compactionOnIdle: compaction.onIdle } : {}),
     ...(cache?.retention ? { cacheRetention: cache.retention } : {}),
-    ...(cache?.warming ? { cacheWarming: cache.warming } : {}),
   };
   return Object.keys(parsed).length > 0 ? parsed : undefined;
 }
@@ -465,15 +411,10 @@ export function mergeRecipeAgentSessionConfig(
   if (!base) return overlay;
   if (!overlay) return base;
   const settings = mergeObjects(base.settings ?? {}, overlay.settings ?? {});
-  const compactionOnIdle = {
-    ...base.compactionOnIdle,
-    ...overlay.compactionOnIdle,
-  };
   return {
     ...base,
     ...overlay,
     ...(Object.keys(settings).length > 0 ? { settings } : {}),
-    ...(Object.keys(compactionOnIdle).length > 0 ? { compactionOnIdle } : {}),
   };
 }
 

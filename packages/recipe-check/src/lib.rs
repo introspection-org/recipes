@@ -4151,53 +4151,6 @@ fn validate_session_cache(value: &JsonValue, path: &str, ctx: &mut CheckContext)
     }
 }
 
-fn validate_session_compaction_on_idle(
-    compaction: &JsonMap,
-    value: &JsonValue,
-    path: &str,
-    ctx: &mut CheckContext,
-) {
-    let Some(on_idle) = validate_session_settings_object(
-        value,
-        path,
-        "compaction.on_idle",
-        &["min_context_tokens", "keep_recent_tokens", "instructions"],
-        &[],
-        &[("min_context_tokens", true), ("keep_recent_tokens", false)],
-        ctx,
-    ) else {
-        return;
-    };
-    if on_idle
-        .get("instructions")
-        .is_some_and(|value| !value.as_str().is_some_and(|text| !text.trim().is_empty()))
-    {
-        ctx.error(
-            "agent.session.compaction.on_idle.instructions_invalid",
-            path,
-            "Agent session.compaction.on_idle.instructions must be a non-empty string",
-            None::<String>,
-        );
-    }
-    let keep = on_idle
-        .get("keep_recent_tokens")
-        .or_else(|| compaction.get("keep_recent_tokens"))
-        .and_then(JsonValue::as_f64);
-    let min = on_idle
-        .get("min_context_tokens")
-        .and_then(JsonValue::as_f64);
-    if let (Some(keep), Some(min)) = (keep, min) {
-        if keep >= min {
-            ctx.warning(
-                "agent.session.compaction.on_idle_ineffective",
-                path,
-                "Agent session.compaction.on_idle keeps at least min_context_tokens of recent context, so a prepared compaction summarizes nothing",
-                Some("set keep_recent_tokens below min_context_tokens"),
-            );
-        }
-    }
-}
-
 fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckContext) {
     let Some(compaction) = validate_session_settings_object(
         value,
@@ -4209,7 +4162,6 @@ fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckCon
             "keep_recent_tokens",
             "model_overrides",
             "instructions",
-            "on_idle",
         ],
         &["enabled"],
         &[("reserve_tokens", false), ("keep_recent_tokens", false)],
@@ -4227,9 +4179,6 @@ fn validate_session_compaction(value: &JsonValue, path: &str, ctx: &mut CheckCon
             "Agent session.compaction.instructions must be a non-empty string",
             None::<String>,
         );
-    }
-    if let Some(on_idle) = compaction.get("on_idle") {
-        validate_session_compaction_on_idle(compaction, on_idle, path, ctx);
     }
     let Some(value) = compaction.get("model_overrides") else {
         return;
@@ -7820,12 +7769,11 @@ mod tests {
     }
 
     #[test]
-    fn checks_session_cache_and_compaction_on_idle() {
+    fn checks_session_cache() {
         let ai = "ai:\n  model: openai/gpt-5\n";
         for retention in ["none", "short", "long"] {
-            let tail = format!(
-                "{ai}session:\n  cache:\n    retention: {retention}\n    warming: idle\n  compaction:\n    keep_recent_tokens: 20000\n    on_idle:\n      min_context_tokens: 150000\n      keep_recent_tokens: 20000\n      instructions: Keep what is unfinished.\n"
-            );
+            let tail =
+                format!("{ai}session:\n  cache:\n    retention: {retention}\n    warming: idle\n");
             assert_eq!(session_codes(&tail), [], "{retention}");
         }
         for (session, code) in [
@@ -7839,26 +7787,6 @@ mod tests {
                 "  cache:\n    warming: always\n",
                 "agent.session.cache.warming_invalid",
             ),
-            (
-                "  compaction:\n    on_idle: true\n",
-                "agent.session.compaction.on_idle_invalid",
-            ),
-            (
-                "  compaction:\n    on_idle:\n      after: 1h\n",
-                "agent.session.compaction.on_idle_key_unknown",
-            ),
-            (
-                "  compaction:\n    on_idle:\n      min_context_tokens: 0\n",
-                "agent.session.compaction.on_idle.min_context_tokens_invalid",
-            ),
-            (
-                "  compaction:\n    on_idle:\n      keep_recent_tokens: 1.5\n",
-                "agent.session.compaction.on_idle.keep_recent_tokens_invalid",
-            ),
-            (
-                "  compaction:\n    on_idle:\n      instructions: \" \"\n",
-                "agent.session.compaction.on_idle.instructions_invalid",
-            ),
         ] {
             let tail = format!("{ai}session:\n{session}");
             assert_eq!(
@@ -7868,8 +7796,13 @@ mod tests {
             );
         }
         assert_eq!(
-            session_codes(&format!("{ai}session:\n  compaction:\n    keep_recent_tokens: 50000\n    on_idle:\n      min_context_tokens: 40000\n")),
-            [("agent.session.compaction.on_idle_ineffective".to_owned(), Severity::Warning)]
+            session_codes(&format!(
+                "{ai}session:\n  compaction:\n    on_idle:\n      min_context_tokens: 1\n"
+            )),
+            [(
+                "agent.session.compaction_key_unknown".to_owned(),
+                Severity::Error
+            )]
         );
     }
 
