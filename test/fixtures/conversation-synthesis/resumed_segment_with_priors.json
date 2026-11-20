@@ -1,0 +1,97 @@
+{
+  "name": "resumed_segment_with_priors",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:04:00Z",
+    "span_count": 8,
+    "error_count": 0,
+    "duration_ms": 241250.5,
+    "model_calls": [
+      {
+        "span_id": "span-03",
+        "response_id": "resp-03",
+        "timestamp": "2026-11-12T09:03:00Z",
+        "timestamp_ns": 1794474180000000000,
+        "input_new_messages": [
+          {
+            "role": "tool",
+            "parts": [
+              {
+                "type": "tool_call_response",
+                "id": "call-2",
+                "name": "run",
+                "response": "Error: permission denied writing /exports/nightly.csv"
+              }
+            ]
+          }
+        ],
+        "input_message_count": 5,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "The export user cannot write to /exports. Grant it write access."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-04",
+        "response_id": "resp-04",
+        "timestamp": "2026-11-12T09:04:00Z",
+        "timestamp_ns": 1794474240000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Thanks, that fixed it."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 7,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Glad it works now."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "watermark": {
+      "watermark": "2026-11-12T09:02:00Z",
+      "cursor": "eyJpIjoic3Bhbi0wMiIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTIwMDAwMDAwMDAwIn0",
+      "segment": 1,
+      "tail_fingerprints": [
+        "e2c9219175dd8cc991613fdb",
+        "505ce6f358c5272a0eef0378",
+        "d0f057eefafeb47ec9cfd21f",
+        "7bc4d7f6b72858add9860666"
+      ],
+      "last_input_count": 3,
+      "completed_at": "2026-11-12T09:02:00Z"
+    },
+    "prior_observations": [
+      {
+        "lens": "task_resolution",
+        "label": "unresolved",
+        "summary": "The export still fails."
+      }
+    ],
+    "prior_resolution": {
+      "id": "obs-prior"
+    }
+  }
+}

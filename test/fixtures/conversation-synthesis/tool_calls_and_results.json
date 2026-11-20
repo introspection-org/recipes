@@ -1,0 +1,150 @@
+{
+  "name": "tool_calls_and_results",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:04:00Z",
+    "span_count": 8,
+    "error_count": 1,
+    "duration_ms": 241250.5,
+    "model_calls": [
+      {
+        "span_id": "span-01",
+        "response_id": "resp-01",
+        "timestamp": "2026-11-12T09:01:00Z",
+        "timestamp_ns": 1794474060000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Why does the nightly export fail?"
+              }
+            ]
+          }
+        ],
+        "input_message_count": 1,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "thinking",
+                "content": "Check the export job's recent runs first."
+              },
+              {
+                "type": "tool_call",
+                "id": "call-1",
+                "name": "list_files",
+                "arguments": {
+                  "path": "src",
+                  "recursive": true
+                }
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-02",
+        "response_id": "resp-02",
+        "timestamp": "2026-11-12T09:02:00Z",
+        "timestamp_ns": 1794474120000000000,
+        "input_new_messages": [
+          {
+            "role": "tool",
+            "parts": [
+              {
+                "type": "tool_call_response",
+                "id": "call-1",
+                "name": "list_files",
+                "response": "src/module_0.py  0 bytes\nsrc/module_1.py  37 bytes\nsrc/module_2.py  74 bytes\nsrc/module_3.py  111 bytes\nsrc/module_4.py  148 bytes\nsrc/module_5.py  185 bytes\nsrc/module_6.py  222 bytes\nsrc/module_7.py  259 bytes\nsrc/module_8.py  296 bytes\nsrc/module_9.py  333 bytes\nsrc/module_10.py  370 bytes\nsrc/module_11.py  407 bytes\nsrc/module_12.py  444 bytes\nsrc/module_13.py  481 bytes\nsrc/module_14.py  518 bytes\nsrc/module_15.py  555 bytes\nsrc/module_16.py  592 bytes\nsrc/module_17.py  629 bytes\nsrc/module_18.py  666 bytes\nsrc/module_19.py  703 bytes\nsrc/module_20.py  740 bytes\nsrc/module_21.py  777 bytes\nsrc/module_22.py  814 bytes\nsrc/module_23.py  851 bytes\nsrc/module_24.py  888 bytes\nsrc/module_25.py  925 bytes\nsrc/module_26.py  962 bytes\nsrc/module_27.py  999 bytes\nsrc/module_28.py  1036 bytes\nsrc/module_29.py  1073 bytes\nsrc/module_30.py  1110 bytes\nsrc/module_31.py  1147 bytes\nsrc/module_32.py  1184 bytes\nsrc/module_33.py  1221 bytes\nsrc/module_34.py  1258 bytes\nsrc/module_35.py  1295 bytes\nsrc/module_36.py  1332 bytes\nsrc/module_37.py  1369 bytes\nsrc/module_38.py  1406 bytes\nsrc/module_39.py  1443 bytes\nsrc/module_40.py  1480 bytes\nsrc/module_41.py  1517 bytes\nsrc/module_42.py  1554 bytes\nsrc/module_43.py  1591 bytes\nsrc/module_44.py  1628 bytes\nsrc/module_45.py  1665 bytes\nsrc/module_46.py  1702 bytes\nsrc/module_47.py  1739 bytes\nsrc/module_48.py  1776 bytes\nsrc/module_49.py  1813 bytes\nsrc/module_50.py  1850 bytes\nsrc/module_51.py  1887 bytes\nsrc/module_52.py  1924 bytes\nsrc/module_53.py  1961 bytes\nsrc/module_54.py  1998 bytes\nsrc/module_55.py  2035 bytes\nsrc/module_56.py  2072 bytes\nsrc/module_57.py  2109 bytes\nsrc/module_58.py  2146 bytes\nsrc/module_59.py  2183 bytes\nsrc/module_60.py  2220 bytes\nsrc/module_61.py  2257 bytes\nsrc/module_62.py  2294 bytes\nsrc/module_63.py  2331 bytes\nsrc/module_64.py  2368 bytes\nsrc/module_65.py  2405 bytes\nsrc/module_66.py  2442 bytes\nsrc/module_67.py  2479 bytes\nsrc/module_68.py  2516 bytes\nsrc/module_69.py  2553 bytes\nsrc/module_70.py  2590 bytes\nsrc/module_71.py  2627 bytes\nsrc/module_72.py  2664 bytes\nsrc/module_73.py  2701 bytes\nsrc/module_74.py  2738 bytes\nsrc/module_75.py  2775 bytes\nsrc/module_76.py  2812 bytes\nsrc/module_77.py  2849 bytes\nsrc/module_78.py  2886 bytes\nsrc/module_79.py  2923 bytes\nsrc/module_80.py  2960 bytes\nsrc/module_81.py  2997 bytes\nsrc/module_82.py  3034 bytes\nsrc/module_83.py  3071 bytes\nsrc/module_84.py  3108 bytes\nsrc/module_85.py  3145 bytes\nsrc/module_86.py  3182 bytes\nsrc/module_87.py  3219 bytes\nsrc/module_88.py  3256 bytes\nsrc/module_89.py  3293 bytes\nsrc/module_90.py  3330 bytes\nsrc/module_91.py  3367 bytes\nsrc/module_92.py  3404 bytes\nsrc/module_93.py  3441 bytes\nsrc/module_94.py  3478 bytes\nsrc/module_95.py  3515 bytes\nsrc/module_96.py  3552 bytes\nsrc/module_97.py  3589 bytes\nsrc/module_98.py  3626 bytes\nsrc/module_99.py  3663 bytes\nsrc/module_100.py  3700 bytes\nsrc/module_101.py  3737 bytes\nsrc/module_102.py  3774 bytes\nsrc/module_103.py  3811 bytes\nsrc/module_104.py  3848 bytes\nsrc/module_105.py  3885 bytes\nsrc/module_106.py  3922 bytes\nsrc/module_107.py  3959 bytes\nsrc/module_108.py  3996 bytes\nsrc/module_109.py  4033 bytes\nsrc/module_110.py  4070 bytes\nsrc/module_111.py  4107 bytes\nsrc/module_112.py  4144 bytes\nsrc/module_113.py  4181 bytes\nsrc/module_114.py  4218 bytes\nsrc/module_115.py  4255 bytes\nsrc/module_116.py  4292 bytes\nsrc/module_117.py  4329 bytes\nsrc/module_118.py  4366 bytes\nsrc/module_119.py  4403 bytes"
+              }
+            ]
+          }
+        ],
+        "input_message_count": 3,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "tool_call",
+                "id": "call-2",
+                "name": "run",
+                "arguments": {
+                  "command": "make export"
+                }
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-03",
+        "response_id": "resp-03",
+        "timestamp": "2026-11-12T09:03:00Z",
+        "timestamp_ns": 1794474180000000000,
+        "input_new_messages": [
+          {
+            "role": "tool",
+            "parts": [
+              {
+                "type": "tool_call_response",
+                "id": "call-2",
+                "name": "run",
+                "response": "Error: permission denied writing /exports/nightly.csv"
+              }
+            ]
+          }
+        ],
+        "input_message_count": 5,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "The export user cannot write to /exports. Grant it write access."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-04",
+        "response_id": "resp-04",
+        "timestamp": "2026-11-12T09:04:00Z",
+        "timestamp_ns": 1794474240000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Thanks, that fixed it."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 7,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Glad it works now."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "prior_observations": []
+  }
+}

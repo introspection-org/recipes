@@ -42,7 +42,6 @@ export { trajectoryFromPiSession } from "./session.js";
 export {
   evidenceHash,
   normalizeReplayTrajectory,
-  renderTrajectoryInput,
   toJudgeInput,
   type JudgeInput,
   type ReplayTrajectoryRecord,

@@ -343,6 +343,10 @@ export function createInProcessRunController(
       return run.summary;
     },
 
+    forget(id: string): void {
+      if (runs.get(id)?.summary.status === "closed") runs.delete(id);
+    },
+
     async shutdown(): Promise<void> {
       await Promise.all(
         [...runs.values()]
