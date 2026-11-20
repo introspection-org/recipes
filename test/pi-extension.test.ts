@@ -289,73 +289,6 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
-  it("summarizes each subagent with its description", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-recipe-subagent-summary-"));
-    try {
-      const recipeDir = writeRecipe(root);
-      const main = readFileSync(join(recipeDir, "defs", "main.yaml"), "utf8");
-      writeFileSync(
-        join(recipeDir, "defs", "main.yaml"),
-        main.replace("  - explorer\n", "  - explorer\n  - acme\n  - writer\n"),
-      );
-      const long = `Drafts ${"a careful reply ".repeat(20)}for each ticket.`;
-      for (const [name, description] of [
-        ["acme", "Looks up an Acme account\n  by its id."],
-        ["writer", long],
-      ]) {
-        writeFileSync(
-          join(recipeDir, "defs", `${name}.yaml`),
-          [
-            `name: ${name}`,
-            `description: ${JSON.stringify(description)}`,
-            "model:",
-            "  name: openai/gpt-4.1",
-            "tools: []",
-            "",
-          ].join("\n"),
-        );
-      }
-      const pi = createMockExtensionAPI();
-      const notify = vi.fn();
-      const ctx = extensionContext(root, notify);
-      pi.flagValues.set("recipe", recipeDir);
-      pi.flagValues.set("agent", "main");
-      createRecipesExtension({ env: {} })(pi);
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
-      );
-
-      notify.mockClear();
-      await pi.commands.get("recipe")?.handler("", ctx);
-      const summary = notify.mock.calls[0]?.[0] as string;
-      const lines = summary.split("\n");
-      const start = lines.indexOf("Subagents:");
-      expect(lines.slice(start + 1, start + 3)).toEqual([
-        "  - explorer",
-        "  - acme: Looks up an Acme account by its id.",
-      ]);
-      expect(lines[start + 3]).toMatch(/^ {2}- writer: Drafts .*…$/);
-      expect(lines[start + 3]!.length).toBeLessThanOrEqual(
-        "  - writer: ".length + 200,
-      );
-
-      pi.flagValues.set("agent", "explorer");
-      await pi.emitExtensionEvent(
-        { type: "session_start", reason: "startup" } as any,
-        ctx,
-      );
-      notify.mockClear();
-      await pi.commands.get("recipe")?.handler("", ctx);
-      expect(notify).toHaveBeenCalledWith(
-        expect.stringContaining("Subagents: (none)\n"),
-        "info",
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it("reports a friendly message when the selected recipe is missing", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-missing-"));
     try {
@@ -2264,6 +2197,75 @@ describe("Recipes extension for Pi", () => {
         customType: "recipe_session",
         data: expect.objectContaining({ recipe_dir: recipeDir, agent: "main" }),
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("/recipe summary", () => {
+  it("summarizes each subagent with its description", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-subagent-summary-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const main = readFileSync(join(recipeDir, "defs", "main.yaml"), "utf8");
+      writeFileSync(
+        join(recipeDir, "defs", "main.yaml"),
+        main.replace("  - explorer\n", "  - explorer\n  - acme\n  - writer\n"),
+      );
+      const long = `Drafts ${"a careful reply ".repeat(20)}for each ticket.`;
+      for (const [name, description] of [
+        ["acme", "Looks up an Acme account\n  by its id."],
+        ["writer", long],
+      ]) {
+        writeFileSync(
+          join(recipeDir, "defs", `${name}.yaml`),
+          [
+            `name: ${name}`,
+            `description: ${JSON.stringify(description)}`,
+            "model:",
+            "  name: openai/gpt-4.1",
+            "tools: []",
+            "",
+          ].join("\n"),
+        );
+      }
+      const pi = createMockExtensionAPI();
+      const notify = vi.fn();
+      const ctx = extensionContext(root, notify);
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      createRecipesExtension({ env: {} })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
+
+      notify.mockClear();
+      await pi.commands.get("recipe")?.handler("", ctx);
+      const summary = notify.mock.calls[0]?.[0] as string;
+      const lines = summary.split("\n");
+      const start = lines.indexOf("Subagents:");
+      expect(lines.slice(start + 1, start + 3)).toEqual([
+        "  - explorer",
+        "  - acme: Looks up an Acme account by its id.",
+      ]);
+      expect(lines[start + 3]).toMatch(/^ {2}- writer: Drafts .*…$/);
+      expect(lines[start + 3]!.length).toBeLessThanOrEqual(
+        "  - writer: ".length + 200,
+      );
+
+      pi.flagValues.set("agent", "explorer");
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
+      notify.mockClear();
+      await pi.commands.get("recipe")?.handler("", ctx);
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining("Subagents: (none)\n"),
+        "info",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
