@@ -26,7 +26,6 @@ import {
   loadJudges,
   normalizeReplayTrajectory,
   parseJudgeDefinition,
-  renderTrajectoryInput,
   runJudges,
   samplesIn,
   toJudgeInput,
@@ -34,6 +33,11 @@ import {
   type JudgeClassifier,
   type JudgeInputLine,
 } from "../src/judges/index.js";
+import {
+  MAX_PROMPT_TOKENS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
+} from "../src/prompts/index.js";
 import { judgeCli, parseJudgeCliArgs } from "../src/judges/cli-main.js";
 import { stripCodeFence } from "../src/judges/verdict.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
@@ -331,20 +335,33 @@ describe("judge gate", () => {
 
 describe("judge evidence", () => {
   it("renders the normalized trajectory with sorted keys and labelled system instructions", () => {
-    const transcript = renderTrajectoryInput(toJudgeInput(EXPORT, "Be brief."));
+    const transcript = trajectoryLlmJudge.build(
+      toJudgeInput(EXPORT, "Be brief."),
+      MAX_PROMPT_TOKENS,
+    ).prompt;
     expect(transcript.startsWith("TRAJECTORY\n[")).toBe(true);
     expect(transcript).toContain('"arguments": {\n      "message": "hello"');
     expect(transcript).toContain("\n\nSYSTEM INSTRUCTIONS\nBe brief.");
     expect(transcript).not.toContain("meta");
   });
 
-  it("clips long tool output for a classifier and cuts the middle to fit a budget", () => {
+  it("slims long tool output for a classifier and cuts the middle to fit a budget", () => {
     const input = toJudgeInput([
       { type: "tool_call", id: "c1", name: "read", arguments: {} },
       { type: "tool_result", tool_call_id: "c1", content: "x".repeat(9000) },
+      { type: "tool_call", id: "c2", name: "read", arguments: {} },
+      {
+        type: "tool_result",
+        tool_call_id: "c2",
+        content: `${"y".repeat(9000)} permission denied`,
+      },
     ]);
-    expect(renderTrajectoryInput(input, { slim: true })).toContain("[clipped]");
-    const cut = renderTrajectoryInput(input, { maxUnits: 500 });
+    const slim = trajectoryLlmClassify.build(input, MAX_PROMPT_TOKENS).prompt;
+    // Jev's slim: head and tail of a long result, an error kept whole.
+    expect(slim).toContain(`${"x".repeat(150)} […] ${"x".repeat(150)}`);
+    expect(slim).not.toContain("x".repeat(151));
+    expect(slim).toContain(`${"y".repeat(9000)} permission denied`);
+    const cut = trajectoryLlmJudge.build(input, 166).prompt;
     expect(cut.length).toBeLessThanOrEqual(500);
     expect(cut).toContain("transcript middle redacted");
   });

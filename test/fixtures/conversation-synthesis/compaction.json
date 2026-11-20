@@ -1,0 +1,112 @@
+{
+  "name": "compaction",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:03:00Z",
+    "span_count": 6,
+    "error_count": 0,
+    "duration_ms": 181250.5,
+    "model_calls": [
+      {
+        "span_id": "span-01",
+        "response_id": "resp-01",
+        "timestamp": "2026-11-12T09:01:00Z",
+        "timestamp_ns": 1794474060000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Refactor the billing module."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 1,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Starting with invoices.py."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-02",
+        "response_id": "resp-02",
+        "timestamp": "2026-11-12T09:02:00Z",
+        "timestamp_ns": 1794474120000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Also cover refunds."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 3,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Refunds moved to refunds.py."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "span_id": "span-03",
+        "response_id": "resp-03",
+        "timestamp": "2026-11-12T09:03:00Z",
+        "timestamp_ns": 1794474180000000000,
+        "input_new_messages": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "compaction",
+                "content": "Summary: invoices.py and refunds.py refactored."
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Now add tests."
+              }
+            ]
+          }
+        ],
+        "input_message_count": 2,
+        "output_messages": [
+          {
+            "role": "assistant",
+            "parts": [
+              {
+                "type": "text",
+                "content": "Added tests for both modules."
+              }
+            ],
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "prior_observations": []
+  }
+}

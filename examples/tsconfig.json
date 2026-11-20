@@ -20,6 +20,7 @@
       "@introspection-ai/recipes/agents": ["../src/agents.ts"],
       "@introspection-ai/recipes/batch": ["../src/batch/index.ts"],
       "@introspection-ai/recipes/judges": ["../src/judges/index.ts"],
+      "@introspection-ai/recipes/prompts": ["../src/prompts/index.ts"],
       "@introspection-ai/recipes/recipe": ["../src/recipe/resolve.ts"],
       "@introspection-ai/recipes/review": ["../src/review.ts"],
       "@introspection-ai/recipes/session": ["../src/api/session.ts"],

@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -5,6 +6,11 @@ import { dirname } from "node:path";
 export interface BatchFiles {
   /** The file's text, or null when it does not exist yet. */
   read(path: string): Promise<string | null>;
+  /**
+   * The file's lines, one at a time, so a large input never sits in memory
+   * whole; null when it does not exist. Without it a batch reads the text.
+   */
+  lines?(path: string): Promise<AsyncIterable<string> | null>;
   /** Append one line and make it durable before resolving. */
   appendLine(path: string, line: string): Promise<void>;
   /** Replace the file's content in one step, so a reader never sees a partial file. */
@@ -17,6 +23,34 @@ export interface BatchFiles {
 
 let tempCounter = 0;
 
+/**
+ * A text stream's lines, read only as fast as they are taken: the stream's
+ * own iterator waits for each read, where `readline`'s keeps reading ahead
+ * and buffers lines a slow reader has not taken yet.
+ */
+async function* splitLines(
+  chunks: AsyncIterable<string>,
+): AsyncGenerator<string> {
+  // Each chunk is searched once; a line spanning chunks is kept as pieces and
+  // joined when its newline arrives, so a long line costs its own length.
+  let pieces: string[] = [];
+  for await (const chunk of chunks) {
+    let start = 0;
+    for (
+      let end = chunk.indexOf("\n");
+      end >= 0;
+      end = chunk.indexOf("\n", start)
+    ) {
+      pieces.push(chunk.slice(start, end));
+      yield pieces.join("");
+      pieces = [];
+      start = end + 1;
+    }
+    if (start < chunk.length) pieces.push(chunk.slice(start));
+  }
+  if (pieces.length > 0) yield pieces.join("");
+}
+
 /** `BatchFiles` on the local file system, each append and write synced before it resolves. */
 export const nodeBatchFiles: BatchFiles = {
   async read(path) {
@@ -26,6 +60,19 @@ export const nodeBatchFiles: BatchFiles = {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  },
+  async lines(path) {
+    const stream = createReadStream(path, { encoding: "utf8" });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        stream.once("open", () => resolve());
+        stream.once("error", reject);
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    return splitLines(stream);
   },
   async appendLine(path, line) {
     await mkdir(dirname(path), { recursive: true });

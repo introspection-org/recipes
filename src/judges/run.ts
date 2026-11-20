@@ -1,3 +1,16 @@
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { findRecipeModel } from "../model-binding.js";
+import { findClassifierModel } from "./classifier.js";
+import { CHARS_PER_TOKEN, promptBudget } from "../prompts/budget.js";
+import { VERDICT_INSTRUCTIONS } from "./verdict.js";
+import {
+  CLASSIFIER_BUDGET_TOKENS,
+  trajectoryLlmClassify,
+  trajectoryLlmJudge,
+} from "../prompts/builders/trajectory.js";
+import { builderId } from "../prompts/builder.js";
+import { promptBuilder } from "../prompts/registry.js";
+import { parsePreprocess } from "../prompts/spec.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nodeBatchFiles, type BatchFiles } from "../batch/files.js";
@@ -14,12 +27,7 @@ import type { JudgeDefinition } from "./definition.js";
 import { evaluateGate, gateView, type JudgeFeedbackEvent } from "./gate.js";
 import { CONTRACT_VERSION, judgementId, samplesIn } from "./identity.js";
 import { trajectoryFromPiSession } from "./session.js";
-import {
-  CLASSIFIER_BUDGET_UNITS,
-  evidenceHash,
-  renderTrajectoryInput,
-  toJudgeInput,
-} from "./trajectory.js";
+import { evidenceHash, toJudgeInput } from "./trajectory.js";
 import {
   completeClassifierVerdict,
   completeLlmVerdict,
@@ -128,6 +136,12 @@ export interface RunJudgesOptions {
   onResult?: (line: JudgementLine) => Promise<void> | void;
   /** Replaces the local file system. */
   files?: BatchFiles;
+  /**
+   * The catalog each judge's prompt budget is read from: the smallest context
+   * window across its `ai.model` and `ai.fallbacks`. Pi's built-in catalog
+   * without it; a model neither knows keeps the fixed budget.
+   */
+  modelRegistry?: ModelRegistry;
 }
 
 export interface JudgesOutcome {
@@ -342,6 +356,50 @@ export async function runJudges(
     };
   };
 
+  const budgets = new Map<string, number>();
+  const budgetFor = (judge: JudgeDefinition): number => {
+    let tokens = budgets.get(judge.name);
+    if (tokens === undefined) {
+      const specs = [judge.ai.name, ...(judge.ai.fallbacks ?? [])];
+      tokens =
+        judge.kind === "classifier"
+          ? // Jev's slim was measured cut to 25k tokens (the slimming study); a
+            // classifier's window may lower that, never raise it.
+            promptBudget(
+              specs.map((spec) => findClassifierModel(spec)),
+              CLASSIFIER_BUDGET_TOKENS,
+            )
+          : // The judge's system prompt shares the window with its transcript.
+            Math.max(
+              0,
+              promptBudget(
+                specs.map((spec) =>
+                  findRecipeModel(spec, options.modelRegistry),
+                ),
+              ) -
+                Math.ceil(
+                  (judge.instructions.trim().length +
+                    2 +
+                    VERDICT_INSTRUCTIONS.length) /
+                    CHARS_PER_TOKEN,
+                ),
+            );
+      budgets.set(judge.name, tokens);
+    }
+    return tokens;
+  };
+  const builderFor = (judge: JudgeDefinition) => {
+    const spec = judge.preprocess
+      ? parsePreprocess(judge.preprocess)
+      : {
+          builder: builderId(
+            judge.kind === "classifier"
+              ? trajectoryLlmClassify
+              : trajectoryLlmJudge,
+          ),
+        };
+    return { builder: promptBuilder(spec.builder), options: spec.options };
+  };
   for (const judge of options.judges) {
     const operational = options.operational?.[judge.name] ?? {};
     for (const line of lines) {
@@ -375,13 +433,11 @@ export async function runJudges(
         pairs.set(pairId(judge, line), {
           judge,
           line,
-          transcript:
-            judge.kind === "classifier"
-              ? renderTrajectoryInput(input, {
-                  maxUnits: CLASSIFIER_BUDGET_UNITS,
-                  slim: true,
-                })
-              : renderTrajectoryInput(input),
+          transcript: (() => {
+            const { builder, options: builderOptions } = builderFor(judge);
+            return builder.build(input, budgetFor(judge), builderOptions)
+              .prompt;
+          })(),
           evidence: evidenceHash(input),
         });
       } catch (error) {

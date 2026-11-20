@@ -1,0 +1,25 @@
+{
+  "name": "nothing_new_past_the_cursor",
+  "input": {
+    "conversation_id": "conv-parity",
+    "completed_at": "2026-11-12T09:02:00Z",
+    "span_count": 4,
+    "error_count": 0,
+    "duration_ms": 121250.5,
+    "model_calls": [],
+    "watermark": {
+      "watermark": "2026-11-12T09:02:00Z",
+      "cursor": "eyJpIjoic3Bhbi0wMiIsInMiOiJjcmVhdGVkX2F0IiwiZCI6ImFzYyIsInYiOiIxNzk0NDc0MTIwMDAwMDAwMDAwIn0",
+      "segment": 1,
+      "tail_fingerprints": [
+        "e2c9219175dd8cc991613fdb",
+        "505ce6f358c5272a0eef0378",
+        "d0f057eefafeb47ec9cfd21f",
+        "7bc4d7f6b72858add9860666"
+      ],
+      "last_input_count": 3,
+      "completed_at": "2026-11-12T09:02:00Z"
+    },
+    "prior_observations": []
+  }
+}
