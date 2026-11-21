@@ -685,6 +685,8 @@ export function createRecipesExtension(
   let lastLaunchErrorKey: string | null = null;
   let childRunIndex = 0;
   const childRuns = new Map<string, ChildRun>();
+  // Usage of runs already closed: closing a run removes it from childRuns, not its cost.
+  const closedUsage = { output: 0, cost: 0 };
   let releaseApiBindings: (() => void) | undefined;
   // Runs restored from a previous Pi process via rehydrateChildRuns(). They
   // have no live runner: readable (status/wait) but not controllable.
@@ -727,8 +729,14 @@ export function createRecipesExtension(
   const agentsSummary = (): string | undefined => {
     const runs = [...childRuns.values()];
     const running = runs.filter((run) => run.status === "running").length;
-    const output = runs.reduce((sum, run) => sum + (run.usage?.output ?? 0), 0);
-    const cost = runs.reduce((sum, run) => sum + (run.usage?.cost ?? 0), 0);
+    const output = runs.reduce(
+      (sum, run) => sum + (run.usage?.output ?? 0),
+      closedUsage.output,
+    );
+    const cost = runs.reduce(
+      (sum, run) => sum + (run.usage?.cost ?? 0),
+      closedUsage.cost,
+    );
     const parts = [
       ...(running > 0 ? [`${running} agent${running === 1 ? "" : "s"}`] : []),
       ...(output > 0
@@ -890,6 +898,8 @@ export function createRecipesExtension(
         await run.promise;
       }
       await run.runner.shutdown();
+      closedUsage.output += run.usage?.output ?? 0;
+      closedUsage.cost += run.usage?.cost ?? 0;
       childRuns.delete(id);
       return controllerSummary(run, "closed");
     },
@@ -1737,10 +1747,11 @@ export function createRecipesExtension(
       promise: Promise.resolve(undefined as never),
       notifyUpdate,
     };
+    // Registered before the first update, so the widget sees it running and keeps its timer.
+    childRuns.set(id, run);
     notifyUpdate();
     void persistRun(launchState.cwd, run);
     run.promise = executeChildPrompt(run, prompt, launchState.cwd);
-    childRuns.set(id, run);
     return run;
   }
 
