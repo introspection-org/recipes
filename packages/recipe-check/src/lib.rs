@@ -3272,9 +3272,15 @@ fn validate_agents(
         .collect();
     let skill_names = packaged_skill_names(&skill_resources, &dependency_skills.roots, ctx);
     for name in unique_names {
-        validate_agent_inheritance(&name, &raw_by_name, ctx);
+        validate_agent_inheritance(&name, &raw_by_name, unverified_agents, ctx);
         for field in AgentField::REQUIRED {
-            if !resolved_field_provided(&name, field, &raw_by_name, &mut Vec::new()) {
+            if !resolved_field_provided(
+                &name,
+                field,
+                &raw_by_name,
+                !unverified_agents.is_empty(),
+                &mut Vec::new(),
+            ) {
                 let path = raw_by_name
                     .get(&name)
                     .map(|agent| agent.path.clone())
@@ -5194,6 +5200,7 @@ fn validate_agent_names(sources: &[RawAgent], ctx: &mut CheckContext) {
 fn validate_agent_inheritance(
     name: &str,
     raw_by_name: &HashMap<String, &RawAgent>,
+    unverified_agents: &BTreeSet<String>,
     ctx: &mut CheckContext,
 ) {
     let mut stack = Vec::new();
@@ -5230,6 +5237,20 @@ fn validate_agent_inheritance(
             );
             return;
         }
+        if !raw_by_name.contains_key(&parent) && !unverified_agents.is_empty() {
+            ctx.warning(
+                "agent.from_unverified",
+                agent.path.clone(),
+                format!(
+                    "Recipe agent '{}' inherits from '{}', which is not in the Recipe and was not checked against agents in dependencies that are not installed: {}",
+                    agent.name,
+                    from,
+                    unverified_agents.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+                Some("install dependencies before checking to verify agents from dependency packages"),
+            );
+            return;
+        }
         if !raw_by_name.contains_key(&parent) {
             ctx.error(
                 "agent.from_missing",
@@ -5251,20 +5272,22 @@ fn resolved_field_provided(
     name: &str,
     field: AgentField,
     raw_by_name: &HashMap<String, &RawAgent>,
+    deferred: bool,
     stack: &mut Vec<String>,
 ) -> bool {
     if stack.iter().any(|item| item == name) || stack.len() >= MAX_INHERITANCE_DEPTH {
         return false;
     }
     let Some(agent) = raw_by_name.get(name) else {
-        return false;
+        // A base in an uninstalled dependency may provide it; `from_unverified` says so.
+        return deferred && !stack.is_empty();
     };
     if agent.fields.contains(&field) {
         return true;
     }
     if let Some(parent) = &agent.from {
         stack.push(name.to_owned());
-        return resolved_field_provided(parent, field, raw_by_name, stack);
+        return resolved_field_provided(parent, field, raw_by_name, deferred, stack);
     }
     false
 }
@@ -8546,6 +8569,41 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == "agent.agent_unverified"),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn an_agent_inheriting_from_an_uninstalled_dependency_agent_is_unverified() {
+        let package = json!({
+            "name": "dependency-base",
+            "dependencies": { "@acme/agents": ">=1.0.0" },
+            "pi": { "agents": [
+                "./agents/*.yaml",
+                "./node_modules/@acme/agents/agents/reviewer.yaml"
+            ] }
+        });
+        let package = serde_json::to_string_pretty(&package).expect("serialize package");
+        let files = recipe_files(&[
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            ("agents/agent.yaml", "name: agent\nfrom: code-reviewer\n"),
+        ]);
+        let report = check_recipe_files(&files);
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Severity::Error),
+            "{:?}",
+            report.diagnostics
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "agent.from_unverified"),
             "{:?}",
             report.diagnostics
         );
