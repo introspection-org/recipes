@@ -312,7 +312,7 @@ describe("companion packages", () => {
     ).rejects.toThrow(`${DOCX}@0.3.0 (installed alongside Recipes`);
   });
 
-  it("finds a peer the platform installs in an ancestor node_modules, with its Python, profile and range check", async () => {
+  it("finds a peer the platform installs in an ancestor node_modules, with its profile and range check", async () => {
     const { hostDir } = host();
     const opt = join(
       mkdtempSync(join(tmpdir(), "companions-ancestor-")),
@@ -341,12 +341,9 @@ describe("companion packages", () => {
     expect(loaded.skillPaths?.[1]).toBe(
       join(platformDocx, "profiles", "legal-redlining-en-us", "SKILL.md"),
     );
+    // Its own pi.runtime.python is ignored: every format runs in the documents environment.
     expect(recipePythonDeclarations(recipeDir, { hostDir })).toEqual([
-      expect.objectContaining({
-        kind: "peer",
-        owner: DOCX,
-        packageDir: platformDocx,
-      }),
+      expect.objectContaining({ kind: "documents" }),
     ]);
 
     docxPackage(join(opt, "node_modules"), {
@@ -360,16 +357,15 @@ describe("companion packages", () => {
     );
   });
 
-  it("prepares a companion's Python and hands its interpreter to the adapter", async () => {
+  it("prepares the documents environment for a companion and hands its interpreter to the adapter", async () => {
     const { hostDir, nodeModules } = host();
-    const hostDocx = docxPackage(nodeModules, { python: true });
+    docxPackage(nodeModules, { python: true });
     const recipeDir = recipe({ documents });
 
     expect(recipePythonDeclarations(recipeDir, { hostDir })).toEqual([
       expect.objectContaining({
-        kind: "package",
-        owner: DOCX,
-        packageDir: hostDocx,
+        kind: "documents",
+        owner: "@introspection-ai/recipes",
       }),
     ]);
     expect(recipePythonDeclarations(recipe({}), { hostDir })).toEqual([]);

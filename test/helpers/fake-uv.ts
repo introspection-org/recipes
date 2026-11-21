@@ -25,9 +25,7 @@ export function write(path: string, body: string): void {
  * FAKE_IMPORT_FAIL is set, for a plain `--python` version (else FAKE_UV_PYTHON,
  * else 3.12.0). `python find` names the active environment's interpreter when
  * its version starts with the request (any specifier passes), else one elsewhere (or none, exit 2,
- * with FAKE_UV_FIND_NONE). `export` prints FAKE_UV_EXPORT; `lock` writes a
- * uv.lock into --project, or fails with FAKE_UV_LOCK_EXIT. Every call is
- * appended to FAKE_UV_LOG.
+ * with FAKE_UV_FIND_NONE). Every call is appended to FAKE_UV_LOG.
  */
 export function fakeUv(): {
   bin: string;
@@ -62,12 +60,6 @@ if (args[0] === "python" && args[1] === "find") {
   if (found && (!/^[0-9.]+$/.test(request) || found[1].startsWith(request))) console.log(path.join(venv, "bin", "python"));
   else if (process.env.FAKE_UV_FIND_NONE) { console.error("error: No interpreter found for Python " + request + " in virtual environments, managed installations, or search path"); process.exit(2); }
   else console.log("/synthetic/python" + request + "/bin/python");
-  process.exit(0);
-}
-if (args[0] === "export") { process.stdout.write(process.env.FAKE_UV_EXPORT ?? ""); process.exit(0); }
-if (args[0] === "lock") {
-  if (process.env.FAKE_UV_LOCK_EXIT) { console.error(process.env.FAKE_UV_LOCK_STDERR ?? "No solution found when resolving dependencies"); process.exit(Number(process.env.FAKE_UV_LOCK_EXIT)); }
-  fs.writeFileSync(path.join(option("--project"), "uv.lock"), "version = 1\\n");
   process.exit(0);
 }
 const marker = env && path.join(env, ".fake-current");
@@ -115,14 +107,10 @@ setTimeout(() => {
   };
 }
 
-export function pythonProject(
-  dir: string,
-  lock = "version = 1\n",
-  name = "synthetic",
-): void {
+export function pythonProject(dir: string, lock = "version = 1\n"): void {
   write(
     join(dir, "python", "pyproject.toml"),
-    `[project]\nname = '${name}'\nversion = '0.1.0'\n`,
+    "[project]\nname = 'synthetic'\nversion = '0.1.0'\n",
   );
   write(join(dir, "python", "uv.lock"), lock);
 }

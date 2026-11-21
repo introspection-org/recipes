@@ -1059,7 +1059,7 @@ fn validate_pi_config(
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
-    validate_recipe_python_project(pi.get("runtime"), package, ctx);
+    validate_recipe_python_project(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
 
     resolved
@@ -1970,62 +1970,9 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
     }
 }
 
-/// The Python libraries each companion peer's `pi.runtime.python` locks, by
-/// PEP 503 name. A peer's libraries join the Recipe's environment, so the
-/// Recipe's own pyproject.toml need not list them. A test keeps the table in
-/// step with each package's pyproject.toml.
-const COMPANION_PYTHON_LIBRARIES: [(&str, &[&str]); 2] = [
-    ("@introspection-ai/recipe-documents-docx", &["paper-docx"]),
-    (
-        "@introspection-ai/recipe-documents-pdf",
-        &["pillow", "pypdfium2"],
-    ),
-];
-
-fn normalize_python_name(name: &str) -> String {
-    let mut out = String::new();
-    let mut separator = false;
-    for c in name.trim().chars() {
-        if matches!(c, '-' | '_' | '.') {
-            separator = true;
-        } else {
-            if separator && !out.is_empty() {
-                out.push('-');
-            }
-            separator = false;
-            out.push(c.to_ascii_lowercase());
-        }
-    }
-    out
-}
-
-/// The names in a pyproject.toml's `[project] dependencies`, read without a
-/// TOML parser: each quoted requirement's leading name.
-fn pyproject_dependency_names(pyproject: &str) -> Vec<String> {
-    let project = regex::Regex::new(r"(?ms)^\[project\][ \t]*$(.*?)(?:^\[|\z)").expect("regex");
-    let Some(table) = project.captures(pyproject).and_then(|c| c.get(1)) else {
-        return Vec::new();
-    };
-    let list = regex::Regex::new(r"(?ms)^\s*dependencies\s*=\s*\[(.*?)\]").expect("regex");
-    let Some(items) = list.captures(table.as_str()).and_then(|c| c.get(1)) else {
-        return Vec::new();
-    };
-    let requirement = regex::Regex::new(r#"["']\s*([A-Za-z0-9][A-Za-z0-9._-]*)"#).expect("regex");
-    requirement
-        .captures_iter(items.as_str())
-        .filter_map(|c| c.get(1))
-        .map(|name| normalize_python_name(name.as_str()))
-        .collect()
-}
-
 /// The Recipe's own Python project: `pyproject.toml` at the root (or at the
-/// legacy `pi.runtime.python.project`) needs its uv.lock, and should not list
-/// a library a peer's `pi.runtime.python` already provides.
-fn validate_recipe_python_project(
-    runtime: Option<&JsonValue>,
-    package: &Package,
-    ctx: &mut CheckContext,
-) {
+/// legacy `pi.runtime.python.project`) needs its uv.lock.
+fn validate_recipe_python_project(runtime: Option<&JsonValue>, ctx: &mut CheckContext) {
     let project = runtime
         .and_then(|runtime| runtime.get("python"))
         .and_then(|python| string_value(python.get("project")))
@@ -2046,26 +1993,6 @@ fn validate_recipe_python_project(
             format!("{pyproject} has no uv.lock beside it"),
             Some("run `uv lock` in the Recipe and commit uv.lock"),
         );
-    }
-    let Some(content) = ctx.content(&pyproject).map(str::to_owned) else {
-        return;
-    };
-    let names = pyproject_dependency_names(&content);
-    for (peer, libraries) in COMPANION_PYTHON_LIBRARIES {
-        if !package.peer_dependency_keys.contains(peer) {
-            continue;
-        }
-        for library in libraries
-            .iter()
-            .filter(|library| names.iter().any(|name| name == *library))
-        {
-            ctx.warning(
-                "runtime.python_peer_provided",
-                &pyproject,
-                format!("{pyproject} lists {library}, which the peer {peer} provides"),
-                Some("declare the peer; its Python libraries are part of the Recipe's environment"),
-            );
-        }
     }
 }
 
@@ -9273,51 +9200,6 @@ mod tests {
         let other = json!({ "name": "legacy", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "lockfile": "other.lock" } } } });
         assert!(python_codes(other, &files)
             .contains(&("pi.runtime_path_invalid".to_owned(), Severity::Error)));
-    }
-
-    #[test]
-    fn warns_when_the_recipes_pyproject_lists_a_library_a_peer_provides() {
-        let package = json!({
-            "name": "peer-python",
-            "peerDependencies": { "@introspection-ai/recipe-documents-docx": ">=0.4.0" },
-            "pi": { "agents": ["agents/*.yaml"] }
-        });
-        let pyproject = "[project]\nname = 'acme'\ndependencies = [\n  \"Paper_Docx>=0.2\",\n  \"pypdfium2\",\n]\n";
-        assert_eq!(
-            python_codes(
-                package,
-                &[("pyproject.toml", pyproject), ("uv.lock", "version = 1\n")]
-            ),
-            vec![("runtime.python_peer_provided".to_owned(), Severity::Warning)]
-        );
-    }
-
-    #[test]
-    fn companion_python_libraries_match_each_packages_pyproject() {
-        for (package, pyproject) in [
-            (
-                "@introspection-ai/recipe-documents-docx",
-                include_str!("../../documents/docx/python/pyproject.toml"),
-            ),
-            (
-                "@introspection-ai/recipe-documents-pdf",
-                include_str!("../../documents/pdf/python/pyproject.toml"),
-            ),
-        ] {
-            let mut names = pyproject_dependency_names(pyproject);
-            names.sort();
-            let listed = COMPANION_PYTHON_LIBRARIES
-                .iter()
-                .find(|(name, _)| *name == package)
-                .map(|(_, libraries)| {
-                    libraries
-                        .iter()
-                        .map(|l| (*l).to_owned())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            assert_eq!(names, listed, "{package}");
-        }
     }
 
     #[test]

@@ -4,7 +4,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -80,8 +79,7 @@ function recipe(options: {
         ...(pkg.python ? { pi: { runtime: { python: pkg.python } } } : {}),
       }),
     );
-    if (pkg.python)
-      pythonProject(packageDir, undefined, pkg.name.replace(/[@/]/g, "-"));
+    if (pkg.python) pythonProject(packageDir);
     const as = pkg.as ?? "dependencies";
     if (as === "dependencies") dependencies[pkg.name] = "1.0.0";
     if (as === "peerDependencies") peerDependencies[pkg.name] = "1.0.0";
@@ -552,7 +550,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
   });
 
   describe("package declarations", () => {
-    const docx = "@introspection-ai/recipe-documents-docx";
+    const docx = "@acme/recipe-tables";
 
     it("gives each direct dependency its own non-editable environment, never the shell's", async () => {
       const { uv, prepare } = harness();
@@ -563,8 +561,9 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
             python: { project: "python", lockfile: "python/uv.lock" },
           },
           {
-            name: "dep-pkg",
+            name: "peer-pkg",
             python: { project: "python", lockfile: "python/uv.lock" },
+            as: "peerDependencies",
           },
           {
             name: "dev-only",
@@ -582,13 +581,8 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       });
       const root = join(scratch("roots-"), ".pi");
       const prepared = await prepare(dir, { environmentRoot: root });
-      expect(Object.keys(prepared.packages).sort()).toEqual([docx, "dep-pkg"]);
-      const docxEnv = join(
-        root,
-        "python-packages",
-        "@introspection-ai",
-        "recipe-documents-docx",
-      );
+      expect(Object.keys(prepared.packages).sort()).toEqual([docx, "peer-pkg"]);
+      const docxEnv = join(root, "python-packages", "@acme", "recipe-tables");
       expect(prepared.packages[docx]).toMatchObject({
         kind: "package",
         environmentDir: docxEnv,
@@ -646,198 +640,96 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
     });
   });
 
-  describe("peer declarations join the shell environment", () => {
+  describe("the documents environment", () => {
     const docx = "@introspection-ai/recipe-documents-docx";
-    const pins = "paper-docx==0.2.1\nlxml==6.1.3\n";
+    const pdf = "@introspection-ai/recipe-documents-pdf";
 
-    it("gives a Recipe with no Python of its own one activated environment for its peers", async () => {
-      const { uv, prepare } = harness({ FAKE_UV_EXPORT: pins });
-      const { dir } = recipe({
-        python: false,
-        packages: [
-          {
-            name: docx,
-            python: {
-              project: "python",
-              lockfile: "python/uv.lock",
-              imports: ["docx"],
-            },
-            as: "peerDependencies",
-          },
-        ],
-      });
-      const root = join(scratch("roots-"), ".pi");
-      const prepared = await prepare(dir, { environmentRoot: root });
-      const shell = prepared.recipe!;
-      expect(shell.environmentDir).toBe(join(root, "python"));
-      expect(shell.projectDir).toBe(join(root, "python-project"));
-      expect(shell.peers).toEqual([docx]);
-      expect(shell.activation.pathPrepend).toBe(join(root, "python", "bin"));
-      expect(prepared.packages[docx]?.interpreter).toBe(shell.interpreter);
-      const generated = readFileSync(
-        join(root, "python-project", "pyproject.toml"),
-        "utf8",
-      );
-      expect(generated).toContain('"paper-docx==0.2.1"');
-      expect(generated).toMatch(/package = false \}/);
-      expect(uv.calls().map((call) => call.args[0])).toEqual(
-        expect.arrayContaining(["export", "lock", "sync"]),
-      );
-      // Check mode accepts it offline, without locking or syncing again.
-      const before = uv.calls().length;
-      const checked = await prepare(dir, {
-        environmentRoot: root,
-        mode: "check",
-      });
-      expect(checked.recipe?.synced).toBe(false);
-      const after = uv
-        .calls()
-        .slice(before)
-        .map((call) => call.args);
-      expect(after.some((args) => args[0] === "lock")).toBe(false);
-      expect(
-        after
-          .filter((args) => args[0] === "sync")
-          .every(
-            (args) => args.includes("--check") && args.includes("--offline"),
-          ),
-      ).toBe(true);
-    });
-
-    it("joins a documents peer the Recipe has not installed, resolved from the host", async () => {
-      const { prepare } = harness({ FAKE_UV_EXPORT: pins });
-      const { dir } = recipe({
-        python: false,
-        packages: [
-          {
-            name: docx,
-            python: {
-              project: "python",
-              lockfile: "python/uv.lock",
-              imports: ["docx"],
-            },
-            as: "peerDependencies",
-          },
-        ],
-      });
-      const hostModules = join(scratch("host-"), "node_modules");
-      const hostDir = join(hostModules, "@introspection-ai", "recipes");
-      mkdirSync(hostDir, { recursive: true });
+    function documentsRecipe(manifest: Record<string, unknown>): string {
+      const dir = scratch("recipe-python-documents-");
       writeFileSync(
-        join(hostDir, "package.json"),
-        JSON.stringify({ name: "@introspection-ai/recipes", version: "1.0.0" }),
+        join(dir, "package.json"),
+        JSON.stringify({ name: "acme", version: "0.1.0", ...manifest }),
       );
-      renameSync(
-        join(dir, "node_modules", ...docx.split("/")),
-        join(hostModules, ...docx.split("/")),
-      );
+      return dir;
+    }
+
+    it.each([
+      [
+        "a peer, not installed",
+        { peerDependencies: { [docx]: ">=0.5.0" }, pi: {} },
+      ],
+      ["pi.documents", { pi: { documents: [{ format: "docx" }] } }],
+    ])(
+      "is the shell environment of a Recipe with no Python that uses a format through %s",
+      async (_, manifest) => {
+        const { prepare } = harness();
+        const root = join(scratch("roots-"), ".pi");
+        const prepared = await prepare(documentsRecipe(manifest), {
+          environmentRoot: root,
+        });
+        const environmentDir = join(root, "python-documents");
+        expect(prepared.recipe).toMatchObject({
+          kind: "documents",
+          environmentDir,
+          activation: { pathPrepend: join(environmentDir, "bin") },
+        });
+        expect(prepared.documents?.environmentDir).toBe(environmentDir);
+        expect(Object.keys(prepared.packages)).toEqual([docx]);
+        expect(prepared.packages[docx]?.interpreter).toBe(
+          join(environmentDir, "bin", "python"),
+        );
+      },
+    );
+
+    it("serves every Python format from one environment, and a Recipe with its own Python keeps only its own shell", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({});
       const manifest = JSON.parse(
         readFileSync(join(dir, "package.json"), "utf8"),
       );
-      manifest.pi.documents = [{ format: "docx" }];
+      manifest.peerDependencies = { [docx]: ">=0.5.0", [pdf]: ">=0.4.0" };
+      manifest.pi.documents = [{ format: "html" }];
       writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
-      const root = join(scratch("roots-"), ".pi");
-      const prepared = await prepare(dir, { environmentRoot: root, hostDir });
-      expect(prepared.recipe?.peers).toEqual([docx]);
-      expect(prepared.packages[docx]?.interpreter).toBe(
-        prepared.recipe?.interpreter,
-      );
-    });
-
-    it("lets the peers' pins win over the Recipe's own lock, and keeps the Recipe's other pins", async () => {
-      const { prepare } = harness({
-        FAKE_UV_EXPORT: "lxml==6.1.3\nsix==1.17.0\n",
-      });
-      const { dir } = recipe({
-        packages: [
-          {
-            name: docx,
-            python: { project: "python", lockfile: "python/uv.lock" },
-            as: "peerDependencies",
-          },
-        ],
-      });
       const root = scratch("roots-");
-      await prepare(dir, { environmentRoot: root });
-      const generated = readFileSync(
-        join(root, "python-project", "pyproject.toml"),
-        "utf8",
-      );
-      expect(generated.match(/"lxml==6\.1\.3"/g)).toHaveLength(1);
-      expect(generated).toContain('"synthetic"');
-      expect(generated).toContain('"-introspection-ai-recipe-documents-docx"');
-    });
-
-    it("fails at sync with an actionable error when the Recipe's requirements exclude a peer's pin", async () => {
-      const { prepare } = harness({
-        FAKE_UV_EXPORT: pins,
-        FAKE_UV_LOCK_EXIT: "1",
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.recipe).toMatchObject({
+        kind: "recipe",
+        environmentDir: join(root, "python"),
       });
-      const { dir } = recipe({
-        packages: [
-          {
-            name: docx,
-            python: { project: "python", lockfile: "python/uv.lock" },
-            as: "peerDependencies",
-          },
-        ],
-      });
-      const root = scratch("roots-");
-      await expect(prepare(dir, { environmentRoot: root })).rejects.toThrow(
-        /peers' locked versions win[\s\S]*No solution found/,
-      );
-      // No lock is left for check mode to accept.
-      expect(existsSync(join(root, "python-project", "uv.lock"))).toBe(false);
-      await expect(
-        prepare(dir, { environmentRoot: root, mode: "check" }),
-      ).rejects.toBeInstanceOf(RecipePythonOutdatedError);
-    });
-
-    it("finds a changed peer lock outdated in check mode, without writing", async () => {
-      const { uv, prepare } = harness({ FAKE_UV_EXPORT: pins });
-      const { dir } = recipe({
-        python: false,
-        packages: [
-          {
-            name: docx,
-            python: { project: "python", lockfile: "python/uv.lock" },
-            as: "peerDependencies",
-          },
-        ],
-      });
-      const root = scratch("roots-");
-      await prepare(dir, { environmentRoot: root });
-      const generatedPath = join(root, "python-project", "pyproject.toml");
-      const generated = readFileSync(generatedPath, "utf8");
-      writeFileSync(
-        join(
-          dir,
-          "node_modules",
-          "@introspection-ai",
-          "recipe-documents-docx",
-          "python",
-          "uv.lock",
-        ),
-        "version = 1\n# relocked\n",
-      );
-      const before = uv.calls().length;
-      await expect(
-        prepare(dir, { environmentRoot: root, mode: "check" }),
-      ).rejects.toBeInstanceOf(RecipePythonOutdatedError);
-      expect(readFileSync(generatedPath, "utf8")).toBe(generated);
+      const documents = join(root, "python-documents", "bin", "python");
+      expect(prepared.packages[docx]?.interpreter).toBe(documents);
+      expect(prepared.packages[pdf]?.interpreter).toBe(documents);
       expect(
-        uv
-          .calls()
-          .slice(before)
-          .some(
-            (call) =>
-              call.args[0] === "lock" ||
-              (call.args[0] === "sync" && !call.args.includes("--check")),
-          ),
-      ).toBe(false);
+        uv.calls().filter((call) => call.args.includes("--compile-bytecode")),
+      ).toHaveLength(2);
+
+      // Check mode is offline and never installs.
+      const before = uv.calls().length;
+      await prepare(dir, { environmentRoot: root, mode: "check" });
+      const checks = uv
+        .calls()
+        .slice(before)
+        .filter((call) => call.args[0] === "sync");
+      expect(checks).toHaveLength(2);
+      for (const call of checks)
+        expect(call.args).toEqual(
+          expect.arrayContaining(["--check", "--offline", "--frozen"]),
+        );
     });
 
-    it("takes a pyproject.toml and uv.lock at the Recipe root as its own project, without pi.runtime.python", async () => {
+    it("is not prepared for a Recipe whose formats run no Python", async () => {
+      const { uv, prepare } = harness();
+      const prepared = await prepare(
+        documentsRecipe({ pi: { documents: [{ format: "html" }] } }),
+        { environmentRoot: scratch("roots-") },
+      );
+      expect(prepared).toEqual({ packages: {} });
+      expect(uv.calls()).toEqual([]);
+    });
+  });
+
+  describe("a Python project at the Recipe root", () => {
+    it("is the Recipe's own project without pi.runtime.python, and needs its uv.lock", async () => {
       const { prepare } = harness();
       const { dir } = recipe({ python: false });
       write(
@@ -851,8 +743,33 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const prepared = await prepare(dir, {
         environmentRoot: scratch("roots-"),
       });
-      expect(prepared.recipe?.projectDir).toBe(dir);
-      expect(prepared.recipe?.peers).toEqual([]);
+      expect(prepared.recipe).toMatchObject({
+        kind: "recipe",
+        projectDir: dir,
+      });
+    });
+
+    it("takes pi.runtime.python with only overrides", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({ python: false });
+      write(
+        join(dir, "pyproject.toml"),
+        "[project]\nname = 'acme'\nversion = '0.1.0'\n",
+      );
+      write(join(dir, "uv.lock"), "version = 1\n");
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { runtime: { python: { version: "3.12" } } };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const prepared = await prepare(dir, {
+        environmentRoot: scratch("roots-"),
+      });
+      expect(prepared.recipe?.lockfile).toBe(join(dir, "uv.lock"));
+      expect(
+        uv.calls().find((call) => call.args.includes("--compile-bytecode"))
+          ?.args,
+      ).toEqual(expect.arrayContaining(["--python", "3.12"]));
     });
   });
 
@@ -1482,153 +1399,5 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
         }),
       ).rejects.toBeInstanceOf(RecipePythonVersionError);
     }, 60_000);
-  },
-);
-
-/** Composed environments against the real uv: projects without dependencies, so nothing reaches the network. */
-describe.skipIf(!hasUv || IS_WINDOWS || installedMinors.length === 0)(
-  "a composed environment's interpreter with the real uv",
-  () => {
-    const peer = "@acme/recipe-tables";
-
-    function lockedProject(dir: string, name: string, requires: string): void {
-      write(
-        join(dir, "pyproject.toml"),
-        `[project]\nname = "${name}"\nversion = "0.1.0"\nrequires-python = "${requires}"\ndependencies = []\n`,
-      );
-      const env = { ...process.env };
-      delete env.VIRTUAL_ENV;
-      delete env.UV_FROZEN;
-      delete env.UV_LOCKED;
-      const locked = spawnSync("uv", ["lock", "--project", dir], {
-        env,
-        encoding: "utf8",
-      });
-      if (locked.status !== 0)
-        throw new Error(`uv lock failed: ${locked.stderr}`);
-    }
-
-    /** A Recipe with a root project and one peer declaring Python. */
-    function composedRecipe(options: {
-      recipeRequires?: string;
-      peerRequires?: string;
-      version?: string;
-    }): string {
-      const dir = scratch("recipe-python-composed-");
-      lockedProject(dir, "acme-recipe", options.recipeRequires ?? ">=3.9");
-      const peerDir = join(dir, "node_modules", "@acme", "recipe-tables");
-      lockedProject(
-        join(peerDir, "python"),
-        "acme-tables",
-        options.peerRequires ?? ">=3.9",
-      );
-      writeFileSync(
-        join(peerDir, "package.json"),
-        JSON.stringify({
-          name: peer,
-          version: "1.0.0",
-          pi: { runtime: { python: { project: "python" } } },
-        }),
-      );
-      writeFileSync(
-        join(dir, "package.json"),
-        JSON.stringify({
-          name: "synthetic-composed",
-          version: "0.1.0",
-          peerDependencies: { [peer]: ">=1.0.0" },
-          pi: options.version
-            ? { runtime: { python: { version: options.version } } }
-            : {},
-        }),
-      );
-      return dir;
-    }
-
-    function environmentVersion(environmentDir: string): string {
-      return (
-        /version_info = ([^\s]+)/.exec(
-          readFileSync(join(environmentDir, "pyvenv.cfg"), "utf8"),
-        )?.[1] ?? ""
-      );
-    }
-
-    const env = { ...process.env };
-    delete env.VIRTUAL_ENV;
-    delete env.UV_PYTHON;
-    const oldest = installedMinors[0]!;
-
-    it("takes a bare version as the interpreter request and a valid requires-python", async () => {
-      const dir = composedRecipe({ version: oldest });
-      const root = scratch("recipe-python-composed-root-");
-      const prepared = await prepareRecipePython(dir, {
-        mode: "sync",
-        env,
-        environmentRoot: root,
-      });
-      const generated = readFileSync(
-        join(root, "python-project", "pyproject.toml"),
-        "utf8",
-      );
-      expect(generated).toContain(`==${oldest}.*`);
-      expect(environmentVersion(prepared.recipe!.environmentDir)).toMatch(
-        new RegExp(`^${oldest.replace(".", "\\.")}\\.`),
-      );
-      await expect(
-        prepareRecipePython(dir, { mode: "check", env, environmentRoot: root }),
-      ).resolves.toMatchObject({ recipe: { synced: false } });
-    }, 120_000);
-
-    it("intersects the members' requires-python, and names an empty intersection", async () => {
-      const dir = composedRecipe({});
-      // Locked under a range uv can satisfy, then narrowed past every Python.
-      const peerProject = join(
-        dir,
-        "node_modules",
-        "@acme",
-        "recipe-tables",
-        "python",
-        "pyproject.toml",
-      );
-      writeFileSync(
-        peerProject,
-        readFileSync(peerProject, "utf8").replace('">=3.9"', '"<3.0"'),
-      );
-      await expect(
-        prepareRecipePython(dir, {
-          mode: "sync",
-          env,
-          environmentRoot: scratch("recipe-python-composed-root-"),
-        }),
-      ).rejects.toThrow(
-        /No Python version satisfies every project[\s\S]*@acme\/recipe-tables requires <3\.0/,
-      );
-      const ok = composedRecipe({ peerRequires: "<4" });
-      const root = scratch("recipe-python-composed-root-");
-      await prepareRecipePython(ok, {
-        mode: "sync",
-        env,
-        environmentRoot: root,
-      });
-      expect(
-        readFileSync(join(root, "python-project", "pyproject.toml"), "utf8"),
-      ).toContain(`requires-python = ">=3.9,<4"`);
-    }, 120_000);
-
-    it("honours the Recipe's .python-version, which uv cannot discover from the generated project", async () => {
-      const dir = composedRecipe({});
-      writeFileSync(join(dir, ".python-version"), `${oldest}\n`);
-      const root = scratch("recipe-python-composed-root-");
-      const prepared = await prepareRecipePython(dir, {
-        mode: "sync",
-        env,
-        environmentRoot: root,
-      });
-      expect(environmentVersion(prepared.recipe!.environmentDir)).toMatch(
-        new RegExp(`^${oldest.replace(".", "\\.")}\\.`),
-      );
-      await expect(
-        prepareRecipePython(dir, { mode: "check", env, environmentRoot: root }),
-      ).resolves.toMatchObject({ recipe: { synced: false } });
-    }, 120_000);
   },
 );

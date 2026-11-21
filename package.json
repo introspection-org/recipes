@@ -11,6 +11,8 @@
   "files": [
     "dist",
     "skills",
+    "python/documents/pyproject.toml",
+    "python/documents/uv.lock",
     "docs",
     "README.md",
     "package.json"

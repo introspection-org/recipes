@@ -13,8 +13,6 @@
     "python/*.py",
     "python/recipe_documents_docx/*.py",
     "python/recipe_documents_docx/LICENSE-redline-bench",
-    "python/pyproject.toml",
-    "python/uv.lock",
     "README.md",
     "package.json"
   ],
@@ -30,18 +28,6 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
-  },
-  "pi": {
-    "runtime": {
-      "python": {
-        "project": "python",
-        "lockfile": "python/uv.lock",
-        "version": ">=3.12,<3.15",
-        "imports": [
-          "docx"
-        ]
-      }
-    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -26,16 +26,10 @@ let documents: Tool;
 
 /** The adapter's locked Python environment (paper-docx), built outside the repo as `uv run` does. */
 beforeAll(() => {
-  const environment = join(tmpdir(), "recipe-documents-docx-tests-python");
+  const environment = join(tmpdir(), "recipe-documents-env-docx-tests");
   execFileSync(
     "uv",
-    [
-      "sync",
-      "--frozen",
-      "--quiet",
-      "--project",
-      resolve("packages/documents/docx/python"),
-    ],
+    ["sync", "--frozen", "--quiet", "--project", resolve("python/documents")],
     {
       env: { ...process.env, UV_PROJECT_ENVIRONMENT: environment },
       stdio: "inherit",

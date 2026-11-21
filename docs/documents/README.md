@@ -317,18 +317,12 @@ one, `convert` it to Word (below).
 
 pdfplumber is optional because of its size: about 41 MB installed, since it
 brings pdfminer.six, cryptography, Pillow and cffi, against 7.7 MB for
-pypdfium2. To enable tables, declare `@introspection-ai/recipe-documents-pdf`
-as a peer and add pdfplumber to the Recipe's own root `pyproject.toml`:
-
-```toml
-# pyproject.toml
-dependencies = ["pdfplumber"]
-```
-
-then `uv lock`. The PDF package's lock pins the extra's versions, and its pins
-win when the host composes the environment. The helper imports pdfplumber only when a read asks for tables,
-and nothing is fetched at run time. A profile for contract or pricing work may
-recommend the extra; a Recipe that only reads briefs can leave it out.
+pypdfium2. The documents environment is synced without it, so PDF
+`tables: true` needs an environment synced from Recipes' `python/documents`
+project with `--extra tables` and named by `RECIPE_DOCUMENTS_PYTHON`. The
+helper imports pdfplumber only when a read asks for tables, and nothing is
+fetched at run time. A profile for contract or pricing work may recommend the
+extra; a Recipe that only reads briefs can leave it out.
 
 ### PDF to Word: `convert`
 
@@ -374,8 +368,8 @@ such as LibreOffice's PDF import or pdf2docx, places text in positioned boxes
 and line by line. The file looks right but redlines badly, because a sentence
 split across boxes can't be quoted or revised as one paragraph.
 
-The work runs in two halves, each in its own format's Python environment, so
-neither environment gains a library and the runtime image needs nothing new:
+The work runs in two halves, both in the documents environment, so it gains
+no library and the runtime image needs nothing new:
 
 - **The PDF adapter exports an outline.** It reads pypdfium2's characters with
   their positions, fonts, sizes (after the page's scale) and colours, and
@@ -438,33 +432,27 @@ ends allowed.
 
 ## Python
 
-The Word and PDF helpers are small Python programs (HTML runs in Node and needs none). Each format package
-declares `pi.runtime.python`, locked by the package's `python/uv.lock`:
-paper-docx for Word, pypdfium2 and pillow for PDF. A Recipe declaring
-`pi.documents` declares and locks none of these libraries itself. Where they
-run depends on how the Recipe takes the package (see
-[Package declarations](../recipe-format.md#package-declarations)):
+The Word and PDF helpers are small Python programs (HTML runs in Node and
+needs none). They share one environment, Recipes' own `python/documents`
+project, locked by `python/documents/uv.lock`: paper-docx for Word, pypdfium2
+and pillow for PDF. The host prepares it when the Recipe uses a Word or PDF
+format, through `pi.documents` or by listing the format package, and passes
+its interpreter to every format's adapter (see
+[Package declarations](../recipe-format.md#package-declarations)). A Recipe
+declaring `pi.documents` declares and locks none of these libraries itself.
 
-- **As a peer** (`peerDependencies`), the package's locked Python joins the
-  Recipe's one shell environment, beside the Recipe's own root
-  `pyproject.toml` if it has one. The helpers and the agent's shell share
-  that copy, so a script the agent writes can `import docx` with no Python
-  declared by the Recipe. Don't list paper-docx or pypdfium2 in the Recipe's
-  `pyproject.toml`; `recipes check` warns when it does.
-- **As a dependency**, or omitted so the copy installed beside Recipes is
-  used, the package gets an environment of its own, which only its helpers
-  run in.
+- **A Recipe with no Python of its own** gets the documents environment as
+  its shell environment, so a script the agent writes can `import docx` with
+  no Python files in the Recipe.
+- **A Recipe with its own Python project** keeps only that environment in its
+  shell. A script of its own that imports `docx` lists `paper-docx` in the
+  Recipe's `pyproject.toml`.
 
-Either way the host passes the interpreter to the adapter. The helpers use
-`RECIPE_DOCUMENTS_PYTHON` first when it is set (tests, custom hosts), then the
-interpreter the host passes, then `VIRTUAL_ENV`, then `python3`. An extension
-that needs one of these interpreters itself reads it with
+The helpers use `RECIPE_DOCUMENTS_PYTHON` first when it is set (tests, custom
+hosts), then the interpreter the host passes, then `VIRTUAL_ENV`, then
+`python3`. An extension that needs the interpreter itself reads it with
 `packagePython("@introspection-ai/recipe-documents-docx")` on its session
-context (see [Package declarations](../recipe-format.md#package-declarations)). Package
-environments are synced without extras, so PDF `tables: true` needs
-pdfplumber in the Recipe's own `pyproject.toml` with the PDF package as a peer
-(above), or an environment synced with `--extra tables` and named by
-`RECIPE_DOCUMENTS_PYTHON`.
+context.
 
 ## How a Recipe's skills should use it
 
@@ -547,9 +535,8 @@ refuses a different one, naming the package, both versions and the fix.
 `createDocumentFormatModule` from `@introspection-ai/recipes/documents` builds
 the same object, for a format that depends on Recipes anyway.
 
-`createAdapter` also receives `python`: the interpreter of the environment
-holding the format package's own `pi.runtime.python`, which the host prepares:
-the Recipe's shell environment for a peer, the package's own otherwise (see [Runtime requirements](../recipe-format.md#runtime-requirements)). It is
+`createAdapter` also receives `python`: the interpreter of the documents
+environment, which the host prepares (see [Runtime requirements](../recipe-format.md#runtime-requirements)). It is
 absent when the package declares none; an adapter that ignores it keeps
 working.
 

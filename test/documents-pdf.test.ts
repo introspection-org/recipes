@@ -19,7 +19,7 @@ type Tool = {
   ): Promise<{ content: Array<{ text?: string }>; details: any }>;
 };
 
-const project = resolve("packages/documents/pdf/python");
+const project = resolve("python/documents");
 const fixtures = resolve("test/fixtures/documents");
 let cwd = "";
 let pagesDir = "";
@@ -28,7 +28,7 @@ let withTables: Tool;
 let withoutTables: Tool;
 
 function environment(name: string, extras: string[]): string {
-  const path = join(tmpdir(), `recipe-documents-pdf-tests-${name}`);
+  const path = join(tmpdir(), `recipe-documents-env-pdf-tests-${name}`);
   execFileSync(
     "uv",
     ["sync", "--frozen", "--quiet", "--project", project, ...extras],
