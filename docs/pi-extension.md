@@ -80,7 +80,7 @@ Any other of the agent's skills is a helper: reading it never changes the phase,
 
 A helper read counts the same way a step read does: a glance at its top (fewer than 100 lines, or `head`) doesn't. While the clock is paused the step shows ⏸ as before, and a resumed session restores phase, step and helper from its earlier reads. Without `phases`, the footer works as described above.
 
-A host that draws its own line (the platform's task chat) passes `onRecipeStep` to `createAgentSession`, with or without a UI. It receives the same step as data, `{ skill, phase?, steps: [{ name, state: "done" | "current" | "todo" }], paused, worked_ms }`, whenever the step changes or the clock starts or stops, not every second; the host runs the clock on from `worked_ms` while `paused` is false. A skill outside a phase has no `steps` and shows by `skill`.
+A host that draws its own line (the platform's task chat) passes `onRecipeStep` to `createAgentSession`, with or without a UI. It receives the same step as data, `{ skill, phase?, steps: [{ name, state: "done" | "current" | "todo" }], paused, worked_ms, agents? }`, whenever the step changes, the clock starts or stops, or a subagent run starts or ends, not every second; `agents` counts the session's subagent runs running now and is absent when none is; the host runs the clock on from `worked_ms` while `paused` is false. A skill outside a phase has no `steps` and shows by `skill`.
 
 ## The Recipe a session runs
 
