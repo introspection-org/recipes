@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { recipesPackagePath } from "../recipe/companions.js";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
@@ -64,8 +64,8 @@ export interface RecipeProductivityModule {
 }
 
 /** The core `productivity` skill, offered to every agent that selects `mail`, `calendar` or `drive`. It ships beside `dist/`. */
-export const PRODUCTIVITY_SKILL = fileURLToPath(
-  new URL("../../skills/productivity/SKILL.md", import.meta.url),
+export const PRODUCTIVITY_SKILL = recipesPackagePath(
+  "skills/productivity/SKILL.md",
 );
 
 /** Where fetched attachments and downloads go: the runtime files folder, else `files/` in the workspace. */

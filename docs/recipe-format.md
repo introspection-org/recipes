@@ -858,6 +858,12 @@ Concurrent preparations of one environment are serialised by a lock file
 beside it. uv never creates a `.venv` in the Recipe: the host names the
 environment.
 
+The shared project ships in the Recipes package (`python/shared`), found
+from the installed `@introspection-ai/recipes` that Node resolves above the
+running module. A host that bundles Recipes into a directory with no such
+`node_modules` above it sets `PI_RECIPES_PACKAGE_DIR` to the installed
+package's directory; the first-party skills Recipes ships resolve the same way.
+
 Each prepared environment reports its directory and interpreter, plus the
 activation for the shell environment (`kind: "shared"` when it is the
 shared environment). Failures are named errors:

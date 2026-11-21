@@ -91,6 +91,37 @@ export function hostRecipesDirFrom(moduleDir: string): string | undefined {
   return resolveDependencyDir(moduleDir, RECIPES_PACKAGE);
 }
 
+/**
+ * Environment variable naming the installed `@introspection-ai/recipes`
+ * directory, for a host that bundles Recipes somewhere no `node_modules` above
+ * it holds the package.
+ */
+export const RECIPES_PACKAGE_DIR_ENV = "PI_RECIPES_PACKAGE_DIR";
+
+/**
+ * A file Recipes ships in its package (`python/shared`, `skills/...`). A host
+ * that bundles Recipes moves this module into its own output, where `../../`
+ * is not the package, so the first directory that holds `relativePath` wins:
+ * `PI_RECIPES_PACKAGE_DIR`, the Recipes `hostRecipesDirFrom` finds for this
+ * module, then two levels above this module.
+ */
+export function recipesPackagePath(
+  relativePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const fallback = join(recipesModuleDir, "..", "..");
+  const candidates = [
+    env[RECIPES_PACKAGE_DIR_ENV] || undefined,
+    hostRecipesDirFrom(recipesModuleDir),
+    fallback,
+  ];
+  const dir = candidates.find(
+    (candidate) =>
+      candidate !== undefined && existsSync(join(candidate, relativePath)),
+  );
+  return join(dir ?? fallback, relativePath);
+}
+
 /** A channel or document format package, found for one Recipe. */
 export interface ResolvedRecipePackage {
   name: string;

@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { recipesPackagePath } from "../recipe/companions.js";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
@@ -21,9 +21,7 @@ import {
 export const SIGNATURE_PROVIDERS_PACKAGE = "@introspection-ai/recipe-signature";
 
 /** The `signature` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
-export const SIGNATURE_SKILL = fileURLToPath(
-  new URL("../../skills/signature/SKILL.md", import.meta.url),
-);
+export const SIGNATURE_SKILL = recipesPackagePath("skills/signature/SKILL.md");
 
 /** The signature family for `loadProviderModules`: every first-party id is in one bundle. */
 export const SIGNATURE_PROVIDER_FAMILY: ProviderFamily<RecipeSignatureProviderModule> =
