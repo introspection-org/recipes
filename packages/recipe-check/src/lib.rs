@@ -349,7 +349,7 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             let agent_names = declared_agent_names(&agent_paths, &ctx);
             prompts::validate_prompt_templates(paths, &agent_names, &mut ctx);
         }
-        let unverified_agents = unverified_dependency_agent_names(&package, &ctx);
+        let unverified_agents = uninstalled_agent_dependencies(&package, &ctx);
         validate_agents(
             &agent_paths,
             &resources,
@@ -3095,10 +3095,10 @@ fn uninstalled_dependency_of<'a>(
         .map(String::as_str)
 }
 
-/// Agent names implied by `pi.agents` patterns into dependencies that are not
-/// installed: the file stem of each pattern naming one YAML file. A glob
-/// implies no name, so a subagent behind one still reports missing.
-fn unverified_dependency_agent_names(package: &Package, ctx: &CheckContext) -> BTreeSet<String> {
+/// The declared dependencies `pi.agents` patterns point into that are not
+/// installed. Their agents are unknown here: a file's name need not be its
+/// agent's `name`, so a subagent this check can't find may be one of them.
+fn uninstalled_agent_dependencies(package: &Package, ctx: &CheckContext) -> BTreeSet<String> {
     let Some(patterns) = package
         .pi
         .as_ref()
@@ -3110,9 +3110,7 @@ fn unverified_dependency_agent_names(package: &Package, ctx: &CheckContext) -> B
     patterns
         .iter()
         .filter_map(JsonValue::as_str)
-        .filter(|pattern| uninstalled_dependency_of(pattern, package, ctx).is_some())
-        .filter(|pattern| !has_glob(pattern) && is_yaml_path(pattern))
-        .filter_map(|pattern| Path::new(pattern.trim()).file_stem()?.to_str())
+        .filter_map(|pattern| uninstalled_dependency_of(pattern, package, ctx))
         .map(str::to_owned)
         .collect()
 }
@@ -5386,12 +5384,25 @@ fn validate_declared_agent_references(
         }
     }
     for subagent in agent.subagents.as_deref().unwrap_or_default() {
-        if !raw_by_name.contains_key(subagent) && !unverified_agents.contains(subagent) {
+        if raw_by_name.contains_key(subagent) {
+            continue;
+        }
+        if unverified_agents.is_empty() {
             ctx.error(
                 "agent.subagent_missing",
                 path,
                 format!("Recipe agent '{name}' references missing subagent '{subagent}'"),
                 Some("add the agent definition or remove the reference"),
+            );
+        } else {
+            ctx.warning(
+                "agent.subagent_unverified",
+                path,
+                format!(
+                    "Recipe agent '{name}' subagent '{subagent}' is not in the Recipe and was not checked against agents in dependencies that are not installed: {}",
+                    unverified_agents.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+                Some("install dependencies before checking to verify agents from dependency packages"),
             );
         }
     }
@@ -8500,6 +8511,7 @@ mod tests {
             [
                 ("agent.agent_unverified", Severity::Warning),
                 ("package.agents_unmatched", Severity::Error),
+                ("agent.subagent_unverified", Severity::Warning),
             ],
             "{:?}",
             report.diagnostics
