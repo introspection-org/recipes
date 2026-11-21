@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.60.0](https://github.com/introspection-org/recipes/compare/v0.59.0...v0.60.0) (2026-11-21)
+
+
+### Features
+
+* **agents:** show each subagent run's time, tokens and cost live, and report them to the parent ([#560](https://github.com/introspection-org/recipes/issues/560)) ([157f4f6](https://github.com/introspection-org/recipes/commit/157f4f6d7e2196052b43d6469acf0c2e73fedd4a))
+* **skill-progress:** count a session's running subagent runs on its reported step ([#562](https://github.com/introspection-org/recipes/issues/562)) ([ed9593e](https://github.com/introspection-org/recipes/commit/ed9593ed4a7ebc15b85c8785773313dcbea0d286))
+
+
+### Bug Fixes
+
+* **agents:** register a run before its first update, and keep closed runs' usage in the session totals ([#564](https://github.com/introspection-org/recipes/issues/564)) ([abf6fb6](https://github.com/introspection-org/recipes/commit/abf6fb66b4284b454a7c5efeb4870a0c7a094590))
+
 ## [0.59.0](https://github.com/introspection-org/recipes/compare/v0.58.0...v0.59.0) (2026-11-20)
 
 
