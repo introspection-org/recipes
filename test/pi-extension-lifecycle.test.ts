@@ -26,7 +26,7 @@ function extensionContext(cwd: string, notify = vi.fn()) {
   return {
     cwd,
     hasUI: true,
-    ui: { notify },
+    ui: { notify, setWidget: vi.fn() },
     modelRegistry: {
       authStorage,
       find: vi.fn((provider: string, id: string) => ({ provider, id })),
