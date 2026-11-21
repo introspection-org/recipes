@@ -436,6 +436,11 @@ describe("subagent usage", () => {
         ctx,
       );
       const id = started?.details?.agent?.agent_run_id as string;
+      // The run shows in the subagents panel from its start, before it reports anything.
+      const panel = ctx.ui.setWidget.mock.calls.at(-1);
+      expect(panel?.[1]).toEqual(
+        expect.arrayContaining([expect.stringContaining("explorer")]),
+      );
 
       const assistantEnd = (output: number, cost: number) =>
         childOpts.onEvent({
