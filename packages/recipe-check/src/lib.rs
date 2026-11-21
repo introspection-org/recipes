@@ -349,10 +349,12 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
             let agent_names = declared_agent_names(&agent_paths, &ctx);
             prompts::validate_prompt_templates(paths, &agent_names, &mut ctx);
         }
+        let unverified_agents = unverified_dependency_agent_names(&package, &ctx);
         validate_agents(
             &agent_paths,
             &resources,
             &dependency_skills,
+            &unverified_agents,
             mcp_tool_policy.as_ref(),
             &agent_tool_catalog(&package),
             &mut ctx,
@@ -1016,7 +1018,7 @@ fn validate_pi_config(
         ("skills", skills, false),
         ("prompts", prompts, false),
     ] {
-        let paths = resolve_resource_patterns(key, &patterns, required, ctx);
+        let paths = resolve_resource_patterns(key, &patterns, required, package, ctx);
         if required && paths.is_empty() {
             ctx.error(
                 "package.agents_missing",
@@ -2999,6 +3001,7 @@ fn resolve_resource_patterns(
     key: &'static str,
     patterns: &ResourcePatterns,
     required: bool,
+    package: &Package,
     ctx: &mut CheckContext,
 ) -> Vec<String> {
     let mut resolved = BTreeSet::new();
@@ -3014,7 +3017,19 @@ fn resolve_resource_patterns(
         }
 
         let matches = match_paths(ctx, pattern);
-        if matches.is_empty() && (required || patterns.explicit) {
+        let uninstalled = (key == "agents")
+            .then(|| uninstalled_dependency_of(pattern, package, ctx))
+            .flatten();
+        if let (true, Some(dependency)) = (matches.is_empty(), uninstalled) {
+            ctx.warning(
+                "agent.agent_unverified",
+                PACKAGE_JSON,
+                format!(
+                    "package.json#pi.agents pattern '{pattern}' is in dependency '{dependency}', which is not installed, so it was not checked"
+                ),
+                Some("install dependencies before checking to verify agents from dependency packages"),
+            );
+        } else if matches.is_empty() && (required || patterns.explicit) {
             ctx.error(
                 format!("package.{key}_unmatched"),
                 PACKAGE_JSON,
@@ -3054,6 +3069,46 @@ fn resolve_resource_patterns(
     }
 
     resolved.into_iter().collect()
+}
+
+/// The declared dependency or peer a `./node_modules/<name>/...` pattern points
+/// into, when the snapshot does not hold that dependency's `package.json`.
+fn uninstalled_dependency_of<'a>(
+    pattern: &str,
+    package: &'a Package,
+    ctx: &CheckContext,
+) -> Option<&'a str> {
+    let normalized = normalize_slashes(pattern.trim().trim_start_matches("./"));
+    let rest = normalized.strip_prefix("node_modules/")?;
+    package
+        .dependencies
+        .iter()
+        .chain(&package.peer_dependencies)
+        .find(|name| rest.starts_with(&format!("{name}/")))
+        .filter(|name| !ctx.has_file(&format!("node_modules/{name}/package.json")))
+        .map(String::as_str)
+}
+
+/// Agent names implied by `pi.agents` patterns into dependencies that are not
+/// installed: the file stem of each pattern naming one YAML file. A glob
+/// implies no name, so a subagent behind one still reports missing.
+fn unverified_dependency_agent_names(package: &Package, ctx: &CheckContext) -> BTreeSet<String> {
+    let Some(patterns) = package
+        .pi
+        .as_ref()
+        .and_then(|pi| pi.get("agents"))
+        .and_then(JsonValue::as_array)
+    else {
+        return BTreeSet::new();
+    };
+    patterns
+        .iter()
+        .filter_map(JsonValue::as_str)
+        .filter(|pattern| uninstalled_dependency_of(pattern, package, ctx).is_some())
+        .filter(|pattern| !has_glob(pattern) && is_yaml_path(pattern))
+        .filter_map(|pattern| Path::new(pattern.trim()).file_stem()?.to_str())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn resolve_agents(
@@ -3177,6 +3232,7 @@ fn validate_agents(
     agent_paths: &[String],
     resources: &HashMap<&'static str, Vec<String>>,
     dependency_skills: &DependencySkills,
+    unverified_agents: &BTreeSet<String>,
     mcp_tool_policy: Option<&McpToolPolicy>,
     tool_catalog: &[String],
     ctx: &mut CheckContext,
@@ -3236,6 +3292,7 @@ fn validate_agents(
                 &raw_by_name,
                 &skill_names,
                 &dependency_skills.uninstalled,
+                unverified_agents,
                 ctx,
             );
         }
@@ -5282,6 +5339,7 @@ fn validate_declared_agent_references(
     raw_by_name: &HashMap<String, &RawAgent>,
     skill_names: &BTreeMap<String, Vec<String>>,
     uninstalled_dependencies: &[String],
+    unverified_agents: &BTreeSet<String>,
     ctx: &mut CheckContext,
 ) {
     let name = &agent.name;
@@ -5322,7 +5380,7 @@ fn validate_declared_agent_references(
         }
     }
     for subagent in agent.subagents.as_deref().unwrap_or_default() {
-        if !raw_by_name.contains_key(subagent) {
+        if !raw_by_name.contains_key(subagent) && !unverified_agents.contains(subagent) {
             ctx.error(
                 "agent.subagent_missing",
                 path,
@@ -8395,6 +8453,90 @@ mod tests {
         assert_eq!(codes(&report), [("agent.skill_missing", Severity::Error)]);
         assert!(
             report.diagnostics[0].message.contains("'hidden'"),
+            "{:?}",
+            report.diagnostics
+        );
+    }
+
+    fn dependency_agents_recipe(extra: &[(&str, &str)]) -> RecipeFiles {
+        let package = json!({
+            "name": "dependency-agents",
+            "dependencies": { "@acme/agents": ">=1.0.0" },
+            "pi": { "agents": [
+                "./agents/*.yaml",
+                "./node_modules/@acme/agents/agents/reviewer.yaml",
+                "./node_modules/@acme/other/agents/helper.yaml"
+            ] }
+        });
+        let package = serde_json::to_string_pretty(&package).expect("serialize package");
+        let mut files = vec![
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\nsubagents: [reviewer]\n",
+            ),
+        ];
+        files.extend_from_slice(extra);
+        recipe_files(&files)
+    }
+
+    const ACME_AGENTS: (&str, &str) = (
+        "node_modules/@acme/agents/package.json",
+        r#"{"name":"@acme/agents"}"#,
+    );
+
+    #[test]
+    fn warns_for_agents_in_a_dependency_that_is_not_installed() {
+        let report = check_recipe_files(&dependency_agents_recipe(&[]));
+        assert_eq!(
+            codes(&report),
+            [
+                ("agent.agent_unverified", Severity::Warning),
+                ("package.agents_unmatched", Severity::Error),
+            ],
+            "{:?}",
+            report.diagnostics
+        );
+        assert!(report.diagnostics[0].message.contains("'@acme/agents'"));
+        assert!(report.diagnostics[1].message.contains("@acme/other"));
+    }
+
+    #[test]
+    fn validates_agents_from_an_installed_dependency() {
+        let reviewer = (
+            "node_modules/@acme/agents/agents/reviewer.yaml",
+            "name: reviewer\nmodel:\n  name: test/provider-model\n",
+        );
+        let report = check_recipe_files(&dependency_agents_recipe(&[ACME_AGENTS, reviewer]));
+        assert_eq!(
+            codes(&report),
+            [("package.agents_unmatched", Severity::Error)],
+            "{:?}",
+            report.diagnostics
+        );
+
+        let broken = (
+            "node_modules/@acme/agents/agents/reviewer.yaml",
+            "name: reviewer\n",
+        );
+        let report = check_recipe_files(&dependency_agents_recipe(&[ACME_AGENTS, broken]));
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "agent.model.name_missing"
+                    && diagnostic.path.starts_with("node_modules/@acme/agents/")),
+            "{:?}",
+            report.diagnostics
+        );
+
+        let report = check_recipe_files(&dependency_agents_recipe(&[ACME_AGENTS]));
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "agent.subagent_missing"),
             "{:?}",
             report.diagnostics
         );
