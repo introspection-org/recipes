@@ -17,8 +17,7 @@ def test_accepts_portable_runtime_requirements() -> None:
                     "path": "package.json",
                     "content": (
                         '{"name":"demo","pi":{"agents":["agents/*.yaml"],'
-                        '"runtime":{"python":{"project":"python",'
-                        '"lockfile":"python/uv.lock","version":">=3.14,<3.15",'
+                        '"runtime":{"python":{"version":">=3.14,<3.15",'
                         '"imports":["demo"]}}}}'
                     ),
                 },
@@ -26,8 +25,8 @@ def test_accepts_portable_runtime_requirements() -> None:
                     "path": "agents/agent.yaml",
                     "content": "name: agent\nmodel:\n  name: test/model\n",
                 },
-                {"path": "python/pyproject.toml"},
-                {"path": "python/uv.lock"},
+                {"path": "pyproject.toml"},
+                {"path": "uv.lock"},
             ]
         }
     )
