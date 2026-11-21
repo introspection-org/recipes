@@ -79,7 +79,8 @@ function recipe(options: {
         ...(pkg.python ? { pi: { runtime: { python: pkg.python } } } : {}),
       }),
     );
-    if (pkg.python) pythonProject(packageDir);
+    if (pkg.python)
+      pythonProject(packageDir, undefined, pkg.name.replace(/[@/]/g, "-"));
     const as = pkg.as ?? "dependencies";
     if (as === "dependencies") dependencies[pkg.name] = "1.0.0";
     if (as === "peerDependencies") peerDependencies[pkg.name] = "1.0.0";
@@ -561,9 +562,8 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
             python: { project: "python", lockfile: "python/uv.lock" },
           },
           {
-            name: "peer-pkg",
+            name: "dep-pkg",
             python: { project: "python", lockfile: "python/uv.lock" },
-            as: "peerDependencies",
           },
           {
             name: "dev-only",
@@ -581,7 +581,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       });
       const root = join(scratch("roots-"), ".pi");
       const prepared = await prepare(dir, { environmentRoot: root });
-      expect(Object.keys(prepared.packages).sort()).toEqual([docx, "peer-pkg"]);
+      expect(Object.keys(prepared.packages).sort()).toEqual([docx, "dep-pkg"]);
       const docxEnv = join(
         root,
         "python-packages",
@@ -642,6 +642,176 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       ).rejects.toThrow(
         /must ship python\/pyproject\.toml[\s\S]*must ship python\/uv\.lock/,
       );
+    });
+  });
+
+  describe("peer declarations join the shell environment", () => {
+    const docx = "@introspection-ai/recipe-documents-docx";
+    const pins = "paper-docx==0.2.1\nlxml==6.1.3\n";
+
+    it("gives a Recipe with no Python of its own one activated environment for its peers", async () => {
+      const { uv, prepare } = harness({ FAKE_UV_EXPORT: pins });
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: docx,
+            python: {
+              project: "python",
+              lockfile: "python/uv.lock",
+              imports: ["docx"],
+            },
+            as: "peerDependencies",
+          },
+        ],
+      });
+      const root = join(scratch("roots-"), ".pi");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      const shell = prepared.recipe!;
+      expect(shell.environmentDir).toBe(join(root, "python"));
+      expect(shell.projectDir).toBe(join(root, "python-project"));
+      expect(shell.peers).toEqual([docx]);
+      expect(shell.activation.pathPrepend).toBe(join(root, "python", "bin"));
+      expect(prepared.packages[docx]?.interpreter).toBe(shell.interpreter);
+      const generated = readFileSync(
+        join(root, "python-project", "pyproject.toml"),
+        "utf8",
+      );
+      expect(generated).toContain('"paper-docx==0.2.1"');
+      expect(generated).toMatch(/package = false \}/);
+      expect(uv.calls().map((call) => call.args[0])).toEqual(
+        expect.arrayContaining(["export", "lock", "sync"]),
+      );
+      // Check mode accepts it offline, without locking or syncing again.
+      const before = uv.calls().length;
+      const checked = await prepare(dir, {
+        environmentRoot: root,
+        mode: "check",
+      });
+      expect(checked.recipe?.synced).toBe(false);
+      const after = uv
+        .calls()
+        .slice(before)
+        .map((call) => call.args);
+      expect(after.some((args) => args[0] === "lock")).toBe(false);
+      expect(
+        after
+          .filter((args) => args[0] === "sync")
+          .every(
+            (args) => args.includes("--check") && args.includes("--offline"),
+          ),
+      ).toBe(true);
+    });
+
+    it("lets the peers' pins win over the Recipe's own lock, and keeps the Recipe's other pins", async () => {
+      const { prepare } = harness({
+        FAKE_UV_EXPORT: "lxml==6.1.3\nsix==1.17.0\n",
+      });
+      const { dir } = recipe({
+        packages: [
+          {
+            name: docx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+            as: "peerDependencies",
+          },
+        ],
+      });
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      const generated = readFileSync(
+        join(root, "python-project", "pyproject.toml"),
+        "utf8",
+      );
+      expect(generated.match(/"lxml==6\.1\.3"/g)).toHaveLength(1);
+      expect(generated).toContain('"synthetic"');
+      expect(generated).toContain('"-introspection-ai-recipe-documents-docx"');
+    });
+
+    it("fails at sync with an actionable error when the Recipe's requirements exclude a peer's pin", async () => {
+      const { prepare } = harness({
+        FAKE_UV_EXPORT: pins,
+        FAKE_UV_LOCK_EXIT: "1",
+      });
+      const { dir } = recipe({
+        packages: [
+          {
+            name: docx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+            as: "peerDependencies",
+          },
+        ],
+      });
+      const root = scratch("roots-");
+      await expect(prepare(dir, { environmentRoot: root })).rejects.toThrow(
+        /peers' locked versions win[\s\S]*No solution found/,
+      );
+      // No lock is left for check mode to accept.
+      expect(existsSync(join(root, "python-project", "uv.lock"))).toBe(false);
+      await expect(
+        prepare(dir, { environmentRoot: root, mode: "check" }),
+      ).rejects.toBeInstanceOf(RecipePythonOutdatedError);
+    });
+
+    it("finds a changed peer lock outdated in check mode, without writing", async () => {
+      const { uv, prepare } = harness({ FAKE_UV_EXPORT: pins });
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: docx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+            as: "peerDependencies",
+          },
+        ],
+      });
+      const root = scratch("roots-");
+      await prepare(dir, { environmentRoot: root });
+      const generatedPath = join(root, "python-project", "pyproject.toml");
+      const generated = readFileSync(generatedPath, "utf8");
+      writeFileSync(
+        join(
+          dir,
+          "node_modules",
+          "@introspection-ai",
+          "recipe-documents-docx",
+          "python",
+          "uv.lock",
+        ),
+        "version = 1\n# relocked\n",
+      );
+      const before = uv.calls().length;
+      await expect(
+        prepare(dir, { environmentRoot: root, mode: "check" }),
+      ).rejects.toBeInstanceOf(RecipePythonOutdatedError);
+      expect(readFileSync(generatedPath, "utf8")).toBe(generated);
+      expect(
+        uv
+          .calls()
+          .slice(before)
+          .some(
+            (call) =>
+              call.args[0] === "lock" ||
+              (call.args[0] === "sync" && !call.args.includes("--check")),
+          ),
+      ).toBe(false);
+    });
+
+    it("takes a pyproject.toml and uv.lock at the Recipe root as its own project, without pi.runtime.python", async () => {
+      const { prepare } = harness();
+      const { dir } = recipe({ python: false });
+      write(
+        join(dir, "pyproject.toml"),
+        "[project]\nname = 'acme'\nversion = '0.1.0'\n",
+      );
+      await expect(
+        prepare(dir, { environmentRoot: scratch("roots-") }),
+      ).rejects.toThrow(/run `uv lock`/);
+      write(join(dir, "uv.lock"), "version = 1\n");
+      const prepared = await prepare(dir, {
+        environmentRoot: scratch("roots-"),
+      });
+      expect(prepared.recipe?.projectDir).toBe(dir);
+      expect(prepared.recipe?.peers).toEqual([]);
     });
   });
 

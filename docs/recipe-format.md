@@ -717,17 +717,21 @@ Those host concerns MUST NOT become mandatory Recipe source fields.
 
 ## Runtime requirements
 
-A Recipe MAY declare portable runtime requirements under `pi.runtime`. These
-requirements are fail-closed: a host MUST satisfy every declaration before the
-first model call or reject the Recipe with an actionable diagnostic.
+A Recipe MAY bring Python. Its requirements are fail-closed: a host MUST
+satisfy them before the first model call or reject the Recipe with an
+actionable diagnostic.
+
+**A `pyproject.toml` and `uv.lock` at the Recipe root are the Recipe's Python
+project.** They list only the Recipe's own libraries. A Recipe without them
+has no project of its own. A root `pyproject.toml` without a `uv.lock` is an
+error: run `uv lock` and commit the lock. `pi.runtime.python` is optional and
+holds overrides only:
 
 ```json
 {
   "pi": {
     "runtime": {
       "python": {
-        "project": "python",
-        "lockfile": "python/uv.lock",
         "version": ">=3.12,<3.15",
         "imports": ["pandas", "openpyxl"]
       }
@@ -736,48 +740,77 @@ first model call or reject the Recipe with an actionable diagnostic.
 }
 ```
 
-`python.project` names a Recipe-relative Python project directory and
-`python.lockfile` names its committed `uv.lock`, which must be the
-`uv.lock` beside the project's `pyproject.toml`. Hosts MUST install with
-frozen resolution (`uv sync --frozen --no-dev`) and MUST NOT install into
-system Python or resolve an unlocked dependency graph. `version` is passed to
-uv as the interpreter request. `imports` are optional boot preflights, each a
-dotted Python module name (`docx`, `paper_docx.api`); hosts import them with
-`PYTHONHOME` removed.
+`version` is passed to uv as the interpreter request. `imports` are optional
+boot preflights, each a dotted Python module name (`docx`, `paper_docx.api`);
+hosts import them with `PYTHONHOME` removed. Hosts MUST install with frozen
+resolution and MUST NOT install into system Python or resolve an unlocked
+dependency graph. `pi.runtime.python.project` (a subdirectory holding the
+project) and `pi.runtime.python.lockfile` are legacy: still read, with
+`recipes check` warning `runtime.python_project_legacy`; the lockfile is
+always the project's `uv.lock`.
 
 `pi.runtime.python` is the only runtime key; any other key under `pi.runtime`
 is rejected. PDF and Word work goes through the `documents` tool (`pi.documents`
 with the `pdf` or `docx` format), not shell utilities. A Recipe that only uses
-the `documents` tool needs no `pi.runtime.python`; the format packages bring
-their own.
+the `documents` tool needs no `pi.runtime.python` and no Python project; the
+format packages bring their own.
 
 ### Package declarations
 
 A package the Recipe depends on MAY declare `pi.runtime.python` in its own
-`package.json`, with the same fields relative to the package. Hosts read it
-from each direct `dependencies` or `peerDependencies` entry, found with Node's
-package resolution from the Recipe directory (the Recipe's own `node_modules`,
-or one above it when an npm install hoists the dependency beside the Recipe);
-`devDependencies` and transitive dependencies are
+`package.json`, with `project` naming its Python project directory (relative
+to the package; `lockfile`, if given, is that project's `uv.lock`). Hosts read
+it from each direct `dependencies` or `peerDependencies` entry, found with
+Node's package resolution from the Recipe directory (the Recipe's own
+`node_modules`, or one above it when the platform provides a peer or an npm
+install hoists a dependency); `devDependencies` and transitive dependencies are
 not read, and a declared dependency that is not installed is skipped. A
 package declaring it MUST ship the project's `pyproject.toml` and `uv.lock`:
 when its `package.json` lists `files`, both must be covered.
 
-Each declaration gets its own environment:
+**A Recipe has one shell environment: its own project plus every peer's
+Python.** A `peerDependencies` entry declaring `pi.runtime.python` (a name
+also in `dependencies` counts as a dependency) joins it:
 
-- **The Recipe's own declaration is the shell environment.** Hosts activate
-  it for the agent's shell tools: `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`
-  name it, its `bin` (`Scripts` on Windows) comes first on `PATH`, and
-  `PYTHONHOME` is removed.
-- **Each package's declaration gets a separate environment**, installed with
-  `--no-editable` and never activated or put on `PATH`. The host hands the
-  package its interpreter; a documents format receives it as
-  `createAdapter({ env, cwd, python })`.
+- The host composes it at prepare time from a generated project that depends,
+  by path, on the Recipe's project (if any) and on each peer's. It is
+  constrained to each peer's locked versions, and to the Recipe's own locked
+  versions for anything no peer pins, so **a peer's pins win** and every
+  installed version comes from a committed lock. The peers' `[tool.uv]
+  constraint-dependencies` carry over. The Recipe's own lock never mentions a
+  peer: `uv lock` in the Recipe needs no peer installed, and a new release of
+  a peer never asks the author to relock.
+- uv locks the generated project when the host syncs (`sync` mode). A Recipe
+  requirement that excludes a peer's pin fails there, naming the conflict:
+  relax the Recipe's requirement, or drop the library from the Recipe's
+  `pyproject.toml`, since the peer provides it. `recipes check` warns
+  `runtime.python_peer_provided` when the Recipe's `pyproject.toml` lists a
+  library a companion peer provides (such as `paper-docx` or `pypdfium2`).
+- A Recipe with no Python of its own but a peer declaring Python still gets
+  the environment, so a script the agent runs with `python3` can `import
+  docx` once the Recipe declares `@introspection-ai/recipe-documents-docx` as
+  a peer.
+- Hosts activate it for the agent's shell tools: `VIRTUAL_ENV` and
+  `UV_PROJECT_ENVIRONMENT` name it, its `bin` (`Scripts` on Windows) comes
+  first on `PATH`, and `PYTHONHOME` is removed. The peer's own code runs in
+  it too: a documents format peer receives its interpreter as
+  `createAdapter({ env, cwd, python })`, one copy for the shell and the
+  helpers. Run scripts with `python3` (or `uv run`); `uv sync` in the Recipe
+  would sync only the Recipe's own project into it.
+
+**Every other package's declaration gets a separate environment**: a
+`dependencies` entry, which the Recipe brings and pins as its own
+implementation detail, and a companion the Recipe uses without listing it
+(the copy installed beside Recipes). Each is installed with `--no-editable`
+from the package's own lock and never activated or put on `PATH`; the host
+hands the package its interpreter. Two such packages may lock different
+versions of the same library.
 
 A package extension asks for a package's interpreter with
-`packagePython(name)` on its session context, by the package's name; it is
-`undefined` when that package declares no `pi.runtime.python` or is not a
-direct dependency. `@introspection-ai/recipes/python` runs a script with it:
+`packagePython(name)` on its session context, by the package's name (a peer's
+is the shell environment's); it is `undefined` when that package declares no
+`pi.runtime.python` or is not a direct dependency.
+`@introspection-ai/recipes/python` runs a script with it:
 `pythonExecutable({ python, env, override })` picks the interpreter
 (`env[override]`, then `python`, then `VIRTUAL_ENV`, then `python3`), and
 `runPythonJson(script, request, { python, env, cwd, signal, timeoutMs })`
@@ -801,9 +834,6 @@ export default function tables(pi) {
 }
 ```
 
-No declaration has to agree with another: two packages may lock different
-versions of the same library.
-
 ### Preparing environments
 
 `prepareRecipePython(recipeDir, options)` from
@@ -812,29 +842,36 @@ versions of the same library.
 - `mode: "check"` runs `uv sync --frozen --no-dev --check --offline`, then
   `uv python find` with the environment active, and the import preflight. The
   second step catches an environment whose interpreter no longer satisfies the
-  declared version or `requires-python`, which uv's check passes. It writes
-  nothing and uses no network.
+  declared version or `requires-python`, which uv's check passes. For a
+  composed shell environment it first compares the generated project with the
+  one its inputs produce now, reading each peer's lock with
+  `uv export --frozen --offline`. It writes nothing and uses no network.
 - `mode: "sync"` checks first and installs only a missing or outdated
-  environment, with `uv sync --frozen --no-dev --compile-bytecode`. A current
-  environment is never recompiled.
+  environment, with `uv sync --frozen --no-dev --compile-bytecode`; a composed
+  one is first rewritten and locked with `uv lock`. A current environment is
+  never recompiled or relocked.
 - uv runs with `--no-python-downloads` unless `allowPythonDownloads` is set.
 
 By default environments live in a shared cache,
-`~/.introspection/python/<hash>`, keyed by the environment kind (shell or
-package), platform and architecture, the `uv.lock` and `pyproject.toml`
-contents, and the declared `version`. Without a declared `version` it also
-keys on what uv would pick the interpreter from: `UV_PYTHON`, every
-`.python-version` or `.python-versions` file from the project directory up to
-the filesystem root, and uv's global pin. A Recipe project that is itself a
-package (it has `[build-system]`, so it installs editable) also keys on its
-directory. `environmentRoot` (or `PI_RECIPES_PYTHON_ROOT`) fixes the
-location instead: the shell environment is `<root>/python` and each package's
-`<root>/python-packages/<name>`, so a host baking environments into a Recipe
-image passes `<recipe>/.pi`. Concurrent preparations of one environment are
-serialised by a lock file beside it.
+`~/.introspection/python/<hash>`, keyed by the environment kind, platform and
+architecture, every `uv.lock` and `pyproject.toml` that composes it, the
+constraints taken from the locks, and the declared `version`s. Without a
+declared `version` it also keys on what uv would pick the interpreter from:
+`UV_PYTHON`, every `.python-version` or `.python-versions` file from the
+project directory up to the filesystem root, and uv's global pin. A package's
+environment, and a composed one, key on each package's directory and version;
+a Recipe project that is itself a package (it has `[build-system]`, so it
+installs editable) keys on its directory. A composed environment's generated
+project sits beside it, at `<hash>-project`. `environmentRoot` (or
+`PI_RECIPES_PYTHON_ROOT`) fixes the location instead: the shell environment is
+`<root>/python` (its generated project `<root>/python-project`) and each
+package's `<root>/python-packages/<name>`, so a host baking environments into
+a Recipe image passes `<recipe>/.pi`. Concurrent preparations of one
+environment are serialised by a lock file beside it. uv never creates a
+`.venv` in the Recipe: the host names the environment.
 
 Each prepared environment reports its directory and interpreter, plus the
-activation for the shell environment. Failures are named errors:
+activation and the joined `peers` for the shell environment. Failures are named errors:
 `RecipePythonUvMissingError` (uv not installed), `RecipePythonVersionError`
 (no interpreter satisfies the version), `RecipePythonOutdatedError` (check
 mode found an environment missing or not matching its lock) and

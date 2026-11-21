@@ -1,12 +1,20 @@
 /**
  * Prepare the Python environments a Recipe declares with `pi.runtime.python`.
  *
- * Two kinds of declaration exist, and they never share an environment:
+ * Two kinds of environment exist, and they never share one:
  *
- * - The Recipe's own declaration is its **shell environment**. Activating it
- *   sets `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`, puts its `bin` first on
- *   `PATH` and removes `PYTHONHOME`, so the agent's shell tools run it.
- * - A direct dependency's declaration is that **package's environment**. It is
+ * - The Recipe's **shell environment** holds the Recipe's own project and the
+ *   locked Python of every `peerDependencies` entry that declares
+ *   `pi.runtime.python`. With no peer declaring Python it is the Recipe's own
+ *   project, synced from its `uv.lock`; with one, it is a generated project
+ *   that depends on each of those projects by path, constrained to the peers'
+ *   locked versions (they win over the Recipe's own lock), and locked by uv at
+ *   sync. Activating it sets `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`, puts
+ *   its `bin` first on `PATH` and removes `PYTHONHOME`, so the agent's shell
+ *   tools run it. A peer's own code (a documents format's helpers) runs in it
+ *   too.
+ * - A direct `dependencies` entry's declaration, or that of a companion the
+ *   Recipe uses without listing, is that **package's environment**. It is
  *   installed with `--no-editable`, never activated and never put on `PATH`;
  *   the host passes its interpreter to the package (documents formats receive
  *   it through `createAdapter({ python })`).
@@ -26,10 +34,11 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  writeFileSync,
   writeSync,
 } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 
 import { resolveRecipePackage } from "./companions.js";
 import {
@@ -56,8 +65,9 @@ export interface PrepareRecipePythonOptions {
   /**
    * Fixed location for the environments instead of the shared, lock-keyed
    * cache under `~/.introspection/python`. The Recipe's shell environment is
-   * `<root>/python`, each package's `<root>/python-packages/<name>`. A host
-   * that bakes environments into a Recipe image passes `<recipe>/.pi`.
+   * `<root>/python` (and, when peers join it, its generated project
+   * `<root>/python-project`), each package's `<root>/python-packages/<name>`.
+   * A host that bakes environments into a Recipe image passes `<recipe>/.pi`.
    */
   environmentRoot?: string;
   /** Let uv download a managed Python interpreter. Default false: `--no-python-downloads`. */
@@ -108,12 +118,20 @@ export interface RecipePythonEnvironment {
 export interface RecipeShellPythonEnvironment extends RecipePythonEnvironment {
   kind: "recipe";
   activation: RecipePythonActivation;
+  /**
+   * The peers whose locked Python joined this environment. When any did,
+   * `projectDir` and `lockfile` are the generated project's.
+   */
+  peers: readonly string[];
 }
 
 export interface PreparedRecipePython {
-  /** The Recipe's own declaration, if any: the shell environment. */
+  /** The shell environment: present when the Recipe or a peer declares Python. */
   recipe?: RecipeShellPythonEnvironment;
-  /** Each direct dependency's declaration, by package name. */
+  /**
+   * Each package's interpreter, by package name: a peer's is the shell
+   * environment's, any other package's is its own environment's.
+   */
   packages: Readonly<Record<string, RecipePythonEnvironment>>;
 }
 
@@ -160,7 +178,8 @@ export class RecipePythonImportError extends RecipePythonError {
 }
 
 interface Declaration {
-  kind: "recipe" | "package";
+  /** `peer`: a `peerDependencies` entry, whose Python joins the shell environment. */
+  kind: "recipe" | "peer" | "package";
   owner: string;
   packageDir: string;
   python: RecipePythonRuntimeRequirement;
@@ -182,6 +201,7 @@ function readJson(path: string): Record<string, unknown> {
 function packagePythonDeclaration(
   name: string,
   packageDir: string,
+  kind: "peer" | "package" = "package",
 ): Declaration | undefined {
   const report = validateRecipePythonPackage(packageDir);
   if (!report.valid) {
@@ -192,12 +212,13 @@ function packagePythonDeclaration(
     );
   }
   return report.python
-    ? { kind: "package", owner: name, packageDir, python: report.python }
+    ? { kind, owner: name, packageDir, python: report.python }
     : undefined;
 }
 
 /**
- * Every `pi.runtime.python` the Recipe declares: its own, its direct
+ * Every `pi.runtime.python` the Recipe declares: its own, its peers' (a name
+ * in both `dependencies` and `peerDependencies` is a dependency), its direct
  * dependencies', and that of each channel or document format package its
  * `pi.channels` or `pi.documents` uses but does not list, found as the loader
  * finds it (the copy installed alongside Recipes; see `resolveRecipePackage`).
@@ -216,12 +237,30 @@ export function recipePythonDeclarations(
       packageDir: root,
       python: manifest.runtime.python,
     });
+  } else if (existsSync(join(root, "pyproject.toml"))) {
+    // A pyproject.toml at the root is the Recipe's Python project by convention.
+    if (!existsSync(join(root, "uv.lock"))) {
+      throw new RecipePythonError(
+        `${manifest.name}: pyproject.toml has no uv.lock beside it; run \`uv lock\` in the Recipe and commit uv.lock`,
+      );
+    }
+    declarations.push({
+      kind: "recipe",
+      owner: manifest.name,
+      packageDir: root,
+      python: { project: ".", lockfile: "uv.lock", imports: [] },
+    });
+  }
+  const dependencies = installedRecipeDependencies(root, ["dependencies"]);
+  for (const { name, packageDir } of dependencies) {
+    const declaration = packagePythonDeclaration(name, packageDir);
+    if (declaration) declarations.push(declaration);
   }
   for (const { name, packageDir } of installedRecipeDependencies(root, [
-    "dependencies",
     "peerDependencies",
   ])) {
-    const declaration = packagePythonDeclaration(name, packageDir);
+    if (dependencies.some((dependency) => dependency.name === name)) continue;
+    const declaration = packagePythonDeclaration(name, packageDir, "peer");
     if (declaration) declarations.push(declaration);
   }
   const used = [
@@ -236,7 +275,7 @@ export function recipePythonDeclarations(
     if (
       declarations.some(
         (declaration) =>
-          declaration.kind === "package" && declaration.owner === name,
+          declaration.kind !== "recipe" && declaration.owner === name,
       )
     )
       continue;
@@ -475,6 +514,128 @@ function lastLines(text: string, count = 12): string {
 const INTERPRETER_PROBLEM =
   /no interpreter found|requires-python|python version|python downloads are not allowed|does not satisfy|incompatible with the project/i;
 
+/** What one environment is prepared for: a declaration, or the composed shell environment. */
+interface Target {
+  kind: "recipe" | "peer" | "package";
+  owner: string;
+  python: { version?: string; imports: readonly string[] };
+}
+
+/** A locked requirement line `uv export` prints: `name==version`, optionally with a marker. */
+const PIN = /^[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?==[^\s;]+(\s*;.*)?$/;
+
+/** PEP 503 normalisation, so `Paper_Docx` and `paper-docx` are one name. */
+function normalizePythonName(name: string): string {
+  return name.toLowerCase().replace(/[-_.]+/g, "-");
+}
+
+function pinName(line: string): string {
+  return normalizePythonName(/^[A-Za-z0-9._-]+/.exec(line)?.[0] ?? line);
+}
+
+/** The `[project]` table's `name`, read without a TOML parser. */
+function pythonProjectName(pyproject: string): string | undefined {
+  const table = /^\[project\][ \t]*\r?\n([\s\S]*?)(?=^\[|$(?![\s\S]))/m.exec(
+    pyproject,
+  );
+  return table
+    ? /^\s*name\s*=\s*["']([^"']+)["']/m.exec(table[1] ?? "")?.[1]
+    : undefined;
+}
+
+/** The `[manifest] constraints` of a `uv.lock` (`[tool.uv] constraint-dependencies`), as requirement strings. */
+function manifestConstraints(lock: string): string[] {
+  const manifest =
+    /^\[manifest\][ \t]*\r?\n([\s\S]*?)(?=^\[|$(?![\s\S]))/m.exec(lock)?.[1];
+  const list =
+    manifest && /^constraints\s*=\s*\[([\s\S]*?)\]\s*$/m.exec(manifest)?.[1];
+  if (!list) return [];
+  const constraints: string[] = [];
+  for (const entry of list.matchAll(/\{([^}]*)\}/g)) {
+    const field = (key: string) =>
+      new RegExp(`\\b${key}\\s*=\\s*"([^"]*)"`).exec(entry[1] ?? "")?.[1];
+    const name = field("name");
+    if (!name) continue;
+    const marker = field("marker");
+    constraints.push(
+      `${name}${field("specifier") ?? ""}${marker ? ` ; ${marker}` : ""}`,
+    );
+  }
+  return constraints;
+}
+
+/**
+ * How a member project joins the generated one: a project that is not a
+ * package (`package = false`, or no `[build-system]`) contributes only its
+ * dependencies; a package is installed, editable for the Recipe's own.
+ */
+function pythonSourceKind(
+  pyproject: string,
+  kind: Declaration["kind"],
+): "virtual" | "editable" | "package" {
+  if (
+    /^\s*package\s*=\s*false\b/m.test(pyproject) ||
+    !/^\s*\[build-system\]/m.test(pyproject)
+  )
+    return "virtual";
+  return kind === "recipe" ? "editable" : "package";
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function composedPyproject(
+  inputHash: string,
+  version: string | undefined,
+  constraints: readonly string[],
+  members: ReadonlyArray<{
+    name: string;
+    path: string;
+    source: "virtual" | "editable" | "package";
+  }>,
+): string {
+  const source = (kind: string) =>
+    kind === "virtual"
+      ? ", package = false"
+      : kind === "editable"
+        ? ", editable = true"
+        : ", editable = false";
+  return [
+    "# Generated by @introspection-ai/recipes: the Recipe's Python project and its peers'. Do not edit.",
+    `# inputs ${inputHash}`,
+    "[project]",
+    'name = "recipe-python-environment"',
+    'version = "0"',
+    ...(version ? [`requires-python = ${tomlString(version)}`] : []),
+    `dependencies = [${members.map((member) => tomlString(member.name)).join(", ")}]`,
+    "",
+    "[tool.uv]",
+    "package = false",
+    "constraint-dependencies = [",
+    ...constraints.map((line) => `  ${tomlString(line)},`),
+    "]",
+    "",
+    "[tool.uv.sources]",
+    ...members.map(
+      (member) =>
+        `${tomlString(member.name)} = { path = ${tomlString(member.path)}${source(member.source)} }`,
+    ),
+    "",
+  ].join("\n");
+}
+
+function shellActivation(environmentDir: string): RecipePythonActivation {
+  return {
+    set: {
+      VIRTUAL_ENV: environmentDir,
+      UV_PROJECT_ENVIRONMENT: environmentDir,
+    },
+    pathPrepend: binDir(environmentDir),
+    unset: ["PYTHONHOME"],
+  };
+}
+
 class Preparer {
   private readonly env: NodeJS.ProcessEnv;
   private readonly uv: string;
@@ -517,7 +678,7 @@ class Preparer {
     this.uvChecked = true;
   }
 
-  private commonArgs(declaration: Declaration, projectDir: string): string[] {
+  private commonArgs(declaration: Target, projectDir: string): string[] {
     return [
       "sync",
       "--project",
@@ -534,7 +695,7 @@ class Preparer {
 
   /** `current`, `outdated` (exit 1 or missing), or `interpreter` (exit 2 naming the interpreter). */
   private async check(
-    declaration: Declaration,
+    declaration: Target,
     projectDir: string,
     environmentDir: string,
   ): Promise<{
@@ -577,7 +738,7 @@ class Preparer {
    * elsewhere is still accepted when it is the environment's base interpreter.
    */
   private async checkInterpreter(
-    declaration: Declaration,
+    declaration: Target,
     projectDir: string,
     environmentDir: string,
   ): Promise<{
@@ -656,7 +817,7 @@ class Preparer {
   }
 
   private versionError(
-    declaration: Declaration,
+    declaration: Target,
     detail: string,
   ): RecipePythonVersionError {
     const wanted = declaration.python.version
@@ -672,7 +833,7 @@ class Preparer {
   }
 
   private async sync(
-    declaration: Declaration,
+    declaration: Target,
     projectDir: string,
     environmentDir: string,
   ): Promise<void> {
@@ -691,7 +852,7 @@ class Preparer {
   }
 
   private async importCheck(
-    declaration: Declaration,
+    declaration: Target,
     environmentDir: string,
   ): Promise<void> {
     const imports = declaration.python.imports;
@@ -737,7 +898,8 @@ class Preparer {
     }
   }
 
-  async prepare(declaration: Declaration): Promise<RecipePythonEnvironment> {
+  /** The declaration's project directory and lockfile, validated. */
+  locate(declaration: Declaration): { projectDir: string; lockfile: string } {
     const projectDir = resolve(
       declaration.packageDir,
       declaration.python.project,
@@ -762,6 +924,71 @@ class Preparer {
         `${declaration.owner}: pi.runtime.python.lockfile must be the project's uv.lock (${declaration.python.project}/uv.lock)`,
       );
     }
+    return { projectDir, lockfile };
+  }
+
+  /**
+   * Check, and in sync mode install, `target` from `projectDir` into
+   * `environmentDir`. A generated project is first compared with what it
+   * should hold (`generated.stale`), and rewritten and locked before the
+   * install (`generated.write`); both run under the environment's lock.
+   */
+  async ensure(
+    target: Target,
+    projectDir: string,
+    environmentDir: string,
+    generated?: {
+      stale(): string | undefined;
+      write(): Promise<void>;
+    },
+  ): Promise<boolean> {
+    await this.ensureUv(dirname(projectDir));
+    const state = async () => {
+      const stale = generated?.stale();
+      if (stale !== undefined)
+        return { state: "outdated" as const, detail: stale };
+      return this.check(target, projectDir, environmentDir);
+    };
+    let synced = false;
+    const first = await state();
+    if (first.state !== "current") {
+      if (this.options.mode === "check") {
+        if (first.state === "interpreter")
+          throw this.versionError(target, first.detail);
+        throw new RecipePythonOutdatedError(
+          `The Python environment for ${target.owner} is not prepared or does not match its uv.lock (${environmentDir}); the host must sync it before the session starts:\n${first.detail}`,
+        );
+      }
+      if (first.state === "interpreter" && !this.options.allowPythonDownloads) {
+        throw this.versionError(target, first.detail);
+      }
+      synced = await withEnvironmentLock(environmentDir, async () => {
+        // Another process may have finished the same environment while this one waited.
+        const again = await state();
+        if (again.state === "current") return false;
+        if (
+          again.state === "interpreter" &&
+          !this.options.allowPythonDownloads
+        ) {
+          throw this.versionError(target, again.detail);
+        }
+        this.options.onSync?.({
+          owner: target.owner,
+          kind: target.kind === "recipe" ? "recipe" : "package",
+          environmentDir,
+          firstBuild: !environmentExists(environmentDir),
+        });
+        await generated?.write();
+        await this.sync(target, projectDir, environmentDir);
+        return true;
+      });
+    }
+    await this.importCheck(target, environmentDir);
+    return synced;
+  }
+
+  async prepare(declaration: Declaration): Promise<RecipePythonEnvironment> {
+    const { projectDir, lockfile } = this.locate(declaration);
     const environmentDir = environmentDirFor(
       declaration,
       projectDir,
@@ -769,44 +996,9 @@ class Preparer {
       this.options,
       this.env,
     );
-    await this.ensureUv(projectDir);
-
-    let synced = false;
-    const first = await this.check(declaration, projectDir, environmentDir);
-    if (first.state !== "current") {
-      if (this.options.mode === "check") {
-        if (first.state === "interpreter")
-          throw this.versionError(declaration, first.detail);
-        throw new RecipePythonOutdatedError(
-          `The Python environment for ${declaration.owner} is not prepared or does not match its uv.lock (${environmentDir}); the host must sync it before the session starts:\n${first.detail}`,
-        );
-      }
-      if (first.state === "interpreter" && !this.options.allowPythonDownloads) {
-        throw this.versionError(declaration, first.detail);
-      }
-      synced = await withEnvironmentLock(environmentDir, async () => {
-        // Another process may have finished the same environment while this one waited.
-        const again = await this.check(declaration, projectDir, environmentDir);
-        if (again.state === "current") return false;
-        if (
-          again.state === "interpreter" &&
-          !this.options.allowPythonDownloads
-        ) {
-          throw this.versionError(declaration, again.detail);
-        }
-        this.options.onSync?.({
-          owner: declaration.owner,
-          kind: declaration.kind,
-          environmentDir,
-          firstBuild: !environmentExists(environmentDir),
-        });
-        await this.sync(declaration, projectDir, environmentDir);
-        return true;
-      });
-    }
-    await this.importCheck(declaration, environmentDir);
+    const synced = await this.ensure(declaration, projectDir, environmentDir);
     return {
-      kind: declaration.kind,
+      kind: declaration.kind === "recipe" ? "recipe" : "package",
       owner: declaration.owner,
       packageDir: declaration.packageDir,
       projectDir,
@@ -815,6 +1007,241 @@ class Preparer {
       interpreter: interpreterPath(environmentDir),
       imports: [...declaration.python.imports],
       synced,
+    };
+  }
+
+  /** The locked requirements of a project, as `name==version[ ; marker]` lines; local sources are left out. */
+  async lockedPins(owner: string, projectDir: string): Promise<string[]> {
+    const result = await this.uvRun(
+      [
+        "export",
+        "--project",
+        projectDir,
+        "--frozen",
+        "--offline",
+        "--no-dev",
+        "--all-extras",
+        "--no-hashes",
+        "--no-header",
+        "--no-annotate",
+        "--no-emit-project",
+        "--no-emit-workspace",
+      ],
+      projectDir,
+      "",
+    );
+    if (result.code !== 0) {
+      throw new RecipePythonError(
+        `uv could not read the locked Python dependencies of ${owner} (exit ${result.code}):\n${lastLines(`${result.stdout}\n${result.stderr}`)}`,
+      );
+    }
+    return result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => PIN.test(line));
+  }
+
+  /**
+   * The shell environment when at least one peer declares Python: a generated
+   * project depending by path on the Recipe's own project (if any) and on each
+   * peer's, constrained to the peers' locked versions and to the Recipe's own
+   * for anything no peer pins. It is locked by uv at sync, so a Recipe
+   * requirement that excludes a peer's pin fails there.
+   */
+  async prepareComposed(
+    recipeName: string,
+    recipeDir: string,
+    own: Declaration | undefined,
+    peers: readonly Declaration[],
+  ): Promise<RecipeShellPythonEnvironment> {
+    const members = [...(own ? [own] : []), ...peers].map((declaration) => {
+      const located = this.locate(declaration);
+      const pyproject = readFileSync(
+        join(located.projectDir, "pyproject.toml"),
+        "utf8",
+      );
+      const name = pythonProjectName(pyproject);
+      if (!name) {
+        throw new RecipePythonError(
+          `${declaration.owner}: ${join(declaration.python.project, "pyproject.toml")} names no [project] name`,
+        );
+      }
+      return { declaration, ...located, pyproject, name };
+    });
+    const seen = new Map<string, string>();
+    for (const member of members) {
+      const other = seen.get(normalizePythonName(member.name));
+      if (other) {
+        throw new RecipePythonError(
+          `${member.declaration.owner} and ${other} both name their Python project "${member.name}"; one Recipe environment needs distinct project names`,
+        );
+      }
+      seen.set(normalizePythonName(member.name), member.declaration.owner);
+    }
+    await this.ensureUv(recipeDir);
+
+    const constraints: string[] = [];
+    const pinned = new Set<string>();
+    for (const member of members.filter((m) => m.declaration.kind === "peer")) {
+      for (const line of await this.lockedPins(
+        member.declaration.owner,
+        member.projectDir,
+      )) {
+        pinned.add(pinName(line));
+        constraints.push(line);
+      }
+    }
+    for (const member of members.filter(
+      (m) => m.declaration.kind === "recipe",
+    )) {
+      for (const line of await this.lockedPins(
+        member.declaration.owner,
+        member.projectDir,
+      )) {
+        if (!pinned.has(pinName(line))) constraints.push(line);
+      }
+    }
+    for (const member of members) {
+      constraints.push(
+        ...manifestConstraints(readFileSync(member.lockfile, "utf8")),
+      );
+    }
+
+    const versions = members
+      .map((member) => member.declaration.python.version)
+      .filter((version): version is string => Boolean(version));
+    const version = versions.length > 0 ? versions.join(",") : undefined;
+    const target: Target = {
+      kind: "recipe",
+      owner: recipeName,
+      python: {
+        ...(version ? { version } : {}),
+        imports: [
+          ...new Set(
+            members.flatMap((member) => member.declaration.python.imports),
+          ),
+        ],
+      },
+    };
+
+    const inputs = createHash("sha256");
+    inputs.update(
+      `recipes-python-env:${ENVIRONMENT_FORMAT}\0composed\0${process.platform}-${process.arch}\0`,
+    );
+    inputs.update(`version\0${version ?? ""}\0`);
+    if (!version) hashDiscoveredPins(inputs, recipeDir, this.env);
+    for (const line of constraints) inputs.update(`constraint\0${line}\0`);
+    for (const member of members) {
+      const { declaration } = member;
+      inputs.update(`member\0${declaration.kind}\0${declaration.owner}\0`);
+      hashFile(
+        inputs,
+        "pyproject.toml",
+        join(member.projectDir, "pyproject.toml"),
+      );
+      hashFile(inputs, "uv.lock", member.lockfile);
+      const packageJson = readJson(
+        join(declaration.packageDir, "package.json"),
+      );
+      const packageVersion =
+        typeof packageJson.version === "string" ? packageJson.version : "";
+      inputs.update(
+        `package\0${packageVersion}\0${realpathSync(member.projectDir)}\0`,
+      );
+    }
+    const inputHash = inputs.digest("hex").slice(0, 32);
+
+    const environmentDir = this.options.environmentRoot
+      ? join(resolve(this.options.environmentRoot), "python")
+      : join(
+          (IS_WINDOWS ? this.env.USERPROFILE : this.env.HOME) || homedir(),
+          ".introspection",
+          "python",
+          inputHash,
+        );
+    const projectDir = `${environmentDir}-project`;
+    const pyprojectPath = join(projectDir, "pyproject.toml");
+    const lockfile = join(projectDir, "uv.lock");
+    const pyproject = composedPyproject(
+      inputHash,
+      version,
+      constraints,
+      members.map((member) => ({
+        name: member.name,
+        path: relative(projectDir, member.projectDir).split(sep).join("/"),
+        source: pythonSourceKind(member.pyproject, member.declaration.kind),
+      })),
+    );
+
+    const synced = await this.ensure(target, projectDir, environmentDir, {
+      stale: () => {
+        let current: string | undefined;
+        try {
+          current = readFileSync(pyprojectPath, "utf8");
+        } catch {
+          current = undefined;
+        }
+        if (current !== pyproject)
+          return `${pyprojectPath} is missing or was generated from other inputs`;
+        if (!existsSync(lockfile)) return `${lockfile} does not exist`;
+        return undefined;
+      },
+      write: async () => {
+        mkdirSync(projectDir, { recursive: true });
+        let current: string | undefined;
+        try {
+          current = readFileSync(pyprojectPath, "utf8");
+        } catch {
+          current = undefined;
+        }
+        if (current !== pyproject) {
+          // A lock left from other inputs must not pass for this project's.
+          rmSync(lockfile, { force: true });
+          writeFileSync(pyprojectPath, pyproject);
+        }
+        if (existsSync(lockfile)) return;
+        const result = await this.uvRun(
+          [
+            "lock",
+            "--project",
+            projectDir,
+            ...(version ? ["--python", version] : []),
+            ...(this.options.allowPythonDownloads
+              ? []
+              : ["--no-python-downloads"]),
+          ],
+          projectDir,
+          environmentDir,
+        );
+        if (result.code === 0) return;
+        rmSync(lockfile, { force: true });
+        const detail = lastLines(`${result.stdout}\n${result.stderr}`);
+        if (
+          INTERPRETER_PROBLEM.test(detail) &&
+          !/No solution found/i.test(detail)
+        )
+          throw this.versionError(target, detail);
+        throw new RecipePythonError(
+          `uv could not resolve the Python environment for ${recipeName} from its own project and its peers' (${peers
+            .map((peer) => peer.owner)
+            .join(
+              ", ",
+            )}); the peers' locked versions win, so relax the Recipe's requirement, or drop a library a peer already provides from the Recipe's pyproject.toml (exit ${result.code}):\n${detail}`,
+        );
+      },
+    });
+    return {
+      kind: "recipe",
+      owner: recipeName,
+      packageDir: resolve(recipeDir),
+      projectDir,
+      lockfile,
+      environmentDir,
+      interpreter: interpreterPath(environmentDir),
+      imports: target.python.imports,
+      synced,
+      peers: peers.map((peer) => peer.owner),
+      activation: shellActivation(environmentDir),
     };
   }
 }
@@ -1001,11 +1428,11 @@ async function withEnvironmentLock<T>(
 
 /**
  * Find and prepare every `pi.runtime.python` the Recipe at `recipeDir`
- * declares: its own (the shell environment), each direct `dependencies` or
- * `peerDependencies` entry Node resolves from the Recipe directory, and each
- * companion channel or document format package the Recipe uses without
- * listing it (each package in an environment of its own). Dev and transitive
- * dependencies are not read.
+ * declares: its own and each `peerDependencies` entry's (together, the shell
+ * environment), each direct `dependencies` entry Node resolves from the
+ * Recipe directory, and each companion channel or document format package the
+ * Recipe uses without listing it (each package in an environment of its own).
+ * Dev and transitive dependencies are not read.
  */
 export async function prepareRecipePython(
   recipeDir: string,
@@ -1018,26 +1445,43 @@ export async function prepareRecipePython(
   const preparer = new Preparer(options);
   const packages: Record<string, RecipePythonEnvironment> = {};
   let recipe: RecipeShellPythonEnvironment | undefined;
+  const own = declarations.find((d) => d.kind === "recipe");
+  const peers = declarations.filter((d) => d.kind === "peer");
+  if (peers.length > 0) {
+    recipe = await preparer.prepareComposed(
+      readPiPackageManifest(resolve(recipeDir)).name,
+      recipeDir,
+      own,
+      peers,
+    );
+    for (const peer of peers) {
+      const { projectDir, lockfile } = preparer.locate(peer);
+      packages[peer.owner] = {
+        kind: "package",
+        owner: peer.owner,
+        packageDir: peer.packageDir,
+        projectDir,
+        lockfile,
+        environmentDir: recipe.environmentDir,
+        interpreter: recipe.interpreter,
+        imports: [...peer.python.imports],
+        synced: recipe.synced,
+      };
+    }
+  } else if (own) {
+    const environment = await preparer.prepare(own);
+    recipe = {
+      ...environment,
+      kind: "recipe",
+      peers: [],
+      activation: shellActivation(environment.environmentDir),
+    };
+  }
   // Sequential: uv already parallelises one install, and concurrent first
   // builds would only compete for the same downloads.
   for (const declaration of declarations) {
-    const environment = await preparer.prepare(declaration);
-    if (declaration.kind === "recipe") {
-      recipe = {
-        ...environment,
-        kind: "recipe",
-        activation: {
-          set: {
-            VIRTUAL_ENV: environment.environmentDir,
-            UV_PROJECT_ENVIRONMENT: environment.environmentDir,
-          },
-          pathPrepend: binDir(environment.environmentDir),
-          unset: ["PYTHONHOME"],
-        },
-      };
-    } else {
-      packages[declaration.owner] = environment;
-    }
+    if (declaration.kind !== "package") continue;
+    packages[declaration.owner] = await preparer.prepare(declaration);
   }
   return { ...(recipe ? { recipe } : {}), packages };
 }
