@@ -51,7 +51,7 @@ let documents: Tool;
 let withoutTables: Tool;
 
 function environment(project: string, name: string, extras: string[] = []) {
-  const path = join(tmpdir(), `recipe-documents-convert-tests-${name}`);
+  const path = join(tmpdir(), `recipe-documents-env-convert-tests-${name}`);
   execFileSync(
     "uv",
     ["sync", "--frozen", "--quiet", "--project", resolve(project), ...extras],
@@ -213,12 +213,9 @@ const signed = (blocks: Block[]): Block[] =>
   );
 
 beforeAll(() => {
-  pdfPython = environment("packages/documents/pdf/python", "pdf-tables", [
-    "--extra",
-    "tables",
-  ]);
-  const pdfBase = environment("packages/documents/pdf/python", "pdf-base");
-  docxPython = environment("packages/documents/docx/python", "docx");
+  pdfPython = environment("python/shared", "pdf-tables", ["--extra", "tables"]);
+  const pdfBase = environment("python/shared", "pdf-base");
+  docxPython = environment("python/shared", "docx");
   cwd = mkdtempSync(join(tmpdir(), "documents-convert-"));
   layOut(SOURCE, "sow");
   copyFileSync(

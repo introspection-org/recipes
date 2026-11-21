@@ -101,7 +101,7 @@ export class PdfDocumentAdapter implements DocumentAdapter {
 /** PDF as a document format: `{ "pi": { "documents": [{ "format": "pdf" }] } }`. */
 export const pdfDocumentFormatModule: RecipeDocumentFormatModule = {
   kind: "documents",
-  apiVersion: 1,
+  apiVersion: 2,
   format: "pdf",
   extensions: [".pdf"],
   capabilities: PDF_DOCUMENT_CAPABILITIES,

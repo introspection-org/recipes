@@ -40,30 +40,30 @@ fails the conversion, naming the page.
 
 ## Python
 
-`python/pdf.py` runs in this package's own Python environment. The package declares it in
-`package.json#pi.runtime.python` (`python/pyproject.toml`, locked by `python/uv.lock`, with
-pypdfium2 and pillow), and the host prepares it with uv beside the Recipe and passes its
-interpreter to the adapter. A Recipe declares no Python for PDFs: it needs none of its own,
-and one it does declare is its agent's shell environment, which the helper doesn't use. This
-needs `@introspection-ai/recipes` 0.39.0 or later.
+`python/pdf.py` runs in the shared environment every Word and PDF format shares:
+Recipes' own `python/shared` project, locked once in Recipes, with pypdfium2 and pillow. The host
+prepares it with uv when a Recipe uses this format and passes its interpreter to the
+adapter. A Recipe declares no Python for this format. The module declares
+document format `apiVersion` 2, so a Recipes host too old to prepare that environment
+refuses to load it.
 
 The interpreter is the first of:
 
 1. `RECIPE_DOCUMENTS_PYTHON`, an explicit override;
-2. the package environment's interpreter, from the host;
+2. the shared environment's interpreter, from the host;
 3. `VIRTUAL_ENV` (`bin/python`, or `Scripts\python.exe` on Windows), for a host that
-   prepares no package environment;
+   prepares no shared environment;
 4. `python3` on `PATH`.
 
 ### Tables
 
-The package environment is installed without extras, so it has no pdfplumber: `read` with
+The shared environment is installed without extras, so it has no pdfplumber: `read` with
 `tables: true` returns the text and a note that the `tables` extra is missing. Choosing the
 extra from a Recipe is not supported yet. Until it is, a host that needs tables points
-`RECIPE_DOCUMENTS_PYTHON` at an environment synced from this package's lock with the extra:
+`RECIPE_DOCUMENTS_PYTHON` at an environment synced from Recipes' documents lock with the extra:
 
 ```sh
-uv sync --frozen --no-dev --extra tables --project <package>/python
+uv sync --frozen --no-dev --extra tables --project <recipes>/python/shared
 ```
 
 The extra is optional because of its size: pypdfium2 installs at about 7.7 MB, pdfplumber at

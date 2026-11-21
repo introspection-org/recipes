@@ -1007,7 +1007,10 @@ function runtimeSourceShapeFindings(
         }
       }
       for (const key of ["project", "lockfile"]) {
-        if (typeof python[key] !== "string" || !python[key].trim()) {
+        if (
+          python[key] !== undefined &&
+          (typeof python[key] !== "string" || !python[key].trim())
+        ) {
           findings.push(
             invalid(
               `package.json#pi.runtime.python.${key} must be a non-empty relative path`,
@@ -1321,7 +1324,7 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(pattern);
 }
 
-const UNSCANNED_PACKAGE_DIRS = new Set(["node_modules", ".git"]);
+const UNSCANNED_PACKAGE_DIRS = new Set(["node_modules", ".git", ".venv"]);
 
 function globScanRoot(glob: string): string {
   const segments = normalizeResourcePath(glob).split("/");
@@ -1589,11 +1592,14 @@ function parseRuntimeRequirements(value: unknown): RecipeRuntimeRequirements {
   const runtime = asRecord(value);
   const python = asRecord(runtime.python);
   return {
-    ...(stringValue(python.project) && stringValue(python.lockfile)
+    ...(runtime.python !== undefined && runtime.python !== null
       ? {
           python: {
-            project: normalizeResourcePath(stringValue(python.project)!),
-            lockfile: normalizeResourcePath(stringValue(python.lockfile)!),
+            project: normalizeResourcePath(stringValue(python.project) ?? "."),
+            lockfile: normalizeResourcePath(
+              stringValue(python.lockfile) ??
+                `${stringValue(python.project) ?? "."}/uv.lock`,
+            ),
             ...(stringValue(python.version)
               ? { version: stringValue(python.version) }
               : {}),
@@ -1888,7 +1894,7 @@ export function validatePiPackageManifest(
       const rel = relative(resolve(pkg.path), target);
       const outside =
         isAbsolute(authored) ||
-        hasTraversalSegment(authored) ||
+        (authored !== "." && hasTraversalSegment(authored)) ||
         rel === ".." ||
         rel.startsWith(`..${sep}`) ||
         isAbsolute(rel);
@@ -1970,7 +1976,7 @@ export function validateRecipePythonPackage(
       const rel = relative(resolve(packageDir), resolve(packageDir, authored));
       return !(
         isAbsolute(authored) ||
-        hasTraversalSegment(authored) ||
+        (authored !== "." && hasTraversalSegment(authored)) ||
         rel === ".." ||
         rel.startsWith(`..${sep}`) ||
         isAbsolute(rel)

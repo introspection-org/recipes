@@ -317,17 +317,12 @@ one, `convert` it to Word (below).
 
 pdfplumber is optional because of its size: about 41 MB installed, since it
 brings pdfminer.six, cryptography, Pillow and cffi, against 7.7 MB for
-pypdfium2. To enable tables, add it to the Recipe's Python environment and lock
-it:
-
-```toml
-# python/pyproject.toml
-dependencies = ["pypdfium2==5.14.0", "pillow==13.0.0", "pdfplumber==0.11.10"]
-```
-
-then `uv lock`. The helper imports pdfplumber only when a read asks for tables,
-and nothing is fetched at run time. A profile for contract or pricing work may
-recommend the extra; a Recipe that only reads briefs can leave it out.
+pypdfium2. The shared environment is synced without it, so PDF
+`tables: true` needs an environment synced from Recipes' `python/shared`
+project with `--extra tables` and named by `RECIPE_DOCUMENTS_PYTHON`. The
+helper imports pdfplumber only when a read asks for tables, and nothing is
+fetched at run time. A profile for contract or pricing work may recommend the
+extra; a Recipe that only reads briefs can leave it out.
 
 ### PDF to Word: `convert`
 
@@ -373,8 +368,8 @@ such as LibreOffice's PDF import or pdf2docx, places text in positioned boxes
 and line by line. The file looks right but redlines badly, because a sentence
 split across boxes can't be quoted or revised as one paragraph.
 
-The work runs in two halves, each in its own format's Python environment, so
-neither environment gains a library and the runtime image needs nothing new:
+The work runs in two halves, both in the shared environment, so it gains
+no library and the runtime image needs nothing new:
 
 - **The PDF adapter exports an outline.** It reads pypdfium2's characters with
   their positions, fonts, sizes (after the page's scale) and colours, and
@@ -437,22 +432,27 @@ ends allowed.
 
 ## Python
 
-The Word and PDF helpers are small Python programs (HTML runs in Node and needs none). Each format package
-declares its own `pi.runtime.python` environment, locked by the package's
-`python/uv.lock`: paper-docx for Word, pypdfium2 and pillow for PDF. The host
-prepares that environment for the installed package, as it does every
-package's (see [Runtime requirements](../recipe-format.md#runtime-requirements)),
-and passes its interpreter to the adapter. A Recipe declaring `pi.documents`
-declares and locks none of these packages itself; its own
-`pi.runtime.python`, if any, stays its shell environment. The helpers use
-`RECIPE_DOCUMENTS_PYTHON` first when it is set (tests, custom hosts), then the
-interpreter the host passes, then `VIRTUAL_ENV`, then `python3`. An extension
-that needs one of these interpreters itself reads it with
+The Word and PDF helpers are small Python programs (HTML runs in Node and
+needs none). They share one environment, Recipes' own `python/shared`
+project, locked by `python/shared/uv.lock`: paper-docx for Word, pypdfium2
+and pillow for PDF. The host prepares it when the Recipe uses a Word or PDF
+format, through `pi.documents` or by listing the format package, and passes
+its interpreter to every format's adapter (see
+[Package declarations](../recipe-format.md#package-declarations)). A Recipe
+declaring `pi.documents` declares and locks none of these libraries itself.
+
+- **A Recipe with no Python of its own** gets the shared environment as
+  its shell environment, so a script the agent writes can `import docx` with
+  no Python files in the Recipe.
+- **A Recipe with its own Python project** keeps only that environment in its
+  shell. A script of its own that imports `docx` lists `paper-docx` in the
+  Recipe's `pyproject.toml`.
+
+The helpers use `RECIPE_DOCUMENTS_PYTHON` first when it is set (tests, custom
+hosts), then the interpreter the host passes, then `VIRTUAL_ENV`, then
+`python3`. An extension that needs the interpreter itself reads it with
 `packagePython("@introspection-ai/recipe-documents-docx")` on its session
-context (see [Package declarations](../recipe-format.md#package-declarations)). Package
-environments are synced without extras, so PDF `tables: true` needs
-pdfplumber from an environment synced with `--extra tables` and named by
-`RECIPE_DOCUMENTS_PYTHON`.
+context.
 
 ## How a Recipe's skills should use it
 
@@ -480,7 +480,7 @@ import type { RecipeDocumentFormatModule } from "@introspection-ai/recipes/docum
 
 const pdf: RecipeDocumentFormatModule = {
   kind: "documents",
-  apiVersion: 1,
+  apiVersion: 2,
   format: "pdf",
   extensions: [".pdf"],
   capabilities: { read: true, render: true },
@@ -527,19 +527,26 @@ with the `outline` beside its `text`.
 A Python helper answers with an `outline` key beside `text` and `details`. The
 host keeps the outline out of what the model sees and passes the export's
 `text` (its notes, such as a missing extra) through with the create's result.
-Both capabilities are additive, so the contract stays at `apiVersion` 1. A
-host that predates them loads such a format without `convert`.
+Both capabilities are additive. A host that predates them loads such a
+format without `convert`.
 
 `apiVersion` names the contract the format was written against; the host
-refuses a different one, naming the package, both versions and the fix.
+refuses one it does not implement, naming the package, both versions and the
+fix. Version 2 means the format ships no Python of its own: its helpers run in
+the shared environment the host prepares, so a host implementing only 1
+refuses it rather than run its helpers under another interpreter. The host
+still loads version 1, for a format that declares its own
+`pi.runtime.python`: that environment is prepared separately and its
+interpreter passed as `python`. The Word and PDF formats are always served by
+the shared environment, whichever version a release declares.
 `createDocumentFormatModule` from `@introspection-ai/recipes/documents` builds
 the same object, for a format that depends on Recipes anyway.
 
-`createAdapter` also receives `python`: the interpreter of the environment the
-format package's own `pi.runtime.python` declares, which the host prepares
-(see [Runtime requirements](../recipe-format.md#runtime-requirements)). It is
-absent when the package declares none; an adapter that ignores it keeps
-working.
+`createAdapter` also receives `python`: the interpreter of the documents
+environment for Word and PDF, or of the format package's own
+`pi.runtime.python` for any other format, which the host prepares (see
+[Runtime requirements](../recipe-format.md#runtime-requirements)). It is
+absent when neither applies; an adapter that ignores it keeps working.
 
 A Python helper runs with `runHelper(script, request, { env, cwd, python,
 signal })`, which the host passes to `createAdapter`: its

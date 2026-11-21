@@ -5,6 +5,7 @@ version: 2
 #   npm    -> / (the published @introspection-ai/recipes package; pnpm)
 #   cargo  -> / (cargo workspace: packages/{mcp-client,recipe-check,recipe-check-python})
 #   uv     -> /packages/recipe-check-python (maturin build + dev toolchain, own uv.lock)
+#   uv     -> /python/shared (the shared Python environment's libraries)
 #
 # Commit messages: `prefix: "chore"` + `include: "scope"` renders
 # `chore(deps): …` / `chore(deps-dev): …` — Dependabot appends the (deps) scope
@@ -141,6 +142,33 @@ updates:
           - "mypy"
           - "pytest*"
           - "ruff"
+      security-rollup:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # ── Python: the shared environment's uv.lock (python/shared) ──
+  #
+  # The libraries first-party packages run with (paper-docx, pypdfium2, pillow,
+  # pdfplumber in the tables extra). python-docx stays ignored: the project's
+  # constraint-dependencies forbid it, since paper-docx provides `docx`.
+  - package-ecosystem: "uv"
+    directory: "/python/shared"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    ignore:
+      - dependency-name: "python-docx"
+    groups:
       security-rollup:
         applies-to: security-updates
         patterns:

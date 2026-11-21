@@ -1059,6 +1059,7 @@ fn validate_pi_config(
     }
     validate_mcp_config(pi.get("mcp"), ctx);
     validate_runtime_config(pi.get("runtime"), ctx);
+    validate_recipe_python_project(pi.get("runtime"), ctx);
     validate_evals_config(pi.get("evals"), ctx);
 
     resolved
@@ -1898,6 +1899,9 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
             }
         }
         for key in ["project", "lockfile"] {
+            if python.get(key).is_none() {
+                continue;
+            }
             let Some(path) = string_value(python.get(key)) else {
                 ctx.error(
                     "pi.runtime_invalid",
@@ -1916,6 +1920,29 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
                 || (!ctx.has_dir(&normalized) && key == "project")
             {
                 ctx.error("pi.runtime_path_invalid", PACKAGE_JSON, format!("package.json#pi.runtime.python.{key} must resolve inside the recipe: {path}"), None::<String>);
+            }
+        }
+        let project = string_value(python.get("project")).map(|path| normalize_relative(&path));
+        if let Some(project) = project.as_deref().filter(|project| !project.is_empty()) {
+            ctx.warning(
+                "runtime.python_project_legacy",
+                PACKAGE_JSON,
+                format!("package.json#pi.runtime.python.project '{project}' is a legacy location: a Recipe's Python project is its root pyproject.toml"),
+                Some("move pyproject.toml and uv.lock to the Recipe root and drop pi.runtime.python.project"),
+            );
+        }
+        if let Some(lockfile) = string_value(python.get("lockfile")) {
+            let expected = match project.as_deref() {
+                Some(project) if !project.is_empty() => format!("{project}/uv.lock"),
+                _ => "uv.lock".to_owned(),
+            };
+            if normalize_relative(&lockfile) != expected {
+                ctx.error(
+                    "pi.runtime_path_invalid",
+                    PACKAGE_JSON,
+                    format!("package.json#pi.runtime.python.lockfile must be the project's uv.lock ({expected})"),
+                    Some("drop pi.runtime.python.lockfile: it is always the uv.lock beside pyproject.toml"),
+                );
             }
         }
         if let Some(imports) = python.get("imports") {
@@ -1940,6 +1967,43 @@ fn validate_runtime_config(value: Option<&JsonValue>, ctx: &mut CheckContext) {
                 }
             }
         }
+    }
+}
+
+/// The Recipe's own Python project: `pyproject.toml` at the root (or at the
+/// legacy `pi.runtime.python.project`) needs its uv.lock.
+fn validate_recipe_python_project(runtime: Option<&JsonValue>, ctx: &mut CheckContext) {
+    let project = runtime
+        .and_then(|runtime| runtime.get("python"))
+        .and_then(|python| string_value(python.get("project")))
+        .map(|path| normalize_relative(&path))
+        .filter(|path| !path.is_empty());
+    let join = |name: &str| match project.as_deref() {
+        Some(project) => format!("{project}/{name}"),
+        None => name.to_owned(),
+    };
+    let pyproject = join("pyproject.toml");
+    if !ctx.has_file(&pyproject) {
+        if runtime.and_then(|runtime| runtime.get("python")).is_some() {
+            ctx.error(
+                "runtime.python_project_missing",
+                PACKAGE_JSON,
+                match project.as_deref() {
+                    Some(project) => format!("pi.runtime.python is declared but {project} has no pyproject.toml"),
+                    None => "pi.runtime.python is declared but the Recipe has no pyproject.toml at its root".to_owned(),
+                },
+                Some("add pyproject.toml and uv.lock at the root, or remove pi.runtime.python (a Recipe using only first-party packages' Python needs none)"),
+            );
+        }
+        return;
+    }
+    if !ctx.has_file(&join("uv.lock")) {
+        ctx.error(
+            "runtime.python_lock_missing",
+            &pyproject,
+            format!("{pyproject} has no uv.lock beside it"),
+            Some("run `uv lock` in the Recipe and commit uv.lock"),
+        );
     }
 }
 
@@ -9083,6 +9147,79 @@ mod tests {
         let report = check_recipe_files(&input);
 
         assert!(report.valid, "{:?}", report.diagnostics);
+    }
+
+    fn python_codes(package: JsonValue, files: &[(&str, &str)]) -> Vec<(String, Severity)> {
+        let manifest = serde_json::to_string_pretty(&package).expect("serialize package");
+        let mut all = vec![
+            ("package.json", manifest.as_str()),
+            (
+                "agents/agent.yaml",
+                "name: agent\nmodel:\n  name: test/provider-model\n",
+            ),
+        ];
+        all.extend_from_slice(files);
+        check_recipe_files(&recipe_files(&all))
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code.starts_with("runtime.") || d.code.starts_with("pi.runtime"))
+            .map(|d| (d.code, d.severity))
+            .collect()
+    }
+
+    #[test]
+    fn a_root_pyproject_is_the_recipes_python_project_and_needs_its_lock() {
+        let package = json!({ "name": "root-python", "pi": { "agents": ["agents/*.yaml"] } });
+        let pyproject = "[project]\nname = 'acme'\ndependencies = []\n";
+        assert_eq!(
+            python_codes(
+                package.clone(),
+                &[("pyproject.toml", pyproject), ("uv.lock", "version = 1\n")]
+            ),
+            vec![]
+        );
+        assert_eq!(
+            python_codes(package, &[("pyproject.toml", pyproject)]),
+            vec![("runtime.python_lock_missing".to_owned(), Severity::Error)]
+        );
+        // Overrides only: no project or lockfile needed.
+        let overrides = json!({ "name": "root-python", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "version": ">=3.12", "imports": ["acme"] } } } });
+        assert_eq!(
+            python_codes(
+                overrides,
+                &[("pyproject.toml", pyproject), ("uv.lock", "version = 1\n")]
+            ),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn rejects_pi_runtime_python_without_a_project() {
+        let package = json!({ "name": "no-project", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "version": ">=3.12" } } } });
+        assert_eq!(
+            python_codes(package, &[]),
+            vec![("runtime.python_project_missing".to_owned(), Severity::Error)]
+        );
+    }
+
+    #[test]
+    fn warns_on_a_legacy_project_and_rejects_another_lockfile() {
+        let legacy = json!({ "name": "legacy", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "project": "python", "lockfile": "python/uv.lock" } } } });
+        let files = [
+            ("python/pyproject.toml", "[project]\nname='controls'\n"),
+            ("python/uv.lock", "version = 1\n"),
+            ("other.lock", ""),
+        ];
+        assert_eq!(
+            python_codes(legacy, &files),
+            vec![(
+                "runtime.python_project_legacy".to_owned(),
+                Severity::Warning
+            )]
+        );
+        let other = json!({ "name": "legacy", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "lockfile": "other.lock" } } } });
+        assert!(python_codes(other, &files)
+            .contains(&("pi.runtime_path_invalid".to_owned(), Severity::Error)));
     }
 
     #[test]

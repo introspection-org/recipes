@@ -550,7 +550,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
   });
 
   describe("package declarations", () => {
-    const docx = "@introspection-ai/recipe-documents-docx";
+    const docx = "@acme/recipe-tables";
 
     it("gives each direct dependency its own non-editable environment, never the shell's", async () => {
       const { uv, prepare } = harness();
@@ -582,12 +582,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const root = join(scratch("roots-"), ".pi");
       const prepared = await prepare(dir, { environmentRoot: root });
       expect(Object.keys(prepared.packages).sort()).toEqual([docx, "peer-pkg"]);
-      const docxEnv = join(
-        root,
-        "python-packages",
-        "@introspection-ai",
-        "recipe-documents-docx",
-      );
+      const docxEnv = join(root, "python-packages", "@acme", "recipe-tables");
       expect(prepared.packages[docx]).toMatchObject({
         kind: "package",
         environmentDir: docxEnv,
@@ -642,6 +637,250 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       ).rejects.toThrow(
         /must ship python\/pyproject\.toml[\s\S]*must ship python\/uv\.lock/,
       );
+    });
+  });
+
+  describe("the documents environment", () => {
+    const docx = "@introspection-ai/recipe-documents-docx";
+    const pdf = "@introspection-ai/recipe-documents-pdf";
+
+    function documentsRecipe(manifest: Record<string, unknown>): string {
+      const dir = scratch("recipe-python-documents-");
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "acme", version: "0.1.0", ...manifest }),
+      );
+      return dir;
+    }
+
+    it.each([
+      [
+        "a peer, not installed",
+        { peerDependencies: { [docx]: ">=0.5.0" }, pi: {} },
+      ],
+      ["pi.documents", { pi: { documents: [{ format: "docx" }] } }],
+    ])(
+      "is the shell environment of a Recipe with no Python that uses a format through %s",
+      async (_, manifest) => {
+        const { prepare } = harness();
+        const root = join(scratch("roots-"), ".pi");
+        const prepared = await prepare(documentsRecipe(manifest), {
+          environmentRoot: root,
+        });
+        const environmentDir = join(root, "python-shared");
+        expect(prepared.recipe).toMatchObject({
+          kind: "shared",
+          environmentDir,
+          activation: { pathPrepend: join(environmentDir, "bin") },
+        });
+        expect(prepared.shared?.environmentDir).toBe(environmentDir);
+        expect(Object.keys(prepared.packages)).toEqual([docx]);
+        expect(prepared.packages[docx]?.interpreter).toBe(
+          join(environmentDir, "bin", "python"),
+        );
+      },
+    );
+
+    it("serves every Python format from one environment, and a Recipe with its own Python keeps only its own shell", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({});
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.peerDependencies = { [docx]: ">=0.5.0", [pdf]: ">=0.4.0" };
+      manifest.pi.documents = [{ format: "html" }];
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const root = scratch("roots-");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.recipe).toMatchObject({
+        kind: "recipe",
+        environmentDir: join(root, "python"),
+      });
+      const documents = join(root, "python-shared", "bin", "python");
+      expect(prepared.packages[docx]?.interpreter).toBe(documents);
+      expect(prepared.packages[pdf]?.interpreter).toBe(documents);
+      expect(
+        uv.calls().filter((call) => call.args.includes("--compile-bytecode")),
+      ).toHaveLength(2);
+
+      // Check mode is offline and never installs.
+      const before = uv.calls().length;
+      await prepare(dir, { environmentRoot: root, mode: "check" });
+      const checks = uv
+        .calls()
+        .slice(before)
+        .filter((call) => call.args[0] === "sync");
+      expect(checks).toHaveLength(2);
+      for (const call of checks)
+        expect(call.args).toEqual(
+          expect.arrayContaining(["--check", "--offline", "--frozen"]),
+        );
+    });
+
+    it("maps a listed first-party package to the shared environment, ignoring its own declaration, and keeps a third-party one in its own", async () => {
+      const { prepare } = harness();
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: docx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+          {
+            name: "@acme/recipe-tables",
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+        ],
+      });
+      const root = scratch("roots-");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.packages[docx]?.interpreter).toBe(
+        join(root, "python-shared", "bin", "python"),
+      );
+      expect(prepared.packages["@acme/recipe-tables"]?.interpreter).toBe(
+        join(
+          root,
+          "python-packages",
+          "@acme",
+          "recipe-tables",
+          "bin",
+          "python",
+        ),
+      );
+      expect(prepared.recipe?.kind).toBe("shared");
+    });
+
+    it("leaves a format it does not serve in its own environment, and passes that interpreter to the format", async () => {
+      const { prepare } = harness();
+      const xlsx = "@introspection-ai/recipe-documents-xlsx";
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: xlsx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+        ],
+      });
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { documents: [{ format: "xlsx" }] };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const packageDir = join(
+        dir,
+        "node_modules",
+        "@introspection-ai",
+        "recipe-documents-xlsx",
+      );
+      writeFileSync(
+        join(packageDir, "package.json"),
+        JSON.stringify({
+          ...JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")),
+          type: "module",
+          main: "index.js",
+        }),
+      );
+      writeFileSync(
+        join(packageDir, "index.js"),
+        `export default { kind: "documents", apiVersion: 1, format: "xlsx", extensions: [".xlsx"], capabilities: { read: true },
+  createAdapter: (options) => { globalThis.__xlsxPython = options.python ?? null;
+    return { format: "xlsx", extensions: [".xlsx"], capabilities: { read: true }, read: async () => ({ text: "" }) }; } };\n`,
+      );
+      const root = scratch("roots-");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.shared).toBeUndefined();
+      const own = join(
+        root,
+        "python-packages",
+        "@introspection-ai",
+        "recipe-documents-xlsx",
+      );
+      expect(prepared.packages[xlsx]?.environmentDir).toBe(own);
+
+      const loaded = await loadRecipeDocuments(
+        [{ format: "xlsx" }],
+        ["documents"],
+        {
+          recipeDir: dir,
+          python: prepared.packages,
+        },
+      );
+      await loaded.extension!.factory(createMockExtensionAPI() as never);
+      expect((globalThis as { __xlsxPython?: string }).__xlsxPython).toBe(
+        join(own, "bin", "python"),
+      );
+    });
+
+    it("is not prepared for a Recipe whose formats run no Python", async () => {
+      const { uv, prepare } = harness();
+      const prepared = await prepare(
+        documentsRecipe({ pi: { documents: [{ format: "html" }] } }),
+        { environmentRoot: scratch("roots-") },
+      );
+      expect(prepared).toEqual({ packages: {} });
+      expect(uv.calls()).toEqual([]);
+    });
+  });
+
+  describe("a Python project at the Recipe root", () => {
+    it("is the Recipe's own project without pi.runtime.python, and needs its uv.lock", async () => {
+      const { prepare } = harness();
+      const { dir } = recipe({ python: false });
+      write(
+        join(dir, "pyproject.toml"),
+        "[project]\nname = 'acme'\nversion = '0.1.0'\n",
+      );
+      await expect(
+        prepare(dir, { environmentRoot: scratch("roots-") }),
+      ).rejects.toThrow(/run `uv lock`/);
+      write(join(dir, "uv.lock"), "version = 1\n");
+      const prepared = await prepare(dir, {
+        environmentRoot: scratch("roots-"),
+      });
+      expect(prepared.recipe).toMatchObject({
+        kind: "recipe",
+        projectDir: dir,
+      });
+    });
+
+    it("refuses pi.runtime.python without a pyproject.toml at the root, as recipe-check does", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({ python: false });
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { runtime: { python: { version: ">=3.12" } } };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      await expect(
+        prepare(dir, { environmentRoot: scratch("roots-") }),
+      ).rejects.toThrow(
+        /pi\.runtime\.python is declared but the Recipe has no pyproject\.toml at its root/,
+      );
+      expect(uv.calls()).toEqual([]);
+    });
+
+    it("takes pi.runtime.python with only overrides", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({ python: false });
+      write(
+        join(dir, "pyproject.toml"),
+        "[project]\nname = 'acme'\nversion = '0.1.0'\n",
+      );
+      write(join(dir, "uv.lock"), "version = 1\n");
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { runtime: { python: { version: "3.12" } } };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const prepared = await prepare(dir, {
+        environmentRoot: scratch("roots-"),
+      });
+      expect(prepared.recipe?.lockfile).toBe(join(dir, "uv.lock"));
+      expect(
+        uv.calls().find((call) => call.args.includes("--compile-bytecode"))
+          ?.args,
+      ).toEqual(expect.arrayContaining(["--python", "3.12"]));
     });
   });
 

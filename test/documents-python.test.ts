@@ -64,24 +64,28 @@ type Tool = {
 };
 
 /**
- * A synthetic Recipe that declares no Python of its own and uses both format
- * packages: pinned in its dependencies, or omitted so the host supplies them
- * from beside its own `@introspection-ai/recipes`. `prepareRecipePython` builds each package's environment
- * from its own `pi.runtime.python` with the real uv, and the documents tool
- * reads a synthetic .docx and .pdf through them. The tool's environment has
+ * A synthetic Recipe that uses both format packages: pinned in its
+ * dependencies, declared as peers, or omitted so the host supplies them from
+ * beside its own `@introspection-ai/recipes`. `prepareRecipePython` builds the
+ * one documents environment with the real uv, and the documents tool reads a
+ * synthetic .docx and .pdf through it. The tool's environment has
  * no VIRTUAL_ENV, no override and no python3 on PATH, so only the prepared
  * interpreters can serve the reads.
  */
 describe.skipIf(!hasUv || process.platform === "win32")(
-  "documents in their packages' own environments",
+  "documents in the shared documents environment",
   () => {
     it.each([
       "pinned by the Recipe",
       "companion packages installed alongside Recipes",
+      "declared as peers",
+      "declared as peers, with a Python project of its own",
     ])(
       "reads a .docx and a .pdf for a Recipe that declares no Python, %s",
       async (source) => {
         const pinned = source === "pinned by the Recipe";
+        const peers = source.startsWith("declared as peers");
+        const own = source.endsWith("of its own");
         const recipeDir = mkdtempSync(
           join(tmpdir(), "documents-package-python-"),
         );
@@ -103,7 +107,7 @@ describe.skipIf(!hasUv || process.platform === "win32")(
           }),
         );
         const scope = join(
-          pinned ? recipeDir : hostRoot,
+          pinned || peers ? recipeDir : hostRoot,
           "node_modules",
           "@introspection-ai",
         );
@@ -136,10 +140,30 @@ describe.skipIf(!hasUv || process.platform === "win32")(
                   },
                 }
               : {}),
+            ...(peers
+              ? {
+                  peerDependencies: {
+                    "@introspection-ai/recipe-documents-docx": ">=0.3.0",
+                    "@introspection-ai/recipe-documents-pdf": ">=0.2.0",
+                  },
+                }
+              : {}),
             pi: { documents: declarations },
           }),
         );
 
+        if (own) {
+          // Its own project, with no document library: it keeps only its own shell.
+          writeFileSync(
+            join(recipeDir, "pyproject.toml"),
+            '[project]\nname = "acme-recipe"\nversion = "0.1.0"\nrequires-python = ">=3.12"\ndependencies = []\n',
+          );
+          const lockEnv = { ...process.env };
+          delete lockEnv.VIRTUAL_ENV;
+          execFileSync("uv", ["lock", "--project", recipeDir], {
+            env: lockEnv,
+          });
+        }
         const prepareEnv = { ...process.env };
         delete prepareEnv.VIRTUAL_ENV;
         delete prepareEnv.UV_PROJECT_ENVIRONMENT;
@@ -150,33 +174,43 @@ describe.skipIf(!hasUv || process.platform === "win32")(
           allowPythonDownloads: true,
           hostDir,
         });
-        expect(prepared.recipe).toBeUndefined();
         const docx =
           prepared.packages["@introspection-ai/recipe-documents-docx"]!;
         const pdf =
           prepared.packages["@introspection-ai/recipe-documents-pdf"]!;
-        expect(docx.interpreter).toBe(
-          join(
-            recipeDir,
-            ".pi",
-            "python-packages",
-            "@introspection-ai",
-            "recipe-documents-docx",
-            "bin",
-            "python",
-          ),
+        const documentsPython = join(
+          recipeDir,
+          ".pi",
+          "python-shared",
+          "bin",
+          "python",
         );
-        expect(pdf.interpreter).toBe(
-          join(
-            recipeDir,
-            ".pi",
-            "python-packages",
-            "@introspection-ai",
-            "recipe-documents-pdf",
-            "bin",
-            "python",
-          ),
-        );
+        expect(docx.interpreter).toBe(documentsPython);
+        expect(pdf.interpreter).toBe(documentsPython);
+        const shell = prepared.recipe!;
+        if (own) {
+          // Only the Recipe's own environment reaches its shell.
+          expect(shell.kind).toBe("recipe");
+          expect(shell.environmentDir).toBe(join(recipeDir, ".pi", "python"));
+          expect(() =>
+            execFileSync(shell.interpreter, ["-c", "import docx"], {
+              stdio: "pipe",
+            }),
+          ).toThrow();
+        } else {
+          // A Recipe without Python of its own gets the documents environment as its shell.
+          expect(shell.kind).toBe("shared");
+          expect(shell.interpreter).toBe(documentsPython);
+          execFileSync(shell.interpreter, ["-c", "import docx, pypdfium2"]);
+        }
+        await expect(
+          prepareRecipePython(recipeDir, {
+            mode: "check",
+            env: prepareEnv,
+            environmentRoot: join(recipeDir, ".pi"),
+            hostDir,
+          }),
+        ).resolves.toMatchObject({ shared: { synced: false } });
 
         const cwd = join(recipeDir, "workspace");
         mkdirSync(cwd);
