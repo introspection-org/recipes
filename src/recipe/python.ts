@@ -559,6 +559,46 @@ function pythonProjectName(pyproject: string): string | undefined {
     : undefined;
 }
 
+/** The `[project]` table's `requires-python`, read without a TOML parser. */
+function pythonRequiresPython(pyproject: string): string | undefined {
+  const table = /^\[project\][ \t]*\r?\n([\s\S]*?)(?=^\[|$(?![\s\S]))/m.exec(
+    pyproject,
+  );
+  return table
+    ? /^\s*requires-python\s*=\s*["']([^"']+)["']/m
+        .exec(table[1] ?? "")?.[1]
+        ?.trim()
+    : undefined;
+}
+
+/**
+ * A declared `version` as a PEP 440 specifier: a specifier stays as it is, a
+ * bare `3.12` means `==3.12.*` and `3.12.4` means `==3.12.4`. Any other uv
+ * request (an implementation or a path) constrains no range.
+ */
+function versionSpecifier(version: string): string | undefined {
+  const trimmed = version.trim();
+  if (/^(===|==|!=|~=|<=|>=|<|>)/.test(trimmed)) return trimmed;
+  if (/^\d+\.\d+$/.test(trimmed)) return `==${trimmed}.*`;
+  if (/^\d+\.\d+\.\d+$/.test(trimmed)) return `==${trimmed}`;
+  return undefined;
+}
+
+/** The first interpreter request in the nearest `.python-version` from `dir` up, as uv discovers it from a project. */
+function discoveredPythonPin(dir: string): string | undefined {
+  for (let current = resolve(dir); ; current = dirname(current)) {
+    const path = join(current, ".python-version");
+    if (existsSync(path) && statSync(path).isFile()) {
+      const line = readFileSync(path, "utf8")
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .find((entry) => entry && !entry.startsWith("#"));
+      if (line) return line;
+    }
+    if (dirname(current) === current) return undefined;
+  }
+}
+
 /** The `[manifest] constraints` of a `uv.lock` (`[tool.uv] constraint-dependencies`), as requirement strings. */
 function manifestConstraints(lock: string): string[] {
   const manifest =
@@ -603,7 +643,7 @@ function tomlString(value: string): string {
 
 function composedPyproject(
   inputHash: string,
-  version: string | undefined,
+  requiresPython: string | undefined,
   constraints: readonly string[],
   members: ReadonlyArray<{
     name: string;
@@ -623,7 +663,9 @@ function composedPyproject(
     "[project]",
     'name = "recipe-python-environment"',
     'version = "0"',
-    ...(version ? [`requires-python = ${tomlString(version)}`] : []),
+    ...(requiresPython
+      ? [`requires-python = ${tomlString(requiresPython)}`]
+      : []),
     `dependencies = [${members.map((member) => tomlString(member.name)).join(", ")}]`,
     "",
     "[tool.uv]",
@@ -1123,10 +1165,27 @@ class Preparer {
       );
     }
 
-    const versions = members
-      .map((member) => member.declaration.python.version)
-      .filter((version): version is string => Boolean(version));
-    const version = versions.length > 0 ? versions.join(",") : undefined;
+    // One range every member can install: each project's requires-python and
+    // each declared version, intersected (a comma joins PEP 440 specifiers).
+    const ranges = [
+      ...new Set(
+        members.flatMap((member) =>
+          [
+            pythonRequiresPython(member.pyproject),
+            member.declaration.python.version &&
+              versionSpecifier(member.declaration.python.version),
+          ].filter((range): range is string => Boolean(range)),
+        ),
+      ),
+    ];
+    const requiresPython = ranges.length > 0 ? ranges.join(",") : undefined;
+    // The interpreter request: the Recipe's declared version, else the
+    // .python-version uv would discover from the Recipe (the generated
+    // project sits outside it), else the composed range.
+    const version =
+      own?.python.version ??
+      discoveredPythonPin(own ? this.locate(own).projectDir : recipeDir) ??
+      requiresPython;
     const target: Target = {
       kind: "recipe",
       owner: recipeName,
@@ -1180,7 +1239,7 @@ class Preparer {
     const lockfile = join(projectDir, "uv.lock");
     const pyproject = composedPyproject(
       inputHash,
-      version,
+      requiresPython,
       constraints,
       members.map((member) => ({
         name: member.name,
@@ -1232,6 +1291,25 @@ class Preparer {
         if (result.code === 0) return;
         rmSync(lockfile, { force: true });
         const detail = lastLines(`${result.stdout}\n${result.stderr}`);
+        if (/conflicting Python requirements/i.test(detail)) {
+          throw new RecipePythonVersionError(
+            `No Python version satisfies every project in the environment for ${recipeName}: ${members
+              .map(
+                (member) =>
+                  `${member.declaration.owner} requires ${
+                    [
+                      pythonRequiresPython(member.pyproject),
+                      member.declaration.python.version,
+                    ]
+                      .filter(Boolean)
+                      .join(" and ") || "any"
+                  }`,
+              )
+              .join(
+                "; ",
+              )}. Align the Recipe's requires-python or version with its peers':\n${detail}`,
+          );
+        }
         if (
           INTERPRETER_PROBLEM.test(detail) &&
           !/No solution found/i.test(detail)

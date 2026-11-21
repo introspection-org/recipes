@@ -776,7 +776,11 @@ also in `dependencies` counts as a dependency) joins it:
   by path, on the Recipe's project (if any) and on each peer's. It is
   constrained to each peer's locked versions, and to the Recipe's own locked
   versions for anything no peer pins, so **a peer's pins win** and every
-  installed version comes from a committed lock. The peers' `[tool.uv]
+  installed version comes from a committed lock. Its `requires-python` is the
+  intersection of every member project's `requires-python` and declared
+  `version`; an empty intersection fails, naming each member's range. The
+  interpreter request is the Recipe's `version`, else the `.python-version`
+  uv would find from the Recipe's project, else that range. The peers' `[tool.uv]
   constraint-dependencies` carry over. The Recipe's own lock never mentions a
   peer: `uv lock` in the Recipe needs no peer installed, and a new release of
   a peer never asks the author to relock.

@@ -1484,3 +1484,151 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
     }, 60_000);
   },
 );
+
+/** Composed environments against the real uv: projects without dependencies, so nothing reaches the network. */
+describe.skipIf(!hasUv || IS_WINDOWS || installedMinors.length === 0)(
+  "a composed environment's interpreter with the real uv",
+  () => {
+    const peer = "@acme/recipe-tables";
+
+    function lockedProject(dir: string, name: string, requires: string): void {
+      write(
+        join(dir, "pyproject.toml"),
+        `[project]\nname = "${name}"\nversion = "0.1.0"\nrequires-python = "${requires}"\ndependencies = []\n`,
+      );
+      const env = { ...process.env };
+      delete env.VIRTUAL_ENV;
+      delete env.UV_FROZEN;
+      delete env.UV_LOCKED;
+      const locked = spawnSync("uv", ["lock", "--project", dir], {
+        env,
+        encoding: "utf8",
+      });
+      if (locked.status !== 0)
+        throw new Error(`uv lock failed: ${locked.stderr}`);
+    }
+
+    /** A Recipe with a root project and one peer declaring Python. */
+    function composedRecipe(options: {
+      recipeRequires?: string;
+      peerRequires?: string;
+      version?: string;
+    }): string {
+      const dir = scratch("recipe-python-composed-");
+      lockedProject(dir, "acme-recipe", options.recipeRequires ?? ">=3.9");
+      const peerDir = join(dir, "node_modules", "@acme", "recipe-tables");
+      lockedProject(
+        join(peerDir, "python"),
+        "acme-tables",
+        options.peerRequires ?? ">=3.9",
+      );
+      writeFileSync(
+        join(peerDir, "package.json"),
+        JSON.stringify({
+          name: peer,
+          version: "1.0.0",
+          pi: { runtime: { python: { project: "python" } } },
+        }),
+      );
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({
+          name: "synthetic-composed",
+          version: "0.1.0",
+          peerDependencies: { [peer]: ">=1.0.0" },
+          pi: options.version
+            ? { runtime: { python: { version: options.version } } }
+            : {},
+        }),
+      );
+      return dir;
+    }
+
+    function environmentVersion(environmentDir: string): string {
+      return (
+        /version_info = ([^\s]+)/.exec(
+          readFileSync(join(environmentDir, "pyvenv.cfg"), "utf8"),
+        )?.[1] ?? ""
+      );
+    }
+
+    const env = { ...process.env };
+    delete env.VIRTUAL_ENV;
+    delete env.UV_PYTHON;
+    const oldest = installedMinors[0]!;
+
+    it("takes a bare version as the interpreter request and a valid requires-python", async () => {
+      const dir = composedRecipe({ version: oldest });
+      const root = scratch("recipe-python-composed-root-");
+      const prepared = await prepareRecipePython(dir, {
+        mode: "sync",
+        env,
+        environmentRoot: root,
+      });
+      const generated = readFileSync(
+        join(root, "python-project", "pyproject.toml"),
+        "utf8",
+      );
+      expect(generated).toContain(`==${oldest}.*`);
+      expect(environmentVersion(prepared.recipe!.environmentDir)).toMatch(
+        new RegExp(`^${oldest.replace(".", "\\.")}\\.`),
+      );
+      await expect(
+        prepareRecipePython(dir, { mode: "check", env, environmentRoot: root }),
+      ).resolves.toMatchObject({ recipe: { synced: false } });
+    }, 120_000);
+
+    it("intersects the members' requires-python, and names an empty intersection", async () => {
+      const dir = composedRecipe({});
+      // Locked under a range uv can satisfy, then narrowed past every Python.
+      const peerProject = join(
+        dir,
+        "node_modules",
+        "@acme",
+        "recipe-tables",
+        "python",
+        "pyproject.toml",
+      );
+      writeFileSync(
+        peerProject,
+        readFileSync(peerProject, "utf8").replace('">=3.9"', '"<3.0"'),
+      );
+      await expect(
+        prepareRecipePython(dir, {
+          mode: "sync",
+          env,
+          environmentRoot: scratch("recipe-python-composed-root-"),
+        }),
+      ).rejects.toThrow(
+        /No Python version satisfies every project[\s\S]*@acme\/recipe-tables requires <3\.0/,
+      );
+      const ok = composedRecipe({ peerRequires: "<4" });
+      const root = scratch("recipe-python-composed-root-");
+      await prepareRecipePython(ok, {
+        mode: "sync",
+        env,
+        environmentRoot: root,
+      });
+      expect(
+        readFileSync(join(root, "python-project", "pyproject.toml"), "utf8"),
+      ).toContain(`requires-python = ">=3.9,<4"`);
+    }, 120_000);
+
+    it("honours the Recipe's .python-version, which uv cannot discover from the generated project", async () => {
+      const dir = composedRecipe({});
+      writeFileSync(join(dir, ".python-version"), `${oldest}\n`);
+      const root = scratch("recipe-python-composed-root-");
+      const prepared = await prepareRecipePython(dir, {
+        mode: "sync",
+        env,
+        environmentRoot: root,
+      });
+      expect(environmentVersion(prepared.recipe!.environmentDir)).toMatch(
+        new RegExp(`^${oldest.replace(".", "\\.")}\\.`),
+      );
+      await expect(
+        prepareRecipePython(dir, { mode: "check", env, environmentRoot: root }),
+      ).resolves.toMatchObject({ recipe: { synced: false } });
+    }, 120_000);
+  },
+);
