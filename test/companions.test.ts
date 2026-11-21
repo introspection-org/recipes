@@ -343,7 +343,7 @@ describe("companion packages", () => {
     );
     expect(recipePythonDeclarations(recipeDir, { hostDir })).toEqual([
       expect.objectContaining({
-        kind: "package",
+        kind: "peer",
         owner: DOCX,
         packageDir: platformDocx,
       }),

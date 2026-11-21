@@ -78,10 +78,14 @@ describe.skipIf(!hasUv || process.platform === "win32")(
     it.each([
       "pinned by the Recipe",
       "companion packages installed alongside Recipes",
+      "declared as peers",
+      "declared as peers, with a Recipe project of its own",
     ])(
       "reads a .docx and a .pdf for a Recipe that declares no Python, %s",
       async (source) => {
         const pinned = source === "pinned by the Recipe";
+        const peers = source.startsWith("declared as peers");
+        const own = source.endsWith("of its own");
         const recipeDir = mkdtempSync(
           join(tmpdir(), "documents-package-python-"),
         );
@@ -103,7 +107,7 @@ describe.skipIf(!hasUv || process.platform === "win32")(
           }),
         );
         const scope = join(
-          pinned ? recipeDir : hostRoot,
+          pinned || peers ? recipeDir : hostRoot,
           "node_modules",
           "@introspection-ai",
         );
@@ -136,10 +140,29 @@ describe.skipIf(!hasUv || process.platform === "win32")(
                   },
                 }
               : {}),
+            ...(peers
+              ? {
+                  peerDependencies: {
+                    "@introspection-ai/recipe-documents-docx": ">=0.3.0",
+                    "@introspection-ai/recipe-documents-pdf": ">=0.2.0",
+                  },
+                }
+              : {}),
             pi: { documents: declarations },
           }),
         );
 
+        if (own) {
+          writeFileSync(
+            join(recipeDir, "pyproject.toml"),
+            '[project]\nname = "acme-recipe"\nversion = "0.1.0"\nrequires-python = ">=3.12"\ndependencies = ["six"]\n',
+          );
+          const lockEnv = { ...process.env };
+          delete lockEnv.VIRTUAL_ENV;
+          execFileSync("uv", ["lock", "--project", recipeDir], {
+            env: lockEnv,
+          });
+        }
         const prepareEnv = { ...process.env };
         delete prepareEnv.VIRTUAL_ENV;
         delete prepareEnv.UV_PROJECT_ENVIRONMENT;
@@ -150,33 +173,53 @@ describe.skipIf(!hasUv || process.platform === "win32")(
           allowPythonDownloads: true,
           hostDir,
         });
-        expect(prepared.recipe).toBeUndefined();
         const docx =
           prepared.packages["@introspection-ai/recipe-documents-docx"]!;
         const pdf =
           prepared.packages["@introspection-ai/recipe-documents-pdf"]!;
-        expect(docx.interpreter).toBe(
-          join(
-            recipeDir,
-            ".pi",
-            "python-packages",
-            "@introspection-ai",
-            "recipe-documents-docx",
-            "bin",
-            "python",
-          ),
-        );
-        expect(pdf.interpreter).toBe(
-          join(
-            recipeDir,
-            ".pi",
-            "python-packages",
-            "@introspection-ai",
-            "recipe-documents-pdf",
-            "bin",
-            "python",
-          ),
-        );
+        if (peers) {
+          // One environment: the shell's, which the format helpers run in too.
+          const shell = prepared.recipe!;
+          expect(shell.environmentDir).toBe(join(recipeDir, ".pi", "python"));
+          expect(docx.interpreter).toBe(shell.interpreter);
+          expect(pdf.interpreter).toBe(shell.interpreter);
+          execFileSync(shell.interpreter, [
+            "-c",
+            `import docx, pypdfium2${own ? ", six" : ""}`,
+          ]);
+          await expect(
+            prepareRecipePython(recipeDir, {
+              mode: "check",
+              env: prepareEnv,
+              environmentRoot: join(recipeDir, ".pi"),
+              hostDir,
+            }),
+          ).resolves.toMatchObject({ recipe: { synced: false } });
+        } else {
+          expect(prepared.recipe).toBeUndefined();
+          expect(docx.interpreter).toBe(
+            join(
+              recipeDir,
+              ".pi",
+              "python-packages",
+              "@introspection-ai",
+              "recipe-documents-docx",
+              "bin",
+              "python",
+            ),
+          );
+          expect(pdf.interpreter).toBe(
+            join(
+              recipeDir,
+              ".pi",
+              "python-packages",
+              "@introspection-ai",
+              "recipe-documents-pdf",
+              "bin",
+              "python",
+            ),
+          );
+        }
 
         const cwd = join(recipeDir, "workspace");
         mkdirSync(cwd);
