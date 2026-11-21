@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.31.0...introspection-recipe-check-python-v0.32.0) (2026-11-21)
+
+
+### Features
+
+* **python:** documents formats share one Python environment, a Recipe's Python project lives at its root ([#569](https://github.com/introspection-org/recipes/issues/569)) ([c29834b](https://github.com/introspection-org/recipes/commit/c29834bb34b0a79fb29448d3319199ae30494c22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * introspection-recipe-check bumped from 0.31.0 to 0.32.0
+
 ## [0.31.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-python-v0.30.0...introspection-recipe-check-python-v0.31.0) (2026-11-21)
 
 
