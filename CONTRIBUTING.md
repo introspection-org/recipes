@@ -158,9 +158,9 @@ Recipes does not expose a standalone validation command. Run
   is absent (`recipes check` warns); `package-lock.json`, `npm-shrinkwrap.json` and
   `yarn.lock` are rejected, as is a `packageManager` field that is not a
   complete `pnpm@<version>`. This is about npm and yarn, not about lockfiles in
-  general — a Recipe declaring `pi.runtime.python` MUST also commit the
-  `uv.lock` its `python.lockfile` names, and `recipes check` rejects it when
-  that file is missing.
+  general — a Recipe with a root `pyproject.toml` MUST also commit the
+  `uv.lock` beside it, and `recipes check` rejects it when that file is
+  missing.
 
 ## Pull Requests
 

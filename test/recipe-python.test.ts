@@ -30,7 +30,13 @@ import {
   type PrepareRecipePythonOptions,
   type RecipePythonSyncEvent,
 } from "../src/recipe/python.js";
-import { fakeUv, pythonProject, scratch, write } from "./helpers/fake-uv.js";
+import {
+  fakeUv,
+  pythonProject,
+  recipePythonProject,
+  scratch,
+  write,
+} from "./helpers/fake-uv.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 const IS_WINDOWS = process.platform === "win32";
@@ -88,14 +94,8 @@ function recipe(options: {
   if (options.missingDependency)
     dependencies[options.missingDependency] = "1.0.0";
   const python =
-    options.python === false
-      ? undefined
-      : {
-          project: "python",
-          lockfile: "python/uv.lock",
-          ...(options.python ?? {}),
-        };
-  if (python) pythonProject(dir);
+    options.python === false ? undefined : { ...(options.python ?? {}) };
+  if (python) recipePythonProject(dir);
   writeFileSync(
     join(dir, "package.json"),
     JSON.stringify({
@@ -860,6 +860,22 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       expect(uv.calls()).toEqual([]);
     });
 
+    it("refuses a Recipe's pi.runtime.python.project or lockfile before running uv", async () => {
+      const { uv, prepare } = harness();
+      for (const python of [
+        { project: "python", lockfile: "python/uv.lock" },
+        { project: "." },
+        { lockfile: "uv.lock" },
+      ]) {
+        const { dir } = recipe({ python });
+        pythonProject(dir);
+        await expect(prepare(dir)).rejects.toThrow(
+          "synthetic-recipe: pi.runtime.python.project is no longer supported: move pyproject.toml and uv.lock to the Recipe root and remove project/lockfile",
+        );
+      }
+      expect(uv.calls()).toEqual([]);
+    });
+
     it("takes pi.runtime.python with only overrides", async () => {
       const { uv, prepare } = harness();
       const { dir } = recipe({ python: false });
@@ -900,7 +916,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
         first.recipe?.environmentDir,
       );
       // A different lock gets its own.
-      writeFileSync(join(dir, "python", "uv.lock"), "version = 1\n# changed\n");
+      writeFileSync(join(dir, "uv.lock"), "version = 1\n# changed\n");
       expect((await prepare(dir)).recipe?.environmentDir).not.toBe(
         first.recipe?.environmentDir,
       );
@@ -957,7 +973,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       const shared = (await prepare(first.dir)).recipe?.environmentDir;
       expect((await prepare(second.dir)).recipe?.environmentDir).toBe(shared);
       // A pin in the project, or in any directory above it, selects another interpreter.
-      writeFileSync(join(second.dir, "python", ".python-version"), "3.12\n");
+      writeFileSync(join(second.dir, ".python-version"), "3.12\n");
       const pinned = (await prepare(second.dir)).recipe?.environmentDir;
       expect(pinned).not.toBe(shared);
       writeFileSync(join(first.dir, ".python-version"), "3.12\n");
@@ -966,7 +982,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       );
       // The same pin in the same place shares again.
       rmSync(join(first.dir, ".python-version"));
-      writeFileSync(join(first.dir, "python", ".python-version"), "3.12\n");
+      writeFileSync(join(first.dir, ".python-version"), "3.12\n");
       expect((await prepare(first.dir)).recipe?.environmentDir).toBe(pinned);
       // UV_PYTHON and the global pin count too.
       const third = recipe({});
@@ -981,7 +997,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       // A declared version overrides every pin, so they are not read.
       declareVersion(first.dir, ">=3.11");
       declareVersion(second.dir, ">=3.11");
-      rmSync(join(first.dir, "python", ".python-version"));
+      rmSync(join(first.dir, ".python-version"));
       expect((await prepare(first.dir)).recipe?.environmentDir).toBe(
         (await prepare(second.dir)).recipe?.environmentDir,
       );
@@ -993,8 +1009,8 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
         'version = 1\n\n[[package]]\nname = "synthdep"\nversion = "0.1.0"\nsource = { directory = "../synthdep" }\n';
       const first = recipe({});
       const second = recipe({});
-      writeFileSync(join(first.dir, "python", "uv.lock"), lock);
-      writeFileSync(join(second.dir, "python", "uv.lock"), lock);
+      writeFileSync(join(first.dir, "uv.lock"), lock);
+      writeFileSync(join(second.dir, "uv.lock"), lock);
       expect((await prepare(first.dir)).recipe?.environmentDir).not.toBe(
         (await prepare(second.dir)).recipe?.environmentDir,
       );
@@ -1188,7 +1204,7 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
     function emptyRecipe(): string {
       const dir = scratch("recipe-python-real-empty-");
       write(
-        join(dir, "python", "pyproject.toml"),
+        join(dir, "pyproject.toml"),
         [
           "[project]",
           'name = "synthetic"',
@@ -1201,11 +1217,10 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
       const lockEnv = { ...process.env };
       delete lockEnv.UV_FROZEN;
       delete lockEnv.UV_LOCKED;
-      const locked = spawnSync(
-        "uv",
-        ["lock", "--project", join(dir, "python")],
-        { env: lockEnv, encoding: "utf8" },
-      );
+      const locked = spawnSync("uv", ["lock", "--project", dir], {
+        env: lockEnv,
+        encoding: "utf8",
+      });
       if (locked.status !== 0)
         throw new Error(`uv lock failed: ${locked.stderr}`);
       writeFileSync(
@@ -1215,7 +1230,7 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
           version: "0.1.0",
           pi: {
             runtime: {
-              python: { project: "python", lockfile: "python/uv.lock" },
+              python: {},
             },
           },
         }),
@@ -1243,7 +1258,7 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
         ].join("\n"),
       );
       write(
-        join(dir, "python", "pyproject.toml"),
+        join(dir, "pyproject.toml"),
         [
           "[project]",
           'name = "synthetic"',
@@ -1251,18 +1266,17 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
           'requires-python = ">=3.9"',
           'dependencies = ["synthdep"]',
           "[tool.uv.sources]",
-          'synthdep = { path = "../synthdep" }',
+          'synthdep = { path = "synthdep" }',
           "",
         ].join("\n"),
       );
       const lockEnv = { ...process.env };
       delete lockEnv.UV_FROZEN;
       delete lockEnv.UV_LOCKED;
-      const locked = spawnSync(
-        "uv",
-        ["lock", "--project", join(dir, "python")],
-        { env: lockEnv, encoding: "utf8" },
-      );
+      const locked = spawnSync("uv", ["lock", "--project", dir], {
+        env: lockEnv,
+        encoding: "utf8",
+      });
       if (locked.status !== 0)
         throw new Error(`uv lock failed: ${locked.stderr}`);
       writeFileSync(
@@ -1272,11 +1286,7 @@ describe.skipIf(!hasUv || IS_WINDOWS)(
           version: "0.1.0",
           pi: {
             runtime: {
-              python: {
-                project: "python",
-                lockfile: "python/uv.lock",
-                imports: ["synthdep"],
-              },
+              python: { imports: ["synthdep"] },
             },
           },
         }),

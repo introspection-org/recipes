@@ -747,10 +747,10 @@ request. `imports` are optional
 boot preflights, each a dotted Python module name (`docx`, `paper_docx.api`);
 hosts import them with `PYTHONHOME` removed. Hosts MUST install with frozen
 resolution and MUST NOT install into system Python or resolve an unlocked
-dependency graph. `pi.runtime.python.project` (a subdirectory holding the
-project) and `pi.runtime.python.lockfile` are legacy: still read, with
-`recipes check` warning `runtime.python_project_legacy`; the lockfile is
-always the project's `uv.lock`.
+dependency graph. A Recipe's `pi.runtime.python` takes no `project` or
+`lockfile`: either is an error (`runtime.python_project_removed`), and hosts
+refuse to prepare the Recipe. Move `pyproject.toml` and `uv.lock` to the Recipe
+root and remove both keys.
 
 `pi.runtime.python` is the only runtime key; any other key under `pi.runtime`
 is rejected. PDF and Word work goes through the `documents` tool (`pi.documents`

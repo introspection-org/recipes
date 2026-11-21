@@ -321,35 +321,62 @@ describe("Recipe Format", () => {
     ]);
   });
 
-  it("resolves locked Python and approved system runtime requirements", () => {
+  it("resolves a Recipe's root Python project and its runtime overrides", () => {
     const recipeDir = fixture();
-    mkdirSync(join(recipeDir, "python"), { recursive: true });
     writeFileSync(
-      join(recipeDir, "python", "pyproject.toml"),
+      join(recipeDir, "pyproject.toml"),
       "[project]\nname='controls'\n",
     );
-    writeFileSync(join(recipeDir, "python", "uv.lock"), "version = 1\n");
+    writeFileSync(join(recipeDir, "uv.lock"), "version = 1\n");
     const pkg = JSON.parse(
       readFileSync(join(recipeDir, "package.json"), "utf8"),
     );
     pkg.pi.runtime = {
       python: {
-        project: "python",
-        lockfile: "python/uv.lock",
         version: ">=3.12,<3.15",
         imports: ["pandas", "openpyxl"],
       },
     };
     writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
 
-    expect(readPiPackageManifest(recipeDir).runtime).toEqual({
-      python: {
-        project: "python",
-        lockfile: "python/uv.lock",
-        version: ">=3.12,<3.15",
-        imports: ["pandas", "openpyxl"],
-      },
+    const manifest = readPiPackageManifest(recipeDir);
+    expect(manifest.runtime?.python).toMatchObject({
+      version: ">=3.12,<3.15",
+      imports: ["pandas", "openpyxl"],
     });
+    expect(validatePiPackageManifest(manifest).findings).toEqual([]);
+  });
+
+  it("rejects a Recipe's pi.runtime.python.project or lockfile", () => {
+    for (const python of [
+      { project: "python", lockfile: "python/uv.lock" },
+      { project: "." },
+      { lockfile: "uv.lock" },
+    ]) {
+      const recipeDir = fixture();
+      mkdirSync(join(recipeDir, "python"), { recursive: true });
+      for (const dir of [recipeDir, join(recipeDir, "python")]) {
+        writeFileSync(join(dir, "pyproject.toml"), "[project]\nname='c'\n");
+        writeFileSync(join(dir, "uv.lock"), "version = 1\n");
+      }
+      const pkg = JSON.parse(
+        readFileSync(join(recipeDir, "package.json"), "utf8"),
+      );
+      pkg.pi.runtime = { python };
+      writeFileSync(join(recipeDir, "package.json"), JSON.stringify(pkg));
+
+      const report = validatePiPackageManifest(
+        readPiPackageManifest(recipeDir),
+      );
+      expect(report.valid).toBe(false);
+      expect(report.findings).toContainEqual(
+        expect.objectContaining({
+          code: "runtime.python_project_removed",
+          message:
+            "pi.runtime.python.project is no longer supported: move pyproject.toml and uv.lock to the Recipe root and remove project/lockfile",
+        }),
+      );
+    }
   });
 
   it("rejects pi.runtime.system as an unknown runtime field, as the Rust checker does", () => {

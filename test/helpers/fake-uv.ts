@@ -107,10 +107,16 @@ setTimeout(() => {
   };
 }
 
+/** A Python project in `dir/python`, where a package may keep one. */
 export function pythonProject(dir: string, lock = "version = 1\n"): void {
+  recipePythonProject(join(dir, "python"), lock);
+}
+
+/** A Recipe's Python project: `pyproject.toml` and `uv.lock` at its root. */
+export function recipePythonProject(dir: string, lock = "version = 1\n"): void {
   write(
-    join(dir, "python", "pyproject.toml"),
+    join(dir, "pyproject.toml"),
     "[project]\nname = 'synthetic'\nversion = '0.1.0'\n",
   );
-  write(join(dir, "python", "uv.lock"), lock);
+  write(join(dir, "uv.lock"), lock);
 }

@@ -3,8 +3,8 @@
  *
  * Three kinds exist, and they never share an environment:
  *
- * - The Recipe's own project (a `pyproject.toml` and `uv.lock` at its root, or
- *   the legacy `pi.runtime.python.project`) is its **shell environment**.
+ * - The Recipe's own project (a `pyproject.toml` and `uv.lock` at its root)
+ *   is its **shell environment**.
  *   Activating it sets `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`, puts its
  *   `bin` first on `PATH` and removes `PYTHONHOME`, so the agent's shell tools
  *   run it.
@@ -45,6 +45,7 @@ import {
   installedRecipeDependencies,
   isPythonModuleName,
   readPiPackageManifest,
+  RECIPE_PYTHON_PROJECT_REMOVED,
   recipeChannelPackageName,
   recipeDocumentPackageName,
   validateRecipePythonPackage,
@@ -274,12 +275,20 @@ export function recipePythonDeclarations(
   const root = resolve(recipeDir);
   const declarations: Declaration[] = [];
   const manifest = readPiPackageManifest(root);
+  const authored = (
+    (readJson(join(root, "package.json")).pi as
+      { runtime?: { python?: Record<string, unknown> } } | undefined) ?? {}
+  ).runtime?.python;
+  if (authored?.project !== undefined || authored?.lockfile !== undefined)
+    throw new RecipePythonError(
+      `${manifest.name}: ${RECIPE_PYTHON_PROJECT_REMOVED}`,
+    );
   if (manifest.runtime?.python) {
     declarations.push({
       kind: "recipe",
       owner: manifest.name,
       packageDir: root,
-      python: manifest.runtime.python,
+      python: { ...manifest.runtime.python, project: ".", lockfile: "uv.lock" },
     });
   } else if (existsSync(join(root, "pyproject.toml"))) {
     // A pyproject.toml at the root is the Recipe's Python project by convention.
@@ -828,7 +837,7 @@ class Preparer {
       declaration.python.lockfile,
     );
     if (!existsSync(join(projectDir, "pyproject.toml"))) {
-      if (declaration.kind === "recipe" && declaration.python.project === ".")
+      if (declaration.kind === "recipe")
         throw new RecipePythonError(
           `${declaration.owner}: pi.runtime.python is declared but the Recipe has no pyproject.toml at its root; add pyproject.toml and uv.lock at the root, or remove pi.runtime.python (a Recipe using only first-party packages' Python needs none)`,
         );

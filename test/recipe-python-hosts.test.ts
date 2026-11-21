@@ -19,7 +19,7 @@ import {
   type RecipeSessionHandle,
 } from "../src/session.js";
 import { cleanEnv, writeFixtureRecipe } from "../src/test-utils.js";
-import { fakeUv, pythonProject, scratch } from "./helpers/fake-uv.js";
+import { fakeUv, recipePythonProject, scratch } from "./helpers/fake-uv.js";
 import { createMockExtensionAPI } from "./helpers/mock-extension.js";
 
 const IS_WINDOWS = process.platform === "win32";
@@ -28,10 +28,10 @@ function pythonRecipe(tools = ["read", "bash"]) {
   const fixture = writeFixtureRecipe({
     tools,
     manifestPi: {
-      runtime: { python: { project: "python", lockfile: "python/uv.lock" } },
+      runtime: { python: {} },
     },
   });
-  pythonProject(fixture.recipeDir);
+  recipePythonProject(fixture.recipeDir);
   return fixture;
 }
 
@@ -257,10 +257,10 @@ describe.skipIf(IS_WINDOWS)("session API: Recipe Python", () => {
       tools: ["read"],
       subagents: ["background", "explorer"],
       manifestPi: {
-        runtime: { python: { project: "python", lockfile: "python/uv.lock" } },
+        runtime: { python: {} },
       },
     });
-    pythonProject(fixture.recipeDir);
+    recipePythonProject(fixture.recipeDir);
     writeFileSync(
       join(fixture.recipeDir, "agents", "background.yaml"),
       [
