@@ -143,5 +143,11 @@ describe("the session's step", () => {
     await update?.(run);
     expect(steps.at(-1)).toMatchObject({ skill: "build-draft" });
     expect(steps.at(-1)).not.toHaveProperty("agents");
+
+    // A run a host starts through the handle is counted too.
+    run.status = "running";
+    await handle.agentRuns.start({ name: "helper", prompt: "again" });
+    // The mock lists the run once per start, so both starts are running now.
+    expect(steps.at(-1)).toMatchObject({ skill: "build-draft", agents: 2 });
   });
 });

@@ -1227,6 +1227,11 @@ async function createSessionForAgent(
           })
         : inertRunController();
     }
+    // One watched controller for the agent tool and the returned handle alike, so a run a host
+    // starts through `handle.agentRuns` re-reports the step too.
+    agentRuns = watchAgentRuns(agentRuns, () => {
+      for (const listener of agentRunsChanged) listener();
+    });
     const tools = [
       ...recipe.tools.filter(
         (tool) => !connectorLoadout.toolNames.includes(tool),
@@ -1309,15 +1314,7 @@ async function createSessionForAgent(
       ...(environmentBash ? [environmentBash] : []),
       ...(opts.customTools ?? []).map((tool) => withExposure(tool, exposure)),
       ...(wantsSubagents
-        ? [
-            createAgentTool(
-              watchAgentRuns(agentRuns, () => {
-                for (const listener of agentRunsChanged) listener();
-              }),
-              recipe.subagents,
-              opts.agentToolOptions,
-            ),
-          ]
+        ? [createAgentTool(agentRuns, recipe.subagents, opts.agentToolOptions)]
         : []),
       ...(mcp.tools ?? []),
       ...toolSearchTools,
