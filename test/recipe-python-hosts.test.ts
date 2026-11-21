@@ -85,6 +85,25 @@ describe.skipIf(IS_WINDOWS)("Pi extension: Recipe Python", () => {
         { type: "session_shutdown" } as any,
         extensionContext(workspaceDir),
       );
+
+      // A later launch checks the environment it built; uv refuses a repeated --offline.
+      const relaunch = createMockExtensionAPI();
+      createRecipesExtension({ env })(relaunch);
+      await relaunch.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(workspaceDir, vi.fn()),
+      );
+      expect(uv.calls().some((call) => call.args.includes("--check"))).toBe(
+        true,
+      );
+      for (const call of uv.calls())
+        expect(
+          call.args.filter((arg) => arg === "--offline").length,
+        ).toBeLessThanOrEqual(1);
+      await relaunch.emitExtensionEvent(
+        { type: "session_shutdown" } as any,
+        extensionContext(workspaceDir),
+      );
     } finally {
       cleanup();
     }

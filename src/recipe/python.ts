@@ -45,7 +45,7 @@ import {
 /** Hosts read a fixed environment root from this variable (see `environmentRoot`). */
 export const RECIPE_PYTHON_ROOT_ENV = "PI_RECIPES_PYTHON_ROOT";
 
-/** Set to `1` by a host that has everything installed already, such as the Operator's image: nothing is downloaded. */
+/** Set to `1` by a host that has everything installed already: nothing is downloaded. */
 export const NO_INSTALL_ENV = "INTROSPECTION_NO_INSTALL";
 
 export const UV_INSTALL_URL =
@@ -534,7 +534,6 @@ class Preparer {
         ? ["--python", declaration.python.version]
         : []),
       ...(this.options.allowPythonDownloads ? [] : ["--no-python-downloads"]),
-      ...(this.options.offline ? ["--offline"] : []),
     ];
   }
 
@@ -683,7 +682,11 @@ class Preparer {
     environmentDir: string,
   ): Promise<void> {
     const result = await this.uvRun(
-      [...this.commonArgs(declaration, projectDir), "--compile-bytecode"],
+      [
+        ...this.commonArgs(declaration, projectDir),
+        "--compile-bytecode",
+        ...(this.options.offline ? ["--offline"] : []),
+      ],
       projectDir,
       environmentDir,
     );
