@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.1](https://github.com/introspection-org/recipes/compare/v0.60.0...v0.60.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **documents-docx:** take paper-docx &gt;=0.2.1 as a floor, not an exact pin ([#567](https://github.com/introspection-org/recipes/issues/567)) ([1f2465f](https://github.com/introspection-org/recipes/commit/1f2465fcd4b648c887106a43350133cd3bc31272))
+
 ## [0.60.0](https://github.com/introspection-org/recipes/compare/v0.59.0...v0.60.0) (2026-11-21)
 
 
