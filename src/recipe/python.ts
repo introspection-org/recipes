@@ -271,6 +271,17 @@ export function recipePythonDeclarations(
       recipeDocumentPackageName(document.format),
     ),
   ];
+  // A peer the Recipe doesn't have installed (a local build before `pnpm install`) resolves from the host and still
+  // joins the shell environment.
+  const peerNames = new Set(
+    Object.keys(
+      (
+        JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+          peerDependencies?: Record<string, unknown>;
+        }
+      ).peerDependencies ?? {},
+    ),
+  );
   for (const name of used) {
     if (
       declarations.some(
@@ -281,7 +292,12 @@ export function recipePythonDeclarations(
       continue;
     const resolved = resolveRecipePackage(root, name, options.hostDir);
     const declaration =
-      resolved && packagePythonDeclaration(name, resolved.packageDir);
+      resolved &&
+      packagePythonDeclaration(
+        name,
+        resolved.packageDir,
+        peerNames.has(name) ? "peer" : "package",
+      );
     if (declaration) declarations.push(declaration);
   }
   return declarations;

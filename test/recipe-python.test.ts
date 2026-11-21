@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -701,6 +702,46 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
             (args) => args.includes("--check") && args.includes("--offline"),
           ),
       ).toBe(true);
+    });
+
+    it("joins a documents peer the Recipe has not installed, resolved from the host", async () => {
+      const { prepare } = harness({ FAKE_UV_EXPORT: pins });
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: docx,
+            python: {
+              project: "python",
+              lockfile: "python/uv.lock",
+              imports: ["docx"],
+            },
+            as: "peerDependencies",
+          },
+        ],
+      });
+      const hostModules = join(scratch("host-"), "node_modules");
+      const hostDir = join(hostModules, "@introspection-ai", "recipes");
+      mkdirSync(hostDir, { recursive: true });
+      writeFileSync(
+        join(hostDir, "package.json"),
+        JSON.stringify({ name: "@introspection-ai/recipes", version: "1.0.0" }),
+      );
+      renameSync(
+        join(dir, "node_modules", ...docx.split("/")),
+        join(hostModules, ...docx.split("/")),
+      );
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi.documents = [{ format: "docx" }];
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const root = join(scratch("roots-"), ".pi");
+      const prepared = await prepare(dir, { environmentRoot: root, hostDir });
+      expect(prepared.recipe?.peers).toEqual([docx]);
+      expect(prepared.packages[docx]?.interpreter).toBe(
+        prepared.recipe?.interpreter,
+      );
     });
 
     it("lets the peers' pins win over the Recipe's own lock, and keeps the Recipe's other pins", async () => {
