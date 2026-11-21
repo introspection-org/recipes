@@ -345,16 +345,19 @@ pub fn check_recipe_files(input: &RecipeFiles) -> Report {
                 resource_counts.insert(key.to_owned(), paths.len());
             }
         }
+        let uninstalled = uninstalled_agent_dependencies(&package, &ctx);
         if let Some(paths) = resources.get("prompts") {
-            let agent_names = declared_agent_names(&agent_paths, &ctx);
+            let agent_names = AgentSet {
+                by_name: declared_agent_names(&agent_paths, &ctx),
+                uninstalled: uninstalled.clone(),
+            };
             prompts::validate_prompt_templates(paths, &agent_names, &mut ctx);
         }
-        let unverified_agents = uninstalled_agent_dependencies(&package, &ctx);
         validate_agents(
             &agent_paths,
             &resources,
             &dependency_skills,
-            &unverified_agents,
+            uninstalled,
             mcp_tool_policy.as_ref(),
             &agent_tool_catalog(&package),
             &mut ctx,
@@ -3115,6 +3118,122 @@ fn uninstalled_agent_dependencies(package: &Package, ctx: &CheckContext) -> BTre
         .collect()
 }
 
+/// The agents a reference may name, decided once: a name the Recipe's
+/// agents declare is `Found`; any other is `Missing`, unless `pi.agents`
+/// points into a dependency that is not installed, whose agents may hold it,
+/// and then it is `Unknown`. Every reference to an agent by name looks it up here.
+pub(crate) struct AgentSet<V> {
+    pub(crate) by_name: HashMap<String, V>,
+    pub(crate) uninstalled: BTreeSet<String>,
+}
+
+pub(crate) enum AgentLookup<'a, V> {
+    Found(&'a V),
+    Missing,
+    Unknown,
+}
+
+pub(crate) const AGENT_REFERENCE_UNVERIFIED: &str = "agent.reference_unverified";
+
+impl<V> AgentSet<V> {
+    pub(crate) fn lookup(&self, name: &str) -> AgentLookup<'_, V> {
+        match self.by_name.get(name) {
+            Some(agent) => AgentLookup::Found(agent),
+            None if self.uninstalled.is_empty() => AgentLookup::Missing,
+            None => AgentLookup::Unknown,
+        }
+    }
+
+    /// Warn that `reference` (who refers, and how) names `name`, which may be
+    /// an agent in a dependency that is not installed.
+    pub(crate) fn warn_unknown(
+        &self,
+        path: impl Into<String>,
+        reference: &str,
+        name: &str,
+        ctx: &mut CheckContext,
+    ) {
+        ctx.warning(
+            AGENT_REFERENCE_UNVERIFIED,
+            path,
+            format!(
+                "{reference} '{name}', which is not in the Recipe and was not checked against agents in dependencies that are not installed: {}",
+                self.uninstalled.iter().cloned().collect::<Vec<_>>().join(", ")
+            ),
+            Some("install dependencies before checking to verify agents from dependency packages"),
+        );
+    }
+}
+
+type Agents<'a> = AgentSet<&'a RawAgent>;
+
+/// Where an agent's `from` chain ends.
+enum ChainEnd {
+    /// An agent with no `from`.
+    Root,
+    /// A base that may be in an uninstalled dependency.
+    Unknown {
+        child: String,
+        base: String,
+    },
+    Missing {
+        child: String,
+        base: String,
+    },
+    Cycle,
+    TooDeep,
+}
+
+impl Agents<'_> {
+    /// The agents `name` resolves through, itself first, and where the chain ends.
+    fn chain(&self, name: &str) -> (Vec<&RawAgent>, ChainEnd) {
+        let mut chain: Vec<&RawAgent> = Vec::new();
+        let mut current = name.to_owned();
+        loop {
+            if chain.len() >= MAX_INHERITANCE_DEPTH {
+                return (chain, ChainEnd::TooDeep);
+            }
+            let agent = match self.lookup(&current) {
+                AgentLookup::Found(agent) => *agent,
+                AgentLookup::Unknown => {
+                    let child = chain
+                        .last()
+                        .map(|agent| agent.name.clone())
+                        .unwrap_or_default();
+                    return (
+                        chain,
+                        ChainEnd::Unknown {
+                            child,
+                            base: current,
+                        },
+                    );
+                }
+                AgentLookup::Missing => {
+                    let child = chain
+                        .last()
+                        .map(|agent| agent.name.clone())
+                        .unwrap_or_default();
+                    return (
+                        chain,
+                        ChainEnd::Missing {
+                            child,
+                            base: current,
+                        },
+                    );
+                }
+            };
+            if chain.iter().any(|seen| seen.name == agent.name) {
+                return (chain, ChainEnd::Cycle);
+            }
+            chain.push(agent);
+            let Some(from) = &agent.from else {
+                return (chain, ChainEnd::Root);
+            };
+            current = from.clone();
+        }
+    }
+}
+
 fn resolve_agents(
     resources: &HashMap<&'static str, Vec<String>>,
     ctx: &CheckContext,
@@ -3223,12 +3342,17 @@ fn resolve_dependency_skills(package: &Package, ctx: &mut CheckContext) -> Depen
 /// The `name` each readable agent file declares, the identity a task selects
 /// it by. A file that does not parse contributes nothing; `validate_agents`
 /// reports it.
-fn declared_agent_names(agent_paths: &[String], ctx: &CheckContext) -> BTreeSet<String> {
+fn declared_agent_names(agent_paths: &[String], ctx: &CheckContext) -> HashMap<String, ()> {
     agent_paths
         .iter()
         .filter_map(|path| ctx.content(path))
         .filter_map(|content| serde_saphyr::from_str::<JsonValue>(content).ok())
-        .filter_map(|agent| agent.get("name")?.as_str().map(str::to_owned))
+        .filter_map(|agent| {
+            agent
+                .get("name")?
+                .as_str()
+                .map(|name| (name.to_owned(), ()))
+        })
         .collect()
 }
 
@@ -3236,7 +3360,7 @@ fn validate_agents(
     agent_paths: &[String],
     resources: &HashMap<&'static str, Vec<String>>,
     dependency_skills: &DependencySkills,
-    unverified_agents: &BTreeSet<String>,
+    uninstalled: BTreeSet<String>,
     mcp_tool_policy: Option<&McpToolPolicy>,
     tool_catalog: &[String],
     ctx: &mut CheckContext,
@@ -3256,12 +3380,15 @@ fn validate_agents(
         validate_agent_tool_activation(source, tool_catalog, ctx);
     }
 
-    let mut raw_by_name = HashMap::new();
-    for source in &sources {
-        raw_by_name.insert(source.name.clone(), source);
-    }
+    let agents = AgentSet {
+        by_name: sources
+            .iter()
+            .map(|source| (source.name.clone(), source))
+            .collect(),
+        uninstalled,
+    };
 
-    let mut unique_names: Vec<String> = raw_by_name.keys().cloned().collect();
+    let mut unique_names: Vec<String> = agents.by_name.keys().cloned().collect();
     unique_names.sort();
     let skill_resources: Vec<String> = resources
         .get("skills")
@@ -3272,22 +3399,20 @@ fn validate_agents(
         .collect();
     let skill_names = packaged_skill_names(&skill_resources, &dependency_skills.roots, ctx);
     for name in unique_names {
-        validate_agent_inheritance(&name, &raw_by_name, unverified_agents, ctx);
+        let AgentLookup::Found(agent) = agents.lookup(&name) else {
+            continue;
+        };
+        let agent = *agent;
+        let (chain, end) = agents.chain(&name);
+        validate_agent_inheritance(&name, &end, &agents, ctx);
         for field in AgentField::REQUIRED {
-            if !resolved_field_provided(
-                &name,
-                field,
-                &raw_by_name,
-                !unverified_agents.is_empty(),
-                &mut Vec::new(),
-            ) {
-                let path = raw_by_name
-                    .get(&name)
-                    .map(|agent| agent.path.clone())
-                    .unwrap_or_default();
+            // A base that may be a dependency's agent may provide it.
+            let provided = chain.iter().any(|base| base.fields.contains(&field))
+                || matches!(end, ChainEnd::Unknown { .. });
+            if !provided {
                 ctx.error(
                     format!("agent.{}_missing", field.label()),
-                    path,
+                    agent.path.clone(),
                     format!(
                         "Recipe agent '{name}' must declare {} directly or inherit it with from",
                         field.label()
@@ -3296,17 +3421,21 @@ fn validate_agents(
                 );
             }
         }
-        if let Some(agent) = raw_by_name.get(&name) {
-            validate_declared_agent_references(
-                agent,
-                &raw_by_name,
-                &skill_names,
-                &dependency_skills.uninstalled,
-                unverified_agents,
-                ctx,
-            );
-        }
-        validate_resolved_agent_mcp(&name, &raw_by_name, mcp_tool_policy, tool_catalog, ctx);
+        validate_declared_agent_references(
+            agent,
+            &agents,
+            &skill_names,
+            &dependency_skills.uninstalled,
+            ctx,
+        );
+        validate_resolved_agent_mcp(
+            agent,
+            &chain,
+            matches!(end, ChainEnd::Unknown { .. }),
+            mcp_tool_policy,
+            tool_catalog,
+            ctx,
+        );
     }
 }
 
@@ -5197,99 +5326,42 @@ fn validate_agent_names(sources: &[RawAgent], ctx: &mut CheckContext) {
     }
 }
 
-fn validate_agent_inheritance(
-    name: &str,
-    raw_by_name: &HashMap<String, &RawAgent>,
-    unverified_agents: &BTreeSet<String>,
-    ctx: &mut CheckContext,
-) {
-    let mut stack = Vec::new();
-    let mut current = name.to_owned();
-    loop {
-        if stack.len() >= MAX_INHERITANCE_DEPTH {
-            let path = raw_by_name
-                .get(&current)
-                .map(|agent| agent.path.clone())
-                .unwrap_or_else(|| "agents".to_owned());
-            ctx.error(
-                "agent.from_depth",
-                path,
-                format!(
-                    "Recipe agent '{name}' exceeds the maximum from depth of {MAX_INHERITANCE_DEPTH}"
-                ),
-                Some("flatten the inheritance chain"),
-            );
-            return;
-        }
-        let Some(agent) = raw_by_name.get(&current) else {
-            return;
-        };
-        let Some(from) = &agent.from else {
-            return;
-        };
-        let parent = from.to_owned();
-        if stack.contains(&parent) || parent == current {
-            ctx.error(
-                "agent.from_cycle",
-                agent.path.clone(),
-                format!("Recipe agent '{}' has cyclic from chain", agent.name),
-                Some("remove the inheritance cycle"),
-            );
-            return;
-        }
-        if !raw_by_name.contains_key(&parent) && !unverified_agents.is_empty() {
-            ctx.warning(
-                "agent.from_unverified",
-                agent.path.clone(),
-                format!(
-                    "Recipe agent '{}' inherits from '{}', which is not in the Recipe and was not checked against agents in dependencies that are not installed: {}",
-                    agent.name,
-                    from,
-                    unverified_agents.iter().cloned().collect::<Vec<_>>().join(", ")
-                ),
-                Some("install dependencies before checking to verify agents from dependency packages"),
-            );
-            return;
-        }
-        if !raw_by_name.contains_key(&parent) {
-            ctx.error(
-                "agent.from_missing",
-                agent.path.clone(),
-                format!(
-                    "Recipe agent '{}' inherits from missing agent '{}'",
-                    agent.name, from
-                ),
-                Some("update from to reference an existing agent"),
-            );
-            return;
-        }
-        stack.push(current);
-        current = parent;
-    }
-}
-
-fn resolved_field_provided(
-    name: &str,
-    field: AgentField,
-    raw_by_name: &HashMap<String, &RawAgent>,
-    deferred: bool,
-    stack: &mut Vec<String>,
-) -> bool {
-    if stack.iter().any(|item| item == name) || stack.len() >= MAX_INHERITANCE_DEPTH {
-        return false;
-    }
-    let Some(agent) = raw_by_name.get(name) else {
-        // A base in an uninstalled dependency may provide it; `from_unverified` says so.
-        return deferred && !stack.is_empty();
+fn validate_agent_inheritance(name: &str, end: &ChainEnd, agents: &Agents, ctx: &mut CheckContext) {
+    let path_of = |agent: &str| match agents.lookup(agent) {
+        AgentLookup::Found(found) => found.path.clone(),
+        _ => "agents".to_owned(),
     };
-    if agent.fields.contains(&field) {
-        return true;
+    match end {
+        ChainEnd::Root => {}
+        ChainEnd::TooDeep => ctx.error(
+            "agent.from_depth",
+            path_of(name),
+            format!(
+                "Recipe agent '{name}' exceeds the maximum from depth of {MAX_INHERITANCE_DEPTH}"
+            ),
+            Some("flatten the inheritance chain"),
+        ),
+        ChainEnd::Cycle => ctx.error(
+            "agent.from_cycle",
+            path_of(name),
+            format!("Recipe agent '{name}' has cyclic from chain"),
+            Some("remove the inheritance cycle"),
+        ),
+        // Reported once, by the agent whose `from` names it.
+        ChainEnd::Unknown { child, base } if child == name => agents.warn_unknown(
+            path_of(child),
+            &format!("Recipe agent '{child}' inherits from"),
+            base,
+            ctx,
+        ),
+        ChainEnd::Missing { child, base } if child == name => ctx.error(
+            "agent.from_missing",
+            path_of(child),
+            format!("Recipe agent '{child}' inherits from missing agent '{base}'"),
+            Some("update from to reference an existing agent"),
+        ),
+        ChainEnd::Unknown { .. } | ChainEnd::Missing { .. } => {}
     }
-    if let Some(parent) = &agent.from {
-        stack.push(name.to_owned());
-        return resolved_field_provided(parent, field, raw_by_name, deferred, stack);
-    }
-    false
 }
 
 fn packaged_skill_names(
@@ -5363,10 +5435,9 @@ fn skill_frontmatter_name(path: &str, ctx: &CheckContext) -> Option<String> {
 
 fn validate_declared_agent_references(
     agent: &RawAgent,
-    raw_by_name: &HashMap<String, &RawAgent>,
+    agents: &Agents,
     skill_names: &BTreeMap<String, Vec<String>>,
     uninstalled_dependencies: &[String],
-    unverified_agents: &BTreeSet<String>,
     ctx: &mut CheckContext,
 ) {
     let name = &agent.name;
@@ -5407,51 +5478,28 @@ fn validate_declared_agent_references(
         }
     }
     for subagent in agent.subagents.as_deref().unwrap_or_default() {
-        if raw_by_name.contains_key(subagent) {
-            continue;
-        }
-        if unverified_agents.is_empty() {
-            ctx.error(
+        match agents.lookup(subagent) {
+            AgentLookup::Found(_) => {}
+            AgentLookup::Missing => ctx.error(
                 "agent.subagent_missing",
                 path,
                 format!("Recipe agent '{name}' references missing subagent '{subagent}'"),
                 Some("add the agent definition or remove the reference"),
-            );
-        } else {
-            ctx.warning(
-                "agent.subagent_unverified",
+            ),
+            AgentLookup::Unknown => agents.warn_unknown(
                 path,
-                format!(
-                    "Recipe agent '{name}' subagent '{subagent}' is not in the Recipe and was not checked against agents in dependencies that are not installed: {}",
-                    unverified_agents.iter().cloned().collect::<Vec<_>>().join(", ")
-                ),
-                Some("install dependencies before checking to verify agents from dependency packages"),
-            );
+                &format!("Recipe agent '{name}' references subagent"),
+                subagent,
+                ctx,
+            ),
         }
     }
 }
 
-fn resolved_agent_mcp(
-    name: &str,
-    raw_by_name: &HashMap<String, &RawAgent>,
-    stack: &mut Vec<String>,
-) -> Option<AgentMcpConfig> {
-    if stack.iter().any(|item| item == name) || stack.len() >= MAX_INHERITANCE_DEPTH {
-        return None;
-    }
-    let agent = raw_by_name.get(name)?;
-    stack.push(name.to_owned());
-    let inherited = agent
-        .from
-        .as_deref()
-        .and_then(|parent| resolved_agent_mcp(parent, raw_by_name, stack))
-        .unwrap_or_default();
-    stack.pop();
-
-    let Some(child) = &agent.mcp else {
-        return (!inherited.servers.is_empty() || inherited.mode.is_some()).then_some(inherited);
-    };
-    let mut merged = child.clone();
+/// The `mcp` an agent resolves to: its own, else the nearest base's.
+fn resolved_agent_mcp(chain: &[&RawAgent]) -> Option<AgentMcpConfig> {
+    let agent = chain.iter().find(|agent| agent.mcp.is_some())?;
+    let mut merged = agent.mcp.clone()?;
     if merged.mode.is_some() {
         for selection in merged.servers.values_mut() {
             if !activation_allowed("defer", merged.mode) {
@@ -5462,7 +5510,7 @@ fn resolved_agent_mcp(
             }
         }
     }
-    Some(merged)
+    (!merged.servers.is_empty() || merged.mode.is_some()).then_some(merged)
 }
 
 /// `defer` hides a declared tool behind tool search, so it needs `tools`; `eager` declares a tool
@@ -5503,44 +5551,44 @@ fn portable_agent_name(value: &str) -> bool {
     parts.all(valid_part)
 }
 
+/// The tools an agent resolves to: its own, else the nearest base's. `None`
+/// when no agent in the chain declares them but a base may be a dependency's agent.
 fn resolved_agent_tools(
-    name: &str,
-    raw_by_name: &HashMap<String, &RawAgent>,
+    chain: &[&RawAgent],
+    base_unknown: bool,
     catalog: &[String],
-) -> BTreeSet<String> {
-    let mut current = raw_by_name.get(name);
-    for _ in 0..MAX_INHERITANCE_DEPTH {
-        let Some(agent) = current else {
-            break;
-        };
-        if let Some(tools) = &agent.tools {
-            return selected_tools(tools, catalog);
-        }
-        current = agent
-            .from
-            .as_deref()
-            .and_then(|parent| raw_by_name.get(parent));
+) -> Option<BTreeSet<String>> {
+    match chain.iter().find_map(|agent| agent.tools.as_ref()) {
+        Some(tools) => Some(selected_tools(tools, catalog)),
+        None if base_unknown => None,
+        None => Some(BTreeSet::new()),
     }
-    BTreeSet::new()
 }
 
+/// Checks an agent's resolved `mcp`. A value that would come from a base in an
+/// uninstalled dependency is unknown, and the checks on it wait for that base.
 fn validate_resolved_agent_mcp(
-    name: &str,
-    raw_by_name: &HashMap<String, &RawAgent>,
+    agent: &RawAgent,
+    chain: &[&RawAgent],
+    base_unknown: bool,
     mcp_tool_policy: Option<&McpToolPolicy>,
     tool_catalog: &[String],
     ctx: &mut CheckContext,
 ) {
-    let Some(mcp) = resolved_agent_mcp(name, raw_by_name, &mut Vec::new()) else {
+    let Some(mcp) = resolved_agent_mcp(chain) else {
         return;
     };
-    let path = raw_by_name
-        .get(name)
-        .map(|agent| agent.path.clone())
-        .unwrap_or_default();
+    let name = &agent.name;
+    let path = agent.path.clone();
 
-    let tools = resolved_agent_tools(name, raw_by_name, tool_catalog);
-    for (server_id, selection) in &mcp.servers {
+    let tools = resolved_agent_tools(chain, base_unknown, tool_catalog);
+    let servers = if tools.is_some() {
+        mcp.servers.iter().collect()
+    } else {
+        Vec::new()
+    };
+    let tools = tools.unwrap_or_default();
+    for (server_id, selection) in servers {
         for tool in selection
             .behind
             .iter()
@@ -8534,7 +8582,7 @@ mod tests {
             [
                 ("agent.agent_unverified", Severity::Warning),
                 ("package.agents_unmatched", Severity::Error),
-                ("agent.subagent_unverified", Severity::Warning),
+                ("agent.reference_unverified", Severity::Warning),
             ],
             "{:?}",
             report.diagnostics
@@ -8603,10 +8651,103 @@ mod tests {
             report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == "agent.from_unverified"),
+                .any(|diagnostic| diagnostic.code == "agent.reference_unverified"),
             "{:?}",
             report.diagnostics
         );
+    }
+
+    /// A Recipe whose `agents/agent.yaml` is `agent`, with a prompt template,
+    /// and whose `pi.agents` points into `@acme/agents` unless `complete`.
+    fn agent_reference_recipe(agent: &str, prompt: &str, complete: bool) -> Report {
+        let mut patterns = vec!["./agents/*.yaml"];
+        if !complete {
+            patterns.push("./node_modules/@acme/agents/agents/reviewer.yaml");
+        }
+        let package = json!({
+            "name": "agent-references",
+            "dependencies": { "@acme/agents": ">=1.0.0" },
+            "pi": {
+                "agents": patterns,
+                "prompts": ["./prompts/*.md"],
+                "mcp": { "servers": [{ "id": "docs", "tools": { "include": ["*"] } }] }
+            }
+        });
+        let package = serde_json::to_string_pretty(&package).expect("serialize package");
+        check_recipe_files(&recipe_files(&[
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            ("agents/agent.yaml", agent),
+            ("prompts/go.md", prompt),
+        ]))
+    }
+
+    const MODEL: &str = "model:\n  name: test/provider-model\n";
+    const PROMPT: &str = "---\ndescription: Go\n---\nGo.";
+
+    /// Each kind of reference to an agent by name: Unknown when `pi.agents`
+    /// points into an uninstalled dependency, the original diagnostic otherwise.
+    #[test]
+    fn every_agent_reference_is_unverified_only_while_a_dependency_is_uninstalled() {
+        let cases: [(&str, String, &str, &str); 5] = [
+            (
+                "subagent",
+                format!("name: agent\n{MODEL}subagents: [reviewer]\n"),
+                PROMPT,
+                "agent.subagent_missing",
+            ),
+            ("from", format!("name: agent\n{MODEL}from: reviewer\n"), PROMPT, "agent.from_missing"),
+            // model is required; the unknown base may provide it.
+            ("inherited required field", "name: agent\nfrom: reviewer\n".to_owned(), PROMPT, "agent.model.name_missing"),
+            // tools are inherited; the unknown base may declare `read`.
+            (
+                "inherited tools",
+                "name: agent\nfrom: reviewer\nmcp:\n  servers:\n    docs:\n      include: ['*']\n      behind: [read]\n".to_owned(),
+                PROMPT,
+                "agent.mcp_behind_tool_undeclared",
+            ),
+            (
+                "prompt suggest",
+                format!("name: agent\n{MODEL}"),
+                "---\nsuggest: [reviewer]\ndescription: Go\n---\nGo.",
+                "prompts.suggest_agent_unknown",
+            ),
+        ];
+        for (kind, agent, prompt, original) in cases {
+            let unknown = agent_reference_recipe(&agent, prompt, false);
+            assert!(
+                !unknown
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.severity.is_error() || d.code == original),
+                "{kind}: {:?}",
+                unknown.diagnostics
+            );
+            assert!(
+                unknown
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "agent.reference_unverified"
+                        && d.message.contains("'reviewer'")
+                        && d.message.contains("@acme/agents")),
+                "{kind}: {:?}",
+                unknown.diagnostics
+            );
+            let missing = agent_reference_recipe(&agent, prompt, true);
+            assert!(
+                missing.diagnostics.iter().any(|d| d.code == original),
+                "{kind}: {:?}",
+                missing.diagnostics
+            );
+            assert!(
+                !missing
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.code == "agent.reference_unverified"),
+                "{kind}: {:?}",
+                missing.diagnostics
+            );
+        }
     }
 
     #[test]
