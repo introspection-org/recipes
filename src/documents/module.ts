@@ -1,8 +1,9 @@
-import { fileURLToPath } from "node:url";
-
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { loadRecipePackageModule } from "../recipe/companions.js";
+import {
+  loadRecipePackageModule,
+  recipesPackagePath,
+} from "../recipe/companions.js";
 import {
   recipeDocumentPackageName,
   type RecipePackageDocument,
@@ -18,9 +19,7 @@ import { runDocumentHelper } from "./python.js";
 import type { DocumentAdapter, DocumentCapabilities } from "./types.js";
 
 /** The core `documents` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
-export const DOCUMENTS_SKILL = fileURLToPath(
-  new URL("../../skills/documents/SKILL.md", import.meta.url),
-);
+export const DOCUMENTS_SKILL = recipesPackagePath("skills/documents/SKILL.md");
 
 /**
  * The document format contract this host implements. A format module

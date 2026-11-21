@@ -27,6 +27,7 @@ import {
 
 export type { RecipePackageManifest } from "./package.js";
 export type { RecipeAgentMcp, RecipeAgentToolPolicy } from "./agent.js";
+export { RECIPES_PACKAGE_DIR_ENV } from "./companions.js";
 export {
   activateRecipePython,
   prepareRecipePython,

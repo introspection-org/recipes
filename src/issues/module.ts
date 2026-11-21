@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { recipesPackagePath } from "../recipe/companions.js";
 
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
@@ -22,9 +22,7 @@ import type { RecipeToolExposure } from "../recipe/agent.js";
 export const ISSUES_PROVIDERS_PACKAGE = "@introspection-ai/recipe-issues";
 
 /** The `issues` skill, offered to every agent that selects the tool. It ships beside `dist/`. */
-export const ISSUES_SKILL = fileURLToPath(
-  new URL("../../skills/issues/SKILL.md", import.meta.url),
-);
+export const ISSUES_SKILL = recipesPackagePath("skills/issues/SKILL.md");
 
 /** The issues family for `loadProviderModules`: every first-party id is in one bundle. */
 export const ISSUES_PROVIDER_FAMILY: ProviderFamily<RecipeIssuesProviderModule> =
