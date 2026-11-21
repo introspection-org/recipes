@@ -10,15 +10,14 @@ on:
 
 permissions: {}
 
-# Push runs: newest push to a ref wins — a run superseded by a newer main
-# push is cancelled rather than queued behind. workflow_dispatch runs live in
-# a separate group (cancel-in-progress: false below), so a manual re-run to
-# finish an interrupted release is never cancelled by a concurrent push. Safe
-# either way: release-please is idempotent, and the plan job publishes only
+# A running release is never cancelled: a newer push waits behind it, and
+# pushes that land meanwhile collapse into that one waiting run. Cancelling
+# lost a release when merges landed in a row, each run cancelled before it
+# published. release-please is idempotent, and the plan job publishes only
 # versions their registries lack.
 concurrency:
   group: release-please-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 jobs:
   release-please:
