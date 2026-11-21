@@ -1018,8 +1018,14 @@ fn validate_pi_config(
         ("skills", skills, false),
         ("prompts", prompts, false),
     ] {
+        let deferred = key == "agents"
+            && patterns
+                .patterns
+                .iter()
+                .any(|pattern| uninstalled_dependency_of(pattern, package, ctx).is_some());
         let paths = resolve_resource_patterns(key, &patterns, required, package, ctx);
-        if required && paths.is_empty() {
+        // Agents only in an uninstalled dependency are warned about, not missing.
+        if required && paths.is_empty() && !deferred {
             ctx.error(
                 "package.agents_missing",
                 PACKAGE_JSON,
@@ -8500,6 +8506,37 @@ mod tests {
         );
         assert!(report.diagnostics[0].message.contains("'@acme/agents'"));
         assert!(report.diagnostics[1].message.contains("@acme/other"));
+    }
+
+    #[test]
+    fn a_recipe_whose_agents_are_all_in_an_uninstalled_dependency_still_declares_agents() {
+        let package = json!({
+            "name": "dependency-agents-only",
+            "dependencies": { "@acme/agents": ">=1.0.0" },
+            "pi": { "agents": ["./node_modules/@acme/agents/agents/agent.yaml"] }
+        });
+        let package = serde_json::to_string_pretty(&package).expect("serialize package");
+        let files = recipe_files(&[
+            ("package.json", package.as_str()),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+        ]);
+        let report = check_recipe_files(&files);
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Severity::Error),
+            "{:?}",
+            report.diagnostics
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "agent.agent_unverified"),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]
