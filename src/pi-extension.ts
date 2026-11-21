@@ -698,7 +698,12 @@ export function createRecipesExtension(
   // Running subagents stay in view above the footer, one line each, redrawn
   // once a second until none is running.
   let agentsWidgetTimer: NodeJS.Timeout | undefined;
+  // Re-reports the step when the running count moves; set once the footer is registered.
+  let refreshAgentStep: (() => void) | undefined;
+  const runningAgents = () =>
+    [...childRuns.values()].filter((run) => run.status === "running").length;
   const renderAgentsWidget = () => {
+    refreshAgentStep?.();
     const ctx = localAgentContext;
     const running = [...childRuns.values()].filter(
       (run) => run.status === "running",
@@ -726,7 +731,7 @@ export function createRecipesExtension(
   /** `4 agents · ↓ 4.1k · $0.45`: how many run now, and every run's usage this session. */
   const agentsSummary = (): string | undefined => {
     const runs = [...childRuns.values()];
-    const running = runs.filter((run) => run.status === "running").length;
+    const running = runningAgents();
     const output = runs.reduce((sum, run) => sum + (run.usage?.output ?? 0), 0);
     const cost = runs.reduce((sum, run) => sum + (run.usage?.cost ?? 0), 0);
     const parts = [
@@ -2053,8 +2058,9 @@ export function createRecipesExtension(
       Date.now,
       undefined,
       undefined,
-      agentsSummary,
+      { running: runningAgents, summary: agentsSummary },
     );
+    refreshAgentStep = () => skillProgress.refresh();
 
     pi.on("session_start", async (event, ctx) => {
       if (!ensureRecipeFetch()) {

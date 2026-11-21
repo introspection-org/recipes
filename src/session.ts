@@ -36,6 +36,7 @@ import {
   MAX_AGENT_RUN_DEPTH,
   type AgentRunController,
   type AgentRunEventObserver,
+  type AgentRunSummary,
 } from "./agents.js";
 import { compactionExtensions } from "./compaction.js";
 import {
@@ -839,6 +840,16 @@ async function createSessionForAgent(
   let candidates: Model<Api>[] | undefined;
   let session: AgentSession | undefined;
   let agentRuns: AgentRunController | undefined;
+  // The step line counts this session's running subagent runs, looking again
+  // whenever one of them updates.
+  const agentRunsChanged: Array<() => void> = [];
+  const runningAgents = {
+    running: () =>
+      agentRuns?.list().filter((run) => run.status === "running").length ?? 0,
+    onChange: (listener: () => void) => {
+      agentRunsChanged.push(listener);
+    },
+  };
   let unsubscribe: (() => void) | undefined;
   let detachInstrumentation: (() => void) | undefined;
   // Python: check only, fail-closed before any MCP runtime starts. The host
@@ -1053,7 +1064,9 @@ async function createSessionForAgent(
         ),
       );
     }
-    inlineExtensions.push(...recipeStepExtensions(recipe, opts.onRecipeStep));
+    inlineExtensions.push(
+      ...recipeStepExtensions(recipe, opts.onRecipeStep, runningAgents),
+    );
     inlineExtensions.push(
       ...compactionExtensions(recipe.sessionConfig, () => session),
     );
@@ -1296,7 +1309,15 @@ async function createSessionForAgent(
       ...(environmentBash ? [environmentBash] : []),
       ...(opts.customTools ?? []).map((tool) => withExposure(tool, exposure)),
       ...(wantsSubagents
-        ? [createAgentTool(agentRuns, recipe.subagents, opts.agentToolOptions)]
+        ? [
+            createAgentTool(
+              watchAgentRuns(agentRuns, () => {
+                for (const listener of agentRunsChanged) listener();
+              }),
+              recipe.subagents,
+              opts.agentToolOptions,
+            ),
+          ]
         : []),
       ...(mcp.tools ?? []),
       ...toolSearchTools,
@@ -1620,4 +1641,39 @@ async function sessionBash(
     },
   }) as ToolDefinition;
   return toolsBinDir ? withToolsCommand(bash, firstParty) : bash;
+}
+
+/** `controller`, calling `changed` whenever one of its runs may have started or ended. */
+function watchAgentRuns(
+  controller: AgentRunController,
+  changed: () => void,
+): AgentRunController {
+  const after = async (summary: Promise<AgentRunSummary>) => {
+    const run = await summary;
+    changed();
+    return run;
+  };
+  return {
+    list: () => controller.list(),
+    get: (id) => controller.get(id),
+    async start(input) {
+      const run = await controller.start({
+        ...input,
+        onUpdate(summary) {
+          changed();
+          return input.onUpdate?.(summary);
+        },
+      });
+      changed();
+      return run;
+    },
+    wait: (id, signal) => controller.wait(id, signal),
+    message: (id, message) => after(controller.message(id, message)),
+    interrupt: (id) => after(controller.interrupt(id)),
+    close: (id) => after(controller.close(id)),
+    ...(controller.forget
+      ? { forget: (id: string) => controller.forget!(id) }
+      : {}),
+    shutdown: () => controller.shutdown(),
+  };
 }
