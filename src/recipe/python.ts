@@ -38,9 +38,8 @@ import {
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { resolveRecipePackage } from "./companions.js";
+import { recipesPackagePath, resolveRecipePackage } from "./companions.js";
 import {
   installedRecipeDependencies,
   isPythonModuleName,
@@ -207,14 +206,14 @@ const SHARED_PYTHON_PACKAGES: readonly string[] = [
   "@introspection-ai/recipe-documents-pdf",
 ];
 
-/** Recipes' own package directory, which holds the shared project. */
-const RECIPES_PACKAGE_DIR = fileURLToPath(new URL("../../", import.meta.url));
-
 function sharedDeclaration(): Declaration {
   return {
     kind: "shared",
     owner: "@introspection-ai/recipes",
-    packageDir: RECIPES_PACKAGE_DIR,
+    packageDir: resolve(
+      recipesPackagePath("python/shared/pyproject.toml"),
+      "../../..",
+    ),
     python: {
       project: "python/shared",
       lockfile: "python/shared/uv.lock",
