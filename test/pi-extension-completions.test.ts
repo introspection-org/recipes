@@ -28,7 +28,7 @@ function extensionContext(cwd: string, opts: { isIdle?: () => boolean } = {}) {
   return {
     cwd,
     hasUI: true,
-    ui: { notify: vi.fn() },
+    ui: { notify: vi.fn(), setWidget: vi.fn() },
     isIdle: opts.isIdle ?? (() => true),
     modelRegistry: {
       authStorage,
@@ -397,6 +397,113 @@ describe("recipe child agent completion delivery", () => {
       expect(text).toContain("expand for full output");
       expect(text).toContain("✗ explorer recipe-agent-2 failed");
       expect(text).toContain("⎿  boom");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("subagent usage", () => {
+  it("counts a child's tokens and cost and reports them to the parent", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-usage-"));
+    try {
+      let childOpts: any;
+      let finish!: (output: string) => void;
+      const createChildAgentRunner = vi.fn((opts: any) => {
+        childOpts = opts;
+        const done = new Promise<string>((resolve) => {
+          finish = resolve;
+        });
+        return {
+          async start() {},
+          async prompt() {
+            return await done;
+          },
+          async cancel() {},
+          async shutdown() {},
+        };
+      });
+      const { pi, ctx, projectDir } = await startSession(
+        createChildAgentRunner,
+        root,
+      );
+      const tool = agentTool(pi);
+      const started = await tool.execute(
+        "call-usage",
+        { name: "explorer", prompt: "look around" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const id = started?.details?.agent?.agent_run_id as string;
+
+      const assistantEnd = (output: number, cost: number) =>
+        childOpts.onEvent({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [],
+            usage: {
+              input: 100,
+              output,
+              cacheRead: 2000,
+              cacheWrite: 50,
+              cost: { total: cost },
+            },
+          },
+        });
+      assistantEnd(1500, 0.05);
+      assistantEnd(800, 0.04);
+
+      const render = () =>
+        tool.renderResult!(
+          started as any,
+          { expanded: false, isPartial: false },
+          undefined as any,
+          {
+            lastComponent: undefined,
+            invalidate: () => {},
+            toolCallId: "call-usage",
+          } as any,
+        )
+          .render(200)
+          .join("\n");
+      expect(render()).toMatch(
+        new RegExp(
+          `run ${id} \\(explorer[^\\n]*\\[↓ 2\\.3k tokens · \\$0\\.09 · \\d\\d:\\d\\d\\]`,
+        ),
+      );
+
+      finish("found it");
+      await waitForPersistedStatus(projectDir, id, "completed");
+      expect(render()).toContain("[completed · ↓ 2.3k tokens · $0.09 · ");
+
+      await pi.emitExtensionEvent(
+        { type: "agent_end", messages: [] } as any,
+        ctx,
+      );
+      await vi.waitFor(() => expect(completionMessages(pi)).toHaveLength(1));
+      expect(completionMessages(pi)[0]!.message.content).toContain(
+        `[completed · ↓ 2.3k tokens · $0.09]`,
+      );
+      const status = await tool.execute(
+        "call-status",
+        { action: "status", id },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(status?.details?.agent?.usage).toEqual({
+        input_tokens: 200,
+        output_tokens: 2300,
+        cache_read_tokens: 4000,
+        cache_write_tokens: 100,
+        cost_usd: 0.09,
+      });
+      const statusText = status?.content
+        ?.map((part) => (part.type === "text" ? part.text : ""))
+        .join("");
+      expect(statusText).toContain("↓ 2.3k tokens · $0.09");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

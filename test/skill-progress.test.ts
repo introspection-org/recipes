@@ -12,6 +12,7 @@ import {
   stepSkills,
   stepLine,
   stepState,
+  wholeSkillRead,
   type RecipeSkills,
   type RecipeStep,
 } from "../src/skill-progress.js";
@@ -26,7 +27,10 @@ const names = [
 const skills = { names };
 
 /** The footer registered against a fake Pi, with a clock the test moves and a UI that records the status. */
-function harness(recipeSkills: RecipeSkills) {
+function harness(
+  recipeSkills: RecipeSkills,
+  agents?: () => string | undefined,
+) {
   const handlers = new Map<string, (event: any, ctx: any) => void>();
   const pi = {
     on: (name: string, handler: any) => handlers.set(name, handler),
@@ -57,6 +61,8 @@ function harness(recipeSkills: RecipeSkills) {
       tick = fn;
       return () => {};
     },
+    undefined,
+    agents,
   );
   return {
     handlers,
@@ -126,6 +132,37 @@ describe("where the agent is", () => {
     expect(stepSkills(["research", "write"])).toEqual(["research", "write"]);
   });
 
+  it("judges each command of a shell line on its own", () => {
+    const steps = {
+      names: ["improve-select", "improve-classify"],
+      phases: ["improve"],
+    };
+    expect(
+      wholeSkillRead(
+        {
+          command:
+            "cat s/improve-select/SKILL.md; echo =====; cat s/improve-classify/SKILL.md | head -80",
+        },
+        steps,
+      ),
+    ).toBe("improve-select");
+    expect(
+      wholeSkillRead(
+        {
+          command:
+            "cat s/improve-select/SKILL.md && cat s/improve-classify/SKILL.md",
+        },
+        steps,
+      ),
+    ).toBe("improve-classify");
+    expect(
+      wholeSkillRead({ command: "head -40 s/improve-select/SKILL.md" }, steps),
+    ).toBeUndefined();
+    expect(
+      wholeSkillRead({ path: "s/improve-select/SKILL.md", limit: 20 }, steps),
+    ).toBeUndefined();
+  });
+
   it("counts reading a skill, not glancing at its top", () => {
     expect(readsWhole({ path: "s/build-review/SKILL.md", limit: 30 })).toBe(
       false,
@@ -189,6 +226,35 @@ describe("where the agent is", () => {
         skills,
       ),
     ).toBe("build-brainstorm");
+  });
+
+  it("shows running subagents and their usage before the clock", () => {
+    let agents: string | undefined = "4 agents · ↓ 4.1k · $0.45";
+    const f = harness(skills, () => agents);
+    const ctx = f.ctx([
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              name: "read",
+              arguments: { path: "s/build-draft/SKILL.md" },
+            },
+          ],
+        },
+      },
+    ]);
+    f.progress.resume(ctx as any);
+    f.handlers.get("agent_start")!({}, ctx);
+    f.at(12 * 60_000 + 4_000);
+    expect(f.statuses.at(-1)).toContain(
+      "build ✓ brainstorm ▸ draft ○ review · 4 agents · ↓ 4.1k · $0.45 · 12:04",
+    );
+    agents = undefined;
+    f.at(12 * 60_000 + 5_000);
+    expect(f.statuses.at(-1)).toContain("▸ draft ○ review · 12:05");
   });
 
   it("shows the step and the agent's working time, paused while the person is in the loop", () => {

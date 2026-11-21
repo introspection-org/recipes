@@ -27,6 +27,15 @@ export interface ChildToolActivity {
   error?: string;
 }
 
+/** Tokens and cost of a run's model calls, its own children's included. */
+interface ChildRunUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+
 export interface ChildRunSnapshot {
   id: string;
   agent: string;
@@ -38,6 +47,7 @@ export interface ChildRunSnapshot {
   output?: string;
   error?: string;
   toolCalls: ChildToolActivity[];
+  usage?: ChildRunUsage;
 }
 
 const RUN_STATUSES: readonly string[] = [

@@ -43,13 +43,16 @@ import {
   ChildCompletionQueue,
   envelopeFromRun,
   renderCompletionNotice,
+  usageText,
   type ChildCompletionEnvelope,
 } from "./child/agent-completions.js";
 import {
   AGENT_RUN_EVENT_ENTRY_TYPE,
   type AgentRunEvent,
   type AgentRunEventObserver,
+  compactTokens,
   notifyAgentRunEvent,
+  runProgress,
 } from "./agents.js";
 import {
   clearMcpSession,
@@ -167,6 +170,9 @@ interface AgentCallParams {
 
 /** Mid-turn completion delivery retries on this cadence until the session idles. */
 const COMPLETION_DELIVERY_RETRY_MS = 100;
+
+/** The widget listing running subagents above the footer. */
+const AGENTS_WIDGET_KEY = "recipe-agents";
 /** Published by the hosted runtime's proxy preload. */
 const MANAGED_FETCH_INSTALLER_SYMBOL = Symbol.for(
   "introspection.installManagedFetch",
@@ -453,7 +459,10 @@ function formatCompletionMessage(
       envelope.duration_ms !== undefined
         ? ` ${themeFg(theme, "muted", `· ${formatDurationMs(envelope.duration_ms)}`)}`
         : "";
-    let text = `${icon} ${themeBold(theme, envelope.agent)} ${themeFg(theme, "muted", envelope.id)}${label} ${themeFg(theme, "muted", envelope.status)}${duration}`;
+    const usage = envelope.usage
+      ? ` ${themeFg(theme, "muted", `· ${usageText(envelope.usage)}`)}`
+      : "";
+    let text = `${icon} ${themeBold(theme, envelope.agent)} ${themeFg(theme, "muted", envelope.id)}${label} ${themeFg(theme, "muted", envelope.status)}${duration}${usage}`;
     const preview =
       (envelope.status === "failed"
         ? (envelope.error ?? envelope.output_preview)
@@ -484,7 +493,34 @@ function snapshotOf(run: ChildRunSnapshot): ChildRunSnapshot {
     output: run.output,
     error: run.error,
     toolCalls: run.toolCalls.map((call) => ({ ...call })),
+    ...(run.usage ? { usage: { ...run.usage } } : {}),
   };
+}
+
+/** Adds an assistant message's usage, from a child's `message_end` event, to its run's. */
+function addMessageUsage(run: ChildRunSnapshot, event: unknown): boolean {
+  const record = asRecord(event);
+  if (record?.type !== "message_end") return false;
+  const message = asRecord(record.message);
+  const usage = asRecord(message?.usage);
+  if (message?.role !== "assistant" || !usage) return false;
+  const number = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const total = run.usage ?? {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+  };
+  run.usage = {
+    input: total.input + number(usage.input),
+    output: total.output + number(usage.output),
+    cacheRead: total.cacheRead + number(usage.cacheRead),
+    cacheWrite: total.cacheWrite + number(usage.cacheWrite),
+    cost: total.cost + number(asRecord(usage.cost)?.total),
+  };
+  return true;
 }
 
 function controllerSummary(
@@ -523,6 +559,17 @@ function controllerSummary(
     output_preview: run.output,
     output: run.output,
     error: run.error,
+    ...(run.usage
+      ? {
+          usage: {
+            input_tokens: run.usage.input,
+            output_tokens: run.usage.output,
+            cache_read_tokens: run.usage.cacheRead,
+            cache_write_tokens: run.usage.cacheWrite,
+            cost_usd: run.usage.cost,
+          },
+        }
+      : {}),
   };
 }
 
@@ -648,6 +695,54 @@ export function createRecipesExtension(
   // Latest extension context, for the idle check gating completion delivery.
   let sessionCtx: Pick<ExtensionContext, "isIdle"> | null = null;
   let localAgentContext: ExtensionContext | null = null;
+  // Running subagents stay in view above the footer, one line each, redrawn
+  // once a second until none is running.
+  let agentsWidgetTimer: NodeJS.Timeout | undefined;
+  const renderAgentsWidget = () => {
+    const ctx = localAgentContext;
+    const running = [...childRuns.values()].filter(
+      (run) => run.status === "running",
+    );
+    if (running.length === 0 && agentsWidgetTimer) {
+      clearInterval(agentsWidgetTimer);
+      agentsWidgetTimer = undefined;
+    }
+    if (!ctx?.hasUI) return;
+    ctx.ui.setWidget(
+      AGENTS_WIDGET_KEY,
+      running.length === 0
+        ? undefined
+        : running.map((run) => {
+            const summary = controllerSummary(run);
+            const label =
+              summary.label && summary.label !== summary.agent_name
+                ? ` (${summary.label})`
+                : "";
+            return `▸ ${summary.agent_name}${label} · ${runProgress(summary)}`;
+          }),
+      { placement: "belowEditor" },
+    );
+  };
+  /** `4 agents · ↓ 4.1k · $0.45`: how many run now, and every run's usage this session. */
+  const agentsSummary = (): string | undefined => {
+    const runs = [...childRuns.values()];
+    const running = runs.filter((run) => run.status === "running").length;
+    const output = runs.reduce((sum, run) => sum + (run.usage?.output ?? 0), 0);
+    const cost = runs.reduce((sum, run) => sum + (run.usage?.cost ?? 0), 0);
+    const parts = [
+      ...(running > 0 ? [`${running} agent${running === 1 ? "" : "s"}`] : []),
+      ...(output > 0
+        ? [`↓ ${compactTokens(output)}`, `$${cost.toFixed(2)}`]
+        : []),
+    ];
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+  };
+  const watchAgents = () => {
+    if (agentsWidgetTimer) return;
+    agentsWidgetTimer = setInterval(renderAgentsWidget, 1000);
+    agentsWidgetTimer.unref?.();
+    renderAgentsWidget();
+  };
   let extensionApi: ExtensionAPI | null = null;
   let sessionConfigurationError: string | null = null;
   const visibleAgentDefinitions = new Map<string, RecipeAgentDefinition>();
@@ -1569,6 +1664,7 @@ export function createRecipesExtension(
     // eslint-disable-next-line prefer-const
     let run: ChildRun | undefined;
     const notifyUpdate = () => {
+      watchAgents();
       if (!run || !onUpdate) return;
       try {
         void Promise.resolve(onUpdate(controllerSummary(run))).catch(() => {});
@@ -1596,10 +1692,14 @@ export function createRecipesExtension(
       agentName,
       modelRegistry: ctx.modelRegistry,
       agentRunId: id,
-      // Runs the child starts in turn arrive already attributed to it.
-      onAgentRunEvent: recordRunEvent,
+      // Runs the child starts in turn arrive already attributed to it, and their usage counts as its own.
+      onAgentRunEvent(envelope) {
+        if (run && addMessageUsage(run, envelope.event)) notifyUpdate();
+        recordRunEvent(envelope);
+      },
       onEvent(event) {
         if (!run) return;
+        if (addMessageUsage(run, event)) notifyUpdate();
         recordRunEvent({
           type: "agent_run_event",
           agent_run_id: run.id,
@@ -1876,25 +1976,85 @@ export function createRecipesExtension(
       text.setText(formatAgentCall(params as AgentCallParams, theme));
       return text;
     };
+    // A run's line redraws once a second while it runs, with its time, tokens, cost and tool.
+    const liveRows = new Map<string, Map<string, () => void>>();
+    let liveTicker: NodeJS.Timeout | undefined;
+    const tickLiveRows = () => {
+      for (const [id, rows] of liveRows) {
+        for (const invalidate of rows.values()) invalidate();
+        if (childRuns.get(id)?.status !== "running") liveRows.delete(id);
+      }
+      if (liveRows.size === 0 && liveTicker) {
+        clearInterval(liveTicker);
+        liveTicker = undefined;
+      }
+    };
+    agentTool.renderResult = (result, _options, _theme, context) => {
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const content = result.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n");
+      const summary = asRecord(result.details)?.agent as
+        AgentRunSummary | undefined;
+      const live = summary ? childRuns.get(summary.agent_run_id) : undefined;
+      if (!summary || !live) {
+        text.setText(content);
+        return text;
+      }
+      const current = controllerSummary(live);
+      const progress =
+        current.status === "running"
+          ? runProgress(current)
+          : `${current.status} · ${runProgress(current)}`;
+      const lead = `run ${summary.agent_run_id} (`;
+      text.setText(
+        content
+          .split("\n")
+          .map((line) =>
+            line.includes(lead)
+              ? line.replace(/\[[^\]]*\]$/, `[${progress}]`)
+              : line,
+          )
+          .join("\n"),
+      );
+      if (current.status === "running") {
+        const rows = liveRows.get(summary.agent_run_id) ?? new Map();
+        rows.set(context.toolCallId, context.invalidate);
+        liveRows.set(summary.agent_run_id, rows);
+        if (!liveTicker) {
+          liveTicker = setInterval(tickLiveRows, 1000);
+          liveTicker.unref?.();
+        }
+      }
+      return text;
+    };
     pi.registerTool(agentTool);
 
     const suggestionPicker = createRecipeSuggestionPicker(pi, env);
     // The footer names the agent's step: the skill it last read.
     const skillsByRecipe = new WeakMap<object, RecipeSkills>();
-    const skillProgress = registerSkillProgress(pi, (ctx) => {
-      const resolved = safeLoadState(pi, ctx.cwd)?.resolved;
-      if (!resolved) return undefined;
-      let skills = skillsByRecipe.get(resolved);
-      if (!skills) {
-        skills = {
-          names: resolved.definition.skills,
-          folders: skillFolders(resolved.skillPaths, resolved.recipeDir),
-          phases: resolved.definition.phases,
-        };
-        skillsByRecipe.set(resolved, skills);
-      }
-      return skills;
-    });
+    const skillProgress = registerSkillProgress(
+      pi,
+      (ctx) => {
+        const resolved = safeLoadState(pi, ctx.cwd)?.resolved;
+        if (!resolved) return undefined;
+        let skills = skillsByRecipe.get(resolved);
+        if (!skills) {
+          skills = {
+            names: resolved.definition.skills,
+            folders: skillFolders(resolved.skillPaths, resolved.recipeDir),
+            phases: resolved.definition.phases,
+          };
+          skillsByRecipe.set(resolved, skills);
+        }
+        return skills;
+      },
+      Date.now,
+      undefined,
+      undefined,
+      agentsSummary,
+    );
 
     pi.on("session_start", async (event, ctx) => {
       if (!ensureRecipeFetch()) {

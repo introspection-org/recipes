@@ -69,7 +69,7 @@ function extensionContext(cwd: string) {
   return {
     cwd,
     hasUI: true,
-    ui: { notify: vi.fn() },
+    ui: { notify: vi.fn(), setWidget: vi.fn() },
     isIdle: () => true,
     modelRegistry: {
       authStorage: { kind: "shared-auth-storage" },

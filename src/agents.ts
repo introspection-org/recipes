@@ -9,6 +9,7 @@ import {
   renderCompletionNotice,
   type ChildCompletionEnvelope,
 } from "./child/agent-completions.js";
+import { elapsed } from "./skill-progress.js";
 
 /** Portable lifecycle contract for Recipe agent runs. */
 export type AgentRunStatus =
@@ -19,6 +20,15 @@ export interface AgentNestedToolSummary {
   verb: string;
   detail: string;
   toolInput?: Record<string, unknown>;
+}
+
+/** A run's model usage so far: output tokens and cost in USD. */
+export interface AgentRunUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
 }
 
 export interface AgentRunSummary {
@@ -36,6 +46,29 @@ export interface AgentRunSummary {
   output_preview?: string;
   output?: string;
   error?: string;
+  usage?: AgentRunUsage;
+}
+
+/** `2.3k` for 2300 tokens, the count as it is under a thousand. */
+export function compactTokens(count: number): string {
+  return count < 1000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
+}
+
+/**
+ * A run's progress in one line: `↓ 2.3k tokens · $0.09 · 00:40 · edit`, its
+ * output tokens, cost, its time on the footer's clock and, while it runs, the
+ * tool it is in.
+ */
+export function runProgress(run: AgentRunSummary, now = Date.now()): string {
+  const parts: string[] = [];
+  if (run.usage) {
+    parts.push(`↓ ${compactTokens(run.usage.output_tokens)} tokens`);
+    parts.push(`$${run.usage.cost_usd.toFixed(2)}`);
+  }
+  parts.push(elapsed((run.completed_at ?? now) - run.started_at));
+  if (run.status === "running" && run.current_tool)
+    parts.push(run.current_tool);
+  return parts.join(" · ");
 }
 
 /**
@@ -134,7 +167,8 @@ function terminal(run: AgentRunSummary): boolean {
 
 /** The run id leads; the agent and label only describe it. */
 function runLine(run: AgentRunSummary): string {
-  return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}]`;
+  const progress = run.usage ? ` · ${runProgress(run)}` : "";
+  return `run ${run.agent_run_id} (${run.agent_name}: ${run.label}) [${run.status}${progress}]`;
 }
 
 function statusBlock(run: AgentRunSummary): string {
@@ -280,7 +314,7 @@ export function createAgentTool(
           return result(run, statusBlock(run));
         }
         if (params.action === "wait") {
-          return await waitFor(params.id, signal);
+          return await waitFor(params.id, signal, onUpdate);
         }
         if (params.action === "message") {
           if (!params.message)
@@ -326,8 +360,18 @@ export function createAgentTool(
   async function waitFor(
     target: string | AgentRunSummary,
     signal: AbortSignal | undefined,
+    onUpdate?: (update: ReturnType<typeof result>) => void,
   ) {
     const id = typeof target === "string" ? target : target.agent_run_id;
+    // The wait is the row on screen while it lasts, so it shows the run's progress.
+    const showProgress = () => {
+      const current = controller.get(id);
+      if (current && !terminal(current))
+        onUpdate?.(result(current, `Waiting for ${runLine(current)}`));
+    };
+    const progress = onUpdate ? setInterval(showProgress, 1000) : undefined;
+    progress?.unref?.();
+    showProgress();
     let run: AgentRunSummary;
     try {
       run = await controller.wait(id, signal);
@@ -336,6 +380,8 @@ export function createAgentTool(
         controller.get(id) ?? (typeof target === "string" ? null : target);
       if (!signal?.aborted || !fallback) throw error;
       run = fallback;
+    } finally {
+      clearInterval(progress);
     }
     if (!terminal(run)) {
       return result(
