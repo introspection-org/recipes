@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-recipe-check"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "regex",
  "regress",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-recipe-check-python"
-version = "0.30.0"
+version = "0.31.0"
 dependencies = [
  "introspection-recipe-check",
  "pyo3",

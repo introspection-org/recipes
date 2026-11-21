@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.30.0...introspection-recipe-check-v0.31.0) (2026-11-21)
+
+
+### Features
+
+* **recipe-check:** warn instead of failing on agents from an uninstalled dependency ([#565](https://github.com/introspection-org/recipes/issues/565)) ([1d5bbb8](https://github.com/introspection-org/recipes/commit/1d5bbb8f14dd5650d7d5112af90bd647dcb79175))
+
 ## [0.30.0](https://github.com/introspection-org/recipes/compare/introspection-recipe-check-v0.29.0...introspection-recipe-check-v0.30.0) (2026-11-20)
 
 
