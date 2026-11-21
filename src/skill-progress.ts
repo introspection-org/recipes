@@ -246,6 +246,16 @@ export interface RecipeStep {
   helper?: string;
   paused: boolean;
   worked_ms: number;
+  /** Subagent runs of this session running now; absent when none is. */
+  agents?: number;
+}
+
+/** This session's subagent runs, as the step line counts them. */
+export interface RunningAgents {
+  /** How many run now. */
+  running(): number;
+  /** Their usage for the footer (`4 agents · ↓ 4.1k · $0.45`), when there is any. */
+  summary?(): string | undefined;
 }
 
 /** Where the agent is among its steps, without the clock. */
@@ -374,7 +384,8 @@ function skillReads(
  * session-start handler to call, so a resumed session shows its step at once.
  * `report`, when given, receives the step as data whenever it or the clock's
  * running state changes (not every second), with or without a UI, for a host
- * that draws its own line.
+ * that draws its own line. Call the returned `refresh` when a subagent run
+ * starts or ends, so the count is re-reported without waiting for the clock.
  */
 export function registerSkillProgress(
   pi: ExtensionAPI,
@@ -387,9 +398,8 @@ export function registerSkillProgress(
     return () => clearInterval(timer);
   },
   report?: (step: RecipeStep) => void,
-  /** Running subagents and their usage, shown before the clock: `4 agents · ↓ 4.1k · $0.45`. */
-  agents?: () => string | undefined,
-): { resume(ctx: ExtensionContext): void } {
+  agents?: RunningAgents,
+): { resume(ctx: ExtensionContext): void; refresh(): void } {
   let current: { at: Position; skills: RecipeSkills } | undefined;
   // The agent's working time this session, across every step: what's banked, plus the run in
   // progress. It pauses while the person is in the loop (the agent's turn has ended, or a question
@@ -411,16 +421,19 @@ export function registerSkillProgress(
   let shown: ExtensionContext | undefined;
   let stop: (() => void) | undefined;
   let reported: string | undefined;
+  let refreshedAt = 0;
   const tell = () => {
     if (!report || !current) return;
     const paused = runningSince === undefined;
-    const key = `${current.at.step}\u0000${current.at.helper}\u0000${paused}`;
+    const running = agents?.running() ?? 0;
+    const key = `${current.at.step}\u0000${current.at.helper}\u0000${paused}\u0000${running}`;
     if (key === reported) return;
     reported = key;
     report({
       ...stepState(current.at, current.skills),
       paused,
       worked_ms: worked(),
+      ...(running > 0 ? { agents: running } : {}),
     });
   };
   const show = (ctx: ExtensionContext) => {
@@ -429,7 +442,7 @@ export function registerSkillProgress(
     shown = ctx;
     ctx.ui.setStatus(
       STEP_STATUS_KEY,
-      `${BRAND} ${positionLine(current.at, current.skills, [agents?.(), elapsed(worked())].filter(Boolean).join(" · "), runningSince === undefined)}`,
+      `${BRAND} ${positionLine(current.at, current.skills, [agents?.summary?.(), elapsed(worked())].filter(Boolean).join(" · "), runningSince === undefined)}`,
     );
     stop ??= every(() => {
       if (shown) show(shown);
@@ -476,6 +489,14 @@ export function registerSkillProgress(
     show(ctx);
   });
   return {
+    refresh() {
+      // A redraw only when the count moved: a host may call this on every run update.
+      const running = agents?.running() ?? 0;
+      if (running === refreshedAt) return;
+      refreshedAt = running;
+      if (shown) show(shown);
+      else tell();
+    },
     resume(ctx) {
       // Another session in the same process starts from nothing: no step, no time.
       if (current && ctx.hasUI) ctx.ui.setStatus(STEP_STATUS_KEY, undefined);
@@ -508,6 +529,8 @@ export function recipeStepExtensions(
     readonly recipeDir: string;
   },
   report: ((step: RecipeStep) => void) | undefined,
+  /** This session's subagent runs, and a way to hear when one starts or ends. */
+  agents?: RunningAgents & { onChange(listener: () => void): void },
 ): ExtensionFactory[] {
   if (!report || agent.definition.skills.length === 0) return [];
   const skills: RecipeSkills = {
@@ -525,7 +548,9 @@ export function recipeStepExtensions(
         undefined,
         undefined,
         report,
+        agents,
       );
+      agents?.onChange(() => progress.refresh());
       pi.on("session_start", (_event, ctx) => progress.resume(ctx));
     },
   ];

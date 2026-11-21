@@ -15,6 +15,7 @@ import {
   wholeSkillRead,
   type RecipeSkills,
   type RecipeStep,
+  type RunningAgents,
 } from "../src/skill-progress.js";
 
 const names = [
@@ -27,10 +28,7 @@ const names = [
 const skills = { names };
 
 /** The footer registered against a fake Pi, with a clock the test moves and a UI that records the status. */
-function harness(
-  recipeSkills: RecipeSkills,
-  agents?: () => string | undefined,
-) {
+function harness(recipeSkills: RecipeSkills, agents?: RunningAgents) {
   const handlers = new Map<string, (event: any, ctx: any) => void>();
   const pi = {
     on: (name: string, handler: any) => handlers.set(name, handler),
@@ -230,7 +228,7 @@ describe("where the agent is", () => {
 
   it("shows running subagents and their usage before the clock", () => {
     let agents: string | undefined = "4 agents · ↓ 4.1k · $0.45";
-    const f = harness(skills, () => agents);
+    const f = harness(skills, { running: () => 4, summary: () => agents });
     const ctx = f.ctx([
       {
         type: "message",
@@ -553,6 +551,46 @@ describe("where the agent is", () => {
       { ...draft, paused: false, worked_ms: 0 },
       { ...draft, paused: true, worked_ms: 60_000 },
     ]);
+  });
+
+  it("re-reports the step when a subagent run starts or ends, counting those running", () => {
+    const handlers = new Map<string, (event: any, ctx: any) => void>();
+    const pi = {
+      on: (name: string, handler: any) => handlers.set(name, handler),
+    } as any;
+    let running = 0;
+    const reports: RecipeStep[] = [];
+    const progress = registerSkillProgress(
+      pi,
+      () => skills,
+      () => 0,
+      () => () => {},
+      (step) => reports.push(step),
+      { running: () => running },
+    );
+    const ctx = {
+      hasUI: false,
+      cwd: "/w",
+      sessionManager: { getEntries: () => [] },
+    };
+    progress.resume(ctx as any);
+    handlers.get("agent_start")!({}, ctx);
+    handlers.get("tool_result")!(
+      { toolName: "read", input: { path: "s/build-draft/SKILL.md" } },
+      ctx,
+    );
+    running = 2;
+    progress.refresh();
+    progress.refresh(); // the same count again reports nothing
+    running = 0;
+    progress.refresh();
+    expect(reports.map((step) => step.agents)).toEqual([
+      undefined,
+      2,
+      undefined,
+    ]);
+    expect(reports[1]).toMatchObject({ skill: "build-draft", agents: 2 });
+    expect(reports[2]).not.toHaveProperty("agents");
   });
 
   it("reports a declared phase and the helper read since its step", () => {
