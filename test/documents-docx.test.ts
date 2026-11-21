@@ -29,7 +29,7 @@ beforeAll(() => {
   const environment = join(tmpdir(), "recipe-documents-env-docx-tests");
   execFileSync(
     "uv",
-    ["sync", "--frozen", "--quiet", "--project", resolve("python/documents")],
+    ["sync", "--frozen", "--quiet", "--project", resolve("python/shared")],
     {
       env: { ...process.env, UV_PROJECT_ENVIRONMENT: environment },
       stdio: "inherit",

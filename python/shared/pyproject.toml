@@ -1,7 +1,7 @@
 [project]
-name = "recipe-documents"
+name = "recipes-shared"
 version = "0.1.0"
-description = "The one Python environment every documents format's helpers run in, which the host prepares for any Recipe using a Word or PDF format."
+description = "The one Python environment every first-party @introspection-ai package that needs Python runs in; a package adds its libraries here."
 requires-python = ">=3.12,<3.15"
 dependencies = ["paper-docx>=0.2.1", "pypdfium2==5.14.0", "pillow==13.0.0"]
 

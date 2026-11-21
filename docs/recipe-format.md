@@ -753,7 +753,7 @@ always the project's `uv.lock`.
 is rejected. PDF and Word work goes through the `documents` tool (`pi.documents`
 with the `pdf` or `docx` format), not shell utilities. A Recipe that only uses
 the `documents` tool needs no `pi.runtime.python` and no Python project; the
-host prepares the shared documents environment (below).
+host prepares the shared environment for the Word and PDF formats (below).
 
 ### Package declarations
 
@@ -775,23 +775,28 @@ Each environment is separate:
   name it, its `bin` (`Scripts` on Windows) comes first on `PATH`, and
   `PYTHONHOME` is removed. It holds only what the Recipe's `pyproject.toml`
   lists: a script that imports `docx` lists `paper-docx` there.
-- **The documents formats share one environment**, Recipes' own
-  `python/documents` project (paper-docx for Word, pypdfium2 and pillow for
-  PDF), locked once in Recipes. Hosts prepare it when the Recipe uses a
-  format that runs Python, through `pi.documents` or by listing the format
-  package in `dependencies` or `peerDependencies` (installed or not), and pass
-  its interpreter to every format: `createAdapter({ env, cwd, python })`. A
-  format package's own `pi.runtime.python`, from a release before the formats
-  shared it, is not read. **A Recipe with no Python of its own gets it as its
-  shell environment**, so a script the agent runs with `python3` can `import
-  docx` with no Python files in the Recipe.
+- **First-party packages share one environment**, Recipes' own
+  `python/shared` project, locked once in Recipes (today paper-docx for the
+  Word format, pypdfium2 and pillow for PDF). Hosts prepare it when the Recipe
+  uses a package it serves, through `pi.documents`, `pi.channels` or by
+  listing the package in `dependencies` or `peerDependencies` (installed or
+  not), and pass its interpreter to each of them (a documents format receives
+  it as `createAdapter({ env, cwd, python })`). **A Recipe with no Python of
+  its own gets it as its shell environment**, so a script the agent runs with
+  `python3` can `import docx` with no Python files in the Recipe.
+- **For package authors:** a first-party `@introspection-ai/*` package that
+  needs Python adds its libraries to Recipes' `python/shared` project, joins
+  the one list of packages Recipes serves from it (`SHARED_PYTHON_PACKAGES`),
+  and declares no `pi.runtime.python`; a `pi.runtime.python` such a package
+  declared in an older release is not read. A third-party package declares
+  its own `pi.runtime.python` and gets its own environment.
 - **Every other package's declaration gets a separate environment**,
   installed with `--no-editable` from the package's own lock and never
   activated or put on `PATH`. The host hands the package its interpreter.
 
 A package extension asks for a package's interpreter with
 `packagePython(name)` on its session context, by the package's name (a
-documents format's is the documents environment's); it is `undefined` when
+shared-environment package's is the shared environment's); it is `undefined` when
 that package declares no `pi.runtime.python` or is not a direct dependency.
 `@introspection-ai/recipes/python` runs a script with it:
 `pythonExecutable({ python, env, override })` picks the interpreter
@@ -834,25 +839,25 @@ export default function tables(pi) {
 
 By default environments live in a shared cache,
 `~/.introspection/python/<hash>`, keyed by the environment kind (the Recipe's,
-documents or package), platform and architecture, the `uv.lock` and
+shared or package), platform and architecture, the `uv.lock` and
 `pyproject.toml` contents, and the declared `version`. Without a declared
 `version` it also keys on what uv would pick the interpreter from:
 `UV_PYTHON`, every `.python-version` or `.python-versions` file from the
 project directory up to the filesystem root, and uv's global pin. The
-documents and package environments also key on the package's directory and
+shared and package environments also key on the package's directory and
 version; a Recipe project that is itself a package (it has `[build-system]`,
 so it installs editable) keys on its directory. `environmentRoot` (or
 `PI_RECIPES_PYTHON_ROOT`) fixes the location instead: the Recipe's
-environment is `<root>/python`, the documents environment
-`<root>/python-documents` and each package's `<root>/python-packages/<name>`,
+environment is `<root>/python`, the shared environment
+`<root>/python-shared` and each package's `<root>/python-packages/<name>`,
 so a host baking environments into a Recipe image passes `<recipe>/.pi`.
 Concurrent preparations of one environment are serialised by a lock file
 beside it. uv never creates a `.venv` in the Recipe: the host names the
 environment.
 
 Each prepared environment reports its directory and interpreter, plus the
-activation for the shell environment (`kind: "documents"` when it is the
-documents environment). Failures are named errors:
+activation for the shell environment (`kind: "shared"` when it is the
+shared environment). Failures are named errors:
 `RecipePythonUvMissingError` (uv not installed), `RecipePythonVersionError`
 (no interpreter satisfies the version), `RecipePythonOutdatedError` (check
 mode found an environment missing or not matching its lock) and

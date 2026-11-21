@@ -69,18 +69,19 @@ contract, what a profile should say, and a complete example.
 
 ## Python
 
-The helpers in `python/` run in the documents environment every Word and PDF format shares:
-Recipes' own `python/documents` project, locked once in Recipes, with paper-docx. The host
+The helpers in `python/` run in the shared environment every Word and PDF format shares:
+Recipes' own `python/shared` project, locked once in Recipes, with paper-docx. The host
 prepares it with uv when a Recipe uses this format and passes its interpreter to the
-adapter. A Recipe declares no Python for this format. This needs `@introspection-ai/recipes`
-0.61.0 or later; this package no longer declares `pi.runtime.python`.
+adapter. A Recipe declares no Python for this format. The module declares
+document format `apiVersion` 2, so a Recipes host too old to prepare that environment
+refuses to load it.
 
 The interpreter is the first of:
 
 1. `RECIPE_DOCUMENTS_PYTHON`, an explicit override;
-2. the documents environment's interpreter, from the host;
+2. the shared environment's interpreter, from the host;
 3. `VIRTUAL_ENV` (`bin/python`, or `Scripts\python.exe` on Windows), for a host that
-   prepares no documents environment;
+   prepares no shared environment;
 4. `python3` on `PATH`.
 
 Licences: the anchoring and section removal follow RedlineBench's redline engine (MIT,

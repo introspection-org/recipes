@@ -371,14 +371,14 @@ describe("documents tool", () => {
     );
     writeFileSync(
       join(pkg, "index.js"),
-      `export default { kind: "documents", apiVersion: 2, format: "pdf", extensions: [".pdf"], capabilities: { read: true }, createAdapter() {} };\n`,
+      `export default { kind: "documents", apiVersion: 3, format: "pdf", extensions: [".pdf"], capabilities: { read: true }, createAdapter() {} };\n`,
     );
 
     await expect(
       loadRecipeDocuments([{ format: "pdf" }], ["documents"], { recipeDir }),
     ).rejects.toThrow(
-      `@introspection-ai/recipe-documents-pdf@9.0.0 (resolved from the Recipe, ${realpathSync(pkg)}) implements document format API 2, ` +
-        `but @introspection-ai/recipes ${recipesVersion()} implements document format API 1. ` +
+      `@introspection-ai/recipe-documents-pdf@9.0.0 (resolved from the Recipe, ${realpathSync(pkg)}) implements document format API 3, ` +
+        `but @introspection-ai/recipes ${recipesVersion()} implements document format API 2. ` +
         "Raise or remove the Recipe's pin on @introspection-ai/recipe-documents-pdf in its dependencies, or run `introspection upgrade`.",
     );
   });

@@ -8,10 +8,11 @@
  *   Activating it sets `VIRTUAL_ENV` and `UV_PROJECT_ENVIRONMENT`, puts its
  *   `bin` first on `PATH` and removes `PYTHONHOME`, so the agent's shell tools
  *   run it.
- * - The **documents environment**, Recipes' own `python/documents` project,
- *   serves every documents format that runs Python (Word, PDF). It is
- *   prepared when the Recipe uses one, through `pi.documents` or by listing
- *   the format package, and is the shell environment of a Recipe with no
+ * - The **shared environment**, Recipes' own `python/shared` project, serves
+ *   every first-party `@introspection-ai/*` package that needs Python
+ *   (`SHARED_PYTHON_PACKAGES`). It is prepared when the Recipe uses one,
+ *   through `pi.documents`, `pi.channels` or by listing
+ *   the package, and is the shell environment of a Recipe with no
  *   Python of its own.
  * - A direct dependency's declaration is that **package's environment**. It is
  *   installed with `--no-editable`, never activated and never put on `PATH`;
@@ -64,7 +65,7 @@ export interface PrepareRecipePythonOptions {
   /**
    * Fixed location for the environments instead of the shared, lock-keyed
    * cache under `~/.introspection/python`. The Recipe's own environment is
-   * `<root>/python`, the documents environment `<root>/python-documents`,
+   * `<root>/python`, the shared environment `<root>/python-shared`,
    * each package's `<root>/python-packages/<name>`. A host that bakes
    * environments into a Recipe image passes `<recipe>/.pi`.
    */
@@ -82,9 +83,9 @@ export interface PrepareRecipePythonOptions {
 }
 
 export interface RecipePythonSyncEvent {
-  /** The declaring package's name: the Recipe's own name for its environment, `@introspection-ai/recipes` for the documents one. */
+  /** The declaring package's name: the Recipe's own name for its environment, `@introspection-ai/recipes` for the shared one. */
   owner: string;
-  kind: "recipe" | "documents" | "package";
+  kind: "recipe" | "shared" | "package";
   environmentDir: string;
   firstBuild: boolean;
 }
@@ -100,7 +101,7 @@ export interface RecipePythonActivation {
 }
 
 export interface RecipePythonEnvironment {
-  kind: "recipe" | "documents" | "package";
+  kind: "recipe" | "shared" | "package";
   /** The declaring package's name. */
   owner: string;
   packageDir: string;
@@ -115,19 +116,19 @@ export interface RecipePythonEnvironment {
 }
 
 export interface RecipeShellPythonEnvironment extends RecipePythonEnvironment {
-  /** `documents` for a Recipe with no Python of its own that uses a documents format. */
-  kind: "recipe" | "documents";
+  /** `shared` for a Recipe with no Python of its own that uses a shared-environment package. */
+  kind: "recipe" | "shared";
   activation: RecipePythonActivation;
 }
 
 export interface PreparedRecipePython {
-  /** The shell environment: the Recipe's own, else the documents environment. */
+  /** The shell environment: the Recipe's own, else the shared environment. */
   recipe?: RecipeShellPythonEnvironment;
-  /** The documents environment, when the Recipe uses a format that runs Python. */
-  documents?: RecipePythonEnvironment;
+  /** The shared environment, when the Recipe uses a first-party package that needs Python. */
+  shared?: RecipePythonEnvironment;
   /**
    * Each direct dependency's declaration by package name, and each Python
-   * documents format the Recipe uses, by its package name, with the documents
+   * shared-environment package the Recipe uses, by its package name, with the shared
    * environment's interpreter.
    */
   packages: Readonly<Record<string, RecipePythonEnvironment>>;
@@ -176,7 +177,7 @@ export class RecipePythonImportError extends RecipePythonError {
 }
 
 interface Declaration {
-  kind: "recipe" | "documents" | "package";
+  kind: "recipe" | "shared" | "package";
   owner: string;
   packageDir: string;
   python: RecipePythonRuntimeRequirement;
@@ -195,20 +196,28 @@ function readJson(path: string): Record<string, unknown> {
     : {};
 }
 
-/** The documents formats whose helpers run Python. */
-const PYTHON_DOCUMENT_FORMATS = ["docx", "pdf"] as const;
+/**
+ * The first-party `@introspection-ai/*` packages that need Python. Each adds
+ * its libraries to Recipes' shared project (`python/shared`) and runs in the
+ * shared environment; its own `pi.runtime.python`, from a release before it
+ * shared, is not read. Every other package keeps its own environment.
+ */
+const SHARED_PYTHON_PACKAGES: readonly string[] = [
+  "@introspection-ai/recipe-documents-docx",
+  "@introspection-ai/recipe-documents-pdf",
+];
 
-/** Recipes' own package directory, which holds the documents project. */
+/** Recipes' own package directory, which holds the shared project. */
 const RECIPES_PACKAGE_DIR = fileURLToPath(new URL("../../", import.meta.url));
 
-function documentsDeclaration(): Declaration {
+function sharedDeclaration(): Declaration {
   return {
-    kind: "documents",
+    kind: "shared",
     owner: "@introspection-ai/recipes",
     packageDir: RECIPES_PACKAGE_DIR,
     python: {
-      project: "python/documents",
-      lockfile: "python/documents/uv.lock",
+      project: "python/shared",
+      lockfile: "python/shared/uv.lock",
       version: ">=3.12,<3.15",
       imports: ["docx", "pypdfium2", "PIL"],
     },
@@ -216,21 +225,23 @@ function documentsDeclaration(): Declaration {
 }
 
 /**
- * The Python documents formats the Recipe uses: named in `pi.documents`, or
- * listed as a dependency or peer, whether or not the package is installed.
+ * The shared-environment packages the Recipe uses: listed as a dependency or
+ * peer (installed or not), or named by `pi.documents` or `pi.channels`.
  */
-function recipePythonDocumentFormats(root: string): string[] {
+function recipeSharedPythonPackages(root: string): string[] {
   const manifest = readPiPackageManifest(root);
   const listed = readJson(join(root, "package.json"));
-  const names = new Set([
+  const used = new Set([
     ...Object.keys((listed.dependencies as object | undefined) ?? {}),
     ...Object.keys((listed.peerDependencies as object | undefined) ?? {}),
+    ...(manifest.documents ?? []).map((document) =>
+      recipeDocumentPackageName(document.format),
+    ),
+    ...(manifest.channels ?? []).map((channel) =>
+      recipeChannelPackageName(channel.provider),
+    ),
   ]);
-  return PYTHON_DOCUMENT_FORMATS.filter(
-    (format) =>
-      names.has(recipeDocumentPackageName(format)) ||
-      (manifest.documents ?? []).some((document) => document.format === format),
-  );
+  return SHARED_PYTHON_PACKAGES.filter((name) => used.has(name));
 }
 
 function packagePythonDeclaration(
@@ -284,21 +295,24 @@ export function recipePythonDeclarations(
       python: { project: ".", lockfile: "uv.lock", imports: [] },
     });
   }
-  const formats = recipePythonDocumentFormats(root);
-  if (formats.length > 0) declarations.push(documentsDeclaration());
+  if (recipeSharedPythonPackages(root).length > 0)
+    declarations.push(sharedDeclaration());
   for (const { name, packageDir } of installedRecipeDependencies(root, [
     "dependencies",
     "peerDependencies",
   ])) {
-    // A documents format runs in the documents environment, even one
-    // published before the formats shared it.
-    if (isDocumentPackage(name)) continue;
+    if (SHARED_PYTHON_PACKAGES.includes(name)) continue;
     const declaration = packagePythonDeclaration(name, packageDir);
     if (declaration) declarations.push(declaration);
   }
-  const used = (manifest.channels ?? []).map((channel) =>
-    recipeChannelPackageName(channel.provider),
-  );
+  const used = [
+    ...(manifest.channels ?? []).map((channel) =>
+      recipeChannelPackageName(channel.provider),
+    ),
+    ...(manifest.documents ?? []).map((document) =>
+      recipeDocumentPackageName(document.format),
+    ),
+  ].filter((name) => !SHARED_PYTHON_PACKAGES.includes(name));
   for (const name of used) {
     if (
       declarations.some(
@@ -313,10 +327,6 @@ export function recipePythonDeclarations(
     if (declaration) declarations.push(declaration);
   }
   return declarations;
-}
-
-function isDocumentPackage(name: string): boolean {
-  return name.startsWith(recipeDocumentPackageName(""));
 }
 
 function hashFile(
@@ -437,7 +447,7 @@ function environmentDirFor(
   if (options.environmentRoot) {
     const root = resolve(options.environmentRoot);
     if (declaration.kind === "recipe") return join(root, "python");
-    if (declaration.kind === "documents") return join(root, "python-documents");
+    if (declaration.kind === "shared") return join(root, "python-shared");
     return join(root, "python-packages", ...declaration.owner.split("/"));
   }
   const home = (IS_WINDOWS ? env.USERPROFILE : env.HOME) || homedir();
@@ -1072,8 +1082,8 @@ async function withEnvironmentLock<T>(
 
 /**
  * Find and prepare every Python environment the Recipe at `recipeDir` needs:
- * its own project (the shell environment), the documents environment when it
- * uses a Word or PDF format (the shell environment when it has no project of
+ * its own project (the shell environment), the shared environment when it
+ * uses a first-party package that needs Python (the shell environment when it has no project of
  * its own), each direct `dependencies` or `peerDependencies` entry Node
  * resolves from the Recipe directory that declares `pi.runtime.python`, and
  * each companion channel package the Recipe uses without listing it (each
@@ -1091,22 +1101,22 @@ export async function prepareRecipePython(
   const preparer = new Preparer(options);
   const packages: Record<string, RecipePythonEnvironment> = {};
   let own: RecipePythonEnvironment | undefined;
-  let documents: RecipePythonEnvironment | undefined;
+  let shared: RecipePythonEnvironment | undefined;
   // Sequential: uv already parallelises one install, and concurrent first
   // builds would only compete for the same downloads.
   for (const declaration of declarations) {
     const environment = await preparer.prepare(declaration);
     if (declaration.kind === "recipe") own = environment;
-    else if (declaration.kind === "documents") {
-      documents = environment;
-      for (const format of recipePythonDocumentFormats(recipeDir))
-        packages[recipeDocumentPackageName(format)] = environment;
+    else if (declaration.kind === "shared") {
+      shared = environment;
+      for (const name of recipeSharedPythonPackages(recipeDir))
+        packages[name] = environment;
     } else packages[declaration.owner] = environment;
   }
-  const shell = own ?? documents;
+  const shell = own ?? shared;
   const recipe: RecipeShellPythonEnvironment | undefined = shell && {
     ...shell,
-    kind: shell.kind === "documents" ? "documents" : "recipe",
+    kind: shell.kind === "shared" ? "shared" : "recipe",
     activation: {
       set: {
         VIRTUAL_ENV: shell.environmentDir,
@@ -1118,7 +1128,7 @@ export async function prepareRecipePython(
   };
   return {
     ...(recipe ? { recipe } : {}),
-    ...(documents ? { documents } : {}),
+    ...(shared ? { shared } : {}),
     packages,
   };
 }

@@ -128,7 +128,7 @@ export const LEGAL_REDLINING_EN_US = fileURLToPath(
 
 export const docxDocumentFormatModule: RecipeDocumentFormatModule = {
   kind: "documents",
-  apiVersion: 1,
+  apiVersion: 2,
   format: "docx",
   extensions: [".docx"],
   capabilities: DOCX_DOCUMENT_CAPABILITIES,

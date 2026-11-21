@@ -19,7 +19,7 @@ type Tool = {
   ): Promise<{ content: Array<{ text?: string }>; details: any }>;
 };
 
-const project = resolve("python/documents");
+const project = resolve("python/shared");
 const fixtures = resolve("test/fixtures/documents");
 let cwd = "";
 let pagesDir = "";

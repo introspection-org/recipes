@@ -181,7 +181,7 @@ describe.skipIf(!hasUv || process.platform === "win32")(
         const documentsPython = join(
           recipeDir,
           ".pi",
-          "python-documents",
+          "python-shared",
           "bin",
           "python",
         );
@@ -199,7 +199,7 @@ describe.skipIf(!hasUv || process.platform === "win32")(
           ).toThrow();
         } else {
           // A Recipe without Python of its own gets the documents environment as its shell.
-          expect(shell.kind).toBe("documents");
+          expect(shell.kind).toBe("shared");
           expect(shell.interpreter).toBe(documentsPython);
           execFileSync(shell.interpreter, ["-c", "import docx, pypdfium2"]);
         }
@@ -210,7 +210,7 @@ describe.skipIf(!hasUv || process.platform === "win32")(
             environmentRoot: join(recipeDir, ".pi"),
             hostDir,
           }),
-        ).resolves.toMatchObject({ documents: { synced: false } });
+        ).resolves.toMatchObject({ shared: { synced: false } });
 
         const cwd = join(recipeDir, "workspace");
         mkdirSync(cwd);

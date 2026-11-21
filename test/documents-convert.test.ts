@@ -213,12 +213,9 @@ const signed = (blocks: Block[]): Block[] =>
   );
 
 beforeAll(() => {
-  pdfPython = environment("python/documents", "pdf-tables", [
-    "--extra",
-    "tables",
-  ]);
-  const pdfBase = environment("python/documents", "pdf-base");
-  docxPython = environment("python/documents", "docx");
+  pdfPython = environment("python/shared", "pdf-tables", ["--extra", "tables"]);
+  const pdfBase = environment("python/shared", "pdf-base");
+  docxPython = environment("python/shared", "docx");
   cwd = mkdtempSync(join(tmpdir(), "documents-convert-"));
   layOut(SOURCE, "sow");
   copyFileSync(

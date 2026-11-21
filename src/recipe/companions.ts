@@ -181,6 +181,8 @@ function fix(pkg: ResolvedRecipePackage): string {
 export interface RecipeModuleApi {
   name: string;
   version: number;
+  /** Older versions this host still loads, beside `version`. */
+  accepts?: readonly number[];
 }
 
 /**
@@ -198,7 +200,12 @@ function assertModuleApi(
     module && typeof module === "object"
       ? (module as { apiVersion?: unknown }).apiVersion
       : undefined;
-  if (declared === undefined || declared === api.version) return;
+  if (
+    declared === undefined ||
+    declared === api.version ||
+    (typeof declared === "number" && api.accepts?.includes(declared))
+  )
+    return;
   throw new Error(
     `${describe(pkg)} implements ${api.name} API ${String(declared)}, but ${RECIPES_PACKAGE} ${running} implements ${api.name} API ${api.version}. ${fix(pkg)}`,
   );

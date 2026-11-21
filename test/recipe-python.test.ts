@@ -667,13 +667,13 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
         const prepared = await prepare(documentsRecipe(manifest), {
           environmentRoot: root,
         });
-        const environmentDir = join(root, "python-documents");
+        const environmentDir = join(root, "python-shared");
         expect(prepared.recipe).toMatchObject({
-          kind: "documents",
+          kind: "shared",
           environmentDir,
           activation: { pathPrepend: join(environmentDir, "bin") },
         });
-        expect(prepared.documents?.environmentDir).toBe(environmentDir);
+        expect(prepared.shared?.environmentDir).toBe(environmentDir);
         expect(Object.keys(prepared.packages)).toEqual([docx]);
         expect(prepared.packages[docx]?.interpreter).toBe(
           join(environmentDir, "bin", "python"),
@@ -696,7 +696,7 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
         kind: "recipe",
         environmentDir: join(root, "python"),
       });
-      const documents = join(root, "python-documents", "bin", "python");
+      const documents = join(root, "python-shared", "bin", "python");
       expect(prepared.packages[docx]?.interpreter).toBe(documents);
       expect(prepared.packages[pdf]?.interpreter).toBe(documents);
       expect(
@@ -715,6 +715,101 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
         expect(call.args).toEqual(
           expect.arrayContaining(["--check", "--offline", "--frozen"]),
         );
+    });
+
+    it("maps a listed first-party package to the shared environment, ignoring its own declaration, and keeps a third-party one in its own", async () => {
+      const { prepare } = harness();
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: docx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+          {
+            name: "@acme/recipe-tables",
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+        ],
+      });
+      const root = scratch("roots-");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.packages[docx]?.interpreter).toBe(
+        join(root, "python-shared", "bin", "python"),
+      );
+      expect(prepared.packages["@acme/recipe-tables"]?.interpreter).toBe(
+        join(
+          root,
+          "python-packages",
+          "@acme",
+          "recipe-tables",
+          "bin",
+          "python",
+        ),
+      );
+      expect(prepared.recipe?.kind).toBe("shared");
+    });
+
+    it("leaves a format it does not serve in its own environment, and passes that interpreter to the format", async () => {
+      const { prepare } = harness();
+      const xlsx = "@introspection-ai/recipe-documents-xlsx";
+      const { dir } = recipe({
+        python: false,
+        packages: [
+          {
+            name: xlsx,
+            python: { project: "python", lockfile: "python/uv.lock" },
+          },
+        ],
+      });
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { documents: [{ format: "xlsx" }] };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      const packageDir = join(
+        dir,
+        "node_modules",
+        "@introspection-ai",
+        "recipe-documents-xlsx",
+      );
+      writeFileSync(
+        join(packageDir, "package.json"),
+        JSON.stringify({
+          ...JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")),
+          type: "module",
+          main: "index.js",
+        }),
+      );
+      writeFileSync(
+        join(packageDir, "index.js"),
+        `export default { kind: "documents", apiVersion: 1, format: "xlsx", extensions: [".xlsx"], capabilities: { read: true },
+  createAdapter: (options) => { globalThis.__xlsxPython = options.python ?? null;
+    return { format: "xlsx", extensions: [".xlsx"], capabilities: { read: true }, read: async () => ({ text: "" }) }; } };\n`,
+      );
+      const root = scratch("roots-");
+      const prepared = await prepare(dir, { environmentRoot: root });
+      expect(prepared.shared).toBeUndefined();
+      const own = join(
+        root,
+        "python-packages",
+        "@introspection-ai",
+        "recipe-documents-xlsx",
+      );
+      expect(prepared.packages[xlsx]?.environmentDir).toBe(own);
+
+      const loaded = await loadRecipeDocuments(
+        [{ format: "xlsx" }],
+        ["documents"],
+        {
+          recipeDir: dir,
+          python: prepared.packages,
+        },
+      );
+      await loaded.extension!.factory(createMockExtensionAPI() as never);
+      expect((globalThis as { __xlsxPython?: string }).__xlsxPython).toBe(
+        join(own, "bin", "python"),
+      );
     });
 
     it("is not prepared for a Recipe whose formats run no Python", async () => {

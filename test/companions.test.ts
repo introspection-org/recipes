@@ -343,7 +343,7 @@ describe("companion packages", () => {
     );
     // Its own pi.runtime.python is ignored: every format runs in the documents environment.
     expect(recipePythonDeclarations(recipeDir, { hostDir })).toEqual([
-      expect.objectContaining({ kind: "documents" }),
+      expect.objectContaining({ kind: "shared" }),
     ]);
 
     docxPackage(join(opt, "node_modules"), {
@@ -364,7 +364,7 @@ describe("companion packages", () => {
 
     expect(recipePythonDeclarations(recipeDir, { hostDir })).toEqual([
       expect.objectContaining({
-        kind: "documents",
+        kind: "shared",
         owner: "@introspection-ai/recipes",
       }),
     ]);

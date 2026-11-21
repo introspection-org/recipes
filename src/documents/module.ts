@@ -24,11 +24,16 @@ export const DOCUMENTS_SKILL = fileURLToPath(
 
 /**
  * The document format contract this host implements. A format module
- * declares the version it was written against, and the host refuses one that
- * differs; bump it on any breaking change to `RecipeDocumentFormatModule` or
- * `DocumentAdapterOptions`.
+ * declares the version it was written against, and the host refuses one it
+ * does not accept; bump it on any breaking change to
+ * `RecipeDocumentFormatModule` or `DocumentAdapterOptions`. Version 2 formats
+ * run their helpers in the documents environment the host prepares, and ship
+ * no Python of their own, so a host implementing only 1 refuses them.
  */
-export const DOCUMENT_FORMAT_API_VERSION = 1 as const;
+export const DOCUMENT_FORMAT_API_VERSION = 2 as const;
+
+/** The contract versions this host loads: 2, and 1 for formats that bring their own Python. */
+const DOCUMENT_FORMAT_API_VERSIONS = [1, 2] as const;
 
 /**
  * What a format package exports as its default: transport plus a capability
@@ -40,7 +45,7 @@ export const DOCUMENT_FORMAT_API_VERSION = 1 as const;
 export interface RecipeDocumentFormatModule {
   readonly kind: "documents";
   /** The contract version, `DOCUMENT_FORMAT_API_VERSION` when written. */
-  readonly apiVersion: typeof DOCUMENT_FORMAT_API_VERSION;
+  readonly apiVersion: (typeof DOCUMENT_FORMAT_API_VERSIONS)[number];
   readonly format: string;
   readonly extensions: readonly string[];
   /** Static, so the loader can build the tool before any session exists. */
@@ -200,6 +205,7 @@ export async function loadRecipeDocuments(
           api: {
             name: "document format",
             version: DOCUMENT_FORMAT_API_VERSION,
+            accepts: DOCUMENT_FORMAT_API_VERSIONS,
           },
           ...(options.hostDir !== undefined
             ? { hostDir: options.hostDir }
