@@ -4,8 +4,6 @@
 //! `description`, and a host fills a fixed set of `{{name}}` placeholders, so
 //! warn when either would show up wrong.
 
-use std::collections::BTreeSet;
-
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -210,7 +208,7 @@ pub(crate) fn read_suggestions(paths: &[String], ctx: &CheckContext) -> Vec<Sugg
 /// that each name is one of `agents`, the Recipe's declared agent names.
 pub(crate) fn validate_prompt_templates(
     paths: &[String],
-    agents: &BTreeSet<String>,
+    agents: &super::AgentSet<()>,
     ctx: &mut CheckContext,
 ) {
     let placeholder = Regex::new(r"\{\{([A-Za-z][\w.-]*)\}\}").expect("placeholder pattern");
@@ -223,7 +221,20 @@ pub(crate) fn validate_prompt_templates(
             Mark::None => continue,
             Mark::Every => {}
             Mark::Agents(names) => {
-                for name in names.iter().filter(|name| !agents.contains(*name)) {
+                for name in &names {
+                    match agents.lookup(name) {
+                        super::AgentLookup::Found(_) => continue,
+                        super::AgentLookup::Unknown => {
+                            agents.warn_unknown(
+                                file.clone(),
+                                &format!("Prompt template '{file}' is suggested for agent"),
+                                name,
+                                ctx,
+                            );
+                            continue;
+                        }
+                        super::AgentLookup::Missing => {}
+                    }
                     ctx.warning(
                         "prompts.suggest_agent_unknown",
                         file.clone(),
