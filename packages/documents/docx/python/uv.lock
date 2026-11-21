@@ -87,15 +87,15 @@ wheels = [
 
 [[package]]
 name = "paper-docx"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/70/dc/bdc50405502a1a92707284005c1fab3e9e61fd3a7894a18bd80e24ac1920/paper_docx-0.2.0.tar.gz", hash = "sha256:034a961dc42eb44d7676e3a5af7ded485e89eb97851f8ccb24c481355b2c9d7d", size = 7291150, upload-time = "2026-08-24T23:37:59.805Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/bf/fc72748a049caf0a3db7a7440ad169f9900961c31a2b59f76aca62fdc4b1/paper_docx-0.2.1.tar.gz", hash = "sha256:6ebe8522de3e7aeb6ca1515c3832a4012905596c66eda0114f1e59370585381a", size = 7244540, upload-time = "2026-09-23T22:29:23.66Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/c6/b54eb65833f5c59e10be4d8f3f422eefba440aa805cca345f80410383975/paper_docx-0.2.0-py3-none-any.whl", hash = "sha256:d61b6c1e23c2e50364ca9ebf913b08121bba12dc9119ffd0047ad927ff29ace0", size = 439210, upload-time = "2026-08-24T23:37:58.225Z" },
+    { url = "https://files.pythonhosted.org/packages/af/84/b16e4d10a4b2c63638be9fb3d0a0babdb1203df6c90cce52748c78fff7e4/paper_docx-0.2.1-py3-none-any.whl", hash = "sha256:876d9f5bdebaa8f8523d5fa3fb85f9d5468ab6e6c40f51ab62c899ea2dd48b31", size = 435075, upload-time = "2026-09-23T22:29:21.953Z" },
 ]
 
 [[package]]
@@ -107,7 +107,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "paper-docx", specifier = "==0.2.0" }]
+requires-dist = [{ name = "paper-docx", specifier = ">=0.2.1" }]
 
 [[package]]
 name = "typing-extensions"
