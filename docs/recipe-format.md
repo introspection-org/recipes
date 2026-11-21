@@ -725,7 +725,7 @@ actionable diagnostic.
 project.** They list only the Recipe's own libraries. A Recipe without them
 has no project of its own. A root `pyproject.toml` without a `uv.lock` is an
 error: run `uv lock` and commit the lock. `pi.runtime.python` is optional and
-holds overrides only:
+holds overrides for that project only:
 
 ```json
 {
@@ -740,7 +740,10 @@ holds overrides only:
 }
 ```
 
-`version` is passed to uv as the interpreter request. `imports` are optional
+Declaring it without a root `pyproject.toml` is an error
+(`runtime.python_project_missing`); a Recipe that uses only first-party
+packages' Python declares none. `version` is passed to uv as the interpreter
+request. `imports` are optional
 boot preflights, each a dotted Python module name (`docx`, `paper_docx.api`);
 hosts import them with `PYTHONHOME` removed. Hosts MUST install with frozen
 resolution and MUST NOT install into system Python or resolve an unlocked

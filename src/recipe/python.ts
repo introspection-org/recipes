@@ -828,6 +828,10 @@ class Preparer {
       declaration.python.lockfile,
     );
     if (!existsSync(join(projectDir, "pyproject.toml"))) {
+      if (declaration.kind === "recipe" && declaration.python.project === ".")
+        throw new RecipePythonError(
+          `${declaration.owner}: pi.runtime.python is declared but the Recipe has no pyproject.toml at its root; add pyproject.toml and uv.lock at the root, or remove pi.runtime.python (a Recipe using only first-party packages' Python needs none)`,
+        );
       throw new RecipePythonError(
         `${declaration.owner}: pi.runtime.python.project has no pyproject.toml: ${declaration.python.project}`,
       );

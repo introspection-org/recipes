@@ -1984,6 +1984,17 @@ fn validate_recipe_python_project(runtime: Option<&JsonValue>, ctx: &mut CheckCo
     };
     let pyproject = join("pyproject.toml");
     if !ctx.has_file(&pyproject) {
+        if runtime.and_then(|runtime| runtime.get("python")).is_some() {
+            ctx.error(
+                "runtime.python_project_missing",
+                PACKAGE_JSON,
+                match project.as_deref() {
+                    Some(project) => format!("pi.runtime.python is declared but {project} has no pyproject.toml"),
+                    None => "pi.runtime.python is declared but the Recipe has no pyproject.toml at its root".to_owned(),
+                },
+                Some("add pyproject.toml and uv.lock at the root, or remove pi.runtime.python (a Recipe using only first-party packages' Python needs none)"),
+            );
+        }
         return;
     }
     if !ctx.has_file(&join("uv.lock")) {
@@ -9179,6 +9190,15 @@ mod tests {
                 &[("pyproject.toml", pyproject), ("uv.lock", "version = 1\n")]
             ),
             vec![]
+        );
+    }
+
+    #[test]
+    fn rejects_pi_runtime_python_without_a_project() {
+        let package = json!({ "name": "no-project", "pi": { "agents": ["agents/*.yaml"], "runtime": { "python": { "version": ">=3.12" } } } });
+        assert_eq!(
+            python_codes(package, &[]),
+            vec![("runtime.python_project_missing".to_owned(), Severity::Error)]
         );
     }
 

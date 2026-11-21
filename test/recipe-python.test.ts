@@ -844,6 +844,22 @@ describe.skipIf(IS_WINDOWS)("prepareRecipePython with a fake uv", () => {
       });
     });
 
+    it("refuses pi.runtime.python without a pyproject.toml at the root, as recipe-check does", async () => {
+      const { uv, prepare } = harness();
+      const { dir } = recipe({ python: false });
+      const manifest = JSON.parse(
+        readFileSync(join(dir, "package.json"), "utf8"),
+      );
+      manifest.pi = { runtime: { python: { version: ">=3.12" } } };
+      writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+      await expect(
+        prepare(dir, { environmentRoot: scratch("roots-") }),
+      ).rejects.toThrow(
+        /pi\.runtime\.python is declared but the Recipe has no pyproject\.toml at its root/,
+      );
+      expect(uv.calls()).toEqual([]);
+    });
+
     it("takes pi.runtime.python with only overrides", async () => {
       const { uv, prepare } = harness();
       const { dir } = recipe({ python: false });
