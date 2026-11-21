@@ -96,6 +96,7 @@ import {
 import {
   activateRecipePython,
   prepareRecipePython,
+  NO_INSTALL_ENV,
   RECIPE_PYTHON_ROOT_ENV,
   type PreparedRecipePython,
 } from "./recipe/python.js";
@@ -980,11 +981,13 @@ export function createRecipesExtension(
     if (launchState.pythonFailure) throw new Error(launchState.pythonFailure);
     if (!launchState.python) {
       try {
+        const noInstall = env[NO_INSTALL_ENV] === "1";
         launchState.python = await prepareRecipePython(
           launchState.resolved.recipeDir,
           {
             mode: "sync",
-            allowPythonDownloads: true,
+            allowPythonDownloads: !noInstall,
+            offline: noInstall,
             env,
             ...(stringFlag(env[RECIPE_PYTHON_ROOT_ENV])
               ? { environmentRoot: stringFlag(env[RECIPE_PYTHON_ROOT_ENV]) }

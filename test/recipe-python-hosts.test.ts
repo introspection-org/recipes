@@ -64,6 +64,32 @@ function extensionContext(cwd: string, notify = vi.fn()) {
 }
 
 describe.skipIf(IS_WINDOWS)("Pi extension: Recipe Python", () => {
+  it("installs only from what is on the machine when the host has everything installed", async () => {
+    const { recipeDir, workspaceDir, cleanup } = pythonRecipe();
+    try {
+      const { uv, env } = hostEnv({ INTROSPECTION_NO_INSTALL: "1" });
+      env.PI_RECIPE_DIR = recipeDir;
+      const pi = createMockExtensionAPI();
+      createRecipesExtension({ env })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        extensionContext(workspaceDir, vi.fn()),
+      );
+      const syncs = uv
+        .calls()
+        .filter((call) => call.args.includes("--compile-bytecode"));
+      expect(syncs).toHaveLength(1);
+      expect(syncs[0]!.args).toContain("--offline");
+      expect(syncs[0]!.args).toContain("--no-python-downloads");
+      await pi.emitExtensionEvent(
+        { type: "session_shutdown" } as any,
+        extensionContext(workspaceDir),
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
   it("installs on load, says so on a first build, activates the shell environment and restores it", async () => {
     const { recipeDir, workspaceDir, cleanup } = pythonRecipe();
     try {

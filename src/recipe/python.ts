@@ -45,6 +45,9 @@ import {
 /** Hosts read a fixed environment root from this variable (see `environmentRoot`). */
 export const RECIPE_PYTHON_ROOT_ENV = "PI_RECIPES_PYTHON_ROOT";
 
+/** Set to `1` by a host that has everything installed already, such as the Operator's image: nothing is downloaded. */
+export const NO_INSTALL_ENV = "INTROSPECTION_NO_INSTALL";
+
 export const UV_INSTALL_URL =
   "https://docs.astral.sh/uv/getting-started/installation/";
 
@@ -62,6 +65,8 @@ export interface PrepareRecipePythonOptions {
   environmentRoot?: string;
   /** Let uv download a managed Python interpreter. Default false: `--no-python-downloads`. */
   allowPythonDownloads?: boolean;
+  /** Install only from what is already on the machine: `--offline`. A package missing from uv's cache fails the sync. */
+  offline?: boolean;
   /** Environment uv and the import check run with. Default `process.env`. */
   env?: NodeJS.ProcessEnv;
   /** The uv executable. Default `uv` from `env.PATH`. */
@@ -529,6 +534,7 @@ class Preparer {
         ? ["--python", declaration.python.version]
         : []),
       ...(this.options.allowPythonDownloads ? [] : ["--no-python-downloads"]),
+      ...(this.options.offline ? ["--offline"] : []),
     ];
   }
 
