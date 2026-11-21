@@ -245,7 +245,7 @@ comment on that paragraph, and a revision without a rationale fails alone rather
 than failing the batch's schema check.
 
 `compare` is used only when its result keeps the body's block structure and
-each table's rows and cells: paper-docx 0.2.0 inserts empty paragraphs for some
+each table's rows and cells: paper-docx inserts empty paragraphs for some
 multi-paragraph batches, and rebuilds a table whose cells it changes by deleting
 and re-inserting whole rows, the other party's cells included. Either would move
 paragraph ids, so such a result is discarded for the tracked path.
