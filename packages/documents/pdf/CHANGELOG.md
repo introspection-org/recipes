@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/introspection-org/recipes/compare/recipe-documents-pdf-v0.4.0...recipe-documents-pdf-v0.5.0) (2026-11-21)
+
+
+### Features
+
+* **python:** documents formats share one Python environment, a Recipe's Python project lives at its root ([#569](https://github.com/introspection-org/recipes/issues/569)) ([c29834b](https://github.com/introspection-org/recipes/commit/c29834bb34b0a79fb29448d3319199ae30494c22))
+
 ## [0.4.0](https://github.com/introspection-org/recipes/compare/recipe-documents-pdf-v0.3.0...recipe-documents-pdf-v0.4.0) (2026-11-12)
 
 
