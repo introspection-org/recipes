@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.1](https://github.com/introspection-org/recipes/compare/v0.61.0...v0.61.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **python:** locate Recipes' own files from the installed package, so a bundled Recipes finds python/shared ([#578](https://github.com/introspection-org/recipes/issues/578)) ([ea1c93c](https://github.com/introspection-org/recipes/commit/ea1c93c07448aef58269acf63a7c1c6b4fba90ed))
+
 ## [0.61.0](https://github.com/introspection-org/recipes/compare/v0.60.1...v0.61.0) (2026-11-21)
 
 
