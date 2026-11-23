@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.0](https://github.com/introspection-org/recipes/compare/v0.61.1...v0.62.0) (2026-11-23)
+
+
+### Features
+
+* memory enters each conversation as a snapshotted read of MEMORY.md, not the system prompt ([#591](https://github.com/introspection-org/recipes/issues/591)) ([2777c7a](https://github.com/introspection-org/recipes/commit/2777c7a4d1168a05aa674194818808203aa209f0))
+
 ## [0.61.1](https://github.com/introspection-org/recipes/compare/v0.61.0...v0.61.1) (2026-11-21)
 
 
