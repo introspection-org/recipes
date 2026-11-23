@@ -51,21 +51,9 @@ selects that Recipe's default agent, not the parent's.
 
 ## Local memory
 
-A local host can give a series of Recipe sessions a private memory directory.
-Create the directory first and pass its absolute path in `INTROSPECTION_MEMORY_DIR`
-or with `--recipe-memory-dir`. The flag takes precedence. To detect support before
-starting a session, run the same Pi executable with the same extensions and
-`--help`, and look for `--recipe-memory-dir <value>` in the extension flags.
+A Recipe session loads `memories/MEMORY.md` from its working directory at session start, as the Runtime loads the memory folder it mounts at `/workspace/memories`: the first 200 lines and 25,000 UTF-8 bytes, read again by each fresh session. A missing or empty index adds nothing to the prompt. Other files in `memories/` are read with tools.
 
-The Recipe's `read`, `write`, and `edit` tools route `/workspace/memories` and
-its descendants into that directory. At session start, its `MEMORY.md` is loaded
-with the standard memory limits (200 lines and 25,000 UTF-8 bytes). A missing or
-empty index contributes nothing to the prompt. Each fresh session reads the
-current index. Use a separate directory for each independent series.
-
-The host owns the directory and controls its parents. Mapped paths reject
-`..` components and symbolic links. This mapping applies to the three Pi tools;
-shell commands and Recipe extension code use the host filesystem directly.
+Each series of sessions that must not share memory runs in its own working directory, such as a Harbor trial's `/workspace` or a local scenario's workspace.
 
 ## Where the agent is
 
@@ -80,7 +68,17 @@ Nothing need be declared for it. The step is the agent's skill it last read, amo
 An agent that moves through several phases declares them in its agent file, in order:
 
 ```yaml
-skills: [build-brainstorm, build-draft, build-review, build-deploy, improve-collect, improve-classify, improve-propose, eval-run]
+skills:
+  [
+    build-brainstorm,
+    build-draft,
+    build-review,
+    build-deploy,
+    improve-collect,
+    improve-classify,
+    improve-propose,
+    eval-run,
+  ]
 phases: [build, improve]
 ```
 
@@ -105,7 +103,16 @@ A host that draws its own line (the platform's task chat) passes `onRecipeStep` 
 When the extension starts a Recipe session it records the Recipe in the session file, as a custom entry of type `recipe_session`:
 
 ```json
-{ "type": "custom", "customType": "recipe_session", "data": { "recipe_dir": "/abs/path/interviewer", "agent": "agent", "package": "interviewer", "version": "0.1.0" } }
+{
+  "type": "custom",
+  "customType": "recipe_session",
+  "data": {
+    "recipe_dir": "/abs/path/interviewer",
+    "agent": "agent",
+    "package": "interviewer",
+    "version": "0.1.0"
+  }
+}
 ```
 
 It's written again only when the Recipe, agent or version changes, so the latest one is what the session runs now. Whoever continues the session (`introspection local`, a local task, a person) reads it to start the same Recipe and agent without being told. A session that can't record it still runs.
@@ -269,13 +276,13 @@ for the changes since `previous_content`), with no Node or Pi imports.
 Each item carries what the reviewer is shown, so the host needs no access to
 the files:
 
-| Field | What it is |
-| --- | --- |
-| `path`, `label`, `section` | As given; `section` only when one was |
-| `content` | The file as the terminal review shows it: front matter folded into one line, only `section` when given |
-| `sha256` | Of the whole file on disk when asked (`null` when it doesn't exist), so a record of approval can say exactly which file was approved |
-| `previous_content` | What this session's last review of the path showed, when the file has changed since; kept in memory only, so a restarted session sends none |
-| `truncated` | `true` when `content` was cut to the interrupt's cap (256 KB of content across the review); the host lets such a file be read but not approved |
+| Field                      | What it is                                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`, `label`, `section` | As given; `section` only when one was                                                                                                          |
+| `content`                  | The file as the terminal review shows it: front matter folded into one line, only `section` when given                                         |
+| `sha256`                   | Of the whole file on disk when asked (`null` when it doesn't exist), so a record of approval can say exactly which file was approved           |
+| `previous_content`         | What this session's last review of the path showed, when the file has changed since; kept in memory only, so a restarted session sends none    |
+| `truncated`                | `true` when `content` was cut to the interrupt's cap (256 KB of content across the review); the host lets such a file be read but not approved |
 
 `details.files` holds `{ path, sha256 }` for every item, on every host. The model sees, after `Answer: `:
 

@@ -4,7 +4,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -170,7 +169,6 @@ describe("Recipes extension for Pi", () => {
     expect(pi.commands.has("recipe")).toBe(true);
     expect(pi.commands.has("recipe-resources")).toBe(false);
     expect(pi.flags.has("recipe")).toBe(true);
-    expect(pi.flags.get("recipe-memory-dir")?.type).toBe("string");
     expect(pi.flags.has("agent")).toBe(true);
 
     const results = await pi.emitExtensionEvent(
@@ -183,34 +181,6 @@ describe("Recipes extension for Pi", () => {
     );
     expect(results).toEqual([{}]);
     expect(pi.activeTools).toEqual([]);
-  });
-
-  it("aborts before prompting with invalid memory configuration", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-recipe-memory-config-"));
-    try {
-      const recipeDir = writeRecipe(root);
-      const linkedIndex = join(root, "MEMORY.md");
-      symlinkSync(join(recipeDir, "SYSTEM.md"), linkedIndex);
-      for (const [directory, reason] of [
-        ["relative", "existing absolute directory"],
-        [join(root, "missing"), "existing absolute directory"],
-        [root, "symbolic links"],
-      ] as const) {
-        const { pi, notify, ctx } = await startMainAgent(recipeDir, root, {
-          INTROSPECTION_MEMORY_DIR: directory,
-        });
-        expect(notify).toHaveBeenCalledWith(
-          expect.stringContaining(reason),
-          "warning",
-        );
-        expect(pi.activeTools).toEqual([]);
-        const abort = vi.fn();
-        await pi.emitExtensionEvent({ type: "agent_start" }, { ...ctx, abort });
-        expect(abort).toHaveBeenCalledOnce();
-      }
-    } finally {
-      rmSync(root, { force: true, recursive: true });
-    }
   });
 
   it("reports when recipe inspection commands run without an active recipe", async () => {

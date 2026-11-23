@@ -143,8 +143,6 @@ export async function openPiCliSession(options: {
   workspaceDir: string;
   bindings: Array<{ id: string; url: string }>;
   responses: FauxResponseStep[];
-  env?: NodeJS.ProcessEnv;
-  flagValues?: Record<string, string>;
   cleanups: Array<() => void | Promise<void>>;
 }): Promise<AgentSession> {
   useFauxModel(options.recipeDir);
@@ -172,7 +170,6 @@ export async function openPiCliSession(options: {
     ...cleanEnv(),
     PI_RECIPE_DIR: options.recipeDir,
     PI_RECIPES_MCP_LOCAL_CONFIG: bindingsPath,
-    ...options.env,
   };
   const resourceLoader = new DefaultResourceLoader({
     cwd: options.workspaceDir,
@@ -186,9 +183,6 @@ export async function openPiCliSession(options: {
     ],
   });
   await resourceLoader.reload();
-  for (const [name, value] of Object.entries(options.flagValues ?? {})) {
-    resourceLoader.getExtensions().runtime.flagValues.set(name, value);
-  }
   const { session } = await createAgentSession({
     cwd: options.workspaceDir,
     agentDir,

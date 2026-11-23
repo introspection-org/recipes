@@ -8,7 +8,7 @@ import {
   recipeSessionChanged,
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
-import { bindLocalMemory } from "./local-memory.js";
+import { formatMemoryForPrompt, loadMemoryIndex } from "./memory.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -171,6 +171,8 @@ interface AgentCallParams {
 
 /** Mid-turn completion delivery retries on this cadence until the session idles. */
 const COMPLETION_DELIVERY_RETRY_MS = 100;
+// The memory index the Runtime loads, from the folder it mounts in the workspace.
+const MEMORY_INDEX_PATH = "memories/MEMORY.md";
 
 /** The widget listing running subagents above the footer. */
 const AGENTS_WIDGET_KEY = "recipe-agents";
@@ -1901,11 +1903,6 @@ export function createRecipesExtension(
         "Recipe folder, installed recipe name, or installed recipe source to use for this Pi session",
       type: "string",
     });
-    pi.registerFlag("recipe-memory-dir", {
-      description:
-        "Absolute private directory mounted at /workspace/memories for this Recipe",
-      type: "string",
-    });
     pi.registerFlag("agent", {
       description: "Agent to use",
       type: "string",
@@ -2089,22 +2086,13 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
-      memoryPrompt = "";
-      const flag = pi.getFlag("recipe-memory-dir");
-      const directory =
-        typeof flag === "string" ? flag : env.INTROSPECTION_MEMORY_DIR;
-      if (directory !== undefined) {
-        try {
-          memoryPrompt = bindLocalMemory(pi, ctx.cwd, directory);
-        } catch (err) {
-          failRecipeSession(
-            pi,
-            `Memory directory configuration failed: ${String(err)}`,
-            ctx,
-          );
-          return;
-        }
-      }
+      const loaded = loadMemoryIndex({
+        cwd: ctx.cwd,
+        indexPath: MEMORY_INDEX_PATH,
+      });
+      for (const diagnostic of loaded.diagnostics)
+        ctx.ui.notify(diagnostic.message, "warning");
+      memoryPrompt = formatMemoryForPrompt(loaded.memory);
       skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
