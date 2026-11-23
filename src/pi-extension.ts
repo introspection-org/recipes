@@ -2247,11 +2247,10 @@ export function createRecipesExtension(
         launchState.piBehindServers,
       );
       offerOnlyRecipeSkills(event, recipeSkills(launchState));
-      const prompt = createSystemPrompt(event, launchState);
       return withCurrentDate(
         event,
         clock,
-        memoryPrompt ? (prompt ?? event.systemPrompt) + memoryPrompt : prompt,
+        createSystemPrompt(event, launchState, memoryPrompt),
       );
     });
   };
