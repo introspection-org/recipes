@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpBindingError } from "../src/mcp/index.js";
 import { registerChannelTools } from "../src/channels/index.js";
 import type { LoadMemoryIndexOptions } from "../src/memory.js";
+import { MEMORY_SNAPSHOT_ENTRY } from "../src/memory-context.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
 import { createDelegatedRuns } from "../src/agents.js";
@@ -223,6 +224,18 @@ describe("createAgentSession", () => {
     const created = writeFixtureRecipe(options);
     cleanups.push(created.cleanup);
     return created;
+  }
+
+  function memorySnapshot(handle: RecipeSessionHandle): string | undefined {
+    const entry = handle.session.sessionManager
+      .getEntries()
+      .filter(
+        (e) => e.type === "custom" && e.customType === MEMORY_SNAPSHOT_ENTRY,
+      )
+      .at(-1);
+    return entry?.type === "custom"
+      ? (entry.data as { content: string }).content
+      : undefined;
   }
 
   async function open(
@@ -556,7 +569,7 @@ describe("createAgentSession", () => {
     ).toBe(false);
   });
 
-  it("loads memory before the host transforms the resolved prompt", async () => {
+  it("keeps memory out of the prompt the host transforms", async () => {
     const { recipeDir, workspaceDir } = fixture();
     const memoriesDir = join(workspaceDir, "memories");
     mkdirSync(memoriesDir);
@@ -578,9 +591,9 @@ describe("createAgentSession", () => {
       },
     });
 
-    expect(transformed).toContain("<memories>");
-    expect(transformed).toContain("Testing preferences");
+    expect(transformed).not.toContain("Testing preferences");
     expect(handle.session.systemPrompt).toContain("Host context.");
+    expect(memorySnapshot(handle)).toBe("- [Testing preferences](testing.md)");
   });
 
   it("keeps the session cwd authoritative for memory paths", async () => {
@@ -596,8 +609,8 @@ describe("createAgentSession", () => {
 
     const handle = await open({ recipeDir, cwd: workspaceDir, memory });
 
-    expect(handle.session.systemPrompt).toContain("session memory");
-    expect(handle.session.systemPrompt).not.toContain("other memory");
+    expect(memorySnapshot(handle)).toBe("session memory");
+    expect(handle.session.systemPrompt).not.toContain("session memory");
   });
 
   it("allows the host to replace or disable loaded memory", async () => {
@@ -616,8 +629,7 @@ describe("createAgentSession", () => {
       }),
     });
 
-    expect(handle.session.systemPrompt).toContain("replacement memory");
-    expect(handle.session.systemPrompt).not.toContain("original memory");
+    expect(memorySnapshot(handle)).toBe("replacement memory");
   });
 
   it("starts connector sessions with the default Slack loadout", async () => {

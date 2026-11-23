@@ -131,18 +131,26 @@ locale and the system clock; an unknown zone fails construction.
 
 ### Persistent memory context
 
-Hosts can provide one durable memory index through `memory`. Recipes loads the
-index once during session construction and bounds the injected index content to
-200 lines and 25,000 UTF-8 bytes after XML escaping by default. Missing and
-empty indexes render nothing. The host owns the directory, persistence, and
-identity scope; Recipes assumes no filesystem layout.
+Hosts can provide one durable memory index through `memory`. The index never
+enters the system prompt, so the prompt stays the same for every owner. Each
+conversation instead snapshots it once, saves the snapshot in the session, and
+replays it as a `read` of the index right after the first user message: a
+continued or restored conversation sends the bytes it started with, and its
+cached prefix holds even after the agent rewrites the file. Compaction takes a
+new snapshot, since it rewrites the history anyway. The snapshot is bounded to
+200 lines and 25,000 UTF-8 bytes; a missing or empty index adds nothing. The
+host owns the directory, persistence, and identity scope; Recipes assumes no
+filesystem layout.
 
-The index should stay concise and can link to focused files in its directory.
-Recipes injects it without adding usage or precedence instructions.
+Memory is progressive: the index is the one file always loaded, so it stays
+concise and links to focused files in its directory, which the agent reads with
+its tools when the index or its instructions point there. Recipes adds no usage
+or precedence instructions.
 
 `memoryOverride` follows Pi's resource override pattern. It can replace, filter,
-or disable the loaded index before rendering. The exported `loadMemoryIndex`
-and `formatMemoryForPrompt` helpers let custom hosts use the same primitives.
+or disable the loaded index before it is snapshotted. The exported
+`loadMemoryIndex` and `formatMemoryForPrompt` helpers let custom hosts use the
+same primitives.
 Recipe-specific memory behavior belongs in `SYSTEM.md` or agent
 `system_instructions`, while the host binds the actual memory resource.
 
