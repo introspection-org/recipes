@@ -8,7 +8,11 @@ import type { LoadMemoryIndexResult } from "../src/memory.js";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
-function setup(load: () => LoadMemoryIndexResult, entries: unknown[] = []) {
+function setup(
+  load: () => LoadMemoryIndexResult,
+  entries: unknown[] = [],
+  branch?: unknown[],
+) {
   const handlers = new Map<string, Handler>();
   const appended: unknown[] = [];
   const pi = {
@@ -22,7 +26,7 @@ function setup(load: () => LoadMemoryIndexResult, entries: unknown[] = []) {
     cwd: "/workspace",
     model: { api: "anthropic-messages", provider: "anthropic", id: "m" },
     ui: { notify: vi.fn() },
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getBranch: () => branch ?? entries },
   };
   const start = registerMemoryContext(pi as never, "memories/MEMORY.md", load);
   const fire = (name: string, event: unknown = {}) =>
@@ -36,7 +40,10 @@ function setup(load: () => LoadMemoryIndexResult, entries: unknown[] = []) {
   return { fire, context, appended };
 }
 
-function loaded(content: string | null): LoadMemoryIndexResult {
+function loaded(
+  content: string | null,
+  maxBytes = 25_000,
+): LoadMemoryIndexResult {
   return {
     memory:
       content === null
@@ -46,7 +53,7 @@ function loaded(content: string | null): LoadMemoryIndexResult {
             baseDir: "/workspace/memories",
             content,
             maxLines: 200,
-            maxBytes: 25_000,
+            maxBytes,
             truncated: false,
           },
     diagnostics: [],
@@ -100,10 +107,28 @@ describe("registerMemoryContext", () => {
     fire("session_start");
     content = null;
     fire("session_compact");
-    expect(appended.at(-1)).toEqual({
-      path: "memories/MEMORY.md",
-      content: "",
-    });
+    expect(appended.at(-1)).toEqual({ path: "", content: "" });
     expect(context([user("hi")])).toEqual({});
+  });
+
+  it("bounds a snapshot to its limits, as an override may exceed them", () => {
+    const { fire, appended } = setup(() => loaded("x".repeat(30), 10));
+    fire("session_start");
+    expect(appended).toEqual([
+      { path: "memories/MEMORY.md", content: "xxxxxxx..." },
+    ]);
+  });
+
+  it("restores only a snapshot on the active branch", () => {
+    const other = {
+      type: "custom",
+      customType: MEMORY_SNAPSHOT_ENTRY,
+      data: { path: "memories/MEMORY.md", content: "other branch" },
+    };
+    const { fire, context } = setup(() => loaded("this branch"), [other], []);
+    fire("session_start");
+    expect(context([user("hi")]).messages?.[2]).toMatchObject({
+      content: [{ type: "text", text: "this branch" }],
+    });
   });
 });

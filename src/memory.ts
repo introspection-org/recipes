@@ -201,6 +201,27 @@ function escapeXmlWithinBytes(
 }
 
 /** Format durable memory for the system prompt, following Pi's skill renderer. */
+/** A loaded index's content within its line and byte limits, unescaped. */
+export function boundMemoryContent(memory: MemoryIndex): string {
+  const maxLines = boundedLimit(
+    "maxLines",
+    memory.maxLines,
+    DEFAULT_MEMORY_INDEX_MAX_LINES,
+  );
+  const maxBytes = boundedLimit(
+    "maxBytes",
+    memory.maxBytes,
+    DEFAULT_MEMORY_INDEX_MAX_BYTES,
+  );
+  const lines = boundLines(memory.content, maxLines);
+  const fits = Buffer.byteLength(lines.content, "utf8") <= maxBytes;
+  if (fits && !lines.truncated && !memory.truncated) return lines.content;
+  const suffix = maxBytes >= 3 ? "..." : ".".repeat(maxBytes);
+  const room = maxBytes - Buffer.byteLength(suffix, "utf8");
+  const bytes = Buffer.from(lines.content, "utf8").subarray(0, room);
+  return new StringDecoder("utf8").write(bytes) + suffix;
+}
+
 export function formatMemoryForPrompt(memory: MemoryIndex | null): string {
   if (!memory) return "";
 

@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { LoadMemoryIndexResult } from "./memory.js";
+import { boundMemoryContent, type LoadMemoryIndexResult } from "./memory.js";
 
 /** Session entry holding a conversation's memory snapshot. */
 export const MEMORY_SNAPSHOT_ENTRY = "recipe_memory_snapshot";
@@ -24,7 +24,7 @@ interface MemorySnapshot {
  */
 export function registerMemoryContext(
   pi: ExtensionAPI,
-  indexPath: string,
+  indexPath: string | undefined,
   load: (cwd: string) => LoadMemoryIndexResult,
 ): (ctx: ExtensionContext) => void {
   let started = false;
@@ -35,11 +35,14 @@ export function registerMemoryContext(
     for (const diagnostic of loaded.diagnostics)
       ctx.ui.notify(diagnostic.message, "warning");
     snapshot = loaded.memory
-      ? { path: indexPath, content: loaded.memory.content }
+      ? {
+          path: indexPath ?? loaded.memory.filePath,
+          content: boundMemoryContent(loaded.memory),
+        }
       : null;
     pi.appendEntry(
       MEMORY_SNAPSHOT_ENTRY,
-      snapshot ?? { path: indexPath, content: "" },
+      snapshot ?? { path: "", content: "" },
     );
   }
 
@@ -47,7 +50,7 @@ export function registerMemoryContext(
     started = true;
     snapshot = null;
     const saved = ctx.sessionManager
-      ?.getEntries()
+      ?.getBranch()
       .filter(
         (entry) =>
           entry.type === "custom" && entry.customType === MEMORY_SNAPSHOT_ENTRY,

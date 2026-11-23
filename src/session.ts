@@ -794,12 +794,15 @@ function memoryExtensions(
   opts: CreateAgentSessionInternalOptions,
 ): InlineExtension[] {
   const source = opts.memory;
-  if (!source) return [];
+  const override = opts.memoryOverride;
+  if (!source && !override) return [];
   return [
     (pi) => {
-      const start = registerMemoryContext(pi, source.indexPath, (cwd) => {
-        const loaded = loadMemoryIndex({ ...source, cwd });
-        return opts.memoryOverride ? opts.memoryOverride(loaded) : loaded;
+      const start = registerMemoryContext(pi, source?.indexPath, (cwd) => {
+        const loaded = source
+          ? loadMemoryIndex({ ...source, cwd })
+          : { memory: null, diagnostics: [] };
+        return override ? override(loaded) : loaded;
       });
       pi.on("session_start", (_event, ctx) => start(ctx));
     },

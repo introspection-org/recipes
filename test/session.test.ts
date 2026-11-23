@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpBindingError } from "../src/mcp/index.js";
 import { registerChannelTools } from "../src/channels/index.js";
 import type { LoadMemoryIndexOptions } from "../src/memory.js";
-import { MEMORY_SNAPSHOT_ENTRY } from "../src/memory-context.js";
+import { memorySnapshot } from "./helpers/memory-snapshot.js";
 import { resolveRecipe } from "../src/recipe/resolve.js";
 import { createInProcessRunController } from "../src/run-controller.js";
 import { createDelegatedRuns } from "../src/agents.js";
@@ -224,18 +224,6 @@ describe("createAgentSession", () => {
     const created = writeFixtureRecipe(options);
     cleanups.push(created.cleanup);
     return created;
-  }
-
-  function memorySnapshot(handle: RecipeSessionHandle): string | undefined {
-    const entry = handle.session.sessionManager
-      .getEntries()
-      .filter(
-        (e) => e.type === "custom" && e.customType === MEMORY_SNAPSHOT_ENTRY,
-      )
-      .at(-1);
-    return entry?.type === "custom"
-      ? (entry.data as { content: string }).content
-      : undefined;
   }
 
   async function open(
@@ -630,6 +618,18 @@ describe("createAgentSession", () => {
     });
 
     expect(memorySnapshot(handle)).toBe("replacement memory");
+    const overrideOnly = await open({
+      recipeDir,
+      cwd: workspaceDir,
+      memoryOverride: () => ({
+        memory: {
+          ...{ filePath: "/h/MEMORY.md", baseDir: "/h", content: "x" },
+          ...{ maxLines: 200, maxBytes: 25_000, truncated: false },
+        },
+        diagnostics: [],
+      }),
+    });
+    expect(memorySnapshot(overrideOnly)).toBe("x");
   });
 
   it("starts connector sessions with the default Slack loadout", async () => {
