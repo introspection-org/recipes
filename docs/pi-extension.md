@@ -51,11 +51,10 @@ selects that Recipe's default agent, not the parent's.
 
 ## Local memory
 
-A Recipe session loads `memories/MEMORY.md` from its working directory at
-session start, as the Runtime loads the memory folder it mounts at
-`/workspace/memories`: the first 200 lines and 25,000 UTF-8 bytes, read again
-by each fresh session. A missing or empty index adds nothing to the prompt.
-Other files in `memories/` are read with tools.
+A Recipe session's memory index is `memories/MEMORY.md` in its working
+directory, as the Runtime mounts it at `/workspace/memories`. It is loaded as
+the host API's "Persistent memory context" describes: once per conversation,
+as a read after the first user message, never in the system prompt.
 
 A series of sessions that must not share memory runs in its own working
 directory, such as a Harbor trial's `/workspace` or a local scenario's
