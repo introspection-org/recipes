@@ -144,8 +144,8 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
+import { registerMemoryContext } from "./memory-context.js";
 import {
-  formatMemoryForPrompt,
   loadMemoryIndex,
   type MemoryContextOverride,
   type MemoryContextSource,
@@ -789,6 +789,26 @@ async function configureSessionMcp(
   }
 }
 
+/** The memory context, when the host binds a memory index. */
+function memoryExtensions(
+  opts: CreateAgentSessionInternalOptions,
+): InlineExtension[] {
+  const source = opts.memory;
+  const override = opts.memoryOverride;
+  if (!source && !override) return [];
+  return [
+    (pi) => {
+      const start = registerMemoryContext(pi, source?.indexPath, (cwd) => {
+        const loaded = source
+          ? loadMemoryIndex({ ...source, cwd })
+          : { memory: null, diagnostics: [] };
+        return override ? override(loaded) : loaded;
+      });
+      pi.on("session_start", (_event, ctx) => start(ctx));
+    },
+  ];
+}
+
 async function createSessionForAgent(
   recipe: ResolvedRecipeAgent,
   opts: CreateAgentSessionInternalOptions,
@@ -802,7 +822,6 @@ async function createSessionForAgent(
   const memoryResult = opts.memoryOverride
     ? opts.memoryOverride(loadedMemory)
     : loadedMemory;
-  const memoryPrompt = formatMemoryForPrompt(memoryResult.memory);
   const otel = opts.otel ? sessionOtel(opts.otel, recipe) : undefined;
 
   // Model + credentials, fail-closed before any MCP runtime starts.
@@ -924,7 +943,10 @@ async function createSessionForAgent(
     // Recipe extensions load through the shared jiti loader; host extensions
     // append after them, matching the Pi extension host's ordering.
     // The date goes first, so a later handler that forces a prompt keeps it.
-    const inlineExtensions: InlineExtension[] = [currentDateExtension(clock)];
+    const inlineExtensions: InlineExtension[] = [
+      currentDateExtension(clock),
+      ...memoryExtensions(opts),
+    ];
     const recipeRegistrations = createRecipeExtensionRegistrationRegistry();
     for (const toolName of [
       "read",
@@ -1115,13 +1137,10 @@ async function createSessionForAgent(
               },
         ),
         systemPromptOverride: (base) => {
-          const resolved = recipe.systemPromptOverride(base);
-          const withMemory = [resolved, memoryPrompt]
-            .filter(Boolean)
-            .join("\n\n");
+          const resolved = recipe.systemPromptOverride(base) ?? "";
           return opts.transformSystemPrompt
-            ? opts.transformSystemPrompt(withMemory)
-            : withMemory || undefined;
+            ? opts.transformSystemPrompt(resolved)
+            : resolved || undefined;
         },
       },
     });

@@ -8,6 +8,8 @@ import {
   recipeSessionChanged,
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
+import { loadMemoryIndex } from "./memory.js";
+import { registerMemoryContext } from "./memory-context.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -170,6 +172,8 @@ interface AgentCallParams {
 
 /** Mid-turn completion delivery retries on this cadence until the session idles. */
 const COMPLETION_DELIVERY_RETRY_MS = 100;
+// The memory index, in the folder the Runtime mounts in the workspace.
+const MEMORY_INDEX_PATH = "memories/MEMORY.md";
 
 /** The widget listing running subagents above the footer. */
 const AGENTS_WIDGET_KEY = "recipe-agents";
@@ -1818,6 +1822,9 @@ export function createRecipesExtension(
 
   return (pi) => {
     extensionApi = pi;
+    const startMemory = registerMemoryContext(pi, MEMORY_INDEX_PATH, (cwd) =>
+      loadMemoryIndex({ cwd, indexPath: MEMORY_INDEX_PATH }),
+    );
     // Deliver queued background completions by waking the parent model with
     // a triggerTurn message. Delivery only happens when the session is
     // genuinely idle: a message queued while the parent turn is streaming
@@ -2082,6 +2089,7 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
+      startMemory(ctx);
       skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();

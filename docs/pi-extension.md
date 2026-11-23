@@ -49,6 +49,17 @@ reads them as its defaults, but an agent name only counts for the Recipe it
 came with: `pi --recipe <another Recipe>` run from a Recipe session's shell
 selects that Recipe's default agent, not the parent's.
 
+## Local memory
+
+A Recipe session's memory index is `memories/MEMORY.md` in its working
+directory, as the Runtime mounts it at `/workspace/memories`. It is loaded as
+the host API's "Persistent memory context" describes: once per conversation,
+as a read after the first user message, never in the system prompt.
+
+A series of sessions that must not share memory runs in its own working
+directory, such as a Harbor trial's `/workspace` or a local scenario's
+workspace.
+
 ## Where the agent is
 
 A Recipe agent's step shows in Pi's footer, with how long the agent has worked:
