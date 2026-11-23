@@ -38,13 +38,12 @@ export interface SystemPromptLaunchState {
 export function createSystemPrompt(
   event: SystemPromptEvent,
   launchState: SystemPromptLaunchState,
-  memoryPrompt = "",
 ): string | undefined {
   const recipePrompt = launchState.resolved.systemPromptOverride(
     event.systemPrompt,
   );
   if (!launchState.resolvedRecipe.resources.hasSystemPrompt)
-    return withMemory(recipePrompt, memoryPrompt);
+    return recipePrompt;
   const selectedTools = event.systemPromptOptions.selectedTools ?? [];
   const skills = event.systemPromptOptions.skills ?? [];
   const fileReadTool = SKILL_FILE_READ_TOOLS.find((tool) =>
@@ -53,19 +52,9 @@ export function createSystemPrompt(
   const skillsPrompt = fileReadTool
     ? formatSkillsForPrompt([...skills], fileReadTool).trim()
     : "";
-  if (!skillsPrompt) return withMemory(recipePrompt, memoryPrompt);
+  if (!skillsPrompt) return recipePrompt;
   const skillsSection = `<skills>\n${skillsPrompt}\n</skills>`;
-  return withMemory(
-    recipePrompt ? `${recipePrompt}\n\n${skillsSection}` : skillsSection,
-    memoryPrompt,
-  );
-}
-
-function withMemory(
-  prompt: string | undefined,
-  memoryPrompt: string,
-): string | undefined {
-  return [prompt, memoryPrompt].filter(Boolean).join("\n\n") || undefined;
+  return recipePrompt ? `${recipePrompt}\n\n${skillsSection}` : skillsSection;
 }
 
 /**
