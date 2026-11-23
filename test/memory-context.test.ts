@@ -2,15 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MEMORY_READ_CALL_ID,
   MEMORY_SNAPSHOT_ENTRY,
-  MemoryContext,
+  registerMemoryContext,
 } from "../src/memory-context.js";
 import type { LoadMemoryIndexResult } from "../src/memory.js";
 
-function setup(entries: unknown[] = []) {
-  const appended: Array<{ customType: string; data: unknown }> = [];
+type Handler = (event: unknown, ctx: unknown) => unknown;
+
+function setup(load: () => LoadMemoryIndexResult, entries: unknown[] = []) {
+  const handlers = new Map<string, Handler>();
+  const appended: unknown[] = [];
   const pi = {
+    on: (name: string, handler: Handler) => handlers.set(name, handler),
     appendEntry: (customType: string, data: unknown) => {
-      appended.push({ customType, data });
+      appended.push(data);
       entries.push({ type: "custom", customType, data });
     },
   };
@@ -20,11 +24,20 @@ function setup(entries: unknown[] = []) {
     ui: { notify: vi.fn() },
     sessionManager: { getEntries: () => entries },
   };
-  return { pi, ctx, appended };
+  const start = registerMemoryContext(pi as never, "memories/MEMORY.md", load);
+  const fire = (name: string, event: unknown = {}) =>
+    name === "session_start"
+      ? start(ctx as never)
+      : handlers.get(name)?.(event, ctx);
+  const context = (messages: unknown[]) =>
+    fire("context", { type: "context", messages }) as {
+      messages?: Array<{ role: string; content?: unknown }>;
+    };
+  return { fire, context, appended };
 }
 
-function loaded(content: string | null): () => LoadMemoryIndexResult {
-  return () => ({
+function loaded(content: string | null): LoadMemoryIndexResult {
+  return {
     memory:
       content === null
         ? null
@@ -37,30 +50,19 @@ function loaded(content: string | null): () => LoadMemoryIndexResult {
             truncated: false,
           },
     diagnostics: [],
-  });
+  };
 }
 
 const user = (text: string) => ({ role: "user", content: text, timestamp: 1 });
 
-describe("MemoryContext", () => {
-  it("reads the index once after the first user message", () => {
-    const { pi, ctx, appended } = setup();
-    const memory = new MemoryContext(
-      pi as never,
-      "memories/MEMORY.md",
-      loaded("likes jazz"),
-    );
-    memory.start(ctx as never);
+describe("registerMemoryContext", () => {
+  it("reads the index once, right after the first user message", () => {
+    const { fire, context, appended } = setup(() => loaded("likes jazz"));
+    fire("session_start");
     expect(appended).toEqual([
-      {
-        customType: MEMORY_SNAPSHOT_ENTRY,
-        data: { path: "memories/MEMORY.md", content: "likes jazz" },
-      },
+      { path: "memories/MEMORY.md", content: "likes jazz" },
     ]);
-    const { messages } = memory.inject(
-      { type: "context", messages: [user("hi"), user("again")] } as never,
-      ctx as never,
-    );
+    const { messages } = context([user("hi"), user("again")]);
     expect(messages?.map((m) => m.role)).toEqual([
       "user",
       "assistant",
@@ -71,54 +73,37 @@ describe("MemoryContext", () => {
       toolCallId: MEMORY_READ_CALL_ID,
       content: [{ type: "text", text: "likes jazz" }],
     });
-    expect(
-      memory.inject({ type: "context", messages } as never, ctx as never),
-    ).toEqual({});
+    expect(context(messages ?? [])).toEqual({});
   });
 
   it("replays a continued conversation's snapshot, not the file", () => {
-    const entries = [
-      {
-        type: "custom",
-        customType: MEMORY_SNAPSHOT_ENTRY,
-        data: { path: "memories/MEMORY.md", content: "old notes" },
-      },
-    ];
-    const { pi, ctx, appended } = setup(entries);
-    const memory = new MemoryContext(
-      pi as never,
-      "memories/MEMORY.md",
-      loaded("new notes"),
+    const { fire, context, appended } = setup(
+      () => loaded("new notes"),
+      [
+        {
+          type: "custom",
+          customType: MEMORY_SNAPSHOT_ENTRY,
+          data: { path: "memories/MEMORY.md", content: "old notes" },
+        },
+      ],
     );
-    memory.start(ctx as never);
+    fire("session_start");
     expect(appended).toEqual([]);
-    const { messages } = memory.inject(
-      { type: "context", messages: [user("hi")] } as never,
-      ctx as never,
-    );
-    expect(messages?.[2]).toMatchObject({
+    expect(context([user("hi")]).messages?.[2]).toMatchObject({
       content: [{ type: "text", text: "old notes" }],
     });
   });
 
-  it("takes a new snapshot after compaction and adds nothing without memory", () => {
-    const { pi, ctx, appended } = setup();
+  it("takes a new snapshot after compaction, and adds nothing without memory", () => {
     let content: string | null = "first";
-    const memory = new MemoryContext(pi as never, "memories/MEMORY.md", () =>
-      loaded(content)(),
-    );
-    memory.start(ctx as never);
+    const { fire, context, appended } = setup(() => loaded(content));
+    fire("session_start");
     content = null;
-    memory.refresh(ctx as never);
-    expect(appended.at(-1)?.data).toEqual({
+    fire("session_compact");
+    expect(appended.at(-1)).toEqual({
       path: "memories/MEMORY.md",
       content: "",
     });
-    expect(
-      memory.inject(
-        { type: "context", messages: [user("hi")] } as never,
-        ctx as never,
-      ),
-    ).toEqual({});
+    expect(context([user("hi")])).toEqual({});
   });
 });

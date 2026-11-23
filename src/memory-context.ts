@@ -1,6 +1,4 @@
 import type {
-  ContextEvent,
-  ContextEventResult,
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
@@ -19,44 +17,55 @@ interface MemorySnapshot {
 /**
  * Memory enters a conversation as a read of its index, right after the first
  * user message, so the system prompt stays the same for every owner and a
- * restored or continued conversation replays the bytes it started with. The
- * index is read once per conversation, and again only after compaction, which
- * rewrites the history anyway.
+ * continued or restored conversation replays the bytes it started with. The
+ * index is read once per conversation, and again after compaction, which
+ * rewrites the history anyway. The host calls the returned `start` on each
+ * session start it runs a Recipe in; until then nothing is added.
  */
-export class MemoryContext {
-  private snapshot: MemorySnapshot | null = null;
+export function registerMemoryContext(
+  pi: ExtensionAPI,
+  indexPath: string,
+  load: (cwd: string) => LoadMemoryIndexResult,
+): (ctx: ExtensionContext) => void {
+  let started = false;
+  let snapshot: MemorySnapshot | null = null;
 
-  constructor(
-    private readonly pi: ExtensionAPI,
-    private readonly indexPath: string,
-    private readonly load: (cwd: string) => LoadMemoryIndexResult,
-  ) {}
+  function take(ctx: ExtensionContext): void {
+    const loaded = load(ctx.cwd);
+    for (const diagnostic of loaded.diagnostics)
+      ctx.ui.notify(diagnostic.message, "warning");
+    snapshot = loaded.memory
+      ? { path: indexPath, content: loaded.memory.content }
+      : null;
+    pi.appendEntry(
+      MEMORY_SNAPSHOT_ENTRY,
+      snapshot ?? { path: indexPath, content: "" },
+    );
+  }
 
-  /** Restore the conversation's snapshot, or take one for a new conversation. */
-  start(ctx: ExtensionContext): void {
+  function start(ctx: ExtensionContext): void {
+    started = true;
+    snapshot = null;
     const saved = ctx.sessionManager
-      .getEntries()
+      ?.getEntries()
       .filter(
         (entry) =>
           entry.type === "custom" && entry.customType === MEMORY_SNAPSHOT_ENTRY,
       )
       .at(-1);
-    if (saved && saved.type === "custom") {
+    if (saved?.type === "custom") {
       const data = saved.data as MemorySnapshot | null;
-      this.snapshot = data?.content ? data : null;
+      snapshot = data?.content ? data : null;
       return;
     }
-    this.take(ctx);
+    take(ctx);
   }
 
-  /** Take a new snapshot after compaction. */
-  refresh(ctx: ExtensionContext): void {
-    this.take(ctx);
-  }
+  pi.on("session_compact", (_event, ctx) => {
+    if (started) take(ctx);
+  });
 
-  /** Put the snapshot's read after the first user message, once. */
-  inject(event: ContextEvent, ctx: ExtensionContext): ContextEventResult {
-    const snapshot = this.snapshot;
+  pi.on("context", (event, ctx) => {
     if (!snapshot || !ctx.model) return {};
     const messages = event.messages;
     if (
@@ -109,31 +118,6 @@ export class MemoryContext {
         ...messages.slice(first + 1),
       ],
     };
-  }
-
-  private take(ctx: ExtensionContext): void {
-    const loaded = this.load(ctx.cwd);
-    for (const diagnostic of loaded.diagnostics)
-      ctx.ui.notify(diagnostic.message, "warning");
-    this.snapshot = loaded.memory
-      ? { path: this.indexPath, content: loaded.memory.content }
-      : null;
-    this.pi.appendEntry(
-      MEMORY_SNAPSHOT_ENTRY,
-      this.snapshot ?? { path: this.indexPath, content: "" },
-    );
-  }
-}
-
-/** The memory context as an extension, for hosts that build their own session. */
-export function memoryContextExtension(
-  indexPath: string,
-  load: (cwd: string) => LoadMemoryIndexResult,
-) {
-  return (pi: ExtensionAPI) => {
-    const memory = new MemoryContext(pi, indexPath, load);
-    pi.on("session_start", (_event, ctx) => memory.start(ctx));
-    pi.on("session_compact", (_event, ctx) => memory.refresh(ctx));
-    pi.on("context", (event, ctx) => memory.inject(event, ctx));
-  };
+  });
+  return start;
 }

@@ -9,7 +9,7 @@ import {
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
 import { loadMemoryIndex } from "./memory.js";
-import { MemoryContext } from "./memory-context.js";
+import { registerMemoryContext } from "./memory-context.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -1822,7 +1822,7 @@ export function createRecipesExtension(
 
   return (pi) => {
     extensionApi = pi;
-    const memory = new MemoryContext(pi, MEMORY_INDEX_PATH, (cwd) =>
+    const startMemory = registerMemoryContext(pi, MEMORY_INDEX_PATH, (cwd) =>
       loadMemoryIndex({ cwd, indexPath: MEMORY_INDEX_PATH }),
     );
     // Deliver queued background completions by waking the parent model with
@@ -2089,7 +2089,7 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
-      memory.start(ctx);
+      startMemory(ctx);
       skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
@@ -2234,13 +2234,6 @@ export function createRecipesExtension(
         "error",
       );
       return { action: "handled" };
-    });
-
-    pi.on("context", (event, ctx) =>
-      safeLoadState(pi, ctx.cwd, ctx) ? memory.inject(event, ctx) : {},
-    );
-    pi.on("session_compact", (_event, ctx) => {
-      if (safeLoadState(pi, ctx.cwd, ctx)) memory.refresh(ctx);
     });
 
     pi.on("before_agent_start", (event, ctx) => {

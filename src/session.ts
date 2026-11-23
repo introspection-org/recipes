@@ -144,7 +144,7 @@ import {
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
-import { memoryContextExtension } from "./memory-context.js";
+import { registerMemoryContext } from "./memory-context.js";
 import {
   loadMemoryIndex,
   type MemoryContextOverride,
@@ -796,10 +796,13 @@ function memoryExtensions(
   const source = opts.memory;
   if (!source) return [];
   return [
-    memoryContextExtension(source.indexPath, (cwd) => {
-      const loaded = loadMemoryIndex({ ...source, cwd });
-      return opts.memoryOverride ? opts.memoryOverride(loaded) : loaded;
-    }),
+    (pi) => {
+      const start = registerMemoryContext(pi, source.indexPath, (cwd) => {
+        const loaded = loadMemoryIndex({ ...source, cwd });
+        return opts.memoryOverride ? opts.memoryOverride(loaded) : loaded;
+      });
+      pi.on("session_start", (_event, ctx) => start(ctx));
+    },
   ];
 }
 
