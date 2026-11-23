@@ -39,6 +39,7 @@ import {
   type AgentRunSummary,
 } from "./agents.js";
 import { compactionExtensions } from "./compaction.js";
+import { registerGenAiSpansFile } from "./genai-spans-file.js";
 import {
   askUserQuestionExtension,
   wantsAskUserQuestion,
@@ -809,6 +810,15 @@ function memoryExtensions(
   ];
 }
 
+/** The GenAI spans file, kept by the root session only: a child would replace it. */
+function genAiSpansFileExtensions(
+  opts: CreateAgentSessionInternalOptions,
+  env: NodeJS.ProcessEnv,
+): InlineExtension[] {
+  if (opts.sessionRole !== "root") return [];
+  return [(pi) => registerGenAiSpansFile(pi, env)];
+}
+
 async function createSessionForAgent(
   recipe: ResolvedRecipeAgent,
   opts: CreateAgentSessionInternalOptions,
@@ -946,6 +956,7 @@ async function createSessionForAgent(
     const inlineExtensions: InlineExtension[] = [
       currentDateExtension(clock),
       ...memoryExtensions(opts),
+      ...genAiSpansFileExtensions(opts, env),
     ];
     const recipeRegistrations = createRecipeExtensionRegistrationRegistry();
     for (const toolName of [
