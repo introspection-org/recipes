@@ -222,6 +222,10 @@ const PRODUCTIVITY_COMMAND_NAMES: Record<
   readonly string[] | undefined
 > = PRODUCTIVITY_COMMANDS;
 
+/** A Recipe's own Python project is its root; only a package names another. */
+export const RECIPE_PYTHON_PROJECT_REMOVED =
+  "pi.runtime.python.project is no longer supported: move pyproject.toml and uv.lock to the Recipe root and remove project/lockfile";
+
 export interface RecipePythonRuntimeRequirement {
   project: string;
   lockfile: string;
@@ -970,6 +974,7 @@ export function isPythonModuleName(value: string): boolean {
 function runtimeSourceShapeFindings(
   value: unknown,
   packageName: string,
+  owner: "recipe" | "package" = "recipe",
 ): RecipeValidationFinding[] {
   if (value === undefined) return [];
   const invalid = (message: string) =>
@@ -1005,6 +1010,18 @@ function runtimeSourceShapeFindings(
             ),
           );
         }
+      }
+      if (
+        owner === "recipe" &&
+        (python.project !== undefined || python.lockfile !== undefined)
+      ) {
+        findings.push(
+          finding(
+            "runtime.python_project_removed",
+            RECIPE_PYTHON_PROJECT_REMOVED,
+            packageName,
+          ),
+        );
       }
       for (const key of ["project", "lockfile"]) {
         if (
@@ -1885,33 +1902,26 @@ export function validatePiPackageManifest(
       ),
     );
   }
-  if (pkg.runtime?.python) {
-    for (const [key, authored, expected] of [
-      ["project", pkg.runtime.python.project, "directory"],
-      ["lockfile", pkg.runtime.python.lockfile, "file"],
-    ] as const) {
-      const target = resolve(pkg.path, authored);
-      const rel = relative(resolve(pkg.path), target);
-      const outside =
-        isAbsolute(authored) ||
-        (authored !== "." && hasTraversalSegment(authored)) ||
-        rel === ".." ||
-        rel.startsWith(`..${sep}`) ||
-        isAbsolute(rel);
-      const exists =
-        existsSync(target) &&
-        (expected === "directory"
-          ? statSync(target).isDirectory()
-          : statSync(target).isFile());
-      if (outside || !exists) {
-        findings.push(
-          finding(
-            "pi.runtime_path_invalid",
-            `package.json#pi.runtime.python.${key} must resolve to a ${expected} inside the Recipe`,
-            pkg.name,
-          ),
-        );
-      }
+  if (
+    pkg.runtime?.python &&
+    !findings.some((item) => item.code === "runtime.python_project_removed")
+  ) {
+    if (!existsSync(join(pkg.path, "pyproject.toml"))) {
+      findings.push(
+        finding(
+          "runtime.python_project_missing",
+          "pi.runtime.python is declared but the Recipe has no pyproject.toml at its root",
+          pkg.name,
+        ),
+      );
+    } else if (!existsSync(join(pkg.path, "uv.lock"))) {
+      findings.push(
+        finding(
+          "runtime.python_lock_missing",
+          "pyproject.toml has no uv.lock beside it",
+          pkg.name,
+        ),
+      );
     }
   }
   return {
@@ -1967,7 +1977,11 @@ export function validateRecipePythonPackage(
   const pi = piPackageManifestBlock(raw);
   const runtime = pi ? asRecord(pi.runtime) : {};
   if (runtime.python === undefined) return { valid: true, findings: [], name };
-  const findings = runtimeSourceShapeFindings({ python: runtime.python }, name);
+  const findings = runtimeSourceShapeFindings(
+    { python: runtime.python },
+    name,
+    "package",
+  );
   const python = parseRuntimeRequirements({ python: runtime.python }).python;
   if (findings.length === 0 && python) {
     const invalidPath = (message: string) =>

@@ -444,7 +444,7 @@ declaring `pi.documents` declares and locks none of these libraries itself.
 - **A Recipe with no Python of its own** gets the shared environment as
   its shell environment, so a script the agent writes can `import docx` with
   no Python files in the Recipe.
-- **A Recipe with its own Python project** keeps only that environment in its
+- **A Recipe with its own root `pyproject.toml`** keeps only that environment in its
   shell. A script of its own that imports `docx` lists `paper-docx` in the
   Recipe's `pyproject.toml`.
 
