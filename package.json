@@ -203,7 +203,7 @@
     "ts-json-schema-generator": "^2.9.0",
     "typebox": "^1.0.56",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "typescript-eslint": "8.72.2",
+    "typescript-eslint": "8.73.0",
     "vitest": "^5.0.1"
   }
 }
