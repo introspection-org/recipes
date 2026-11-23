@@ -49,6 +49,24 @@ reads them as its defaults, but an agent name only counts for the Recipe it
 came with: `pi --recipe <another Recipe>` run from a Recipe session's shell
 selects that Recipe's default agent, not the parent's.
 
+## Local memory
+
+A local host can give a series of Recipe sessions a private memory directory.
+Create the directory first and pass its absolute path in `INTROSPECTION_MEMORY_DIR`
+or with `--recipe-memory-dir`. The flag takes precedence. To detect support before
+starting a session, run the same Pi executable with the same extensions and
+`--help`, and look for `--recipe-memory-dir <value>` in the extension flags.
+
+The Recipe's `read`, `write`, and `edit` tools route `/workspace/memories` and
+its descendants into that directory. At session start, its `MEMORY.md` is loaded
+with the standard memory limits (200 lines and 25,000 UTF-8 bytes). A missing or
+empty index contributes nothing to the prompt. Each fresh session reads the
+current index. Use a separate directory for each independent series.
+
+The host owns the directory and controls its parents. Mapped paths reject
+`..` components and symbolic links. This mapping applies to the three Pi tools;
+shell commands and Recipe extension code use the host filesystem directly.
+
 ## Where the agent is
 
 A Recipe agent's step shows in Pi's footer, with how long the agent has worked:

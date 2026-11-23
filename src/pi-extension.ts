@@ -8,6 +8,7 @@ import {
   recipeSessionChanged,
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
+import { bindLocalMemory } from "./local-memory.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -757,6 +758,7 @@ export function createRecipesExtension(
     renderAgentsWidget();
   };
   let extensionApi: ExtensionAPI | null = null;
+  let memoryPrompt = "";
   let sessionConfigurationError: string | null = null;
   const visibleAgentDefinitions = new Map<string, RecipeAgentDefinition>();
 
@@ -1899,6 +1901,11 @@ export function createRecipesExtension(
         "Recipe folder, installed recipe name, or installed recipe source to use for this Pi session",
       type: "string",
     });
+    pi.registerFlag("recipe-memory-dir", {
+      description:
+        "Absolute private directory mounted at /workspace/memories for this Recipe",
+      type: "string",
+    });
     pi.registerFlag("agent", {
       description: "Agent to use",
       type: "string",
@@ -2082,6 +2089,22 @@ export function createRecipesExtension(
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
       if (!launchState) return;
+      memoryPrompt = "";
+      const flag = pi.getFlag("recipe-memory-dir");
+      const directory =
+        typeof flag === "string" ? flag : env.INTROSPECTION_MEMORY_DIR;
+      if (directory !== undefined) {
+        try {
+          memoryPrompt = bindLocalMemory(pi, ctx.cwd, directory);
+        } catch (err) {
+          failRecipeSession(
+            pi,
+            `Memory directory configuration failed: ${String(err)}`,
+            ctx,
+          );
+          return;
+        }
+      }
       skillProgress.resume(ctx);
       launchState.configured = false;
       visibleAgentDefinitions.clear();
@@ -2236,10 +2259,11 @@ export function createRecipesExtension(
         launchState.piBehindServers,
       );
       offerOnlyRecipeSkills(event, recipeSkills(launchState));
+      const prompt = createSystemPrompt(event, launchState);
       return withCurrentDate(
         event,
         clock,
-        createSystemPrompt(event, launchState),
+        memoryPrompt ? (prompt ?? event.systemPrompt) + memoryPrompt : prompt,
       );
     });
   };
