@@ -332,7 +332,10 @@ async function startPicker(options: PickerOptions = {}) {
     mode: options.mode ?? "tui",
     ui,
     isIdle: () => true,
-    sessionManager: { getEntries: () => options.entries ?? [] },
+    sessionManager: {
+      getEntries: () => options.entries ?? [],
+      getBranch: () => options.entries ?? [],
+    },
     modelRegistry: {
       authStorage: {},
       find: vi.fn((provider: string, id: string) => ({ provider, id })),
