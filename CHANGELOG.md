@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.63.0](https://github.com/introspection-org/recipes/compare/v0.62.0...v0.63.0) (2026-11-23)
+
+
+### Features
+
+* an embedded session keeps the GenAI spans file too, when PI_RECIPE_GENAI_SPANS_FILE names one ([#593](https://github.com/introspection-org/recipes/issues/593)) ([97d436b](https://github.com/introspection-org/recipes/commit/97d436b3df4856571fd2bf3448cf2693db2017a1))
+
 ## [0.62.0](https://github.com/introspection-org/recipes/compare/v0.61.1...v0.62.0) (2026-11-23)
 
 
