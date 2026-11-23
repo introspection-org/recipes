@@ -17,9 +17,7 @@ single session constructor:
 
 ```ts
 import { resolveRecipe } from "@introspection-ai/recipes/recipe";
-import {
-  createAgentSession,
-} from "@introspection-ai/recipes/session";
+import { createAgentSession } from "@introspection-ai/recipes/session";
 
 const recipe = resolveRecipe({ recipeDir });
 const agent = recipe.selectAgent(agentName);
@@ -128,6 +126,13 @@ turn's prompt names the date in that zone, and the built-in `today` tool and
 `calendar list`'s default range read the same clock, as do the default
 in-process children. Omitted fields fall back to the host's time zone and
 locale and the system clock; an unknown zone fails construction.
+
+### GenAI spans file
+
+When the session's `env` sets `PI_RECIPE_GENAI_SPANS_FILE`, the root session
+writes its GenAI spans to that path exactly as the
+[Pi extension](pi-extension.md#genai-spans) does, creating the parent
+directory. Child sessions don't write it.
 
 ### Persistent memory context
 
