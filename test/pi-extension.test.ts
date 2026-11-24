@@ -212,12 +212,27 @@ async function resumeWithRecordedProvider(
 ) {
   const registeredTool = pi.tools.get("setup_git");
   pi.flagValues.delete("recipe-provider");
-  ctx.sessionManager = {
-    getBranch: () => pi.entries.map((entry) => ({ type: "custom", ...entry })),
-  };
-  await pi.emitExtensionEvent({ type: "session_start", reason: "resume" }, ctx);
-  expect(pi.tools.get("setup_git")).toBe(registeredTool);
-  expect(pi.activeTools).toContain("setup_git");
+  const branch = pi.entries.map((entry) => ({ type: "custom", ...entry }));
+  const alternate = branch.map((entry) =>
+    entry.customType === "recipe_session"
+      ? { ...entry, data: { ...(entry.data as object), provider: "anthropic" } }
+      : entry,
+  );
+  for (const [entries, provider, id, effort] of [
+    [branch, "openai", "gpt-4.1", "low"],
+    [alternate, "anthropic", "claude-sonnet-4-5", "high"],
+    [branch, "openai", "gpt-4.1", "low"],
+  ] as const) {
+    ctx.sessionManager = { getBranch: () => entries };
+    await pi.emitExtensionEvent(
+      { type: "session_start", reason: "resume" },
+      ctx,
+    );
+    expect(pi.activeTools).toContain("setup_git");
+    expect(pi.tools.get("setup_git")).toBe(registeredTool);
+    expect(pi.model).toMatchObject({ provider, id });
+    expect(pi.thinkingLevel).toBe(effort);
+  }
 }
 
 describe("Recipes extension for Pi", () => {
@@ -1636,9 +1651,11 @@ describe("Recipes extension for Pi", () => {
         join(recipeDir, "defs", "main.yaml"),
         [
           "name: main",
-          "model:",
-          "  name: openai/gpt-4.1",
-          "  thinking_level: low",
+          "ai:",
+          "  default_model: primary",
+          "  models:",
+          "    primary: {provider: openai, model: gpt-4.1, thinking_level: low}",
+          "    other: {provider: anthropic, model: claude-sonnet-4-5, thinking_level: high}",
           "tools:",
           "  - setup_git",
           "skills: []",

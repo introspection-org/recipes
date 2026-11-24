@@ -1001,17 +1001,24 @@ export function createRecipesExtension(
       const provider =
         providerFlag ??
         recordedRecipeProvider(recordedSession, recipeDir, root.name);
-      // Flags and session metadata can describe the same launch. Its factories
-      // have already registered their tools with this Pi extension instance.
-      if (
+      // Provider selection changes the model graph. Pi registrations belong to
+      // the Recipe and agent and live for the lifetime of this extension.
+      const existing =
         state?.cwd === cwd &&
         state.sourceRecipe === sourceRecipe &&
-        state.resolved.name === root.name &&
-        state.resolvedRecipe.recipeProvider === provider
-      )
-        return state;
+        state.resolved.name === root.name
+          ? state
+          : undefined;
+      if (existing && existing.resolvedRecipe.recipeProvider === provider)
+        return existing;
       resolvedRecipe = scopeRecipeProvider(sourceRecipe, root.name, provider);
       resolved = resolvedRecipe.selectAgent(root.name);
+      if (existing) {
+        existing.resolvedRecipe = resolvedRecipe;
+        existing.resolved = resolved;
+        existing.configured = false;
+        return existing;
+      }
     } catch (err) {
       throw new RecipeLaunchError(
         recipeLoadErrorMessage(
