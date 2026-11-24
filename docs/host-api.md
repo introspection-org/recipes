@@ -264,7 +264,7 @@ host that needs structure-only traces can wrap its exporter with
 In tools mode the `execute_tool` span of an MCP tool carries `mcp.server.id`
 and `mcp.tool.name`, and `mcp.server.binding` when the host says where it bound
 the server from:
-`materializeMcpSession({ bindingOrigins: { attio: "live" } })`, with `live`
+`materializeMcpSession({ bindingOrigins: { crm: "live" } })`, with `live`
 for a project endpoint, `recipe` for an eval task's committed binding to a fake
 and `local` for an `introspection dev` local binding.
 
