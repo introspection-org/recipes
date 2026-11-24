@@ -33,6 +33,13 @@ Recipes currently requires Node.js 24 or later and Pi `>=1.1.0`.
 
 ## Selection
 
+Use `pi --recipe ./recipe --recipe-provider anthropic` to select the model
+provider for the root agent and all its subagents. Each agent uses a matching
+default or its sole matching entry. Pi checks these choices before starting
+the Recipe. The session's `recipe_session` entry records the selected provider
+in its optional `provider` field. Resuming that Recipe and agent restores it
+unless a new `--recipe-provider` is given.
+
 `--recipe` accepts a local directory:
 
 ```bash

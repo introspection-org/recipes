@@ -51,6 +51,15 @@ it returns:
 the exact `ResolvedRecipe` the host inspected, selects `agentName`, and uses
 that same graph for every default in-process child session.
 
+Pass `recipeProvider?: string` to select a provider for this session. For each
+reachable agent the SDK chooses its default entry when it matches the provider,
+or its sole matching entry otherwise. A missing or ambiguous match fails
+during session creation and identifies the agent and its choices. The SDK
+uses each selected entry's model and effort together. A single `ai.model`
+counts as one entry. With no selection, each agent uses its authored default.
+Continuing a session with the same session manager restores its provider for
+the same Recipe and agent. An explicit option takes precedence.
+
 ```ts
 const handle = await createAgentSession({
   recipe,

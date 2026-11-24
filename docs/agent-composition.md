@@ -90,7 +90,7 @@ Omission means "inherit" for a derived agent. Declaring a field means
 | Field | Derived-agent behavior |
 | --- | --- |
 | `description` | Child value replaces the base; omission inherits it |
-| `ai` | Merges by key when `model` is omitted; declaring `ai.model` starts a fresh AI configuration |
+| `ai` | Merges by key when a model declaration is omitted; declaring `ai.model` or `ai.models` starts a fresh AI configuration |
 | `session` | Merges by key; nested settings objects merge recursively |
 | `tools` | Child array replaces the inherited allowlist; `[]` clears it |
 | `skills` | Child array replaces the inherited selection; `[]` clears it |
@@ -109,8 +109,7 @@ Arrays never merge item by item. This makes capability boundaries reviewable:
 a derived agent that declares `tools: [read]` receives only `read`, not the
 base agent's other tools.
 
-AI settings merge only while the child omits `ai.model`. Declaring
-`ai.model` starts a fresh AI configuration, even when restating the same
+AI settings merge only while the child omits both `ai.model` and `ai.models`. Either declaration starts a fresh AI configuration, even when restating the same
 identity, so
 provider routing, headers, retries, cache policy, and transport tuning cannot
 silently cross model boundaries.
@@ -165,7 +164,7 @@ camelCase. Provider-adapter-only options are not implied by this block. Its safe
 outer envelope is validated, while explicit provider maps and nested payloads
 remain opaque except for credential and runtime-binding controls. All AI
 settings except the fully resolved model are optional and merge by key along a
-`from:` chain until a child explicitly declares `ai.model`.
+`from:` chain until a child explicitly declares `ai.model` or `ai.models`.
 
 The former `model:` block remains readable for existing Recipes. New Recipes
 should use `ai:`; mixing both blocks in one agent is a validation error.

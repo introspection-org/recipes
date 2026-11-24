@@ -102,6 +102,7 @@ export async function createIsolatedChildSession(
             models: [model, ...fallbacks],
             credentials,
           } = await resolveRecipeAgentModels({
+            recipeProvider: options.recipe.recipeProvider,
             modelSpec: agent.modelSpec,
             fallbacks: agent.modelConfig?.fallbacks,
             env,

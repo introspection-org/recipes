@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { RecipeResolutionError, resolveRecipe } from "../src/recipe/resolve.js";
+import {
+  RecipeResolutionError,
+  resolveRecipe,
+  scopeRecipeProvider,
+} from "../src/recipe/resolve.js";
 
 const roots: string[] = [];
 
@@ -423,4 +427,70 @@ describe("resolved Recipe agents", () => {
       RecipeResolutionError,
     );
   });
+});
+
+it("selects each reachable model and effort before delegation, without changing other sessions", () => {
+  const recipeDir = makeRecipe();
+  const write = (name: string, fields: object) =>
+    writeFileSync(
+      join(recipeDir, "agents", name + ".yaml"),
+      JSON.stringify({ name, ...fields }),
+    );
+  const models = {
+    first: { provider: "one", model: "root", thinking_level: "high" },
+    second: { provider: "two", model: "other", thinking_level: "low" },
+    third: { provider: "one", model: "third" },
+  };
+  write("agent", {
+    ai: { models, default_model: "first" },
+    subagents: ["child"],
+  });
+  write("child", {
+    ai: { model: "two/child", thinking_level: "medium" },
+    subagents: ["leaf"],
+  });
+  write("leaf", {
+    ai: {
+      models: { sole: { provider: "two", model: "leaf" } },
+      fallbacks: ["one/foo", "two/bar"],
+    },
+  });
+  const original = resolveRecipe({ recipeDir });
+  const scoped = scopeRecipeProvider(original, "agent", "two");
+  expect(scoped.selectAgent()).toMatchObject({
+    modelSpec: "two/other",
+    thinkingLevel: "low",
+  });
+  expect(scoped.selectAgent("child")).toMatchObject({
+    modelSpec: "two/child",
+    thinkingLevel: "medium",
+  });
+  expect(scoped.selectAgent("leaf")).toMatchObject({
+    modelSpec: "two/leaf",
+    modelConfig: { fallbacks: ["two/bar"] },
+  });
+  expect(original.selectAgent()).toMatchObject({
+    modelSpec: "one/root",
+    thinkingLevel: "high",
+  });
+  expect(() => scopeRecipeProvider(original, "agent", "one")).toThrow(
+    /child.*one.*ai.model.*two/,
+  );
+  write("leaf", {
+    ai: {
+      models: { ...models, extra: { provider: "two", model: "another" } },
+      default_model: "first",
+    },
+  });
+  expect(() =>
+    scopeRecipeProvider(resolveRecipe({ recipeDir }), "agent", "two"),
+  ).toThrow(/leaf.*ambiguous.*two.*second.*extra/);
+  write("child", { ai: { model: "one/child" } });
+  expect(
+    scopeRecipeProvider(
+      resolveRecipe({ recipeDir }),
+      "agent",
+      "one",
+    ).selectAgent().modelSpec,
+  ).toBe("one/root");
 });

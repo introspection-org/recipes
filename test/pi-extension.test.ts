@@ -161,6 +161,51 @@ function writeRecipe(root: string) {
   return recipeDir;
 }
 
+it("uses the launch provider and restores it on resume", async () => {
+  const root = mkdtempSync(join(tmpdir(), "recipe-provider-"));
+  try {
+    const recipeDir = writeRecipe(root);
+    writeFileSync(
+      join(recipeDir, "defs", "main.yaml"),
+      [
+        "name: main",
+        "ai:",
+        "  default_model: primary",
+        "  models:",
+        "    primary: { provider: one, model: first, thinking_level: high }",
+        "    other: { provider: two, model: second, thinking_level: low }",
+      ].join("\n"),
+    );
+    const ctx = extensionContext(root, vi.fn());
+    const launch = async (provider?: string) => {
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      if (provider) pi.flagValues.set("recipe-provider", provider);
+      createRecipesExtension({ env: {} })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" },
+        ctx,
+      );
+      return pi;
+    };
+    const first = await launch("two");
+    expect(first.model).toMatchObject({ provider: "two", id: "second" });
+    expect(first.thinkingLevel).toBe("low");
+    ctx.sessionManager = {
+      getBranch: () =>
+        first.entries.map((entry) => ({ ...entry, type: "custom" })),
+    };
+    const resumed = await launch();
+    expect(resumed.model).toEqual(first.model);
+    expect(resumed.thinkingLevel).toBe("low");
+    const overridden = await launch("one");
+    expect(overridden.model).toMatchObject({ provider: "one", id: "first" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 describe("Recipes extension for Pi", () => {
   it("registers recipe launch flags", async () => {
     const pi = createMockExtensionAPI();

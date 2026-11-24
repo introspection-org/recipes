@@ -142,6 +142,13 @@ import {
   cloneModelForRecipe,
 } from "./recipe/model.js";
 import {
+  latestRecipeSession,
+  recordedRecipeProvider,
+  recipeSessionChanged,
+  RECIPE_SESSION_ENTRY_TYPE,
+} from "./recipe-session-entry.js";
+import {
+  scopeRecipeProvider,
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
@@ -217,6 +224,8 @@ export interface CreateAgentSessionOptions {
   recipe: ResolvedRecipe;
   /** Default: the agent named `agent`, else the recipe's single-agent rule. */
   agentName?: string;
+  /** Select this provider throughout the root and its delegation graph. */
+  recipeProvider?: string;
   /** Agent workspace. Default: `process.cwd()`. */
   cwd?: string;
   /** Model credentials. Default: derived from provider env keys. */
@@ -819,6 +828,21 @@ function genAiSpansFileExtensions(
   return [(pi) => registerGenAiSpansFile(pi, env)];
 }
 
+function assertSessionTransportProvider(
+  recipe: ResolvedRecipeAgent,
+  opts: CreateAgentSessionInternalOptions,
+  lookupProvider: string,
+): void {
+  if (opts.recipe.recipeProvider !== undefined) {
+    for (const model of [opts.modelOverride, ...(opts.modelFallbacks ?? [])]) {
+      if (model && model.provider !== lookupProvider)
+        throw new Error(
+          `Recipe agent "${recipe.name}" selected provider "${opts.recipe.recipeProvider}" but received transport "${model.provider}/${model.id}"`,
+        );
+    }
+  }
+}
+
 async function createSessionForAgent(
   recipe: ResolvedRecipeAgent,
   opts: CreateAgentSessionInternalOptions,
@@ -841,6 +865,7 @@ async function createSessionForAgent(
     opts.modelOverride,
     recipe.modelConfig?.fallbacks,
   );
+  assertSessionTransportProvider(recipe, opts, lookupProvider);
   const credentialProvider = opts.modelOverride?.provider ?? lookupProvider;
   const credentials =
     opts.credentialsResolved && opts.credentials
@@ -1491,10 +1516,36 @@ async function createSessionForAgent(
 export async function createAgentSession(
   opts: CreateAgentSessionOptions,
 ): Promise<RecipeSessionHandle> {
-  return createSessionForAgent(opts.recipe.selectAgent(opts.agentName), {
+  const root = opts.recipe.selectAgent(opts.agentName);
+  const entries = opts.sessionManager?.getBranch() ?? [];
+  const provider =
+    opts.recipeProvider ??
+    recordedRecipeProvider(
+      latestRecipeSession(entries),
+      root.recipeDir,
+      root.name,
+    );
+  const recipe = scopeRecipeProvider(opts.recipe, root.name, provider);
+  const handle = await createSessionForAgent(recipe.selectAgent(root.name), {
     ...opts,
+    recipe,
     sessionRole: "root",
   });
+  if (provider !== undefined) {
+    const entry = {
+      recipe_dir: root.recipeDir,
+      agent: root.name,
+      package: root.manifest.name,
+      version: root.manifest.version,
+      provider,
+    };
+    if (recipeSessionChanged(entries, entry))
+      handle.session.sessionManager.appendCustomEntry(
+        RECIPE_SESSION_ENTRY_TYPE,
+        entry,
+      );
+  }
+  return handle;
 }
 
 /** @internal Construct a child with Recipes-owned lifecycle state. */

@@ -1,5 +1,61 @@
 [
   {
+    "name": "sole named model",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}}}\n"
+    }
+  },
+  {
+    "name": "named model choices",
+    "valid": true,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}, \"gateway\": {\"provider\": \"openrouter\", \"model\": \"anthropic/claude\", \"thinking_level\": \"high\"}}, \"default_model\": \"fast\"}\n"
+    }
+  },
+  {
+    "name": "named models missing default",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}, \"gateway\": {\"provider\": \"openrouter\", \"model\": \"anthropic/claude\", \"thinking_level\": \"high\"}}}\n"
+    }
+  },
+  {
+    "name": "unknown named default",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}, \"gateway\": {\"provider\": \"openrouter\", \"model\": \"anthropic/claude\", \"thinking_level\": \"high\"}}, \"default_model\": \"absent\"}\n"
+    }
+  },
+  {
+    "name": "duplicate provider prefix",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"openai/gpt-5\"}}}\n"
+    }
+  },
+  {
+    "name": "conflicting model declarations",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}, \"gateway\": {\"provider\": \"openrouter\", \"model\": \"anthropic/claude\", \"thinking_level\": \"high\"}}, \"model\": \"openai/gpt-5\", \"default_model\": \"fast\"}\n"
+    }
+  },
+  {
+    "name": "named models with global effort",
+    "valid": false,
+    "files": {
+      "package.json": "{\"name\":\"model-choices\",\"pi\":{}}",
+      "agents/agent.yaml": "name: agent\nai: {\"models\": {\"fast\": {\"provider\": \"openai\", \"model\": \"gpt-5\"}, \"gateway\": {\"provider\": \"openrouter\", \"model\": \"anthropic/claude\", \"thinking_level\": \"high\"}}, \"thinking_level\": \"high\", \"default_model\": \"fast\"}\n"
+    }
+  },
+  {
     "name": "minimal agent",
     "valid": true,
     "files": {

@@ -122,8 +122,23 @@ This is its
 stable identity for selection, subagent references, artifacts, and telemetry;
 the filename has no semantic meaning.
 
-Every fully resolved agent MUST also define `ai.model` as
-`<provider>/<model_id>`. The model may be declared directly or inherited with
+Every fully resolved agent MUST define a model. A single `ai.model` uses
+`<provider>/<model_id>` and takes its effort from `ai.thinking_level`.
+Agents can also declare named choices with `ai.models`:
+
+```yaml
+ai:
+  default_model: direct
+  models:
+    direct: { provider: anthropic, model: claude-sonnet-4-5, thinking_level: high }
+    gateway: { provider: openrouter, model: anthropic/claude-sonnet-4-5, thinking_level: low }
+```
+
+Each entry supplies its provider and the model ID that provider accepts.
+Include any namespace in the model ID and omit the provider prefix.
+`default_model` must name an entry. It is required for multiple entries and
+optional for a single entry. Effort belongs to each entry. An agent chooses
+either the single-model form or the named mapping. The model declaration may be inherited with
 `from`. The legacy `model.name` form remains accepted for backwards
 compatibility, but an agent MUST NOT declare both `ai` and `model`.
 
@@ -142,6 +157,8 @@ the retry goes to the next model, and the agent stays on the model that last
 answered. A model named under `openai` also runs as the same model under
 `openai-codex` when Pi is logged in to ChatGPT and has no OpenAI key, whether
 it is the `ai.model` or a fallback; that alias also applies only to subagents.
+When a session requests a provider, only fallbacks on that provider qualify,
+and credential lookup stays on that provider.
 
 `phases` MAY list, in order, the phases the agent moves through, each the
 prefix of its step skills (`build` for `build-draft`). It changes only what

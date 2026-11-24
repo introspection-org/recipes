@@ -4082,6 +4082,89 @@ pub(crate) fn judge_ai_errors(ai: &JsonValue) -> Vec<String> {
         .collect()
 }
 
+fn valid_thinking_level(value: &JsonValue) -> bool {
+    matches!(
+        value.as_str(),
+        Some("off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")
+    )
+}
+
+fn validate_named_models(
+    ai: &JsonMap,
+    path: &str,
+    owner: &AiOwner,
+    ctx: &mut CheckContext,
+) -> bool {
+    let mut error = |message: String| {
+        ctx.error(
+            owner.code("ai.models_invalid"),
+            path,
+            format!("{}: {message}", owner.subject),
+            None::<String>,
+        )
+    };
+    let Some(value) = ai.get("models") else {
+        if ai.contains_key("default_model") {
+            error("ai.default_model requires ai.models".into());
+        }
+        return false;
+    };
+    let Some(models) = value.as_object().filter(|models| !models.is_empty()) else {
+        error("ai.models must be a non-empty mapping".into());
+        return false;
+    };
+    if ai.contains_key("model") || ai.contains_key("thinking_level") {
+        error(
+            "use ai.model with ai.thinking_level or ai.models with per-entry thinking_level".into(),
+        );
+    }
+    if ai.get("default_model").map_or(models.len() > 1, |v| {
+        !v.as_str().is_some_and(|key| models.contains_key(key))
+    }) {
+        error(format!(
+            "ai.default_model must name one of {}",
+            models.keys().cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    for (key, value) in models {
+        let Some(entry) = value.as_object() else {
+            error(format!("ai.models.{key} must be a mapping"));
+            continue;
+        };
+        let provider = entry
+            .get("provider")
+            .and_then(JsonValue::as_str)
+            .unwrap_or_default();
+        let model = entry
+            .get("model")
+            .and_then(JsonValue::as_str)
+            .unwrap_or_default();
+        if key.trim().is_empty()
+            || provider.is_empty()
+            || provider.contains([':', '/'])
+            || provider.contains(char::is_whitespace)
+            || model.contains(char::is_whitespace)
+            || model.split('/').any(str::is_empty)
+            || model.starts_with(&format!("{provider}/"))
+        {
+            error(format!("ai.models.{key} requires a name, a provider ID and a model ID without its provider prefix"));
+        }
+        if entry
+            .get("thinking_level")
+            .is_some_and(|value| !valid_thinking_level(value))
+        {
+            error(format!("ai.models.{key}.thinking_level is unsupported"));
+        }
+        for field in entry
+            .keys()
+            .filter(|k| !matches!(k.as_str(), "provider" | "model" | "thinking_level"))
+        {
+            error(format!("ai.models.{key} contains unknown field '{field}'"));
+        }
+    }
+    true
+}
+
 /// Validate an `ai:` block, as an agent and a judge declare it. Returns
 /// whether it names a model.
 pub(crate) fn validate_ai_block(
@@ -4107,7 +4190,12 @@ pub(crate) fn validate_ai_block(
         "options",
         "providers",
     ];
-    for key in ai.keys().filter(|key| !AI_KEYS.contains(&key.as_str())) {
+    let agent_models = owner.code == "agent";
+    let has_named_models = agent_models && validate_named_models(ai, path, owner, ctx);
+    for key in ai.keys().filter(|key| {
+        !(AI_KEYS.contains(&key.as_str())
+            || agent_models && matches!(key.as_str(), "models" | "default_model"))
+    }) {
         ctx.error(
             owner.code("ai_key_unknown"),
             path,
@@ -4140,12 +4228,7 @@ pub(crate) fn validate_ai_block(
         validate_ai_fallbacks(value, path, owner, ctx);
     }
     if let Some(value) = ai.get("thinking_level") {
-        if !value.as_str().is_some_and(|level| {
-            matches!(
-                level,
-                "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
-            )
-        }) {
+        if !valid_thinking_level(value) {
             ctx.error(
                 owner.code("ai.thinking_level_invalid"),
                 path,
@@ -4162,7 +4245,7 @@ pub(crate) fn validate_ai_block(
                 format!("{label} ai.options must be an object"),
                 None::<String>,
             );
-            return model_name.is_some();
+            return has_named_models || model_name.is_some();
         };
         const BLOCKED: &[&str] = &[
             "api_key",
@@ -4206,7 +4289,7 @@ pub(crate) fn validate_ai_block(
         }
     }
     validate_model_providers(ai.get("providers"), path, ctx, true, owner);
-    model_name.is_some()
+    has_named_models || model_name.is_some()
 }
 
 fn validate_ai_fallbacks(value: &JsonValue, path: &str, owner: &AiOwner, ctx: &mut CheckContext) {

@@ -258,6 +258,7 @@ export interface RecipeAgentModels {
  * the model the Recipe names, so it gets that model or its credential error.
  */
 export async function resolveRecipeAgentModels(opts: {
+  recipeProvider?: string;
   modelSpec: string;
   fallbacks?: readonly string[];
   env: NodeJS.ProcessEnv;
@@ -272,9 +273,10 @@ export async function resolveRecipeAgentModels(opts: {
   let firstError: unknown;
   for (const spec of specs) {
     try {
-      const model = opts.credentials
-        ? resolveRecipeModel(spec, opts.modelRegistry)
-        : await resolveRecipeAgentModel(spec, opts.env, opts.modelRegistry);
+      const model =
+        opts.credentials || opts.recipeProvider !== undefined
+          ? resolveRecipeModel(spec, opts.modelRegistry)
+          : await resolveRecipeAgentModel(spec, opts.env, opts.modelRegistry);
       const credentials = await resolveRecipeCredentials({
         provider: model.provider,
         env: opts.env,

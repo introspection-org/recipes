@@ -69,6 +69,21 @@ const AiConfigSchema = Type.Object(
   {
     /** `<provider>/<model_id>`. */
     model: Type.Optional(Type.String()),
+    models: Type.Optional(
+      Type.Record(
+        Type.String(),
+        Type.Object(
+          {
+            provider: Type.String({ pattern: "^[^\\s/:]+$" }),
+            model: Type.String({ pattern: "^[^\\s/]+(?:/[^\\s/]+)*$" }),
+            thinking_level: Type.Optional(Type.Enum([...THINKING_LEVELS])),
+          },
+          strict,
+        ),
+        { minProperties: 1 },
+      ),
+    ),
+    default_model: Type.Optional(Type.String()),
     /** Models tried in order when `model` fails, each `<provider>/<model_id>`. */
     fallbacks: Type.Optional(Type.Array(Type.String({ pattern: MODEL_SPEC }))),
     thinking_level: Type.Optional(Type.Enum([...THINKING_LEVELS])),
@@ -194,6 +209,8 @@ type RecipeAgentVercelAiGatewayRouting = Record<string, unknown>;
 
 export interface RecipeAgentModelConfig {
   name?: string;
+  models?: NonNullable<AiConfig["models"]>;
+  defaultModel?: string;
   /** Models to move to, in order, when `name` has no credential or a request to it fails and Pi retries. */
   fallbacks?: string[];
   thinkingLevel?: ThinkingLevel;
@@ -315,9 +332,58 @@ function check<T extends TSchema>(
   }
 }
 
+/** Choose the model and effort as one entry, using the authored default to break ties. */
+export function selectRecipeModelEntry(
+  context: string,
+  entries: NonNullable<AiConfig["models"]>,
+  defaultKey: string,
+  provider?: string,
+) {
+  const preferred = entries[defaultKey]!;
+  if (provider === undefined || preferred.provider === provider)
+    return preferred;
+  const matches = Object.values(entries).filter(
+    (entry) => entry.provider === provider,
+  );
+  if (matches.length === 1) return matches[0]!;
+  const choices = Object.entries(entries)
+    .map(([key, entry]) => `${key} (${entry.provider})`)
+    .join(", ");
+  throw new RecipeModelConfigError(
+    `${context} has ${matches.length ? "ambiguous models" : "no model"} for provider "${provider}". Entries: ${choices}. ${matches.length ? "Set ai.default_model to a matching entry or keep one match." : "Declare a matching model or choose another provider."}`,
+  );
+}
+
 /** A checked `ai:` block as the settings Pi applies. */
-function toModelConfig(ai: AiConfig): RecipeAgentModelConfig {
-  const name = ai.model?.trim();
+function toModelConfig(ai: AiConfig, context: string): RecipeAgentModelConfig {
+  let name = ai.model?.trim();
+  let thinkingLevel = ai.thinking_level;
+  let defaultModel = ai.default_model;
+  if (ai.models) {
+    if (ai.model !== undefined || thinkingLevel !== undefined)
+      throw new RecipeModelConfigError(
+        `${context}: use ai.model with ai.thinking_level or ai.models with per-entry thinking_level`,
+      );
+    const keys = Object.keys(ai.models);
+    for (const [key, entry] of Object.entries(ai.models)) {
+      if (!key.trim() || entry.model.startsWith(entry.provider + "/"))
+        throw new RecipeModelConfigError(
+          `${context}: ai.models entry "${key}" requires a name and a model ID without its provider prefix`,
+        );
+    }
+    defaultModel ??= keys.length === 1 ? keys[0] : undefined;
+    if (!defaultModel || !Object.hasOwn(ai.models, defaultModel))
+      throw new RecipeModelConfigError(
+        `${context}: ai.default_model must name one of ${keys.join(", ")}`,
+      );
+    const entry = selectRecipeModelEntry(context, ai.models, defaultModel);
+    name = `${entry.provider}/${entry.model}`;
+    thinkingLevel = entry.thinking_level;
+  } else if (defaultModel !== undefined) {
+    throw new RecipeModelConfigError(
+      `${context}: ai.default_model requires ai.models`,
+    );
+  }
   const fallbacks = ai.fallbacks?.map((spec) => spec.trim());
   const streamOptions = ai.options
     ? Object.fromEntries(
@@ -333,9 +399,8 @@ function toModelConfig(ai: AiConfig): RecipeAgentModelConfig {
   return {
     ...(name ? { name } : {}),
     ...(fallbacks?.length ? { fallbacks } : {}),
-    ...(ai.thinking_level
-      ? { thinkingLevel: ai.thinking_level as ThinkingLevel }
-      : {}),
+    ...(ai.models ? { models: ai.models, defaultModel } : {}),
+    ...(thinkingLevel ? { thinkingLevel: thinkingLevel as ThinkingLevel } : {}),
     ...(streamOptions && hasKeys(streamOptions) ? { streamOptions } : {}),
     ...(openrouter
       ? { openrouter: { ...openrouter } as OpenRouterRouting }
@@ -381,7 +446,7 @@ export function parseRecipeAgentAiConfig(
   value: unknown,
 ): RecipeAgentModelConfig | undefined {
   if (value === undefined) return undefined;
-  return toModelConfig(check(AiConfigSchema, context, "ai", value));
+  return toModelConfig(check(AiConfigSchema, context, "ai", value), context);
 }
 
 /** Parse the older agent `model:` block, read as the `ai:` block it means. */
@@ -392,6 +457,7 @@ export function parseRecipeAgentModelConfig(
   if (value === undefined) return undefined;
   return toModelConfig(
     legacyModelAsAi(check(LegacyModelSchema, context, "model", value)),
+    context,
   );
 }
 
@@ -428,6 +494,17 @@ export function mergeRecipeAgentModelConfig(
   return {
     ...base,
     ...overlay,
+    ...(base.models && base.defaultModel && overlay.thinkingLevel
+      ? {
+          models: {
+            ...base.models,
+            [base.defaultModel]: {
+              ...base.models[base.defaultModel]!,
+              thinking_level: overlay.thinkingLevel,
+            },
+          },
+        }
+      : {}),
     ...(hasKeys(streamOptions) ? { streamOptions } : {}),
     ...(hasKeys(openrouter) ? { openrouter } : {}),
     ...(hasKeys(anthropic) ? { anthropic } : {}),

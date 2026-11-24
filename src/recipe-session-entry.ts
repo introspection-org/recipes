@@ -10,6 +10,7 @@ export interface RecipeSessionEntry {
   /** Absolute path of the Recipe package. */
   recipe_dir: string;
   agent: string;
+  provider?: string;
   package: string;
   version: string;
 }
@@ -43,6 +44,18 @@ export function recipeSessionChanged(
     !latest ||
     latest.recipe_dir !== entry.recipe_dir ||
     latest.agent !== entry.agent ||
+    latest.provider !== entry.provider ||
     latest.version !== entry.version
   );
+}
+
+/** Only restore a selection recorded for the same Recipe and entrypoint. */
+export function recordedRecipeProvider(
+  entry: RecipeSessionEntry | undefined,
+  recipeDir: string,
+  agent: string,
+): string | undefined {
+  return entry?.recipe_dir === recipeDir && entry.agent === agent
+    ? entry.provider
+    : undefined;
 }

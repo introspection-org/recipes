@@ -228,6 +228,7 @@ class RecipeChildAgentSessionRunner implements RecipeChildAgentRunner {
       models: [first, ...fallbacks],
       credentials,
     } = await resolveRecipeAgentModels({
+      recipeProvider: this.opts.recipe.recipeProvider,
       modelSpec: resolved.modelSpec,
       fallbacks: resolved.modelConfig?.fallbacks,
       env: this.opts.env ?? process.env,

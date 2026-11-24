@@ -12,7 +12,10 @@ import {
   selectedAgentTools,
   type RecipeSystemInstructions,
 } from "./agent.js";
-import type { RecipeAgentModelConfig } from "./model.js";
+import {
+  selectRecipeModelEntry,
+  type RecipeAgentModelConfig,
+} from "./model.js";
 import type { RecipeAgentSessionConfig } from "./session.js";
 import { packagedSkills, resolveAgentSkillPaths } from "./skills.js";
 import {
@@ -83,6 +86,7 @@ export interface ResolvedRecipeAgent {
  * select root/child sessions from it instead of reparsing YAML per session.
  */
 export interface ResolvedRecipe {
+  readonly recipeProvider?: string;
   readonly recipeDir: string;
   readonly manifest: PiPackageManifest;
   /** Complete package resource closure, before per-agent skill selection. */
@@ -481,6 +485,83 @@ export function resolveRecipe(opts: { recipeDir: string }): ResolvedRecipe {
     selectAgent(agentName) {
       const selected = selectAgent(definitions, agentName);
       return agents.get(selected.agentName)!;
+    },
+  });
+}
+
+/** Bind a root and its delegation graph before the session opens any transports. */
+export function scopeRecipeProvider(
+  recipe: ResolvedRecipe,
+  root: string | undefined,
+  provider: string | undefined,
+): ResolvedRecipe {
+  if (provider === undefined) return recipe;
+  const agents = new Map<string, ResolvedRecipeAgent>();
+  function visit(agent: ResolvedRecipeAgent) {
+    if (agents.has(agent.name)) return;
+    const config = agent.modelConfig;
+    const entries = config?.models ?? {
+      "ai.model": {
+        provider: agent.modelSpec.split("/", 1)[0]!,
+        model: agent.modelSpec.slice(agent.modelSpec.indexOf("/") + 1),
+        thinking_level: agent.thinkingLevel,
+      },
+    };
+    const entry = selectRecipeModelEntry(
+      `Recipe agent "${agent.name}"`,
+      entries,
+      config?.defaultModel ?? "ai.model",
+      provider,
+    );
+    const name = `${entry.provider}/${entry.model}`;
+    const thinkingLevel = entry.thinking_level;
+    const model = { name, thinkingLevel };
+    const modelConfig = {
+      ...config,
+      ...model,
+      fallbacks: config?.fallbacks?.filter((spec) =>
+        spec.startsWith(provider + "/"),
+      ),
+    };
+    agents.set(agent.name, {
+      ...agent,
+      modelSpec: name,
+      thinkingLevel,
+      modelConfig,
+      definition: { ...agent.definition, model, modelConfig },
+    });
+    for (const child of agent.subagents.keys())
+      visit(recipe.selectAgent(child));
+  }
+  const rootAgent = recipe.selectAgent(root);
+  visit(rootAgent);
+  for (const agent of agents.values()) {
+    agents.set(
+      agent.name,
+      deepFreeze({
+        ...agent,
+        subagents: readonlyMap(
+          new Map(
+            [...agent.subagents.keys()].map((name) => [
+              name,
+              agents.get(name)!.definition,
+            ]),
+          ),
+        ),
+      }),
+    );
+  }
+  return Object.freeze({
+    ...recipe,
+    recipeProvider: provider,
+    agents: readonlyMap(agents),
+    selectAgent(name?: string) {
+      const agent = agents.get(name ?? rootAgent.name);
+      if (!agent)
+        throw new RecipeResolutionError(
+          `Recipe agent "${name}" is outside this session`,
+        );
+      return agent;
     },
   });
 }

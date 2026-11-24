@@ -6,6 +6,8 @@ import {
 import {
   RECIPE_SESSION_ENTRY_TYPE,
   recipeSessionChanged,
+  latestRecipeSession,
+  recordedRecipeProvider,
   type RecipeSessionEntry,
 } from "./recipe-session-entry.js";
 import { loadMemoryIndex } from "./memory.js";
@@ -95,6 +97,7 @@ import {
 } from "./recipe/model.js";
 import {
   resolveRecipe,
+  scopeRecipeProvider,
   type ResolvedRecipeAgent,
   type ResolvedRecipe,
 } from "./recipe/resolve.js";
@@ -971,6 +974,8 @@ export function createRecipesExtension(
     return launchAgentName;
   }
 
+  let recordedSession: RecipeSessionEntry | undefined;
+
   function loadState(
     pi: Parameters<ExtensionFactory>[0],
     cwd: string,
@@ -983,14 +988,30 @@ export function createRecipesExtension(
       throw new RecipeLaunchError(recipeNotFoundMessage(flag, recipeDir));
     }
     const requestedAgentName = selectedAgentName(pi, cwd, recipeDir);
-    const key = [cwd, recipeDir, requestedAgentName ?? ""].join("\0");
+    const providerFlag = stringFlag(pi.getFlag("recipe-provider"));
+    const key = [
+      cwd,
+      recipeDir,
+      requestedAgentName ?? "",
+      providerFlag ?? "",
+      recordedSession?.recipe_dir,
+      recordedSession?.agent,
+      recordedSession?.provider,
+    ].join("\0");
     if (state?.key === key) return state;
 
     let resolvedRecipe: ResolvedRecipe;
     let resolved: ResolvedRecipeAgent;
     try {
       resolvedRecipe = resolveRecipe({ recipeDir });
-      resolved = resolvedRecipe.selectAgent(requestedAgentName);
+      const root = resolvedRecipe.selectAgent(requestedAgentName);
+      resolvedRecipe = scopeRecipeProvider(
+        resolvedRecipe,
+        root.name,
+        providerFlag ??
+          recordedRecipeProvider(recordedSession, recipeDir, root.name),
+      );
+      resolved = resolvedRecipe.selectAgent(root.name);
     } catch (err) {
       throw new RecipeLaunchError(
         recipeLoadErrorMessage(
@@ -1327,25 +1348,6 @@ export function createRecipesExtension(
       `agent:${launchState.resolved.name}`,
     ].filter(Boolean);
     pi.setSessionName(labelParts.join(" "));
-    const recipeEntry: RecipeSessionEntry = {
-      recipe_dir: launchState.resolved.recipeDir,
-      agent: launchState.resolved.name,
-      package: launchState.resolved.manifest.name,
-      version: launchState.resolved.manifest.version,
-    };
-    try {
-      if (
-        recipeSessionChanged(
-          ctx.sessionManager?.getEntries?.() ?? [],
-          recipeEntry,
-        )
-      ) {
-        pi.appendEntry(RECIPE_SESSION_ENTRY_TYPE, recipeEntry);
-      }
-    } catch {
-      // A session that can't record its Recipe still runs; continuing it just needs --recipe again.
-    }
-
     const { provider, model } = modelParts(launchState.resolved.modelSpec);
     const lookupProvider = provider === "gemini" ? "google" : provider;
     const registeredModel = ctx.modelRegistry.find(lookupProvider, model);
@@ -1368,6 +1370,30 @@ export function createRecipesExtension(
 
     if (launchState.resolved.thinkingLevel) {
       pi.setThinkingLevel(launchState.resolved.thinkingLevel);
+    }
+
+    const recipeEntry: RecipeSessionEntry = {
+      ...(launchState.resolvedRecipe.recipeProvider
+        ? { provider: launchState.resolvedRecipe.recipeProvider }
+        : {}),
+      recipe_dir: launchState.resolved.recipeDir,
+      agent: launchState.resolved.name,
+      package: launchState.resolved.manifest.name,
+      version: launchState.resolved.manifest.version,
+    };
+    try {
+      if (
+        recipeSessionChanged(
+          ctx.sessionManager?.getBranch?.() ??
+            ctx.sessionManager?.getEntries?.() ??
+            [],
+          recipeEntry,
+        )
+      ) {
+        pi.appendEntry(RECIPE_SESSION_ENTRY_TYPE, recipeEntry);
+      }
+    } catch {
+      // A session that can't record its Recipe still runs; continuing it just needs --recipe again.
     }
 
     // First-party tools a host or Recipe extension registered (`web_search`)
@@ -1906,6 +1932,10 @@ export function createRecipesExtension(
         "Recipe folder, installed recipe name, or installed recipe source to use for this Pi session",
       type: "string",
     });
+    pi.registerFlag("recipe-provider", {
+      description: "Model provider for this Recipe and its subagents",
+      type: "string",
+    });
     pi.registerFlag("agent", {
       description: "Agent to use",
       type: "string",
@@ -2085,6 +2115,11 @@ export function createRecipesExtension(
         const warning = managedFetchMissingWarning(env);
         if (warning !== undefined) ctx.ui.notify(warning, "warning");
       }
+      recordedSession = latestRecipeSession(
+        ctx.sessionManager?.getBranch?.() ??
+          ctx.sessionManager?.getEntries?.() ??
+          [],
+      );
       sessionCtx = ctx;
       localAgentContext = ctx;
       const launchState = safeLoadState(pi, ctx.cwd, ctx);
@@ -2165,6 +2200,7 @@ export function createRecipesExtension(
     });
 
     pi.on("session_shutdown", async () => {
+      recordedSession = undefined;
       suggestionPicker.cancel();
       await closeAllChildRuns();
       await closeRootMcpRuntime();
