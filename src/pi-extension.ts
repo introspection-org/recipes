@@ -227,7 +227,7 @@ interface ChildRun extends ChildRunSnapshot {
 }
 
 interface RecipeLaunchState {
-  key: string;
+  sourceRecipe: ResolvedRecipe;
   cwd: string;
   resolvedRecipe: ResolvedRecipe;
   resolved: ResolvedRecipeAgent;
@@ -989,28 +989,28 @@ export function createRecipesExtension(
     }
     const requestedAgentName = selectedAgentName(pi, cwd, recipeDir);
     const providerFlag = stringFlag(pi.getFlag("recipe-provider"));
-    const key = [
-      cwd,
-      recipeDir,
-      requestedAgentName ?? "",
-      providerFlag ?? "",
-      recordedSession?.recipe_dir,
-      recordedSession?.agent,
-      recordedSession?.provider,
-    ].join("\0");
-    if (state?.key === key) return state;
-
+    let sourceRecipe: ResolvedRecipe;
     let resolvedRecipe: ResolvedRecipe;
     let resolved: ResolvedRecipeAgent;
     try {
-      resolvedRecipe = resolveRecipe({ recipeDir });
-      const root = resolvedRecipe.selectAgent(requestedAgentName);
-      resolvedRecipe = scopeRecipeProvider(
-        resolvedRecipe,
-        root.name,
+      sourceRecipe =
+        state?.sourceRecipe.recipeDir === recipeDir
+          ? state.sourceRecipe
+          : resolveRecipe({ recipeDir });
+      const root = sourceRecipe.selectAgent(requestedAgentName);
+      const provider =
         providerFlag ??
-          recordedRecipeProvider(recordedSession, recipeDir, root.name),
-      );
+        recordedRecipeProvider(recordedSession, recipeDir, root.name);
+      // Flags and session metadata can describe the same launch. Its factories
+      // have already registered their tools with this Pi extension instance.
+      if (
+        state?.cwd === cwd &&
+        state.sourceRecipe === sourceRecipe &&
+        state.resolved.name === root.name &&
+        state.resolvedRecipe.recipeProvider === provider
+      )
+        return state;
+      resolvedRecipe = scopeRecipeProvider(sourceRecipe, root.name, provider);
       resolved = resolvedRecipe.selectAgent(root.name);
     } catch (err) {
       throw new RecipeLaunchError(
@@ -1027,7 +1027,7 @@ export function createRecipesExtension(
     env.PI_AGENT_NAME = resolved.name;
 
     state = {
-      key,
+      sourceRecipe,
       cwd,
       resolvedRecipe,
       resolved,

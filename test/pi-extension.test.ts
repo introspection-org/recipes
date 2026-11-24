@@ -206,6 +206,20 @@ it("uses the launch provider and restores it on resume", async () => {
   }
 });
 
+async function resumeWithRecordedProvider(
+  pi: ReturnType<typeof createMockExtensionAPI>,
+  ctx: ReturnType<typeof extensionContext>,
+) {
+  const registeredTool = pi.tools.get("setup_git");
+  pi.flagValues.delete("recipe-provider");
+  ctx.sessionManager = {
+    getBranch: () => pi.entries.map((entry) => ({ type: "custom", ...entry })),
+  };
+  await pi.emitExtensionEvent({ type: "session_start", reason: "resume" }, ctx);
+  expect(pi.tools.get("setup_git")).toBe(registeredTool);
+  expect(pi.activeTools).toContain("setup_git");
+}
+
 describe("Recipes extension for Pi", () => {
   it("registers recipe launch flags", async () => {
     const pi = createMockExtensionAPI();
@@ -1612,7 +1626,8 @@ describe("Recipes extension for Pi", () => {
     }
   });
 
-  it("loads the complete ordered package extension closure", async () => {
+  const resume = it.each([undefined, "openai"]);
+  resume("keeps Recipe tools on resume (%s)", async (provider) => {
     const root = mkdtempSync(join(tmpdir(), "pi-recipe-launch-"));
     try {
       const recipeDir = writeRecipe(root);
@@ -1674,7 +1689,8 @@ describe("Recipes extension for Pi", () => {
       const pi = createMockExtensionAPI();
       pi.flagValues.set("recipe", recipeDir);
       pi.flagValues.set("agent", "main");
-      createRecipesExtension()(pi);
+      if (provider) pi.flagValues.set("recipe-provider", provider);
+      createRecipesExtension({ env: {} })(pi);
       const notify = vi.fn();
 
       await pi.emitExtensionEvent(
@@ -1687,6 +1703,10 @@ describe("Recipes extension for Pi", () => {
       expect(notify).toHaveBeenCalledWith(
         "Recipe extensions: 2/2 loaded",
         "info",
+      );
+      await resumeWithRecordedProvider(
+        pi,
+        extensionContext(join(root, "project"), notify),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
