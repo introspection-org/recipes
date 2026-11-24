@@ -1346,23 +1346,34 @@ export function createRecipesExtension(
       // A session that can't record its Recipe still runs; continuing it just needs --recipe again.
     }
 
-    const { provider, model } = modelParts(launchState.resolved.modelSpec);
-    const lookupProvider = provider === "gemini" ? "google" : provider;
-    const registeredModel = ctx.modelRegistry.find(lookupProvider, model);
-    if (!registeredModel) {
-      throw new Error(
-        `Recipe model is not available: ${launchState.resolved.modelSpec}`,
+    // The session starts on the first of `ai.model` and `ai.fallbacks` this host can serve.
+    const fallbacks = launchState.resolved.modelConfig?.fallbacks ?? [];
+    let failure: string | undefined;
+    let started = false;
+    for (const spec of [launchState.resolved.modelSpec, ...fallbacks]) {
+      const { provider, model } = modelParts(spec);
+      const lookupProvider = provider === "gemini" ? "google" : provider;
+      const registeredModel = ctx.modelRegistry.find(lookupProvider, model);
+      if (!registeredModel) {
+        failure ??= `Recipe model is not available: ${spec}`;
+        continue;
+      }
+      const resolvedModel = cloneModelForRecipe(registeredModel);
+      applyRecipeAgentModelConfigToModel(
+        resolvedModel,
+        launchState.resolved.modelConfig,
       );
+      if (await pi.setModel(resolvedModel)) {
+        started = true;
+        break;
+      }
+      failure ??= `Recipe model has no configured API key: ${spec}`;
     }
-    const resolvedModel = cloneModelForRecipe(registeredModel);
-    applyRecipeAgentModelConfigToModel(
-      resolvedModel,
-      launchState.resolved.modelConfig,
-    );
-    const ok = await pi.setModel(resolvedModel);
-    if (!ok) {
+    if (!started) {
       throw new Error(
-        `Recipe model has no configured API key: ${launchState.resolved.modelSpec}`,
+        fallbacks.length > 0
+          ? `${failure}; none of its fallbacks can start either: ${fallbacks.join(", ")}`
+          : failure,
       );
     }
 

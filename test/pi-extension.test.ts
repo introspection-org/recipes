@@ -161,6 +161,51 @@ function writeRecipe(root: string) {
   return recipeDir;
 }
 
+async function startWithFallbacks(keys: boolean[]) {
+  const root = mkdtempSync(join(tmpdir(), "pi-recipe-model-fallbacks-"));
+  const previousExitCode = process.exitCode;
+  try {
+    const recipeDir = writeRecipe(root);
+    const agentPath = join(recipeDir, "defs", "main.yaml");
+    writeFileSync(
+      agentPath,
+      readFileSync(agentPath, "utf8").replace(
+        ["model:", "  name: openai/gpt-4.1", "  thinking_level: low"].join(
+          "\n",
+        ),
+        [
+          "ai:",
+          "  model: openai/gpt-4.1",
+          "  fallbacks: [anthropic/claude-sonnet-5-5]",
+          "  thinking_level: low",
+        ].join("\n"),
+      ),
+    );
+    const projectDir = join(root, "project");
+    mkdirSync(projectDir, { recursive: true });
+    const notify = vi.fn();
+    const pi = createMockExtensionAPI();
+    pi.flagValues.set("recipe", recipeDir);
+    pi.flagValues.set("agent", "main");
+    const setModel = vi.fn();
+    for (const ok of keys) setModel.mockResolvedValueOnce(ok);
+    (pi as any).setModel = setModel;
+    createRecipesExtension()(pi);
+    await pi.emitExtensionEvent(
+      { type: "session_start", reason: "startup" } as any,
+      {
+        ...extensionContext(projectDir, notify),
+        abort: vi.fn(),
+        mode: "json",
+      },
+    );
+    return { setModel, notify };
+  } finally {
+    process.exitCode = previousExitCode;
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 describe("Recipes extension for Pi", () => {
   it("registers recipe launch flags", async () => {
     const pi = createMockExtensionAPI();
@@ -629,6 +674,31 @@ describe("Recipes extension for Pi", () => {
       process.exitCode = previousExitCode;
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it.each([
+    [[false, true], "anthropic/claude-sonnet-5-5"],
+    [[true], "openai/gpt-4.1"],
+  ])(
+    "starts on the first of ai.model and ai.fallbacks with credentials (%j)",
+    async (keys, expected) => {
+      const { setModel, notify } = await startWithFallbacks(keys);
+      const [last] = setModel.mock.calls.at(-1)!;
+      expect(`${last.provider}/${last.id}`).toBe(expected);
+      expect(setModel).toHaveBeenCalledTimes(keys.length);
+      expect(notify).not.toHaveBeenCalledWith(
+        expect.stringContaining("cannot start"),
+        "warning",
+      );
+    },
+  );
+
+  it("names the model and its fallbacks when none has credentials", async () => {
+    const { notify } = await startWithFallbacks([false, false]);
+    expect(notify).toHaveBeenCalledWith(
+      "Recipe session cannot start: Recipe model has no configured API key: openai/gpt-4.1; none of its fallbacks can start either: anthropic/claude-sonnet-5-5",
+      "warning",
+    );
   });
 
   it.each([
