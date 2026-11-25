@@ -231,9 +231,41 @@ function unknownRun(id: string, controller: AgentRunController) {
 
 const UNKNOWN_RUN = /unknown agent run|agent run not found/i;
 
+/** The longest role description the parent agent sees, ellipsis included. */
+export const AGENT_ROLE_DESCRIPTION_CHARS = 200;
+
+/** What the parent agent is told about one subagent role. */
+export interface AgentRole {
+  readonly description?: string;
+}
+
+/**
+ * One `- <name>: <description>` line per role, the description collapsed to
+ * one line and cut at {@link AGENT_ROLE_DESCRIPTION_CHARS} with an ellipsis;
+ * a role without a description shows its name only.
+ */
+export function agentRoleLines(
+  agents: ReadonlyMap<string, AgentRole>,
+): string[] {
+  return [...agents].map(([name, role]) => {
+    const description = role.description?.replace(/\s+/g, " ").trim();
+    if (!description) return `- ${name}`;
+    const short =
+      description.length > AGENT_ROLE_DESCRIPTION_CHARS
+        ? `${description.slice(0, AGENT_ROLE_DESCRIPTION_CHARS - 1).trimEnd()}…`
+        : description;
+    return `- ${name}: ${short}`;
+  });
+}
+
+function agentRoleList(agents: ReadonlyMap<string, AgentRole>): string {
+  const lines = agentRoleLines(agents);
+  return lines.length > 0 ? lines.join("\n") : "(none)";
+}
+
 export function createAgentTool(
   controller: AgentRunController,
-  agents: ReadonlyMap<string, unknown>,
+  agents: ReadonlyMap<string, AgentRole>,
   opts: { acknowledgeCompletions?(ids: readonly string[]): void } = {},
 ): ToolDefinition {
   const closedRunIds = new Set<string>();
@@ -243,14 +275,15 @@ export function createAgentTool(
   return defineTool({
     name: "agent",
     label: "Agent",
-    description: [
-      "Start or manage child agents.",
-      "Omit action to start one child with name and prompt; it returns a run id at once. Its result reaches you when it finishes: carry on or end your turn.",
-      "For a short check whose answer you need now, pass wait: true to get the result in the same call, or use wait with the run id.",
-      `Available agent roles: ${[...agents.keys()].join(", ")}. Pass a role as name; use label to distinguish concurrent runs.`,
-      "Use status, message, interrupt, or close with the run id `start` returned.",
-      "Message steers a running child at the next message boundary; on a settled child it resumes the same session.",
-    ].join(" "),
+    description:
+      [
+        "Start or manage child agents.",
+        "Omit action to start one child with name and prompt; it returns a run id at once. Its result reaches you when it finishes: carry on or end your turn.",
+        "For a short check whose answer you need now, pass wait: true to get the result in the same call, or use wait with the run id.",
+        "Pass a role as name; use label to distinguish concurrent runs.",
+        "Use status, message, interrupt, or close with the run id `start` returned.",
+        "Message steers a running child at the next message boundary; on a settled child it resumes the same session.",
+      ].join(" ") + `\n\nAvailable agent roles:\n${agentRoleList(agents)}`,
     parameters: AgentToolParams,
     async execute(_callId, rawParams, signal, onUpdate) {
       const params = rawParams as AgentToolInput;
@@ -264,7 +297,7 @@ export function createAgentTool(
           }
           if (!agents.has(params.name)) {
             return errorResult(
-              `Unknown agent "${params.name}". Available: ${[...agents.keys()].join(", ")}`,
+              `Unknown agent "${params.name}". Available agent roles:\n${agentRoleList(agents)}`,
               controller,
             );
           }

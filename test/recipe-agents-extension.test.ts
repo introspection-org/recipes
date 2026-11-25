@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  AGENT_ROLE_DESCRIPTION_CHARS,
+  agentRoleLines,
   createAgentTool,
+  type AgentRole,
   type AgentRunController,
   type AgentRunSummary,
 } from "../src/agents.js";
@@ -347,5 +350,63 @@ describe("agent tool waiting", () => {
     expect(text(result)).toBe(
       `run ${id} (explorer: Explore) [completed]\nfound it`,
     );
+  });
+});
+
+describe("agent roles the parent sees", () => {
+  const long = `Drafts ${"a careful reply ".repeat(20)}for each ticket.`;
+  function roles(): ReadonlyMap<string, AgentRole> {
+    return new Map<string, AgentRole>([
+      ["acme", { description: "Looks up an Acme account\n  by its id." }],
+      ["talent", {}],
+      ["writer", { description: long }],
+    ]);
+  }
+
+  it("lists each role with its description on one line", () => {
+    const lines = agentRoleLines(roles());
+
+    expect(lines[0]).toBe("- acme: Looks up an Acme account by its id.");
+    expect(lines[1]).toBe("- talent");
+    expect(lines[2]).toMatch(/^- writer: Drafts a careful reply .*…$/);
+    expect(lines[2]!.length).toBeLessThanOrEqual(
+      "- writer: ".length + AGENT_ROLE_DESCRIPTION_CHARS,
+    );
+    expect(lines[2]!.length).toBeGreaterThan(
+      "- writer: ".length + AGENT_ROLE_DESCRIPTION_CHARS - 3,
+    );
+  });
+
+  it("keeps a description at the limit whole", () => {
+    const exact = "x".repeat(AGENT_ROLE_DESCRIPTION_CHARS);
+    expect(agentRoleLines(new Map([["acme", { description: exact }]]))).toEqual(
+      [`- acme: ${exact}`],
+    );
+  });
+
+  it("names every role and its purpose in the tool description", () => {
+    const tool = createAgentTool(controller(), roles());
+
+    expect(tool.description).toContain(
+      `Available agent roles:\n${agentRoleLines(roles()).join("\n")}`,
+    );
+  });
+
+  it("lists the roles when the name is unknown", async () => {
+    const tool = createAgentTool(controller(), roles());
+
+    const result = await tool.execute(
+      "call-1",
+      { name: "missing", prompt: "Go" },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: `Unknown agent "missing". Available agent roles:\n${agentRoleLines(roles()).join("\n")}`,
+    });
   });
 });

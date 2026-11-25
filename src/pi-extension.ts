@@ -111,6 +111,7 @@ import {
   resolveRecipeSkillCommand,
 } from "./recipe/skills-prompt.js";
 import {
+  agentRoleLines,
   createAgentTool,
   type AgentRunController,
   type AgentRunSummary,
@@ -298,10 +299,6 @@ function modelParts(spec: string): { provider: string; model: string } {
     provider: spec.slice(0, index),
     model: spec.slice(index + 1),
   };
-}
-
-function visibleSubagents(state: RecipeLaunchState): RecipeAgentDefinition[] {
-  return [...state.resolved.subagents.values()];
 }
 
 /** Selections the agent's mode runs: outside codemode, servers behind a tool are on Pi's client instead. */
@@ -577,10 +574,6 @@ function controllerSummary(
   };
 }
 
-function nameList(names: string[]): string {
-  return names.length > 0 ? names.join(", ") : "(none)";
-}
-
 function bulletList(items: string[]): string[] {
   return items.length > 0 ? items.map((item) => `  - ${item}`) : ["  - none"];
 }
@@ -601,7 +594,7 @@ function recipeSummary(
   state: RecipeLaunchState,
   activeTools: string[],
 ): string {
-  const subagents = visibleSubagents(state).map((agent) => agent.name);
+  const subagents = agentRoleLines(state.resolved.subagents);
   return [
     "Active Recipe",
     `Name: ${state.resolved.manifest.name}@${state.resolved.manifest.version}`,
@@ -611,7 +604,8 @@ function recipeSummary(
     `Agent: ${state.resolved.name}`,
     `Model: ${state.resolved.definition.model?.name ?? "(session default)"}`,
     `Thinking level: ${state.resolved.definition.model?.thinkingLevel ?? "(session default)"}`,
-    `Subagents: ${nameList(subagents)}`,
+    subagents.length > 0 ? "Subagents:" : "Subagents: (none)",
+    ...subagents.map((line) => `  ${line}`),
     "",
     "Active recipe tools:",
     ...bulletList(activeRecipeTools(state, activeTools)),
