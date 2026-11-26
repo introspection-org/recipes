@@ -260,8 +260,8 @@ importers:
   packages/productivity/google:
     devDependencies:
       '@emulators/core':
-        specifier: ^0.13.1
-        version: 0.13.1
+        specifier: ^0.14.0
+        version: 0.14.0
       '@emulators/google':
         specifier: ^0.13.1
         version: 0.13.1
@@ -518,6 +518,9 @@ packages:
 
   '@emulators/core@0.13.1':
     resolution: {integrity: sha512-otPAqo7b1Me+Ak84Yw+oyvpSnPKu+X7XDgbscFrkwXmZ3lb5HjlN4wbMeQ01a6f5p562DtlKhpIUU+Q2mvfDRQ==}
+
+  '@emulators/core@0.14.0':
+    resolution: {integrity: sha512-3XAxtzFh1quWqyFur/Ufcz+Z+kdODWDrfjoxMYtaBiYQrwaa7EWmIQ2W3KjDKiZ7tox+KxRa9F4d7DJoVqHSKw==}
 
   '@emulators/google@0.13.0':
     resolution: {integrity: sha512-fEw2+oBgUtK8wahSrezwJx/FJfNHy1ciZvlhKMA6vneYVwSf1EJNeI45k3CCheAXfrVhegN7mrw/1XrRVuuaaA==}
@@ -2393,8 +2396,8 @@ packages:
   highlight.js@10.7.3:
     resolution: {integrity: sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==}
 
-  hono@4.13.19:
-    resolution: {integrity: sha512-KmXvQAXwcAHV+muzbIwoJ23niEB5nMoDVr9WcRkU8mvjUECm/1+7v4Jgp7P7a+H6MLFrh+vXrGonGrGS+RQfkA==}
+  hono@4.13.20:
+    resolution: {integrity: sha512-xo6gecEJQ+CjTtOUUbcLHE8CdRKMeF4qITe+DT+OhFnSUmZR/ZBa9XavAfiGh4HlukmlaHFdaK4dz5tkTYFNmA==}
     engines: {node: '>=16.9.0'}
 
   hosted-git-info@9.0.3:
@@ -2926,6 +2929,10 @@ packages:
 
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+    engines: {node: '>=16.20.0'}
+
+  pkce-challenge@5.0.2:
+    resolution: {integrity: sha512-vCc54+qyIfKC5e2UN28AZKElwqjLINgiIV3RKI8pDu93TjaAJoB3QrgMzEBouy8yOKsXVXdAinO1QArJf9x5WA==}
     engines: {node: '>=16.20.0'}
 
   playwright-core@1.65.1:
@@ -3953,7 +3960,11 @@ snapshots:
 
   '@emulators/core@0.13.1':
     dependencies:
-      jose: 6.2.17
+      jose: 6.2.18
+
+  '@emulators/core@0.14.0':
+    dependencies:
+      jose: 6.2.18
 
   '@emulators/google@0.13.0':
     dependencies:
@@ -4105,9 +4116,9 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@hono/node-server@1.19.19(hono@4.13.19)':
+  '@hono/node-server@1.19.19(hono@4.13.20)':
     dependencies:
-      hono: 4.13.19
+      hono: 4.13.20
     optional: true
 
   '@humanfs/core@0.19.2':
@@ -4245,7 +4256,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.6.7)':
     dependencies:
-      '@hono/node-server': 1.19.19(hono@4.13.19)
+      '@hono/node-server': 1.19.19(hono@4.13.20)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
@@ -4255,10 +4266,10 @@ snapshots:
       eventsource-parser: 3.1.1
       express: 5.3.0
       express-rate-limit: 8.7.5(express@5.3.0)
-      hono: 4.13.19
+      hono: 4.13.20
       jose: 6.2.18
       json-schema-typed: 8.0.2
-      pkce-challenge: 5.0.1
+      pkce-challenge: 5.0.2
       raw-body: 3.0.2
       zod: 4.6.7
       zod-to-json-schema: 3.25.2(zod@4.6.7)
@@ -5610,7 +5621,7 @@ snapshots:
 
   highlight.js@10.7.3: {}
 
-  hono@4.13.19:
+  hono@4.13.20:
     optional: true
 
   hosted-git-info@9.0.3:
@@ -6134,6 +6145,9 @@ snapshots:
   picomatch@4.0.7: {}
 
   pkce-challenge@5.0.1: {}
+
+  pkce-challenge@5.0.2:
+    optional: true
 
   playwright-core@1.65.1: {}
 

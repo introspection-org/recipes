@@ -30,7 +30,7 @@
     "pack:check": "pnpm pack --dry-run --json | node ../../../scripts/check-npm-pack.mjs"
   },
   "devDependencies": {
-    "@emulators/core": "^0.13.1",
+    "@emulators/core": "^0.14.0",
     "@emulators/google": "^0.13.1",
     "@introspection-ai/recipes": "workspace:^",
     "@types/node": "^26.1.2",
