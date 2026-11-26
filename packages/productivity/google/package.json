@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "@emulators/core": "^0.13.1",
-    "@emulators/google": "^0.13.1",
+    "@emulators/google": "^0.14.0",
     "@introspection-ai/recipes": "workspace:^",
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
