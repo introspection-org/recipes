@@ -199,8 +199,9 @@ merge the two streams without copying root events. An injected `runController`
 owns its own observation contract and does not trigger this callback.
 
 The Pi extension records those same envelopes as non-context custom entries,
-so Pi's session and JSON event surfaces preserve child runs through their
-normal event machinery. Embedded hosts receive the observer directly and do
+all but the streaming `message_update` and `tool_execution_update` events, so
+Pi's session and JSON event surfaces preserve child runs through their normal
+event machinery. Embedded hosts receive the observer directly and do
 not need Pi entry transport.
 
 An injected `runController` is owned by the returned session handle.

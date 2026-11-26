@@ -54,6 +54,7 @@ import {
   type AgentRunEventObserver,
   compactTokens,
   notifyAgentRunEvent,
+  persistsAgentRunEvent,
   runProgress,
 } from "./agents.js";
 import {
@@ -1705,6 +1706,9 @@ export function createRecipesExtension(
     };
     const recordRunEvent = (envelope: AgentRunEvent) => {
       notifyAgentRunEvent(opts.onAgentRunEvent, envelope);
+      // Streaming updates reach the observer above but are not appended: the
+      // end events carry their final content.
+      if (!persistsAgentRunEvent(envelope)) return;
       // Custom entries join Pi's canonical session event stream without
       // entering model context. JSON mode serializes the resulting single
       // `entry_appended` event through Pi's guarded output writer.

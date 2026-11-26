@@ -92,6 +92,24 @@ export interface AgentRunEvent {
   event: AgentSessionEvent;
 }
 
+/**
+ * Pi events that stream a message or tool call in progress. Each one repeats
+ * everything streamed so far (a long bash repeats its whole output on every
+ * update), and the matching `message_end` or `tool_execution_end` carries the
+ * final result, so observers see them live but the session does not keep them.
+ */
+const STREAMING_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "message_update",
+  "tool_execution_update",
+]);
+
+/** Whether a child run event is kept as a session entry, not only observed live. */
+export function persistsAgentRunEvent(envelope: AgentRunEvent): boolean {
+  return !STREAMING_EVENT_TYPES.has(
+    (envelope.event as { type?: string }).type ?? "",
+  );
+}
+
 /** Host observer for child run events. Observers never own run lifecycle. */
 export type AgentRunEventObserver = (
   event: AgentRunEvent,
