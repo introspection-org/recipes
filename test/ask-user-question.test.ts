@@ -346,8 +346,11 @@ describe("ask_user_question tool", () => {
       expect(calls.map((call) => call.kind)).toEqual(["custom"]);
       const shown = calls[0]!.options!.join("\n");
       expect(shown).toContain(`4. ${ASK_USER_TYPE_SOMETHING}`);
-      // Titles only: option descriptions aren't repeated under each choice.
-      expect(shown).not.toContain("No passwords; newest browsers only");
+      // Each description follows its label on the same row.
+      expect(shown).toContain(
+        "1. Passkeys — No passwords; newest browsers only",
+      );
+      expect(shown).toMatch(/3\. Password$/m);
       expect(result.content[0]!.text).toBe("Auth: Magic link");
     });
 
