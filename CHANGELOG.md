@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.63.1](https://github.com/introspection-org/recipes/compare/v0.63.0...v0.63.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **pi:** keep a child's streaming events out of the parent session ([#600](https://github.com/introspection-org/recipes/issues/600)) ([287e5ea](https://github.com/introspection-org/recipes/commit/287e5eacbbaafb3ca6fe232da0ba2af0d0230505))
+* **pi:** start a session on the first of ai.model and ai.fallbacks with credentials ([#596](https://github.com/introspection-org/recipes/issues/596)) ([676089f](https://github.com/introspection-org/recipes/commit/676089fbf5fe7d726ceeb66a85e7bd5dbbf047c1))
+
 ## [0.63.0](https://github.com/introspection-org/recipes/compare/v0.62.0...v0.63.0) (2026-11-23)
 
 
