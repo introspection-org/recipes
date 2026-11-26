@@ -305,7 +305,10 @@ record of approvals can say so. `details.reviews` holds the same decisions as
 ## Structured child events
 
 Pi's JSON mode emits root session events directly. Recipes appends one Pi
-custom entry for every canonical event emitted by a delegated child. Pi emits
+custom entry for each canonical event emitted by a delegated child, except the
+streaming `message_update` and `tool_execution_update` events: each repeats
+everything streamed so far, and the matching `message_end` or
+`tool_execution_end` carries the final content. Pi emits
 that entry as an `entry_appended` event; its `data` is an `agent_run_event`
 envelope carrying the child run id, parent run id (`root`, or the delegating
 child's run id for a depth-2 run), agent identity, depth, and unchanged Pi

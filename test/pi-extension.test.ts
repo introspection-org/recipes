@@ -2272,3 +2272,115 @@ describe("Recipes extension for Pi", () => {
     }
   });
 });
+
+describe("Recipes extension child run events", () => {
+  it("passes a child's streaming events to the observer without appending them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-recipe-stream-events-"));
+    try {
+      const recipeDir = writeRecipe(root);
+      const projectDir = join(root, "project");
+      mkdirSync(projectDir, { recursive: true });
+      const partial = (text: string) => ({
+        content: [{ type: "text", text }],
+        details: {},
+      });
+      const childEvents = [
+        { type: "tool_execution_start", toolCallId: "c1", toolName: "bash" },
+        {
+          type: "tool_execution_update",
+          toolCallId: "c1",
+          toolName: "bash",
+          partialResult: partial("line 1\n"),
+        },
+        {
+          type: "tool_execution_update",
+          toolCallId: "c1",
+          toolName: "bash",
+          partialResult: partial("line 1\nline 2\n"),
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: "c1",
+          toolName: "bash",
+          result: partial("line 1\nline 2\n"),
+          isError: false,
+        },
+        { type: "message_start", message: { role: "assistant", content: [] } },
+        {
+          type: "message_update",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "do" }],
+          },
+        },
+        {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "done" }],
+          },
+        },
+      ];
+      const createChildAgentRunner = vi.fn((opts: any = {}) => ({
+        async start() {},
+        async prompt() {
+          for (const event of childEvents) opts.onEvent?.(event);
+          opts.onAssistantMessage?.("done", "final");
+          return "done";
+        },
+        async steer() {},
+        async cancel() {},
+        async shutdown() {},
+      }));
+      const onAgentRunEvent = vi.fn();
+      const pi = createMockExtensionAPI();
+      pi.flagValues.set("recipe", recipeDir);
+      pi.flagValues.set("agent", "main");
+      const ctx = { ...extensionContext(projectDir), mode: "json" } as any;
+
+      createRecipesExtension({ createChildAgentRunner, onAgentRunEvent })(pi);
+      await pi.emitExtensionEvent(
+        { type: "session_start", reason: "startup" } as any,
+        ctx,
+      );
+      const started = await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-1",
+          { name: "explorer", prompt: "inspect" },
+          undefined,
+          undefined,
+          ctx,
+        );
+      await pi.tools
+        .get("agent")
+        ?.execute(
+          "tool-call-2",
+          { action: "wait", id: started?.details?.agent?.agent_run_id },
+          undefined,
+          undefined,
+          ctx,
+        );
+
+      const observed = onAgentRunEvent.mock.calls.map(
+        ([envelope]) => envelope.event,
+      );
+      expect(observed).toEqual(childEvents);
+      const appended = pi.entries
+        .filter(
+          (entry: { customType: string }) =>
+            entry.customType === "agent_run_event",
+        )
+        .map((entry) => (entry.data as { event: unknown }).event);
+      expect(appended).toEqual(
+        childEvents.filter(
+          (event) =>
+            event.type !== "tool_execution_update" &&
+            event.type !== "message_update",
+        ),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
