@@ -31,21 +31,33 @@ Every command is served by Google's REST APIs, and the descriptor declares
 each `rest`. The mapping is static and versioned: the package's contract
 tests pin each request and result shape.
 
-| Command | REST |
-| --- | --- |
-| `mail search` | `GET gmail/v1/users/me/messages?q=` |
-| `mail read` | `users.messages.get`, `users.threads.get` (`format=full`) |
-| `mail fetch_attachment` | `users.messages.attachments.get` |
-| `mail draft` / `update_draft` | `users.drafts.create`, `users.drafts.update` |
-| `mail send` | `users.drafts.send` |
-| `mail label` / `move` | `users.messages.modify` |
-| `calendar list` / `read` | `GET calendar/v3/calendars/{id}/events`, `events.get` |
-| `calendar free_busy` | `POST calendar/v3/freeBusy` |
-| `calendar create` / `update` / `respond` / `cancel` | `events.insert`, `events.patch` (own attendee `responseStatus`), `events.delete`, with `sendUpdates=all` |
-| `drive search` | `GET drive/v3/files?q=` |
-| `drive read` | `files.export` (native formats), `files.get?alt=media` |
-| `drive download` | `files.export`, `files.get?alt=media` |
-| `drive upload` | `POST upload/drive/v3/files` (multipart; resumable above 5 MB) |
+The table lists every operation a command calls, by the method's id in the
+API's discovery document, which is also the span's
+`introspection.api.operation_id`. An operation in *italics* is called only
+under the condition given. Label and calendar-zone lookups are made once per
+session and reused.
+
+| Command | Operations | Conditions and parameters |
+| --- | --- | --- |
+| `mail search` | `gmail.users.messages.list`, `gmail.users.messages.get` per result, *`gmail.users.labels.list`* | `messages.list` with `q=` (the query, `from:`, `after:`, `before:`, `is:unread`), `labelIds=` for `folder` and `includeSpamTrash=true` for spam or trash, paged with `pageToken`; `messages.get` with `format=full` and `fields=` limited to headers and part structure; `labels.list` to name a result's labels, and to resolve a `folder` that is not a system label |
+| `mail read` | `gmail.users.messages.get` or `gmail.users.threads.get`, *`gmail.users.labels.list`*, *`gmail.users.messages.attachments.get`* | `messages.get` for `message_id`, `threads.get` for `thread_id`, both `format=full`; `labels.list` to name the labels; `attachments.get` when Gmail stores a body part apart (up to 5 MB) |
+| `mail fetch_attachment` | `gmail.users.messages.get`, *`gmail.users.messages.attachments.get`* | `messages.get` with `format=full` to find the part; `attachments.get` unless the part's data is inline |
+| `mail draft` | *`gmail.users.messages.get`*, `gmail.users.drafts.create` | `messages.get` (`format=full`) for the parent when `reply_to_id` is given |
+| `mail update_draft` | `gmail.users.drafts.get`, *`gmail.users.messages.attachments.get`*, `gmail.users.drafts.update` | `drafts.get` with `format=full`; `attachments.get` when `body` is not given and the kept body is stored apart |
+| `mail send` | `gmail.users.drafts.send` | Never retried |
+| `mail label` | *`gmail.users.labels.list`*, `gmail.users.messages.modify`, *`gmail.users.messages.get`* | `labels.list` to resolve label names that are not system labels and to name the result's labels; `messages.get` (`format=full`, structure `fields=`) when `modify` returns no headers |
+| `mail move` | *`gmail.users.labels.list`*, `gmail.users.messages.modify`, *`gmail.users.messages.get`* | As `mail label`; `archive` resolves no label |
+| `calendar list` | *`calendar.calendarList.list`*, `calendar.events.list` | `calendarList.list` (`maxResults=250`, paged) when `calendar` names one other than `primary`; `events.list` with `timeMin=`, `timeMax=`, `singleEvents=true`, `orderBy=startTime`, paged with `pageToken` |
+| `calendar read` | `calendar.events.get`, *`calendar.calendars.get`* | `calendars.get` (`fields=timeZone`) when the event has no time zone of its own |
+| `calendar free_busy` | `calendar.freebusy.query` | `POST`, though a read |
+| `calendar create` | `calendar.events.insert` | On `primary`, `sendUpdates=all`; `conferenceDataVersion=1` when `online_meeting` |
+| `calendar update` | `calendar.events.patch`, *`calendar.calendars.get`* | `sendUpdates=all`, `conferenceDataVersion=1` when `online_meeting`; `calendars.get` (`fields=timeZone`) when neither `time_zone` nor the event gives a zone |
+| `calendar respond` | `calendar.events.get`, `calendar.events.patch` | `events.patch` with `sendUpdates=all` and only `attendees`, the person's own `responseStatus` (and comment) changed |
+| `calendar cancel` | `calendar.events.delete` | `sendUpdates=all` |
+| `drive search` | `drive.files.list` | `q=` (`trashed = false` and `fullText contains`, `in parents`, `modifiedTime >`), `fields=`, paged with `pageToken` |
+| `drive read` | `drive.files.get`, then *`drive.files.export`* or *`drive.files.get`* | First `files.get` with `fields=` for metadata; then `files.export` with `mimeType=` (`text/plain` or `text/csv`) for Docs, Sheets and Slides, or `files.get` with `alt=media` and a `Range` header for a text file; neither for other files |
+| `drive download` | `drive.files.get`, then *`drive.files.export`* or *`drive.files.get`* | First `files.get` with `fields=` for metadata; then `files.export` with `mimeType=` (`.docx`, `.xlsx`, `.pptx` types) for Docs, Sheets and Slides, or `files.get` with `alt=media` for a stored file |
+| `drive upload` | `drive.files.create` | `POST upload/drive/v3/files` with `uploadType=multipart` up to 5 MB; above it `uploadType=resumable`, then `PUT` of the bytes to the returned session URI, same operation |
 
 ### MCP later
 
